@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ak-core"
+version = "0.1.0"
+description = "Core agent wrapper functions for Agent Kernel"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Yaala Labs", email = "info@yaalalabs.com" }
+]
+dependencies = [
+    "ak_common==0.1.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/core"]

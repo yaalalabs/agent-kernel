@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ak-common"
+version = "0.1.0"
+description = "Common library for Agent Kernel"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Yaala Labs", email = "info@yaalalabs.com" }
+]
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/common"]
+
+[tool.uv]
+package = true
