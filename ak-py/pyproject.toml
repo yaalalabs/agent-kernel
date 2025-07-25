@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ak-py"
+version = "0.1.0"
+description = "Agent Kernel Python Distribution"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Yaala Labs", email = "info@yaalalabs.com" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv.workspace]
+members = ["ak-common", "ak-core", "ak-agents"]
+
+[tool.uv.sources]
+"ak-common" = { workspace = true }
+"ak-core" = { workspace = true }
+"ak-agents" = { workspace = true }
+
+# Common tool configurations that apply to all packages
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true

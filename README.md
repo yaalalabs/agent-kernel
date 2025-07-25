@@ -32,6 +32,8 @@ AK's Python libraries provide developers with comprehensive tools to:
 7. **Prebuilt Knowledge Sources**
    - Leverage predefined knowledge sources, including graph databases, and manage these resources through built-in tools.
 
+AK currently supports the AI Agent Framework portability for [langraph](https://www.langchain.com/langgraph) and [OpenAI Agents](https://openai.github.io/openai-agents-python/).
+
 ### Agent Capabilities
 
 Agent Kernel (AK) offers a range of capabilities to support productive agent development:
@@ -70,8 +72,6 @@ The Agent Kernel includes in-built capabilities to facilitate seamless integrati
 ### Agent Testing
 
 Agent Kernel (AK) offers a robust utility for testing agents locally. Developers can use the built-in CLI-based testing environment to interact with agents and assess their functionality. Additionally, an automated test framework allows predefined scenarios to be executed, simplifying the process of validating agent behavior.
-
----
 
 ## Agent Deployment
 
