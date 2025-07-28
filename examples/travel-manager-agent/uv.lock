@@ -1,0 +1,48 @@
+version = 1
+revision = 2
+requires-python = ">=3.12"
+
+[[package]]
+name = "ak-agents"
+version = "0.1.0"
+source = { registry = "../../ak-py/dist" }
+dependencies = [
+    { name = "ak-common" },
+    { name = "ak-core" },
+]
+sdist = { path = "ak_agents-0.1.0.tar.gz" }
+wheels = [
+    { path = "ak_agents-0.1.0-py3-none-any.whl" },
+]
+
+[[package]]
+name = "ak-common"
+version = "0.1.0"
+source = { registry = "../../ak-py/dist" }
+sdist = { path = "ak_common-0.1.0.tar.gz" }
+wheels = [
+    { path = "ak_common-0.1.0-py3-none-any.whl" },
+]
+
+[[package]]
+name = "ak-core"
+version = "0.1.0"
+source = { registry = "../../ak-py/dist" }
+dependencies = [
+    { name = "ak-common" },
+]
+sdist = { path = "ak_core-0.1.0.tar.gz" }
+wheels = [
+    { path = "ak_core-0.1.0-py3-none-any.whl" },
+]
+
+[[package]]
+name = "travel-manager-agent"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "ak-agents" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ak-agents", specifier = ">=0.1.0" }]
