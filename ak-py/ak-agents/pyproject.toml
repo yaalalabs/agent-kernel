@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [tool.uv]
-package = false
+package = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ak_agents"]
