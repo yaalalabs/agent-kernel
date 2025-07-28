@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+src/ak_core/__init__.py
+src/ak_core/agent.py
+src/ak_core.egg-info/PKG-INFO
+src/ak_core.egg-info/SOURCES.txt
+src/ak_core.egg-info/dependency_links.txt
+src/ak_core.egg-info/requires.txt
+src/ak_core.egg-info/top_level.txt

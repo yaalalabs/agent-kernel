@@ -1,0 +1,38 @@
+Metadata-Version: 2.4
+Name: ak-core
+Version: 0.1.0
+Summary: Core agent wrapper functions for Agent Kernel
+Author-email: Yaala Labs <info@yaalalabs.com>
+License: MIT
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: ak_common==0.1.0
+
+# Agent Kernel Core Library
+
+This package provides core agent wrapper functions for the Agent Kernel framework. It is designed to be used by agent logic developers to create and manage AI agents.
+
+## Features
+
+- Base Agent class for creating custom agents
+- AgentFactory for creating different types of agents
+- AgentTeam for managing collections of agents that collaborate
+
+## Development
+
+To set up the development environment:
+
+```bash
+# Install development dependencies
+uv pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+black .
+isort .
+
+# Type check
+mypy .
+```
