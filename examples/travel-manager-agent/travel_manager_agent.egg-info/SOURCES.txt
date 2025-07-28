@@ -1,8 +1,0 @@
-README.md
-main.py
-pyproject.toml
-travel_manager_agent.egg-info/PKG-INFO
-travel_manager_agent.egg-info/SOURCES.txt
-travel_manager_agent.egg-info/dependency_links.txt
-travel_manager_agent.egg-info/requires.txt
-travel_manager_agent.egg-info/top_level.txt
