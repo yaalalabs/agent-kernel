@@ -12,8 +12,6 @@ license = { text = "MIT" }
 authors = [
     { name = "Yaala Labs", email = "info@yaalalabs.com" }
 ]
-dependencies = [
-]
 
 [dependency-groups]
 dev = [
@@ -21,6 +19,8 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "pytest-cov>=6.2.1",
+    "pytest-html>=4.1.1",
 ]
 
 
@@ -50,3 +50,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=ak-common/src --cov=ak-core/src --cov=ak-agents/src --cov-report=term --cov-report=html --html=report.html"
+

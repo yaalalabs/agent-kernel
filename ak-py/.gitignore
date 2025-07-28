@@ -1,3 +1,7 @@
 .venv
 __pycache__
 dist
+.coverage
+htmlcov
+report.html
+assets
