@@ -29,6 +29,12 @@ requires-dist = [
 name = "ak-common"
 version = "0.1.0"
 source = { editable = "ak-common" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.11.7" }]
 
 [[package]]
 name = "ak-core"
@@ -45,11 +51,8 @@ requires-dist = [{ name = "ak-common", editable = "ak-common" }]
 name = "ak-py"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
-    { name = "pydantic" },
-]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "black" },
     { name = "isort" },
@@ -58,14 +61,14 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black", specifier = ">=23.0.0" },
+    { name = "isort", specifier = ">=5.0.0" },
+    { name = "mypy", specifier = ">=1.0.0" },
+    { name = "pytest", specifier = ">=7.0.0" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "annotated-types"

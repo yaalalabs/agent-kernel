@@ -13,16 +13,16 @@ authors = [
     { name = "Yaala Labs", email = "info@yaalalabs.com" }
 ]
 dependencies = [
-    "pydantic>=2.11.7",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
 ]
+
 
 [tool.uv.workspace]
 members = ["ak-common", "ak-core", "ak-agents"]

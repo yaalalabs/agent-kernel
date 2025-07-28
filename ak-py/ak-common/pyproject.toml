@@ -1,5 +1,7 @@
 [build-system]
-requires = ["uv_build>=0.8.2,<0.9.0"]
+requires = [
+    "uv_build>=0.8.2,<0.9.0",
+]
 build-backend = "uv_build"
 
 [project]
@@ -8,18 +10,26 @@ version = "0.1.0"
 description = "Common library for Agent Kernel"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
 authors = [
-    { name = "Yaala Labs", email = "hello@yaalalabs.com" }
+    { name = "Yaala Labs", email = "hello@yaalalabs.com" },
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.11.7",
+]
+
+[project.license]
+text = "MIT"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ak_common"]
+packages = [
+    "src/ak_common",
+]
 
 [tool.uv]
 package = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests",
+]
 addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
