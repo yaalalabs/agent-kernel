@@ -21,4 +21,4 @@ dependencies = [
 package = false
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/logic"]
+packages = ["src/ak_agents"]
