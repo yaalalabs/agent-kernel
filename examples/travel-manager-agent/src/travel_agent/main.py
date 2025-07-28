@@ -1,6 +1,6 @@
 from ak_common.log.logger import get_logger
 
-from src.travel_agent.travel_agent_orchestrator import TravelAgentOrchestrator
+from travel_agent.travel_agent_orchestrator import TravelAgentOrchestrator
 
 log = get_logger("Main")
 
