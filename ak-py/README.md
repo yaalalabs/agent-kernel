@@ -27,8 +27,18 @@ The monorepo consists of three main components:
 - Python 3.12 or higher
 - uv package manager 0.8.0 or higher
 
-To set up the development environment:
+#### To set up the development environment:
 
 ```bash
 ./build.sh
 ```
+#### To run tests
+
+```bash
+uv run pytest
+```
+
+### Notes
+
+1. Use root level `pyproject.toml` only to maintain common `dev` dependencies
+2. Module level dependencies should be maintained individually, and the conflicts should either be managed manually (recommended) or overridden on root `pyproject.toml` with caution. 

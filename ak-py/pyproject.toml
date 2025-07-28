@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.2,<0.9.0"]
+build-backend = "uv_build"
 
 [project]
 name = "ak-py"
@@ -12,15 +12,17 @@ license = { text = "MIT" }
 authors = [
     { name = "Yaala Labs", email = "info@yaalalabs.com" }
 ]
-dependencies = []
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "pytest-cov>=6.2.1",
+    "pytest-html>=4.1.1",
 ]
+
 
 [tool.uv.workspace]
 members = ["ak-common", "ak-core", "ak-agents"]
@@ -29,6 +31,9 @@ members = ["ak-common", "ak-core", "ak-agents"]
 "ak-common" = { workspace = true }
 "ak-core" = { workspace = true }
 "ak-agents" = { workspace = true }
+
+[tool.uv]
+package = false
 
 # Common tool configurations that apply to all packages
 [tool.black]
@@ -45,3 +50,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=ak-common/src --cov=ak-core/src --cov=ak-agents/src --cov-report=term --cov-report=html --html=report.html"
+

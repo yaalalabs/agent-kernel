@@ -1,0 +1,23 @@
+
+[project]
+name = "travel-manager-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ak-agents>=0.1.0"
+]
+
+[tool.uv]
+find-links = ["../../ak-py/dist"]
+package = false
+
+[uv.pip]
+extra-index-url = ["https://pypi.org/simple/"]
+find-links = ["../../ak-py/dist"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+]
