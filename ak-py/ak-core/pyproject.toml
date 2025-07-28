@@ -20,4 +20,4 @@ dependencies = [
 package = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/core"]
+packages = ["src/ak_core"]

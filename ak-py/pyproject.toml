@@ -30,6 +30,9 @@ members = ["ak-common", "ak-core", "ak-agents"]
 "ak-core" = { workspace = true }
 "ak-agents" = { workspace = true }
 
+[tool.uv]
+package = false
+
 # Common tool configurations that apply to all packages
 [tool.black]
 line-length = 88
