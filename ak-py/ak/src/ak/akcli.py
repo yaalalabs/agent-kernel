@@ -12,7 +12,7 @@ class CLI:
         """
         Initializes the CLI instance.
         """
-        self._agent = None
+        self.select()
 
     def select(self, name: str = None):
         """

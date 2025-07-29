@@ -8,6 +8,12 @@ class OpenAIRunner(BaseRunner):
     OpenAIRunner class provides a runner for OpenAI Agents SDK based agents.
     """
 
+    def __init__(self):
+        """
+        Initializes an OpenAIRunner instance.
+        """
+        super().__init__("openai")
+
     async def run(self, agent: Any, prompt: Any) -> Any:
         result = await Runner.run(agent.agent, prompt)
         return result.final_output
