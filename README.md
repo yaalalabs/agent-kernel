@@ -10,10 +10,10 @@ AK offers a variety of execution options, each supporting multiple deployment pr
 
 Agent Kernel (AK) provides a streamlined solution for developing and executing AI agents. It eliminates the need to rewrite existing agents by integrating seamlessly with your preferred agentic framework. Additionally, it offers unified development capabilities that allow engineers to focus on logic without being tied to a specific framework. Here's how Agent Kernel enhances the development experience:
 
-1. **Framework Flexibility**  
+1. **Seamless Migration**  
    Run existing agents on Agent Kernel's variety of execution frameworks with little to no effort required for porting.
 
-2. **Unified Development Experience**  
+2. **Framework Flexibility**  
    Build agents using Agent Kernel’s standardized framework and switch between underlying agentic frameworks effortlessly.
 
 Currently, Agent Kernel supports portability across popular AI agent frameworks, including [Langraph](https://www.langchain.com/langgraph) and [OpenAI Agents](https://openai.github.io/openai-agents-python/), allowing developers to leverage these frameworks’ capabilities while benefiting from AK's versatility.
