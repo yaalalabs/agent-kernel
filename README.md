@@ -18,7 +18,7 @@ Agent Kernel (AK) provides a streamlined solution for developing and executing A
 
 Currently, Agent Kernel supports portability across popular AI agent frameworks, including [Langraph](https://www.langchain.com/langgraph) and [OpenAI Agents](https://openai.github.io/openai-agents-python/), allowing developers to leverage these frameworks’ capabilities while benefiting from AK's versatility.
 
-## Agent Development
+## Agent Kernel Features
 
 AK's Python libraries provide developers with comprehensive tools to:
 
@@ -28,60 +28,44 @@ AK's Python libraries provide developers with comprehensive tools to:
 2. **Tool Integration**
    - Bind tools and functionalities to agents for enhanced capabilities.
 
-3. **Collaboration and Teamwork**
-   - Build collections of agents that can collaborate to achieve shared goals.
+3. **Hierarchies, Collaboration and Teamwork**
+   - Build collections of agents that can collaborate to achieve shared goals and define topologies & hierarchies, including prebuilt setups like supervisor agents managing subordinate agents.
 
-4. **Agent Hierarchies**
-   - Define topologies and hierarchies, including prebuilt setups like supervisor agents managing subordinate agents.
-
-5. **Context and Memory Management**
-   - Handle agent memory efficiently, with in-built support for both short-term and long-term memory management.
-
-6. **Traceability and Accountability**
-   - Ensure transparency by tracking and auditing agent operations.
-
-7. **Prebuilt Knowledge Sources**
-   - Leverage predefined knowledge sources, including graph databases, and manage these resources through built-in tools.
-
-### Agent Capabilities
-
-Agent Kernel (AK) offers a range of capabilities to support productive agent development:
-
-1. **Agent Memory Management**
-   - AK supports both short-term and long-term memory management via pluggable storage types.
+4. **Context and Memory Management**
+   - Handle agent memory efficiently, with in-built support for both short-term and long-term memory management via pluggable storage types
    - It currently offers in-memory and Redis-based options for in-built short-term memory management.
    - For long-term memory, AK supports AWS DynamoDB and MongoDB.
    - Developers can customize memory management based on their preferences.
 
-2. **LLM Portability**
+5. **Traceability and Accountability**
+   - Ensures transparency by tracking and auditing agent operations.
+   - Provides detailed traceability of all agent actions with multiple verbosity levels.
+   - Includes tracking of collaborative actions and LLM calls.
+
+6. **Prebuilt Knowledge Sources**
+   - Leverage predefined knowledge sources, including graph databases, and manage these resources through built-in tools.
+
+7. **LLM Portability**
    - AK agents' language models are configurable.
    - In multi-agent collaborative setups, each agent can be configured with a preferred LLM and customized hyperparameters.
 
-3. **Agent Collaboration**
-   - AK natively supports different types of agents, including hierarchical and collaborative (team-based) setups.
-   - Developers can define custom topologies to suit specific use cases.
-
-4. **Built-in MCP Support**
+8. **Built-in MCP Support**
    - AK includes built-in Multi-Context Processing (MCP) capabilities, enabling agents to connect and interact with external tools, data sources, and services seamlessly.
    - This ensures optimal collaboration and task distribution across dynamic environments.
 
-5. **Built-in A2A Support**
+9. **Built-in A2A Support**
    - AK provides Agent-to-Agent (A2A) communication support.
    - This enables advanced collaborative workflows, message passing, and synchronization between agents within a shared ecosystem.
 
-### Agent Support Capabilities
+### Support Features
 
-The Agent Kernel includes in-built capabilities to facilitate seamless integration into applications:
+The Agent Kernel includes support features to facilitate seamless integration into applications:
 
 1. **Thread Management**
    - Support for in-built chat functionality with thread management.
    - Features include thread history persistence, context persistence, and double text prevention.
 
-2. **Auditability**
-   - Provides detailed traceability of all agent actions with multiple verbosity levels.
-   - Includes tracking of collaborative actions and LLM calls.
-
-3. **Role-Based Access Control (RBAC)**
+2. **Role-Based Access Control (RBAC)**
    - Built-in capability for role-based access control for both agents and tool invocation.
    - Includes interfaces to attach custom RBAC tools as needed.
 
