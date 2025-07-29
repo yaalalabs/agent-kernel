@@ -1,5 +1,5 @@
 import asyncio
-import readline
+import readline  # Enables line editing and history features for input() in the CLI
 
 from .ak import Runtime
 
