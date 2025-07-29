@@ -25,12 +25,18 @@ dev = [
 
 
 [tool.uv.workspace]
-members = ["ak-common", "ak-core", "ak-agents"]
+members = [
+    "ak-common",
+    "ak-core",
+    "ak-agents",
+    "ak",
+]
 
 [tool.uv.sources]
 "ak-common" = { workspace = true }
 "ak-core" = { workspace = true }
 "ak-agents" = { workspace = true }
+"ak" = { workspace = true }
 
 [tool.uv]
 package = false
