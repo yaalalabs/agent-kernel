@@ -1,7 +1,7 @@
 import asyncio
 import readline
 
-from ak import Runtime
+from .ak import Runtime
 
 class CLI:
     """
@@ -44,7 +44,7 @@ class CLI:
         else:
             print("Available agents:")
             for agent in agents:
-                print(f"- {agent.name}")
+                print(f"  {agent.runner.name}: {agent.name}")
             print()
 
     def load(self, name: str):
