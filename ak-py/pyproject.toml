@@ -30,6 +30,7 @@ members = [
     "ak-core",
     "ak-agents",
     "ak",
+    "ak-crewai",
     "ak-openai",
 ]
 
@@ -38,6 +39,7 @@ members = [
 "ak-core" = { workspace = true }
 "ak-agents" = { workspace = true }
 "ak" = { workspace = true }
+"ak-crewai" = { workspace = true }
 "ak-openai" = { workspace = true }
 
 [tool.uv]

@@ -5,15 +5,17 @@ requires = [
 build-backend = "uv_build"
 
 [project]
-name = "ak"
+name = "ak-crewai"
 version = "0.1.0"
-description = "Agent Kernel"
+description = "Agent Kernel support for CrewAI"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
     { name = "Yaala Labs", email = "hello@yaalalabs.com" },
 ]
 dependencies = [
+    "ak",
+    "crewai>=0.150.0",
 ]
 
 [project.license]
@@ -21,8 +23,11 @@ text = "MIT"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/ak",
+    "src/ak_crewai",
 ]
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+ak = { workspace = true }
