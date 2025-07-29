@@ -2,7 +2,7 @@
 [project]
 name = "cli-crewai-agents"
 version = "0.1.0"
-description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel with a CLI"
+description = "Demo of CrewAI based agents running in Agent Kernel with a CLI"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

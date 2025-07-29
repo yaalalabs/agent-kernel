@@ -14,7 +14,7 @@ authors = [
     { name = "Yaala Labs", email = "hello@yaalalabs.com" },
 ]
 dependencies = [
-    "ak",
+    "ak==0.1.0",
     "crewai>=0.150.0",
 ]
 

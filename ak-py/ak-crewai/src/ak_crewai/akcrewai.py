@@ -23,7 +23,7 @@ class CrewAIRunner(BaseRunner):
         """
         task = Task(description=prompt, expected_output="An answer is plain text", agent=agent.agent)
         crew = Crew(agents=[agent.agent], tasks=[task], verbose=False)
-        return crew.kickoff(inputs={"topic": "France"})
+        return crew.kickoff(inputs={})
 
 class CrewAIAgent(BaseAgent):
     """

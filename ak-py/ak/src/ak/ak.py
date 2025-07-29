@@ -83,7 +83,7 @@ class Module:
         Initializes a Module instance.
         :param agents: List of agents in the module.
         """
-        self._module = agents
+        self._agents = agents
         for agent in agents:
             Runtime.register(agent)
 
