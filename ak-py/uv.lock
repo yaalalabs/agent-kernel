@@ -13,7 +13,6 @@ members = [
     "ak-common",
     "ak-core",
     "ak-crewai",
-    "ak-demo-openai",
     "ak-openai",
     "ak-py",
 ]
@@ -146,21 +145,6 @@ dependencies = [
 requires-dist = [
     { name = "ak", editable = "ak" },
     { name = "crewai", specifier = ">=0.150.0" },
-]
-
-[[package]]
-name = "ak-demo-openai"
-version = "0.1.0"
-source = { editable = "ak-demo-openai" }
-dependencies = [
-    { name = "ak" },
-    { name = "ak-openai" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ak", editable = "ak" },
-    { name = "ak-openai", editable = "ak-openai" },
 ]
 
 [[package]]
