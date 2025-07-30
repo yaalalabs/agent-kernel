@@ -1,5 +1,6 @@
 import asyncio
 import readline  # Enables line editing and history features for input() in the CLI
+import uuid
 
 from .ak import Runtime
 
@@ -12,9 +13,10 @@ class CLI:
         """
         Initializes the CLI instance.
         """
-        self.select()
+        self._agent = None
+        self._session = None
 
-    def select(self, name: str = None):
+    def select(self, name: str | None=None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
         """
@@ -27,15 +29,25 @@ class CLI:
         else:
             agents = list(Runtime.agents().values())
             self._agent = agents[0] if agents else None
+            if self._session is None and self._agent is not None:
+                self.new()
 
     def help(self):
         print("Available commands:")
         print("!h, !help - Show this help message")
         print("!ld, !load <module_name> - Load agent module")
         print("!ls, !list - List available agents")
+        print("!n, !new - Start a new session")
         print("!s, !select <agent_name> - Select an agent to run the prompt") 
         print("!q, !quit - Exit the program")
         print()
+
+    def new(self):
+        if self._agent:
+            self._session = self._agent.runner.session(str(uuid.uuid4()))
+            print(f"Starting new session: {self._session.id}")
+        else:
+            print("No agent selected. Please select an agent using !select <agent_name>.")
 
     def list(self):
         agents = list(Runtime.agents().values())
@@ -44,7 +56,7 @@ class CLI:
         else:
             print("Available agents:")
             for agent in agents:
-                print(f"  {agent.runner.name}: {agent.name}")
+                print(f"  {agent.name}")
             print()
 
     def load(self, name: str):
@@ -61,6 +73,8 @@ class CLI:
 
     async def run(self):
         print("AgentKernel CLI (type !help for commands or !quit to exit):")
+        self.select()
+
         if not self._agent:
             print("No agents available. Please load an agent module using !load <module_name>.")
 
@@ -81,6 +95,8 @@ class CLI:
                         print("Usage: !load <module_name>")
                         continue
                     self.load(tokens[1])
+                elif command in ["!n", "!new"]:
+                    self.new()
                 elif command in ["!q", "!quit"]:
                     break
                 elif command in ["!s", "!select"]:
@@ -93,7 +109,7 @@ class CLI:
                 continue
 
             if self._agent:
-                print(await Runtime.run(self._agent, prompt))
+                print(await Runtime.run(self._agent, self._session, prompt))
                 print()
             else:
                 print("No agent selected. Please select an agent using !select <agent_name>.")

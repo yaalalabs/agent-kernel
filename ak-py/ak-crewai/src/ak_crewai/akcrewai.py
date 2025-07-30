@@ -14,10 +14,20 @@ class CrewAIRunner(BaseRunner):
         """
         super().__init__("crewai")
 
-    async def run(self, agent: Any, prompt: Any) -> Any:
+    def session(self, id: str) -> Any:
+        """
+        Create a new session with the given identifier.
+        :param id: Unique identifier for the session.
+        :return: Session instance.
+        """
+        #TODO: COmplete session management for CrewAI
+        return None
+
+    async def run(self, agent: Any, session: Any, prompt: Any) -> Any:
         """
         Runs the CrewAI agent with the provided prompt.
         :param agent: The CrewAI agent to run.
+        :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """

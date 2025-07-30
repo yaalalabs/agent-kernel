@@ -1,6 +1,35 @@
+import logging
+
 from abc import abstractmethod
 from importlib import import_module
 from typing import Any
+
+class Session:
+    """
+    Session is the base class for a stacking state across related interactions with agents.
+
+    Agent Kernel provides an implementation of the Session class for each supported agent framework,
+    allowing the runtime to track and share state across multiple related agent logic invocations.
+
+    Sessions may be volatile (meaning that they are not persisted) or durable (meaning that they
+    are persisted and are available across multiple invocations of the runtime). This is governed by
+    the runtime configuration.
+    """
+
+    def __init__(self, id: str):
+        """
+        Initializes a Session instance.
+        :param id: Unique identifier for the session.
+        """
+        self._id = id
+
+    @property
+    def id(self) -> str:
+        """
+        Returns the unique identifier for the session.
+        :return: Unique identifier for the session.
+        """
+        return self._id
 
 class Runner:
     """
@@ -27,10 +56,20 @@ class Runner:
         return self._name
 
     @abstractmethod
-    async def run(self, agent: Any, prompt: Any) -> Any:
+    def session(self, id: str) -> Session:
+        """
+        Create a new Session with the given identifier.
+        :param id: Unique identifier for the session.
+        :return: Session instance.
+        """
+        pass
+
+    @abstractmethod
+    async def run(self, agent: Any, session: Any, prompt: Any) -> Any:
         """
         Runs the agent with the provided prompt.
         :param agent: The agent to run.
+        :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """
@@ -99,6 +138,7 @@ class Runtime:
     Runtime class provides the environment for hosting and running agents.
     """
 
+    _log = logging.getLogger("ak.runtime")
     _agents = {}
 
     @staticmethod
@@ -108,6 +148,7 @@ class Runtime:
         :param module: Name of the module to load.
         :return: The loaded module.
         """
+        Runtime._log.debug(f"Loading module '{module}'")
         return import_module(module)
 
     @staticmethod
@@ -116,7 +157,11 @@ class Runtime:
         Registers an agent in the runtime.
         :param agent: The agent to register.
         """
-        Runtime._agents[agent.name] = agent
+        if not Runtime._agents.get(agent.name):
+            Runtime._log.debug(f"Registering agent '{agent.name}'")
+            Runtime._agents[agent.name] = agent
+        else:
+            Runtime._log.warning(f"Agent with name '{agent.name}' is already registered.")
 
     @staticmethod
     def agents() -> dict[str, Agent]:
@@ -127,11 +172,13 @@ class Runtime:
         return Runtime._agents
 
     @staticmethod
-    async def run(agent: Agent, prompt: Any) -> Any:
+    async def run(agent: Agent, session: Any, prompt: Any) -> Any:
         """
         Runs the specified agent with the given prompt.
         :param agent: The agent to run.
+        :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """
-        return await agent.runner.run(agent, prompt)
+        Runtime._log.debug(f"Running agent '{agent.name}' with prompt: {prompt}")
+        return await agent.runner.run(agent, session, prompt)
