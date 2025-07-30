@@ -75,15 +75,6 @@ class Runner:
         return self._name
 
     @abstractmethod
-    def session(self, id: str) -> Session:
-        """
-        Create a new Session with the given identifier.
-        :param id: Unique identifier for the session.
-        :return: Session instance.
-        """
-        pass
-
-    @abstractmethod
     async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
         Runs the agent with the provided prompt.

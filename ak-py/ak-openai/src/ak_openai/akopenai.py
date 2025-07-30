@@ -58,7 +58,7 @@ class OpenAIRunner(BaseRunner):
         """
         super().__init__(FRAMEWORK)
 
-    def session(self, session: Session) -> OpenAISession:
+    def _session(self, session: Session) -> OpenAISession:
         """
         Returns the OpenAI session associated with the provided session.
         :param session: The session to retrieve the OpenAI session for.
@@ -76,7 +76,7 @@ class OpenAIRunner(BaseRunner):
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """
-        result = await Runner.run(agent.agent, prompt, session=self.session(session))
+        result = await Runner.run(agent.agent, prompt, session=self._session(session))
         return result.final_output
 
 class OpenAIAgent(BaseAgent):

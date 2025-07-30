@@ -16,7 +16,7 @@ class CLI:
         self._agent = None
         self._session = None
 
-    def select(self, name: str | None=None):
+    def select(self, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
         """

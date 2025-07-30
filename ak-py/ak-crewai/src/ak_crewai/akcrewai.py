@@ -25,7 +25,6 @@ class CrewAISession(Storage):
         return self._memory
 
     def save(self, value: Any, metadata=None, agent=None) -> None:
-        print(f"Saving item: {value} with metadata: {metadata} for agent: {agent}")
         self._items.append({
             "value": value,
             "metadata": metadata,
@@ -59,7 +58,7 @@ class CrewAIRunner(Runner):
         """
         super().__init__(FRAMEWORK)
 
-    def memory(self, session: Session) -> ExternalMemory | None:
+    def _memory(self, session: Session) -> ExternalMemory | None:
         """
         Returns the external memory associated with the session.
         :param session: The session to retrieve the memory for.
@@ -79,7 +78,7 @@ class CrewAIRunner(Runner):
         """
         task = Task(
             description=prompt, expected_output="An answer is plain text", agent=agent.agent)
-        crew = Crew(agents=agent.crew, tasks=[task], verbose=False, external_memory=self.memory(session))
+        crew = Crew(agents=agent.crew, tasks=[task], verbose=False, external_memory=self._memory(session))
         return crew.kickoff(inputs={})
 
 class CrewAIAgent(BaseAgent):
