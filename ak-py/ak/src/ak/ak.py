@@ -22,6 +22,7 @@ class Session:
         :param id: Unique identifier for the session.
         """
         self._id = id
+        self._data = {}
 
     @property
     def id(self) -> str:
@@ -30,6 +31,24 @@ class Session:
         :return: Unique identifier for the session.
         """
         return self._id
+
+    def get(self, key: str) -> Any:
+        """
+        Retrieves a framework specific session object from the session data.
+        :param key: The key to retrieve the session object for.
+        :return: The framework specific session object associated with the key, or None if the key
+        does not exist.
+        """
+        return self._data.get(key)
+
+    def set(self, key: str, value: Any) -> Any:
+        """
+        Sets a framework specific session object in the session data.
+        :param key: The key to set the session object for.
+        :param value: The framework specific session object to set.
+        """
+        self._data[key] = value
+        return value
 
 class Runner:
     """
@@ -65,7 +84,7 @@ class Runner:
         pass
 
     @abstractmethod
-    async def run(self, agent: Any, session: Any, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
         Runs the agent with the provided prompt.
         :param agent: The agent to run.
@@ -172,7 +191,7 @@ class Runtime:
         return Runtime._agents
 
     @staticmethod
-    async def run(agent: Agent, session: Any, prompt: Any) -> Any:
+    async def run(agent: Agent, session: Session, prompt: Any) -> Any:
         """
         Runs the specified agent with the given prompt.
         :param agent: The agent to run.

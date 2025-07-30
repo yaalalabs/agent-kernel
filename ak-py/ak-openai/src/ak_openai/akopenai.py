@@ -1,19 +1,18 @@
 from typing import Any, List
 from agents import Agent, Runner
 
-from ak import Agent as BaseAgent, Module, Runner as BaseRunner, Session as BaseSession
+from ak import Agent as BaseAgent, Module, Runner as BaseRunner, Session
 
-class OpenAISession(BaseSession):
+FRAMEWORK = "openai"
+class OpenAISession:
     """
     OpenAISession class provides a session for OpenAI Agents SDK based agents.
     """
 
-    def __init__(self, id: str):
+    def __init__(self):
         """
         Initializes an OpenAISession instance.
-        :param id: Unique identifier for the session.
         """
-        super().__init__(id)
         self._items = []
 
     async def get_items(self, limit: int | None = None) -> List[dict]:
@@ -47,6 +46,7 @@ class OpenAISession(BaseSession):
         Clear all items for this session.
         """
         self._items.clear()
+
 class OpenAIRunner(BaseRunner):
     """
     OpenAIRunner class provides a runner for OpenAI Agents SDK based agents.
@@ -56,17 +56,19 @@ class OpenAIRunner(BaseRunner):
         """
         Initializes an OpenAIRunner instance.
         """
-        super().__init__("openai")
+        super().__init__(FRAMEWORK)
 
-    def session(self, id: str) -> OpenAISession:
+    def session(self, session: Session) -> OpenAISession:
         """
-        Create a new OpenAISession with the given identifier.
-        :param id: Unique identifier for the session.
+        Returns the OpenAI session associated with the provided session.
+        :param session: The session to retrieve the OpenAI session for.
         :return: OpenAISession instance.
         """
-        return OpenAISession(id)
+        if session is None:
+            return None
+        return session.get(FRAMEWORK) or session.set(FRAMEWORK, OpenAISession())
 
-    async def run(self, agent: Any, session: Any, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
         Runs the OpenAI agent with the provided prompt.
         :param agent: The OpenAI agent to run.
@@ -74,7 +76,7 @@ class OpenAIRunner(BaseRunner):
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """
-        result = await Runner.run(agent.agent, prompt, session=session)
+        result = await Runner.run(agent.agent, prompt, session=self.session(session))
         return result.final_output
 
 class OpenAIAgent(BaseAgent):

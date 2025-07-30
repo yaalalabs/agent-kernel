@@ -2,7 +2,7 @@ import asyncio
 import readline  # Enables line editing and history features for input() in the CLI
 import uuid
 
-from .ak import Runtime
+from .ak import Runtime, Session
 
 class CLI:
     """
@@ -44,7 +44,7 @@ class CLI:
 
     def new(self):
         if self._agent:
-            self._session = self._agent.runner.session(str(uuid.uuid4()))
+            self._session = Session(str(uuid.uuid4()))
             print(f"Starting new session: {self._session.id}")
         else:
             print("No agent selected. Please select an agent using !select <agent_name>.")
