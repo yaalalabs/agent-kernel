@@ -25,7 +25,7 @@ class CrewAISession(Storage):
         return self._memory
 
     def save(self, value: Any, metadata=None, agent=None) -> None:
-        print(f"Saving item: {value} with metadata: {metadata} for agent: {agent}")
+        self._logger.info(f"Saving item: {value} with metadata: {metadata} for agent: {agent}")
         self._items.append({
             "value": value,
             "metadata": metadata,
