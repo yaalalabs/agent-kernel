@@ -1,0 +1,36 @@
+[build-system]
+requires = [
+    "uv_build>=0.8.2,<0.9.0",
+]
+build-backend = "uv_build"
+
+[project]
+name = "ak-langgraph"
+version = "0.1.0"
+description = "Agent Kernel support for LangGraph Agents SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Yaala Labs", email = "hello@yaalalabs.com" },
+]
+dependencies = [
+    "ak==0.1.0",
+    "langgraph==0.6.2",
+    "langchain==0.3.27",
+    "langchain_community==0.3.27",
+    "litellm==1.74.3"
+]
+
+[project.license]
+text = "MIT"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/ak_langgraph",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+ak = { workspace = true }

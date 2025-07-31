@@ -1,2 +1,4 @@
 .idea
 *.egg-info
+.env
+.venv
