@@ -111,6 +111,7 @@ class CrewAIAgent(BaseAgent):
         Returns the list of CrewAI agents in the crew.
         """
         return self._crew
+
 class CrewAIModule(Module):
     """
     CrewAIModule class provides a module for CrewAI based agents.
