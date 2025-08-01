@@ -6,7 +6,7 @@ from ak_langgraph import Agent, AgentModule, AgentRunner, LiteLLMModel
 
 load_dotenv()
 
-llm = LiteLLMModel(model_name="openai/gpt-4o-mini", temperature=0.0, api_key=os.getenv("GEMINI_API_KEY"))
+llm = LiteLLMModel(model_name="gemini/gemini-2.5-flash", temperature=0.0, api_key=os.getenv("GEMINI_API_KEY"))
 
 math_agent = Agent(
     name="math",
@@ -15,6 +15,7 @@ math_agent = Agent(
     system_prompt="You provide help with math problems. Explain your reasoning at each step and include examples. \
         If prompted for anything else you refuse to answer.",
     runner=AgentRunner(),
+    # tool_functions=[math_tool],
 )
 
 history_agent = Agent(
