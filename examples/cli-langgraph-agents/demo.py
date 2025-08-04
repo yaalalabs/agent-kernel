@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 
 from ak import CLI
-from ak_langgraph import Agent, AgentModule, AgentRunner, LiteLLMModel
+from ak_langgraph import Agent, AgentModule, AgentRunner, AgentSession, LiteLLMModel
 
 load_dotenv()
 
@@ -32,6 +32,7 @@ triage_agent = Agent(
     model=llm,
     system_prompt="You determine which agent to use based on the user's question.",
     runner=AgentRunner(),
+    session=AgentSession(),
     handoffs=[history_agent, math_agent],
 )
 

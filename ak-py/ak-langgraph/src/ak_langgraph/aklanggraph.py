@@ -1,4 +1,6 @@
-from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner
+import uuid
+
+from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
 from ak_common.log.logger import get_logger
 
 from typing import Any, Sequence, TypedDict, Annotated, Callable, List, Optional
@@ -12,6 +14,9 @@ from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 from langchain_core.output_parsers.json import parse_json_markdown
+from langgraph.checkpoint.memory import MemorySaver
+
+FRAMEWORK = "langgraph"
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -26,6 +31,11 @@ class StructuredLLMResponse(BaseModel):
     llm_response_message: str
     handoff_to_agent: Optional[str] = None
 
+class LangGraphSessionConfigurable(BaseModel):
+    thread_id: str
+class LangGraphSessionConfigModel(BaseModel):
+    configurable: LangGraphSessionConfigurable
+
 class LangGraphAgent(BaseAgent):
     def __init__(
         self, 
@@ -35,7 +45,8 @@ class LangGraphAgent(BaseAgent):
         system_prompt: str, 
         runner: BaseRunner,
         tool_functions: List[Callable[..., Any]] = [], 
-        handoffs: Optional[List['LangGraphAgent']] = None
+        handoffs: Optional[List['LangGraphAgent']] = None,
+        session: Optional['LangGraphSession'] = None
     ):
         self.log = get_logger(name)
         self.handoff_agents = {}
@@ -52,6 +63,7 @@ class LangGraphAgent(BaseAgent):
             if not isinstance(fn, BaseTool) else fn
             for fn in tool_functions
         ]
+        self.session = session
         super().__init__(name=name, runner=runner)
         self._initialize_graph()
 
@@ -112,9 +124,9 @@ Only use handoffs when the task genuinely requires the other agent's specialized
         def handoff_node(state: AgentState) -> dict:
             state_for_handoff_node = {"messages": state["messages"][:-1], "handoff_to_agent": None}
             self.log.info(f"Executing handoff to agent: {target_agent.name}")
-            result = target_agent.graph.invoke(state_for_handoff_node)
+            result = target_agent.graph.invoke(state_for_handoff_node)["messages"][-1]
             self.log.info(f"Result from handoff agent '{target_agent.name}': {result}")
-            return {"messages": result["messages"][-1], "handoff_to_agent": None}
+            return {"messages": result, "handoff_to_agent": None}
         return handoff_node
 
     def _build_graph(self) -> CompiledStateGraph:
@@ -159,7 +171,7 @@ Only use handoffs when the task genuinely requires the other agent's specialized
 
         self.log.info(f"Setting entry point: {self._name}")
         graph.set_entry_point(self._name)
-        compiled = graph.compile()
+        compiled = graph.compile(checkpointer=self.session.checkpointer if self.session else None)
         self.log.info(f"Graph compilation complete")
         return compiled
 
@@ -170,6 +182,41 @@ Only use handoffs when the task genuinely requires the other agent's specialized
         self.graph = self._build_graph()
 
 
+class LangGraphSession(BaseSession):
+    """
+    LangGraphSession class provides a session for LangGraph Agents SDK based agents.
+    """
+
+    def __init__(self, checkpointer:MemorySaver=None):
+        """
+        Initializes a LangGraphSession instance.
+        """
+        super().__init__(FRAMEWORK)
+        self.checkpointer = checkpointer or MemorySaver()
+
+    async def get_state(self) -> AgentState:
+        """Retrieve full AgentState, loading messages from checkpoint."""
+        tup = await self.checkpointer.aget_tuple(self._config())
+        if tup is not None and tup.checkpoint.channel_values.get("messages") is not None:
+            msgs = tuple(tup.checkpoint.channel_values["messages"])
+        else:
+            msgs = ()
+        return AgentState(messages=msgs, handoff_to_agent=self._handoff)
+
+    async def get_items(self, limit: Optional[int] = None) -> list[BaseMessage]:
+        """
+        Return list of BaseMessage in chronological order,
+        optionally truncated to the most recent `limit` messages.
+        """
+        state = await self.get_state()
+        if limit is None:
+            return list(state["messages"])
+        return list(state["messages"][-limit:])
+
+    async def summarize_chat_history(self, previous_chat_history_summary:str):
+        new_messages = await self.get_items(limit=5)
+        # invoke llm to generate a new chat history summary by giving the previous summary and new messages
+        pass
 
 
 class LangGraphRunner(BaseRunner):
@@ -181,10 +228,16 @@ class LangGraphRunner(BaseRunner):
         """
         Initializes an LangGraphRunner instance.
         """
-        super().__init__("langgraph")
+        self.thread_id = str(uuid.uuid4()) # Have to be replaced by the actual thread ID determined by the system
+        super().__init__(FRAMEWORK)
 
-    async def run(self, agent: LangGraphAgent, prompt: Any) -> Any:
-        result = await agent.graph.ainvoke({"messages": [HumanMessage(content=prompt)]})
+    async def run(self, agent: LangGraphAgent, session: LangGraphSession, prompt: Any) -> Any:
+        session_config = LangGraphSessionConfigModel(
+            configurable=LangGraphSessionConfigurable(
+                thread_id=session.id
+            )
+        )
+        result = await agent.graph.ainvoke(input={"messages": [HumanMessage(content=prompt)]}, config=session_config.model_dump())
         last_message = result["messages"][-1]
         return last_message.content
 
