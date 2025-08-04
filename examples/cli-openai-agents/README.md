@@ -5,4 +5,4 @@ interact with agents via the Agent Kernel CLI.
 
 Run this demo using the following.
 
-    python demo.py
+    python cli.py
