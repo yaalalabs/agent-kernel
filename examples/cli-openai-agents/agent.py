@@ -1,5 +1,3 @@
-from ak import CLI
-from ak_openai import AgentModule
 from agents import Agent
 
 math_agent = Agent(
@@ -20,8 +18,3 @@ triage_agent = Agent(
     instructions="You determine which agent to use based on the user's question.",
     handoffs=[history_agent, math_agent],
 )
-
-AgentModule([triage_agent, math_agent, history_agent])
-
-if __name__ == "__main__":
-    CLI.main()

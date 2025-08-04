@@ -17,6 +17,7 @@ variable "env_alias" {
 variable "product_display_name" {
   type        = string
   description = "Product display name"
+  default = null
 }
 
 variable "is_production" {
