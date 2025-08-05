@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     "ak>=0.1.0",
     "ak-openai>=0.1.0",
+    "ak-aws>=0.1.0",
 ]
 
 [tool.uv]
