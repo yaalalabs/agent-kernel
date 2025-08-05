@@ -1,6 +1,8 @@
+# Lambda module configuration for deploying OpenAI Agent Lambda function
 module "lambda" {
   source = "../../../ak-deployment/ak/modules/lambda"
 
+  # Basic lambda configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   function_description = "Agent Kernel OpenAI Sample Lambda"
@@ -8,7 +10,9 @@ module "lambda" {
   handler_path         = "lambda.handler"
   module_name          = var.module_name
   package_path         = "../dist.zip"
-  region               = var.region
+  region = var.region
+
+  # Environment variables passed to lambda
   environment_variables = {
     "OPENAI_API_KEY" = var.openai_api_key
   }

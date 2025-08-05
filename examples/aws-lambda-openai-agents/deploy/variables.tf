@@ -23,3 +23,8 @@ variable "is_production" {
   type        = bool
   default     = false
 }
+
+variable "openai_api_key" {
+  description = "OpenAI API Key"
+  type        = string
+}

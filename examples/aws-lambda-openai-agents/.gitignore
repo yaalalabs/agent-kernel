@@ -2,3 +2,5 @@
 requirements.txt
 dist
 dist.zip
+*.tfstate
+*.tfstate.backup
