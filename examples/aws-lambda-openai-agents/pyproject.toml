@@ -1,12 +1,11 @@
 
 [project]
-name = "cli-openai-agents"
+name = "aws-lambda-openai-agents"
 version = "0.1.0"
-description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel with a CLI"
+description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel with AWS Lambda"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ak>=0.1.0",
     "ak-openai>=0.1.0",
     "ak-aws>=0.1.0",
 ]
