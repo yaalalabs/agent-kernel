@@ -67,8 +67,8 @@ class Lambda:
         print("Agent Kernel Lambda")
 
         try:
-            prompt = event.get('prompt', '')
-            name = event.get('agent', None)
+            prompt = json.loads(event.get('body', '{}')).get('prompt', '')
+            name = json.loads(event.get('body', '{}')).get('agent', None)
 
             cls._select(name)
             if not cls._agent:
