@@ -1,14 +1,19 @@
-provider "aws" {
+# Lambda module configuration for deploying OpenAI Agent Lambda function
+module "lambda" {
+  source = "../../../ak-deployment/ak/modules/lambda"
+
+  # Basic lambda configuration
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  function_description = "Agent Kernel OpenAI Sample Lambda"
+  function_name        = "openai-agents"
+  handler_path         = "lambda.handler"
+  module_name          = var.module_name
+  package_path         = "../dist.zip"
   region = var.region
-}
 
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "5.79.0" # pin terraform provider version
-    }
-
+  # Environment variables passed to lambda
+  environment_variables = {
+    "OPENAI_API_KEY" = var.openai_api_key
   }
-  required_version = ">= 1.9.5" # pin terraform version
 }
