@@ -44,7 +44,7 @@ module "lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "7.20.0"
 
-  function_name = "${var.product_alias}-${var.env_alias}${var.module_name}-${var.function_name}"
+  function_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}"
   description   = var.function_description
   handler       = var.handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"

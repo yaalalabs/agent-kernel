@@ -1,5 +1,6 @@
 import json
 import uuid
+import asyncio
 from typing import Any, Dict
 
 from ak import Runtime, Session
@@ -52,6 +53,13 @@ class Lambda:
             return None
 
     @classmethod
+    async def _run_agent(cls, prompt: str):
+        """
+        Async method to run the agent.
+        """
+        return await Runtime.run(cls._agent, cls._session, prompt)
+
+    @classmethod
     def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         AWS Lambda handler function to process incoming requests.
@@ -73,7 +81,7 @@ class Lambda:
                         'body': json.dumps({'error': 'No agent available'})
                     }
 
-            result = Runtime.run(cls._agent, cls._session, prompt)
+            result = asyncio.run(cls._run_agent(prompt))
             print(f"Result: {result}")
             return {
                 'statusCode': 200,

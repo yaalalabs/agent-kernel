@@ -9,4 +9,7 @@ module "lambda" {
   module_name          = var.module_name
   package_path         = "../dist.zip"
   region               = var.region
+  environment_variables = {
+    "OPENAI_API_KEY" = var.openai_api_key
+  }
 }
