@@ -36,7 +36,6 @@ triage_agent = LangGraphAgent(
     handoffs=[history_agent, math_agent],
     checkpointer=session.checkpointer
 )
-print(triage_agent)
 
 AgentModule([triage_agent.graph, math_agent.graph, history_agent.graph])
 

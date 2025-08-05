@@ -1,21 +1,10 @@
-import uuid
-
 from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
-from ak_common.log.logger import get_logger
 
 from typing import Any, Sequence, TypedDict, Annotated, Callable, List, Optional
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
-from langchain_core.tools import StructuredTool
-from langgraph.graph import StateGraph, END
-from langchain_community.chat_models.litellm import ChatLiteLLM
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
-from langchain_core.output_parsers.json import parse_json_markdown
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
 
 FRAMEWORK = "langgraph"
 
@@ -103,7 +92,6 @@ class LangGraphRunner(BaseRunner):
         """
         Initializes an LangGraphRunner instance.
         """
-        self.thread_id = str(uuid.uuid4()) # Have to be replaced by the actual thread ID determined by the system
         super().__init__(FRAMEWORK)
 
     async def run(self, agent: LangGraphAgent, session: LangGraphSession, prompt: Any) -> Any:

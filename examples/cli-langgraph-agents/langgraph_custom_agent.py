@@ -1,4 +1,4 @@
-from typing import Any, Sequence, TypedDict, Annotated, Callable, List, Optional
+from typing import Any, Sequence, TypedDict, Annotated, Callable, List, Optional, Union
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.tools import StructuredTool
 from langgraph.graph import StateGraph, END
@@ -14,7 +14,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
-    handoff_to_agent: Optional[str] = None
+    handoff_to_agent: Optional[str]
 
 class LiteLLMModel(BaseModel):
     model_name: str
@@ -41,7 +41,7 @@ class LangGraphAgent:
         self.handoff_agents = {}
         if handoffs:
             for agent in handoffs:
-                if not hasattr(agent, 'graph') or agent.graph is None:
+                if not isinstance(agent, CompiledStateGraph) and (not hasattr(agent, 'graph') or agent.graph is None):
                     agent._initialize_graph()
                 self.handoff_agents[agent.name] = agent
         self.description = description
@@ -63,7 +63,7 @@ class LangGraphAgent:
 
 HANDOFF CAPABILITIES:
 You can transfer control to the following specialized agents:
-{chr(10).join([f"- {name}: {agent.description}" for name, agent in self.handoff_agents.items()])}
+{chr(10).join([f"- {name}: {getattr(agent, 'description', 'No description available')}" for name, agent in self.handoff_agents.items()])}
 
 Respond in JSON with keys:
 - "llm_response_message": your response to the user
@@ -108,11 +108,12 @@ Only use handoffs when the task genuinely requires the other agent's specialized
             print(f"WARNING: Invalid handoff requested to '{handoff}', available agents: {list(self.handoff_agents.keys())}")
         return tools_condition(state)
 
-    def _create_handoff_node(self, target_agent: 'LangGraphAgent'):
+    def _create_handoff_node(self, target_agent: Union['LangGraphAgent', CompiledStateGraph]):
+        target_agent = target_agent.graph if isinstance(target_agent, LangGraphAgent) else target_agent
         def handoff_node(state: AgentState) -> dict:
             state_for_handoff_node = {"messages": state["messages"][:-1], "handoff_to_agent": None}
             print(f"Executing handoff to agent: {target_agent.name}")
-            result = target_agent.graph.invoke(state_for_handoff_node)["messages"][-1]
+            result = target_agent.invoke(state_for_handoff_node)["messages"][-1]
             print(f"Result from handoff agent '{target_agent.name}': {result}")
             return {"messages": result, "handoff_to_agent": None}
         return handoff_node
