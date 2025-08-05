@@ -1,6 +1,6 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "lambda" {
-  source = "../../../ak-deployment/ak/modules/lambda"
+  source = "../../../ak-deployment/ak-aws/serverless"
 
   # Basic lambda configuration
   product_alias        = var.product_alias
@@ -16,4 +16,4 @@ module "lambda" {
   environment_variables = {
     "OPENAI_API_KEY" = var.openai_api_key
   }
-}
+}gg

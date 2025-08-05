@@ -42,7 +42,7 @@ data "aws_s3_object" "signed_component_code" {
 
 module "lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
-  version = "7.20.0"
+  version = "8.0.1"
 
   function_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}"
   description   = var.function_description
@@ -90,19 +90,4 @@ module "lambda_deployment" {
 
   kms_key_arn                = local.lambda_kms_key_arn != null ? local.lambda_kms_key_arn : null
   cloudwatch_logs_kms_key_id = local.cloudwatch_kms_key_arn != null ? local.cloudwatch_kms_key_arn : null
-}
-
-provider "aws" {
-  region = var.region
-}
-
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "5.79.0" # pin terraform provider version
-    }
-
-  }
-  required_version = ">= 1.9.5" # pin terraform version
 }

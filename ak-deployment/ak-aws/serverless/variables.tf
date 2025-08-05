@@ -16,7 +16,7 @@ variable "env_alias" {
 variable "product_display_name" {
   type        = string
   description = "Product display name"
-  default = "An Agent Kernel deployment"
+  default     = "An Agent Kernel deployment"
 }
 
 variable "module_type" {
@@ -45,13 +45,13 @@ variable "package_path" {
 variable "event_source_mapping" {
   description = "Event source mapping"
   type        = any
-  default     = []
+  default = []
 }
 
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
-  default     = {}
+  default = {}
 }
 
 variable "timeout" {
@@ -96,8 +96,27 @@ variable "package_type" {
 
 variable "layers" {
   description = "Lambda layers"
-  type        = list(string)
-  default     = []
+  type = list(string)
+  default = []
 }
+
+variable "api_version" {
+  type        = string
+  description = "API version"
+  default     = "v1"
+}
+
+variable "agent_endpoint" {
+  type        = string
+  description = "Agent invocation endpoint"
+  default     = "chat"
+}
+
+variable "tags" {
+  type = map(string)
+  description = "Resource tags"
+  default = {}
+}
+
 
 data "aws_caller_identity" "current" {}
