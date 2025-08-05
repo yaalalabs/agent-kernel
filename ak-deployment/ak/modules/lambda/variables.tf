@@ -1,7 +1,6 @@
 variable "region" {
   type        = string
   description = "Region"
-  default     = "ap-southeast-2"
 }
 
 variable "product_alias" {
@@ -17,6 +16,7 @@ variable "env_alias" {
 variable "product_display_name" {
   type        = string
   description = "Product display name"
+  default = "An Agent Kernel deployment"
 }
 
 variable "module_type" {
@@ -36,44 +36,28 @@ variable "is_production" {
   default     = false
 }
 
-# variable "package_path" {
-#   type        = string
-#   description = "Lambda function path"
-# }
-
-variable "mode" {
+variable "package_path" {
   type        = string
-  description = "['install', 'upgrade']"
+  description = "Zip package path"
 }
 
-variable "setup" {
-  description = "Setup type (env or tenant)"
-  type        = string
-}
-
-variable "tenant" {
-  description = "Tenant identifier"
-  type        = string
-  default     = "UNSPECIFIED"
-}
 
 variable "event_source_mapping" {
   description = "Event source mapping"
   type        = any
-  default     = null
+  default     = []
 }
-
 
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
-  default     = null
+  default     = {}
 }
 
 variable "timeout" {
   description = "Lambda timeout"
   type        = number
-  default     = 10
+  default     = 30
 }
 
 variable "memory_size" {
@@ -97,11 +81,6 @@ variable "handler_path" {
   type        = string
 }
 
-variable "role_arn" {
-  description = "Lambda role ARN"
-  type        = string
-}
-
 variable "image_uri" {
   description = "Image URI for docker based lambdas"
   type        = string
@@ -109,9 +88,9 @@ variable "image_uri" {
 }
 
 variable "package_type" {
-  description = "Lambda deployment type"
+  description = "Lambda deployment type Image/LocalZip/S3Zip"
   type        = string
-  default     = "Zip"
+  default     = "LocalZip"
 }
 
 

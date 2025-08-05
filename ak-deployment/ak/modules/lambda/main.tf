@@ -1,16 +1,16 @@
 locals {
-  source_code_s3 = "${var.product_alias}-${var.env_alias}-source-storage-${data.aws_caller_identity.current.account_id}-${data.aws_region}"
-  package_file_name  = "source_code.zip"
+  source_code_s3    = "${var.product_alias}-${var.env_alias}-source-storage-${data.aws_caller_identity.current.account_id}-${var.region}"
+  package_file_name = "source_code.zip"
 }
 
 data "aws_s3_object" "source_code" {
-  count  = (var.package_type == "Image") ? 0 : 1
+  count  = (var.package_type == "S3Zip") ? 1 : 0
   bucket = local.source_code_s3
   key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.module_name}/lambda/${local.package_file_name}"
 }
 
 resource "aws_signer_signing_job" "handler_lambda_signing_job" {
-  count = (var.is_production) && (var.package_type != "Image") ? 1 : 0
+  count = (var.is_production) && (var.package_type != "S3Zip") ? 1 : 0
 
   profile_name = local.lambda_signer_profile_name
   source {
@@ -30,7 +30,7 @@ resource "aws_signer_signing_job" "handler_lambda_signing_job" {
 }
 
 data "aws_s3_object" "signed_component_code" {
-  count = (var.is_production) && (var.package_type != "Image") ? 1 : 0
+  count = (var.is_production) && (var.package_type != "S3Zip") ? 1 : 0
 
   bucket = aws_signer_signing_job.handler_lambda_signing_job[0].signed_object[0].s3[0].bucket
   key    = aws_signer_signing_job.handler_lambda_signing_job[0].signed_object[0].s3[0].key
@@ -48,15 +48,14 @@ module "lambda_deployment" {
   description   = var.function_description
   handler       = var.handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
-  lambda_role   = var.role_arn
+  create_role   = true
+  role_name     = "${var.product_alias}-${var.env_alias}${var.module_name}-${var.function_name}-lambda-role"
   image_uri     = var.image_uri
-  package_type  = var.package_type
-
-  layers = var.layers
-
+  local_existing_package = var.package_type == "LocalZip" ? var.package_path : null
   create_package = false
+  package_type  = var.package_type == "Image" ? "Image" : "Zip"
   create_layer   = false # to control creation of the Lambda Layer and related resources
-  create_role    = false # to control creation of the IAM role and policies required for Lambda Function
+  layers = var.layers
 
   #create cloudwatch alarm for the lambda
   use_existing_cloudwatch_log_group = false
@@ -75,13 +74,13 @@ module "lambda_deployment" {
 
   # vpc_subnet_ids          = local.lambda_subnet_ids
   # vpc_security_group_ids  = [local.lambda_sg_id]
-  code_signing_config_arn = (var.package_type == "Image") ? null : local.lambda_signing_config_arn
+  code_signing_config_arn = (var.package_type == "S3Zip") ? local.lambda_signing_config_arn : null
 
-  s3_existing_package = (var.package_type == "Image") ? {} : {
+  s3_existing_package = (var.package_type == "S3Zip") ? {
     bucket     = local.lambda_signer_profile_name != null ? data.aws_s3_object.signed_component_code[0].bucket : data.aws_s3_object.source_code[0].bucket
     key        = local.lambda_signer_profile_name != null ? data.aws_s3_object.signed_component_code[0].key : data.aws_s3_object.source_code[0].key
     version_id = local.lambda_signer_profile_name != null ? null : data.aws_s3_object.source_code[0].version_id
-  }
+  } : {}
 
   environment_variables = var.environment_variables
   event_source_mapping  = var.event_source_mapping

@@ -18,19 +18,8 @@ variable "module_name" {
   description = "module name"
 }
 
-variable "component" {
-  type        = string
-  description = "Lambda/Layer/API"
-}
-
 variable "is_production" {
   description = "Is production"
   type        = bool
   default     = false
 }
-
-data "aws_caller_identity" "current" {}
-
-data "aws_ecr_authorization_token" "token" {}
-
-data "aws_region" "current" {}

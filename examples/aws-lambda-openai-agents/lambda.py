@@ -23,4 +23,4 @@ triage_agent = Agent(
 
 AgentModule([triage_agent, math_agent, history_agent])
 
-lambda_handler = Lambda.handler
+handler = Lambda.handler
