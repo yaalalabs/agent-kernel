@@ -8,4 +8,4 @@ framework, allowing for seamless interaction and execution of LangGraph based ag
 
 __version__ = "0.1.0"
 
-from .aklanggraph import LangGraphModule as AgentModule, LangGraphRunner as AgentRunner, LangGraphAgent as Agent, LangGraphSession as AgentSession, LiteLLMModel
+from .aklanggraph import LangGraphModule as AgentModule, LangGraphRunner as AgentRunner, LangGraphAgent as Agent, LangGraphSession as AgentSession
