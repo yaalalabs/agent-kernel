@@ -1,1 +1,4 @@
 .terraform
+requirements.txt
+dist
+dist.zip
