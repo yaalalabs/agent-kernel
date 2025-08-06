@@ -39,8 +39,10 @@ class Lambda:
             cls._log.info("No agent was requested. Defaulting to first agent in the list")
             agents = list(Runtime.agents().values())
             cls._agent = agents[0] if agents else None
-            if cls._agent: cls._log.info(f"Selected agent: {cls._agent.name}")
-            else: cls._log.error("No agents available")
+            if cls._agent:
+                cls._log.info(f"Selected agent: {cls._agent.name}")
+            else:
+                cls._log.error("No agents available")
 
         if cls._session is not None:
             cls._log.debug(f"Reusing existing session: {cls._session.id}")
@@ -81,7 +83,6 @@ class Lambda:
         AWS Lambda handler function to process incoming requests.
         """
         cls._log.info("Agent Kernel Agent Lambda Handler started")
-
         try:
             prompt = json.loads(event.get('body', '{}')).get('prompt', '')
             name = json.loads(event.get('body', '{}')).get('agent', None)
@@ -96,8 +97,16 @@ class Lambda:
                         'statusCode': 400,
                         'body': json.dumps({'error': 'No agent available'})
                     }
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    asyncio.set_event_loop(asyncio.new_event_loop())
+                    result = asyncio.run(cls._run_agent(prompt))
+                else:
+                    result = loop.run_until_complete(cls._run_agent(prompt))
+            except RuntimeError:
+                result = asyncio.run(cls._run_agent(prompt))
 
-            result = asyncio.run(cls._run_agent(prompt))
             cls._log.info(f"Result: {result}")
             return {
                 'statusCode': 200,
