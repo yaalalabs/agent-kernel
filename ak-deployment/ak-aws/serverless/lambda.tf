@@ -61,8 +61,8 @@ module "lambda_deployment" {
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90
 
-  #cloudwatch log permissions - already set in global/permissions
-  attach_cloudwatch_logs_policy = false
+  #cloudwatch log permissions
+  attach_cloudwatch_logs_policy = true
   #SNS/SQS dead letter notification policy
   attach_dead_letter_policy = false
   #elastic network interface permissions - already set in global/permissions

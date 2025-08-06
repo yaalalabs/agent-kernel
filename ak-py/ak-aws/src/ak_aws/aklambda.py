@@ -1,9 +1,18 @@
-import json
-import uuid
 import asyncio
+import json
+import logging
+import uuid
 from typing import Any, Dict
 
-from ak import Runtime, Session
+from ak import Runtime, Session, Agent
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True
+)
+
+print("2")
 
 
 class Lambda:
@@ -11,8 +20,9 @@ class Lambda:
     Lambda class provides an AWS Lambda interface for interacting with agents.
     Includes handler method for AWS Lambda function integration.
     """
-    _agent: Any = None
-    _session: Any = None
+    _log = logging.getLogger("aklambda.lambda")
+    _agent: Agent = None
+    _session: Session = None
 
     @classmethod
     def _select(cls, name: str | None = None):
@@ -24,20 +34,26 @@ class Lambda:
             if selected:
                 cls._agent = selected
             else:
-                print(f"No agent found with name '{name}'")
+                cls._log.warning(f"No agent found with name '{name}'")
         else:
+            cls._log.info("No agent was requested. Defaulting to first agent in the list")
             agents = list(Runtime.agents().values())
             cls._agent = agents[0] if agents else None
-            if cls._session is None and cls._agent is not None:
-                cls._new()
+            if cls._agent: cls._log.info(f"Selected agent: {cls._agent.name}")
+            else: cls._log.error("No agents available")
+
+        if cls._session is not None:
+            cls._log.debug(f"Reusing existing session: {cls._session.id}")
+        else:
+            cls._new()
 
     @classmethod
     def _new(cls):
         if cls._agent:
             cls._session = Session(str(uuid.uuid4()))
-            print(f"Starting new session: {cls._session.id}")
+            cls._log.info(f"Starting new session: {cls._session.id}")
         else:
-            print("No agent selected. Please select an agent using !select <agent_name>.")
+            cls._log.warning("No agent selected")
 
     @classmethod
     def _load(cls, name: str):
@@ -49,7 +65,7 @@ class Lambda:
             if not cls._agent:
                 cls._select()
         except ImportError as e:
-            print(f"No module found with name '{name}': {e}")
+            cls._log.info(f"No module found with name '{name}': {e}")
             return None
 
     @classmethod
@@ -64,7 +80,7 @@ class Lambda:
         """
         AWS Lambda handler function to process incoming requests.
         """
-        print("Agent Kernel Lambda")
+        cls._log.info("Agent Kernel Agent Lambda Handler started")
 
         try:
             prompt = json.loads(event.get('body', '{}')).get('prompt', '')
@@ -72,17 +88,17 @@ class Lambda:
 
             cls._select(name)
             if not cls._agent:
-                print("No agents available. defaulting to first agent in the list")
+                cls._log.info("No agents available. defaulting to first agent in the list")
                 cls._select()
                 if not cls._agent:
-                    print("No agents available. Please load an agent module.")
+                    cls._log.info("No agents available. Please load an agent module.")
                     return {
                         'statusCode': 400,
                         'body': json.dumps({'error': 'No agent available'})
                     }
 
             result = asyncio.run(cls._run_agent(prompt))
-            print(f"Result: {result}")
+            cls._log.info(f"Result: {result}")
             return {
                 'statusCode': 200,
                 'body': json.dumps({'result': result})
