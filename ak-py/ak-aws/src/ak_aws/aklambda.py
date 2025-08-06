@@ -12,7 +12,6 @@ logging.basicConfig(
     force=True
 )
 
-print("2")
 
 
 class Lambda:
