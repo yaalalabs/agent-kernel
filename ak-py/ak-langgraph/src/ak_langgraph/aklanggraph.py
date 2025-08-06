@@ -90,12 +90,23 @@ class LangGraphRunner(BaseRunner):
         """
         super().__init__(FRAMEWORK)
 
-    async def run(self, agent: LangGraphAgent, session: LangGraphSession, prompt: Any) -> Any:
+    def _session(self, session: BaseSession) -> LangGraphSession:
+        """
+        Returns the LangGraph session associated with the provided session.
+        :param session: The session to retrieve the LangGraph session for.
+        :return: LangGraphSession instance.
+        """
+        if session is None:
+            return None
+        return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
+
+    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
         session_config = LangGraphSessionConfigModel(
             configurable=LangGraphSessionConfigurable(
                 thread_id=session.id
             )
         )
+        agent.agent.checkpointer = self._session(session).checkpointer
         result = await agent.agent.ainvoke(input={"messages": [HumanMessage(content=prompt)]}, config=session_config.model_dump())
         last_message = result["messages"][-1]
         return last_message.content

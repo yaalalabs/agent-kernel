@@ -3,10 +3,8 @@ from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 from langchain_openai import ChatOpenAI
 from ak import CLI
-from ak_langgraph import AgentModule, AgentSession
+from ak_langgraph import AgentModule
 from custom_langgraph_agent import CustomLangGraphAgent
-
-session = AgentSession()
 
 model = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -35,7 +33,7 @@ supervisor = create_supervisor(
         "Assign work to one agent at a time, do not call agents in parallel.\n"
         "Do not do any work yourself."
     )
-).compile(name="supervisor", checkpointer=session.checkpointer)
+).compile(name="supervisor")
 
 AgentModule([supervisor, history_agent, math_agent])
 
