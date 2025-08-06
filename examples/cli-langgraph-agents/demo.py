@@ -4,7 +4,7 @@ from langgraph_supervisor import create_supervisor
 from langchain_openai import ChatOpenAI
 from ak import CLI
 from ak_langgraph import AgentModule, AgentSession
-from custom_langgraph_agent import CustomLangGraphAgent
+from custom_agent import CustomAgent
 
 session = AgentSession()
 
@@ -18,7 +18,7 @@ math_agent = create_react_agent(
         If prompted for anything else you refuse to answer.",
 )
 
-history_agent = CustomLangGraphAgent(
+history_agent = CustomAgent(
     name="history",
     description="Specialist agent for historical questions",
     model=model,    

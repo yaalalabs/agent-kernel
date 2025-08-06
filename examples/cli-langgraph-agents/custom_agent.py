@@ -11,7 +11,7 @@ from langgraph.checkpoint.memory import MemorySaver
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], "add_messages"]
 
-class CustomLangGraphAgent:
+class CustomAgent:
     def __init__(
         self,
         name: str,
