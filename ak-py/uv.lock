@@ -154,7 +154,6 @@ version = "0.1.0"
 source = { editable = "ak-langgraph" }
 dependencies = [
     { name = "ak" },
-    { name = "ak-common" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langgraph" },
@@ -164,7 +163,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ak", editable = "ak" },
-    { name = "ak-common", editable = "ak-common" },
     { name = "langchain", specifier = "==0.3.27" },
     { name = "langchain-community", specifier = "==0.3.27" },
     { name = "langgraph", specifier = "==0.6.2" },

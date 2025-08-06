@@ -6,16 +6,10 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel
 from langgraph.checkpoint.memory import MemorySaver
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], "add_messages"]
-
-class LiteLLMModel(BaseModel):
-    model_name: str
-    temperature: float
-    api_key: str
 
 class CustomLangGraphAgent:
     def __init__(

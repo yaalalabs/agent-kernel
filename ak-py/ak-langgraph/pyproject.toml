@@ -15,7 +15,6 @@ authors = [
 ]
 dependencies = [
     "ak==0.1.0",
-    "ak-common==0.1.0",
     "langgraph==0.6.2",
     "langchain==0.3.27",
     "langchain_community==0.3.27",

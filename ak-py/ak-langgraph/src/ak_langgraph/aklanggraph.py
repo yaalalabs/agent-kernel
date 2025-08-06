@@ -48,6 +48,9 @@ class LangGraphSession(BaseSession):
         super().__init__(FRAMEWORK)
         self.checkpointer = checkpointer or MemorySaver()
         self._handoff: Optional[str] = None  # Optional handoff tracking
+    
+    def _get_config(self) -> LangGraphSessionConfigModel:
+        return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=self.id)).model_dump()
 
     async def get_state(self) -> dict:
         """
@@ -74,13 +77,6 @@ class LangGraphSession(BaseSession):
         state = await self.get_state()
         messages = state["messages"]
         return list(messages[-limit:] if limit else messages)
-
-    async def summarize_chat_history(self, previous_chat_history_summary: str):
-        """
-        Stub method to be implemented by subclasses or injected logic.
-        Should summarize the chat using previous summary and recent messages.
-        """
-        raise NotImplementedError("summarize_chat_history must be implemented by the subclass or session logic.")
 
 
 class LangGraphRunner(BaseRunner):

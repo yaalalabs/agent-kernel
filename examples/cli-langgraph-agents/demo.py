@@ -1,6 +1,4 @@
 import os
-from dotenv import load_dotenv
-load_dotenv()
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 from langchain_openai import ChatOpenAI
