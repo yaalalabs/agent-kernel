@@ -27,7 +27,7 @@ variable "module_type" {
 
 variable "module_name" {
   type        = string
-  description = "module name"
+  description = "Module name"
 }
 
 variable "is_production" {

@@ -20,8 +20,8 @@ class Lambda:
     Includes handler method for AWS Lambda function integration.
     """
     _log = logging.getLogger("aklambda.lambda")
-    _agent: Agent = None
-    _session: Session = None
+    _agent: Agent | None = None
+    _session: Session | None = None
 
     @classmethod
     def _select(cls, name: str | None = None):

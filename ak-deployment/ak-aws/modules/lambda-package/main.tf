@@ -1,5 +1,5 @@
 locals {
-  source_code_s3    = "${var.product_alias}-${var.env_alias}-source-storage-${data.aws_caller_identity.current.account_id}-${data.aws_region}"
+  source_code_s3    = "${var.product_alias}-${var.env_alias}-source-storage-${data.aws_caller_identity.current.account_id}-${var.region}"
   package_type      = var.is_layer ? "layer" : "lambda"
   package_file_name = "source_code.zip"
   file_exist = fileexists(var.package_dir_path)
