@@ -49,7 +49,7 @@ module "lambda_deployment" {
   handler       = var.handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role   = true
-  role_name     = "${var.product_alias}-${var.env_alias}${var.module_name}-${var.function_name}-lambda-role"
+  role_name     = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
   image_uri     = var.image_uri
   local_existing_package = var.package_type == "LocalZip" ? var.package_path : null
   create_package = false
