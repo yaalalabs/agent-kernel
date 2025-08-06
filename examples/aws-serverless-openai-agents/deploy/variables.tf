@@ -5,7 +5,7 @@ variable "region" {
 
 variable "product_alias" {
   type        = string
-  description = "Prod alias"
+  description = "Product alias"
 }
 
 variable "env_alias" {
