@@ -4,6 +4,7 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
+from langchain_core.runnables.config import RunnableConfig
 
 from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
 
@@ -51,15 +52,16 @@ class LangGraphSession(BaseSession):
         super().__init__(FRAMEWORK)
         self._checkpointer = MemorySaver()
 
-    def _get_config(self) -> LangGraphSessionConfigModel:
+    def _get_config(self) -> dict:
         return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=self.id)).model_dump()
 
     async def get_state(self) -> dict:
         """
         Retrieve the current state from the checkpoint system.
-        Returns a dictionary with keys like 'messages' and 'handoff_to_agent'.
+        Returns a dictionary with keys like 'messages'.
         """
-        tup = await self._checkpointer.aget_tuple(self._config())
+        raw_config = self._get_config()
+        tup = await self._checkpointer.aget_tuple(RunnableConfig(configurable=raw_config.get("configurable", {})))
 
         if tup is not None:
             messages = tuple(tup.checkpoint.channel_values.get("messages", ()))
