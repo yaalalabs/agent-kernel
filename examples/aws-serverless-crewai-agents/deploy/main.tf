@@ -12,6 +12,8 @@ module "serverless_agents" {
   package_path         = "../dist"
   package_type         = "Image"
   region               = var.region
+  memory_size          = 512
+  timeout              = 60
 
   # Environment variables passed to lambda
   environment_variables = {
