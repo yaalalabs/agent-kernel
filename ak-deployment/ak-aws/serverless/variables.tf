@@ -38,7 +38,7 @@ variable "is_production" {
 
 variable "package_path" {
   type        = string
-  description = "Zip package path"
+  description = "Zip package path or Docker image source path"
 }
 
 
@@ -81,12 +81,6 @@ variable "handler_path" {
   type        = string
 }
 
-variable "image_uri" {
-  description = "Image URI for docker based lambdas"
-  type        = string
-  default     = null
-}
-
 variable "package_type" {
   description = "Lambda deployment type Image/LocalZip/S3Zip"
   type        = string
@@ -118,5 +112,7 @@ variable "tags" {
   default = {}
 }
 
+
+data "aws_ecr_authorization_token" "token" {}
 
 data "aws_caller_identity" "current" {}

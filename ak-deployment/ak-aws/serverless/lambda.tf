@@ -24,6 +24,15 @@ module source_package {
   depends_on = [module.source_storage]
 }
 
+module docker_image {
+  count         = (var.package_type == "Image") ? 1 : 0
+  source        = "../modules/lambda-docker"
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  source_path   = var.package_path
+}
+
 data "aws_s3_object" "source_code" {
   count  = (var.package_type == "S3Zip") ? 1 : 0
   bucket = module.source_storage[0].source_storage_s3_bucket
@@ -72,7 +81,7 @@ module "lambda_deployment" {
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = true
   role_name              = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
-  image_uri              = var.image_uri
+  image_uri              = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
   local_existing_package = var.package_type == "LocalZip" ? var.package_path : null
   create_package         = false
   package_type           = var.package_type == "Image" ? "Image" : "Zip"

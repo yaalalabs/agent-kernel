@@ -9,8 +9,8 @@ module "serverless_agents" {
   function_name        = "crewai-agents"
   handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist.zip"
-  package_type         = "S3Zip"
+  package_path         = "../dist"
+  package_type         = "Image"
   region               = var.region
 
   # Environment variables passed to lambda

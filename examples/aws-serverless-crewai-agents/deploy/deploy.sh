@@ -3,16 +3,16 @@
 # Create a zip file of the Lambda function code
 create_deployment_package() {
     pushd ../
-    rm -rf dist dist.zip
-    mkdir dist
+    rm -rf dist
+    mkdir -p dist/data
     uv export --no-hashes > requirements.txt
-    uv pip install -r requirements.txt --target=dist
-    cp -r lambda.py dist/
-    cd dist && zip -r ../dist.zip .
+    uv pip install -r requirements.txt --target=dist/data
+    cp -r lambda.py dist/data
     popd || exit 1
+    cp Dockerfile ../dist/
 }
 
-#create_deployment_package
+create_deployment_package
 
 terraform init
 terraform apply
