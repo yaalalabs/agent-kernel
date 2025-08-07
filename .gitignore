@@ -1,2 +1,7 @@
 .idea
 *.egg-info
+.env
+.venv
+venv
+Scratches
+__pycache__

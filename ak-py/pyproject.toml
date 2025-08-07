@@ -32,7 +32,8 @@ members = [
     "ak",
     "ak-crewai",
     "ak-openai",
-    "ak-aws",
+    "ak-langgraph",
+    "ak-aws"
 ]
 
 [tool.uv.sources]
@@ -42,6 +43,7 @@ members = [
 "ak" = { workspace = true }
 "ak-crewai" = { workspace = true }
 "ak-openai" = { workspace = true }
+"ak-langgraph" = { workspace = true }
 "ak-aws" = { workspace = true }
 
 [tool.uv]
