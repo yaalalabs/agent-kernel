@@ -1,9 +1,13 @@
+locals {
+  bucket = "${var.product_alias}-${var.env_alias}-sources-${data.aws_caller_identity.current.account_id}"
+}
+
 resource "aws_s3_bucket" "source-storage" {
-  bucket        = "${var.product_alias}-${var.env_alias}-sources-${data.aws_caller_identity.current.account_id}"
+  bucket        = local.bucket
   force_destroy = true
 
   tags = merge({
-    Name              = "${var.product_alias}-${var.env_alias}-sources-${data.aws_caller_identity.current.account_id}"
+    Name              = local.bucket
     Region            = var.region
     isS3BackupEnabled = var.is_production ? "true" : "false"
     backupType        = "critical"
