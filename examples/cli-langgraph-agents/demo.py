@@ -8,6 +8,8 @@ from custom_agent import CustomAgent
 
 model = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 
+# Math agent: Handles mathematical problems and calculations
+# Uses LangGraph's ReAct framework to provide step-by-step mathematical solutions
 math_agent = create_react_agent(
     name="math",
     tools=[],
@@ -16,14 +18,18 @@ math_agent = create_react_agent(
         If prompted for anything else you refuse to answer.",
 )
 
+# History agent: Specialized in handling historical queries
+# Uses custom implementation to provide detailed historical context and explanations
 history_agent = CustomAgent(
     name="history",
     description="Specialist agent for historical questions",
-    model=model,    
+    model=model,
     system_prompt="You provide assistance with historical queries. Explain important events and context clearly.",
 ).graph
 
-supervisor = create_supervisor(
+# LangGraph's inbuilt supervisor agent: Coordinates between math and history agents
+# Routes queries to the appropriate specialized agent based on the question type
+triage_agent = create_supervisor(
     model=model,
     agents=[history_agent, math_agent],
     prompt=(
@@ -31,11 +37,12 @@ supervisor = create_supervisor(
         "- a history agent. Assign history-related tasks to this agent\n"
         "- a math agent. Assign math-related tasks to this agent\n"
         "Assign work to one agent at a time, do not call agents in parallel.\n"
-        "Do not do any work yourself."
+        "Do not do any work yourself. \n"
+        "When you get a response from an agent, respond with the received response."
     )
-).compile(name="supervisor")
+).compile(name="triage")
 
-AgentModule([supervisor, history_agent, math_agent])
+AgentModule([triage_agent, history_agent, math_agent])
 
 if __name__ == "__main__":
     CLI.main()

@@ -46,7 +46,7 @@ class LangGraphSession(BaseSession):
 
     def __init__(self, checkpointer: MemorySaver = None):
         super().__init__(FRAMEWORK)
-        self.checkpointer = checkpointer or MemorySaver()
+        self._checkpointer = checkpointer or MemorySaver()
         self._handoff: Optional[str] = None  # Optional handoff tracking
     
     def _get_config(self) -> LangGraphSessionConfigModel:
@@ -57,7 +57,7 @@ class LangGraphSession(BaseSession):
         Retrieve the current state from the checkpoint system.
         Returns a dictionary with keys like 'messages' and 'handoff_to_agent'.
         """
-        tup = await self.checkpointer.aget_tuple(self._config())
+        tup = await self._checkpointer.aget_tuple(self._config())
 
         if tup is not None:
             messages = tuple(tup.checkpoint.channel_values.get("messages", ()))
@@ -106,7 +106,7 @@ class LangGraphRunner(BaseRunner):
                 thread_id=session.id
             )
         )
-        agent.agent.checkpointer = self._session(session).checkpointer
+        agent.agent.checkpointer = self._session(session)._checkpointer
         result = await agent.agent.ainvoke(input={"messages": [HumanMessage(content=prompt)]}, config=session_config.model_dump())
         last_message = result["messages"][-1]
         return last_message.content
