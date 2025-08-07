@@ -1,10 +1,10 @@
 resource "aws_s3_bucket" "source-storage" {
-  bucket        = "${var.product_alias}-${var.env_alias}-source-storage-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}"
+  bucket        = "${var.product_alias}-${var.env_alias}-sources-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 
   tags = merge({
-    Name              = "${var.product_alias}-${var.env_alias}-source-storage-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}"
-    Region            = data.aws_region.current.name
+    Name              = "${var.product_alias}-${var.env_alias}-sources-${data.aws_caller_identity.current.account_id}"
+    Region            = var.region
     isS3BackupEnabled = var.is_production ? "true" : "false"
     backupType        = "critical"
     ResourceName      = "AppSourceBucket"

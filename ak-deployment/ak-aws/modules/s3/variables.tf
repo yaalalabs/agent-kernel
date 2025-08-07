@@ -7,6 +7,10 @@ variable "product_alias" {
   description = "Product alias"
 }
 
+variable "region" {
+  description = "AWS region"
+}
+
 variable "env_alias" {
   type        = string
   description = "Environment alias"
@@ -25,6 +29,7 @@ variable "s3_bucket_tags" {
 
 variable "s3_kms_key_id" {
   type = string
+  default = null
 }
 
 variable "is_production" {

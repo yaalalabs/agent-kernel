@@ -17,7 +17,7 @@ variable "env_alias" {
 variable "product_display_name" {
   type        = string
   description = "Product display name"
-  default = null
+  default     = null
 }
 
 variable "is_production" {
@@ -40,6 +40,10 @@ variable "is_layer" {
   description = "is the package a layer"
   type        = bool
   default     = false
+}
+variable "s3_bucket" {
+  description = "S3 bucket"
+  type        = string
 }
 
 data "aws_caller_identity" "current" {}
