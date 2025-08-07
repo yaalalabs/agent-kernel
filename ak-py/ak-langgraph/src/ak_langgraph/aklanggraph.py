@@ -1,15 +1,19 @@
-from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
+from typing import Any, Optional
 
-from typing import Any, Sequence, TypedDict, Annotated, Callable, List, Optional
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
-from langgraph.checkpoint.memory import MemorySaver
+
+from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
 
 FRAMEWORK = "langgraph"
 
+
 class LangGraphSessionConfigurable(BaseModel):
     thread_id: str
+
+
 class LangGraphSessionConfigModel(BaseModel):
     configurable: LangGraphSessionConfigurable
 
@@ -37,18 +41,16 @@ class LangGraphAgent(BaseAgent):
         return self._agent
 
 
-
 class LangGraphSession(BaseSession):
     """
     LangGraphSession class provides a session for LangGraph Agents SDK-based agents,
     without relying on a custom TypedDict like AgentState.
     """
 
-    def __init__(self, checkpointer: MemorySaver = None):
+    def __init__(self):
         super().__init__(FRAMEWORK)
-        self._checkpointer = checkpointer or MemorySaver()
-        self._handoff: Optional[str] = None  # Optional handoff tracking
-    
+        self._checkpointer = MemorySaver()
+
     def _get_config(self) -> LangGraphSessionConfigModel:
         return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=self.id)).model_dump()
 
@@ -66,7 +68,6 @@ class LangGraphSession(BaseSession):
 
         return {
             "messages": messages,
-            "handoff_to_agent": self._handoff,
         }
 
     async def get_items(self, limit: Optional[int] = None) -> list[BaseMessage]:
@@ -107,7 +108,8 @@ class LangGraphRunner(BaseRunner):
             )
         )
         agent.agent.checkpointer = self._session(session)._checkpointer
-        result = await agent.agent.ainvoke(input={"messages": [HumanMessage(content=prompt)]}, config=session_config.model_dump())
+        result = await agent.agent.ainvoke(input={"messages": [HumanMessage(content=prompt)]},
+                                           config=session_config.model_dump())
         last_message = result["messages"][-1]
         return last_message.content
 
