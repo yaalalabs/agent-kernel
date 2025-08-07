@@ -33,7 +33,7 @@ members = [
     "ak-crewai",
     "ak-openai",
     "ak-langgraph",
-    "ak-aws",
+    "ak-aws"
 ]
 
 [tool.uv.sources]
