@@ -33,6 +33,7 @@ members = [
     "ak-crewai",
     "ak-openai",
     "ak-langgraph"
+    "ak-aws",
 ]
 
 [tool.uv.sources]
@@ -43,6 +44,7 @@ members = [
 "ak-crewai" = { workspace = true }
 "ak-openai" = { workspace = true }
 "ak-langgraph" = { workspace = true }
+"ak-aws" = { workspace = true }
 
 [tool.uv]
 package = false

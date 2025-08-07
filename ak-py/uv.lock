@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "ak",
     "ak-agents",
+    "ak-aws",
     "ak-common",
     "ak-core",
     "ak-crewai",
@@ -110,6 +111,17 @@ requires-dist = [
     { name = "ak-common", editable = "ak-common" },
     { name = "ak-core", editable = "ak-core" },
 ]
+
+[[package]]
+name = "ak-aws"
+version = "0.1.0"
+source = { editable = "ak-aws" }
+dependencies = [
+    { name = "ak" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ak", editable = "ak" }]
 
 [[package]]
 name = "ak-common"
