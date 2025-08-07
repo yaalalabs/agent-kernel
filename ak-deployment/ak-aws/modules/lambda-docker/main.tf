@@ -1,16 +1,16 @@
 locals {
-  source_path   = "${path.root}/${var.source_path}"
-  path_include  = ["**"]
-  path_exclude  = ["**/__pycache__/**"]
+  source_path = "${path.root}/${var.source_path}"
+  path_include = ["**"]
+  path_exclude = ["**/__pycache__/**"]
   files_include = setunion([for f in local.path_include : fileset(local.source_path, f)]...)
   files_exclude = setunion([for f in local.path_exclude : fileset(local.source_path, f)]...)
-  files         = sort(setsubtract(local.files_include, local.files_exclude))
+  files = sort(setsubtract(local.files_include, local.files_exclude))
 
   dir_sha = sha1(join("", [for f in local.files : filesha1("${local.source_path}/${f}")]))
 }
 
 module "docker_build_from_ecr" {
-  source = "terraform-aws-modules/lambda/aws//modules/docker-build"
+  source  = "terraform-aws-modules/lambda/aws//modules/docker-build"
   version = "7.20.0"
 
   create_ecr_repo = true
@@ -32,9 +32,9 @@ module "docker_build_from_ecr" {
     ]
   })
 
-  use_image_tag        = false
-  source_path          = local.source_path
-  platform             = "linux/amd64"
+  use_image_tag = false
+  source_path   = local.source_path
+  platform      = "linux/amd64"
 
   triggers = {
     dir_sha = local.dir_sha
