@@ -76,12 +76,11 @@ class CrewAIRunner(Runner):
             return None
         if session.get(FRAMEWORK) is None:
             self._log.debug("Creating new CrewAISession")
-            shared_session = session.set(FRAMEWORK, CrewAISession())
-            return ExternalMemory(storage=shared_session) # ExternalMemory cannot be reshared across crews
+            previous = session.set(FRAMEWORK, CrewAISession())
         else:
             self._log.debug("Reusing existing CrewAISession")
-            shared_session = session.get(FRAMEWORK)
-            return ExternalMemory(storage=shared_session)
+            previous = session.get(FRAMEWORK)
+        return ExternalMemory(previous)
 
     async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
