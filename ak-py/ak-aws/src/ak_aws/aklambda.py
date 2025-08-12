@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import traceback
 import uuid
 from typing import Any, Dict
 
@@ -106,11 +107,19 @@ class Lambda:
                 result = asyncio.run(cls._run_agent(prompt))
 
             cls._log.info(f"Result: {result}")
+
+            if hasattr(result, 'raw'):  # Handle CrewAI result
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps({'result': str(result.raw)})
+                }
+
             return {
                 'statusCode': 200,
                 'body': json.dumps({'result': result})
             }
         except Exception as e:
+            cls._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
             return {
                 'statusCode': 500,
                 'body': json.dumps({'error': str(e)})
