@@ -43,7 +43,7 @@ class CrewAISession(Storage):
         :param score_threshold: Minimum score threshold for results.
         :return: List of items matching the query.
         """
-        return list(map(lambda item: {"context": item["value"]}, self._items[:limit]))
+        return list(map(lambda item: {"context": item["value"]}, self._items[:limit])) # CrewAI expects a list of dicts with a "context" key
 
     def reset(self) -> None:
         self._log.debug("reset")
