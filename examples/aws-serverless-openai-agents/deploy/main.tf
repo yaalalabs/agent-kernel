@@ -10,6 +10,7 @@ module "serverless_agents" {
   handler_path         = "lambda.handler"
   module_name          = var.module_name
   package_path         = "../dist.zip"
+  product_display_name = "AK OpenAI Serverless Example"
   region = var.region
 
   # Environment variables passed to lambda

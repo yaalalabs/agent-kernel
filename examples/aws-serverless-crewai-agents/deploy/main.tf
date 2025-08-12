@@ -14,6 +14,7 @@ module "serverless_agents" {
   region               = var.region
   memory_size          = 512
   timeout              = 60
+  product_display_name = "AK CrewAI Serverless Example"
 
   # Environment variables passed to lambda
   environment_variables = {
