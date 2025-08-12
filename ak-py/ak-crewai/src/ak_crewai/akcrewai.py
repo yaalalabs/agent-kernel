@@ -23,7 +23,7 @@ class CrewAISession(Storage):
         self._log = logging.getLogger("akcrewai.session")
 
     def save(self, value: Any, metadata=None, agent=None) -> None:
-        self._log.debug(f"Received save request: {value}, {metadata}, {agent}")
+        self._log.debug(f"save: {value}, {metadata}, {agent}")
         if metadata is None:
             metadata = {}
         if agent is None:
@@ -35,7 +35,7 @@ class CrewAISession(Storage):
         })
 
     def search(self, query: str, limit: int = 10, score_threshold: float = 0.5) -> list[dict]:
-        self._log.debug(f"Received search request: {query}, {limit}, {score_threshold}")
+        self._log.debug(f"search: {query}, {limit}, {score_threshold}")
         """
         Searches for items in the session that match the query.
         :param query: The search query.
@@ -46,7 +46,7 @@ class CrewAISession(Storage):
         return list(map(lambda item: {"context": item["value"]}, self._items[:limit]))
 
     def reset(self) -> None:
-        self._log.debug("Received reset request")
+        self._log.debug("reset")
         """
         Resets the session by clearing all items.
         """
