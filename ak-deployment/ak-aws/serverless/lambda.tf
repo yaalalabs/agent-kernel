@@ -2,6 +2,28 @@ locals {
   package_file_name = "source_code.zip"
 }
 
+
+resource "aws_iam_role" "lambda_role" {
+  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaRole"
+}
+
 module source_storage {
   count                = (var.package_type == "S3Zip") ? 1 : 0
   source               = "../modules/s3"
@@ -79,8 +101,8 @@ module "lambda_deployment" {
   description            = var.function_description
   handler                = var.handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
-  create_role            = true
-  role_name              = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
+  create_role            = false
+  lambda_role            = aws_iam_role.lambda_role.arn
   image_uri              = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
   local_existing_package = var.package_type == "LocalZip" ? var.package_path : null
   create_package         = false
