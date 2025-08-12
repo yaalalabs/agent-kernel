@@ -26,9 +26,6 @@ dev = [
 
 [tool.uv.workspace]
 members = [
-    "ak-common",
-    "ak-core",
-    "ak-agents",
     "ak",
     "ak-crewai",
     "ak-openai",
@@ -37,9 +34,6 @@ members = [
 ]
 
 [tool.uv.sources]
-"ak-common" = { workspace = true }
-"ak-core" = { workspace = true }
-"ak-agents" = { workspace = true }
 "ak" = { workspace = true }
 "ak-crewai" = { workspace = true }
 "ak-openai" = { workspace = true }

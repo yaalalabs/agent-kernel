@@ -13,7 +13,6 @@ logging.basicConfig(
 )
 
 
-
 class Lambda:
     """
     Lambda class provides an AWS Lambda interface for interacting with agents.

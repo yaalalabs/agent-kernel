@@ -5,13 +5,16 @@ module "serverless_agents" {
   # Basic lambda configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "Agent Kernel OpenAI Sample Lambda"
-  function_name        = "openai-agents"
+  function_description = "Agent Kernel CrewAI Sample Lambda"
+  function_name        = "crewai-agents"
   handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist.zip"
-  product_display_name = "AK OpenAI Serverless Example"
-  region = var.region
+  package_path         = "../dist"
+  package_type         = "Image"
+  region               = var.region
+  memory_size          = 512
+  timeout              = 60
+  product_display_name = "AK CrewAI Serverless Example"
 
   # Environment variables passed to lambda
   environment_variables = {

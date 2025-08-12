@@ -1,10 +1,12 @@
 import os
+from ak import CLI
+from ak_aws import Lambda
+from ak_langgraph import AgentModule
+from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
-from langchain_openai import ChatOpenAI
-from ak import CLI
-from ak_langgraph import AgentModule
-from    custom_agent import CustomAgent
+
+from custom_agent import CustomAgent
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
@@ -44,5 +46,4 @@ triage_agent = create_supervisor(
 
 AgentModule([triage_agent, history_agent, math_agent])
 
-if __name__ == "__main__":
-    CLI.main()
+handler = Lambda.handler

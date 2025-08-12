@@ -26,24 +26,12 @@ variable "is_production" {
   default     = false
 }
 
-variable "package_dir_path" {
-  type        = string
-  description = "Lambda function / layer path"
-}
-
 variable "module_name" {
   type        = string
   description = "module name"
 }
 
-variable "is_layer" {
-  description = "is the package a layer"
-  type        = bool
-  default     = false
-}
-variable "s3_bucket" {
-  description = "S3 bucket"
+variable "source_path" {
   type        = string
+  description = "Source path"
 }
-
-data "aws_caller_identity" "current" {}
