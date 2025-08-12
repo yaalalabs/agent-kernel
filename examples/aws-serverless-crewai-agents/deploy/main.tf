@@ -18,6 +18,9 @@ module "serverless_agents" {
 
   # Environment variables passed to lambda
   environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+    OPENAI_API_KEY     = var.openai_api_key,
+    CREWAI_STORAGE_DIR = "/tmp/crewai",
+    EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
+    HOME               = "/tmp"
   }
 }
