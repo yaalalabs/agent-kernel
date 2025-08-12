@@ -1,6 +1,8 @@
 # Agent Kernel running OpenAI Agent SDK Agents
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK. Users may
+# Agent Kernel running LangGraph Agents
+
+This package contains a demo of Agent Kernel running agents built with LangGraph. Users may
 interact with agents via the Agent Kernel Lambda Implementation.
 
 ## Deployed Resources
