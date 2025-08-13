@@ -25,7 +25,8 @@ The module is designed for Agent Kernel deployments but can be used for any serv
 
 ```hcl
 module "serverless_api" {
-  source = "ak-aws/serverless"
+  source  = "app.terraform.io/yaalalabs/ak-serverless/aws"
+  version = "0.0.1"
 
   region              = "us-west-2"
   product_alias       = "myproduct"
