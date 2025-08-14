@@ -1,5 +1,5 @@
 from ak import CLI
-from ak_crewai import AgentModule
+from ak.crewai import AgentModule
 from crewai import Agent
 
 math_agent = Agent(
