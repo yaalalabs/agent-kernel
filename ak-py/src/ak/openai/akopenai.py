@@ -1,7 +1,7 @@
 from typing import Any, List
 from agents import Agent, Runner
 
-from ak import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from ..ak import Agent as BaseAgent, Module, Runner as BaseRunner, Session
 
 FRAMEWORK = "openai"
 class OpenAISession:

@@ -6,7 +6,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 from langchain_core.runnables.config import RunnableConfig
 
-from ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
+from ..ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
 
 FRAMEWORK = "langgraph"
 

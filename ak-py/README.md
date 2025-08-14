@@ -1,44 +1,211 @@
-# Agent Kernel Python Distribution
+# Agent Kernel (Python)
 
-This directory contains Agent Kernel's code. This follows a [uv](https://docs.astral.sh/uv/) based monorepo structure.
+Agent Kernel is a lightweight runtime and adapter layer that lets you build and run AI agents across multiple frameworks with a unified API. This package brings a common set of abstractions (Agent, Runner, Session, Module, Runtime) and integrations for:
 
-## Monorepo Structure
+- OpenAI Agents SDK
+- CrewAI
+- LangGraph
 
-The monorepo consists of three main components:
+It also provides a simple interactive CLI and an AWS Lambda handler to deploy your agents as serverless endpoints.
 
-1. **common** - Common library used by other components
-   - Provides utility functions and shared functionality
-   - Located in `ak-common/`
 
-2. **core** - Agent core wrapper functions
-   - Exposes functionality for agent logic developers
-   - Depends on the common library
-   - Located in `ak-core/`
+## Why Agent Kernel?
 
-3. **agents** - Agent logic implementation
-   - Contains agent logic code written using common and core
-   - Depends on both common and core libraries
-   - Located in `ak-agents/`
+- Unified model: Write agent logic once, run it under different frameworks via thin adapters.
+- Pluggable: Bring your own framework-specific agents and register them using a small shim.
+- Session-aware: Built-in session abstraction to maintain conversational or task state across runs.
+- Ready to use: CLI for local interaction, AWS Lambda handler for quick cloud deployment.
 
-## Development Setup
 
-### Requirements
+## Installation
 
-- Python 3.12 or higher
-- uv package manager 0.8.0 or higher
+This repository uses the uv toolchain. You can work from source easily.
 
-#### To set up the development environment:
+Prerequisites:
+- Python 3.12+
+- uv 0.8.0+
+
+From source (editable):
 
 ```bash
-./build.sh
+# Clone the repo and cd into ak-py
+uv sync  # install dependencies
 ```
-#### To run tests
+
+Or using pip (if you package/publish it):
+
+```bash
+pip install ak-py
+```
+
+
+## Quick Start
+
+Below is the minimal mental model:
+
+- Agent: your framework-specific agent (e.g., a CrewAI Agent or a LangGraph CompiledStateGraph) wrapped by an Agent Kernel adapter.
+- Runner: framework-specific execution strategy.
+- Session: shared state across turns.
+- Module: a container that registers agents with the global Runtime on import/instantiation.
+- Runtime: a registry and orchestrator for agents.
+
+### Example: Define and register agents
+
+You typically create a Python module that constructs your framework agents and registers them with Agent Kernel by creating an AgentModule. Importing this module will register agents in the Runtime.
+
+CrewAI example (pseudo/minimal):
+
+```python
+# demo.py
+from ak import CLI
+from crewai import Agent as CrewAgent
+from ak.crewai import AgentModule  # CrewAIModule aliased as AgentModule
+
+researcher = CrewAgent(role="researcher", goal="Find facts")
+writer = CrewAgent(role="writer", goal="Summarize findings")
+
+# Register both under Agent Kernel. The module maps each Crew agent to a CrewAIAgent
+# and registers them with the global Runtime.
+module = AgentModule([researcher, writer])
+if __name__ == "__main__":
+    CLI.main()
+```
+
+LangGraph example (pseudo/minimal):
+
+```python
+# demo.py
+from ak import CLI
+from langgraph.graph import StateGraph
+from ak.langgraph import AgentModule  # LangGraphModule aliased as AgentModule
+
+# Build your graph and compile it to CompiledStateGraph with a `.name`
+sg = StateGraph(...)
+compiled = sg.compile()
+compiled.name = "assistant"  # ensure a name is set
+
+module = AgentModule([compiled])
+if __name__ == "__main__":
+    CLI.main()
+```
+
+OpenAI Agents SDK example (pseudo/minimal):
+
+```python
+# demo.py
+from ak import CLI
+from openai import OpenAI
+from agents import Agent as OpenAIAgent  # from openai-agents SDK
+from ak.openai import AgentModule  # OpenAIModule aliased as AgentModule
+
+client = OpenAI()
+assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
+
+module = AgentModule([assistant])
+if __name__ == "__main__":
+    CLI.main()
+```
+
+
+## Using the CLI
+
+Agent Kernel ships with a simple interactive CLI that lets you:
+- Load an agent module (which registers agents)
+- List/select an agent
+- Send prompts and view responses
+
+Run one of the above examples from the project:
+
+```bash
+uv run demo.py
+```
+
+Once inside, available commands:
+- !h, !help — Show help
+- !ld, !load <module_name> — Import a Python module that instantiates an AgentModule (e.g., my_crewai_agents)
+- !ls, !list — List registered agents
+- !s, !select <agent_name> — Select an agent by name
+- !n, !new — Start a new session
+- !q, !quit — Exit
+
+Tip: If your agent module registers at import time, you can simply run:
+
+```text
+(assistant) >> !load my_crewai_agents
+```
+
+
+## AWS Lambda Deployment
+
+A ready-to-use handler is provided at:
+
+- ak.aws:Lambda.handler
+
+OpenAI Agents SDK lambda example (pseudo/minimal):
+
+```python
+# demo.py
+from ak.aws import Lambda
+from openai import OpenAI
+from agents import Agent as OpenAIAgent  # from openai-agents SDK
+from ak.openai import AgentModule  # OpenAIModule aliased as AgentModule
+
+client = OpenAI()
+assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
+
+module = AgentModule([assistant])
+handler = Lambda.handler
+```
+
+It expects an API Gateway-style event with a JSON body like:
+
+```json
+{
+  "prompt": "Hello agent",
+  "agent": "writer"  
+}
+```
+
+Response shape:
+- 200 with { "result": <string> }
+- 400 if no agent is available
+- 500 on unexpected errors
+
+Notes:
+- If no agent name is provided, the handler selects the first registered agent.
+- Make sure your deployment package (Lambda layer or container) includes your agent module and dependencies. Importing your agent module should register agents before the first request.
+
+## Development
+
+Requirements:
+- Python 3.12+
+- uv 0.8.0+
+
+Setup:
+
+```bash
+./build.sh  # installs dev dependencies and sets up environment
+```
+
+Run tests:
 
 ```bash
 uv run pytest
 ```
 
-### Notes
+Formatting and static checks (configured in pyproject.toml):
+- black
+- isort
+- mypy
 
-1. Use root level `pyproject.toml` only to maintain common `dev` dependencies
-2. Module level dependencies should be maintained individually, and the conflicts should either be managed manually (recommended) or overridden on root `pyproject.toml` with caution. 
+
+## Configuration and Extensibility
+
+- Sessions: Use ak.ak.Session to keep per-conversation or per-job state across runs. Framework adapters manage their own session storage within that Session via namespaced keys (e.g., "crewai", "langgraph", "openai").
+- Adapters: See ak/crewai, ak/langgraph, ak/openai for reference implementations. To add a new framework, implement a Runner and an Agent wrapper, then a Module that registers them with Runtime.
+- Runtime: Agents are registered globally; Runtime.load(module_name) imports a module, which should instantiate an AgentModule to register its agents.
+
+
+## License
+
+MIT © Yaala Labs

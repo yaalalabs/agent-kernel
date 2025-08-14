@@ -5,7 +5,7 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ak import Agent as BaseAgent, Module, Runner, Session
+from ..ak import Agent as BaseAgent, Module, Runner, Session
 
 FRAMEWORK = "crewai"
 

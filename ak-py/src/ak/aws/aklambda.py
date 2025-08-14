@@ -5,7 +5,7 @@ import traceback
 import uuid
 from typing import Any, Dict
 
-from ak import Runtime, Session, Agent
+from ..ak import Runtime, Session, Agent
 
 logging.basicConfig(
     level=logging.DEBUG,
