@@ -15,7 +15,7 @@ authors = [
 
 [project.optional-dependencies]
 crewai = ["crewai>=0.150.0"]
-langgraph = ["langgraph==0.6.2", "langchain==0.3.27", "langchain_community==0.3.27", "litellm==1.74.3"]
+langgraph = ["langgraph~=0.6.2", "langchain~=0.3.27", "langchain_community~=0.3.27", "litellm~=1.74.3"]
 openai = ["openai-agents>=0.2.3"]
 
 [dependency-groups]
