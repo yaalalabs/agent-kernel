@@ -1,6 +1,6 @@
-from ak_crewai import AgentModule
+from ak.crewai import AgentModule
 from crewai import Agent
-from ak_aws import Lambda
+from ak.aws import Lambda
 
 
 math_agent = Agent(
