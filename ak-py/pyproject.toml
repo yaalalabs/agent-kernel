@@ -3,7 +3,7 @@ requires = ["uv_build>=0.8.2,<0.9.0"]
 build-backend = "uv_build"
 
 [project]
-name = "ak-py"
+name = "ak"
 version = "0.1.0"
 description = "Agent Kernel Python Distribution"
 readme = "README.md"
@@ -12,6 +12,11 @@ license = { text = "MIT" }
 authors = [
     { name = "Yaala Labs", email = "info@yaalalabs.com" }
 ]
+
+[project.optional-dependencies]
+crewai = ["crewai>=0.150.0"]
+langgraph = ["langgraph~=0.6.2", "langchain~=0.3.27", "langchain_community~=0.3.27", "litellm~=1.74.3"]
+openai = ["openai-agents>=0.2.3"]
 
 [dependency-groups]
 dev = [
@@ -23,25 +28,8 @@ dev = [
     "pytest-html>=4.1.1",
 ]
 
-
-[tool.uv.workspace]
-members = [
-    "ak",
-    "ak-crewai",
-    "ak-openai",
-    "ak-langgraph",
-    "ak-aws"
-]
-
-[tool.uv.sources]
-"ak" = { workspace = true }
-"ak-crewai" = { workspace = true }
-"ak-openai" = { workspace = true }
-"ak-langgraph" = { workspace = true }
-"ak-aws" = { workspace = true }
-
 [tool.uv]
-package = false
+package = true
 
 # Common tool configurations that apply to all packages
 [tool.black]

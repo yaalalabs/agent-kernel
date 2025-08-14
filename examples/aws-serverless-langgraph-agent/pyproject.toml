@@ -5,8 +5,7 @@ description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel wi
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ak-aws>=0.1.0",
-    "ak-langgraph>=0.1.0",
+    "ak[langgraph,aws]>=0.1.0",
     "langchain-litellm>=0.2.2",
     "langchain-openai>=0.3.28",
     "langgraph-supervisor>=0.0.29",

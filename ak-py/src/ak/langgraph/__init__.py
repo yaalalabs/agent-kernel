@@ -6,6 +6,11 @@ It provides the necessary classes and methods to integrate LangGraph agents into
 framework, allowing for seamless interaction and execution of LangGraph based agents.
 """
 
-__version__ = "0.1.0"
+import importlib.metadata
+
+try:
+    __version__ = importlib.metadata.version("ak")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.1.0"
 
 from .aklanggraph import LangGraphModule as AgentModule, LangGraphRunner as AgentRunner, LangGraphAgent as Agent

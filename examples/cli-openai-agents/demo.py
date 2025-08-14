@@ -1,5 +1,5 @@
 from ak import CLI
-from ak_openai import AgentModule
+from ak.openai import AgentModule
 from agents import Agent
 
 math_agent = Agent(

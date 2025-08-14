@@ -1,6 +1,6 @@
 from agents import Agent
-from ak_aws import Lambda
-from ak_openai import AgentModule
+from ak.aws import Lambda
+from ak.openai import AgentModule
 
 math_agent = Agent(
     name="math",
