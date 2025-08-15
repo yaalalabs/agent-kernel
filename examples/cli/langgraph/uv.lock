@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -82,7 +82,7 @@ wheels = [
 [[package]]
 name = "ak"
 version = "0.1.0"
-source = { registry = "../../ak-py/dist" }
+source = { registry = "../../../ak-py/dist" }
 sdist = { path = "ak-0.1.0.tar.gz" }
 wheels = [
     { path = "ak-0.1.0-py3-none-any.whl" },
@@ -213,7 +213,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cli-langgraph-agents"
+name = "cli-langgraph"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

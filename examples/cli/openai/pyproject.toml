@@ -1,6 +1,6 @@
 
 [project]
-name = "cli-openai-agents"
+name = "cli-openai"
 version = "0.1.0"
 description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel with a CLI"
 readme = "README.md"
@@ -10,9 +10,9 @@ dependencies = [
 ]
 
 [tool.uv]
-find-links = ["../../ak-py/dist"]
+find-links = ["../../../ak-py/dist"]
 package = false
 
 [uv.pip]
 extra-index-url = ["https://pypi.org/simple/"]
-find-links = ["../../ak-py/dist"]
+find-links = ["../../../ak-py/dist"]
