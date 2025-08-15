@@ -9,7 +9,12 @@ PUBLISH_TOKEN=$(aws codeartifact get-authorization-token \
   --query authorizationToken \
   --output text)
 
-PUBLISH_URL=$(aws codeartifact get-repository-endpoint --domain $domain --repository $repository --format pypi --query repositoryEndpoint --output text)
+PUBLISH_URL=$(aws codeartifact get-repository-endpoint \
+  --domain $domain \
+  --repository $repository \
+  --format pypi \
+  --query repositoryEndpoint \
+  --output text)
 
 export UV_PUBLISH_USERNAME=aws
 export UV_PUBLISH_PASSWORD="$PUBLISH_TOKEN"
