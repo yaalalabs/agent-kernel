@@ -1,4 +1,5 @@
-from logging import getLogger
+import logging
+
 from typing import Any
 
 from crewai import Agent, Crew, Task
@@ -20,7 +21,7 @@ class CrewAISession(Storage):
         Initializes a CrewAISession instance.
         """
         self._items = []
-        self._log = getLogger("ak.crewai.session")
+        self._log = logging.getLogger("ak.crewai.session")
 
     def save(self, value: Any, metadata=None, agent=None) -> None:
         """

@@ -1,5 +1,6 @@
-from importlib import import_module
-from logging import getLogger
+import importlib
+import logging
+
 from typing import Any
 
 from .base import Agent, Session
@@ -9,7 +10,7 @@ class Runtime:
     Runtime class provides the environment for hosting and running agents.
     """
 
-    _log = getLogger("ak.runtime")
+    _log = logging.getLogger("ak.runtime")
     _agents = {}
 
     @staticmethod
@@ -20,7 +21,7 @@ class Runtime:
         :return: The loaded module.
         """
         Runtime._log.debug(f"Loading module '{module}'")
-        return import_module(module)
+        return importlib.import_module(module)
 
     @staticmethod
     def register(agent: Agent):
