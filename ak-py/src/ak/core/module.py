@@ -17,7 +17,7 @@ class Module:
         """
         self._agents = agents
         for agent in agents:
-            Runtime.register(agent)
+            Runtime.instance().register(agent)
 
     @property
     def agents(self) -> list[Agent]:
