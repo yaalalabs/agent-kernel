@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "ak"
-version = "0.1.0b1"
+version = "0.1.0a1"
 description = "Agent Kernel Python Distribution"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,22 +31,18 @@ dev = [
 [tool.uv]
 package = true
 
-[[tool.uv.index]]
-name = "private-registry"
-publish-url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/ak/"
-url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/ak/simple/"
-
-# Common tool configurations that apply to all packages
-[tool.black]
-line-length = 88
-target-version = ["py312"]
-
 [tool.isort]
 profile = "black"
 line_length = 88
 
 [tool.mypy]
 python_version = "3.12"
+
+# Common tool configurations that apply to all packages
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
