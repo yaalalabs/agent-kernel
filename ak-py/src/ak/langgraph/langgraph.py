@@ -1,12 +1,12 @@
 from typing import Any, Optional
 
 from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.runnables.config import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
-from langchain_core.runnables.config import RunnableConfig
 
-from ..ak import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
+from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
 
 FRAMEWORK = "langgraph"
 
@@ -49,10 +49,17 @@ class LangGraphSession(BaseSession):
     """
 
     def __init__(self):
+        """
+        Initializes a LangGraphSession instance.
+        """
         super().__init__(FRAMEWORK)
         self._checkpointer = MemorySaver()
 
     def _get_config(self) -> dict:
+        """
+        Returns the configuration for the LangGraph session.
+        This includes the thread ID and any other necessary configuration.
+        """
         return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=self.id)).model_dump()
 
     async def get_state(self) -> dict:
@@ -104,6 +111,13 @@ class LangGraphRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
     async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
+        """
+        Runs the LangGraph agent with the provided session and prompt.
+        :param agent: The LangGraph agent to run.
+        :param session: The session to run the agent in.
+        :param prompt: The input prompt for the agent.
+        :return: The response from the agent.
+        """
         session_config = LangGraphSessionConfigModel(
             configurable=LangGraphSessionConfigurable(
                 thread_id=session.id
