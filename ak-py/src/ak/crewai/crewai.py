@@ -1,11 +1,11 @@
-import logging
+from logging import getLogger
 from typing import Any
 
 from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..ak import Agent as BaseAgent, Module, Runner, Session
+from ..core import Agent as BaseAgent, Module, Runner, Session
 
 FRAMEWORK = "crewai"
 
@@ -20,9 +20,15 @@ class CrewAISession(Storage):
         Initializes a CrewAISession instance.
         """
         self._items = []
-        self._log = logging.getLogger("akcrewai.session")
+        self._log = getLogger("ak.crewai.session")
 
     def save(self, value: Any, metadata=None, agent=None) -> None:
+        """
+        Saves an item to the session.
+        :param value: The value to save.
+        :param metadata: Optional metadata associated with the value.
+        :param agent: Optional agent associated with the value.
+        """
         self._log.debug(f"save: {value}, {metadata}, {agent}")
         if metadata is None:
             metadata = {}
@@ -35,7 +41,6 @@ class CrewAISession(Storage):
         })
 
     def search(self, query: str, limit: int = 10, score_threshold: float = 0.5) -> list[dict]:
-        self._log.debug(f"search: {query}, {limit}, {score_threshold}")
         """
         Searches for items in the session that match the query.
         :param query: The search query.
@@ -43,13 +48,14 @@ class CrewAISession(Storage):
         :param score_threshold: Minimum score threshold for results.
         :return: List of items matching the query.
         """
+        self._log.debug(f"search: {query}, {limit}, {score_threshold}")
         return list(map(lambda item: {"context": item["value"]}, self._items[:limit])) # CrewAI expects a list of dicts with a "context" key
 
     def reset(self) -> None:
-        self._log.debug("reset")
         """
         Resets the session by clearing all items.
         """
+        self._log.debug("reset")
         self._items = []
 
 
@@ -63,7 +69,7 @@ class CrewAIRunner(Runner):
         Initializes a CrewAIRunner instance.
         """
         super().__init__(FRAMEWORK)
-        self._log = logging.getLogger("akcrewai.runner")
+        self._log = getLogger("ak.crewai.runner")
 
     def _memory(self, session: Session) -> ExternalMemory | None:
         """

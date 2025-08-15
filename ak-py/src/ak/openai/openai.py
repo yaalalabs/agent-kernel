@@ -1,9 +1,11 @@
 from typing import Any, List
 from agents import Agent, Runner
 
-from ..ak import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
 
 FRAMEWORK = "openai"
+
+
 class OpenAISession:
     """
     OpenAISession class provides a session for OpenAI Agents SDK based agents.
@@ -47,6 +49,7 @@ class OpenAISession:
         """
         self._items.clear()
 
+
 class OpenAIRunner(BaseRunner):
     """
     OpenAIRunner class provides a runner for OpenAI Agents SDK based agents.
@@ -79,6 +82,7 @@ class OpenAIRunner(BaseRunner):
         result = await Runner.run(agent.agent, prompt, session=self._session(session))
         return result.final_output
 
+
 class OpenAIAgent(BaseAgent):
     """
     OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK based agents.
@@ -100,6 +104,7 @@ class OpenAIAgent(BaseAgent):
         Returns the OpenAI agent instance.
         """
         return self._agent
+
 
 class OpenAIModule(Module):
     """
