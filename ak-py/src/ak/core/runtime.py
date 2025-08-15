@@ -1,7 +1,6 @@
 import importlib
 import logging
 
-from abc import abstractmethod
 from typing import Any, Self
 
 from .base import Agent, Session
@@ -29,7 +28,7 @@ class Runtime:
         self._log.debug(f"Loading module '{module}'")
         return importlib.import_module(module)
 
-    def agents(self, ) -> dict[str, Agent]:
+    def agents(self) -> dict[str, Agent]:
         """
         Returns the list of registered agents.
         :return: List of agents.

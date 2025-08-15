@@ -9,7 +9,7 @@ class SessionStore:
     """
 
     @abstractmethod
-    def load(self, id: str) -> Session | None:
+    def load(self, id: str) -> Session:
         """
         Loads a session by its unique identifier.
         :param id: Unique identifier for the session.
@@ -45,11 +45,11 @@ class InMemorySessionStore(SessionStore):
         """
         self._sessions = {}
 
-    def load(self, id: str) -> Session | None:
+    def load(self, id: str) -> Session:
         """
         Loads a session by its unique identifier.
         :param id: Unique identifier for the session.
-        :return: The session associated with the identifier, or None if it does not exist.
+        :return: The session associated with the identifier, or a new session if it does not exist.
         """
         session = self._sessions.get(id)
         if session is None:
