@@ -3,9 +3,10 @@ import json
 import logging
 import traceback
 import uuid
+
 from typing import Any, Dict
 
-from ..ak import Runtime, Session, Agent
+from ..core import Runtime, Session, Agent
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -19,7 +20,7 @@ class Lambda:
     Lambda class provides an AWS Lambda interface for interacting with agents.
     Includes handler method for AWS Lambda function integration.
     """
-    _log = logging.getLogger("aklambda.lambda")
+    _log = logging.getLogger("ak.aws.lambda")
     _agent: Agent | None = None
     _session: Session | None = None
 

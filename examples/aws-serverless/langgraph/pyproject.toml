@@ -1,0 +1,21 @@
+[project]
+name = "aws-serverless-langgraph"
+version = "0.1.0"
+description = "Demo of LangGraph based agents running in Agent Kernel on AWS Lambda"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ak[langgraph,aws]>=0.1.0",
+    "langchain-litellm>=0.2.2",
+    "langchain-openai>=0.3.28",
+    "langgraph-supervisor>=0.0.29",
+    "openai>=1.99.1",
+]
+
+[tool.uv]
+find-links = ["../../../ak-py/dist"]
+package = false
+
+[uv.pip]
+extra-index-url = ["https://pypi.org/simple/"]
+find-links = ["../../../ak-py/dist"]
