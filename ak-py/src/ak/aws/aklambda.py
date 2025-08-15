@@ -23,6 +23,7 @@ class Lambda:
     _log = logging.getLogger("ak.aws.lambda")
     _agent: Agent | None = None
     _session: Session | None = None
+    _runtime: Runtime = Runtime.instance()
 
     @classmethod
     def _select(cls, name: str | None = None):
@@ -30,14 +31,14 @@ class Lambda:
         Selects an agent by name, or the first available agent if no name is provided.
         """
         if name:
-            selected = Runtime.agents().get(name)
+            selected = cls._runtime.agents().get(name)
             if selected:
                 cls._agent = selected
             else:
                 cls._log.warning(f"No agent found with name '{name}'")
         else:
             cls._log.info("No agent was requested. Defaulting to first agent in the list")
-            agents = list(Runtime.agents().values())
+            agents = list(cls._runtime.agents().values())
             cls._agent = agents[0] if agents else None
             if cls._agent:
                 cls._log.info(f"Selected agent: {cls._agent.name}")
@@ -52,7 +53,7 @@ class Lambda:
     @classmethod
     def _new(cls):
         if cls._agent:
-            cls._session = Session(str(uuid.uuid4()))
+            cls._session = cls._runtime.sessions().load(str(uuid.uuid4()))
             cls._log.info(f"Starting new session: {cls._session.id}")
         else:
             cls._log.warning("No agent selected")
@@ -63,7 +64,7 @@ class Lambda:
         Loads an agent module by name.
         """
         try:
-            Runtime.load(name)
+            cls._runtime.load(name)
             if not cls._agent:
                 cls._select()
         except ImportError as e:
@@ -75,7 +76,7 @@ class Lambda:
         """
         Async method to run the agent.
         """
-        return await Runtime.run(cls._agent, cls._session, prompt)
+        return await cls._runtime.run(cls._agent, cls._session, prompt)
 
     @classmethod
     def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:

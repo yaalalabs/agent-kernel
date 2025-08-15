@@ -16,6 +16,7 @@ class CLI:
         Initializes the CLI instance.
         """
         self._agent = None
+        self._runtime = Runtime.instance()
         self._session = None
 
     def select(self, name: str | None = None):
@@ -23,13 +24,13 @@ class CLI:
         Selects an agent by name, or the first available agent if no name is provided.
         """
         if name:
-            selected = Runtime.agents().get(name)
+            selected = self._runtime.agents().get(name)
             if selected:
                 self._agent = selected
             else:
                 print(f"No agent found with name '{name}'")
         else:
-            agents = list(Runtime.agents().values())
+            agents = list(self._runtime.agents().values())
             self._agent = agents[0] if agents else None
             if self._session is None and self._agent is not None:
                 self.new()
@@ -46,13 +47,13 @@ class CLI:
 
     def new(self):
         if self._agent:
-            self._session = Session(str(uuid4()))
+            self._session = self._runtime.sessions().load(str(uuid4()))
             print(f"Starting new session: {self._session.id}")
         else:
             print("No agent selected. Please select an agent using !select <agent_name>.")
 
     def list(self):
-        agents = list(Runtime.agents().values())
+        agents = list(self._runtime.agents().values())
         if not agents:
             print("No agents available.")
         else:
@@ -66,7 +67,7 @@ class CLI:
         Loads an agent module by name.
         """
         try:
-            Runtime.load(name)
+            self._runtime.load(name)
             if not self._agent:
                 self.select()
         except ImportError as e:
@@ -111,7 +112,7 @@ class CLI:
                 continue
 
             if self._agent:
-                print(await Runtime.run(self._agent, self._session, prompt))
+                print(await self._runtime.run(self._agent, self._session, prompt))
                 print()
             else:
                 print("No agent selected. Please select an agent using !select <agent_name>.")
