@@ -10,9 +10,4 @@ dependencies = [
 ]
 
 [tool.uv]
-#find-links = ["../../../ak-py/dist"]
 package = false
-
-[uv.pip]
-extra-index-url = ["https://pypi.org/simple/"]
-#find-links = ["../../../ak-py/dist"]

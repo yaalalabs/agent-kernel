@@ -16,6 +16,10 @@ Create/activate the virtual environment and install dependencies using:
 
     ./build.sh
 
+Install local dependencies in development mode using:
+
+    ./build.sh local
+
 ## Run
 
 Once dependencies are installed, run the demo with:
