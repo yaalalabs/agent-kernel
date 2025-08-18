@@ -57,8 +57,8 @@ CrewAI example (pseudo/minimal):
 
 ```python
 # demo.py
-from ak import CLI
 from crewai import Agent as CrewAgent
+from ak.cli import CLI
 from ak.crewai import AgentModule  # CrewAIModule aliased as AgentModule
 
 researcher = CrewAgent(role="researcher", goal="Find facts")
@@ -75,8 +75,8 @@ LangGraph example (pseudo/minimal):
 
 ```python
 # demo.py
-from ak import CLI
 from langgraph.graph import StateGraph
+from ak.cli import CLI
 from ak.langgraph import AgentModule  # LangGraphModule aliased as AgentModule
 
 # Build your graph and compile it to CompiledStateGraph with a `.name`
@@ -93,9 +93,9 @@ OpenAI Agents SDK example (pseudo/minimal):
 
 ```python
 # demo.py
-from ak import CLI
 from openai import OpenAI
 from agents import Agent as OpenAIAgent  # from openai-agents SDK
+from ak.cli import CLI
 from ak.openai import AgentModule  # OpenAIModule aliased as AgentModule
 
 client = OpenAI()
@@ -145,9 +145,9 @@ OpenAI Agents SDK lambda example (pseudo/minimal):
 
 ```python
 # demo.py
-from ak.aws import Lambda
 from openai import OpenAI
 from agents import Agent as OpenAIAgent  # from openai-agents SDK
+from ak.aws import Lambda
 from ak.openai import AgentModule  # OpenAIModule aliased as AgentModule
 
 client = OpenAI()
@@ -208,4 +208,11 @@ Formatting and static checks (configured in pyproject.toml):
 
 ## License
 
-MIT © Yaala Labs
+Copyright © Yaala Labs
+www.yaalalabs.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
