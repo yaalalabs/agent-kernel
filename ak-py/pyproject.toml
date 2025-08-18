@@ -49,5 +49,5 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
 [tool.pytest.ini_options]
-addopts = "--cov=ak-common/src --cov=ak-core/src --cov=ak-agents/src --cov-report=term --cov-report=html --html=report.html"
+addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
 
