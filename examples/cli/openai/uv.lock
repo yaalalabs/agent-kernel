@@ -5,10 +5,10 @@ requires-python = ">=3.12"
 [[package]]
 name = "ak"
 version = "0.1.0a1"
-source = { registry = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple" }
-sdist = { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1.tar.gz", hash = "sha256:149711d01d01b37f9995ae6c63cab25f90c0ff30f621875c7e284a12c3e0608c" }
+source = { registry = "../../../ak-py/dist" }
+sdist = { path = "ak-0.1.0a1.tar.gz" }
 wheels = [
-    { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1-py3-none-any.whl", hash = "sha256:3c6de447fef27b78e7976340af3862f371073ae4076b61d4da3a41256776cf18" },
+    { path = "ak-0.1.0a1-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]

@@ -21,7 +21,7 @@ This demo deploys the following AWS resources:
     export TF_VAR_openai_api_key=<OPENAI_API_KEY>
     ```
 
-2. Navigate to deployment directory and run deployment script:
+2. Navigate to the deployment directory and run the deployment script:
     ```bash
-    cd deploy && ./deploy.sh
+    cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
     ```
