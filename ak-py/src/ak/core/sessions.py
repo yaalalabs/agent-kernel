@@ -1,18 +1,30 @@
-from abc import abstractmethod
+import logging
+from abc import abstractmethod, ABC
 
 from .base import Session
 
-class SessionStore: 
+
+class SessionStore(ABC):
     """
     SessionStore is the base class for session storage that allows storage and retrieval of session
     data.
     """
 
     @abstractmethod
-    def load(self, id: str) -> Session:
+    def new(self, session_id: str) -> Session:
+        """
+        Initialize a session for a given session id.
+        :param session_id: Unique identifier for the session.
+        :return: The session associated with the identifier, or a new session if it does not exist.
+        """
+        pass
+
+    @abstractmethod
+    def load(self, session_id: str, strict: bool = False) -> Session:
         """
         Loads a session by its unique identifier.
-        :param id: Unique identifier for the session.
+        :param session_id: Unique identifier for the session.
+        :param strict: If True, raises an exception if the session is not found.
         :return: The session associated with the identifier, or a new session if it does not exist
         in storage.
         """
@@ -21,7 +33,7 @@ class SessionStore:
     @abstractmethod
     def store(self, session: Session) -> None:
         """
-        Stores a session, or update it if it already exists in the storage.
+        Stores a session or update it if it already exists in the storage.
         :param session: The session to store.
         """
         pass
@@ -44,22 +56,40 @@ class InMemorySessionStore(SessionStore):
         Initializes an InMemorySessionStore instance.
         """
         self._sessions = {}
+        self._log = logging.getLogger("ak.core.sessions.inmemory")
 
-    def load(self, id: str) -> Session:
+    def load(self, session_id: str, strict: bool = False) -> Session:
         """
         Loads a session by its unique identifier.
-        :param id: Unique identifier for the session.
+        :param session_id: Unique identifier for the session.
+        :param strict: If True, raises an exception if the session is not found.
         :return: The session associated with the identifier, or a new session if it does not exist.
         """
-        session = self._sessions.get(id)
+        session = self._sessions.get(session_id)
         if session is None:
-            session = Session(id)
-            self._sessions[id] = session
+            if strict:
+                raise KeyError(f"Session {session_id} not found")
+            else:
+                self._log.warning(f"Session {session_id} not found, creating new session")
+                session = Session(session_id)
+                self._sessions[session_id] = session
+        return session
+
+    def new(self, session_id: str) -> Session:
+        """
+        Initialize a session for a given session id.
+        :param session_id: Unique identifier for the session.
+        :return: The session associated with the identifier, or a new session if it does not exist.
+        """
+        self._log.debug(f"Creating new session with ID {session_id} ")
+        session = Session(session_id)
+        self._sessions[session_id] = session
+
         return session
 
     def store(self, session: Session) -> None:
         """
-        Stores a session, or updates it if it already exists in the storage.
+        Stores a session or updates it if it already exists in the storage.
         :param session: The session to store.
         """
         self._sessions[session.id] = session

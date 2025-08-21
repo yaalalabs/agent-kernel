@@ -3,10 +3,9 @@ import json
 import logging
 import traceback
 import uuid
-
 from typing import Any, Dict
 
-from ..core import Runtime, Session, Agent
+from ..core import Runtime, Agent
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -18,11 +17,11 @@ logging.basicConfig(
 class Lambda:
     """
     Lambda class provides an AWS Lambda interface for interacting with agents.
-    Includes handler method for AWS Lambda function integration.
+    Includes a handler method for AWS Lambda function integration.
     """
     _log = logging.getLogger("ak.aws.lambda")
     _agent: Agent | None = None
-    _session: Session | None = None
+    _session_id: str | None = None
     _runtime: Runtime = Runtime.instance()
 
     @classmethod
@@ -45,18 +44,25 @@ class Lambda:
             else:
                 cls._log.error("No agents available")
 
-        if cls._session is not None:
-            cls._log.debug(f"Reusing existing session: {cls._session.id}")
+        # Create a session only if an agent is selected
+        if cls._agent:
+            if cls._session_id is not None:
+                cls._old()
+            else:
+                cls._new()
         else:
-            cls._new()
+            cls._log.warning("No agent selected. Session was not created.")
+
+    @classmethod
+    def _old(cls):
+        cls._log.debug(f"Attempting to reuse existing session: {cls._session_id}")
+        cls._runtime.sessions().load(cls._session_id)
 
     @classmethod
     def _new(cls):
-        if cls._agent:
-            cls._session = cls._runtime.sessions().load(str(uuid.uuid4()))
-            cls._log.info(f"Starting new session: {cls._session.id}")
-        else:
-            cls._log.warning("No agent selected")
+        cls._session_id = str(uuid.uuid4())
+        cls._log.info(f"Starting new session: {cls._session_id}")
+        cls._runtime.sessions().new(cls._session_id)
 
     @classmethod
     def _load(cls, name: str):
@@ -87,6 +93,7 @@ class Lambda:
         try:
             prompt = json.loads(event.get('body', '{}')).get('prompt', '')
             name = json.loads(event.get('body', '{}')).get('agent', None)
+            cls._session_id = json.loads(event.get('body', '{}')).get('session_id', None)
 
             cls._select(name)
             if not cls._agent:

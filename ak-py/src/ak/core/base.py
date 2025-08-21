@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 from typing import Any
 
 
@@ -32,33 +32,33 @@ class Session:
 
     def get(self, key: str) -> Any:
         """
-        Retrieves a framework specific session object from the session data.
+        Retrieves a framework-specific session object from the session data.
         :param key: The key to retrieve the session object for.
-        :return: The framework specific session object associated with the key, or None if the key
+        :return: The framework-specific session object associated with the key, or None if the key
         does not exist.
         """
         return self._data.get(key)
 
     def set(self, key: str, value: Any) -> Any:
         """
-        Sets a framework specific session object in the session data.
+        Sets a framework-specific session object in the session data.
         :param key: The key to set the session object for.
-        :param value: The framework specific session object to set.
+        :param value: The framework-specific session object to set.
         """
         self._data[key] = value
         return value
 
 
-class Runner:
+class Runner(ABC):
     """
     Runner is the base class for all agent runners.
 
     Agent Kernel provides an implementation of the Runner class for each supported agent framework,
-    allowing the runtime to execute agent logic in a framework agnostic manner. These
+    allowing the runtime to execute agent logic in a framework-agnostic manner. These
     implementations inherit from the Runner class and encapsulate the agent runner provided by that
     framework.
     """
-    
+
     def __init__(self, name: str):
         """
         Initializes a Runner instance.
@@ -90,7 +90,7 @@ class Agent:
     Agent is the base class for all agents.
     
     Agent Kernel provides an implementation of the Agent class for each supported agent framework,
-    allowing the runtime to manage agents in a framework agnostic manner. These implementations
+    allowing the runtime to manage agents in a framework-agnostic manner. These implementations
     inherit from the Agent class and encapsulate the agent implementation provided by that
     framework.
     """
