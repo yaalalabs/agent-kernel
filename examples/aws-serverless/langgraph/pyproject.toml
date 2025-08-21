@@ -5,7 +5,7 @@ description = "Demo of LangGraph based agents running in Agent Kernel on AWS Lam
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ak[langgraph,aws]>=0.1.0",
+    "ak[langgraph,aws]>=0.1.0a1",
     "langchain-litellm>=0.2.2",
     "langchain-openai>=0.3.28",
     "langgraph-supervisor>=0.0.29",
@@ -13,9 +13,4 @@ dependencies = [
 ]
 
 [tool.uv]
-find-links = ["../../../ak-py/dist"]
 package = false
-
-[uv.pip]
-extra-index-url = ["https://pypi.org/simple/"]
-find-links = ["../../../ak-py/dist"]
