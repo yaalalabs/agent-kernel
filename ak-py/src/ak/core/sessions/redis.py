@@ -52,6 +52,14 @@ class RedisSessionStore(SessionStore):
     ):
         """
         Initializes a RedisSessionStore instance.
+
+
+        :param ssl: Whether to use SSL for Redis connection
+        :param url: Redis connection URL (takes precedence over host/port if provided)
+        :param host: Redis server hostname
+        :param port: Redis server port
+        :param prefix: Key prefix for session storage
+        :param ttl_seconds: Time-to-live in seconds for stored sessions
         """
         self._log = logging.getLogger("ak.core.sessions.redis")
         self._serde = RedisSessionSerde()
@@ -82,6 +90,7 @@ class RedisSessionStore(SessionStore):
         """
         key = self._util.key(session.id)
         payload = self._serde.serialize(session)
+        self._log.debug(f"Storing session {session.id} with TTL {self._ttl}")
         self._util.set(key, payload, ex=self._ttl)
 
     def clear(self) -> None:
@@ -177,8 +186,10 @@ class RedisUtil:
         for attempt in range(retries):
             try:
                 if self._url:
+                    self._log.debug(f"Connecting to Redis using URL {self._url}")
                     client = redis.from_url(self._url, ssl=self._ssl)
                 else:
+                    self._log.debug(f"Connecting to Redis at {self._host}:{self._port}")
                     client = redis.Redis(
                         host=self._host,
                         port=self._port,
@@ -195,20 +206,27 @@ class RedisUtil:
                 time.sleep(2)
 
     def key(self, session_id: str) -> str:
+        """Generates a Redis key for the given session ID using a configured prefix."""
         return f"{self._prefix}{session_id}"
 
     def get(self, key: str) -> Optional[bytes]:
+        """Retrieves value for the given key from Redis."""
+        self._log.debug(f"Getting value for key: {key}")
         return self.client.get(key)
 
     def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+        """Sets value for the given key in Redis with optional expiration time."""
+        self._log.debug(f"Setting value for key: {key} with expiration: {ex}")
         self.client.set(name=key, value=value, ex=ex)
 
     def delete(self, key: str) -> None:
+        """Deletes the given key from Redis."""
+        self._log.debug(f"Deleting key: {key}")
         self.client.delete(key)
 
     def clear_prefix(self) -> None:
+        """Clears all keys matching the configured prefix pattern."""
         pattern = f"{self._prefix}*"
-        # Use scan_iter to avoid blocking
         keys = list(self.client.scan_iter(match=pattern, count=1000))
         if keys:
             self.client.delete(*keys)
