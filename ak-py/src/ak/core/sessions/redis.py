@@ -16,31 +16,6 @@ class RedisSessionStore(SessionStore):
     RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
     """
 
-    def load(self, session_id: str, strict: bool = False) -> Session:
-        """
-        Loads a session by its unique identifier.
-        :param session_id: Unique identifier for the session.
-        :param strict: If True, raises an exception if the session is not found.
-        :return: The session associated with the identifier, or a new session if it does not exist
-        in storage.
-        """
-        key = self._util.key(session_id)
-        raw = self._util.get(key)
-        if raw is not None:
-            try:
-                return self._serde.deserialize(raw)
-            except Exception as ex:
-                self._log.error(f"Failed to deserialize session {session_id}: {ex}")
-                if strict:
-                    self._log.error(traceback.format_exc())
-                    raise
-        if strict:
-            raise KeyError(f"Session {session_id} not found")
-        self._log.warning(f"Session {session_id} not found, creating new session")
-        session = Session(session_id)
-        self.store(session)
-        return session
-
     def __init__(
             self,
             ssl: bool = False,
@@ -70,6 +45,23 @@ class RedisSessionStore(SessionStore):
         )
         self._ttl = ttl_seconds
 
+    def load(self, session_id: str, strict: bool = False) -> Session:
+        """
+        Loads a session by its unique identifier.
+        :param session_id: Unique identifier for the session.
+        :param strict: If True, raises an exception if the session is not found.
+        :return: The session associated with the identifier, or a new session if it does not exist
+        in storage.
+        """
+        key = self._util.key(session_id)
+        if not self._util.exists(key):
+            if strict:
+                raise KeyError(f"Session {session_id} not found")
+            self._log.warning(f"Session {session_id} not found, creating new session")
+            return self.new(session_id)
+        # Return Redis-backed session
+        return RedisSession(session_id, self._util, ttl_seconds=self._ttl)
+
     def new(self, session_id: str) -> Session:
         """
         Initialize a session for a given session id.
@@ -77,25 +69,21 @@ class RedisSessionStore(SessionStore):
         :return: The session associated with the identifier, or a new session if it does not exist.
         """
         self._log.debug(f"Creating new session with ID {session_id} ")
-        session = Session(session_id)
-        self.store(session)
-        return session
-
-    def store(self, session: Session) -> None:
-        """
-        Stores a session or updates it if it already exists in the storage.
-        :param session: The session to store.
-        """
-        key = self._util.key(session.id)
-        payload = self._serde.serialize(session)
-        self._log.debug(f"Storing session {session.id} with TTL {self._ttl}")
-        self._util.set(key, payload, ex=self._ttl)
+        key = self._util.key(session_id)
+        # Create a minimal hash so the key exists and TTL can apply
+        self._util.hset(key, "__init__", self._serde.dumps(True))
+        if self._ttl:
+            self._util.expire(key, self._ttl)
+        return RedisSession(session_id, self._util, ttl_seconds=self._ttl)
 
     def clear(self) -> None:
         """
         Clears all stored sessions for this store's prefix.
         """
         self._util.clear_prefix()
+
+    def store(self, session: Session) -> None:
+        pass
 
 
 class RedisSessionSerde:
@@ -108,37 +96,58 @@ class RedisSessionSerde:
         self._log = logging.getLogger("ak.core.sessions.redis.serde")
 
     @staticmethod
-    def serialize(session: Session) -> str:
+    def dumps(obj: Any) -> str:
         """
-        Serialize a Session to a JSON string.
-        Non-JSON-serializable values in session data are converted to strings via repr().
+        Serialize a value to JSON, falling back to repr for non-serializable objects.
+        :param obj: The value to serialize.
+        :return: The serialized value as a JSON string.
         """
-
-        def safe(obj: Any) -> Any:
-            try:
-                json.dumps(obj)
-                return obj
-            except Exception:
-                return repr(obj)
-
-        data = {
-            "id": session.id,
-            "data": {k: safe(v) for k, v in getattr(session, "_data", {}).items()},
-        }
-        return json.dumps(data)
+        try:
+            return json.dumps(obj)
+        except Exception:
+            return json.dumps(repr(obj))
 
     @staticmethod
-    def deserialize(payload: Any) -> Session:
+    def loads(payload: Optional[bytes | str]) -> Any:
         """
-        Deserialize a JSON string or bytes back into a Session instance.
+        Deserialize a JSON string/bytes back into a Python object; returns None if missing.
+        :param payload: The JSON string or bytes to deserialize.
+        :return: The deserialized value.
         """
+        if payload is None:
+            return None
         if isinstance(payload, (bytes, bytearray)):
             payload = payload.decode("utf-8")
-        obj = json.loads(payload)
-        s = Session(obj["id"])
-        for k, v in obj.get("data", {}).items():
-            s.set(k, v)
-        return s
+        try:
+            return json.loads(payload)
+        except Exception:
+            return payload
+
+
+class RedisSession(Session):
+    """
+    Redis-backed Session that persists each field as a Redis hash field.
+
+    Uses a RedisUtil helper for namespaced access. Values are JSON-serialized and
+    deserialized using RedisSessionSerde.
+    """
+
+    def __init__(self, id: str, util: "RedisUtil", ttl_seconds: Optional[int] = None):
+        super().__init__(id)
+        self._util = util
+        self._ttl = ttl_seconds
+        self._key = self._util.key(id)
+
+    def get(self, key: str) -> Any:
+        raw = self._util.hget(self._key, key)
+        return RedisSessionSerde.loads(raw)
+
+    def set(self, key: str, value: Any) -> Any:
+        payload = RedisSessionSerde.dumps(value)
+        self._util.hset(self._key, key, payload)
+        if self._ttl:
+            self._util.expire(self._key, self._ttl)
+        return value
 
 
 class RedisUtil:
@@ -204,26 +213,35 @@ class RedisUtil:
                 time.sleep(2)
 
     def key(self, session_id: str) -> str:
-        """Generates a Redis key for the given session ID using a configured prefix."""
+        """
+        Generates a Redis key for the given session ID using a configured prefix.
+        :param session_id: The session ID to generate a key for.
+        :return: The generated key.
+        """
         return f"{self._prefix}{session_id}"
 
-    def get(self, key: str) -> Optional[bytes]:
-        """Retrieves value for the given key from Redis."""
-        self._log.debug(f"Getting value for key: {key}")
-        return self.client.get(key)
+    def hset(self, key: str, field: str, value: str) -> None:
+        self._log.debug(f"HSET {key} field={field}")
+        self.client.hset(name=key, key=field, value=value)
 
-    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
-        """Sets value for the given key in Redis with optional expiration time."""
-        self._log.debug(f"Setting value for key: {key} with expiration: {ex}")
-        self.client.set(name=key, value=value, ex=ex)
+    def hget(self, key: str, field: str) -> Optional[bytes]:
+        self._log.debug(f"HGET {key} field={field}")
+        return self.client.hget(name=key, key=field)
 
-    def delete(self, key: str) -> None:
-        """Deletes the given key from Redis."""
-        self._log.debug(f"Deleting key: {key}")
-        self.client.delete(key)
+    def expire(self, key: str, ttl_seconds: int) -> None:
+        self._log.debug(f"EXPIRE {key} {ttl_seconds}")
+        self.client.expire(name=key, time=ttl_seconds)
+
+    def exists(self, key: str) -> bool:
+        try:
+            return bool(self.client.exists(key))
+        except redis.RedisError:
+            return False
 
     def clear_prefix(self) -> None:
-        """Clears all keys matching the configured prefix pattern."""
+        """
+        Clears all keys matching the configured prefix pattern.
+        """
         pattern = f"{self._prefix}*"
         keys = list(self.client.scan_iter(match=pattern, count=1000))
         if keys:

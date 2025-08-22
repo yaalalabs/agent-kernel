@@ -1,6 +1,6 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
-  source  = "../../../../ak-deployment/ak-aws/serverless"
+  source = "../../../../ak-deployment/ak-aws/serverless"
   # version = "0.0.1-rc3"
 
   # Basic lambda configuration
