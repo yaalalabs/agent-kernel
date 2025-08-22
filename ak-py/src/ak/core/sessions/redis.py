@@ -1,6 +1,6 @@
-import json
 import logging
 import os
+import pickle
 import time
 import traceback
 from typing import Any, Optional
@@ -91,37 +91,31 @@ class RedisSessionSerde:
     RedisSessionSerde provides serialization and deserialization of Session objects for Redis
     storage using a JSON representation.
     """
+    _log = logging.getLogger("ak.core.sessions.redisserde")
 
-    def __init__(self):
-        self._log = logging.getLogger("ak.core.sessions.redis.serde")
+    # Binary headers to distinguish formats
 
-    @staticmethod
-    def dumps(obj: Any) -> str:
+    @classmethod
+    def dumps(cls, obj: Any) -> bytes:
         """
         Serialize a value to JSON, falling back to repr for non-serializable objects.
         :param obj: The value to serialize.
         :return: The serialized value as a JSON string.
         """
-        try:
-            return json.dumps(obj)
-        except Exception:
-            return json.dumps(repr(obj))
+        cls._log.debug(f"dumps: {obj}")
+        return pickle.dumps(obj)
 
-    @staticmethod
-    def loads(payload: Optional[bytes | str]) -> Any:
+    @classmethod
+    def loads(cls, payload: bytes) -> Any:
         """
         Deserialize a JSON string/bytes back into a Python object; returns None if missing.
         :param payload: The JSON string or bytes to deserialize.
         :return: The deserialized value.
         """
+        cls._log.debug(f"loads: {type(payload)}")
         if payload is None:
             return None
-        if isinstance(payload, (bytes, bytearray)):
-            payload = payload.decode("utf-8")
-        try:
-            return json.loads(payload)
-        except Exception:
-            return payload
+        return pickle.loads(payload)
 
 
 class RedisSession(Session):
@@ -134,6 +128,7 @@ class RedisSession(Session):
 
     def __init__(self, id: str, util: "RedisUtil", ttl_seconds: Optional[int] = None):
         super().__init__(id)
+        self._log = logging.getLogger("ak.core.sessions.redissession")
         self._util = util
         self._ttl = ttl_seconds
         self._key = self._util.key(id)
