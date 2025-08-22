@@ -16,7 +16,7 @@ class Runtime:
     _sessions: SessionStore = InMemorySessionStore()
 
     @staticmethod
-    def instance() -> Self:
+    def instance() -> 'Runtime':
         return RUNTIME
 
     def load(self, module: str) -> None:

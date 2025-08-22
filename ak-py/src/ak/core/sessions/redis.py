@@ -6,15 +6,16 @@ from ..base import Session
 
 class RedisSessionStore(SessionStore):
     """
-    InMemorySessionStore class provides an in-memory implementation of the SessionStore interface.
+    RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
     """
 
-    def __init__(self):
+    def __init__(self, ssl: bool = False):
         """
-        Initializes an InMemorySessionStore instance.
+        Initializes a RedisSessionStore instance.
         """
+        self._ssl = ssl
         self._sessions = {}
-        self._log = logging.getLogger("ak.core.sessions.inmemory")
+        self._log = logging.getLogger("ak.core.sessions.redis")
 
     def load(self, session_id: str, strict: bool = False) -> Session:
         """
@@ -57,3 +58,23 @@ class RedisSessionStore(SessionStore):
         Clears all stored sessions.
         """
         self._sessions.clear()
+
+
+class RedisSessionSerde:
+    """
+    RedisSessionSerde class provides a redis-based implementation of the Session class. it provides a way to serialize
+    and deserialize a session.
+    """
+
+    def __init__(self):
+        """
+        Initializes a RedisSessionStore instance.
+        """
+        self._sessions = {}
+        self._log = logging.getLogger("ak.core.sessions.redis.serde")
+
+
+class RedisUtil:
+    """
+    RedisUtil class provides redis-based utility functions.
+    """
