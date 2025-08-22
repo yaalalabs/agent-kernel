@@ -29,6 +29,11 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution_role_attachmen
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
 
 module source_storage {
   count                = (var.package_type == "S3Zip") ? 1 : 0
@@ -117,25 +122,18 @@ module "lambda_deployment" {
   create_package         = false
   package_type           = var.package_type == "Image" ? "Image" : "Zip"
   create_layer = false # to control creation of the Lambda Layer and related resources
-  layers = var.layers
+  layers                 = var.layers
 
-  #create cloudwatch alarm for the lambda
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90
+  attach_cloudwatch_logs_policy     = true
+  attach_dead_letter_policy         = false
+  attach_network_policy             = false
+  attach_tracing_policy             = false
+  attach_async_event_policy         = false
 
-  #cloudwatch log permissions
-  attach_cloudwatch_logs_policy = true
-  #SNS/SQS dead letter notification policy
-  attach_dead_letter_policy = false
-  #elastic network interface permissions - already set in global/permissions
-  attach_network_policy = false
-  #aws x-ray permissions
-  attach_tracing_policy = false
-
-  attach_async_event_policy = false
-
-  # vpc_subnet_ids          = local.lambda_subnet_ids
-  # vpc_security_group_ids  = [local.lambda_sg_id]
+  vpc_subnet_ids          = data.aws_subnets.default.ids
+  vpc_security_group_ids = [data.aws_security_group.default.id]
   code_signing_config_arn = (var.package_type == "S3Zip" && var.is_production == true) ? local.lambda_signing_config_arn : null
 
   s3_existing_package = (var.package_type == "S3Zip") ? {
@@ -144,8 +142,12 @@ module "lambda_deployment" {
     version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
   } : {}
 
-  environment_variables = var.environment_variables
-  event_source_mapping  = var.event_source_mapping
+  environment_variables = merge(var.environment_variables, {
+    AK_REDIS_HOST   = aws_elasticache_cluster.redis.cache_nodes[0].address
+    AK_REDIS_PORT   = aws_elasticache_cluster.redis.cache_nodes[0].port
+    AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
+  })
+  event_source_mapping = var.event_source_mapping
 
   timeout     = var.timeout
   memory_size = var.memory_size

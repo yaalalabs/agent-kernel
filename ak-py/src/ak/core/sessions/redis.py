@@ -52,8 +52,6 @@ class RedisSessionStore(SessionStore):
     ):
         """
         Initializes a RedisSessionStore instance.
-
-
         :param ssl: Whether to use SSL for Redis connection
         :param url: Redis connection URL (takes precedence over host/port if provided)
         :param host: Redis server hostname
