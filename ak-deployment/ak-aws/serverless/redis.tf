@@ -1,13 +1,13 @@
 resource "aws_security_group" "redis" {
   name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-sg"
   description = "Security group for Redis cluster"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = local.vpc_id
 
   ingress {
     from_port = 6379
     to_port   = 6379
     protocol  = "tcp"
-    cidr_blocks = [data.aws_vpc.default.cidr_block]
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
@@ -22,7 +22,7 @@ resource "aws_security_group" "redis" {
 
 resource "aws_elasticache_subnet_group" "redis" {
   name       = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-subnet"
-  subnet_ids = data.aws_subnets.default.ids
+  subnet_ids = local.subnet_ids
 }
 
 resource "aws_elasticache_cluster" "redis" {

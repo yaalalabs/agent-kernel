@@ -34,6 +34,17 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment"
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
+module "vpc" {
+  source = "../modules/vpc"
+
+  vpc_cidr             = var.vpc_cidr
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  tags                 = var.tags
+}
+
 
 module source_storage {
   count                = (var.package_type == "S3Zip") ? 1 : 0
@@ -132,8 +143,8 @@ module "lambda_deployment" {
   attach_tracing_policy             = false
   attach_async_event_policy         = false
 
-  vpc_subnet_ids          = data.aws_subnets.default.ids
-  vpc_security_group_ids = [data.aws_security_group.default.id]
+  vpc_subnet_ids          = local.subnet_ids
+  vpc_security_group_ids = [aws_security_group.lambda]
   code_signing_config_arn = (var.package_type == "S3Zip" && var.is_production == true) ? local.lambda_signing_config_arn : null
 
   s3_existing_package = (var.package_type == "S3Zip") ? {
@@ -154,4 +165,22 @@ module "lambda_deployment" {
 
   kms_key_arn                = local.lambda_kms_key_arn != null ? local.lambda_kms_key_arn : null
   cloudwatch_logs_kms_key_id = local.cloudwatch_kms_key_arn != null ? local.cloudwatch_kms_key_arn : null
+}
+
+# Create security group for Lambda
+resource "aws_security_group" "lambda" {
+  name        = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  description = "Security group for Lambda functions"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  }
 }

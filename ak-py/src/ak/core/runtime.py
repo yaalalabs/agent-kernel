@@ -4,7 +4,8 @@ import logging
 from typing import Any, Self
 
 from .base import Agent, Session
-from .sessions import InMemorySessionStore, SessionStore
+from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
+
 
 class Runtime:
     """
@@ -13,7 +14,7 @@ class Runtime:
 
     _log = logging.getLogger("ak.runtime")
     _agents = {}
-    _sessions: SessionStore = InMemorySessionStore()
+    _sessions: SessionStore = RedisSessionStore()
 
     @staticmethod
     def instance() -> 'Runtime':
