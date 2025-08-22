@@ -41,7 +41,7 @@ class InMemorySessionStore(SessionStore):
         """
         self._log.debug(f"Creating new session with ID {session_id} ")
         session = Session(session_id)
-        self._sessions[session_id] = session
+        self.store(session)
 
         return session
 
