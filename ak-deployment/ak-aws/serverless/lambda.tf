@@ -144,7 +144,7 @@ module "lambda_deployment" {
   attach_async_event_policy         = false
 
   vpc_subnet_ids          = local.subnet_ids
-  vpc_security_group_ids = [aws_security_group.lambda]
+  vpc_security_group_ids = [aws_security_group.lambda.id]
   code_signing_config_arn = (var.package_type == "S3Zip" && var.is_production == true) ? local.lambda_signing_config_arn : null
 
   s3_existing_package = (var.package_type == "S3Zip") ? {
