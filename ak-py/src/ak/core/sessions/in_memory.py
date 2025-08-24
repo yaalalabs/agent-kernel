@@ -23,6 +23,7 @@ class InMemorySessionStore(SessionStore):
         :param strict: If True, raises an exception if the session is not found.
         :return: The session associated with the identifier, or a new session if it does not exist.
         """
+        self._log.debug(f"Loading session with ID {session_id}")
         session = self._sessions.get(session_id)
         if session is None:
             if strict:
@@ -50,10 +51,12 @@ class InMemorySessionStore(SessionStore):
         Stores a session or updates it if it already exists in the storage.
         :param session: The session to store.
         """
+        self._log.debug(f"Storing session with ID {session.id}")
         self._sessions[session.id] = session
 
     def clear(self) -> None:
         """
         Clears all stored sessions.
         """
+        self._log.debug("Clearing all stored sessions")
         self._sessions.clear()

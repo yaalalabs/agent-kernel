@@ -1,3 +1,4 @@
+import logging
 from abc import abstractmethod, ABC
 from typing import Any
 
@@ -19,6 +20,7 @@ class Session:
         Initializes a Session instance.
         :param id: Unique identifier for the session.
         """
+        self._log = logging.getLogger("ak.core.session")
         self._id = id
         self._data = {}
 
@@ -37,7 +39,9 @@ class Session:
         :return: The framework-specific session object associated with the key, or None if the key
         does not exist.
         """
-        return self._data.get(key)
+        result = self._data.get(key)
+        self._log.debug(f"Retrieved session object for key {key}: {result}")
+        return result
 
     def set(self, key: str, value: Any) -> Any:
         """
@@ -45,6 +49,7 @@ class Session:
         :param key: The key to set the session object for.
         :param value: The framework-specific session object to set.
         """
+        self._log.debug(f"Setting session object for key {key}: {value}")
         self._data[key] = value
         return value
 

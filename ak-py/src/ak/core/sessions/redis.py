@@ -102,7 +102,8 @@ class RedisSessionSerde:
         :param obj: The value to serialize.
         :return: The serialized value as a JSON string.
         """
-        cls._log.debug(f"dumps: {obj}")
+        if not isinstance(obj, bool):
+            cls._log.debug(f"dumped: {obj._items}")
         return pickle.dumps(obj)
 
     @classmethod
@@ -115,7 +116,9 @@ class RedisSessionSerde:
         cls._log.debug(f"loads: {type(payload)}")
         if payload is None:
             return None
-        return pickle.loads(payload)
+        loaded = pickle.loads(payload)
+        cls._log.debug(f"loaded: {loaded._items}")
+        return loaded
 
 
 class RedisSession(Session):

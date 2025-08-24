@@ -14,7 +14,7 @@ class Runtime:
 
     _log = logging.getLogger("ak.runtime")
     _agents = {}
-    _sessions: SessionStore = RedisSessionStore()
+    _sessions: SessionStore = InMemorySessionStore()
 
     @staticmethod
     def instance() -> 'Runtime':
