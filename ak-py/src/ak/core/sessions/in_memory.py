@@ -30,8 +30,7 @@ class InMemorySessionStore(SessionStore):
                 raise KeyError(f"Session {session_id} not found")
             else:
                 self._log.warning(f"Session {session_id} not found, creating new session")
-                session = Session(session_id)
-                self._sessions[session_id] = session
+                session = self.new(session_id)
         return session
 
     def new(self, session_id: str) -> Session:

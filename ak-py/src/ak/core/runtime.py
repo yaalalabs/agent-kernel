@@ -1,10 +1,17 @@
 import importlib
 import logging
-
-from typing import Any, Self
+import os
+from enum import StrEnum
+from typing import Any
 
 from .base import Agent, Session
 from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
+from .. import RedisDriver
+
+
+class MemoryType(StrEnum):
+    IN_MEMORY = "IN_MEMORY"
+    REDIS = "REDIS"
 
 
 class Runtime:
@@ -15,6 +22,14 @@ class Runtime:
     _log = logging.getLogger("ak.runtime")
     _agents = {}
     _sessions: SessionStore = InMemorySessionStore()
+
+    def __init__(self, memory_type: MemoryType = MemoryType.IN_MEMORY):
+        if memory_type == "REDIS":
+            self._sessions = RedisSessionStore(RedisDriver())
+            self._log.debug("Using Redis session store")
+        else:
+            self._log.debug("Using in-memory session store")
+            self._sessions = InMemorySessionStore()
 
     @staticmethod
     def instance() -> 'Runtime':
@@ -66,4 +81,7 @@ class Runtime:
         return self._sessions
 
 
-RUNTIME = Runtime()
+if os.environ.get("AK_MEMORY_TYPE") == "REDIS":
+    RUNTIME = Runtime(MemoryType.REDIS)
+else:
+    RUNTIME = Runtime(MemoryType.IN_MEMORY)

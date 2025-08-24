@@ -1,14 +1,16 @@
 from typing import Any, List
-from agents import Agent, Runner
 
-from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from agents import Agent, Runner, TResponseInputItem
+from agents.memory.session import SessionABC
+
+from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session, RedisDriver
 
 FRAMEWORK = "openai"
 
 
-class OpenAISession:
+class OpenAISession(SessionABC):
     """
-    OpenAISession class provides a session for OpenAI Agents SDK based agents.
+    OpenAISession class provides a session for OpenAI Agents SDK-based agents.
     """
 
     def __init__(self):
@@ -48,6 +50,24 @@ class OpenAISession:
         Clear all items for this session.
         """
         self._items.clear()
+
+
+class OpenAISessionRedis(SessionABC):
+
+    def __init__(self, driver: RedisDriver):
+        self._driver = driver
+
+    async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
+        pass
+
+    async def add_items(self, items: list[TResponseInputItem]) -> None:
+        pass
+
+    async def pop_item(self) -> TResponseInputItem | None:
+        pass
+
+    async def clear_session(self) -> None:
+        pass
 
 
 class OpenAIRunner(BaseRunner):

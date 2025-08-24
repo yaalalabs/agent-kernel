@@ -14,6 +14,7 @@ module "serverless_agents" {
   memory_size          = 256
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region
+  enable_redis_memory  = true
 
   # Environment variables passed to lambda
   environment_variables = {

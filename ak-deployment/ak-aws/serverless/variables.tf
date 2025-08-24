@@ -120,15 +120,20 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  type        = list(string)
+  type = list(string)
   description = "CIDR blocks for the public subnets"
-  default     = ["10.0.1.0/24", "10.0.2.0/24"]
+  default = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "private_subnet_cidrs" {
-  type        = list(string)
+  type = list(string)
   description = "CIDR blocks for the private subnets"
-  default     = ["10.0.3.0/24", "10.0.4.0/24"]
+  default = ["10.0.3.0/24", "10.0.4.0/24"]
+}
+
+variable "enable_redis_memory" {
+  type        = bool
+  description = "When the value true is set, redis memory is enabled"
 }
 
 # Availability zones are now dynamically fetched using aws_availability_zones data source
