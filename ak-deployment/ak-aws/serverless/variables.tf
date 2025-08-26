@@ -125,15 +125,29 @@ variable "public_subnet_cidrs" {
   default = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
-/*variable "private_subnet_ids" {
-  type = list(string)
-  description = "When using an existing VPC to deploy, private subnet IDs need to be provided"
-}
-
 variable "vpc_id" {
   type        = string
-  description = "When using an existing VPC to deploy, the ID of the VPC needs to be provided"
-}*/
+  description = "VPC ID. If not provided, a new one will be created"
+  default    = null
+}
+
+variable "private_subnet_ids" {
+  type = list(string)
+  description = "When using an existing VPC to deploy, private subnet IDs need to be provided"
+  default    = null
+}
+
+variable "redis_host" {
+  type        = string
+  description = "Redis host. If not provided new redis cluster will be created"
+  default    = null
+}
+
+variable "redis_port" {
+  type        = number
+  description = "Redis port should be provided along with the redis host"
+  default     = 6379
+}
 
 variable "private_subnet_cidrs" {
   type = list(string)

@@ -1,9 +1,9 @@
+from ak import MemoryType
+from ak.aws import Lambda
+from ak.langgraph import AgentModule
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
-
-from ak.aws import Lambda
-from ak.langgraph import AgentModule
 
 from custom_agent import CustomAgent
 
@@ -43,6 +43,6 @@ triage_agent = create_supervisor(
     )
 ).compile(name="triage")
 
-AgentModule([triage_agent, history_agent, math_agent])
+AgentModule([triage_agent, history_agent, math_agent], memory_type=MemoryType.REDIS)
 
 handler = Lambda.handler

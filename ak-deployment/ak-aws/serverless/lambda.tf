@@ -35,8 +35,8 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment"
 }
 
 module "vpc" {
-  source = "../modules/vpc"
-
+  source               = "../modules/vpc"
+  count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
@@ -155,8 +155,8 @@ module "lambda_deployment" {
 
   environment_variables = merge(var.environment_variables, {
     # TODO selectively create the redis cluster
-    AK_REDIS_HOST   = aws_elasticache_cluster.redis.cache_nodes[0].address
-    AK_REDIS_PORT   = aws_elasticache_cluster.redis.cache_nodes[0].port
+    AK_REDIS_HOST   = local.redis_host
+    AK_REDIS_PORT   = local.redis_port
     AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
   })
   event_source_mapping = var.event_source_mapping
