@@ -12,6 +12,9 @@ license = { text = "MIT" }
 authors = [
     { name = "Yaala Labs", email = "info@yaalalabs.com" }
 ]
+dependencies = [
+    "redis>=6.4.0",
+]
 
 [project.optional-dependencies]
 crewai = ["crewai>=0.150.0"]

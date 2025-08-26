@@ -1,12 +1,11 @@
 import logging
-
 from typing import Any
 
 from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent, Module, Runner, Session
+from ..core import Agent as BaseAgent, Module, Runner, Session, MemoryType
 
 FRAMEWORK = "crewai"
 
@@ -50,7 +49,8 @@ class CrewAISession(Storage):
         :return: List of items matching the query.
         """
         self._log.debug(f"search: {query}, {limit}, {score_threshold}")
-        return list(map(lambda item: {"context": item["value"]}, self._items[:limit])) # CrewAI expects a list of dicts with a "context" key
+        return list(map(lambda item: {"context": item["value"]},
+                        self._items[:limit]))  # CrewAI expects a list of dicts with a "context" key
 
     def reset(self) -> None:
         """
@@ -140,11 +140,11 @@ class CrewAIModule(Module):
     CrewAIModule class provides a module for CrewAI based agents.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self, agents: list[Agent], memory_type: MemoryType = MemoryType.IN_MEMORY):
         """
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
         """
         runner = CrewAIRunner()
         super().__init__(
-            list(map(lambda agent: CrewAIAgent(agent.role, runner, agent, agents), agents)))
+            list(map(lambda agent: CrewAIAgent(agent.role, runner, agent, agents), agents)), memory_type)

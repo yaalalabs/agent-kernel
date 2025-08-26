@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict
 
 from ..core import Runtime, Agent, Session
+from ..core.runtime import MemoryType
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,7 +23,7 @@ class Lambda:
     _log = logging.getLogger("ak.aws.lambda")
     _agent: Agent | None = None
     _session: Session | None = None
-    _runtime: Runtime = Runtime.instance()
+    _runtime: Runtime = Runtime.instance(MemoryType.REDIS)
 
     @classmethod
     def _select(cls, session_id: str | None, name: str | None = None):
@@ -82,7 +83,9 @@ class Lambda:
         """
         Async method to run the agent.
         """
-        return await cls._runtime.run(cls._agent, cls._session, prompt)
+        result = await cls._runtime.run(cls._agent, cls._session, prompt)
+        cls._runtime.sessions().store(cls._session)
+        return result
 
     @classmethod
     def _get_response_session_id(cls, session_id: str | None = None):

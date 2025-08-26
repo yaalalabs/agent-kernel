@@ -1,10 +1,17 @@
 import importlib
 import logging
-
-from typing import Any, Self
+from enum import StrEnum
+from typing import Any
 
 from .base import Agent, Session
-from .sessions import InMemorySessionStore, SessionStore
+from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
+from .sessions.redis import RedisDriver
+
+
+class MemoryType(StrEnum):
+    IN_MEMORY = "IN_MEMORY"
+    REDIS = "REDIS"
+
 
 class Runtime:
     """
@@ -12,12 +19,30 @@ class Runtime:
     """
 
     _log = logging.getLogger("ak.runtime")
+    _instance = None
     _agents = {}
-    _sessions: SessionStore = InMemorySessionStore()
+    _sessions: SessionStore = None
+    _memory_type: MemoryType = None
+
+    def __init__(self, memory_type: MemoryType = MemoryType.IN_MEMORY):
+        Runtime._memory_type = memory_type
+        if Runtime._instance is not None:
+            raise Exception("Runtime is a singleton class")
+        if memory_type == MemoryType.REDIS:
+            self._sessions = RedisSessionStore(RedisDriver())
+            self._log.debug("Using Redis session store")
+        else:
+            self._log.debug("Using in-memory session store")
+            self._sessions = InMemorySessionStore()
+        Runtime._instance = self
 
     @staticmethod
-    def instance() -> Self:
-        return RUNTIME
+    def instance(memory_type: MemoryType = MemoryType.IN_MEMORY) -> "Runtime":
+        if Runtime._instance is None:
+            Runtime(memory_type)
+        if memory_type != Runtime._memory_type:
+            raise Exception("Runtime already initialized with different memory type")
+        return Runtime._instance
 
     def load(self, module: str) -> None:
         """
@@ -63,6 +88,3 @@ class Runtime:
         :return: The session storage.
         """
         return self._sessions
-
-
-RUNTIME = Runtime()
