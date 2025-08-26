@@ -1,7 +1,7 @@
-from crewai import Agent
-
-from ak.crewai import AgentModule
+from ak import MemoryType
 from ak.aws import Lambda
+from ak.crewai import AgentModule
+from crewai import Agent
 
 math_agent = Agent(
     role="math",
@@ -18,6 +18,6 @@ history_agent = Agent(
     verbose=False,
 )
 
-AgentModule([math_agent, history_agent])
+AgentModule([math_agent, history_agent], memory_type=MemoryType.REDIS)
 
 handler = Lambda.handler

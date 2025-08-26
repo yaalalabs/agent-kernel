@@ -35,7 +35,8 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment"
 }
 
 module "vpc" {
-  source               = "../modules/vpc"
+  source               = "app.terraform.io/yaalalabs/ak-vpc/aws"
+  version              = "0.1.0a1"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -49,7 +50,7 @@ module "vpc" {
 module source_storage {
   count                = (var.package_type == "S3Zip") ? 1 : 0
   source               = "app.terraform.io/yaalalabs/ak-s3/aws"
-  version              = "0.0.1-rc2"
+  version              = "0.1.0a1"
   region               = var.region
   env_alias            = var.env_alias
   is_production        = var.is_production
@@ -61,7 +62,7 @@ module source_storage {
 module source_package {
   count            = (var.package_type == "S3Zip") ? 1 : 0
   source           = "app.terraform.io/yaalalabs/ak-lambda-package/aws"
-  version          = "0.0.1-rc2"
+  version          = "0.1.0a1"
   env_alias        = var.env_alias
   module_name      = var.module_name
   package_dir_path = var.package_path
@@ -73,7 +74,7 @@ module source_package {
 module docker_image {
   count         = (var.package_type == "Image") ? 1 : 0
   source        = "app.terraform.io/yaalalabs/ak-lambda-docker/aws"
-  version       = "0.0.1-rc2"
+  version       = "0.1.0a1"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
