@@ -84,7 +84,7 @@ class RedisDriver:
                 self._redis_client = client
             except redis.RedisError as e:
                 self._log.warning(f"Attempt {attempt + 1} failed: {e}")
-                if attempt == 3:
+                if attempt == retries - 1:
                     break
                 time.sleep(2)
 
@@ -184,7 +184,7 @@ class RedisSessionStore(SessionStore):
         if self._driver.exists(key):
             session = Session(session_id)
             for field in self._driver.hkeys(key):
-                if key == "__init__":
+                if field == "__init__":
                     continue
                 value = self._driver.hget(key, field)
                 session.set(field, self._serde.loads(value))

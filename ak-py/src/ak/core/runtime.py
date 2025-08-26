@@ -28,7 +28,7 @@ class Runtime:
         Runtime._memory_type = memory_type
         if Runtime._instance is not None:
             raise Exception("Runtime is a singleton class")
-        if memory_type == "REDIS":
+        if memory_type == MemoryType.REDIS:
             self._sessions = RedisSessionStore(RedisDriver())
             self._log.debug("Using Redis session store")
         else:

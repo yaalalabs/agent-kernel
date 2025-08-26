@@ -155,7 +155,6 @@ module "lambda_deployment" {
   } : {}
 
   environment_variables = merge(var.environment_variables, {
-    # TODO selectively create the redis cluster
     AK_REDIS_HOST   = local.redis_host
     AK_REDIS_PORT   = local.redis_port
     AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
