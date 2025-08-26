@@ -6,7 +6,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
+from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, MemoryType
 
 FRAMEWORK = "langgraph"
 
@@ -135,10 +135,11 @@ class LangGraphModule(BaseModule):
     LangGraphModule class provides a module for LangGraph Agent SDK based agents.
     """
 
-    def __init__(self, agents: list[CompiledStateGraph]):
+    def __init__(self, agents: list[CompiledStateGraph], memory_type: MemoryType = MemoryType.IN_MEMORY):
         """
         Initializes a LangGraphModule instance.
         :param agents: List of agents in the module.
         """
         runner = LangGraphRunner()
-        super().__init__(list(map(lambda agent: LangGraphAgent(name=agent.name, runner=runner, agent=agent), agents)))
+        super().__init__(list(map(lambda agent: LangGraphAgent(name=agent.name, runner=runner, agent=agent), agents)),
+                         memory_type)

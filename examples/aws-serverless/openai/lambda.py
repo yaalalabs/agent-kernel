@@ -1,5 +1,5 @@
 from agents import Agent
-
+from ak import MemoryType
 from ak.aws import Lambda
 from ak.openai import AgentModule
 
@@ -22,6 +22,6 @@ triage_agent = Agent(
     handoffs=[history_agent, math_agent],
 )
 
-AgentModule([triage_agent, math_agent, history_agent])
+AgentModule([triage_agent, math_agent, history_agent], MemoryType.REDIS)
 
 handler = Lambda.handler

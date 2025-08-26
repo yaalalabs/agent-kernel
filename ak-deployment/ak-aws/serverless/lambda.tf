@@ -153,11 +153,11 @@ module "lambda_deployment" {
     version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
   } : {}
 
-  environment_variables = merge(var.environment_variables, { # TODO selectively create the redis cluster
+  environment_variables = merge(var.environment_variables, {
+    # TODO selectively create the redis cluster
     AK_REDIS_HOST   = aws_elasticache_cluster.redis.cache_nodes[0].address
     AK_REDIS_PORT   = aws_elasticache_cluster.redis.cache_nodes[0].port
     AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
-    AK_MEMORY_TYPE  = var.enable_redis_memory ? "REDIS" : "IN_MEMORY"
   })
   event_source_mapping = var.event_source_mapping
 
