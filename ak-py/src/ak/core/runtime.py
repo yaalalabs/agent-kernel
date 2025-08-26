@@ -6,7 +6,7 @@ from typing import Any
 
 from .base import Agent, Session
 from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
-from .. import RedisDriver
+from .sessions.redis import RedisDriver
 
 
 class MemoryType(StrEnum):

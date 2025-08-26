@@ -82,7 +82,9 @@ class Lambda:
         """
         Async method to run the agent.
         """
-        return await cls._runtime.run(cls._agent, cls._session, prompt)
+        result = await cls._runtime.run(cls._agent, cls._session, prompt)
+        cls._runtime.sessions().store(cls._session)
+        return result
 
     @classmethod
     def _get_response_session_id(cls, session_id: str | None = None):

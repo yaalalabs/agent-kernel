@@ -37,6 +37,9 @@ class RedisDriver:
 
     @property
     def client(self):
+        """
+        Returns the Redis client instance.
+        """
         if self._redis_client is None:
             self._connect()
         else:
@@ -53,9 +56,15 @@ class RedisDriver:
 
     @property
     def ttl(self):
+        """
+        Returns the configured TTL for Redis keys.
+        """
         return self._ttl
 
     def _connect(self):
+        """
+        Connects to Redis using the configured URL or host/port.
+        """
         retries = 3
         for attempt in range(retries):
             try:
@@ -88,18 +97,49 @@ class RedisDriver:
         return f"{self._prefix}{session_id}"
 
     def hset(self, key: str, field: str, value: Any) -> None:
+        """
+        Sets a field in the Redis hash associated with the given key.
+        :param key: The key to set the field for.
+        :param field: The field to set.
+        :param value: The value to set for the field.
+        """
         self._log.debug(f"HSET {key} field={field}")
         self.client.hset(name=key, key=field, value=value)
 
     def hget(self, key: str, field: str) -> Optional[bytes]:
+        """
+        Retrieves a field from the Redis hash associated with the given key.
+        :param key: The key to retrieve the field for.
+        :param field: The field to retrieve.
+        :return: The value of the field, or None if the field does not exist.
+        """
         self._log.debug(f"HGET {key} field={field}")
         return self.client.hget(name=key, key=field)
 
     def expire(self, key: str) -> None:
+        """
+        Sets the TTL for the Redis hash associated with the given key.
+        :param key: The key to set the TTL for.
+        """
         self._log.debug(f"EXPIRE {key} {self._ttl}")
         self.client.expire(name=key, time=self._ttl)
 
+    def hkeys(self, key: str) -> list[str]:
+        """
+        Retrieves all keys in the Redis hash associated with the given key.
+        :param key: The key to retrieve the keys for.
+        :return: A list of keys in the hash.
+        """
+        self._log.debug(f"HKEYS {key}")
+        raw = self.client.hkeys(name=key)
+        return [k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw]
+
     def exists(self, key: str) -> bool:
+        """
+        Checks if a Redis key exists.
+        :param key: The key to check.
+        :return: True if the key exists, False otherwise.
+        """
         try:
             return bool(self.client.exists(key))
         except redis.RedisError:
@@ -141,13 +181,19 @@ class RedisSessionStore(SessionStore):
         in storage.
         """
         key = self._driver.key(session_id)
-        if not self._driver.exists(key):
+        if self._driver.exists(key):
+            session = Session(session_id)
+            for field in self._driver.hkeys(key):
+                if key == "__init__":
+                    continue
+                value = self._driver.hget(key, field)
+                session.set(field, self._serde.loads(value))
+            return session
+        else:
             if strict:
                 raise KeyError(f"Session {session_id} not found")
             self._log.warning(f"Session {session_id} not found, creating new session")
             return self.new(session_id)
-        # Return Redis-backed session
-        return RedisSession(session_id, self._driver)
 
     def new(self, session_id: str) -> Session:
         """
@@ -161,7 +207,7 @@ class RedisSessionStore(SessionStore):
         self._driver.hset(key, "__init__", self._serde.dumps(True))
         if self._driver.ttl:
             self._driver.expire(key)
-        return RedisSession(session_id, self._driver)
+        return Session(session_id)
 
     def clear(self) -> None:
         """
@@ -170,7 +216,15 @@ class RedisSessionStore(SessionStore):
         self._driver.clear_prefix()
 
     def store(self, session: Session) -> None:
-        pass
+        """
+        Stores a session or updates it if it already exists in the storage.
+        :param session: The session to store.
+        """
+        for key in session.get_all_keys():
+            value = session.get(key)
+            self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))
+        if self._driver.ttl:
+            self._driver.expire(self._driver.key(session.id))
 
 
 class RedisSessionSerde:
@@ -205,29 +259,3 @@ class RedisSessionSerde:
         loaded = pickle.loads(payload)
         cls._log.debug(f"loaded: {loaded}")
         return loaded
-
-
-class RedisSession(Session):
-    """
-    Redis-backed Session that persists each field as a Redis hash field.
-
-    Uses a RedisUtil helper for namespaced access. Values are JSON-serialized and
-    deserialized using RedisSessionSerde.
-    """
-
-    def __init__(self, id: str, driver: "RedisDriver"):
-        super().__init__(id)
-        self._log = logging.getLogger("ak.core.sessions.redissession")
-        self._driver = driver
-        self._key = self._driver.key(id)
-
-    def get(self, key: str) -> Any:
-        raw = self._driver.hget(self._key, key)
-        return RedisSessionSerde.loads(raw)
-
-    def set(self, key: str, value: Any) -> Any:
-        payload = RedisSessionSerde.dumps(value)
-        self._driver.hset(self._key, key, payload)
-        if self._driver.ttl:
-            self._driver.expire(self._key)
-        return value
