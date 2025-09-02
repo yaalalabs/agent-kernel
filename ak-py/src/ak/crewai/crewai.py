@@ -70,7 +70,7 @@ class CrewAIRunner(Runner):
         Initializes a CrewAIRunner instance.
         """
         super().__init__(FRAMEWORK)
-        self._log = getLogger("ak.crewai.runner")
+        self._log = logging.getLogger("ak.crewai.runner")
 
     def _memory(self, session: Session) -> ExternalMemory | None:
         """
