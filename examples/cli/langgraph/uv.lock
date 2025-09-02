@@ -83,9 +83,12 @@ wheels = [
 name = "ak"
 version = "0.1.0a1"
 source = { registry = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple" }
-sdist = { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1.tar.gz", hash = "sha256:149711d01d01b37f9995ae6c63cab25f90c0ff30f621875c7e284a12c3e0608c" }
+dependencies = [
+    { name = "redis" },
+]
+sdist = { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1.tar.gz", hash = "sha256:711fe589d0b1601ae5d0e41700c48cc5e8856c3aefb767f5147d5c7f32264e2e" }
 wheels = [
-    { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1-py3-none-any.whl", hash = "sha256:3c6de447fef27b78e7976340af3862f371073ae4076b61d4da3a41256776cf18" },
+    { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1-py3-none-any.whl", hash = "sha256:fb8e6311b87feb2f426918c5c22ddabd8e10619d4767b3667f387d276ba76772" },
 ]
 
 [package.optional-dependencies]
@@ -1259,6 +1262,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fe/0f/25911a9f080464c59fab9027482f822b86bf0608957a5fcc6eaac85aa515/PyYAML-6.0.2-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:68ccc6023a3400877818152ad9a1033e3db8625d899c72eacb5a668902e4d652", size = 751597, upload-time = "2024-08-06T20:32:56.985Z" },
     { url = "https://files.pythonhosted.org/packages/14/0d/e2c3b43bbce3cf6bd97c840b46088a3031085179e596d4929729d8d68270/PyYAML-6.0.2-cp313-cp313-win32.whl", hash = "sha256:bc2fa7c6b47d6bc618dd7fb02ef6fdedb1090ec036abab80d4681424b84c1183", size = 140527, upload-time = "2024-08-06T20:33:03.001Z" },
     { url = "https://files.pythonhosted.org/packages/fa/de/02b54f42487e3d3c6efb3f89428677074ca7bf43aae402517bc7cca949f3/PyYAML-6.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:8388ee1976c416731879ac16da0aff3f63b286ffdd57cdeb95f3f2e085687563", size = 156446, upload-time = "2024-08-06T20:33:04.33Z" },
+]
+
+[[package]]
+name = "redis"
+version = "6.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/d6/e8b92798a5bd67d659d51a18170e91c16ac3b59738d91894651ee255ed49/redis-6.4.0.tar.gz", hash = "sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010", size = 4647399, upload-time = "2025-08-07T08:10:11.441Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/02/89e2ed7e85db6c93dfa9e8f691c5087df4e3551ab39081a4d7c6d1f90e05/redis-6.4.0-py3-none-any.whl", hash = "sha256:f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f", size = 279847, upload-time = "2025-08-07T08:10:09.84Z" },
 ]
 
 [[package]]
