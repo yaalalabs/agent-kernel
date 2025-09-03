@@ -1,7 +1,7 @@
 [project]
 name = "aws-serverless-crewai"
 version = "0.1.0"
-description = "Demo of CrewAI based agents running in Agent Kernel on AWS Lambda"
+description = "Demo of CrewAI based agents running in Agent Kernel on AWS ECS"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

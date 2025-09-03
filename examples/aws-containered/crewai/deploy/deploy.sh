@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Create a zip file of the Lambda function code
+# Create a zip file of the app code
 create_deployment_package() {
     pushd ../
     rm -rf dist
@@ -12,7 +12,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist ak || true
     fi
-    cp -r lambda.py dist/data
+    cp -r app.py dist/data
     popd || exit 1
     cp Dockerfile ../dist/
 }

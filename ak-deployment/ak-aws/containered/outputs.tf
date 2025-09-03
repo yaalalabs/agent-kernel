@@ -13,3 +13,7 @@ output "api_gateway_id" {
 output "api_gateway_stage" {
   value = aws_api_gateway_stage.stage.stage_name
 }
+
+output "agent_invoke_url" {
+  value = "${aws_api_gateway_stage.stage.invoke_url}${aws_api_gateway_resource.agent_endpoint.path}"
+}

@@ -1,13 +1,13 @@
-# Agent Kernel running CrewAI based agents in AWS Serverless (Lambda)
+# Agent Kernel running CrewAI based agents in AWS Containered (ECS)
 
-This package contains a demo of Agent Kernel running agents built with CrewAI, running them in a serverless configuration using AWS Lambda.
+This package contains a demo of Agent Kernel running agents built with CrewAI, running them in a containered configuration using AWS ECS.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
-- API Gateway endpoint for the Lambda function.
+- AWS ECS running the Agent Kernel implementation.
+- API Gateway endpoint for the ECS service.
 
 ## Prerequisites
 
