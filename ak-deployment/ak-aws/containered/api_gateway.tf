@@ -20,6 +20,11 @@ resource "aws_apigatewayv2_integration" "alb_proxy" {
   connection_type        = "VPC_LINK"
   connection_id          = aws_apigatewayv2_vpc_link.ecs_alb.id
   passthrough_behavior   = "WHEN_NO_MATCH"
+
+  # Ensure the backend receives the path expected by the app
+  request_parameters = {
+    "overwrite:path" = "/run"
+  }
 }
 
 resource "aws_apigatewayv2_route" "post_agent" {
