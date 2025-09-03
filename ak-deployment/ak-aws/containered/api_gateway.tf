@@ -16,13 +16,10 @@ resource "aws_apigatewayv2_integration" "alb_proxy" {
   api_id                 = aws_apigatewayv2_api.http_api.id
   integration_type       = "HTTP_PROXY"
   integration_method     = "ANY"
-  integration_uri        = "http://${aws_lb.app.dns_name}:${aws_lb_listener.http.port}/api/${var.api_version}/${var.agent_endpoint}"
+  integration_uri        = aws_lb_listener.http.arn
   connection_type        = "VPC_LINK"
   connection_id          = aws_apigatewayv2_vpc_link.ecs_alb.id
   passthrough_behavior   = "WHEN_NO_MATCH"
-  request_parameters = {
-    "overwrite:header.host" = aws_lb.app.dns_name
-  }
 }
 
 resource "aws_apigatewayv2_route" "post_agent" {
