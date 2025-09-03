@@ -14,3 +14,4 @@ from .base import Agent, Runner, Session
 from .module import Module
 from .runtime import Runtime, MemoryType
 from .sessions.redis import RedisDriver, RedisSessionSerde
+from .service import AgentService
