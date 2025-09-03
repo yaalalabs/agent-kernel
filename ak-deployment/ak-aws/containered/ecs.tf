@@ -45,11 +45,11 @@ module "ecs" {
 
       container_definitions = {
         app = {
-          cpu                      = var.ecs_cpu
-          memory                   = var.ecs_memory
-          image                    = module.docker_image[0].docker_image_uri
-          essential                = true
-          readonly_root_filesystem = false
+          cpu                    = var.ecs_cpu
+          memory                 = var.ecs_memory
+          image                  = module.docker_image[0].docker_image_uri
+          essential              = true
+          readonlyRootFilesystem = false
           portMappings = [
             {
               name          = "app",
@@ -150,7 +150,6 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200-399"
   }
 }
-
 
 
 resource "aws_lb_listener" "http" {

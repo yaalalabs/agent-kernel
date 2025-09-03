@@ -42,7 +42,7 @@ class RESTRequestHandler(AgentService):
       Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
     """
 
-    _log = logging.getLogger("ak.rest.restapi")
+    _log = logging.getLogger("ak.api.restapi")
 
     @classmethod
     async def run(cls, req: RunRequest):
@@ -116,4 +116,4 @@ class RESTAPI:
         """
         log = logging.getLogger("ak.rest.server")
         log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
-        uvicorn.run("ak.rest.restapi:app", host=host, port=port, reload=False)
+        uvicorn.run("ak.api.restapi:app", host=host, port=port, reload=False)
