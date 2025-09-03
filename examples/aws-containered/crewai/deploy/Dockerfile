@@ -1,5 +1,8 @@
-FROM public.ecr.aws/lambda/python:3.12
+FROM python:3.12-slim
 
-COPY data/ /var/task/
+WORKDIR /app
+COPY data/ /app/
 
-CMD ["lambda.handler"]
+EXPOSE 8000
+
+CMD ["app.runner"]

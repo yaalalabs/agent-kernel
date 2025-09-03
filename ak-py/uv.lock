@@ -84,12 +84,15 @@ name = "ak"
 version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
-    { name = "fastapi" },
     { name = "redis" },
-    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
+api = [
+    { name = "fastapi" },
+    { name = "gunicorn" },
+    { name = "uvicorn" },
+]
 crewai = [
     { name = "crewai" },
 ]
@@ -116,16 +119,17 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.150.0" },
-    { name = "fastapi", specifier = ">=0.111.0" },
+    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.111.0" },
+    { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
     { name = "langchain-community", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = "~=0.6.2" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.3" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.2.3" },
     { name = "redis", specifier = ">=6.4.0" },
-    { name = "uvicorn", specifier = ">=0.30.0" },
+    { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30.0" },
 ]
-provides-extras = ["crewai", "langgraph", "openai"]
+provides-extras = ["crewai", "langgraph", "openai", "api"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -871,6 +875,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/84/35/9f6b2503c1fd86d068b46818bbd7329db26a87cdd8c01e0d1a9abea1104c/grpcio-1.74.0-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:3b03d8f2a07f0fea8c8f74deb59f8352b770e3900d143b3d1475effcb08eec20", size = 6491489, upload-time = "2025-07-24T18:53:55.06Z" },
     { url = "https://files.pythonhosted.org/packages/75/33/a04e99be2a82c4cbc4039eb3a76f6c3632932b9d5d295221389d10ac9ca7/grpcio-1.74.0-cp313-cp313-win32.whl", hash = "sha256:b6a73b2ba83e663b2480a90b82fdae6a7aa6427f62bf43b29912c0cfd1aa2bfa", size = 3805811, upload-time = "2025-07-24T18:53:56.798Z" },
     { url = "https://files.pythonhosted.org/packages/34/80/de3eb55eb581815342d097214bed4c59e806b05f1b3110df03b2280d6dfd/grpcio-1.74.0-cp313-cp313-win_amd64.whl", hash = "sha256:fd3c71aeee838299c5887230b8a1822795325ddfea635edd82954c1eaa831e24", size = 4489214, upload-time = "2025-07-24T18:53:59.771Z" },
+]
+
+[[package]]
+name = "gunicorn"
+version = "23.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/72/9614c465dc206155d93eff0ca20d42e1e35afc533971379482de953521a4/gunicorn-23.0.0.tar.gz", hash = "sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec", size = 375031, upload-time = "2024-08-10T20:25:27.378Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/7d/6dac2a6e1eba33ee43f318edbed4ff29151a49b5d37f080aad1e6469bca4/gunicorn-23.0.0-py3-none-any.whl", hash = "sha256:ec400d38950de4dfd418cff8328b2c8faed0edb0d517d3394e457c317908ca4d", size = 85029, upload-time = "2024-08-10T20:25:24.996Z" },
 ]
 
 [[package]]

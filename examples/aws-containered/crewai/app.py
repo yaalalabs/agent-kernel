@@ -1,5 +1,5 @@
 from ak import MemoryType
-from ak.aws import Lambda
+from ak.api import RESTAPI
 from ak.crewai import AgentModule
 from crewai import Agent
 
@@ -20,4 +20,4 @@ history_agent = Agent(
 
 AgentModule([math_agent, history_agent], memory_type=MemoryType.REDIS)
 
-handler = Lambda.handler
+runner = RESTAPI.run
