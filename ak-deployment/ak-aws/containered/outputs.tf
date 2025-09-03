@@ -7,13 +7,13 @@ output "cluster_arn" {
 }
 
 output "api_gateway_id" {
-  value = aws_api_gateway_rest_api.rest_api.id
+  value = aws_apigatewayv2_api.http_api.id
 }
 
 output "api_gateway_stage" {
-  value = aws_api_gateway_stage.stage.stage_name
+  value = aws_apigatewayv2_stage.stage.name
 }
 
 output "agent_invoke_url" {
-  value = "${aws_api_gateway_stage.stage.invoke_url}${aws_api_gateway_resource.agent_endpoint.path}"
+  value = "${try(aws_apigatewayv2_stage.stage.invoke_url, format("%s/%s", aws_apigatewayv2_api.http_api.api_endpoint, aws_apigatewayv2_stage.stage.name))}/api/${var.api_version}/${var.agent_endpoint}"
 }
