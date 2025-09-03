@@ -1,6 +1,6 @@
-# Terraform Module: lambda-docker
+# Terraform Module: ECR
 
-A Terraform module for building Docker images for AWS Lambda functions and storing them in Amazon ECR.
+A Terraform module for building Docker images for AWS Lambda functions / ECS and storing them in Amazon ECR.
 
 ## Overview
 
@@ -23,15 +23,15 @@ The module is designed for Agent Kernel deployments but can be used for any Lamb
 ## Usage
 
 ```hcl
-module "lambda_docker_image" {
-  source  = "app.terraform.io/yaalalabs/ak-lambda-docker/aws"
+module "docker_image" {
+  source  = "app.terraform.io/yaalalabs/ak-ecr/aws"
   version = "0.0.1"
 
-  region              = "us-west-2"
-  product_alias       = "myproduct"
-  env_alias           = "dev"
-  module_name         = "api"
-  source_path         = "path/to/source/code"
+  region        = "us-west-2"
+  product_alias = "myproduct"
+  env_alias     = "dev"
+  module_name   = "api"
+  source_path   = "path/to/source/code"
 }
 ```
 

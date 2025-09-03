@@ -11,8 +11,8 @@ locals {
   vpc_id                     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
   vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
   subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_host                 = var.redis_host != null ? var.redis_host : module.redis.endpoint
-  redis_port                 = var.redis_host != null ? var.redis_port : module.redis.port
+  redis_host                 = var.redis_host != null ? var.redis_host : module.redis[0].endpoint
+  redis_port                 = var.redis_host != null ? var.redis_port : module.redis[0].port
 }
 
 module "vpc" {
@@ -54,8 +54,8 @@ module source_package {
 
 module docker_image {
   count         = (var.package_type == "Image") ? 1 : 0
-  source        = "app.terraform.io/yaalalabs/ak-lambda-docker/aws"
-  version       = "0.1.0-a1"
+  source        = "../modules/ecr"
+  # version       = "0.1.0-a1"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -68,7 +68,7 @@ module "redis" {
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
-  vpc_cidr      = var.vpc_cidr
-  vpc_id        = var.vpc_id
-  subnet_ids    = var.private_subnet_ids
+  vpc_cidr      = local.vpc_cidr
+  vpc_id        = local.vpc_id
+  subnet_ids    = local.subnet_ids
 }

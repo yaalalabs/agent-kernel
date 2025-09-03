@@ -29,15 +29,15 @@ module "redis" {
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
-  vpc_cidr      = var.vpc_cidr
-  vpc_id        = var.vpc_id
-  subnet_ids    = var.private_subnet_ids
+  vpc_cidr      = local.vpc_cidr
+  vpc_id        = local.vpc_id
+  subnet_ids    = local.subnet_ids
 }
 
 module "docker_image" {
   count         = 1
-  source        = "app.terraform.io/yaalalabs/ak-lambda-docker/aws"
-  version       = "0.1.0-a1"
+  source        = "../modules/ecr"
+  # version       = "0.1.0-a1"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
