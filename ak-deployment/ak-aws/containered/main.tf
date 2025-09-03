@@ -1,19 +1,17 @@
-provider "aws" {
-  region = var.region
-}
+provider "aws" { region = var.region }
 
 terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "6.11.0" # pin terraform provider version
+      version = "6.11.0"
     }
     docker = {
       source  = "kreuzwerker/docker"
       version = "3.6.2"
     }
   }
-  required_version = ">= 1.9.5" # pin terraform version
+  required_version = ">= 1.9.5"
 }
 
 provider "docker" {
