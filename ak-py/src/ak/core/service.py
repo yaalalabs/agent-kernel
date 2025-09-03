@@ -18,6 +18,11 @@ class AgentService:
     _runtime: Runtime = Runtime.instance(_memory_type)
 
     @classmethod
+    def reset(cls):
+        _agent = None
+        _session = None
+
+    @classmethod
     def _select(cls, session_id: str | None, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
@@ -102,3 +107,7 @@ class AgentService:
             return cls._session.id
         else:
             return session_id
+
+    @staticmethod
+    def get_runtime() -> Runtime:
+        return AgentService._runtime

@@ -26,6 +26,12 @@ app.add_middleware(
 )
 
 
+class RunRequest(BaseModel):
+    prompt: str
+    agent: Optional[str] = None
+    session_id: Optional[str] = None
+
+
 class RESTRequestHandler(AgentService):
     """
     A simple REST API handler that exposes endpoints to interact with Agent Kernel.
@@ -38,12 +44,42 @@ class RESTRequestHandler(AgentService):
 
     _log = logging.getLogger("ak.rest.restapi")
 
+    @classmethod
+    async def run(cls, req: RunRequest):
+        """
+        Async method to run the agent.
+        :param req: Request an object containing the prompt and optional agent name.
+        """
+        try:
+            cls._select(req.session_id, req.agent)
+            if not cls._agent:
+                cls._select(req.session_id)
+                if not cls._agent:
+                    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail={
+                        "error": "No agent available",
+                        "session_id": cls._get_response_session_id(req.session_id)
+                    })
+            result = await cls._run_agent(req.prompt)
 
-# Pydantic request model
-class RunRequest(BaseModel):
-    prompt: str
-    agent: Optional[str] = None
-    session_id: Optional[str] = None
+            if hasattr(result, 'raw'):
+                payload = {
+                    "result": str(result.raw),
+                    "session_id": cls._get_response_session_id(req.session_id)
+                }
+            else:
+                payload = {
+                    "result": result,
+                    "session_id": cls._get_response_session_id(req.session_id)
+                }
+            return payload
+        except HTTPException:
+            raise
+        except Exception as e:
+            cls._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail={
+                "error": str(e),
+                "session_id": cls._get_response_session_id(None)
+            })
 
 
 # FastAPI routes
@@ -54,48 +90,12 @@ def health():
 
 @app.get("/agents")
 def list_agents():
-    return {"agents": list(RESTRequestHandler._runtime.agents().keys())}
+    return {"agents": list(RESTRequestHandler.get_runtime().agents().keys())}
 
 
 @app.post("/run")
-async def run(req: RunRequest, load: Optional[str] = None):
-    try:
-        # Optional dynamic module load via query parameter ?load=module.path
-        if load:
-            RESTRequestHandler._load(req.session_id, load)
-
-        RESTRequestHandler._select(req.session_id, req.agent)
-        if not RESTRequestHandler._agent:
-            RESTRequestHandler._select(req.session_id)
-            if not RESTRequestHandler._agent:
-                raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail={
-                    "error": "No agent available",
-                    "session_id": RESTRequestHandler._get_response_session_id(req.session_id)
-                })
-
-        # Run agent
-        result = await RESTRequestHandler._run_agent(req.prompt)
-
-        # Normalize result similar to Lambda
-        if hasattr(result, 'raw'):
-            payload = {
-                "result": str(result.raw),
-                "session_id": RESTRequestHandler._get_response_session_id(req.session_id)
-            }
-        else:
-            payload = {
-                "result": result,
-                "session_id": RESTRequestHandler._get_response_session_id(req.session_id)
-            }
-        return payload
-    except HTTPException:
-        raise
-    except Exception as e:
-        RESTRequestHandler._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail={
-            "error": str(e),
-            "session_id": RESTRequestHandler._get_response_session_id(None)
-        })
+async def run(req: RunRequest):
+    return await RESTRequestHandler.run(req)
 
 
 class RESTAPI:
