@@ -119,6 +119,23 @@ data "aws_s3_object" "signed_component_code" {
   ]
 }
 
+resource "aws_security_group" "lambda" {
+  name        = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  description = "Security group for Lambda functions"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  }
+}
+
 module "lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
@@ -166,22 +183,4 @@ module "lambda_deployment" {
 
   kms_key_arn                = local.lambda_kms_key_arn != null ? local.lambda_kms_key_arn : null
   cloudwatch_logs_kms_key_id = local.cloudwatch_kms_key_arn != null ? local.cloudwatch_kms_key_arn : null
-}
-
-# Create security group for Lambda
-resource "aws_security_group" "lambda" {
-  name        = "${var.product_alias}-${var.env_alias}-lambda-sg"
-  description = "Security group for Lambda functions"
-  vpc_id      = local.vpc_id
-
-  egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.product_alias}-${var.env_alias}-lambda-sg"
-  }
 }
