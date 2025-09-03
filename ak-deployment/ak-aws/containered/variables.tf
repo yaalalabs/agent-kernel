@@ -131,7 +131,7 @@ variable "container_type" {
   default     = "ecs"
   validation {
     condition = contains(["ecs", "eks"], lower(var.container_type))
-    error_message = "Container type must be either 'efs' or 'eks'."
+    error_message = "Container type must be either 'ecs' or 'eks'."
   }
 }
 

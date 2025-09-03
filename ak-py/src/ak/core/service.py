@@ -19,8 +19,8 @@ class AgentService:
 
     @classmethod
     def reset(cls):
-        _agent = None
-        _session = None
+        cls._agent = None
+        cls._session = None
 
     @classmethod
     def _select(cls, session_id: str | None, name: str | None = None):
