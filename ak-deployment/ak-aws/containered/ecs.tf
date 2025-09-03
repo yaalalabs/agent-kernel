@@ -4,14 +4,6 @@ module "ecs" {
 
   cluster_name = "${var.product_alias}-${var.env_alias}-${var.module_name}"
 
-  fargate_capacity_providers = {
-    FARGATE = {
-      default_capacity_provider_strategy = {
-        base   = 0
-        weight = 1
-      }
-    }
-  }
   services = {
     app = {
       cpu                = var.ecs_cpu
@@ -22,47 +14,57 @@ module "ecs" {
       platform_version   = "LATEST"
       subnet_ids         = local.subnet_ids
       security_group_ids = [aws_security_group.ecs_service.id]
+
       load_balancer = {
-        target_group_arn = aws_lb_target_group.app.arn
-        container_name   = "app"
-        container_port   = var.ecs_container_port
+        service = {
+          target_group_arn = aws_lb_target_group.app.arn
+          container_name   = "app"
+          container_port   = var.ecs_container_port
+        }
       }
-      task_definition = {
-        family       = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-        network_mode = "awsvpc"
-        requires_compatibilities = ["FARGATE"]
-        cpu          = var.ecs_cpu
-        memory       = var.ecs_memory
-        container_definitions = {
-          app = {
-            image                    = module.docker_image[0].docker_image_uri
-            essential                = true
-            readonly_root_filesystem = false
-            port_mappings = [
-              {
-                name          = "app",
-                containerPort = var.ecs_container_port,
-                hostPort      = var.ecs_container_port,
-                protocol      = "tcp",
-                appProtocol   = "http"
-              }
-            ]
-            environment = merge(var.environment_variables, {
-              AK_REDIS_HOST   = local.redis_host,
-              AK_REDIS_PORT = tostring(local.redis_port),
-              AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
-            })
-            health_check = {
-              command = ["CMD-SHELL", "curl -sf http://localhost:${var.ecs_container_port}${var.ecs_health_check_path} || exit 1"], interval = 30,
-              timeout                                                                                                                        = 5,
-              retries                                                                                                                        = 3,
-              startPeriod                                                                                                                    = 10
+
+
+      container_definitions = {
+        app = {
+          cpu                      = var.ecs_cpu
+          memory                   = var.ecs_memory
+          image                    = module.docker_image[0].docker_image_uri
+          essential                = true
+          readonly_root_filesystem = false
+          port_mappings = [
+            {
+              name          = "app",
+              containerPort = var.ecs_container_port,
+              hostPort      = var.ecs_container_port,
+              protocol      = "tcp",
+              appProtocol   = "http"
             }
-            log_configuration = {
-              logDriver = "awslogs", options = {
-                awslogs-group         = "/ecs/${var.product_alias}-${var.env_alias}-${var.module_name}", awslogs-region = var.region,
-                awslogs-stream-prefix = "ecs"
-              }
+          ]
+          enable_cloudwatch_logging = true
+          environment = [
+            for k, v in merge(var.environment_variables, {
+              AK_REDIS_HOST   = local.redis_host,
+              AK_REDIS_PORT   = tostring(local.redis_port),
+              AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
+            }) : {
+              name  = k
+              value = v
+            }
+          ]
+
+          health_check = {
+            command = ["CMD-SHELL", "curl -sf http://localhost:${var.ecs_container_port}${var.ecs_health_check_path} || exit 1"],
+            interval    = 30,
+            timeout     = 5,
+            retries     = 3,
+            startPeriod = 10
+          }
+          log_configuration = {
+            logDriver = "awslogs",
+            options = {
+              awslogs-group         = "/ecs/${var.product_alias}-${var.env_alias}-${var.module_name}",
+              awslogs-region        = var.region,
+              awslogs-stream-prefix = "ecs"
             }
           }
         }
@@ -70,6 +72,7 @@ module "ecs" {
     }
   }
 }
+
 
 resource "aws_security_group" "ecs_alb" {
   name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"

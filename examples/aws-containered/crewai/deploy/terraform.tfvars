@@ -1,4 +1,4 @@
 region        = "ap-southeast-2"
-product_alias = "ak-crewai-serverless"
+product_alias = "ak-crewai-contd"
 env_alias     = "dev"
 module_name   = "examples"
