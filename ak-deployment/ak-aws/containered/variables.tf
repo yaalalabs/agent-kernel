@@ -116,7 +116,7 @@ variable "ecs_desired_count" {
 variable "ecs_container_port" {
   type        = number
   description = "Container port exposed by the ECS service"
-  default     = 8080
+  default     = 8000
 }
 
 variable "ecs_health_check_path" {

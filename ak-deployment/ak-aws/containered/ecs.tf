@@ -1,3 +1,9 @@
+resource "aws_service_discovery_http_namespace" "this" {
+  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  description = "CloudMap namespace for ${var.product_alias}-${var.env_alias}-${var.module_name}"
+  tags        = var.tags
+}
+
 module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"
   version = "6.3.0"
@@ -23,6 +29,19 @@ module "ecs" {
         }
       }
 
+      service_connect_configuration = {
+        namespace = aws_service_discovery_http_namespace.this.arn
+        service = [
+          {
+            client_alias = {
+              port     = var.ecs_container_port
+              dns_name = "app"
+            }
+            port_name      = "app"
+            discovery_name = "app"
+          }
+        ]
+      }
 
       container_definitions = {
         app = {
@@ -31,20 +50,19 @@ module "ecs" {
           image                    = module.docker_image[0].docker_image_uri
           essential                = true
           readonly_root_filesystem = false
-          port_mappings = [
+          portMappings = [
             {
               name          = "app",
               containerPort = var.ecs_container_port,
               hostPort      = var.ecs_container_port,
               protocol      = "tcp",
-              appProtocol   = "http"
             }
           ]
           enable_cloudwatch_logging = true
-          environment = [
+          environment               = [
             for k, v in merge(var.environment_variables, {
               AK_REDIS_HOST   = local.redis_host,
-              AK_REDIS_PORT   = tostring(local.redis_port),
+              AK_REDIS_PORT = tostring(local.redis_port),
               AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
             }) : {
               name  = k
@@ -72,7 +90,6 @@ module "ecs" {
     }
   }
 }
-
 
 resource "aws_security_group" "ecs_alb" {
   name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
@@ -119,10 +136,11 @@ resource "aws_lb" "app" {
 }
 
 resource "aws_lb_target_group" "app" {
-  name     = "${var.product_alias}-${var.env_alias}-tg"
-  port     = var.ecs_container_port
-  protocol = "HTTP"
-  vpc_id   = local.vpc_id
+  name        = "${var.product_alias}-${var.env_alias}-tg"
+  port        = var.ecs_container_port
+  protocol    = "HTTP"
+  vpc_id      = local.vpc_id
+  target_type = "ip"
   health_check {
     path                = var.ecs_health_check_path
     healthy_threshold   = 2
@@ -132,6 +150,8 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200-399"
   }
 }
+
+
 
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app.arn

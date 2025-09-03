@@ -14,6 +14,7 @@ module "containered_agents" {
   redis_host           = "ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com"
   private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
   product_display_name = "AK CrewAI Containered Example"
+  ecs_container_port   = 8000
 
   # Environment variables passed to container
   environment_variables = {
