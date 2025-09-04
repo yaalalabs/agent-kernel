@@ -5,7 +5,7 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent, Module, Runner, Session, MemoryType
+from ..core import Agent as BaseAgent, Module, Runner, Session
 
 FRAMEWORK = "crewai"
 
@@ -140,11 +140,11 @@ class CrewAIModule(Module):
     CrewAIModule class provides a module for CrewAI based agents.
     """
 
-    def __init__(self, agents: list[Agent], memory_type: MemoryType = MemoryType.IN_MEMORY):
+    def __init__(self, agents: list[Agent]):
         """
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
         """
         runner = CrewAIRunner()
         super().__init__(
-            list(map(lambda agent: CrewAIAgent(agent.role, runner, agent, agents), agents)), memory_type)
+            list(map(lambda agent: CrewAIAgent(agent.role, runner, agent, agents), agents)))

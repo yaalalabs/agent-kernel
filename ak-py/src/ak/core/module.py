@@ -1,5 +1,5 @@
 from .base import Agent
-from .runtime import Runtime, MemoryType
+from .runtime import Runtime
 
 
 class Module:
@@ -11,7 +11,7 @@ class Module:
     framework, allowing the agents to be registered and managed in a framework agnostic manner.
     """
 
-    def __init__(self, agents: list[Agent], memory_type: MemoryType = MemoryType.IN_MEMORY):
+    def __init__(self, agents: list[Agent]):
         """
         Initializes a Module instance.
         :param agents: List of agents in the module.
@@ -19,7 +19,7 @@ class Module:
         """
         self._agents = agents
         for agent in agents:
-            Runtime.instance(memory_type).register(agent)
+            Runtime.instance().register(agent)
 
     @property
     def agents(self) -> list[Agent]:
