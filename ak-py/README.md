@@ -51,7 +51,7 @@ Below is the minimal mental model:
 
 ### Example: Define and register agents
 
-You typically create a Python module that constructs your framework agents and registers them with Agent Kernel by creating an AgentModule. Importing this module will register agents in the Runtime.
+You typically create a Python module that constructs your framework agents and registers them with Agent Kernel by creating an agent module. Importing this module will register agents in the Runtime.
 
 CrewAI example (pseudo/minimal):
 
@@ -59,14 +59,14 @@ CrewAI example (pseudo/minimal):
 # demo.py
 from crewai import Agent as CrewAgent
 from ak.cli import CLI
-from ak.crewai import AgentModule  # CrewAIModule aliased as AgentModule
+from ak.crewai import CrewAIModule
 
 researcher = CrewAgent(role="researcher", goal="Find facts")
 writer = CrewAgent(role="writer", goal="Summarize findings")
 
 # Register both under Agent Kernel. The module maps each Crew agent to a CrewAIAgent
 # and registers them with the global Runtime.
-module = AgentModule([researcher, writer])
+module = CrewAIModule([researcher, writer])
 if __name__ == "__main__":
     CLI.main()
 ```
@@ -77,14 +77,14 @@ LangGraph example (pseudo/minimal):
 # demo.py
 from langgraph.graph import StateGraph
 from ak.cli import CLI
-from ak.langgraph import AgentModule  # LangGraphModule aliased as AgentModule
+from ak.langgraph import LangGraphModule
 
 # Build your graph and compile it to CompiledStateGraph with a `.name`
 sg = StateGraph(...)
 compiled = sg.compile()
 compiled.name = "assistant"  # ensure a name is set
 
-module = AgentModule([compiled])
+module = LangGraphModule([compiled])
 if __name__ == "__main__":
     CLI.main()
 ```
@@ -96,12 +96,12 @@ OpenAI Agents SDK example (pseudo/minimal):
 from openai import OpenAI
 from agents import Agent as OpenAIAgent  # from openai-agents SDK
 from ak.cli import CLI
-from ak.openai import AgentModule  # OpenAIModule aliased as AgentModule
+from ak.openai import OpenAIModule
 
 client = OpenAI()
 assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
 
-module = AgentModule([assistant])
+module = OpenAIModule([assistant])
 if __name__ == "__main__":
     CLI.main()
 ```
@@ -122,7 +122,7 @@ uv run demo.py
 
 Once inside, available commands:
 - !h, !help — Show help
-- !ld, !load <module_name> — Import a Python module that instantiates an AgentModule (e.g., my_crewai_agents)
+- !ld, !load <module_name> — Import a Python module that instantiates an agent module (e.g., my_crewai_agents)
 - !ls, !list — List registered agents
 - !s, !select <agent_name> — Select an agent by name
 - !n, !new — Start a new session
@@ -148,12 +148,12 @@ OpenAI Agents SDK lambda example (pseudo/minimal):
 from openai import OpenAI
 from agents import Agent as OpenAIAgent  # from openai-agents SDK
 from ak.aws import Lambda
-from ak.openai import AgentModule  # OpenAIModule aliased as AgentModule
+from ak.openai import OpenAIModule
 
 client = OpenAI()
 assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
 
-module = AgentModule([assistant])
+module = OpenAIModule([assistant])
 handler = Lambda.handler
 ```
 
@@ -203,4 +203,4 @@ Formatting and static checks (configured in pyproject.toml):
 
 - Sessions: Use ak.ak.Session to keep per-conversation or per-job state across runs. Framework adapters manage their own session storage within that Session via namespaced keys (e.g., "crewai", "langgraph", "openai").
 - Adapters: See ak/crewai, ak/langgraph, ak/openai for reference implementations. To add a new framework, implement a Runner and an Agent wrapper, then a Module that registers them with Runtime.
-- Runtime: Agents are registered globally; Runtime.load(module_name) imports a module, which should instantiate an AgentModule to register its agents.
+- Runtime: Agents are registered globally; Runtime.load(module_name) imports a module, which should instantiate an agent module to register its agents.

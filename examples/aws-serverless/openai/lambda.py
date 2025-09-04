@@ -1,6 +1,6 @@
 from agents import Agent
 from ak.aws import Lambda
-from ak.openai import AgentModule
+from ak.openai import OpenAIModule
 
 math_agent = Agent(
     name="math",
@@ -21,6 +21,6 @@ triage_agent = Agent(
     handoffs=[history_agent, math_agent],
 )
 
-AgentModule([triage_agent, math_agent, history_agent])
+OpenAIModule([triage_agent, math_agent, history_agent])
 
 handler = Lambda.handler

@@ -1,7 +1,7 @@
 from agents import Agent
 
 from ak.cli import CLI
-from ak.openai import AgentModule
+from ak.openai import OpenAIModule
 
 math_agent = Agent(
     name="math",
@@ -10,19 +10,19 @@ math_agent = Agent(
         If prompted for anything else you refuse to answer.",
 )
 
-history_agent = Agent(
-    name="history",
-    handoff_description="Specialist agent for historical questions",
-    instructions="You provide assistance with historical queries. Explain important events and context clearly.",
+general_agent = Agent(
+    name="general",
+    handoff_description="Agent for general questions",
+    instructions="You provide assistance with general queries. Explain important details and context clearly.",
 )
 
 triage_agent = Agent(
     name="triage",
     instructions="You determine which agent to use based on the user's question.",
-    handoffs=[history_agent, math_agent],
+    handoffs=[general_agent, math_agent],
 )
 
-AgentModule([triage_agent, math_agent, history_agent])
+OpenAIModule([triage_agent, math_agent, general_agent])
 
 if __name__ == "__main__":
     CLI.main()
