@@ -15,7 +15,6 @@ class Module:
         """
         Initializes a Module instance.
         :param agents: List of agents in the module.
-        :param memory_type: Memory type for the module.
         """
         self._agents = agents
         for agent in agents:
