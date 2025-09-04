@@ -82,13 +82,13 @@ wheels = [
 [[package]]
 name = "ak"
 version = "0.1.0a1"
-source = { registry = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple" }
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "redis" },
 ]
-sdist = { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1.tar.gz", hash = "sha256:711fe589d0b1601ae5d0e41700c48cc5e8856c3aefb767f5147d5c7f32264e2e" }
+sdist = { path = "ak-0.1.0a1.tar.gz" }
 wheels = [
-    { url = "https://yaalalabs-110597261937.d.codeartifact.ap-southeast-2.amazonaws.com/pypi/agent-kernel/simple/ak/0.1.0a1/ak-0.1.0a1-py3-none-any.whl", hash = "sha256:fb8e6311b87feb2f426918c5c22ddabd8e10619d4767b3667f387d276ba76772" },
+    { path = "ak-0.1.0a1-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
