@@ -1,5 +1,5 @@
 from ak.aws import Lambda
-from ak.langgraph import AgentModule
+from ak.langgraph import LangGraphModule
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
@@ -42,6 +42,6 @@ triage_agent = create_supervisor(
     )
 ).compile(name="triage")
 
-AgentModule([triage_agent, history_agent, math_agent])
+LangGraphModule([triage_agent, history_agent, math_agent])
 
 handler = Lambda.handler

@@ -1,7 +1,7 @@
 from crewai import Agent
 
 from ak.cli import CLI
-from ak.crewai import AgentModule
+from ak.crewai import CrewAIModule
 
 math_agent = Agent(
     role="math",
@@ -11,14 +11,14 @@ math_agent = Agent(
     verbose=False,
 )
 
-history_agent = Agent(
-    role="history",
-    goal="Specialist agent for historical questions",
-    backstory="You provide assistance with historical queries. Explain important events and context clearly.",
+general_agent = Agent(
+    role="general",
+    goal="Agent for general questions",
+    backstory="You provide assistance with general queries. Explain important details and context clearly.",
     verbose=False,
 )
 
-AgentModule([math_agent, history_agent])
+CrewAIModule([math_agent, general_agent])
 
 if __name__ == "__main__":
     CLI.main()

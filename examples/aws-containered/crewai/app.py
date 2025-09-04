@@ -1,5 +1,5 @@
 from ak.api import RESTAPI
-from ak.crewai import AgentModule
+from ak.crewai import CrewAIModule
 from crewai import Agent
 
 math_agent = Agent(
@@ -17,6 +17,6 @@ history_agent = Agent(
     verbose=False,
 )
 
-AgentModule([math_agent, history_agent])
+CrewAIModule([math_agent, history_agent])
 
 runner = RESTAPI.run
