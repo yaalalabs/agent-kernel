@@ -1,5 +1,7 @@
 import importlib
 import logging
+import os
+import traceback
 from enum import StrEnum
 from typing import Any
 
@@ -8,7 +10,7 @@ from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
 from .sessions.redis import RedisDriver
 
 
-class MemoryType(StrEnum):
+class _MemoryType(StrEnum):
     IN_MEMORY = "IN_MEMORY"
     REDIS = "REDIS"
 
@@ -22,13 +24,13 @@ class Runtime:
     _instance = None
     _agents = {}
     _sessions: SessionStore = None
-    _memory_type: MemoryType = None
+    _memory_type: _MemoryType = None
 
-    def __init__(self, memory_type: MemoryType = MemoryType.IN_MEMORY):
+    def __init__(self, memory_type: _MemoryType = _MemoryType.IN_MEMORY):
         Runtime._memory_type = memory_type
         if Runtime._instance is not None:
             raise Exception("Runtime is a singleton class")
-        if memory_type == MemoryType.REDIS:
+        if memory_type == _MemoryType.REDIS:
             self._sessions = RedisSessionStore(RedisDriver())
             self._log.debug("Using Redis session store")
         else:
@@ -37,11 +39,16 @@ class Runtime:
         Runtime._instance = self
 
     @staticmethod
-    def instance(memory_type: MemoryType = MemoryType.IN_MEMORY) -> "Runtime":
+    def instance() -> "Runtime":
         if Runtime._instance is None:
+            env_mem = os.getenv("AK_MEMORY_TYPE")
+            try:
+                memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
+            except ValueError:
+                Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
+                Runtime._log.warning(traceback.format_exc())
+                memory_type = _MemoryType.IN_MEMORY
             Runtime(memory_type)
-        if memory_type != Runtime._memory_type:
-            raise Exception("Runtime already initialized with different memory type")
         return Runtime._instance
 
     def load(self, module: str) -> None:

@@ -1,9 +1,7 @@
 import logging
-import os
 import uuid
 
 from ..core import Runtime, Agent, Session
-from ..core.runtime import MemoryType
 
 
 class AgentService:
@@ -13,9 +11,7 @@ class AgentService:
     _log = logging.getLogger("ak.core.service.agentservice")
     _agent: Agent | None = None
     _session: Session | None = None
-    _env_mem = os.getenv("AK_MEMORY")
-    _memory_type: MemoryType = MemoryType(_env_mem) if _env_mem else MemoryType.REDIS
-    _runtime: Runtime = Runtime.instance(_memory_type)
+    _runtime: Runtime = Runtime.instance()
 
     @classmethod
     def reset(cls):

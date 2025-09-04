@@ -4,7 +4,6 @@ from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
 from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
-from ..core import MemoryType
 
 FRAMEWORK = "openai"
 
@@ -114,10 +113,10 @@ class OpenAIModule(Module):
     OpenAIModule class provides a module for OpenAI Agent SDK based agents.
     """
 
-    def __init__(self, agents: list[Agent], memory_type: MemoryType = MemoryType.IN_MEMORY):
+    def __init__(self, agents: list[Agent]):
         """
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         """
         runner = OpenAIRunner()
-        super().__init__(list(map(lambda agent: OpenAIAgent(agent.name, runner, agent), agents)), memory_type)
+        super().__init__(list(map(lambda agent: OpenAIAgent(agent.name, runner, agent), agents)))

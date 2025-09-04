@@ -146,6 +146,17 @@ variable "redis_port" {
   default     = 6379
 }
 
+variable "agent_memory_type" {
+  #TODO Drive the redis cluster creation via this variable
+  type        = string
+  description = "Agent memory type. Accepted values are redis or in_memory"
+  validation {
+    condition = contains(["redis", "in_memory"], lower(var.agent_memory_type))
+    error_message = "Memory type must be either 'redis' or 'in_memory'."
+  }
+  default = "in_memory"
+}
+
 variable "private_subnet_cidrs" {
   type = list(string)
   description = "CIDR blocks for the private subnets"
