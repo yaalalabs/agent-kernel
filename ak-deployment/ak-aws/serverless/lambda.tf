@@ -2,7 +2,6 @@ locals {
   package_file_name = "source_code.zip"
 }
 
-
 resource "aws_iam_role" "lambda_role" {
   name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
   assume_role_policy = jsonencode({
@@ -32,53 +31,6 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution_role_attachmen
 resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
-}
-
-module "vpc" {
-  source               = "app.terraform.io/yaalalabs/ak-vpc/aws"
-  version              = "0.1.0-a1"
-  count                = var.vpc_id == null ? 1 : 0
-  vpc_cidr             = var.vpc_cidr
-  public_subnet_cidrs  = var.public_subnet_cidrs
-  private_subnet_cidrs = var.private_subnet_cidrs
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  tags                 = var.tags
-}
-
-
-module source_storage {
-  count                = (var.package_type == "S3Zip") ? 1 : 0
-  source               = "app.terraform.io/yaalalabs/ak-s3/aws"
-  version              = "0.1.0-a1"
-  region               = var.region
-  env_alias            = var.env_alias
-  is_production        = var.is_production
-  product_alias        = var.product_alias
-  product_display_name = var.product_display_name
-  s3_kms_key_id        = ""
-}
-
-module source_package {
-  count            = (var.package_type == "S3Zip") ? 1 : 0
-  source           = "app.terraform.io/yaalalabs/ak-lambda-package/aws"
-  version          = "0.1.0-a1"
-  env_alias        = var.env_alias
-  module_name      = var.module_name
-  package_dir_path = var.package_path
-  product_alias    = var.product_alias
-  s3_bucket        = module.source_storage[0].source_storage_s3_bucket
-  depends_on = [module.source_storage]
-}
-
-module docker_image {
-  count         = (var.package_type == "Image") ? 1 : 0
-  source        = "app.terraform.io/yaalalabs/ak-lambda-docker/aws"
-  version       = "0.1.0-a1"
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  source_path   = var.package_path
 }
 
 data "aws_s3_object" "source_code" {
@@ -117,6 +69,23 @@ data "aws_s3_object" "signed_component_code" {
   depends_on = [
     aws_signer_signing_job.handler_lambda_signing_job[0]
   ]
+}
+
+resource "aws_security_group" "lambda" {
+  name        = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  description = "Security group for Lambda functions"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port = 0
+    to_port   = 0
+    protocol  = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  }
 }
 
 module "lambda_deployment" {
@@ -166,22 +135,4 @@ module "lambda_deployment" {
 
   kms_key_arn                = local.lambda_kms_key_arn != null ? local.lambda_kms_key_arn : null
   cloudwatch_logs_kms_key_id = local.cloudwatch_kms_key_arn != null ? local.cloudwatch_kms_key_arn : null
-}
-
-# Create security group for Lambda
-resource "aws_security_group" "lambda" {
-  name        = "${var.product_alias}-${var.env_alias}-lambda-sg"
-  description = "Security group for Lambda functions"
-  vpc_id      = local.vpc_id
-
-  egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.product_alias}-${var.env_alias}-lambda-sg"
-  }
 }

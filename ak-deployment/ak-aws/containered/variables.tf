@@ -19,77 +19,20 @@ variable "product_display_name" {
   default     = "An Agent Kernel deployment"
 }
 
-variable "module_type" {
-  type        = string
-  description = "Module type"
-  default     = "python"
-}
-
 variable "module_name" {
   type        = string
   description = "Module name"
 }
 
-variable "is_production" {
-  description = "Is production"
-  type        = bool
-  default     = false
-}
-
 variable "package_path" {
   type        = string
-  description = "Zip package path or Docker image source path"
-}
-
-variable "event_source_mapping" {
-  description = "Event source mapping"
-  type        = any
-  default = []
+  description = "Docker image source path (app root)"
 }
 
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
   default = {}
-}
-
-variable "timeout" {
-  description = "Lambda timeout"
-  type        = number
-  default     = 30
-}
-
-variable "memory_size" {
-  description = "Lambda memory size"
-  type        = number
-  default     = 128
-}
-
-variable "function_name" {
-  description = "Lambda function name"
-  type        = string
-}
-
-variable "function_description" {
-  description = "Lambda function description"
-  type        = string
-}
-
-variable "handler_path" {
-  description = "Lambda handler path"
-  type        = string
-}
-
-variable "package_type" {
-  description = "Lambda deployment type Image/LocalZip/S3Zip"
-  type        = string
-  default     = "LocalZip"
-}
-
-variable "layers" {
-  description = "Lambda layers"
-  type = list(string)
-  default = []
 }
 
 variable "api_version" {
@@ -122,6 +65,12 @@ variable "public_subnet_cidrs" {
   default = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
+variable "private_subnet_cidrs" {
+  type = list(string)
+  description = "CIDR blocks for the private subnets"
+  default = ["10.0.3.0/24", "10.0.4.0/24"]
+}
+
 variable "vpc_id" {
   type        = string
   description = "VPC ID. If not provided, a new one will be created"
@@ -146,10 +95,44 @@ variable "redis_port" {
   default     = 6379
 }
 
-variable "private_subnet_cidrs" {
-  type = list(string)
-  description = "CIDR blocks for the private subnets"
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
+variable "ecs_cpu" {
+  type        = number
+  description = "Fargate CPU units"
+  default     = 256
+}
+
+variable "ecs_memory" {
+  type        = number
+  description = "Fargate memory in MiB"
+  default     = 512
+}
+
+variable "ecs_desired_count" {
+  type        = number
+  description = "Desired count for ECS service"
+  default     = 1
+}
+
+variable "ecs_container_port" {
+  type        = number
+  description = "Container port exposed by the ECS service"
+  default     = 8000
+}
+
+variable "ecs_health_check_path" {
+  type        = string
+  description = "Health check path for ALB target group"
+  default     = "/health"
+}
+
+variable "container_type" {
+  type        = string
+  description = "Container type (ECS or EKS)"
+  default     = "ecs"
+  validation {
+    condition = contains(["ecs", "eks"], lower(var.container_type))
+    error_message = "Container type must be either 'ecs' or 'eks'."
+  }
 }
 
 data "aws_ecr_authorization_token" "token" {}
