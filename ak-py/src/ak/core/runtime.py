@@ -1,6 +1,7 @@
 import importlib
 import logging
 import os
+import traceback
 from enum import StrEnum
 from typing import Any
 
@@ -41,7 +42,12 @@ class Runtime:
     def instance() -> "Runtime":
         if Runtime._instance is None:
             env_mem = os.getenv("AK_MEMORY_TYPE")
-            memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
+            try:
+                memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
+            except ValueError:
+                Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
+                Runtime._log.warning(traceback.format_exc())
+                memory_type = _MemoryType.IN_MEMORY
             Runtime(memory_type)
         return Runtime._instance
 
