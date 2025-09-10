@@ -1,12 +1,12 @@
 import importlib
 import logging
-import os
 import traceback
 from enum import StrEnum
 from types import ModuleType
 from typing import Any
 
 from .base import Agent, Session
+from .config import AKConfig
 from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
 from .sessions.redis import RedisDriver
 
@@ -42,13 +42,14 @@ class Runtime:
     @staticmethod
     def instance() -> "Runtime":
         if Runtime._instance is None:
-            env_mem = os.getenv("AK_MEMORY_TYPE")
+            env_mem = AKConfig.get().session.type.upper()
             try:
                 memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
             except ValueError:
                 Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
                 Runtime._log.warning(traceback.format_exc())
                 memory_type = _MemoryType.IN_MEMORY
+            Runtime._log.debug(f"Using memory type: {memory_type}")
             Runtime(memory_type)
         return Runtime._instance
 

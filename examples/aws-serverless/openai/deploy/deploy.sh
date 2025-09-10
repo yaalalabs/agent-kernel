@@ -13,6 +13,7 @@ create_deployment_package() {
       uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist ak[openai,aws] || true
     fi
     cp -r lambda.py dist/
+    cp -r config.yaml dist/
     cd dist && zip -r ../dist.zip .
     popd || exit 1
 }

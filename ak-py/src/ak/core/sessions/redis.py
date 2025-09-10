@@ -1,5 +1,4 @@
 import logging
-import os
 import pickle
 import time
 import traceback
@@ -9,6 +8,7 @@ import redis
 
 from .base import SessionStore
 from ..base import Session
+from ..config import AKConfig
 
 
 class RedisDriver:
@@ -19,9 +19,9 @@ class RedisDriver:
 
     def __init__(self):
         self._log = logging.getLogger("ak.core.sessions.redis.util")
-        self._url = os.getenv("AK_REDIS_URL")
-        self._prefix = os.getenv("AK_REDIS_PREFIX", "ak:sessions:")
-        self._ttl = int(os.getenv("AK_REDIS_SESSION_TTL", "604800"))
+        self._url = AKConfig.get().session.redis.url
+        self._prefix = AKConfig.get().session.redis.prefix
+        self._ttl = int(AKConfig.get().session.redis.ttl)
 
     @property
     def client(self):
