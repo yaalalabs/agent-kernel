@@ -61,9 +61,7 @@ module "ecs" {
           enable_cloudwatch_logging = true
           environment               = [
             for k, v in merge(var.environment_variables, {
-              AK_REDIS_URL    = local.redis_url,
-              AK_REDIS_PREFIX = "${var.product_alias}:${var.env_alias}:${var.module_name}:"
-              AK_MEMORY_TYPE  = var.agent_memory_type == "in_memory" ? "IN_MEMORY" : "REDIS"
+              AK_REDIS_URL = local.redis_url,
             }) : {
               name  = k
               value = v
