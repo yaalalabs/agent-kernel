@@ -29,6 +29,7 @@ class AKConfig(BaseSettings):
         env_nested_delimiter = "_"
         env_prefix = "AK_"
         extra = "ignore"  # ignore extra fields
+        _env_ignore_empty = True
 
     @classmethod
     def get(cls) -> "AKConfig":

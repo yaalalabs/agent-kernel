@@ -124,7 +124,7 @@ module "lambda_deployment" {
   } : {}
 
   environment_variables = merge(var.environment_variables, {
-    AK_SESSION_REDIS_URL   = local.redis_url
+    AK_SESSION_REDIS_URL = local.redis_url
   })
   event_source_mapping = var.event_source_mapping
 

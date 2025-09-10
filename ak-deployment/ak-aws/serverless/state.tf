@@ -11,7 +11,7 @@ locals {
   vpc_id                     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
   vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
   subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_url                  = var.redis_url != null ? var.redis_url : module.redis[0].url
+  redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
 }
 
 module "vpc" {
@@ -63,7 +63,7 @@ module docker_image {
 
 module "redis" {
   source        = "../modules/redis"
-  count         = var.redis_url == null && var.agent_memory_type == "redis" ? 1 : 0
+  count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
