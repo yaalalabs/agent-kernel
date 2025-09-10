@@ -9,9 +9,9 @@ from pydantic_settings import BaseSettings
 
 
 class _RedisConfig(BaseModel):
-    url: str = "redis://localhost:6379"
-    ttl: int = 604800
-    prefix: str = "ak:sessions:"
+    url: str = Field(default="redis://localhost:6379", description="Redis connection URL. Use rediss:// for SSL")
+    ttl: int = Field(default=604800, description="Redis saved value TTL in seconds")
+    prefix: str = Field(default="ak:sessions:", description="Key prefix for Redis session storage")
 
 
 class _SessionStoreConfig(BaseModel):
@@ -74,7 +74,7 @@ class AKConfig(BaseSettings):
                 cur = cur[k1]
             cur[keys[-1]] = value
 
-        env_dict = {}  # dict of env defined variables
+        env_dict = {}  # dict of env defined variables. This required because there's no other way to get the environment variables into the structure
         prefix_length = len(prefix)
         for k, v in os.environ.items():
             if prefix and not k.startswith(prefix):
