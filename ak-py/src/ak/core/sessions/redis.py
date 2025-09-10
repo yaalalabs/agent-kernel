@@ -20,7 +20,6 @@ class RedisDriver:
     def __init__(self):
         self._log = logging.getLogger("ak.core.sessions.redis.util")
         self._url = os.getenv("AK_REDIS_URL")
-        self._ssl = os.getenv("AK_REDIS_SSL", "false").lower() == "true"
         self._prefix = os.getenv("AK_REDIS_PREFIX", "ak:sessions:")
         self._ttl = int(os.getenv("AK_REDIS_SESSION_TTL", "604800"))
 
@@ -59,7 +58,6 @@ class RedisDriver:
             try:
                 self._log.debug(f"Connecting to Redis using URL {self._url}")
                 client = redis.from_url(self._url,
-                                        ssl=self._ssl,
                                         decode_responses=False,
                                         socket_connect_timeout=5)
                 client.ping()
