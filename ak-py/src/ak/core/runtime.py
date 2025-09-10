@@ -3,6 +3,7 @@ import logging
 import os
 import traceback
 from enum import StrEnum
+from types import ModuleType
 from typing import Any
 
 from .base import Agent, Session
@@ -51,7 +52,7 @@ class Runtime:
             Runtime(memory_type)
         return Runtime._instance
 
-    def load(self, module: str) -> None:
+    def load(self, module: str) -> ModuleType:
         """
         Loads an agent module dynamically.
         :param module: Name of the module to load.

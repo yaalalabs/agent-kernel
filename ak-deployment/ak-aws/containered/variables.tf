@@ -83,20 +83,13 @@ variable "private_subnet_ids" {
   default     = null
 }
 
-variable "redis_host" {
+variable "redis_url" {
   type        = string
-  description = "Redis host. If not provided new redis cluster will be created"
+  description = "Redis URL. If not provided new redis cluster will be created"
   default     = null
 }
 
-variable "redis_port" {
-  type        = number
-  description = "Redis port should be provided along with the redis host"
-  default     = 6379
-}
-
 variable "agent_memory_type" {
-  #TODO Drive the redis cluster creation via this variable
   type        = string
   description = "Agent memory type. Accepted values are redis or in_memory"
   validation {
