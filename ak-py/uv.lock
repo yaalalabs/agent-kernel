@@ -84,6 +84,7 @@ name = "ak"
 version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
+    { name = "pyyaml" },
     { name = "redis" },
 ]
 
@@ -126,6 +127,7 @@ requires-dist = [
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = "~=0.6.2" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.3" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.2.3" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "redis", specifier = ">=6.4.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30.0" },
 ]

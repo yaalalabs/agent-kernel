@@ -31,7 +31,19 @@ class AKConfig(BaseSettings):
         extra = "ignore"  # ignore extra fields
 
     @classmethod
-    def load(cls, config_path: str = "config.yaml") -> "AKConfig":
+    def get(cls) -> "AKConfig":
+        return globals()["ak_config"]
+
+    @classmethod
+    def _set(cls):
+        working_dir = Path.cwd()
+        file_name = os.getenv("AK_CONFIG_PATH_OVERRIDE", "config.yaml")
+
+        config_file_path = working_dir / file_name
+        globals()["ak_config"] = cls._load(str(config_file_path))
+
+    @classmethod
+    def _load(cls, config_path: str = "config.yaml") -> "AKConfig":
         """
         Load configuration from an optional file and environment variables.
         Precedence (highest to lowest):
@@ -114,3 +126,6 @@ class AKConfig(BaseSettings):
 
         merged = deep_merge(file_dict, env_dict)
         return cls.model_validate(obj=merged)
+
+
+AKConfig._set()
