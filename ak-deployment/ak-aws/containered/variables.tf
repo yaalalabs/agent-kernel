@@ -83,27 +83,10 @@ variable "private_subnet_ids" {
   default     = null
 }
 
-variable "redis_host" {
-  type        = string
-  description = "Redis host. If not provided new redis cluster will be created"
-  default     = null
-}
-
-variable "redis_port" {
-  type        = number
-  description = "Redis port should be provided along with the redis host"
-  default     = 6379
-}
-
-variable "agent_memory_type" {
-  #TODO Drive the redis cluster creation via this variable
-  type        = string
+variable "create_redis_cluster" {
+  type        = bool
   description = "Agent memory type. Accepted values are redis or in_memory"
-  validation {
-    condition = contains(["redis", "in_memory"], lower(var.agent_memory_type))
-    error_message = "Memory type must be either 'redis' or 'in_memory'."
-  }
-  default = "in_memory"
+  default     = false
 }
 
 variable "ecs_cpu" {

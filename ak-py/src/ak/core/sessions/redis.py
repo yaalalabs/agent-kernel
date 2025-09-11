@@ -1,5 +1,4 @@
 import logging
-import os
 import pickle
 import time
 import traceback
@@ -9,6 +8,7 @@ import redis
 
 from .base import SessionStore
 from ..base import Session
+from ..config import AKConfig
 
 
 class RedisDriver:
@@ -17,23 +17,11 @@ class RedisDriver:
     """
     _redis_client = None
 
-    def __init__(
-            self,
-            ssl: bool = False,
-            url: str | None = None,
-            host: str | None = None,
-            port: int | None = None,
-            prefix: str | None = None,
-            ttl_seconds: int | None = None,
-    ):
+    def __init__(self):
         self._log = logging.getLogger("ak.core.sessions.redis.util")
-        self._prefix = prefix
-        self._url = url or os.getenv("AK_REDIS_URL")
-        self._host = host or os.getenv("AK_REDIS_HOST", "localhost")
-        self._port = int(port or os.getenv("AK_REDIS_PORT", "6379"))
-        self._ssl = ssl or (os.getenv("AK_REDIS_SSL", "false").lower() == "true")
-        self._prefix = prefix or os.getenv("AK_REDIS_PREFIX", "ak:sessions:")
-        self._ttl = ttl_seconds or int(os.getenv("AK_SESSION_TTL_SECONDS", "604800"))
+        self._url = AKConfig.get().session.redis.url
+        self._prefix = AKConfig.get().session.redis.prefix
+        self._ttl = int(AKConfig.get().session.redis.ttl)
 
     @property
     def client(self):
@@ -68,18 +56,10 @@ class RedisDriver:
         retries = 3
         for attempt in range(retries):
             try:
-                if self._url:
-                    self._log.debug(f"Connecting to Redis using URL {self._url}")
-                    client = redis.from_url(self._url, ssl=self._ssl)
-                else:
-                    self._log.debug(f"Connecting to Redis at {self._host}:{self._port}")
-                    client = redis.Redis(
-                        host=self._host,
-                        port=self._port,
-                        ssl=self._ssl,
-                        decode_responses=False,
-                        socket_connect_timeout=5
-                    )
+                self._log.debug(f"Connecting to Redis using URL {self._url}")
+                client = redis.from_url(self._url,
+                                        decode_responses=False,
+                                        socket_connect_timeout=5)
                 client.ping()
                 self._redis_client = client
             except redis.RedisError as e:

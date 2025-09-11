@@ -12,7 +12,7 @@ module "serverless_agents" {
   module_name          = var.module_name
   package_path         = "../dist.zip"
   memory_size          = 256
-  agent_memory_type    = "redis"
+  create_redis_cluster = true
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region
 

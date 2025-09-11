@@ -1,11 +1,12 @@
 import importlib
 import logging
-import os
 import traceback
 from enum import StrEnum
+from types import ModuleType
 from typing import Any
 
 from .base import Agent, Session
+from .config import AKConfig
 from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
 from .sessions.redis import RedisDriver
 
@@ -32,26 +33,27 @@ class Runtime:
             raise Exception("Runtime is a singleton class")
         if memory_type == _MemoryType.REDIS:
             self._sessions = RedisSessionStore(RedisDriver())
-            self._log.debug("Using Redis session store")
+            self._log.info("Using Redis session store")
         else:
-            self._log.debug("Using in-memory session store")
+            self._log.info("Using in-memory session store")
             self._sessions = InMemorySessionStore()
         Runtime._instance = self
 
     @staticmethod
     def instance() -> "Runtime":
         if Runtime._instance is None:
-            env_mem = os.getenv("AK_MEMORY_TYPE")
+            env_mem = AKConfig.get().session.type.upper()
             try:
                 memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
             except ValueError:
                 Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
                 Runtime._log.warning(traceback.format_exc())
                 memory_type = _MemoryType.IN_MEMORY
+            Runtime._log.debug(f"Using memory type: {memory_type}")
             Runtime(memory_type)
         return Runtime._instance
 
-    def load(self, module: str) -> None:
+    def load(self, module: str) -> ModuleType:
         """
         Loads an agent module dynamically.
         :param module: Name of the module to load.

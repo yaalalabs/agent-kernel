@@ -201,6 +201,7 @@ Formatting and static checks (configured in pyproject.toml):
 
 ## Configuration and Extensibility
 
+- Configuration: See [CONFIG.md](CONFIG.md) for full details on environment variables and config file options.
 - Sessions: Use ak.ak.Session to keep per-conversation or per-job state across runs. Framework adapters manage their own session storage within that Session via namespaced keys (e.g., "crewai", "langgraph", "openai").
 - Adapters: See ak/crewai, ak/langgraph, ak/openai for reference implementations. To add a new framework, implement a Runner and an Agent wrapper, then a Module that registers them with Runtime.
 - Runtime: Agents are registered globally; Runtime.load(module_name) imports a module, which should instantiate an agent module to register its agents.

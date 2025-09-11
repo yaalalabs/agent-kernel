@@ -12,7 +12,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist ak || true
     fi
-    cp -r app.py dist/data
+    cp -r app.py config.yaml dist/data
     popd || exit 1
     cp Dockerfile ../dist/
 }
