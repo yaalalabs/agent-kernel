@@ -83,9 +83,8 @@ class CLI(AgentService):
                 continue
 
             if self._agent:
-                if self._agent:
-                    print(f"\033[35m{await self._run_agent(prompt=prompt)}\033[0m")
-                    print()
+                print(f"\033[35m{await self._run_agent(prompt=prompt)}\033[0m")
+                print()
             else:
                 print("No agent selected. Please select an agent using !select <agent_name>.")
 
