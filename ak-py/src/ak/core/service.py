@@ -19,7 +19,7 @@ class AgentService:
         cls._session = None
 
     @classmethod
-    def _select(cls, session_id: str | None, name: str | None = None):
+    def _select(cls, session_id: str | None = None, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
         :param session_id: Unique identifier for the session.
