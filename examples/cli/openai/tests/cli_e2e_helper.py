@@ -5,9 +5,8 @@ import pexpect
 
 
 class CLITestHelper:
-    def __init__(self, cli_path: str, prompt: str = ">>> ", timeout: int = 5):
+    def __init__(self, cli_path: str, timeout: int = 5):
         self.cli_path = cli_path
-        self.prompt = prompt
         self.timeout = timeout
         self.child = None
 
@@ -16,23 +15,19 @@ class CLITestHelper:
         self.child.logfile = sys.stdout
         self.child.setecho(False)
         try:
-            self.child.readline()
+            print("trying to read")
+            readline = self.child.readline()
+            print(readline)
         except Exception:
             pass
-        # self.child.expect(self.prompt)
 
-    def send_command(self, command: str, expected_output: str = None):
+    def send_command(self, command: str):
         self.child.sendline(command)
-        if expected_output is not None:
-            try:
-                self.child.expect(expected_output)
-            except Exception:
-                pass
-        if self.prompt:
-            try:
-                self.child.expect(self.prompt)
-            except Exception:
-                pass
+        try:
+            self.child.expect("(kernel)")
+        except Exception:
+            print("exception")
+            pass
 
     def stop(self):
         if self.child.isalive():
