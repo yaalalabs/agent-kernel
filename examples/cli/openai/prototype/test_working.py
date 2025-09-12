@@ -2,7 +2,7 @@ import asyncio
 import re
 import sys
 
-commands = ["History of Sri Lanka", "Tell me more", "!quit"]
+commands = ["History of Sri Lanka", "Tell me more", "!select math", "!new", "!quit"]
 
 # Regex with a capture group for the dynamic part of the prompt
 PROMPT_REGEX = re.compile(r"\((.+?)\) >> $")
@@ -17,11 +17,12 @@ def get_prompt():
 
 
 async def run_cli_e2e(cli_file: str, commands: list, prompt_regex: re.Pattern = PROMPT_REGEX):
+    # Merge stderr into stdout so logging outputs are captured
     proc = await asyncio.create_subprocess_exec(
         sys.executable, cli_file,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,  # merge stderr into stdout
     )
 
     async def read_until_prompt():
@@ -34,13 +35,14 @@ async def run_cli_e2e(cli_file: str, commands: list, prompt_regex: re.Pattern = 
             if not chunk:
                 break
             output_bytes += chunk
+
             try:
                 output_str = output_bytes.decode('utf-8')
             except UnicodeDecodeError:
                 continue  # wait for more bytes if multi-byte char is incomplete
 
             # Search for prompt at the end
-            match = prompt_regex.search(output_str[-30:])  # check last 30 chars
+            match = prompt_regex.search(output_str[-30:])
             if match:
                 captured_prompt_text = match.group(1)
                 return output_str, captured_prompt_text
@@ -65,13 +67,18 @@ async def run_cli_e2e(cli_file: str, commands: list, prompt_regex: re.Pattern = 
         response = prompt_regex.sub("", output).strip()
         print(response, flush=True)
         update_prompt(prompt_text)
+
+        # Remove ANSI escape sequences
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
         responses.append(ansi_escape.sub('', response))
 
     proc.stdin.close()
     await proc.wait()
 
-    print(f"responses: {responses}", flush=True)
+    i = 0
+    for response in responses:
+        print(f"{i + 1}-[{commands[i]}]-{response}", flush=True)
+        i += 1
 
 
 if __name__ == "__main__":
