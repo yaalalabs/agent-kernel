@@ -1,56 +1,37 @@
 import asyncio
+import logging
 import readline  # Enables line editing and history features for input() in the CLI
 
-from uuid import uuid4
-
-from ..core import Runtime, Session
+from ..core import AgentService
 
 
-class CLI:
+# Configure logger only to print agent kernel logs
+ak_logger = logging.getLogger("ak")
+ak_logger.setLevel(logging.INFO)
+ak_logger.propagate = False
+
+if not ak_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter('\033[36m(kernel) >> %(message)s\033[0m'))
+    ak_logger.addHandler(handler)
+
+
+class CLI(AgentService):
     """
     CLI class provides a command-line interface for interacting with agents.
     """
 
-    def __init__(self):
-        """
-        Initializes the CLI instance.
-        """
-        self._agent = None
-        self._runtime = Runtime.instance()
-        self._session = None
-
-    def select(self, name: str | None = None):
-        """
-        Selects an agent by name, or the first available agent if no name is provided.
-        """
-        if name:
-            selected = self._runtime.agents().get(name)
-            if selected:
-                self._agent = selected
-            else:
-                print(f"No agent found with name '{name}'")
-        else:
-            agents = list(self._runtime.agents().values())
-            self._agent = agents[0] if agents else None
-            if self._session is None and self._agent is not None:
-                self.new()
-
-    def help(self):
+    @staticmethod
+    def help():
         print("Available commands:")
         print("!h, !help - Show this help message")
         print("!ld, !load <module_name> - Load agent module")
         print("!ls, !list - List available agents")
         print("!n, !new - Start a new session")
-        print("!s, !select <agent_name> - Select an agent to run the prompt") 
+        print("!s, !select <agent_name> - Select an agent to run the prompt")
         print("!q, !quit - Exit the program")
         print()
-
-    def new(self):
-        if self._agent:
-            self._session = self._runtime.sessions().load(str(uuid4()))
-            print(f"Starting new session: {self._session.id}")
-        else:
-            print("No agent selected. Please select an agent using !select <agent_name>.")
 
     def list(self):
         agents = list(self._runtime.agents().values())
@@ -62,21 +43,9 @@ class CLI:
                 print(f"  {agent.name}")
             print()
 
-    def load(self, name: str):
-        """
-        Loads an agent module by name.
-        """
-        try:
-            self._runtime.load(name)
-            if not self._agent:
-                self.select()
-        except ImportError as e:
-            print(f"No module found with name '{name}': {e}")
-            return None
-
     async def run(self):
         print("AgentKernel CLI (type !help for commands or !quit to exit):")
-        self.select()
+        self._select()
 
         if not self._agent:
             print("No agents available. Please load an agent module using !load <module_name>.")
@@ -97,22 +66,24 @@ class CLI:
                     if len(tokens) != 2:
                         print("Usage: !load <module_name>")
                         continue
-                    self.load(tokens[1])
+                    session_id = self._session.id if self._session else None
+                    self._load(name=tokens[1], session_id=session_id)
                 elif command in ["!n", "!new"]:
-                    self.new()
+                    self._new()
                 elif command in ["!q", "!quit"]:
                     break
                 elif command in ["!s", "!select"]:
                     if len(tokens) != 2:
                         print("Usage: !select <agent_name>")
                         continue
-                    self.select(tokens[1])
+                    session_id = self._session.id if self._session else None
+                    self._select(name=tokens[1], session_id=session_id)
                 else:
                     print("Unknown command. Type !help for available commands.")
                 continue
 
             if self._agent:
-                print(await self._runtime.run(self._agent, self._session, prompt))
+                print(f"\033[35m{await self._run_agent(prompt=prompt)}\033[0m")
                 print()
             else:
                 print("No agent selected. Please select an agent using !select <agent_name>.")
@@ -124,7 +95,3 @@ class CLI:
             asyncio.run(cli.run())
         except asyncio.CancelledError:
             print()
-
-
-if __name__ == "__main__":
-    CLI.main()
