@@ -1,0 +1,28 @@
+# test_cli.py
+import sys
+from pathlib import Path
+
+import pexpect
+import pytest
+
+
+def _demo_path() -> str:
+    # Build absolute path to demo.py regardless of current working directory
+    return str((Path(__file__).resolve().parent / "../demo.py").resolve())
+
+
+@pytest.mark.parametrize("cli_script", [_demo_path()])
+def test_cli_interactive(cli_script):
+    # Start the CLI as a child process
+    child = pexpect.spawn(sys.executable, [cli_script], encoding='utf-8', timeout=15)
+
+    # Wait for the banner and initial prompt showing selected agent name
+    child.expect("AgentKernel CLI (type !help for commands or !quit to exit):")
+    # The prompt format is "(<agent-name>) >> ", starting with the default selected agent (triage)
+    child.expect("\(.*\) >> ")
+
+    # Immediately exit to avoid invoking external LLMs during tests
+    child.sendline("!quit")
+
+    # Ensure the process exits
+    child.expect(pexpect.EOF)

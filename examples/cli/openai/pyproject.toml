@@ -9,5 +9,18 @@ dependencies = [
     "ak[cli,openai]>=0.1.0a1",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "pytest-cov>=6.2.1",
+    "pytest-html>=4.1.1",
+    "pytest-console-scripts>=1.4.1",
+    "pexpect>=4.9.0",
+    "pytest-pexpect>=0.3.0",
+]
+
 [tool.uv]
 package = false
