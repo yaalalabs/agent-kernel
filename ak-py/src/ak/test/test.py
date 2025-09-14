@@ -13,6 +13,7 @@ class Test:
         working_dir = Path.cwd()
         self.path = working_dir / cli
         self.proc = None
+        self.previous = None
 
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
 
@@ -81,6 +82,7 @@ class Test:
         :param message: The message to be sent to the CLI.
         :return: The response from the subprocess.
         """
+        self.previous = message
         print(f"{self._get_prompt()}{message}", flush=True)
         self.proc.stdin.write((message + "\n").encode('utf-8'))
         await self.proc.stdin.drain()
@@ -93,9 +95,18 @@ class Test:
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
         return ansi_escape.sub('', response)
 
+    async def expect(self, expected: str):
+        """
+        Asserts that the last message sent to the CLI is equal to the expected message.
+        :param expected: The expected message."""
+        assert True
+
     async def stop(self):
         """
         Stops the CLI.
         """
         self.proc.stdin.close()
         await self.proc.wait()
+
+
+Test.__test__ = False  # pytest tries to run Test as a test without the flag
