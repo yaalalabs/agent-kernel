@@ -5,7 +5,7 @@ from typing import Optional, List, Any
 
 import yaml
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class _RedisConfig(BaseModel):
@@ -23,13 +23,14 @@ class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(default_factory=_SessionStoreConfig)
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        env_nested_delimiter = "_"
-        env_prefix = "AK_"
-        extra = "ignore"  # ignore extra fields
-        _env_ignore_empty = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="_",
+        env_prefix="AK_",
+        extra="ignore",
+        env_ignore_empty=True
+    )
 
     @classmethod
     def get(cls) -> "AKConfig":
@@ -68,8 +69,9 @@ class AKConfig(BaseSettings):
         file_dict = file_instance.model_dump()
 
         # build environment configs
-        prefix = getattr(cls.Config, "env_prefix", "") or ""
-        nested_delim = getattr(cls.Config, "env_nested_delimiter", "_") or "_"
+        cfg = getattr(cls, "model_config", {}) or {}
+        prefix = (cfg.get("env_prefix") or "")
+        nested_delim = (cfg.get("env_nested_delimiter") or "_")
 
         def set_deep(d: dict, keys: List[Any], value: Any):
             """
