@@ -7,6 +7,9 @@ from rapidfuzz import fuzz
 
 
 class Test:
+    _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
+    _prompt = ""
+
     def __init__(self, cli):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
@@ -17,22 +20,20 @@ class Test:
         self.proc = None
         self.previous = None
 
-    _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
-
-    @staticmethod
-    def _update_prompt(text: str):
+    @classmethod
+    def _update_prompt(cls, text: str):
         """
         Updates the global prompt string.
         :param text: The text to be inserted into the global prompt.
         """
-        globals()["PROMPT"] = f"({text}) >> "
+        cls._prompt = f"({text}) >> "
 
-    @staticmethod
-    def _get_prompt():
+    @classmethod
+    def _get_prompt(cls):
         """
         Returns the global prompt string.
         """
-        return globals()["PROMPT"]
+        return cls._prompt
 
     async def _read_until_prompt(self):
         """
@@ -105,7 +106,6 @@ class Test:
 
         if self.previous is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
-        print(f"Previous: {self.previous}", flush=True)
         score = fuzz.ratio(self.previous, expected)
         print(f"----------------------------------------------", flush=True)
         print(f"Comparison Score: {score}", flush=True)
