@@ -10,7 +10,7 @@ class Test:
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
     _prompt = ""
 
-    def __init__(self, cli):
+    def __init__(self, cli, match_threshold=50):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
         :param cli: The agent-kernel command-line interface path as a string
@@ -19,6 +19,7 @@ class Test:
         self.path = working_dir / cli
         self.proc = None
         self.previous = None
+        self.match_threshold = match_threshold
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -40,7 +41,7 @@ class Test:
         Reads from the subprocess stdout until the prompt is found.
         """
         if self.proc is None:
-            raise Exception("Process not started")
+            raise RuntimeError("Process not started")
         output_bytes = b""
         captured_prompt_text = None
 
@@ -107,10 +108,7 @@ class Test:
         if self.previous is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
         score = fuzz.ratio(self.previous, expected)
-        print(f"----------------------------------------------", flush=True)
-        print(f"Comparison Score: {score}", flush=True)
-        print(f"----------------------------------------------", flush=True)
-        assert score > 50
+        assert score > self.match_threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {self.previous}"
 
     async def stop(self):
         """
