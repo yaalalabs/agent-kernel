@@ -8,5 +8,10 @@ dependencies = [
     "ak[cli,openai,test]>=0.1.0a1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ak[test]>=0.1.0a1",
+]
+
 [tool.uv]
 package = false

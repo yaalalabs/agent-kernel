@@ -3,6 +3,8 @@ import re
 import sys
 from pathlib import Path
 
+from rapidfuzz import fuzz
+
 
 class Test:
     def __init__(self, cli):
@@ -97,9 +99,17 @@ class Test:
 
     async def expect(self, expected: str):
         """
-        Asserts that the last message sent to the CLI is equal to the expected message.
-        :param expected: The expected message."""
-        assert True
+        Asserts that the last response received from the CLI matches the expected message (fuzzy).
+        :param expected: The expected message.
+        """
+
+        if self.previous is None:
+            raise AssertionError("No response available to compare. Ensure send() was called before expect().")
+        score = fuzz.ratio(self.previous, expected)
+        print(f"----------------------------------------------", flush=True)
+        print(f"Comparison Score: {score}", flush=True)
+        print(f"----------------------------------------------", flush=True)
+        assert score > 50
 
     async def stop(self):
         """
