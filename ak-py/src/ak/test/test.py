@@ -5,22 +5,36 @@ from pathlib import Path
 
 
 class Test:
-    def __init__(self, path):
+    def __init__(self, cli):
+        """
+        Initializes an instance of the Test with a specified command-line interface (CLI) path.
+        :param cli: The agent-kernel command-line interface path as a string
+        """
         working_dir = Path.cwd()
-        self.path = working_dir / path
+        self.path = working_dir / cli
         self.proc = None
 
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
 
     @staticmethod
     def _update_prompt(text: str):
+        """
+        Updates the global prompt string.
+        :param text: The text to be inserted into the global prompt.
+        """
         globals()["PROMPT"] = f"({text}) >> "
 
     @staticmethod
     def _get_prompt():
+        """
+        Returns the global prompt string.
+        """
         return globals()["PROMPT"]
 
     async def _read_until_prompt(self):
+        """
+        Reads from the subprocess stdout until the prompt is found.
+        """
         if self.proc is None:
             raise Exception("Process not started")
         output_bytes = b""
@@ -45,6 +59,9 @@ class Test:
         return output_bytes.decode('utf-8'), captured_prompt_text
 
     async def start(self):
+        """
+        Starts the CLI to initialize the test
+        """
         self.proc = await asyncio.create_subprocess_exec(
             sys.executable, self.path,
             stdin=asyncio.subprocess.PIPE,
@@ -58,7 +75,12 @@ class Test:
         print(welcome_stripped, flush=True)
         self._update_prompt(prompt_text)
 
-    async def send(self, message: str):
+    async def send(self, message: str) -> str:
+        """
+        Sends a message to the CLI and returns the response.
+        :param message: The message to be sent to the CLI.
+        :return: The response from the subprocess.
+        """
         print(f"{self._get_prompt()}{message}", flush=True)
         self.proc.stdin.write((message + "\n").encode('utf-8'))
         await self.proc.stdin.drain()
@@ -72,5 +94,8 @@ class Test:
         return ansi_escape.sub('', response)
 
     async def stop(self):
+        """
+        Stops the CLI.
+        """
         self.proc.stdin.close()
         await self.proc.wait()
