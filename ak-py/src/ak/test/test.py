@@ -84,7 +84,6 @@ class Test:
         :param message: The message to be sent to the CLI.
         :return: The response from the subprocess.
         """
-        self.previous = message
         print(f"{self._get_prompt()}{message}", flush=True)
         self.proc.stdin.write((message + "\n").encode('utf-8'))
         await self.proc.stdin.drain()
@@ -95,7 +94,8 @@ class Test:
         print(response, flush=True)
         self._update_prompt(prompt_text)
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
-        return ansi_escape.sub('', response)
+        self.previous = ansi_escape.sub('', response)
+        return self.previous
 
     async def expect(self, expected: str):
         """
@@ -105,6 +105,7 @@ class Test:
 
         if self.previous is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
+        print(f"Previous: {self.previous}", flush=True)
         score = fuzz.ratio(self.previous, expected)
         print(f"----------------------------------------------", flush=True)
         print(f"Comparison Score: {score}", flush=True)
