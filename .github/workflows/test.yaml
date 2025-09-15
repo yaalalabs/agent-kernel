@@ -1,4 +1,4 @@
-name: CLI E2E Test
+name: Test
 
 on:
   pull_request:
@@ -7,7 +7,32 @@ on:
       - develop
 
 jobs:
-  build-and-test:
+  unit-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          pip install uv
+
+      - name: Build and test ak-py
+        working-directory: ak-py
+        run: |
+          set -e
+          ./build.sh
+          uv run pytest -s
+
+  cli-e2e-test:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -27,7 +52,9 @@ jobs:
 
       - name: Build ak-py
         working-directory: ak-py
-        run: ./build.sh
+        run: |
+          set -e
+          ./build.sh
 
       - name: Run CLI examples
         env:
