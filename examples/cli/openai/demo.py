@@ -13,7 +13,7 @@ math_agent = Agent(
 general_agent = Agent(
     name="general",
     handoff_description="Agent for general questions",
-    instructions="You provide assistance with general queries. Explain important details and context clearly.",
+    instructions="You provide assistance with general queries. Give short and direct answers.",
 )
 
 triage_agent = Agent(
