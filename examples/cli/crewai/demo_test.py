@@ -28,4 +28,5 @@ async def test_first_question(test_client):
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
     await test_client.send("Which country hosted the tournament?")
-    await test_client.expect("Co-hosted by India, Pakistan and Sri Lanka.")
+    await test_client.expect("The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka. "
+                             "The tournament took place from February 22 to March 17, 1996.")
