@@ -1,0 +1,41 @@
+name: PR Pipeline
+
+on:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          pip install uv
+
+      - name: Build ak-py
+        working-directory: ak-py
+        run: ./build.sh
+
+      - name: Run CLI examples
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -e
+          for example in examples/cli/*; do
+            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
+              echo "=== Running build for $example ==="
+              (cd "$example" && ./build.sh local)
+              echo "=== Running tests for $example ==="
+              (cd "$example" && uv run pytest -s)
+            fi
+          done
