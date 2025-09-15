@@ -25,7 +25,7 @@ general_agent = CustomAgent(
     name="general",
     description="Agent for general questions",
     model=model,
-    system_prompt="You provide assistance with general queries. Explain important details and context clearly.",
+    system_prompt="You provide assistance with general queries. Give short and direct answers.",
 ).graph
 
 # LangGraph's inbuilt supervisor agent: Coordinates between math and general agents
@@ -39,7 +39,7 @@ triage_agent = create_supervisor(
         "- a general agent. Assign general tasks to this agent\n"
         "Assign work to one agent at a time, do not call agents in parallel.\n"
         "Do not do any work yourself. \n"
-        "When you get a response from an agent, respond with the received response."
+        "Display the response without asking follow up questions."
     )
 ).compile(name="triage")
 

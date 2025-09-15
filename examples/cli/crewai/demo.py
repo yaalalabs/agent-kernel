@@ -14,11 +14,11 @@ math_agent = Agent(
 general_agent = Agent(
     role="general",
     goal="Agent for general questions",
-    backstory="You provide assistance with general queries. Explain important details and context clearly.",
+    backstory="You provide assistance with general queries. Give direct and short answers",
     verbose=False,
 )
 
-CrewAIModule([math_agent, general_agent])
+CrewAIModule([general_agent, math_agent])
 
 if __name__ == "__main__":
     CLI.main()

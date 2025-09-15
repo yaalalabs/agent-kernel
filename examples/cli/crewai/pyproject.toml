@@ -1,4 +1,3 @@
-
 [project]
 name = "cli-crewai"
 version = "0.1.0"
@@ -6,7 +5,12 @@ description = "Demo of CrewAI based agents running in Agent Kernel with a CLI"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ak[cli,crewai]>=0.1.0a1",
+    "ak[cli,crewai,test]>=0.1.0a1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ak[test]>=0.1.0a1",
 ]
 
 [tool.uv]
