@@ -2,13 +2,16 @@ name: CLI E2E Test
 
 on:
   pull_request:
+  push:
+    branches:
+      - develop
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash -e {0}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
