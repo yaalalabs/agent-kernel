@@ -17,3 +17,7 @@ Install local dependencies in development mode using:
 Run this demo using the following.
 
     python demo.py
+
+To run tests:
+    
+    uv run pytest -s 
