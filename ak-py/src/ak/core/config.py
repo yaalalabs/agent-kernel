@@ -19,9 +19,22 @@ class _SessionStoreConfig(BaseModel):
     redis: Optional[_RedisConfig] = _RedisConfig()
 
 
+class _RoutesConfig(BaseModel):
+    agents: str = Field(default=True, description="Agent interaction routes")
+    a2a: str = Field(default=False, description="A2A routes")
+
+
+class _APIConfig(BaseModel):
+    host: str = Field(default="0.0.0.0", description="API host")
+    port: int = Field(default=8000, description="API port")
+    enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
+
+
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
-    session: _SessionStoreConfig = Field(default_factory=_SessionStoreConfig)
+    session: _SessionStoreConfig = Field(description="Agent session / memory related configurations",
+                                         default_factory=_SessionStoreConfig)
+    api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",
