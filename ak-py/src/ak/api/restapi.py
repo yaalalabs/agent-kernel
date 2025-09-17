@@ -55,10 +55,7 @@ class RESTAPI:
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
 
         routers = []
-
         if AKConfig.get().api.enabled_routes.agents:
             routers.append(AgentRESTRequestHandler.router)
-
         app = cls._create_app(routers=routers)
-
         uvicorn.run(app=app, host=host, port=port, reload=False)
