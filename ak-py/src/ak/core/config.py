@@ -20,8 +20,8 @@ class _SessionStoreConfig(BaseModel):
 
 
 class _RoutesConfig(BaseModel):
-    agents: str = Field(default=True, description="Agent interaction routes")
-    a2a: str = Field(default=False, description="A2A routes")
+    agents: bool = Field(default=True, description="Agent interaction routes")
+    a2a: bool = Field(default=False, description="A2A routes")
 
 
 class _APIConfig(BaseModel):
