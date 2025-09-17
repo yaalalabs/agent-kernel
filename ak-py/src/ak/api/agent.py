@@ -26,12 +26,8 @@ class AgentRESTRequestHandler(AgentService):
         agent: Optional[str] = None
         session_id: Optional[str] = None
 
-    @property
-    def router(self) -> APIRouter:
-        return self._get_router()
-
     @classmethod
-    def _get_router(cls) -> APIRouter:
+    def get_router(cls) -> APIRouter:
         """
         Returns the APIRouter instance.
         """

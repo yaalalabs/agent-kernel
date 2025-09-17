@@ -56,6 +56,6 @@ class RESTAPI:
 
         routers = []
         if AKConfig.get().api.enabled_routes.agents:
-            routers.append(AgentRESTRequestHandler.router)
+            routers.append(AgentRESTRequestHandler.get_router())
         app = cls._create_app(routers=routers)
         uvicorn.run(app=app, host=host, port=port, reload=False)
