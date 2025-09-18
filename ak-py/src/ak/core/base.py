@@ -97,7 +97,7 @@ class Runner(ABC):
         pass
 
 
-class Agent:
+class Agent(ABC):
     """
     Agent is the base class for all agents.
     
@@ -129,3 +129,10 @@ class Agent:
         Returns the runner associated with the agent.
         """
         return self._runner
+
+    @abstractmethod
+    def get_a2a_card(self):
+        """
+        Returns the A2A AgentCard associated with the agent.
+        """
+        pass

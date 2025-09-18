@@ -1,3 +1,4 @@
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -6,6 +7,13 @@ from typing import Optional, List, Any
 import yaml
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _get_ak_version() -> str:
+    try:
+        return importlib.metadata.version("ak")
+    except importlib.metadata.PackageNotFoundError:
+        return "0.1.0"
 
 
 class _RedisConfig(BaseModel):
@@ -21,7 +29,6 @@ class _SessionStoreConfig(BaseModel):
 
 class _RoutesConfig(BaseModel):
     agents: bool = Field(default=True, description="Agent interaction routes")
-    a2a: bool = Field(default=False, description="A2A routes")
 
 
 class _APIConfig(BaseModel):
@@ -30,11 +37,18 @@ class _APIConfig(BaseModel):
     enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
 
 
+class _A2AConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable A2A")
+    url: str = Field(default="http://localhost:8000", description="A2A URL")
+
+
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(description="Agent session / memory related configurations",
                                          default_factory=_SessionStoreConfig)
     api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
+    a2a: _A2AConfig = Field(description="Agent to Agent related configurations", default_factory=_A2AConfig)
+    library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     model_config = SettingsConfigDict(
         env_file=".env",
