@@ -112,28 +112,26 @@ class OpenAIAgent(BaseAgent):
         """
         Returns the A2A AgentCard associated with the agent.
         """
-        if AKConfig.a2a.enabled:
-            from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+        from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 
-            skills = []
-            for tool in self.agent.tools:
-                skills.append(AgentSkill(
-                    id=tool.name,
-                    name=tool.name,
-                    description=tool.description,
-                    tags=[]
-                ))
-            return AgentCard(
-                name=self.name,
-                description=self.agent.instructions,
-                url=AKConfig.a2a.url,
-                version=AKConfig.library_version,
-                default_input_modes=["text"],
-                default_output_modes=["json"],
-                capabilities=AgentCapabilities(streaming=False),
-                skills=skills
-            )
-        return None
+        skills = []
+        for tool in self.agent.tools:
+            skills.append(AgentSkill(
+                id=tool.name,
+                name=tool.name,
+                description=tool.description,
+                tags=[]
+            ))
+        return AgentCard(
+            name=self.name,
+            description=self.agent.instructions,
+            url=AKConfig.a2a.url,
+            version=AKConfig.library_version,
+            default_input_modes=["text"],
+            default_output_modes=["json"],
+            capabilities=AgentCapabilities(streaming=False),
+            skills=skills
+        )
 
 
 class OpenAIModule(Module):

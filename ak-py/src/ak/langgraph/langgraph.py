@@ -46,33 +46,31 @@ class LangGraphAgent(BaseAgent):
         """
         Returns the A2A AgentCard associated with the agent.
         """
-        if AKConfig.a2a.enabled:
-            from a2a.types import AgentCard, AgentCapabilities, AgentSkill
-            graph = self.agent.get_graph()
+        from a2a.types import AgentCard, AgentCapabilities, AgentSkill
 
-            skills = []
-            for node_name, node_data in graph.nodes.items():
-                # TODO improve this to better extract tools
-                if hasattr(node_data, 'tools'):
-                    for tool in node_data.tools:
-                        skills.append(AgentSkill(
-                            id=tool.name,
-                            name=tool.name,
-                            description=tool.description,
-                            tags=[]
-                        ))
-            # TODO extract description from graph
-            return AgentCard(
-                name=self.name,
-                description="",
-                url=AKConfig.a2a.url,
-                version=AKConfig.library_version,
-                default_input_modes=["text"],
-                default_output_modes=["json"],
-                capabilities=AgentCapabilities(streaming=False),
-                skills=skills
-            )
-        return None
+        graph = self.agent.get_graph()
+        skills = []
+        for node_name, node_data in graph.nodes.items():
+            # TODO improve this to better extract tools
+            if hasattr(node_data, 'tools'):
+                for tool in node_data.tools:
+                    skills.append(AgentSkill(
+                        id=tool.name,
+                        name=tool.name,
+                        description=tool.description,
+                        tags=[]
+                    ))
+        # TODO extract description from graph
+        return AgentCard(
+            name=self.name,
+            description="",
+            url=AKConfig.a2a.url,
+            version=AKConfig.library_version,
+            default_input_modes=["text"],
+            default_output_modes=["json"],
+            capabilities=AgentCapabilities(streaming=False),
+            skills=skills
+        )
 
 
 class LangGraphSession(BaseSession):
