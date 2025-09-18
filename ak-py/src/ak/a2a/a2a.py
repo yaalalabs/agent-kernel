@@ -1,9 +1,10 @@
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
-from a2a.server.tasks import TaskUpdater
-from a2a.types import UnsupportedOperationError, AgentCard, Part, TextPart, InternalError
+from a2a.server.tasks import TaskUpdater, TaskStore
+from a2a.types import UnsupportedOperationError, AgentCard, Part, TextPart, InternalError, Task
 from a2a.utils.errors import ServerError
 
 from .. import Agent, AgentService
@@ -86,3 +87,23 @@ class A2A:
     @classmethod
     def get_executors(cls) -> dict[str, AgentExecutor]:
         return cls._executors
+
+    @classmethod
+    def get_cards(cls) -> list[AgentCard]:
+        return cls._cards
+
+    @classmethod
+    def get_skill_to_agent_mapping(cls) -> dict[str, str]:
+        return cls._skill_to_agent_mapping
+
+
+class RedisTaskStore(TaskStore):
+    # TODO add implementation
+    async def save(self, task: Task, context: ServerCallContext | None = None) -> None:
+        pass
+
+    async def get(self, task_id: str, context: ServerCallContext | None = None) -> Task | None:
+        pass
+
+    async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
+        pass
