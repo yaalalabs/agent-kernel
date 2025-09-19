@@ -32,6 +32,9 @@ langgraph = [
 openai = [
     "openai-agents>=0.2.3"
 ]
+google = [
+    "google-adk>=1.14.1"
+]
 api = [
     "fastapi>=0.111.0",
     "uvicorn>=0.30.0",
