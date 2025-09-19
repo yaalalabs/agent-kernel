@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .a2a import A2ARESTRequestHandler
 from .agent import AgentRESTRequestHandler
 from ..core.config import AKConfig
 
@@ -57,5 +58,7 @@ class RESTAPI:
         routers = []
         if AKConfig.get().api.enabled_routes.agents:
             routers.append(AgentRESTRequestHandler.get_router())
+        if AKConfig.get().a2a.enabled:
+            routers.append(A2ARESTRequestHandler.get_router())
         app = cls._create_app(routers=routers)
         uvicorn.run(app=app, host=host, port=port, reload=False)
