@@ -34,7 +34,7 @@ class A2ARESTRequestHandler:
 
     @classmethod
     def get_catalog_router(cls) -> APIRouter:
-        router = APIRouter(prefix="a2a")  # Update the configs to reflect the correct Agent URL
+        router = APIRouter(prefix="/a2a")  # Update the configs to reflect the correct Agent URL
 
         @router.get("/catalog")
         def list_cards():

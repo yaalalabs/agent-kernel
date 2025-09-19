@@ -60,11 +60,11 @@ class A2A:
     def _build(cls):
         if cls._built:
             return
-        if not AKConfig.a2a.enabled:
+        if not AKConfig.get().a2a.enabled:
             return
         agents: dict[str, Agent] = Runtime.instance().agents()
         for name, agent in agents.items():
-            whitelisted = AKConfig.a2a.agents == ["*"] or name in AKConfig.a2a.agents
+            whitelisted = AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
             if not whitelisted:
                 continue
             # get card
