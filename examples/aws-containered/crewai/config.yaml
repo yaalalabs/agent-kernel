@@ -4,5 +4,3 @@ session:
   redis:
     prefix: "ak:crewai-ecs:example:"
     url: "redis://ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
-a2a:
-  enabled: true
