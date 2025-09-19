@@ -46,9 +46,6 @@ class RESTAPI:
     def run(cls):
         """
         Starts the REST API server.
-        - You can pass an existing FastAPI `app` instance.
-        - Or supply `routers` to assemble a new app via create_app().
-        - `enable_default_endpoints` toggles the built-in Agent endpoints.
         """
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
