@@ -1,7 +1,10 @@
 import logging
 from typing import List
 
-from fastapi import APIRouter
+from a2a.server.apps.rest.rest_adapter import RESTAdapter
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from ..a2a.a2a import A2A
@@ -19,29 +22,11 @@ class A2ARESTRequestHandler:
 
     _log = logging.getLogger("ak.api.a2a")
 
-    class RunRequest(BaseModel):
-        task_id: str
-        method: str
-        params: dict
-        input: List[dict]
-        context: dict
-        options: dict
-
     @classmethod
-    def _ensure_built(cls):
-        # Build A2A cards/mappings/executors once based on config/runtime
-        try:
-            A2A._build()
-        except Exception as e:
-            cls._log.error(f"Failed to initialize A2A: {e}")
-            raise
+    def get_catalog_router(cls) -> APIRouter:
+        router = APIRouter(prefix="a2a")  # Update the configs to reflect the correct Agent URL
 
-    @classmethod
-    def get_router(cls) -> APIRouter:
-        cls._ensure_built()
-        router = APIRouter()
-
-        @router.get("/a2a/cards")
+        @router.get("/catalog")
         def list_cards():
             cards: List[BaseModel] = A2A.get_cards() or []
             result = []
@@ -49,16 +34,32 @@ class A2ARESTRequestHandler:
                 result.append(c.model_dump())
             return {"cards": result}
 
-        @router.post("/a2a/task")
-        async def execute_task(req: A2ARESTRequestHandler.RunRequest):
-            # Resolve skill to agent name
-            mapping = A2A.get_skill_to_agent_mapping() or {}
-            agent_name = mapping.get(req.method)
-            if not agent_name:
-                return {"error": f"No agent found for skill '{req.method}'"}
-
-            executor: A2A.Executor = await A2A.get_executor(agent_name)
-
-            return {}
-
         return router
+
+    @classmethod
+    def get_agent_routers(cls) -> List[APIRouter]:
+        agents = A2A.get_agent_names()
+        routers = []
+        for agent in agents:
+            adapter = RESTAdapter(
+                agent_card=A2A.get_card(agent),
+                http_handler=DefaultRequestHandler(
+                    agent_executor=A2A.get_executor(agent),
+                    task_store=A2A.get_task_store()
+                )
+            )
+            router = APIRouter(prefix=f"/a2a/{agent}")
+            # Create A2A protocol mandated routes including authenticated card
+            for route, callback in adapter.routes().items():
+                router.add_api_route(
+                    f'/{route[0]}', callback, methods=[route[1]]
+                )
+
+            # create the well-known (public) endpoint
+            @router.get(f'/{AGENT_CARD_WELL_KNOWN_PATH}')
+            async def get_agent_card(request: Request):
+                card = A2A.get_card(agent)
+                return card.model_dump()
+
+            routers.append(router)
+        return routers

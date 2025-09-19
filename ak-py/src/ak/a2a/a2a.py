@@ -1,10 +1,10 @@
 from typing import Any
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
-from a2a.server.tasks import TaskUpdater, TaskStore
-from a2a.types import UnsupportedOperationError, AgentCard, Part, TextPart, InternalError, Task
+from a2a.server.tasks import InMemoryTaskStore, TaskStore
+from a2a.types import UnsupportedOperationError, AgentCard, InternalError
+from a2a.utils import new_agent_text_message
 from a2a.utils.errors import ServerError
 
 from .. import Agent, AgentService
@@ -20,15 +20,11 @@ class A2A:
     """
     A2A cards
     """
-    _cards = []
+    _cards: dict[str, AgentCard] = {}
     """
     A2A executors. A2A expects an executor per each agent
     """
-    _executors = {}
-    """
-    A2A skill to agent map needs to be maintained because A2A request only specifies the skill name
-    """
-    _skill_to_agent_mapping = {}
+    _executors: dict[str, 'A2A.Executor'] = {}
     """
     A2A singleton instance
     """
@@ -45,28 +41,19 @@ class A2A:
                 raise ValueError("RequestContext must have task_id and context_id")
             if not context.message:
                 raise ValueError("RequestContext must have a message")
-
-            updater = TaskUpdater(event_queue, context.task_id, context.context_id)
-            if not context.current_task:
-                await updater.submit()
-            await updater.start_work()
             try:
                 response = await self._execute_agent(context.context_id, context.get_user_input())
-                parts = [Part(root=TextPart(text=response))]
+                await event_queue.enqueue_event(new_agent_text_message(response, context.context_id, context.task_id))
             except Exception as e:
-                parts = [
-                    Part(root=TextPart(text="Sorry, Agent Kernel encountered an error while processing your request"))]
-                await updater.add_artifact(parts)
+                error = "Sorry, Agent Kernel encountered an error while processing your request"
+                await event_queue.enqueue_event(new_agent_text_message(error, context.context_id, context.task_id))
                 raise ServerError(error=InternalError()) from e
-
-            await updater.add_artifact(parts)
-            await updater.complete()
 
         async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
             raise ServerError(error=UnsupportedOperationError())
 
         async def _execute_agent(self, session_id: str, prompt: str) -> Any:
-            AgentService._select(session_id, self.agent_name)
+            AgentService._select(session_id, self.agent_name)  # TODO Agent Service shouldn't be a singleton
             return await AgentService._run_agent(prompt=prompt)
 
     @classmethod
@@ -82,16 +69,11 @@ class A2A:
                 continue
             # get card
             card: AgentCard = agent.get_a2a_card()
-            cls._cards.append(card)
-            skills = card.skills
-            # map skills to agents
-            for skill in skills:
-                cls._skill_to_agent_mapping[skill] = name
+            cls._cards.update({name: card})
         cls._built = True
 
     @classmethod
-    async def get_executor(cls, agent_name: str) -> Any:
-        cls._build()
+    def get_executor(cls, agent_name: str) -> AgentExecutor:
         if cls._executors.get(agent_name) is None:
             cls._executors[agent_name] = cls.Executor(agent_name)
         executor: A2A.Executor = cls._executors[agent_name]
@@ -100,21 +82,22 @@ class A2A:
     @classmethod
     def get_cards(cls) -> list[AgentCard]:
         cls._build()
-        return cls._cards
+        return list(cls._cards.values())
 
     @classmethod
-    def get_skill_to_agent_mapping(cls) -> dict[str, str]:
+    def get_card(cls, name: str) -> AgentCard:
         cls._build()
-        return cls._skill_to_agent_mapping
+        return cls._cards.get(name)
+
+    @classmethod
+    def get_agent_names(cls) -> list[str]:
+        cls._build()
+        return list(cls._cards.keys())
+
+    @classmethod
+    def get_task_store(cls) -> TaskStore:
+        return RedisTaskStore() if AKConfig.get().a2a.task_store_type == "redis" else InMemoryTaskStore()
 
 
-class RedisTaskStore(TaskStore):
-    # TODO add implementation
-    async def save(self, task: Task, context: ServerCallContext | None = None) -> None:
-        pass
-
-    async def get(self, task_id: str, context: ServerCallContext | None = None) -> Task | None:
-        pass
-
-    async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
-        pass
+class RedisTaskStore(InMemoryTaskStore):
+    pass
