@@ -1,26 +1,42 @@
-from agents import Agent
+from google.adk.agents import Agent, LlmAgent
 from ak.aws import Lambda
-from ak.openai import OpenAIModule
+from ak.google import GoogleADKModule
 
+# Math specialist agent
 math_agent = Agent(
     name="math",
-    handoff_description="Specialist agent for math questions",
-    instructions="You provide help with math problems. Explain your reasoning at each step and include examples. \
-        If prompted for anything else you refuse to answer.",
+    model="gemini-2.0-flash",
+    description="Specialist agent for math questions",
+    instruction="""
+    You provide help with math problems.
+    Explain your reasoning at each step and include examples.
+    If prompted for anything else you refuse to answer.
+    """,
 )
 
+# General purpose agent
 history_agent = Agent(
     name="history",
-    handoff_description="Specialist agent for historical questions",
-    instructions="You provide assistance with historical queries. Explain important events and context clearly.",
+    model="gemini-2.0-flash",
+    description="Agent for history questions",
+    instruction="""
+    You provide assistance with history queries.
+    Give short and direct answers.
+    """,
 )
 
-triage_agent = Agent(
+triage_agent = LlmAgent(
     name="triage",
-    instructions="You determine which agent to use based on the user's question.",
-    handoffs=[history_agent, math_agent],
+    model="gemini-2.0-flash",
+    description="Agent that routes the user to the appropriate specialist agent (math or history).",
+    instruction="""
+    You determine which agent to use based on the user's question.
+    If it's a math problem, issue an action.transfer_to_agent to the agent named "math".
+    Otherwise, if it's history related query, transfer to "history".
+    """,
+    sub_agents=[history_agent, math_agent],
 )
 
-OpenAIModule([triage_agent, math_agent, history_agent])
+GoogleADKModule([triage_agent, math_agent, history_agent])
 
 handler = Lambda.handler
