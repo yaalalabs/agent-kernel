@@ -125,7 +125,7 @@ class OpenAIAgent(BaseAgent):
         return AgentCard(
             name=self.name,
             description=self.agent.instructions,
-            url=AKConfig.a2a.url,
+            url=f'{AKConfig.a2a.url}/{self.name}',
             version=AKConfig.library_version,
             default_input_modes=["text"],
             default_output_modes=["json"],
