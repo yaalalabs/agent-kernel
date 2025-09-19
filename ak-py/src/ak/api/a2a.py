@@ -4,7 +4,7 @@ from typing import List
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..a2a.a2a import A2A
@@ -67,7 +67,7 @@ class A2ARESTRequestHandler:
 
             # Create the well-known (public) endpoint
             @router.get(f'/{AGENT_CARD_WELL_KNOWN_PATH}')
-            async def get_agent_card(request: Request):
+            async def get_agent_card():
                 card = A2A.get_card(agent)
                 return card.model_dump()
 
