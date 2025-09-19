@@ -14,10 +14,20 @@ class A2ARESTRequestHandler:
     """
     Minimal A2A REST endpoints backed by ak.a2a.A2A utilities.
     Endpoints:
-    - GET /a2a/health: Health check for A2A routes
-    - GET /a2a/cards: List available A2A AgentCards (one per enabled agent)
-    - POST /a2a/run: Execute a skill by name using mapped agent
-      Payload JSON: { "skill": str, "input": str, "session_id": str | null }
+    - GET /a2a/catalog: Get cards of all agents
+
+    The following endpoints are available per each agent:
+    - GET /a2a/{agent_name}/.well-known/agent-card.json - Agent card download
+    - POST /a2a/{agent_name}/v1/message:send - Send a message to the agent
+    - POST /a2a/{agent_name}/v1/message:stream - Stream a message to the agent
+    - POST /a2a/{agent_name}/v1/tasks/{id}:cancel - Cancel a specific task
+    - GET /a2a/{agent_name}/v1/tasks/{id}:subscribe - Subscribe to task updates
+    - GET /a2a/{agent_name}/v1/tasks/{id} - Get task details
+    - GET /a2a/{agent_name}/v1/tasks/{id}/pushNotificationConfigs/{push_id} - Get push notification config
+    - POST /a2a/{agent_name}/v1/tasks/{id}/pushNotificationConfigs - Set push notification config
+    - GET /a2a/{agent_name}/v1/tasks/{id}/pushNotificationConfigs - List push notifications
+    - GET /a2a/{agent_name}/v1/tasks - List all tasks
+    - GET /a2a/{agent_name}/v1/card - Get authenticated agent card (if supported)
     """
 
     _log = logging.getLogger("ak.api.a2a")
