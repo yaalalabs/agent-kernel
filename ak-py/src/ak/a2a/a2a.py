@@ -29,6 +29,10 @@ class A2A:
     A2A skill to agent map needs to be maintained because A2A request only specifies the skill name
     """
     _skill_to_agent_mapping = {}
+    """
+    A2A singleton instance
+    """
+    _built = False
 
     class Executor(AgentExecutor, AgentService):
 
@@ -47,7 +51,7 @@ class A2A:
                 await updater.submit()
             await updater.start_work()
             try:
-                response = await self.execute_agent(context.context_id, context.get_user_input())
+                response = await self._execute_agent(context.context_id, context.get_user_input())
                 parts = [Part(root=TextPart(text=response))]
             except Exception as e:
                 parts = [
@@ -61,12 +65,14 @@ class A2A:
         async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
             raise ServerError(error=UnsupportedOperationError())
 
-        async def execute_agent(self, session_id: str, prompt: str) -> Any:
+        async def _execute_agent(self, session_id: str, prompt: str) -> Any:
             AgentService._select(session_id, self.agent_name)
             return await AgentService._run_agent(prompt=prompt)
 
     @classmethod
-    def build(cls):
+    def _build(cls):
+        if cls._built:
+            return
         if not AKConfig.a2a.enabled:
             return
         agents: dict[str, Agent] = Runtime.instance().agents()
@@ -81,19 +87,24 @@ class A2A:
             # map skills to agents
             for skill in skills:
                 cls._skill_to_agent_mapping[skill] = name
-            # create executor for agent
-            cls._executors[name] = cls.Executor(name)
+        cls._built = True
 
     @classmethod
-    def get_executors(cls) -> dict[str, AgentExecutor]:
-        return cls._executors
+    async def get_executor(cls, agent_name: str) -> Any:
+        cls._build()
+        if cls._executors.get(agent_name) is None:
+            cls._executors[agent_name] = cls.Executor(agent_name)
+        executor: A2A.Executor = cls._executors[agent_name]
+        return executor
 
     @classmethod
     def get_cards(cls) -> list[AgentCard]:
+        cls._build()
         return cls._cards
 
     @classmethod
     def get_skill_to_agent_mapping(cls) -> dict[str, str]:
+        cls._build()
         return cls._skill_to_agent_mapping
 
 
