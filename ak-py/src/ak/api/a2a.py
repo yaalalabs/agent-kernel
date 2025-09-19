@@ -65,7 +65,7 @@ class A2ARESTRequestHandler:
                     f'/{route[0]}', callback, methods=[route[1]]
                 )
 
-            # create the well-known (public) endpoint
+            # Create the well-known (public) endpoint
             @router.get(f'/{AGENT_CARD_WELL_KNOWN_PATH}')
             async def get_agent_card(request: Request):
                 card = A2A.get_card(agent)
