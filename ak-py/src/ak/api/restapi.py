@@ -3,6 +3,7 @@ import logging
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from .agent import AgentRESTRequestHandler
 from ..core.config import AKConfig
@@ -40,6 +41,14 @@ class RESTAPI:
         for r in routers or []:
             app.include_router(r)
 
+        @app.get("/openapi.json")
+        async def get_openapi_endpoint():
+            return get_openapi(
+                title="Agent Kernel REST API",
+                version="1.0.0",
+                routes=app.routes,
+            )
+
         return app
 
     @classmethod
@@ -57,6 +66,6 @@ class RESTAPI:
         if AKConfig.get().a2a.enabled:
             from .a2a import A2ARESTRequestHandler
             routers.append(A2ARESTRequestHandler.get_catalog_router())
-            routers.append(A2ARESTRequestHandler.get_agent_routers())
+            routers.extend(A2ARESTRequestHandler.get_agent_routers())
         app = cls._create_app(routers=routers)
         uvicorn.run(app=app, host=host, port=port, reload=False)

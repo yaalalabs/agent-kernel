@@ -62,11 +62,11 @@ class A2ARESTRequestHandler:
             # Create A2A protocol mandated routes including authenticated card
             for route, callback in adapter.routes().items():
                 router.add_api_route(
-                    f'/{route[0]}', callback, methods=[route[1]]
+                    f'{route[0]}', callback, methods=[route[1]]
                 )
 
             # Create the well-known (public) endpoint
-            @router.get(f'/{AGENT_CARD_WELL_KNOWN_PATH}')
+            @router.get(f'{AGENT_CARD_WELL_KNOWN_PATH}')
             async def get_agent_card():
                 card = A2A.get_card(agent)
                 return card.model_dump()
