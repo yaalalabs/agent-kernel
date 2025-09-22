@@ -24,7 +24,7 @@ variable "is_production" {
   default     = false
 }
 
-variable "gemini_api_key" {
-  description = "Gemini API Key"
+variable "openai_api_key" {
+  description = "OpenAI API Key"
   type        = string
 }
