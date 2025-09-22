@@ -33,7 +33,8 @@ openai = [
     "openai-agents>=0.2.3"
 ]
 google = [
-    "google-adk>=1.14.1"
+    "google-adk>=1.14.1",
+    "litellm~=1.74.3"
 ]
 api = [
     "fastapi>=0.111.0",
