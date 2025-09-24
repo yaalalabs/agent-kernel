@@ -20,7 +20,7 @@ class RESTAPI:
     Handles the initialization and running of the REST API server.
     Can run any FastAPI app instance or assemble one from routers.
     """
-    _log = logging.getLogger("ak.api.resapi")
+    _log = logging.getLogger("ak.api.restapi")
 
     @classmethod
     def _create_app(cls, routers) -> FastAPI:
