@@ -4,7 +4,6 @@ from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
 from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
-from ..core.config import AKConfig
 
 FRAMEWORK = "openai"
 
@@ -112,7 +111,7 @@ class OpenAIAgent(BaseAgent):
         """
         Returns the A2A AgentCard associated with the agent.
         """
-        from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+        from a2a.types import AgentSkill
 
         skills = []
         for tool in self.agent.tools:
@@ -122,14 +121,9 @@ class OpenAIAgent(BaseAgent):
                 description=tool.description,
                 tags=[]
             ))
-        return AgentCard(
-            name=self.name,
+        return self._generate_a2a_card(
+            agent_name=self.name,
             description=self.agent.instructions,
-            url=f'{AKConfig.get().a2a.url}/{self.name}',
-            version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            capabilities=AgentCapabilities(streaming=False),
             skills=skills
         )
 

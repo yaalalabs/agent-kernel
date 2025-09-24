@@ -1,6 +1,8 @@
 import logging
 from abc import abstractmethod, ABC
-from typing import Any
+from typing import Any, List
+
+from .config import AKConfig
 
 
 class Session:
@@ -129,6 +131,21 @@ class Agent(ABC):
         Returns the runner associated with the agent.
         """
         return self._runner
+
+    @staticmethod
+    def _generate_a2a_card(agent_name: str, description: str, skills: List):
+        from a2a.types import AgentCard, AgentCapabilities
+        return AgentCard(
+            name=agent_name,
+            description=description,
+            url=f'{AKConfig.get().a2a.url}/{agent_name}',
+            version=AKConfig.get().library_version,
+            default_input_modes=["text"],
+            default_output_modes=["json"],
+            preferred_transport="HTTP+JSON",
+            capabilities=AgentCapabilities(streaming=False),
+            skills=skills
+        )
 
     @abstractmethod
     def get_a2a_card(self):

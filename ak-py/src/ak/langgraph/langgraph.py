@@ -7,7 +7,6 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
 from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
-from ..core.config import AKConfig
 
 FRAMEWORK = "langgraph"
 
@@ -46,7 +45,7 @@ class LangGraphAgent(BaseAgent):
         """
         Returns the A2A AgentCard associated with the agent.
         """
-        from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+        from a2a.types import AgentSkill
 
         graph = self.agent.get_graph()
         skills = []
@@ -61,14 +60,9 @@ class LangGraphAgent(BaseAgent):
                         tags=[]
                     ))
         # TODO extract description from graph
-        return AgentCard(
-            name=self.name,
+        return self._generate_a2a_card(
+            agent_name=self.name,
             description="",
-            url=f'{AKConfig.get().a2a.url}/{self.name}',
-            version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            capabilities=AgentCapabilities(streaming=False),
             skills=skills
         )
 

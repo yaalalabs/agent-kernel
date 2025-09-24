@@ -6,7 +6,6 @@ from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
 from ..core import Agent as BaseAgent, Module, Runner, Session
-from ..core.config import AKConfig
 
 FRAMEWORK = "crewai"
 
@@ -139,7 +138,7 @@ class CrewAIAgent(BaseAgent):
         """
           Returns the A2A AgentCard associated with the agent.
           """
-        from a2a.types import AgentCard, AgentCapabilities, AgentSkill
+        from a2a.types import AgentSkill
 
         skills = []
         for tool in self.agent.tools:
@@ -149,14 +148,9 @@ class CrewAIAgent(BaseAgent):
                 description=tool.description,
                 tags=[]
             ))
-        return AgentCard(
-            name=self.name,
+        return self._generate_a2a_card(
+            agent_name=self.name,
             description=self.agent.backstory,
-            url=f'{AKConfig.get().a2a.url}/{self.name}',
-            version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            capabilities=AgentCapabilities(streaming=False),
             skills=skills
         )
 
