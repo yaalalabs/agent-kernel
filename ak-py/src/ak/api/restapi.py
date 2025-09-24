@@ -28,7 +28,7 @@ class RESTAPI:
         Assembles a FastAPI app from routers.
         :param routers: List of routers to include in the app.
         """
-        app = FastAPI(title="Agent Kernel REST API")
+        app = FastAPI(title="Agent Kernel REST API", debug=True)
 
         app.add_middleware(
             CORSMiddleware,

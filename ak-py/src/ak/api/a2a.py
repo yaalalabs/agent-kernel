@@ -64,12 +64,15 @@ class A2ARESTRequestHandler:
                 router.add_api_route(
                     f'{route[0]}', callback, methods=[route[1]]
                 )
-
-            # Create the well-known (public) endpoint
-            @router.get(f'{AGENT_CARD_WELL_KNOWN_PATH}')
-            async def get_agent_card():
-                card = A2A.get_card(agent)
-                return card.model_dump()
-
             routers.append(router)
+
+        # Create the well-known (public) endpoint
+        card_router = APIRouter(prefix="/a2a")
+
+        @card_router.get(f'/{{agent_name}}{AGENT_CARD_WELL_KNOWN_PATH}')
+        async def get_agent_card(agent_name: str):
+            card = A2A.get_card(agent_name)
+            return card.model_dump()
+
+        routers.append(card_router)
         return routers

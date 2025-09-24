@@ -40,7 +40,7 @@ class _APIConfig(BaseModel):
 class _A2AConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable A2A")
     agents: List[str] = Field(default=["*"], description="List of agent names to enable A2A")
-    url: str = Field(default="http://localhost:8000", description="A2A URL")
+    url: str = Field(default="http://localhost:8000/a2a", description="A2A URL")
     task_store_type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
 
 
