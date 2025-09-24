@@ -4,7 +4,7 @@ from http import HTTPStatus
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from openai import BaseModel
+from pydantic import BaseModel
 
 from ..core import AgentService
 
