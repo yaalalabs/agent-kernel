@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 import pytest_asyncio
 from ak.test import Test
@@ -20,11 +22,17 @@ async def test_server():
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def test_client(test_server):
-    test_client = A2AHttpClient("http://localhost:8000/a2a/general")
-    await test_client.init()
-    print("Client initialized")
     try:
+        test_client = A2AHttpClient("http://localhost:8000/a2a/general")
+        await asyncio.wait_for(test_client.init(), timeout=15.0)
+        print("Client initialized")
         yield test_client
+    except asyncio.TimeoutError as e:
+        print(f"Client initialization timeout: {e}")
+        raise
+    except Exception as e:
+        print(f"Client initialization failed: {e}")
+        raise
     finally:
         pass
 

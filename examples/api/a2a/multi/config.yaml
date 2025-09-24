@@ -1,2 +1,5 @@
 a2a:
   enabled: true
+
+api:
+  host: localhost
