@@ -1,0 +1,11 @@
+name: 'Build ak-py'
+description: 'Build the ak-py package'
+runs:
+  using: 'composite'
+  steps:
+    - name: Build ak-py
+      shell: bash
+      working-directory: ak-py
+      run: |
+        set -e
+        ./build.sh
