@@ -10,17 +10,17 @@ class Test:
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
     _prompt = ""
 
-    def __init__(self, path, match_threshold=50, cli_mode=True):
+    def __init__(self, path, match_threshold=50):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
         :param path: Pyton file path as a string
+        :param match_threshold: Fuzzy matching threshold for the response comparison.
         """
         working_dir = Path.cwd()
         self.path = working_dir / path
         self.proc = None
         self.latest = None
         self.match_threshold = match_threshold
-        self.cli_mode = cli_mode
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -75,12 +75,11 @@ class Test:
             stderr=asyncio.subprocess.STDOUT,  # merge stderr into stdout
         )
 
-        if self.cli_mode:
-            # Capture the initial welcome message and prompt
-            welcome, prompt_text = await self._read_until_prompt()
-            welcome_stripped = self._prompt_regex.sub("", welcome).strip()
-            print(welcome_stripped, flush=True)
-            self._update_prompt(prompt_text)
+        # Capture the initial welcome message and prompt
+        welcome, prompt_text = await self._read_until_prompt()
+        welcome_stripped = self._prompt_regex.sub("", welcome).strip()
+        print(welcome_stripped, flush=True)
+        self._update_prompt(prompt_text)
 
     async def send(self, message: str) -> str:
         """
@@ -101,9 +100,10 @@ class Test:
         self.latest = ansi_escape.sub('', response)
         return self.latest
 
-    def compare(self, actual: str, expected: str):
+    @staticmethod
+    def compare(actual: str, expected: str, threshold: int = 50):
         score = fuzz.ratio(actual, expected)
-        assert score > self.match_threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
+        assert score > threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
 
     async def expect(self, expected: str):
         """
@@ -112,14 +112,13 @@ class Test:
         """
         if self.latest is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
-        self.compare(self.latest, expected)
+        self.compare(self.latest, expected, self.match_threshold)
 
     async def stop(self):
         """
         Stops the CLI.
         """
-        if self.cli_mode:
-            self.proc.stdin.close()
+        self.proc.stdin.close()
         await self.proc.wait()
 
 
