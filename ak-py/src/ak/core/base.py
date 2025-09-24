@@ -134,6 +134,13 @@ class Agent(ABC):
 
     @staticmethod
     def _generate_a2a_card(agent_name: str, description: str, skills: List):
+        """
+        Helper method to generate an A2A AgentCard.
+        :param agent_name: Name of the agent.
+        :param description: Description of the agent.
+        :param skills: List of AgentSkill objects.
+        :return: An A2A AgentCard instance.
+        """
         from a2a.types import AgentCard, AgentCapabilities
         return AgentCard(
             name=agent_name,
