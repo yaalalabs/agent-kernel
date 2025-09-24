@@ -22,11 +22,11 @@ async def test_server():
 async def test_client(test_server):
     import httpx
     async with httpx.AsyncClient() as client:
-        response = await client.get("http://localhost:8000/health")
+        response = await client.get("http://127.0.0.1:8000/health")
         print(response)
         assert response.status_code == 200
 
-    test_client = A2AHttpClient("http://localhost:8000/a2a/general")
+    test_client = A2AHttpClient("http://127.0.0.1:8000/a2a/general")
     await test_client.init()
     print("Client initialized")
     try:
