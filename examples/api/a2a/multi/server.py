@@ -20,7 +20,7 @@ math_agent = OpenAIAgent(
 history_agent = CrewAIAgent(
     role="history",
     goal="Specialist agent for history questions",
-    backstory="You provide assistance with history queries. Explain important details and context clearly.",
+    backstory="You provide assistance with history queries. Give direct and correct answers. Answer the question only. Don't give any explanation",
     verbose=False,
 )
 

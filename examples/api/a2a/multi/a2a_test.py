@@ -1,14 +1,15 @@
 import pytest
 import pytest_asyncio
-
 from ak.test import Test
+
+from client import A2AHttpClient
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def test_client():
-    test = Test("demo.py")
+async def test_server():
+    test = Test("server.py", cli_mode=False)
     await test.start()
     try:
         yield test
@@ -16,13 +17,23 @@ async def test_client():
         await test.stop()
 
 
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_client(test_server):
+    test_client = A2AHttpClient("http://localhost:8000/a2a/history")
+    await test_client.init()
+    try:
+        yield test_client
+    finally:
+        pass
+
+
 @pytest.mark.order(1)
-async def test_first_question(test_client):
-    await test_client.send("Who won the 1996 cricket world cup?")
-    await test_client.expect("The 1996 Cricket World Cup was won by Sri Lanka")
+async def test_first_question(test_server, test_client):
+    response = await test_client.send("Who won the 1996 cricket world cup?")
+    test_server.compare(response, "Sri Lanka won the world cup.")
 
 
 @pytest.mark.order(2)
-async def test_follow_up_question(test_client):
-    await test_client.send("Which country hosted the tournament?")
-    await test_client.expect("Co-hosted by India, Pakistan and Sri Lanka.")
+async def test_follow_up_question(test_client, test_server):
+    response = await test_client.send("Which countries hosted the tournament?")
+    test_server.compare(response, "The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka")

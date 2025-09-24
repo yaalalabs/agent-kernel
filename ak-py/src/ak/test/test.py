@@ -10,16 +10,17 @@ class Test:
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
     _prompt = ""
 
-    def __init__(self, cli, match_threshold=50):
+    def __init__(self, path, match_threshold=50, cli_mode=True):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
-        :param cli: The agent-kernel command-line interface path as a string
+        :param path: Pyton file path as a string
         """
         working_dir = Path.cwd()
-        self.path = working_dir / cli
+        self.path = working_dir / path
         self.proc = None
-        self.previous = None
+        self.latest = None
         self.match_threshold = match_threshold
+        self.cli_mode = cli_mode
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -74,11 +75,12 @@ class Test:
             stderr=asyncio.subprocess.STDOUT,  # merge stderr into stdout
         )
 
-        # Capture the initial welcome message and prompt
-        welcome, prompt_text = await self._read_until_prompt()
-        welcome_stripped = self._prompt_regex.sub("", welcome).strip()
-        print(welcome_stripped, flush=True)
-        self._update_prompt(prompt_text)
+        if self.cli_mode:
+            # Capture the initial welcome message and prompt
+            welcome, prompt_text = await self._read_until_prompt()
+            welcome_stripped = self._prompt_regex.sub("", welcome).strip()
+            print(welcome_stripped, flush=True)
+            self._update_prompt(prompt_text)
 
     async def send(self, message: str) -> str:
         """
@@ -96,25 +98,28 @@ class Test:
         print(response, flush=True)
         self._update_prompt(prompt_text)
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
-        self.previous = ansi_escape.sub('', response)
-        return self.previous
+        self.latest = ansi_escape.sub('', response)
+        return self.latest
+
+    def compare(self, actual: str, expected: str):
+        score = fuzz.ratio(actual, expected)
+        assert score > self.match_threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
 
     async def expect(self, expected: str):
         """
         Asserts that the last response received from the CLI matches the expected message (fuzzy).
         :param expected: The expected message.
         """
-
-        if self.previous is None:
+        if self.latest is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
-        score = fuzz.ratio(self.previous, expected)
-        assert score > self.match_threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {self.previous}"
+        self.compare(self.latest, expected)
 
     async def stop(self):
         """
         Stops the CLI.
         """
-        self.proc.stdin.close()
+        if self.cli_mode:
+            self.proc.stdin.close()
         await self.proc.wait()
 
 
