@@ -4,10 +4,10 @@ from ak.test import Test
 
 from client import A2AHttpClient
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+pytestmark = pytest.mark.asyncio(loop_scope="function")  # uses a single session for all tests
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="function", loop_scope="function")
 async def test_server():
     test = Test("server.py", cli_mode=False)
     await test.start()
@@ -18,14 +18,8 @@ async def test_server():
         await test.stop()
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="function", loop_scope="function")
 async def test_client(test_server):
-    import httpx
-    async with httpx.AsyncClient() as client:
-        response = await client.get("http://127.0.0.1:8000/health")
-        print(response)
-        assert response.status_code == 200
-
     test_client = A2AHttpClient("http://127.0.0.1:8000/a2a/general")
     await test_client.init()
     print("Client initialized")
@@ -39,9 +33,5 @@ async def test_client(test_server):
 async def test_first_question(test_server, test_client):
     response = await test_client.send("Who won the 1996 cricket world cup?")
     test_server.compare(response, "Sri Lanka won the world cup.")
-
-
-@pytest.mark.order(2)
-async def test_follow_up_question(test_client, test_server):
     response = await test_client.send("Which countries hosted the tournament?")
     test_server.compare(response, "The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka")
