@@ -34,4 +34,4 @@ async def test_first_question(test_server, test_client):
     response = await test_client.send("Who won the 1996 cricket world cup?")
     test_server.compare(response, "Sri Lanka won the world cup.")
     response = await test_client.send("Which countries hosted the tournament?")
-    test_server.compare(response, "The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka")
+    test_server.compare(response, "The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka.")
