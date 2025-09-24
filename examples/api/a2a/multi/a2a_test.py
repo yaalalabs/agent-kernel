@@ -11,6 +11,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 async def test_server():
     test = Test("server.py", cli_mode=False)
     await test.start()
+    print("Server started")
     try:
         yield test
     finally:
@@ -19,8 +20,9 @@ async def test_server():
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def test_client(test_server):
-    test_client = A2AHttpClient("http://localhost:8000/a2a/history")
+    test_client = A2AHttpClient("http://localhost:8000/a2a/general")
     await test_client.init()
+    print("Client initialized")
     try:
         yield test_client
     finally:
