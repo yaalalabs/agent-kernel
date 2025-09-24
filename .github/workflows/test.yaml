@@ -13,15 +13,23 @@ jobs:
       run:
         shell: bash -e {0}
     steps:
-      - name: Setup Python and uv
-        uses: ./.github/actions/setup-python-uv
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Build ak-py
-        uses: ./.github/actions/build-ak-py
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Test ak-py
+      - name: Install uv
+        run: |
+          pip install uv
+
+      - name: Build and test ak-py
         working-directory: ak-py
         run: |
+          set -e
+          ./build.sh
           uv run pytest -s
 
   cli-e2e-test:
@@ -30,32 +38,34 @@ jobs:
       run:
         shell: bash -e {0}
     steps:
-      - name: Setup Python and uv
-        uses: ./.github/actions/setup-python-uv
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          pip install uv
 
       - name: Build ak-py
-        uses: ./.github/actions/build-ak-py
+        working-directory: ak-py
+        run: |
+          set -e
+          ./build.sh
 
       - name: Run CLI examples
-        uses: ./.github/actions/run-examples
-        with:
-          example-paths: 'examples/cli/* examples/cli/a2a/*'
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-
-  api-e2e-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -e {0}
-    steps:
-      - name: Setup Python and uv
-        uses: ./.github/actions/setup-python-uv
-
-      - name: Build ak-py
-        uses: ./.github/actions/build-ak-py
-
-      - name: Run API examples
-        uses: ./.github/actions/run-examples
-        with:
-          example-paths: 'examples/api/* examples/api/a2a/*'
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -e
+          for example in examples/cli/* examples/cli/a2a/* examples/api/* examples/api/a2a/*; do
+            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
+              echo "=== Running build for $example ==="
+              (cd "$example" && ./build.sh local)
+              echo "=== Running tests for $example ==="
+              (cd "$example" && uv run pytest -s)
+            fi
+          done
