@@ -5,7 +5,7 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent, Module, Runner, Session
+from ..core import Agent as BaseAgent, Module, Runner, Session, TraceloopTracing
 
 FRAMEWORK = "crewai"
 
@@ -65,11 +65,12 @@ class CrewAIRunner(Runner):
     CrewAIRunner class provides a runner for CrewAI based agents.
     """
 
-    def __init__(self):
+    def __init__(self, enable_tracing:bool=False):
         """
         Initializes a CrewAIRunner instance.
         """
-        super().__init__(FRAMEWORK)
+        self._trace_engine = TraceloopTracing(app_name=f"{FRAMEWORK}_trace") if enable_tracing else None
+        super().__init__(name=FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
 
     def _memory(self, session: Session) -> ExternalMemory | None:
@@ -140,11 +141,11 @@ class CrewAIModule(Module):
     CrewAIModule class provides a module for CrewAI based agents.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self, agents: list[Agent], enable_tracing:bool=False):
         """
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
         """
-        runner = CrewAIRunner()
+        runner = CrewAIRunner(enable_tracing=enable_tracing)
         super().__init__(
             list(map(lambda agent: CrewAIAgent(agent.role, runner, agent, agents), agents)))

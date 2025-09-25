@@ -3,7 +3,7 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session, TraceloopTracing
 
 FRAMEWORK = "openai"
 
@@ -57,11 +57,12 @@ class OpenAIRunner(BaseRunner):
     OpenAIRunner class provides a runner for OpenAI Agents SDK based agents.
     """
 
-    def __init__(self):
+    def __init__(self, enable_tracing:bool=False):
         """
         Initializes an OpenAIRunner instance.
         """
-        super().__init__(FRAMEWORK)
+        self._trace_engine = TraceloopTracing(app_name=f"{FRAMEWORK}_trace") if enable_tracing else None
+        super().__init__(name=FRAMEWORK)
 
     def _session(self, session: Session) -> OpenAISession:
         """
@@ -113,10 +114,10 @@ class OpenAIModule(Module):
     OpenAIModule class provides a module for OpenAI Agent SDK based agents.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self, agents: list[Agent], enable_tracing:bool=False):
         """
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         """
-        runner = OpenAIRunner()
+        runner = OpenAIRunner(enable_tracing=enable_tracing)
         super().__init__(list(map(lambda agent: OpenAIAgent(agent.name, runner, agent), agents)))

@@ -22,7 +22,7 @@ triage_agent = Agent(
     handoffs=[general_agent, math_agent],
 )
 
-OpenAIModule([triage_agent, math_agent, general_agent])
+OpenAIModule(agents=[triage_agent, math_agent, general_agent], enable_tracing=False)
 
 if __name__ == "__main__":
     CLI.main()

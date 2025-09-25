@@ -43,7 +43,7 @@ triage_agent = create_supervisor(
     )
 ).compile(name="triage")
 
-LangGraphModule([triage_agent, math_agent, general_agent])
+LangGraphModule(agents=[triage_agent, math_agent, general_agent], enable_tracing=True)
 
 if __name__ == "__main__":
     CLI.main()
