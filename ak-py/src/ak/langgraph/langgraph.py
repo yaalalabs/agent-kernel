@@ -41,6 +41,31 @@ class LangGraphAgent(BaseAgent):
         """
         return self._agent
 
+    def get_a2a_card(self):
+        """
+        Returns the A2A AgentCard associated with the agent.
+        """
+        from a2a.types import AgentSkill
+
+        graph = self.agent.get_graph()
+        skills = []
+        for node_name, node_data in graph.nodes.items():
+            # TODO improve this to better extract tools
+            if hasattr(node_data, 'tools'):
+                for tool in node_data.tools:
+                    skills.append(AgentSkill(
+                        id=tool.name,
+                        name=tool.name,
+                        description=tool.description,
+                        tags=[]
+                    ))
+        # TODO extract description from graph
+        return self._generate_a2a_card(
+            agent_name=self.name,
+            description="",
+            skills=skills
+        )
+
 
 class LangGraphSession(BaseSession):
     """

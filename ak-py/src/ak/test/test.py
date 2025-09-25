@@ -10,15 +10,16 @@ class Test:
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
     _prompt = ""
 
-    def __init__(self, cli, match_threshold=50):
+    def __init__(self, path, match_threshold=50):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
-        :param cli: The agent-kernel command-line interface path as a string
+        :param path: Python file path as a string
+        :param match_threshold: Fuzzy matching threshold for the response comparison.
         """
         working_dir = Path.cwd()
-        self.path = working_dir / cli
+        self.path = working_dir / path
         self.proc = None
-        self.previous = None
+        self.latest = None
         self.match_threshold = match_threshold
 
     @classmethod
@@ -96,19 +97,22 @@ class Test:
         print(response, flush=True)
         self._update_prompt(prompt_text)
         ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
-        self.previous = ansi_escape.sub('', response)
-        return self.previous
+        self.latest = ansi_escape.sub('', response)
+        return self.latest
+
+    @staticmethod
+    def compare(actual: str, expected: str, threshold: int = 50):
+        score = fuzz.ratio(actual, expected)
+        assert score > threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
 
     async def expect(self, expected: str):
         """
         Asserts that the last response received from the CLI matches the expected message (fuzzy).
         :param expected: The expected message.
         """
-
-        if self.previous is None:
+        if self.latest is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
-        score = fuzz.ratio(self.previous, expected)
-        assert score > self.match_threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {self.previous}"
+        self.compare(self.latest, expected, self.match_threshold)
 
     async def stop(self):
         """
