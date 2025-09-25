@@ -13,7 +13,7 @@ class Test:
     def __init__(self, path, match_threshold=50):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
-        :param path: Pyton file path as a string
+        :param path: Python file path as a string
         :param match_threshold: Fuzzy matching threshold for the response comparison.
         """
         working_dir = Path.cwd()
