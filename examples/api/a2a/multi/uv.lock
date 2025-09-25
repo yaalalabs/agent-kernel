@@ -160,6 +160,26 @@ wheels = [
 ]
 
 [[package]]
+name = "api-a2a-multi"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "ak", extra = ["a2a", "crewai", "openai", "test"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "ak", extra = ["test"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ak", extras = ["cli", "crewai", "openai", "a2a", "test"], specifier = ">=0.1.0a1" },
+    { name = "ak", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.0a1" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "appdirs"
 version = "1.4.4"
 source = { registry = "https://pypi.org/simple" }
@@ -426,26 +446,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/61/4f/c88ead80ae78c839152cca5dc6edae65b8a1da090b7220739b54c75549eb/chromadb-1.0.20-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2044e1400f67588271ebd2fa654dd5333e9ad108f800aa57a6fa09237afb6142", size = 19755334, upload-time = "2025-08-18T17:03:22.386Z" },
     { url = "https://files.pythonhosted.org/packages/6f/81/6decbd21c67572d67707f7e168851f10404e2857897456c6ba220e9b09be/chromadb-1.0.20-cp39-abi3-win_amd64.whl", hash = "sha256:b81be370b7c34138c01a41d11304498a13598cf9b21ecde31bba932492071301", size = 19778671, upload-time = "2025-08-18T17:03:33.206Z" },
 ]
-
-[[package]]
-name = "cli-multi"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "ak", extra = ["a2a", "crewai", "openai", "test"] },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "ak", extra = ["test"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ak", extras = ["cli", "crewai", "openai", "a2a", "test"], specifier = ">=0.1.0a1" },
-    { name = "ak", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.0a1" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "click"
