@@ -12,9 +12,3 @@ class TracingProviderEnum(str, Enum):
 PROVIDER_TO_TRACER_CLASS: dict[str, Type[Tracer]] = {
     TracingProviderEnum.traceloop.value: TraceloopTracer,
 }
-
-
-class AgentFrameworkEnum(str, Enum):
-    openai = "openai"
-    langgraph = "langgraph"
-    crewai = "crewai"

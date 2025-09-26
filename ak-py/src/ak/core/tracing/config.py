@@ -1,7 +1,8 @@
 from typing import Optional, Dict
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .enums_and_mappings import TracingProviderEnum, AgentFrameworkEnum
+from .enums_and_mappings import TracingProviderEnum
+from ..enums import AgentFrameworkEnum
 
 
 class TracingFrameworkVariables(BaseModel):

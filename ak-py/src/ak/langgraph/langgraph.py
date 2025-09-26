@@ -6,9 +6,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, get_tracer
+from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, get_tracer, AgentFrameworkEnum
 
-FRAMEWORK = "langgraph"
+FRAMEWORK = AgentFrameworkEnum.langgraph.value
 
 
 class LangGraphSessionConfigurable(BaseModel):

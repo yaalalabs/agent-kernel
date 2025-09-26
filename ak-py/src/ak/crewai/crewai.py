@@ -5,9 +5,9 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent, Module, Runner, Session, get_tracer
+from ..core import Agent as BaseAgent, Module, Runner, Session, get_tracer, AgentFrameworkEnum
 
-FRAMEWORK = "crewai"
+FRAMEWORK = AgentFrameworkEnum.crewai.value
 
 
 class CrewAISession(Storage):

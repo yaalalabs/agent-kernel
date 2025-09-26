@@ -3,9 +3,9 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session, get_tracer
+from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session, get_tracer, AgentFrameworkEnum
 
-FRAMEWORK = "openai"
+FRAMEWORK = AgentFrameworkEnum.openai.value
 
 
 class OpenAISession(SessionABC):
