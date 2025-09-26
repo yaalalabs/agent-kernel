@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
+from pydantic import BaseModel
 
 
 class Tracer(ABC):
@@ -10,14 +11,14 @@ class Tracer(ABC):
     and expose a minimal, common interface used by the Agent Kernel.
     """
 
-    def __init__(self, app_name: str, variables: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, app_name: str, variables: Optional[BaseModel] = None) -> None:
         """Create a tracer instance, but defer heavy provider initialization to `init`.
 
         - app_name: logical application or service name used by the tracing backend.
         - variables: optional provider-specific variables (e.g., base URL, project ID).
         """
         self.app_name = app_name
-        self.variables = variables or {}
+        self.variables = variables
 
     @abstractmethod
     def init(self) -> None:

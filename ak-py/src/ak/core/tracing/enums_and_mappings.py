@@ -6,7 +6,6 @@ from .tracers import Tracer, TraceloopTracer
 
 class TracingProviderEnum(str, Enum):
     traceloop = "traceloop"
-    langsmith = "langsmith"
 
 
 # Mapping from tracing provider enum value (lowercase string) to the tracer class

@@ -1,11 +1,12 @@
 from typing import Any, Dict, Optional
+from pydantic import BaseModel
 from traceloop.sdk import Traceloop
 
 from .base import Tracer
 
 
 class TraceloopTracer(Tracer):
-    def __init__(self, app_name: str = "ak-py", variables: Optional[Dict[str, Any]] = None):
+    def __init__(self, app_name: str = "ak-py", variables: Optional[BaseModel] = None):
         super().__init__(app_name=app_name, variables=variables)
         self.init()
 

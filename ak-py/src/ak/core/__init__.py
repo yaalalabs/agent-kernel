@@ -16,3 +16,4 @@ from .module import Module
 from .runtime import Runtime
 from .sessions.redis import RedisDriver, RedisSessionSerde
 from .service import AgentService
+from .tracing.engine import get_tracer

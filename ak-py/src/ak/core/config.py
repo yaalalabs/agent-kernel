@@ -6,7 +6,7 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .tracing import _TracingConfig
+from .tracing.config import TracingConfig
 
 
 class _RedisConfig(BaseModel):
@@ -23,7 +23,7 @@ class _SessionStoreConfig(BaseModel):
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(default_factory=_SessionStoreConfig)
-    tracing: _TracingConfig = Field(default_factory=_TracingConfig)
+    tracing: TracingConfig = Field(default_factory=TracingConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",
