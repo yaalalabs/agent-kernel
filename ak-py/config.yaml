@@ -1,0 +1,17 @@
+tracing:
+  # global defaults (used if a framework doesn’t override)
+  enabled: true
+  name: ak-py  # global app name
+
+  # per-framework overrides
+  frameworks:
+    openai:
+      name: ak-openai # tracer name
+      provider: traceloop  # traceloop | langsmith | none
+      variables:
+        url: https://taceloop.com/api/v1/ # export URL
+    langgraph:
+      provider: otel
+      name: ak-langgraph
+      variables:
+        url: http://localhost:4317 # export URL
