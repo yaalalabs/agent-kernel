@@ -12,7 +12,7 @@ create_docker_image() {
     uv export --no-hashes > requirements.txt
     uv pip install -r requirements.txt --target=dist  --find-links ../../../ak-py/dist
     uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist ak || true
-    cp -r app.py config.yaml dist/
+    cp -r app.py tool.py config.yaml dist/
     
     DOCKER_BUILDKIT=0 docker build -t linearsix/lime-ai-ak:latest .
 }
