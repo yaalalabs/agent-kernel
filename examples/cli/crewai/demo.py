@@ -18,7 +18,7 @@ general_agent = Agent(
     verbose=False,
 )
 
-CrewAIModule(agents=[general_agent, math_agent])
+CrewAIModule(agents=[general_agent, math_agent], enable_tracing=False)
 
 if __name__ == "__main__":
     CLI.main()

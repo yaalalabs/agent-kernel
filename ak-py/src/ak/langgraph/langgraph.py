@@ -6,9 +6,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, get_tracer, AgentFrameworkEnum
+from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, TraceloopTracing
 
-FRAMEWORK = AgentFrameworkEnum.langgraph.value
+FRAMEWORK = "langgraph"
 
 
 class LangGraphSessionConfigurable(BaseModel):
@@ -94,11 +94,11 @@ class LangGraphRunner(BaseRunner):
     LangGraphRunner class provides a runner for LangGraph Agents SDK based agents.
     """
 
-    def __init__(self):
+    def __init__(self, enable_tracing:bool=False):
         """
         Initializes an LangGraphRunner instance.
         """
-        self._trace_engine = get_tracer(framework=FRAMEWORK)
+        self._trace_engine = TraceloopTracing(app_name=f"{FRAMEWORK}_trace") if enable_tracing else None
         super().__init__(name=FRAMEWORK)
 
     def _session(self, session: BaseSession) -> LangGraphSession:
@@ -138,10 +138,10 @@ class LangGraphModule(BaseModule):
     LangGraphModule class provides a module for LangGraph Agent SDK based agents.
     """
 
-    def __init__(self, agents: list[CompiledStateGraph]):
+    def __init__(self, agents: list[CompiledStateGraph], enable_tracing:bool=False):
         """
         Initializes a LangGraphModule instance.
         :param agents: List of agents in the module.
         """
-        runner = LangGraphRunner()
+        runner = LangGraphRunner(enable_tracing=enable_tracing)
         super().__init__(list(map(lambda agent: LangGraphAgent(name=agent.name, runner=runner, agent=agent), agents)))
