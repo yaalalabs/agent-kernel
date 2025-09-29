@@ -22,6 +22,7 @@ class _SessionStoreConfig(BaseModel):
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(default_factory=_SessionStoreConfig)
+    tracing: bool = Field(default=False, description="Enable tracing")
 
     model_config = SettingsConfigDict(
         env_file=".env",

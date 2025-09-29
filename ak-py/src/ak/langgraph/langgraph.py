@@ -94,11 +94,11 @@ class LangGraphRunner(BaseRunner):
     LangGraphRunner class provides a runner for LangGraph Agents SDK based agents.
     """
 
-    def __init__(self, enable_tracing:bool=False):
+    def __init__(self):
         """
         Initializes an LangGraphRunner instance.
         """
-        self._trace_engine = TraceloopTracing(app_name=f"{FRAMEWORK}_trace") if enable_tracing else None
+        self._trace_engine = TraceloopTracing.get_tracer(name=f"{FRAMEWORK}_trace")
         super().__init__(name=FRAMEWORK)
 
     def _session(self, session: BaseSession) -> LangGraphSession:
@@ -138,10 +138,10 @@ class LangGraphModule(BaseModule):
     LangGraphModule class provides a module for LangGraph Agent SDK based agents.
     """
 
-    def __init__(self, agents: list[CompiledStateGraph], enable_tracing:bool=False):
+    def __init__(self, agents: list[CompiledStateGraph]):
         """
         Initializes a LangGraphModule instance.
         :param agents: List of agents in the module.
         """
-        runner = LangGraphRunner(enable_tracing=enable_tracing)
+        runner = LangGraphRunner()
         super().__init__(list(map(lambda agent: LangGraphAgent(name=agent.name, runner=runner, agent=agent), agents)))

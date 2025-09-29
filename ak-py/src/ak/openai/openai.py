@@ -57,11 +57,11 @@ class OpenAIRunner(BaseRunner):
     OpenAIRunner class provides a runner for OpenAI Agents SDK based agents.
     """
 
-    def __init__(self, enable_tracing:bool=False):
+    def __init__(self):
         """
         Initializes an OpenAIRunner instance.
         """
-        self._trace_engine = TraceloopTracing(app_name=f"{FRAMEWORK}_trace") if enable_tracing else None
+        self._trace_engine = TraceloopTracing.get_tracer(name=f"{FRAMEWORK}_trace")
         super().__init__(name=FRAMEWORK)
 
     def _session(self, session: Session) -> OpenAISession:
@@ -114,10 +114,10 @@ class OpenAIModule(Module):
     OpenAIModule class provides a module for OpenAI Agent SDK based agents.
     """
 
-    def __init__(self, agents: list[Agent], enable_tracing:bool=False):
+    def __init__(self, agents: list[Agent]):
         """
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         """
-        runner = OpenAIRunner(enable_tracing=enable_tracing)
+        runner = OpenAIRunner()
         super().__init__(list(map(lambda agent: OpenAIAgent(agent.name, runner, agent), agents)))
