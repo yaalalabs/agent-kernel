@@ -3,13 +3,12 @@ from typing import Any
 
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import InMemorySessionService, Session as ADKSession
 from google.genai import types
 
 from ak.core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session
 
 FRAMEWORK = "adk"
-APP_NAME = "google_adk"
 
 
 class GoogleADKSession(Session):
@@ -33,26 +32,23 @@ class GoogleADKSession(Session):
         """
         return self._session_service
 
-    async def create_or_use_existing(self, custom_app_name: str = None, initial_state: dict = None):
+    async def get_adk_session(self, app_name: str) -> tuple[str, ADKSession]:
         """
         Create a new session or return an existing one.
-        :param custom_app_name: Optional app name to namespace the session.
-        :param initial_state: Optional initial state for a new session.
+        :param app_name: app name to namespace the session.
         :return: Tuple of (session_id, session object).
         """
-        app_name = custom_app_name or APP_NAME
-        session_id = f"{self.id}-{custom_app_name}" if custom_app_name else f"{self.id}-{APP_NAME}"
+        session_id = f"{self.id}-{app_name}"
 
         if session_id in self._sessions:
             self._log.debug(f"Session already exists for ID: {session_id}")
             return session_id, self._sessions[session_id]
 
-        self._log.debug(f"Creating session with ID: {session_id}, AppName: {app_name}, InitialState: {initial_state}")
+        self._log.debug(f"Creating session with ID: {session_id}, AppName: {app_name}")
         session = await self._session_service.create_session(
             app_name=app_name,
             user_id=session_id,
             session_id=session_id,
-            state=initial_state,
         )
 
         self._log.debug(f"Created Session: {session}")
@@ -113,9 +109,9 @@ class GoogleADKRunner(BaseRunner):
         :param prompt: The prompt to send to the agent.
         :return: The response text from the agent.
         """
-        google_adk_session = self._session(session)
-        runner = self._create_runner(agent=agent, session=google_adk_session)
-        session_id, _ = await google_adk_session.create_or_use_existing(custom_app_name=agent.name)
+        adk_session = self._session(session)
+        runner = self._create_runner(agent=agent, session=adk_session)
+        session_id, _ = await adk_session.get_adk_session(app_name=agent.name)
         return await self.get_agent_response(runner=runner, session_id=session_id, prompt=prompt)
 
 
