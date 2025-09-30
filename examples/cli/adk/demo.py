@@ -1,10 +1,8 @@
+from ak.adk import GoogleADKModule
+from ak.cli import CLI
 from google.adk.agents import Agent, LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 
-from ak.cli import CLI
-from ak.adk import GoogleADKModule
-
-# Math specialist agent
 math_agent = Agent(
     name="math",
     model=LiteLlm(model="openai/gpt-4o-mini"),
@@ -16,7 +14,6 @@ math_agent = Agent(
     """,
 )
 
-# General purpose agent
 history_agent = Agent(
     name="history",
     model=LiteLlm(model="openai/gpt-4o-mini"),
