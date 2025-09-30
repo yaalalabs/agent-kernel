@@ -22,7 +22,7 @@ def fetch_customer_activity(name: str, operations: List[str] | None = None) -> D
         records. Each record contains: type, amount, currency, and a short note.
     """
     sample: List[Dict[str, object]] = [
-        {"type": "deposit", "amount": 250.00, "currency": "USD", "note": "Mobile check deposit"},
+        {"type": "deposit", "amount": 250.00, "currency": "USD", "note": "Deposited over the counter"},
         {"type": "bill_payment", "amount": 89.99, "currency": "USD", "note": "Utility bill"},
         {"type": "transfer", "amount": 150.00, "currency": "USD", "note": "To Savings"},
         {"type": "withdrawal", "amount": 60.00, "currency": "USD", "note": "ATM cash"},

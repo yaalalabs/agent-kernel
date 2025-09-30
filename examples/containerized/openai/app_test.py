@@ -3,7 +3,9 @@ import os
 import shutil
 import subprocess
 import sys
+import uuid
 
+import httpx
 import pytest
 import pytest_asyncio
 from ak.test import Test
@@ -12,9 +14,19 @@ from ak.test import Test
 class APITestClient:
     def __init__(self, url):
         self.url = url
+        self.session_id = str(uuid.uuid4())
 
     async def send(self, prompt):
-        pass
+        payload = {
+            "prompt": prompt,
+            "session_id": self.session_id,
+            "agent": "support",
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(f"{self.url}/run", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("result", "")
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -43,7 +55,7 @@ async def http_client():
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
-    await asyncio.sleep(15)
+    await asyncio.sleep(10)
 
     try:
         yield APITestClient(f"http://localhost:{test_port}")
@@ -53,9 +65,10 @@ async def http_client():
 
 
 @pytest.mark.asyncio
-async def test_call_api(http_client):
-    response = await http_client.send("Who won the 1996 cricket world cup?")
-    Test.compare(response, "Sri Lanka won the 1996 cricket world cup.")
+async def test_support_agent(http_client):
+    response = await http_client.send("I am Andy Dufresne. I did some deposits.")
+    Test.compare(response, " Hello Andy! I noticed that you made a mobile check deposit of $250. "
+                           "Could you tell me how satisfied you were with the mobile check deposit process?")
 
-    response = await http_client.send("Which countries hosted the tournament?")
-    Test.compare(response, "The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka.")
+    response = await http_client.send("I was extremely happy")
+    Test.compare(response, "That's great to hear! What did you like most about the mobile check deposit process?")
