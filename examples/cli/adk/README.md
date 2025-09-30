@@ -1,4 +1,4 @@
-# Agent Kernel running GoogleADK Agents
+c# Agent Kernel running GoogleADK Agents
 
 This package contains a demo of Agent Kernel running agents built with GoogleADK, Users may
 interact with agents via the Agent Kernel CLI.
