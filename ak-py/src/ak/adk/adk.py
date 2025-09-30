@@ -5,7 +5,7 @@ from google.adk.runners import Runner
 from google.genai import types
 from ak.core import Agent, Module, Runner as BaseRunner, Session
 
-FRAMEWORK = "google"
+FRAMEWORK = "adk"
 APP_NAME = "google_adk"
 
 class GoogleADKSession(Session):
@@ -15,7 +15,7 @@ class GoogleADKSession(Session):
         super().__init__(FRAMEWORK)
         self._session_service = InMemorySessionService()
         self._sessions = {}
-        self._log = logging.getLogger("ak.google.session")
+        self._log = logging.getLogger("ak.adk.session")
 
     @property
     def session_service(self):
