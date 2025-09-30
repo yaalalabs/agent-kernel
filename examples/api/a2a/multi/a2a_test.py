@@ -1,4 +1,3 @@
-# test_app.py
 import asyncio
 import subprocess
 import sys
