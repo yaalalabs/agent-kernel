@@ -27,7 +27,7 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of ak, you can force reinstall from local dist
   uv sync --find-links ../../../ak-py/dist --all-groups
-  uv pip install --force-reinstall --find-links ../../../ak-py/dist ak[openai,api] || true # optional, only if local ak is present
+  uv pip install --force-reinstall --find-links ../../../ak-py/dist ak[openai,api,test] || true # optional, only if local ak is present
 fi
 
 create_docker_image() {
@@ -37,7 +37,7 @@ create_docker_image() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist ak[openai,api] || true
+      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist ak[openai,api,test] || true
     fi
     cp -r app.py tool.py dist/
     
