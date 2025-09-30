@@ -61,7 +61,83 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
-          for example in examples/cli/*; do
+          for example in examples/cli/* examples/cli/a2a/*; do
+            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
+              echo "=== Running build for $example ==="
+              (cd "$example" && ./build.sh local)
+              echo "=== Running tests for $example ==="
+              (cd "$example" && uv run pytest -s)
+            fi
+          done
+
+  api-e2e-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          pip install uv
+
+      - name: Build ak-py
+        working-directory: ak-py
+        run: |
+          set -e
+          ./build.sh
+
+      - name: Run CLI examples
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -e
+          for example in examples/api/* examples/api/a2a/*; do
+            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
+              echo "=== Running build for $example ==="
+              (cd "$example" && ./build.sh local)
+              echo "=== Running tests for $example ==="
+              (cd "$example" && uv run pytest -s)
+            fi
+          done
+
+  containerized-e2e-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: |
+          pip install uv
+
+      - name: Build ak-py
+        working-directory: ak-py
+        run: |
+          set -e
+          ./build.sh
+
+      - name: Run Containerized Examples
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -e
+          for example in examples/containerized/* examples/containerized/a2a/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
               (cd "$example" && ./build.sh local)

@@ -1,3 +1,4 @@
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,13 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _get_ak_version() -> str:
+    try:
+        return importlib.metadata.version("ak")
+    except importlib.metadata.PackageNotFoundError:
+        return "0.1.0"
+
+
 class _RedisConfig(BaseModel):
     url: str = Field(default="redis://localhost:6379", description="Redis connection URL. Use rediss:// for SSL")
     ttl: int = Field(default=604800, description="Redis saved value TTL in seconds")
@@ -15,13 +23,34 @@ class _RedisConfig(BaseModel):
 
 
 class _SessionStoreConfig(BaseModel):
-    type: str = Field("in_memory", pattern="^(in_memory|redis)$")
+    type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
     redis: Optional[_RedisConfig] = _RedisConfig()
+
+
+class _RoutesConfig(BaseModel):
+    agents: bool = Field(default=True, description="Agent interaction routes")
+
+
+class _APIConfig(BaseModel):
+    host: str = Field(default="0.0.0.0", description="API host")
+    port: int = Field(default=8000, description="API port")
+    enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
+
+
+class _A2AConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable A2A")
+    agents: List[str] = Field(default=["*"], description="List of agent names to enable A2A")
+    url: str = Field(default="http://localhost:8000/a2a", description="A2A URL")
+    task_store_type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
 
 
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
-    session: _SessionStoreConfig = Field(default_factory=_SessionStoreConfig)
+    session: _SessionStoreConfig = Field(description="Agent session / memory related configurations",
+                                         default_factory=_SessionStoreConfig)
+    api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
+    a2a: _A2AConfig = Field(description="Agent to Agent related configurations", default_factory=_A2AConfig)
+    library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     model_config = SettingsConfigDict(
         env_file=".env",
