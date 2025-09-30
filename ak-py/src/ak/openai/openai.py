@@ -108,6 +108,26 @@ class OpenAIAgent(BaseAgent):
         """
         return self._agent
 
+    def get_a2a_card(self):
+        """
+        Returns the A2A AgentCard associated with the agent.
+        """
+        from a2a.types import AgentSkill
+
+        skills = []
+        for tool in self.agent.tools:
+            skills.append(AgentSkill(
+                id=tool.name,
+                name=tool.name,
+                description=tool.description,
+                tags=[]
+            ))
+        return self._generate_a2a_card(
+            agent_name=self.name,
+            description=self.agent.instructions,
+            skills=skills
+        )
+
 
 class OpenAIModule(Module):
     """

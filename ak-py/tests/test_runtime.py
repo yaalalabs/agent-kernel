@@ -10,6 +10,7 @@ class DummyRunner(Runner):
 
 
 class DummyAgent(Agent):
+
     def __init__(self, name):
         runner = DummyRunner("DummyRunner")
         super().__init__(name, runner)
@@ -22,6 +23,9 @@ class DummyAgent(Agent):
     @property
     def runner(self):
         return self._runner
+
+    def get_a2a_card(self):
+        pass
 
 
 def reset_runtime_singleton():

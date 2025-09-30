@@ -46,6 +46,9 @@ test = [
     "pytest-order>=1.3.0",
     "rapidfuzz>=3.14.1",
 ]
+a2a = [
+    "a2a-sdk[http-server]>=0.3.6",
+]
 
 [dependency-groups]
 dev = [
