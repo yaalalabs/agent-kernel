@@ -26,5 +26,5 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of ak, you can force reinstall from local dist
   uv sync --find-links ../../../ak-py/dist --all-groups
-  uv pip install --force-reinstall --find-links ../../../ak-py/dist ak[cli,google,test] || true # optional, only if local ak is present
+  uv pip install --force-reinstall --find-links ../../../ak-py/dist ak[cli,adk,test] || true # optional, only if local ak is present
 fi

@@ -29,6 +29,9 @@ langgraph = [
     "langchain_community~=0.3.27",
     "litellm~=1.74.3"
 ]
+cli = [
+
+]
 openai = [
     "openai-agents>=0.2.3"
 ]

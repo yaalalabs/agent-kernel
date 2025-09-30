@@ -188,7 +188,7 @@ requires-dist = [
     { name = "redis", specifier = ">=6.4.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30.0" },
 ]
-provides-extras = ["crewai", "langgraph", "openai", "adk", "api", "test", "a2a"]
+provides-extras = ["crewai", "langgraph", "cli", "openai", "adk", "api", "test", "a2a"]
 
 [package.metadata.requires-dev]
 dev = [
