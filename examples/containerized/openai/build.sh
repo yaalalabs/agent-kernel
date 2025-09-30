@@ -31,13 +31,14 @@ else
 fi
 
 create_docker_image() {
+    rm -rf dist || true
     mkdir -p dist/
     uv export --no-hashes > requirements.txt
     if [[ ${1-} != "local" ]]; then
-      uv pip install -r requirements.txt --target=dist/data
+      uv pip install -r requirements.txt --target=dist
     else
-      uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist ak[openai,api,test] || true
+      uv pip install -r requirements.txt --target=dist  --find-links ../../../ak-py/dist
+      uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist ak[openai,api,test] || true
     fi
     cp -r app.py tool.py dist/
     
