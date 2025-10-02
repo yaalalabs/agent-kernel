@@ -29,8 +29,18 @@ langgraph = [
     "langchain_community~=0.3.27",
     "litellm~=1.74.3"
 ]
+cli = [
+
+]
+aws = [
+
+]
 openai = [
     "openai-agents>=0.2.3"
+]
+adk = [
+    "google-adk>=1.14.1",
+    "litellm~=1.74.3"
 ]
 api = [
     "fastapi>=0.111.0",
