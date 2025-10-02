@@ -11,7 +11,7 @@ module "ecs" {
   cluster_name = "${var.product_alias}-${var.env_alias}-${var.module_name}"
 
   services = {
-    app = {
+    (local.service_name) = {
       cpu                = var.ecs_cpu
       memory             = var.ecs_memory
       desired_count      = var.ecs_desired_count
@@ -24,7 +24,7 @@ module "ecs" {
       load_balancer = {
         service = {
           target_group_arn = aws_lb_target_group.app.arn
-          container_name   = "app"
+          container_name   = local.container_name
           container_port   = var.ecs_container_port
         }
       }
@@ -35,16 +35,16 @@ module "ecs" {
           {
             client_alias = {
               port     = var.ecs_container_port
-              dns_name = "app"
+              dns_name = local.container_name
             }
-            port_name      = "app"
-            discovery_name = "app"
+            port_name      = local.container_name
+            discovery_name = local.container_name
           }
         ]
       }
 
       container_definitions = {
-        app = {
+        (local.container_name) = {
           cpu                    = var.ecs_cpu
           memory                 = var.ecs_memory
           image                  = module.docker_image[0].docker_image_uri
@@ -52,7 +52,7 @@ module "ecs" {
           readonlyRootFilesystem = false
           portMappings = [
             {
-              name          = "app",
+              name          = local.container_name,
               containerPort = var.ecs_container_port,
               hostPort      = var.ecs_container_port,
               protocol      = "tcp",

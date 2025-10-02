@@ -2,4 +2,5 @@ debug: true
 session:
   type: redis
   redis:
-    prefix: "ak:openai:example:"
+    prefix: "ak:openai:example:",
+    url: "redis://dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
