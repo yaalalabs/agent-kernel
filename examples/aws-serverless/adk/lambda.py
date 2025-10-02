@@ -1,7 +1,7 @@
 from google.adk.agents import Agent, LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 from ak.aws import Lambda
-from ak.google import GoogleADKModule
+from ak.adk import GoogleADKModule
 
 # Math specialist agent
 math_agent = Agent(
