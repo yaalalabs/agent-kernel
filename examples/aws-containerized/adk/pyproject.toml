@@ -1,5 +1,5 @@
 [project]
-name = "aws-containered-adk"
+name = "aws-containerized-adk"
 version = "0.1.0"
 description = "Demo of Google ADK based agents running in Agent Kernel on AWS ECS"
 readme = "README.md"
