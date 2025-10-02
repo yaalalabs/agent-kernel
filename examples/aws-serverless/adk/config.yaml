@@ -2,4 +2,4 @@ debug: true
 session:
   type: redis
   redis:
-    prefix: "ak:google:example:"
+    prefix: "ak:adk:example:"

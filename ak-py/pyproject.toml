@@ -32,6 +32,9 @@ langgraph = [
 cli = [
 
 ]
+aws = [
+
+]
 openai = [
     "openai-agents>=0.2.3"
 ]
