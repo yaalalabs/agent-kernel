@@ -7,103 +7,119 @@ from ..core import Runtime, Agent, Session
 class AgentService:
     """
     AgentService class provides a utility method for interacting with runtime, agents and sessions.
+    The agent service encapsulates a conversation of a single session with a single agent.
     """
-    _log = logging.getLogger("ak.core.service.agentservice")
-    _agent: Agent | None = None
-    _session: Session | None = None
-    _runtime: Runtime = Runtime.instance()
 
-    @classmethod
-    def reset(cls):
-        cls._agent = None
-        cls._session = None
+    def __init__(self):
+        self._log = logging.getLogger("ak.core.service.agentservice")
+        self._agent = None
+        self._session = None
+        self._runtime = Runtime.instance()
 
-    @classmethod
-    def _select(cls, session_id: str | None = None, name: str | None = None):
+    @property
+    def runtime(self) -> Runtime:
+        """
+        Returns the runtime instance.
+        """
+        return self._runtime
+
+    @property
+    def agent(self) -> Agent:
+        """
+        Returns the selected agent.
+        """
+        return self._agent
+
+    @property
+    def session(self) -> Session:
+        """
+        Returns the selected session.
+        """
+        return self._session
+
+    def reset(self):
+        """
+        Resets the selected agent and session to reuse the agent service instance for sequential runs.
+        """
+        self._agent = None
+        self._session = None
+
+    def select(self, session_id: str | None = None, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent to select.
         """
         if name:
-            selected = cls._runtime.agents().get(name)
+            selected = self._runtime.agents().get(name)
             if selected:
-                cls._agent = selected
+                self._agent = selected
             else:
-                cls._log.warning(f"No agent found with name '{name}'")
+                self._log.warning(f"No agent found with name '{name}'")
         else:
-            cls._log.info("No agent was requested. Defaulting to first agent in the list")
-            agents = list(cls._runtime.agents().values())
-            cls._agent = agents[0] if agents else None
-            if cls._agent:
-                cls._log.info(f"Selected agent: {cls._agent.name}")
+            self._log.info("No agent was requested. Defaulting to first agent in the list")
+            agents = list(self._runtime.agents().values())
+            self._agent = agents[0] if agents else None
+            if self._agent:
+                self._log.info(f"Selected agent: {self._agent.name}")
             else:
-                cls._log.error("No agents available")
+                self._log.error("No agents available")
 
         # Create a session only if an agent is selected
-        if cls._agent:
+        if self._agent:
             if session_id is not None:
-                cls._old(session_id)
+                self._old(session_id)
             else:
-                cls._new()
+                self.new()
         else:
-            cls._log.warning("No agent selected. Session was not created.")
+            self._log.warning("No agent selected. Session was not created.")
 
-    @classmethod
-    def _old(cls, session_id: str):
+    def _old(self, session_id: str):
         """
         Attempts to load an existing session.
         :param session_id: Unique identifier for the session.
         """
-        cls._log.debug(f"Attempting to reuse existing session: {session_id}")
-        cls._session = cls._runtime.sessions().load(session_id)
+        self._log.debug(f"Attempting to reuse existing session: {session_id}")
+        self._session = self._runtime.sessions().load(session_id)
 
-    @classmethod
-    def _new(cls):
+    def new(self):
         """
         Creates a new session.
         """
         session_id = str(uuid.uuid4())
-        cls._log.info(f"Starting new session: {session_id}")
-        cls._session = cls._runtime.sessions().new(session_id)
+        self._log.info(f"Starting new session: {session_id}")
+        self._session = self._runtime.sessions().new(session_id)
 
-    @classmethod
-    def _load(cls, session_id: str, name: str):
+    def load(self, session_id: str, name: str):
         """
         Loads an agent module by name.
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent module to load.
         """
         try:
-            cls._runtime.load(name)
-            if not cls._agent:
-                cls._select(session_id)
+            self._runtime.load(name)
+            if not self._agent:
+                self.select(session_id)
         except ImportError as e:
-            cls._log.info(f"No module found with name '{name}': {e}")
+            self._log.info(f"No module found with name '{name}': {e}")
             return None
 
-    @classmethod
-    async def _run_agent(cls, prompt: str):
+    async def run(self, prompt: str):
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.
         """
-        result = await cls._runtime.run(cls._agent, cls._session, prompt)
-        cls._runtime.sessions().store(cls._session)
+        result = await self._runtime.run(self._agent, self._session, prompt)
+        self._runtime.sessions().store(self._session)
         return result
 
-    @classmethod
-    def _get_response_session_id(cls, session_id: str | None = None) -> str | None:
+    def _get_response_session_id(self, session_id: str | None = None) -> str | None:
         """
         Method will return the session's ID if exists. If not, it will
         return the ID sent by the user. If neither exists, it will return None.
         :param session_id: Unique identifier for the session.
         """
-        if cls._session:
-            return cls._session.id
+        if self._session:
+            return self._session.id
         else:
             return session_id
-
-    @staticmethod
-    def get_runtime() -> Runtime:
-        return AgentService._runtime
