@@ -160,6 +160,7 @@ class RedisSessionStore(SessionStore):
         :return: The session associated with the identifier, or a new session if it does not exist
         in storage.
         """
+        self._log.debug(f"Loading redis session with ID {session_id}")
         key = self._driver.key(session_id)
         if self._driver.exists(key):
             session = Session(session_id)

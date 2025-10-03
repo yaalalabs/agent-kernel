@@ -6,10 +6,10 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..core import AgentService
+from ..core import AgentService, Runtime
 
 
-class AgentRESTRequestHandler(AgentService):
+class AgentRESTRequestHandler:
     """
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
@@ -40,7 +40,7 @@ class AgentRESTRequestHandler(AgentService):
 
         @router.get("/agents")
         def list_agents():
-            return {"agents": list(cls.get_runtime().agents().keys())}
+            return {"agents": list(Runtime.instance().agents().keys())}
 
         @router.post("/run")
         async def run(req: AgentRESTRequestHandler.RunRequest):
@@ -54,26 +54,27 @@ class AgentRESTRequestHandler(AgentService):
         Async method to run the agent.
         :param req: Request an object containing the prompt and optional agent name.
         """
+        service = AgentService()
         try:
-            cls._select(req.session_id, req.agent)
-            if not cls._agent:
-                cls._select(req.session_id)
-                if not cls._agent:
+            service.select(req.session_id, req.agent)
+            if not service.agent:
+                service.select(req.session_id)
+                if not service.agent:
                     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail={
                         "error": "No agent available",
-                        "session_id": cls._get_response_session_id(req.session_id)
+                        "session_id": service.get_response_session_id(req.session_id)
                     })
-            result = await cls._run_agent(req.prompt)
+            result = await service.run(req.prompt)
 
             if hasattr(result, 'raw'):
                 payload = {
                     "result": str(result.raw),
-                    "session_id": cls._get_response_session_id(req.session_id)
+                    "session_id": service.get_response_session_id(req.session_id)
                 }
             else:
                 payload = {
                     "result": result,
-                    "session_id": cls._get_response_session_id(req.session_id)
+                    "session_id": service.get_response_session_id(req.session_id)
                 }
             return payload
         except HTTPException:
@@ -82,5 +83,5 @@ class AgentRESTRequestHandler(AgentService):
             cls._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail={
                 "error": str(e),
-                "session_id": cls._get_response_session_id(None)
+                "session_id": service.get_response_session_id(None)
             })
