@@ -113,7 +113,7 @@ class AgentService:
         self._runtime.sessions().store(self._session)
         return result
 
-    def _get_response_session_id(self, session_id: str | None = None) -> str | None:
+    def get_response_session_id(self, session_id: str | None = None) -> str | None:
         """
         Method will return the session's ID if exists. If not, it will
         return the ID sent by the user. If neither exists, it will return None.

@@ -22,7 +22,7 @@ class CLI:
     """
 
     def __init__(self):
-        self._agent_service = AgentService()
+        self._service = AgentService()
 
     @staticmethod
     def _print(message: str = "", **kwargs):
@@ -40,7 +40,7 @@ class CLI:
         self._print()
 
     def list(self):
-        agents = list(self._agent_service.runtime.agents().values())
+        agents = list(self._service.runtime.agents().values())
         if not agents:
             self._print("No agents available.")
         else:
@@ -51,13 +51,13 @@ class CLI:
 
     async def run(self):
         self._print("AgentKernel CLI (type !help for commands or !quit to exit):")
-        self._agent_service.select()
+        self._service.select()
 
-        if not self._agent_service.agent:
+        if not self._service.agent:
             self._print("No agents available. Please load an agent module using !load <module_name>.")
 
         while True:
-            name = self._agent_service.agent.name if self._agent_service.agent else "none"
+            name = self._service.agent.name if self._service.agent else "none"
             prompt = input(f"({name}) >> ")
             if not prompt.strip():
                 continue
@@ -72,24 +72,24 @@ class CLI:
                     if len(tokens) != 2:
                         self._print("Usage: !load <module_name>")
                         continue
-                    session_id = self._agent_service.session.id if self._agent_service.session else None
-                    self._agent_service.load(name=tokens[1], session_id=session_id)
+                    session_id = self._service.session.id if self._service.session else None
+                    self._service.load(name=tokens[1], session_id=session_id)
                 elif command in ["!n", "!new"]:
-                    self._agent_service.new()
+                    self._service.new()
                 elif command in ["!q", "!quit"]:
                     break
                 elif command in ["!s", "!select"]:
                     if len(tokens) != 2:
                         self._print("Usage: !select <agent_name>")
                         continue
-                    session_id = self._agent_service.session.id if self._agent_service.session else None
-                    self._agent_service.select(name=tokens[1], session_id=session_id)
+                    session_id = self._service.session.id if self._service.session else None
+                    self._service.select(name=tokens[1], session_id=session_id)
                 else:
                     self._print("Unknown command. Type !help for available commands.")
                 continue
 
-            if self._agent_service.agent:
-                self._print(f"\033[35m{await self._agent_service.run(prompt=prompt)}\033[0m")
+            if self._service.agent:
+                self._print(f"\033[35m{await self._service.run(prompt=prompt)}\033[0m")
                 self._print()
             else:
                 self._print("No agent selected. Please select an agent using !select <agent_name>.")

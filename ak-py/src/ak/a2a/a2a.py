@@ -31,7 +31,7 @@ class A2A:
     """
     _log = logging.getLogger(__name__)
 
-    class Executor(AgentExecutor, AgentService):
+    class Executor(AgentExecutor):
 
         def __init__(self, agent_name: str):
             self.agent_name = agent_name
@@ -58,8 +58,9 @@ class A2A:
             raise ServerError(error=UnsupportedOperationError())
 
         async def _execute_agent(self, session_id: str, prompt: str) -> Any:
-            AgentService._select(session_id, self.agent_name)  # TODO Agent Service shouldn't be a singleton
-            return await AgentService._run_agent(prompt=prompt)
+            service = AgentService()
+            service.select(session_id, self.agent_name)  # TODO Agent Service shouldn't be a singleton
+            return await service.run(prompt=prompt)
 
     @classmethod
     def _build(cls):

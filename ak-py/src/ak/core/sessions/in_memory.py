@@ -23,7 +23,7 @@ class InMemorySessionStore(SessionStore):
         :param strict: If True, raises an exception if the session is not found.
         :return: The session associated with the identifier, or a new session if it does not exist.
         """
-        self._log.debug(f"Loading session with ID {session_id}")
+        self._log.debug(f"Loading in-memory session with ID {session_id}")
         session = self._sessions.get(session_id)
         if session is None:
             if strict:
