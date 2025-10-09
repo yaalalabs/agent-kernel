@@ -23,12 +23,13 @@ class RESTAPI:
     _log = logging.getLogger("ak.api.restapi")
 
     @classmethod
-    def _create_app(cls, routers) -> FastAPI:
+    def _create_app(cls, routers, lifespan=None) -> FastAPI:
         """
         Assembles a FastAPI app from routers.
         :param routers: List of routers to include in the app.
+        :param lifespan: Optional lifespan handler.
         """
-        app = FastAPI(title="Agent Kernel REST API", debug=True)
+        app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan)
 
         app.add_middleware(
             CORSMiddleware,
@@ -67,8 +68,11 @@ class RESTAPI:
             from .a2a import A2ARESTRequestHandler
             routers.append(A2ARESTRequestHandler.get_catalog_router())
             routers.extend(A2ARESTRequestHandler.get_agent_routers())
-        app = cls._create_app(routers=routers)
         if AKConfig.get().mcp.enabled:
             from ..mcp.akmcp import MCP
-            app.mount("/mcp", MCP.get_http_app())
+            mcp_app = MCP.get_http_app()
+            app = cls._create_app(routers=routers, lifespan=mcp_app.lifespan)
+            app.mount("/mcp", mcp_app)
+        else:
+            app = cls._create_app(routers=routers)
         uvicorn.run(app=app, host=host, port=port, reload=False)

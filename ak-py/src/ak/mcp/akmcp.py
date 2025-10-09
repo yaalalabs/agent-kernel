@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from fastmcp import FastMCP, Context
+from fastmcp.server.http import StarletteWithLifespan
 
 from ..core import AgentService, Agent, Runtime
 from ..core.config import AKConfig
@@ -47,15 +48,13 @@ class MCP:
         return cls._fastmcp
 
     @classmethod
-    def get_http_app(cls):
+    def get_http_app(cls) -> StarletteWithLifespan:
         cls._build()
         return cls._fastmcp.http_app(path="/")
 
     @classmethod
     def _build(cls):
-        if cls._built:
-            return
-        if not AKConfig.get().mcp.enabled:
+        if cls._built or not AKConfig.get().mcp.enabled:
             return
         if cls._fastmcp is None:
             cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance")
