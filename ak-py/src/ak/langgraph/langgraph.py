@@ -41,6 +41,13 @@ class LangGraphAgent(BaseAgent):
         """
         return self._agent
 
+    def get_description(self):
+        """
+        Returns the description of the agent.
+        """
+        # TODO improve this description
+        return "I am a LangGraph agent."
+
     def get_a2a_card(self):
         """
         Returns the A2A AgentCard associated with the agent.

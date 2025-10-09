@@ -68,4 +68,7 @@ class RESTAPI:
             routers.append(A2ARESTRequestHandler.get_catalog_router())
             routers.extend(A2ARESTRequestHandler.get_agent_routers())
         app = cls._create_app(routers=routers)
+        if AKConfig.get().mcp.enabled:
+            from ..mcp.akmcp import MCP
+            app.mount("/mcp", MCP.get_http_app())
         uvicorn.run(app=app, host=host, port=port, reload=False)

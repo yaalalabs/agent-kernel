@@ -134,6 +134,12 @@ class CrewAIAgent(BaseAgent):
         """
         return self._crew
 
+    def get_description(self):
+        """
+        Returns the description of the agent.
+        """
+        return self.agent.goal or self.agent.backstory
+
     def get_a2a_card(self):
         """
           Returns the A2A AgentCard associated with the agent.

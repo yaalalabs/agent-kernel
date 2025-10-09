@@ -36,7 +36,6 @@ class A2A:
         def __init__(self, agent_name: str):
             self.agent_name = agent_name
             self.log = logging.getLogger(f"ak.a2a.executor.{agent_name}")
-            pass
 
         async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
             if not context.task_id or not context.context_id:
@@ -59,7 +58,7 @@ class A2A:
 
         async def _execute_agent(self, session_id: str, prompt: str) -> Any:
             service = AgentService()
-            service.select(session_id, self.agent_name)  # TODO Agent Service shouldn't be a singleton
+            service.select(session_id, self.agent_name)
             return await service.run(prompt=prompt)
 
     @classmethod
