@@ -27,8 +27,8 @@ class MCPHttpClient:
                 return await client.list_tools()
 
         except Exception as e:
-            self.log.error(f"Exception occurred while listing tools: {e}")
-            traceback.print_exc()
+            self.log.exception(f"Exception occurred while listing tools: {e}")
+            # Traceback is now logged via logger.exception
             raise
 
     async def init(self):
