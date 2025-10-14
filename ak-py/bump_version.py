@@ -178,12 +178,8 @@ def main():
     try:
         import tomllib
     except ImportError:
-        # For Python < 3.11
-        try:
-            import tomli as tomllib
-        except ImportError:
-            print("Error: tomllib/tomli not available. Please use Python 3.11+", file=sys.stderr)
-            sys.exit(1)
+        print("Error: tomllib not available", file=sys.stderr)
+        sys.exit(1)
     
     with open(pyproject_path, "rb") as f:
         config = tomllib.load(f)
