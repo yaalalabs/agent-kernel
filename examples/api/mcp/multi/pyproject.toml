@@ -1,7 +1,7 @@
 [project]
 name = "api-mcp-multi"
 version = "0.1.0"
-description = "Demo of CrewAI and OpenAI Agents SDK based agents running in Agent Kernel with a API exposed via MCP tools"
+description = "Demo of CrewAI and OpenAI Agents SDK based agents running in Agent Kernel with an API exposed via MCP tools"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
