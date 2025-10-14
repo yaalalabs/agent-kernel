@@ -2,7 +2,7 @@ import json
 import logging
 import traceback
 import uuid
-from typing import Any, Dict, List
+from typing import Any, List
 
 from fastmcp.client import Client
 
