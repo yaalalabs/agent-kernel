@@ -1,0 +1,150 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - test
+          - production
+        default: 'test'
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: 'patch'
+      prerelease:
+        description: 'Pre-release type (leave empty for stable release)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - alpha
+          - beta
+        default: ''
+
+permissions:
+  contents: write
+  id-token: write  # Required for PyPI trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment == 'production' && 'pypi-production' || 'pypi-test' }}
+      url: ${{ inputs.environment == 'production' && 'https://pypi.org/p/agent-kernel' || 'https://test.pypi.org/p/agent-kernel' }}
+    
+    defaults:
+      run:
+        shell: bash -e {0}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        run: |
+          pip install uv
+      
+      - name: Bump version
+        id: bump_version
+        working-directory: ak-py
+        run: |
+          python bump_version.py \
+            --bump ${{ inputs.version_bump }} \
+            --prerelease ${{ inputs.prerelease }} \
+            --auto-prerelease-number
+          
+          NEW_VERSION=$(python -c "import tomllib; f = open('pyproject.toml', 'rb'); print(tomllib.load(f)['project']['version'])")
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+      
+      - name: Commit version bump
+        if: inputs.environment == 'production'
+        run: |
+          git add ak-py/pyproject.toml
+          git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
+          git push origin ${{ github.ref_name }}
+      
+      - name: Create git tag
+        if: inputs.environment == 'production'
+        run: |
+          git tag "v${{ steps.bump_version.outputs.new_version }}"
+          git push origin "v${{ steps.bump_version.outputs.new_version }}"
+      
+      - name: Build package
+        working-directory: ak-py
+        run: |
+          ./build.sh
+      
+      - name: Run tests
+        working-directory: ak-py
+        run: |
+          uv run pytest -s
+      
+      - name: Build distribution
+        working-directory: ak-py
+        run: |
+          uv build
+      
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ak-py/dist/
+          verbose: true
+          print-hash: true
+          repository-url: ${{ inputs.environment == 'test' && 'https://test.pypi.org/legacy/' || '' }}
+      
+      - name: Create GitHub Release
+        if: inputs.environment == 'production'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: "v${{ steps.bump_version.outputs.new_version }}"
+          name: "Release v${{ steps.bump_version.outputs.new_version }}"
+          body: |
+            ## Changes in v${{ steps.bump_version.outputs.new_version }}
+            
+            Version bump: ${{ inputs.version_bump }}
+            ${{ inputs.prerelease && format('Pre-release: {0}', inputs.prerelease) || 'Stable release' }}
+            
+            Published to PyPI: https://pypi.org/project/agent-kernel/${{ steps.bump_version.outputs.new_version }}/
+          draft: false
+          prerelease: ${{ inputs.prerelease != '' }}
+          files: |
+            ak-py/dist/*
+      
+      - name: Test PyPI Summary
+        if: inputs.environment == 'test'
+        run: |
+          echo "## 🧪 Test PyPI Release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version **${{ steps.bump_version.outputs.new_version }}** has been published to Test PyPI." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**View on Test PyPI**: https://test.pypi.org/project/agent-kernel/${{ steps.bump_version.outputs.new_version }}/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ ak==${{ steps.bump_version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ⚠️ **Note**: This is a test release. Version was NOT committed or tagged in git." >> $GITHUB_STEP_SUMMARY
