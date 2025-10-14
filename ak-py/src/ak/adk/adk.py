@@ -147,7 +147,7 @@ class GoogleADKAgent(AKBaseAgent):
         """
         Returns the A2A AgentCard associated with the agent.
         """
-        # TODO Add A2A card supportY
+        # TODO Add A2A card support
         pass
 
 
