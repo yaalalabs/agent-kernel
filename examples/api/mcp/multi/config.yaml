@@ -1,0 +1,3 @@
+mcp:
+  enabled: true
+  expose_agents: true

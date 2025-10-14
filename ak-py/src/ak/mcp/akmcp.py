@@ -58,17 +58,17 @@ class MCP:
             return
         if cls._fastmcp is None:
             cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance")
-
-        agents: dict[str, Agent] = Runtime.instance().agents()
-        for name, agent in agents.items():
-            whitelisted = AKConfig.get().mcp.agents == ["*"] or name in AKConfig.get().mcp.agents
-            if not whitelisted:
-                continue
-            # Add executor
-            cls._executors[name] = cls.Executor(name)
-            cls._fastmcp.tool(
-                cls._executors[name].execute,
-                name=name,
-                description=agent.get_description()
-            )
+        if AKConfig.get().mcp.expose_agents:
+            agents: dict[str, Agent] = Runtime.instance().agents()
+            for name, agent in agents.items():
+                whitelisted = AKConfig.get().mcp.agents == ["*"] or name in AKConfig.get().mcp.agents
+                if not whitelisted:
+                    continue
+                # Add executor
+                cls._executors[name] = cls.Executor(name)
+                cls._fastmcp.tool(
+                    cls._executors[name].execute,
+                    name=name,
+                    description=agent.get_description()
+                )
         cls._built = True

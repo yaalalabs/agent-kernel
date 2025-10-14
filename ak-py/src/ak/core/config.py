@@ -45,6 +45,7 @@ class _A2AConfig(BaseModel):
 
 class _MCPConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable MCP")
+    expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
