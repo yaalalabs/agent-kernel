@@ -28,7 +28,6 @@ class MCPHttpClient:
 
         except Exception as e:
             self.log.exception(f"Exception occurred while listing tools: {e}")
-            # Traceback is now logged via logger.exception
             raise
 
     async def init(self):
@@ -45,7 +44,6 @@ class MCPHttpClient:
             })
             try:
                 result = json.loads(response.content[0].text)
-                # If 'raw' key exists, return it; else, return the whole parsed object as string
                 return str(result.get('raw', result))
             except (json.JSONDecodeError, TypeError):
                 return response.content[0].text
