@@ -18,19 +18,7 @@ class MCPHttpClient:
     def __init__(self, server_url: str) -> None:
         self.log = logging.getLogger("ak.mcp.client")
         self.server_url = server_url
-        self.session_id = uuid.uuid4()
-
-    async def get_client(self):
-        try:
-            async with Client(self.server_url, auth="oauth") as client:
-                assert await client.ping()
-                yield client
-        except Exception as e:
-            print(f"Exception occurred while getting client: {e}")
-            traceback.print_stack()
-            raise
-        finally:
-            client.close()
+        self.session_id = str(uuid.uuid4())
 
     async def _list_tools(self) -> List[Any]:
         try:
@@ -42,9 +30,6 @@ class MCPHttpClient:
             print(f"Exception occurred while listing tools: {e}")
             traceback.print_stack()
             raise
-
-    async def _call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
-        pass
 
     async def init(self):
         tools = await self._list_tools()
