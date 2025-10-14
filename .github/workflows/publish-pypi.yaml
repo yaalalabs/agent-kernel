@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: ${{ inputs.environment == 'production' && 'pypi-production' || 'pypi-test' }}
-      url: ${{ inputs.environment == 'production' && 'https://pypi.org/p/agent-kernel' || 'https://test.pypi.org/p/agent-kernel' }}
+      url: ${{ inputs.environment == 'production' && 'https://pypi.org/p/agentkernel' || 'https://test.pypi.org/p/agentkernel' }}
     
     defaults:
       run:
@@ -127,7 +127,7 @@ jobs:
             Version bump: ${{ inputs.version_bump }}
             ${{ inputs.prerelease && format('Pre-release: {0}', inputs.prerelease) || 'Stable release' }}
             
-            Published to PyPI: https://pypi.org/project/agent-kernel/${{ steps.bump_version.outputs.new_version }}/
+            Published to PyPI: https://pypi.org/project/agentkernel/${{ steps.bump_version.outputs.new_version }}/
           draft: false
           prerelease: ${{ inputs.prerelease != '' }}
           files: |
@@ -140,7 +140,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Version **${{ steps.bump_version.outputs.new_version }}** has been published to Test PyPI." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**View on Test PyPI**: https://test.pypi.org/project/agent-kernel/${{ steps.bump_version.outputs.new_version }}/" >> $GITHUB_STEP_SUMMARY
+          echo "**View on Test PyPI**: https://test.pypi.org/project/agentkernel/${{ steps.bump_version.outputs.new_version }}/" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Test Installation" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
