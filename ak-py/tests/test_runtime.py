@@ -1,7 +1,7 @@
 import pytest
 
-from ak import Agent, Runner
-from ak.core.runtime import Runtime, _MemoryType
+from agentkernel import Agent, Runner
+from agentkernel.core.runtime import Runtime, _MemoryType
 
 
 class DummyRunner(Runner):

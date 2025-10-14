@@ -58,8 +58,8 @@ CrewAI example (pseudo/minimal):
 ```python
 # demo.py
 from crewai import Agent as CrewAgent
-from ak.cli import CLI
-from ak.crewai import CrewAIModule
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
 
 researcher = CrewAgent(role="researcher", goal="Find facts")
 writer = CrewAgent(role="writer", goal="Summarize findings")
@@ -76,8 +76,8 @@ LangGraph example (pseudo/minimal):
 ```python
 # demo.py
 from langgraph.graph import StateGraph
-from ak.cli import CLI
-from ak.langgraph import LangGraphModule
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
 
 # Build your graph and compile it to CompiledStateGraph with a `.name`
 sg = StateGraph(...)
@@ -95,8 +95,8 @@ OpenAI Agents SDK example (pseudo/minimal):
 # demo.py
 from openai import OpenAI
 from agents import Agent as OpenAIAgent  # from openai-agents SDK
-from ak.cli import CLI
-from ak.openai import OpenAIModule
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
 
 client = OpenAI()
 assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
@@ -147,8 +147,8 @@ OpenAI Agents SDK lambda example (pseudo/minimal):
 # demo.py
 from openai import OpenAI
 from agents import Agent as OpenAIAgent  # from openai-agents SDK
-from ak.aws import Lambda
-from ak.openai import OpenAIModule
+from agentkernel.aws import Lambda
+from agentkernel.openai import OpenAIModule
 
 client = OpenAI()
 assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version

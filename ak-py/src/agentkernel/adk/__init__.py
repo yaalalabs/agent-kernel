@@ -9,7 +9,7 @@ framework, allowing for seamless interaction and execution of GoogleADK based ag
 import importlib.metadata
 
 try:
-    __version__ = importlib.metadata.version("ak")
+    __version__ = importlib.metadata.version("agentkernel")
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 

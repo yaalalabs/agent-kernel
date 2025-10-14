@@ -1,7 +1,7 @@
 from agents import Agent
 
-from ak.cli import CLI
-from ak.openai import OpenAIModule
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
 
 math_agent = Agent(
     name="math",

@@ -6,7 +6,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService, Session as ADKSession
 from google.genai import types
 
-from ak.core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session
+from agentkernel.core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session
 
 FRAMEWORK = "adk"
 

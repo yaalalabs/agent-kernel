@@ -3,8 +3,8 @@ revision = 2
 requires-python = ">=3.12"
 
 [[package]]
-name = "ak"
-version = "0.1.0a1"
+name = "agentkernel"
+version = "0.1.1a1"
 source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "pydantic" },
@@ -12,9 +12,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { path = "ak-0.1.0a1.tar.gz" }
+sdist = { path = "agentkernel-0.1.1a1.tar.gz" }
 wheels = [
-    { path = "ak-0.1.0a1-py3-none-any.whl" },
+    { path = "agentkernel-0.1.1a1-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -118,18 +118,18 @@ name = "cli-openai"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "ak", extra = ["openai", "test"] },
+    { name = "agentkernel", extra = ["openai", "test"] },
 ]
 
 [package.optional-dependencies]
 dev = [
-    { name = "ak", extra = ["test"] },
+    { name = "agentkernel", extra = ["test"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "ak", extras = ["cli", "openai", "test"], specifier = ">=0.1.0a1" },
-    { name = "ak", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.0a1" },
+    { name = "agentkernel", extras = ["cli", "openai", "test"], specifier = ">=0.1.0a1" },
+    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.0a1" },
 ]
 provides-extras = ["dev"]
 
