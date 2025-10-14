@@ -43,8 +43,9 @@ class MCPHttpClient:
                 "prompt": message,
                 "session_id": self.session_id
             })
-            if tool == "history":
+            try:
                 result = json.loads(response.content[0].text)
-                return str(result['raw'])
-            else:
+                # If 'raw' key exists, return it; else, return the whole parsed object as string
+                return str(result.get('raw', result))
+            except (json.JSONDecodeError, TypeError):
                 return response.content[0].text
