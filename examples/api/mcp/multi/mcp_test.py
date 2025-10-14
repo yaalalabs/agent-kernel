@@ -16,7 +16,7 @@ async def mcp_client():
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     client = MCPHttpClient(server_url="http://127.0.0.1:8000/mcp")
     await client.init()
     try:
