@@ -43,6 +43,12 @@ class _A2AConfig(BaseModel):
     url: str = Field(default="http://localhost:8000/a2a", description="A2A URL")
     task_store_type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
 
+class _MCPConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable MCP")
+    expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
+    agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
+    url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
+
 
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
@@ -50,6 +56,7 @@ class AKConfig(BaseSettings):
                                          default_factory=_SessionStoreConfig)
     api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
     a2a: _A2AConfig = Field(description="Agent to Agent related configurations", default_factory=_A2AConfig)
+    mcp: _MCPConfig = Field(description="Model Context Protocol related configurations", default_factory=_MCPConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     model_config = SettingsConfigDict(

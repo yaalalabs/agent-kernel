@@ -160,3 +160,10 @@ class Agent(ABC):
         Returns the A2A AgentCard associated with the agent.
         """
         pass
+
+    @abstractmethod
+    def get_description(self):
+        """
+        Returns the description of the agent.
+        """
+        pass

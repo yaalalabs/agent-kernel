@@ -107,6 +107,12 @@ class OpenAIAgent(BaseAgent):
         """
         return self._agent
 
+    def get_description(self):
+        """
+        Returns the description of the agent.
+        """
+        return self.agent.instructions
+
     def get_a2a_card(self):
         """
         Returns the A2A AgentCard associated with the agent.

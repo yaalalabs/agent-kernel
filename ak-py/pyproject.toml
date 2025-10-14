@@ -43,8 +43,8 @@ adk = [
     "litellm~=1.74.3"
 ]
 api = [
-    "fastapi>=0.111.0",
-    "uvicorn>=0.30.0",
+    "fastapi>=0.118.0",
+    "uvicorn>=0.37.0",
     "gunicorn>=23.0.0"
 ]
 test = [
@@ -57,6 +57,9 @@ test = [
 ]
 a2a = [
     "a2a-sdk[http-server]>=0.3.6",
+]
+mcp = [
+    "fastmcp>=2.12.4",
 ]
 
 [dependency-groups]

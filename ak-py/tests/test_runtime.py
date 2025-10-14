@@ -27,6 +27,9 @@ class DummyAgent(Agent):
     def get_a2a_card(self):
         pass
 
+    def get_description(self):
+        pass
+
 
 def reset_runtime_singleton():
     # helper to reset the singleton between tests

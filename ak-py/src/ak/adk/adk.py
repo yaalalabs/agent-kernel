@@ -137,10 +137,17 @@ class GoogleADKAgent(AKBaseAgent):
         """
         return self._agent
 
+    def get_description(self):
+        """
+        Returns the description of the agent.
+        """
+        return self.agent.description
+
     def get_a2a_card(self):
         """
         Returns the A2A AgentCard associated with the agent.
         """
+        # TODO Add A2A card support
         pass
 
 
