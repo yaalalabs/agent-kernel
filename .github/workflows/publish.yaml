@@ -136,29 +136,10 @@ jobs:
       - name: Update examples with new version
         if: inputs.environment == 'production'
         run: |
-          # Update pyproject.toml files but skip lock regeneration
-          # Lock files will be regenerated later once PyPI has fully propagated the new version
-          python scripts/update_examples_version.py \
-            --version ${{ steps.bump_version.outputs.new_version }} \
-            --skip-lock
-          
-          # Check if there are any changes
-          if git diff --quiet examples/; then
-            echo "No changes to example files"
-          else
-            echo "Example files updated with new version"
-            git add examples/
-            git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}"
-            git push origin ${{ github.ref_name }}
-          fi
-      
-      - name: Wait for PyPI propagation and regenerate lock files
-        if: inputs.environment == 'production'
-        run: |
           echo "Waiting 60 seconds for PyPI to propagate the new package version..."
           sleep 60
           
-          echo "Regenerating uv.lock files for examples..."
+          echo "Generating uv.lock files for examples..."
           python scripts/update_examples_version.py \
             --version ${{ steps.bump_version.outputs.new_version }} \
             --lock-retries 5 \
@@ -167,11 +148,11 @@ jobs:
           
           # Check if there are any changes to lock files
           if git diff --quiet examples/; then
-            echo "No lock file changes"
+            echo "No example file changes"
           else
-            echo "Lock files updated"
+            echo "Example files updated"
             git add examples/
-            git commit -m "chore: regenerate example lock files for v${{ steps.bump_version.outputs.new_version }}" || true
+            git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}" || true
             git push origin ${{ github.ref_name }} || true
           fi
       
