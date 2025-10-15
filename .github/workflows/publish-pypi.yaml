@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Publish
 
 on:
   workflow_dispatch:
@@ -117,7 +117,7 @@ jobs:
           tag_name: "v${{ steps.bump_version.outputs.new_version }}"
           name: "v${{ steps.bump_version.outputs.new_version }}"
           body: |
-            🚀 **AgentKernel v${{ steps.bump_version.outputs.new_version }}**
+            🚀 **Agent Kernel v${{ steps.bump_version.outputs.new_version }}**
             
             ${{ inputs.prerelease && format('⚠️ Pre-release: {0}', inputs.prerelease) || '✅ Stable release' }}
             
