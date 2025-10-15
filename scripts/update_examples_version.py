@@ -11,6 +11,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -55,13 +56,15 @@ def find_example_pyproject_files(examples_dir: Path) -> list[Path]:
     return sorted(examples_dir.rglob("pyproject.toml"))
 
 
-def regenerate_uv_lock(project_dir: Path, dry_run: bool = False) -> bool:
+def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 3, retry_delay: int = 10) -> bool:
     """
-    Regenerate uv.lock file for a project.
+    Regenerate uv.lock file for a project with retry logic.
     
     Args:
         project_dir: Path to the project directory containing pyproject.toml
         dry_run: If True, don't actually run the command
+        retries: Number of retry attempts (default: 3)
+        retry_delay: Delay in seconds between retries (default: 10)
     
     Returns:
         True if successful, False otherwise
@@ -69,22 +72,36 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False) -> bool:
     if dry_run:
         return True
 
-    try:
-        # Run uv lock in the project directory
-        subprocess.run(
-            ["uv", "lock"],
-            cwd=project_dir,
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"  Error running uv lock: {e.stderr}", file=sys.stderr)
-        return False
-    except FileNotFoundError:
-        print("  Error: 'uv' command not found. Please install uv.", file=sys.stderr)
-        return False
+    for attempt in range(retries):
+        try:
+            # Run uv lock in the project directory
+            result = subprocess.run(
+                ["uv", "lock"],
+                cwd=project_dir,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60  # Add timeout to prevent hanging
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.lower()
+            # Check if it's a package availability issue
+            if attempt < retries - 1 and ("not found" in error_msg or "no version" in error_msg or "could not find" in error_msg):
+                print(f"  Attempt {attempt + 1}/{retries} failed. Package may not be available yet. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                print(f"  Error running uv lock: {e.stderr}", file=sys.stderr)
+                return False
+        except subprocess.TimeoutExpired:
+            print(f"  Error: uv lock timed out after 60 seconds", file=sys.stderr)
+            return False
+        except FileNotFoundError:
+            print("  Error: 'uv' command not found. Please install uv.", file=sys.stderr)
+            return False
+    
+    return False
 
 
 def main():
@@ -110,6 +127,18 @@ def main():
         "--skip-lock",
         action="store_true",
         help="Skip regenerating uv.lock files"
+    )
+    parser.add_argument(
+        "--lock-retries",
+        type=int,
+        default=3,
+        help="Number of retry attempts for lock regeneration (default: 3)"
+    )
+    parser.add_argument(
+        "--lock-retry-delay",
+        type=int,
+        default=10,
+        help="Delay in seconds between lock regeneration retries (default: 10)"
     )
 
     args = parser.parse_args()
@@ -167,7 +196,7 @@ def main():
                 # Regenerate uv.lock file
                 if not args.skip_lock:
                     print(f"  Regenerating uv.lock...")
-                    if regenerate_uv_lock(project_dir, args.dry_run):
+                    if regenerate_uv_lock(project_dir, args.dry_run, args.lock_retries, args.lock_retry_delay):
                         print(f"  ✓ Lock file regenerated")
                         lock_success_count += 1
                     else:
