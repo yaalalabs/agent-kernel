@@ -136,17 +136,27 @@ jobs:
       - name: Update examples with new version
         if: inputs.environment == 'production'
         run: |
-          echo "Waiting 60 seconds for PyPI to propagate the new package version..."
-          sleep 60
+          echo "=========================================="
+          echo "Updating Examples with New Version"
+          echo "=========================================="
+          echo ""
+          echo "⏳ Waiting 120 seconds for PyPI to propagate the new package version..."
+          sleep 120
           
-          echo "Updating example pyproject.toml files and regenerating uv.lock files..."
+          echo ""
+          echo "🔄 Updating example pyproject.toml files and regenerating uv.lock files..."
+          echo "   This will retry up to 8 times with 45-second delays if the package isn't available yet."
+          echo ""
+          
           python scripts/update_examples_version.py \
             --version ${{ steps.bump_version.outputs.new_version }} \
             --force-lock \
-            --lock-retries 5 \
+            --lock-retries 3 \
             --lock-retry-delay 30 \
-            || echo "Warning: Some lock files failed to regenerate. They may need to be updated manually."
+            || echo "⚠️ Warning: Some lock files failed to regenerate. They may need to be updated manually."
           
+          echo ""
+          echo "📝 Committing changes..."
           # Check if there are any changes
           if git diff --quiet examples/; then
             echo "No example file changes"
@@ -156,6 +166,9 @@ jobs:
             git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}" || true
             git push origin ${{ github.ref_name }} || true
           fi
+          
+          echo ""
+          echo "✅ Example update complete!"
       
       - name: Test PyPI Summary
         if: inputs.environment == 'test'

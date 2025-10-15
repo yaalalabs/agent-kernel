@@ -82,6 +82,8 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
     if dry_run:
         return True
 
+    last_error = None
+    
     for attempt in range(retries):
         try:
             # Run uv lock in the project directory
@@ -91,11 +93,15 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
                 check=True,
                 capture_output=True,
                 text=True,
-                timeout=60  # Add timeout to prevent hanging
+                timeout=15 
             )
+            if attempt > 0:
+                print(f"  ✓ Success on attempt {attempt + 1}/{retries}")
             return True
         except subprocess.CalledProcessError as e:
+            last_error = e.stderr
             error_msg = e.stderr.lower()
+            
             # Check if it's a package availability issue
             is_availability_issue = any([
                 "not found" in error_msg,
@@ -107,18 +113,31 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
             ])
             
             if attempt < retries - 1 and is_availability_issue:
-                print(f"  Attempt {attempt + 1}/{retries} failed. Package may not be available yet. Retrying in {retry_delay}s...")
+                print(f"  ⚠ Attempt {attempt + 1}/{retries} failed. Package may not be available yet.")
+                print(f"  ⏳ Waiting {retry_delay}s before retry...")
                 time.sleep(retry_delay)
                 continue
-            else:
-                print(f"  Error running uv lock: {e.stderr}", file=sys.stderr)
-                return False
+            
         except subprocess.TimeoutExpired:
-            print(f"  Error: uv lock timed out after 60 seconds", file=sys.stderr)
-            return False
+            last_error = f"uv lock timed out after 120 seconds"
+            if attempt < retries - 1:
+                print(f"  ⚠ Attempt {attempt + 1}/{retries} timed out.")
+                print(f"  ⏳ Waiting {retry_delay}s before retry...")
+                time.sleep(retry_delay)
+                continue
+                
         except FileNotFoundError:
-            print("  Error: 'uv' command not found. Please install uv.", file=sys.stderr)
+            print("  ✗ Error: 'uv' command not found. Please install uv.", file=sys.stderr)
             return False
+    
+    # All retries exhausted - print the error
+    print(f"  ✗ Failed after {retries} attempts.", file=sys.stderr)
+    if last_error:
+        # Print first 5 lines of error for brevity
+        error_lines = last_error.strip().split('\n')
+        print(f"  Last error: {error_lines[0]}", file=sys.stderr)
+        if len(error_lines) > 1:
+            print(f"  {error_lines[1]}", file=sys.stderr)
     
     return False
 
