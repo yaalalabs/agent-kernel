@@ -4,7 +4,7 @@ import sys
 
 import pytest
 import pytest_asyncio
-from ak.test import Test
+from agentkernel.test import Test
 
 from client import MCPHttpClient
 

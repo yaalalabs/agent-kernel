@@ -1,8 +1,8 @@
 from agents import Agent as OpenAIAgent
-from ak.api import RESTAPI
-from ak.crewai import CrewAIModule
-from ak.mcp import MCP
-from ak.openai import OpenAIModule
+from agentkernel.api import RESTAPI
+from agentkernel.crewai import CrewAIModule
+from agentkernel.mcp import MCP
+from agentkernel.openai import OpenAIModule
 from crewai import Agent as CrewAIAgent
 
 general_agent = OpenAIAgent(
