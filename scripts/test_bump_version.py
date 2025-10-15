@@ -1,14 +1,23 @@
+#!/usr/bin/env python3
+"""
+Unit tests for bump_version.py
+
+This test file can be run directly with: python test_bump_version.py
+It can also be imported and run as part of a test suite.
+"""
+
 import sys
 from pathlib import Path
 
-import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# Add scripts directory to path
+SCRIPTS_DIR = Path(__file__).parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from bump_version import bump_version
 
+
+# Test cases: (current_version, bump_type, prerelease_type, auto_increment, expected_version)
 TEST_CASES = [
     ("0.1.0a1", "patch", "alpha", True, "0.1.0a2"),  # Patch bump with alpha
     ("0.1.1a1", "patch", "alpha", True, "0.1.1a2"),  # Another patch with alpha
@@ -37,8 +46,49 @@ TEST_CASES = [
 ]
 
 
-@pytest.mark.parametrize("current,bump,pre,auto,expected", TEST_CASES)
-def test_bump_version_cases(current, bump, pre, auto, expected):
-    pre_arg = pre if pre else None
-    result = bump_version(current, bump, pre_arg, auto_increment_prerelease=auto)
-    assert result == expected
+def run_tests():
+    """Run all test cases and report results."""
+    passed = 0
+    failed = 0
+    errors = []
+    
+    print(f"Running {len(TEST_CASES)} test cases...")
+    print()
+    
+    for i, (current, bump, pre, auto, expected) in enumerate(TEST_CASES, 1):
+        pre_arg = pre if pre else None
+        
+        try:
+            result = bump_version(current, bump, pre_arg, auto_increment_prerelease=auto)
+            
+            if result == expected:
+                passed += 1
+                print(f"✓ Test {i:2d}: {current:10s} + {bump:5s} ({pre or 'stable':6s}) = {result:10s}")
+            else:
+                failed += 1
+                error_msg = f"✗ Test {i:2d}: {current:10s} + {bump:5s} ({pre or 'stable':6s}) = {result:10s} (expected {expected})"
+                print(error_msg)
+                errors.append(error_msg)
+        except Exception as e:
+            failed += 1
+            error_msg = f"✗ Test {i:2d}: {current:10s} + {bump:5s} ({pre or 'stable':6s}) - ERROR: {e}"
+            print(error_msg)
+            errors.append(error_msg)
+    
+    print()
+    print("=" * 80)
+    print(f"Test Results: {passed} passed, {failed} failed out of {len(TEST_CASES)} total")
+    print("=" * 80)
+    
+    if errors:
+        print()
+        print("Failed tests:")
+        for error in errors:
+            print(f"  {error}")
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run_tests())
