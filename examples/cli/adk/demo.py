@@ -1,5 +1,5 @@
-from ak.adk import GoogleADKModule
-from ak.cli import CLI
+from agentkernel.adk import GoogleADKModule
+from agentkernel.cli import CLI
 from google.adk.agents import Agent, LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 
