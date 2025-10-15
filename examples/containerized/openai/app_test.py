@@ -8,7 +8,7 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from ak.test import Test
+from agentkernel.test import Test
 
 
 class APITestClient:

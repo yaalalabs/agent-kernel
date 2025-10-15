@@ -1,6 +1,6 @@
 from agents import Agent
-from ak.api import RESTAPI
-from ak.openai import OpenAIModule
+from agentkernel.api import RESTAPI
+from agentkernel.openai import OpenAIModule
 
 from tool import fetch_customer_activity
 
