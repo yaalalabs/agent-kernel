@@ -1,207 +1,526 @@
-# Agent Kernel (Python)
+# Agent Kernel
 
-Agent Kernel is a lightweight runtime and adapter layer that lets you build and run AI agents across multiple frameworks with a unified API. This package brings a common set of abstractions (Agent, Runner, Session, Module, Runtime) and integrations for:
+[![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-- OpenAI Agents SDK
-- CrewAI
-- LangGraph
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks with a unified API. Write your agent logic once and run it under different frameworks via thin adapters.
 
-It also provides a simple interactive CLI and an AWS Lambda handler to deploy your agents as serverless endpoints.
+## Features
 
-
-## Why Agent Kernel?
-
-- Unified model: Write agent logic once, run it under different frameworks via thin adapters.
-- Pluggable: Bring your own framework-specific agents and register them using a small shim.
-- Session-aware: Built-in session abstraction to maintain conversational or task state across runs.
-- Ready to use: CLI for local interaction, AWS Lambda handler for quick cloud deployment.
-
+- **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
+- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK
+- **Session Management**: Built-in session abstraction for conversational state
+- **Flexible Deployment**: Interactive CLI for local development, AWS Lambda handler for serverless deployment
+- **Pluggable Architecture**: Easy to extend with custom framework adapters
 
 ## Installation
 
-This repository uses the uv toolchain. You can work from source easily.
+```bash
+pip install agentkernel
+```
 
-Prerequisites:
+**Requirements:**
 - Python 3.12+
-- uv 0.8.0+
-
-From source (editable):
-
-```bash
-# Clone the repo and cd into ak-py
-uv sync  # install dependencies
-```
-
-Or using pip (if you package/publish it):
-
-```bash
-pip install ak-py
-```
-
 
 ## Quick Start
 
-Below is the minimal mental model:
+### Basic Concepts
 
-- Agent: your framework-specific agent (e.g., a CrewAI Agent or a LangGraph CompiledStateGraph) wrapped by an Agent Kernel adapter.
-- Runner: framework-specific execution strategy.
-- Session: shared state across turns.
-- Module: a container that registers agents with the global Runtime on import/instantiation.
-- Runtime: a registry and orchestrator for agents.
+- **Agent**: Framework-specific agent wrapped by an Agent Kernel adapter
+- **Runner**: Framework-specific execution strategy
+- **Session**: Shared state across conversation turns
+- **Module**: Container that registers agents with the Runtime
+- **Runtime**: Global registry and orchestrator for agents
 
-### Example: Define and register agents
-
-You typically create a Python module that constructs your framework agents and registers them with Agent Kernel by creating an agent module. Importing this module will register agents in the Runtime.
-
-CrewAI example (pseudo/minimal):
+### CrewAI Example
 
 ```python
-# demo.py
 from crewai import Agent as CrewAgent
-from ak.cli import CLI
-from ak.crewai import CrewAIModule
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
 
-researcher = CrewAgent(role="researcher", goal="Find facts")
-writer = CrewAgent(role="writer", goal="Summarize findings")
+general_agent = CrewAgent(
+    role="general",
+    goal="Agent for general questions",
+    backstory="You provide assistance with general queries. Give direct and short answers",
+    verbose=False,
+)
 
-# Register both under Agent Kernel. The module maps each Crew agent to a CrewAIAgent
-# and registers them with the global Runtime.
-module = CrewAIModule([researcher, writer])
+math_agent = CrewAgent(
+    role="math",
+    goal="Specialist agent for math questions",
+    backstory="You provide help with math problems. Explain your reasoning at each step and include examples. \
+        If prompted for anything else you refuse to answer.",
+    verbose=False,
+)
+
+# Register agents with Agent Kernel
+module = CrewAIModule([general_agent, math_agent])
+
 if __name__ == "__main__":
     CLI.main()
 ```
 
-LangGraph example (pseudo/minimal):
+### LangGraph Example
 
 ```python
-# demo.py
 from langgraph.graph import StateGraph
-from ak.cli import CLI
-from ak.langgraph import LangGraphModule
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
 
-# Build your graph and compile it to CompiledStateGraph with a `.name`
+# Build and compile your graph
 sg = StateGraph(...)
 compiled = sg.compile()
-compiled.name = "assistant"  # ensure a name is set
+compiled.name = "assistant"
 
 module = LangGraphModule([compiled])
+
 if __name__ == "__main__":
     CLI.main()
 ```
 
-OpenAI Agents SDK example (pseudo/minimal):
+### OpenAI Agents SDK Example
 
 ```python
-# demo.py
-from openai import OpenAI
-from agents import Agent as OpenAIAgent  # from openai-agents SDK
-from ak.cli import CLI
-from ak.openai import OpenAIModule
+from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
 
-client = OpenAI()
-assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
+general_agent = OpenAIAgent(
+    name="general",
+    handoff_description="Agent for general questions",
+    instructions="You provide assistance with general queries. Give short and direct answers.",
+)
 
-module = OpenAIModule([assistant])
+module = OpenAIModule([general_agent])
+
 if __name__ == "__main__":
     CLI.main()
 ```
 
+### Google ADK Example
 
-## Using the CLI
+```python
+from google.adk.agents import Agent
+from agentkernel.cli import CLI
+from agentkernel.adk import GoogleADKModule
+from google.adk.models.lite_llm import LiteLlm
 
-Agent Kernel ships with a simple interactive CLI that lets you:
-- Load an agent module (which registers agents)
-- List/select an agent
-- Send prompts and view responses
+# Create Google ADK agents
+math_agent = Agent(
+    name="math",
+    model=LiteLlm(model="openai/gpt-4o-mini"),
+    description="Specialist agent for math questions",
+    instruction="""
+    You provide help with math problems.
+    Explain your reasoning at each step and include examples.
+    If prompted for anything else you refuse to answer.
+    """,
+)
 
-Run one of the above examples from the project:
+module = GoogleADKModule([math_agent])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+## Interactive CLI
+
+Agent Kernel includes an interactive CLI for local development and testing.
+
+**Available Commands:**
+- `!h`, `!help` — Show help
+- `!ld`, `!load <module_name>` — Load a Python module containing agents
+- `!ls`, `!list` — List registered agents
+- `!s`, `!select <agent_name>` — Select an agent
+- `!n`, `!new` — Start a new session
+- `!q`, `!quit` — Exit
+
+**Usage:**
 
 ```bash
-uv run demo.py
+python demo.py
 ```
 
-Once inside, available commands:
-- !h, !help — Show help
-- !ld, !load <module_name> — Import a Python module that instantiates an agent module (e.g., my_crewai_agents)
-- !ls, !list — List registered agents
-- !s, !select <agent_name> — Select an agent by name
-- !n, !new — Start a new session
-- !q, !quit — Exit
-
-Tip: If your agent module registers at import time, you can simply run:
+Then interact with your agents:
 
 ```text
-(assistant) >> !load my_crewai_agents
+(assistant) >> !load my_agents
+(assistant) >> !select researcher
+(researcher) >> What is the latest news on AI?
 ```
-
 
 ## AWS Lambda Deployment
 
-A ready-to-use handler is provided at:
-
-- ak.aws:Lambda.handler
-
-OpenAI Agents SDK lambda example (pseudo/minimal):
+Deploy your agents as serverless functions using the built-in Lambda handler.
 
 ```python
-# demo.py
 from openai import OpenAI
-from agents import Agent as OpenAIAgent  # from openai-agents SDK
-from ak.aws import Lambda
-from ak.openai import OpenAIModule
+from agents import Agent as OpenAIAgent
+from agentkernel.aws import Lambda
+from agentkernel.openai import OpenAIModule
 
 client = OpenAI()
-assistant = OpenAIAgent(name="assistant", client=client)  # add any required params for your SDK version
+assistant = OpenAIAgent(name="assistant")
 
 module = OpenAIModule([assistant])
 handler = Lambda.handler
 ```
 
-It expects an API Gateway-style event with a JSON body like:
+**Request Format:**
 
 ```json
 {
   "prompt": "Hello agent",
-  "agent": "writer"  
+  "agent": "assistant"
 }
 ```
 
-Response shape:
-- 200 with { "result": <string> }
-- 400 if no agent is available
-- 500 on unexpected errors
+**Response Format:**
 
-Notes:
-- If no agent name is provided, the handler selects the first registered agent.
-- Make sure your deployment package (Lambda layer or container) includes your agent module and dependencies. Importing your agent module should register agents before the first request.
+```json
+{
+  "result": "Agent response here"
+}
+```
+
+**Status Codes:**
+- `200` — Success
+- `400` — No agent available
+- `500` — Unexpected error
+
+## Configuration
+
+Agent Kernel can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
+
+### Configuration Precedence
+
+Values are loaded in the following order (highest precedence first):
+1. Environment variables (including variables from `.env` file)
+2. Configuration file (YAML or JSON)
+3. Built-in defaults
+
+### Configuration File
+
+By default, Agent Kernel looks for `./config.yaml` in the current working directory.
+
+**Override the config file path:**
+
+```bash
+export AK_CONFIG_PATH_OVERRIDE=config.json
+# or
+export AK_CONFIG_PATH_OVERRIDE=conf/agent-kernel.yaml
+```
+
+Supported formats: `.yaml`, `.yml`, `.json`
+
+### Configuration Options
+
+#### Debug Mode
+
+- **Field**: `debug`
+- **Type**: boolean
+- **Default**: `false`
+- **Description**: Enable debug mode across the library
+- **Environment Variable**: `AK_DEBUG`
+
+#### Session Store
+
+Configure where agent sessions are stored.
+
+- **Field**: `session.type`
+- **Type**: string
+- **Options**: `in_memory`, `redis`
+- **Default**: `in_memory`
+- **Environment Variable**: `AK_SESSION_TYPE`
+
+##### Redis Configuration
+
+Required when `session.type=redis`:
+
+- **URL**
+  - **Field**: `session.redis.url`
+  - **Default**: `redis://localhost:6379`
+  - **Description**: Redis connection URL. Use `rediss://` for SSL
+  - **Environment Variable**: `AK_SESSION_REDIS_URL`
+
+- **TTL (Time to Live)**
+  - **Field**: `session.redis.ttl`
+  - **Default**: `604800` (7 days)
+  - **Description**: Session TTL in seconds
+  - **Environment Variable**: `AK_SESSION_REDIS_TTL`
+
+- **Key Prefix**
+  - **Field**: `session.redis.prefix`
+  - **Default**: `ak:sessions:`
+  - **Description**: Key prefix for session storage
+  - **Environment Variable**: `AK_SESSION_REDIS_PREFIX`
+
+#### API Configuration
+
+Configure the REST API server (if using the API module).
+
+- **Host**
+  - **Field**: `api.host`
+  - **Default**: `0.0.0.0`
+  - **Environment Variable**: `AK_API_HOST`
+
+- **Port**
+  - **Field**: `api.port`
+  - **Default**: `8000`
+  - **Environment Variable**: `AK_API_PORT`
+
+- **Enabled Routes**
+  - **Field**: `api.enabled_routes.agents`
+  - **Default**: `true`
+  - **Description**: Enable agent interaction routes
+  - **Environment Variable**: `AK_API_ENABLED_ROUTES_AGENTS`
+
+#### A2A (Agent-to-Agent) Configuration
+
+- **Enabled**
+  - **Field**: `a2a.enabled`
+  - **Default**: `false`
+  - **Environment Variable**: `AK_A2A_ENABLED`
+
+- **Agents**
+  - **Field**: `a2a.agents`
+  - **Default**: `["*"]`
+  - **Description**: List of agent names to enable A2A (use `["*"]` for all)
+  - **Environment Variable**: `AK_A2A_AGENTS` (comma-separated)
+
+- **URL**
+  - **Field**: `a2a.url`
+  - **Default**: `http://localhost:8000/a2a`
+  - **Environment Variable**: `AK_A2A_URL`
+
+- **Task Store Type**
+  - **Field**: `a2a.task_store_type`
+  - **Options**: `in_memory`, `redis`
+  - **Default**: `in_memory`
+  - **Environment Variable**: `AK_A2A_TASK_STORE_TYPE`
+
+#### MCP (Model Context Protocol) Configuration
+
+- **Enabled**
+  - **Field**: `mcp.enabled`
+  - **Default**: `false`
+  - **Environment Variable**: `AK_MCP_ENABLED`
+
+- **Expose Agents**
+  - **Field**: `mcp.expose_agents`
+  - **Default**: `false`
+  - **Description**: Expose agents as MCP tools
+  - **Environment Variable**: `AK_MCP_EXPOSE_AGENTS`
+
+- **Agents**
+  - **Field**: `mcp.agents`
+  - **Default**: `["*"]`
+  - **Description**: List of agent names to expose as MCP tools
+  - **Environment Variable**: `AK_MCP_AGENTS` (comma-separated)
+
+- **URL**
+  - **Field**: `mcp.url`
+  - **Default**: `http://localhost:8000/mcp`
+  - **Environment Variable**: `AK_MCP_URL`
+
+### Configuration Examples
+
+#### Environment Variables
+
+Use the `AK_` prefix and underscores for nested fields:
+
+```bash
+export AK_DEBUG=true
+export AK_SESSION_TYPE=redis
+export AK_SESSION_REDIS_URL=redis://localhost:6379
+export AK_SESSION_REDIS_TTL=604800
+export AK_SESSION_REDIS_PREFIX=ak:sessions:
+export AK_API_HOST=0.0.0.0
+export AK_API_PORT=8000
+export AK_A2A_ENABLED=true
+export AK_MCP_ENABLED=false
+```
+
+#### .env File
+
+Create a `.env` file in your working directory:
+
+```env
+AK_DEBUG=false
+AK_SESSION_TYPE=redis
+AK_SESSION_REDIS_URL=rediss://my-redis:6379
+AK_SESSION_REDIS_TTL=1209600
+AK_SESSION_REDIS_PREFIX=ak:prod:sessions:
+AK_API_HOST=0.0.0.0
+AK_API_PORT=8080
+AK_A2A_ENABLED=true
+AK_A2A_URL=http://localhost:8080/a2a
+```
+
+#### config.yaml
+
+```yaml
+debug: false
+session:
+  type: redis
+  redis:
+    url: redis://localhost:6379
+    ttl: 604800
+    prefix: "ak:sessions:"
+api:
+  host: 0.0.0.0
+  port: 8000
+  enabled_routes:
+    agents: true
+a2a:
+  enabled: true
+  agents: ["*"]
+  url: http://localhost:8000/a2a
+  task_store_type: in_memory
+mcp:
+  enabled: false
+  expose_agents: false
+  agents: ["*"]
+  url: http://localhost:8000/mcp
+```
+
+#### config.json
+
+```json
+{
+  "debug": false,
+  "session": {
+    "type": "redis",
+    "redis": {
+      "url": "redis://localhost:6379",
+      "ttl": 604800,
+      "prefix": "ak:sessions:"
+    }
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "enabled_routes": {
+      "agents": true
+    }
+  },
+  "a2a": {
+    "enabled": true,
+    "agents": ["*"],
+    "url": "http://localhost:8000/a2a",
+    "task_store_type": "in_memory"
+  },
+  "mcp": {
+    "enabled": false,
+    "expose_agents": false,
+    "agents": ["*"],
+    "url": "http://localhost:8000/mcp"
+  }
+}
+```
+
+### Configuration Notes
+
+- Empty environment variables are ignored
+- Unknown fields in files or environment variables are ignored
+- Environment variables override configuration file values
+- Configuration file values override built-in defaults
+- Nested fields use underscore (`_`) delimiter in environment variables
+
+## Extensibility
+
+### Custom Framework Adapters
+
+To add support for a new framework:
+
+1. Implement a `Runner` class for your framework
+2. Create an `Agent` wrapper class
+3. Create a `Module` class that registers agents with the Runtime
+
+Example structure:
+
+```python
+from agentkernel.core import Agent, Runner, Module
+
+class MyFrameworkRunner(Runner):
+    def run(self, agent, prompt, session):
+        # Implement framework-specific execution
+        pass
+
+class MyFrameworkAgent(Agent):
+    def __init__(self, native_agent):
+        self.native_agent = native_agent
+        self.runner = MyFrameworkRunner()
+
+class MyFrameworkModule(Module):
+    def __init__(self, agents):
+        super().__init__()
+        for agent in agents:
+            wrapped = MyFrameworkAgent(agent)
+            self.register(wrapped)
+```
+
+### Session Management
+
+Sessions maintain state across agent interactions. Framework adapters manage their own session storage within the Session object using namespaced keys:
+
+- `"crewai"` — CrewAI session data
+- `"langgraph"` — LangGraph session data
+- `"openai"` — OpenAI Agents SDK session data
+- `"adk"` — Google ADK session data
+
+Access the session in your runner:
+
+```python
+def run(self, agent, prompt, session):
+    # Get framework-specific data
+    my_data = session.get("my_framework", {})
+    
+    # Process and update data
+    my_data["last_prompt"] = prompt
+    
+    # Update session
+    session.set("my_framework", my_data)
+```
 
 ## Development
 
-Requirements:
+**Requirements:**
 - Python 3.12+
-- uv 0.8.0+
+- uv 0.8.0+ (recommended) or pip
 
-Setup:
+**Setup:**
 
 ```bash
-./build.sh  # installs dev dependencies and sets up environment
+git clone https://github.com/yaalalabs/agent-kernel.git
+cd agent-kernel/ak-py
+uv sync  # or: pip install -e ".[dev]"
 ```
 
-Run tests:
+**Run Tests:**
 
 ```bash
 uv run pytest
+# or: pytest
 ```
 
-Formatting and static checks (configured in pyproject.toml):
-- black
-- isort
-- mypy
+**Code Quality:**
 
+The project uses:
+- `black` — Code formatting
+- `isort` — Import sorting
+- `mypy` — Type checking
 
-## Configuration and Extensibility
+## License
 
-- Configuration: See [CONFIG.md](CONFIG.md) for full details on environment variables and config file options.
-- Sessions: Use ak.ak.Session to keep per-conversation or per-job state across runs. Framework adapters manage their own session storage within that Session via namespaced keys (e.g., "crewai", "langgraph", "openai").
-- Adapters: See ak/crewai, ak/langgraph, ak/openai for reference implementations. To add a new framework, implement a Runner and an Agent wrapper, then a Module that registers them with Runtime.
-- Runtime: Agents are registered globally; Runtime.load(module_name) imports a module, which should instantiate an agent module to register its agents.
+MIT License - see LICENSE file for details.
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
+- **Documentation**: [Full Documentation](https://github.com/yaalalabs/agent-kernel)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.

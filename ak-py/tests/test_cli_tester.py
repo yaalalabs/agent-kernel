@@ -1,6 +1,6 @@
 import pytest
 
-from ak.test.test import Test as CliTest
+from agentkernel.test.test import Test as CliTest
 
 
 @pytest.mark.asyncio

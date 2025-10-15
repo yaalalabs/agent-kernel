@@ -1,6 +1,6 @@
 import pytest
 
-from ak.core.config import AKConfig
+from agentkernel.core.config import AKConfig
 
 
 def test_config_defaults_no_file(tmp_path, monkeypatch):

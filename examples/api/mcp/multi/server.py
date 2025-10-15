@@ -1,20 +1,21 @@
+from agentkernel.api import RESTAPI
+from agentkernel.crewai import CrewAIModule
+from agentkernel.mcp import MCP
+from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
-from ak.api import RESTAPI
-from ak.crewai import CrewAIModule
-from ak.mcp import MCP
-from ak.openai import OpenAIModule
 from crewai import Agent as CrewAIAgent
 
 general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
-    instructions="You provide assistance with general queries. Give short and clear answers",
+    instructions="You provide assistance with general queries. Give short and clear answers. "
+                 "Give direct and correct answers. Answer the question only. Don't give any explanation",
 )
 
 math_agent = OpenAIAgent(
     name="math",
     handoff_description="Specialist agent for math questions",
-    instructions="You provide help with math problems. Explain your reasoning at each step and include examples. \
+    instructions="You provide help with math problems. Give direct and correct answers. Answer the question only. Don't give any explanation. \
         If prompted for anything else you refuse to answer.",
 )
 

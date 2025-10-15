@@ -7,6 +7,26 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "agentkernel"
+version = "0.1.2b2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyyaml" },
+    { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/13/ca/34f9ab51be28b0d40648e0ebcd10c5c9755301784aeaa688c6e00aade9da/agentkernel-0.1.2b2.tar.gz", hash = "sha256:f4d88900ec61bebf6fa583bc6d6a80a4d52e8512aa89a00df8f40f713538ab1b", size = 25082, upload-time = "2025-10-15T08:08:51.656Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/ca/ec0d0737827db6d75133d076dfb95038b6c041f3880505c78a4dee7551c2/agentkernel-0.1.2b2-py3-none-any.whl", hash = "sha256:0d45a7af0d4d20971028401f3b1f7b6d9e4c32132813bb286c18d879af30dc6e", size = 39710, upload-time = "2025-10-15T08:08:50.525Z" },
+]
+
+[package.optional-dependencies]
+crewai = [
+    { name = "crewai" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -80,20 +100,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ak"
-version = "0.1.0a1"
-source = { registry = "../../../ak-py/dist" }
-sdist = { path = "ak-0.1.0a1.tar.gz" }
-wheels = [
-    { path = "ak-0.1.0a1-py3-none-any.whl" },
-]
-
-[package.optional-dependencies]
-crewai = [
-    { name = "crewai" },
-]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -148,11 +154,11 @@ name = "aws-serverless-crewai"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "ak", extra = ["crewai"] },
+    { name = "agentkernel", extra = ["crewai"] },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ak", extras = ["crewai", "aws"], specifier = ">=0.1.0a1" }]
+requires-dist = [{ name = "agentkernel", extras = ["crewai", "aws"], specifier = ">=0.1.0a1" }]
 
 [[package]]
 name = "backoff"
@@ -2019,6 +2025,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pydantic-settings"
+version = "2.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/20/c5/dbbc27b814c71676593d1c3f718e6cd7d4f00652cefa24b75f7aa3efb25e/pydantic_settings-2.11.0.tar.gz", hash = "sha256:d0e87a1c7d33593beb7194adb8470fc426e95ba02af83a0f23474a04c9a08180", size = 188394, upload-time = "2025-09-24T14:19:11.764Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/d6/887a1ff844e64aa823fb4905978d882a633cfe295c32eacad582b78a7d8b/pydantic_settings-2.11.0-py3-none-any.whl", hash = "sha256:fe2cea3413b9530d10f3a5875adffb17ada5c1e1bab0b2885546d7310415207c", size = 48608, upload-time = "2025-09-24T14:19:10.015Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2155,6 +2175,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fe/0f/25911a9f080464c59fab9027482f822b86bf0608957a5fcc6eaac85aa515/PyYAML-6.0.2-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:68ccc6023a3400877818152ad9a1033e3db8625d899c72eacb5a668902e4d652", size = 751597, upload-time = "2024-08-06T20:32:56.985Z" },
     { url = "https://files.pythonhosted.org/packages/14/0d/e2c3b43bbce3cf6bd97c840b46088a3031085179e596d4929729d8d68270/PyYAML-6.0.2-cp313-cp313-win32.whl", hash = "sha256:bc2fa7c6b47d6bc618dd7fb02ef6fdedb1090ec036abab80d4681424b84c1183", size = 140527, upload-time = "2024-08-06T20:33:03.001Z" },
     { url = "https://files.pythonhosted.org/packages/fa/de/02b54f42487e3d3c6efb3f89428677074ca7bf43aae402517bc7cca949f3/PyYAML-6.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:8388ee1976c416731879ac16da0aff3f63b286ffdd57cdeb95f3f2e085687563", size = 156446, upload-time = "2024-08-06T20:33:04.33Z" },
+]
+
+[[package]]
+name = "redis"
+version = "6.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/d6/e8b92798a5bd67d659d51a18170e91c16ac3b59738d91894651ee255ed49/redis-6.4.0.tar.gz", hash = "sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010", size = 4647399, upload-time = "2025-08-07T08:10:11.441Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/02/89e2ed7e85db6c93dfa9e8f691c5087df4e3551ab39081a4d7c6d1f90e05/redis-6.4.0-py3-none-any.whl", hash = "sha256:f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f", size = 279847, upload-time = "2025-08-07T08:10:09.84Z" },
 ]
 
 [[package]]

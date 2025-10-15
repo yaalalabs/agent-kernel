@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def _get_ak_version() -> str:
     try:
-        return importlib.metadata.version("ak")
+        return importlib.metadata.version("agentkernel")
     except importlib.metadata.PackageNotFoundError:
         return "0.1.0"
 
