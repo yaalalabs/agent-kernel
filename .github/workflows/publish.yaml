@@ -151,9 +151,21 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> ⚠️ **Note**: This is a test release. Version was NOT committed or tagged in git." >> $GITHUB_STEP_SUMMARY
 
+  # Wait for PyPI propagation before updating examples
+  wait-for-pypi:
+    needs: publish
+    if: inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for PyPI propagation
+        run: |
+          echo "⏳ Waiting 120 seconds for PyPI to propagate the new package version..."
+          sleep 120
+          echo "✅ Wait complete, ready to update examples"
+
   # Trigger test workflow to update examples and run E2E tests
   update-and-test-examples:
-    needs: publish
+    needs: [publish, wait-for-pypi]
     if: inputs.environment == 'production'
     uses: ./.github/workflows/test.yaml
     with:

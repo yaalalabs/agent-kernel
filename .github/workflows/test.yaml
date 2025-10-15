@@ -52,19 +52,15 @@ jobs:
           echo "Updating Examples with New Version"
           echo "=========================================="
           echo ""
-          echo "⏳ Waiting 120 seconds for PyPI to propagate the new package version..."
-          sleep 120
-          
-          echo ""
           echo "🔄 Updating example pyproject.toml files and regenerating uv.lock files..."
-          echo "   This will retry up to 8 times with 45-second delays if the package isn't available yet."
+          echo "   This will retry up to 3 times with 15-second delays if the package isn't available yet."
           echo ""
           
           python scripts/update_examples_version.py \
             --version ${{ inputs.new_version }} \
             --force-lock \
-            --lock-retries 8 \
-            --lock-retry-delay 45 \
+            --lock-retries 3 \
+            --lock-retry-delay 15 \
             || echo "⚠️ Warning: Some lock files failed to regenerate. They may need to be updated manually."
           
           echo ""
