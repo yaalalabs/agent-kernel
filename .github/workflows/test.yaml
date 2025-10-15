@@ -70,6 +70,8 @@ jobs:
             echo "No example file changes"
           else
             echo "Example files updated"
+            # Pull latest changes to avoid conflicts
+            git pull --rebase origin ${{ github.ref_name }}
             git add examples/
             git commit -m "chore: update examples to use agentkernel v${{ inputs.new_version }}"
             git push origin ${{ github.ref_name }}
@@ -121,12 +123,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
-      
-      - name: Pull latest changes if examples were updated
-        if: inputs.update_examples == true
-        run: |
-          git pull origin ${{ github.ref_name }}
+          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -172,12 +169,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
-      
-      - name: Pull latest changes if examples were updated
-        if: inputs.update_examples == true
-        run: |
-          git pull origin ${{ github.ref_name }}
+          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -223,12 +215,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
-      
-      - name: Pull latest changes if examples were updated
-        if: inputs.update_examples == true
-        run: |
-          git pull origin ${{ github.ref_name }}
+          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
