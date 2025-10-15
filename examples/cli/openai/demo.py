@@ -1,24 +1,25 @@
-from agents import Agent
-
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
+from agents import Agent
 
 math_agent = Agent(
     name="math",
     handoff_description="Specialist agent for math questions",
-    instructions="You provide help with math problems. Explain your reasoning at each step and include examples. \
-        If prompted for anything else you refuse to answer.",
+    instructions="You provide help with math problems. Give short and direct answers exactly to the question. "
+                 "Don't provide any explanations nor additional details.",
 )
 
 general_agent = Agent(
     name="general",
     handoff_description="Agent for general questions",
-    instructions="You provide assistance with general queries. Give short and direct answers.",
+    instructions="You provide assistance with general queries. Give short and direct answers exactly to the question. "
+                 "Don't provide any explanations nor additional details",
 )
 
 triage_agent = Agent(
     name="triage",
-    instructions="You determine which agent to use based on the user's question.",
+    instructions="You determine which agent to use based on the user's question. Give short and direct answers exactly to the question. "
+                 "Don't provide any explanations nor additional details",
     handoffs=[general_agent, math_agent],
 )
 
