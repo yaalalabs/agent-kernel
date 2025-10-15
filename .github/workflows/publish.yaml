@@ -38,7 +38,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment:
-      name: ${{ inputs.environment == 'production' && 'pypi-production' || 'pypi-test' }}
+      name: ${{ inputs.environment == 'production' && 'production' || 'test' }}
       url: ${{ inputs.environment == 'production' && 'https://pypi.org/p/agentkernel' || 'https://test.pypi.org/p/agentkernel' }}
     
     defaults:
