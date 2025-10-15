@@ -37,6 +37,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump_version.outputs.new_version }}
     environment:
       name: ${{ inputs.environment == 'production' && 'production' || 'test' }}
       url: ${{ inputs.environment == 'production' && 'https://pypi.org/p/agentkernel' || 'https://test.pypi.org/p/agentkernel' }}
@@ -133,43 +135,6 @@ jobs:
           files: |
             ak-py/dist/*
       
-      - name: Update examples with new version
-        if: inputs.environment == 'production'
-        run: |
-          echo "=========================================="
-          echo "Updating Examples with New Version"
-          echo "=========================================="
-          echo ""
-          echo "⏳ Waiting 120 seconds for PyPI to propagate the new package version..."
-          sleep 120
-          
-          echo ""
-          echo "🔄 Updating example pyproject.toml files and regenerating uv.lock files..."
-          echo "   This will retry up to 8 times with 45-second delays if the package isn't available yet."
-          echo ""
-          
-          python scripts/update_examples_version.py \
-            --version ${{ steps.bump_version.outputs.new_version }} \
-            --force-lock \
-            --lock-retries 3 \
-            --lock-retry-delay 30 \
-            || echo "⚠️ Warning: Some lock files failed to regenerate. They may need to be updated manually."
-          
-          echo ""
-          echo "📝 Committing changes..."
-          # Check if there are any changes
-          if git diff --quiet examples/; then
-            echo "No example file changes"
-          else
-            echo "Example files updated"
-            git add examples/
-            git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}" || true
-            git push origin ${{ github.ref_name }} || true
-          fi
-          
-          echo ""
-          echo "✅ Example update complete!"
-      
       - name: Test PyPI Summary
         if: inputs.environment == 'test'
         run: |
@@ -185,3 +150,12 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> ⚠️ **Note**: This is a test release. Version was NOT committed or tagged in git." >> $GITHUB_STEP_SUMMARY
+
+  # Trigger test workflow to update examples and run E2E tests
+  update-and-test-examples:
+    needs: publish
+    if: inputs.environment == 'production'
+    uses: ./.github/workflows/test.yaml
+    with:
+      update_examples: true
+      new_version: ${{ needs.publish.outputs.new_version }}

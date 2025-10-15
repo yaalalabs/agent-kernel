@@ -5,8 +5,83 @@ on:
   push:
     branches:
       - develop
+  workflow_call:
+    inputs:
+      update_examples:
+        description: 'Whether to update example versions'
+        required: false
+        type: boolean
+        default: false
+      new_version:
+        description: 'New version to update examples to'
+        required: false
+        type: string
+        default: ''
 
 jobs:
+  update-examples:
+    if: inputs.update_examples == true
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        run: |
+          pip install uv
+      
+      - name: Update examples with new version
+        run: |
+          echo "=========================================="
+          echo "Updating Examples with New Version"
+          echo "=========================================="
+          echo ""
+          echo "⏳ Waiting 120 seconds for PyPI to propagate the new package version..."
+          sleep 120
+          
+          echo ""
+          echo "🔄 Updating example pyproject.toml files and regenerating uv.lock files..."
+          echo "   This will retry up to 8 times with 45-second delays if the package isn't available yet."
+          echo ""
+          
+          python scripts/update_examples_version.py \
+            --version ${{ inputs.new_version }} \
+            --force-lock \
+            --lock-retries 8 \
+            --lock-retry-delay 45 \
+            || echo "⚠️ Warning: Some lock files failed to regenerate. They may need to be updated manually."
+          
+          echo ""
+          echo "📝 Committing changes..."
+          # Check if there are any changes
+          if git diff --quiet examples/; then
+            echo "No example file changes"
+          else
+            echo "Example files updated"
+            git add examples/
+            git commit -m "chore: update examples to use agentkernel v${{ inputs.new_version }}"
+            git push origin ${{ github.ref_name }}
+          fi
+          
+          echo ""
+          echo "✅ Example update complete!"
+  
   unit-test:
     runs-on: ubuntu-latest
     defaults:
@@ -37,6 +112,11 @@ jobs:
           uv run pytest -s
 
   cli-e2e-test:
+    needs: [unit-test, update-examples]
+    if: |
+      always() && 
+      needs.unit-test.result == 'success' && 
+      (needs.update-examples.result == 'success' || needs.update-examples.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,6 +124,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      
+      - name: Pull latest changes if examples were updated
+        if: inputs.update_examples == true
+        run: |
+          git pull origin ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -65,16 +152,22 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
+          BUILD_ARG="${{ inputs.update_examples == true && '' || 'local' }}"
           for example in examples/cli/* examples/cli/a2a/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
+              (cd "$example" && ./build.sh $BUILD_ARG)
               echo "=== Running tests for $example ==="
               (cd "$example" && uv run pytest -s)
             fi
           done
 
   api-e2e-test:
+    needs: [unit-test, update-examples]
+    if: |
+      always() && 
+      needs.unit-test.result == 'success' && 
+      (needs.update-examples.result == 'success' || needs.update-examples.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -82,6 +175,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      
+      - name: Pull latest changes if examples were updated
+        if: inputs.update_examples == true
+        run: |
+          git pull origin ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -103,16 +203,22 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
+          BUILD_ARG="${{ inputs.update_examples == true && '' || 'local' }}"
           for example in examples/api/* examples/api/a2a/* examples/api/mcp/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
+              (cd "$example" && ./build.sh $BUILD_ARG)
               echo "=== Running tests for $example ==="
               (cd "$example" && uv run pytest -s)
             fi
           done
 
   containerized-e2e-test:
+    needs: [unit-test, update-examples]
+    if: |
+      always() && 
+      needs.unit-test.result == 'success' && 
+      (needs.update-examples.result == 'success' || needs.update-examples.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -120,6 +226,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      
+      - name: Pull latest changes if examples were updated
+        if: inputs.update_examples == true
+        run: |
+          git pull origin ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -136,15 +249,16 @@ jobs:
           set -e
           ./build.sh
 
-      - name: Run Containerized Examples
+      - name: Run containerized examples
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
-          for example in examples/containerized/* examples/containerized/a2a/*; do
+          BUILD_ARG="${{ inputs.update_examples == true && '' || 'local' }}"
+          for example in examples/containerized/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
+              (cd "$example" && ./build.sh $BUILD_ARG)
               echo "=== Running tests for $example ==="
               (cd "$example" && uv run pytest -s)
             fi
