@@ -70,7 +70,7 @@ jobs:
         id: bump_version
         working-directory: ak-py
         run: |
-          python bump_version.py \
+          python ../scripts/bump_version.py \
             --bump ${{ inputs.version_bump }} \
             ${{ (inputs.prerelease == 'alpha' || inputs.prerelease == 'beta') && format('--prerelease {0}', inputs.prerelease) || '' }} \
             --auto-prerelease-number
@@ -132,6 +132,21 @@ jobs:
           generate_release_notes: true
           files: |
             ak-py/dist/*
+      
+      - name: Update examples with new version
+        if: inputs.environment == 'production'
+        run: |
+          python scripts/update_examples_version.py --version ${{ steps.bump_version.outputs.new_version }}
+          
+          # Check if there are any changes
+          if git diff --quiet examples/; then
+            echo "No changes to example files"
+          else
+            echo "Example files updated with new version"
+            git add examples/
+            git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}"
+            git push origin ${{ github.ref_name }}
+          fi
       
       - name: Test PyPI Summary
         if: inputs.environment == 'test'
