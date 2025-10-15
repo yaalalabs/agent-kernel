@@ -73,7 +73,7 @@ jobs:
         run: |
           python bump_version.py \
             --bump ${{ inputs.version_bump }} \
-            --prerelease ${{ inputs.prerelease }} \
+            ${{ inputs.prerelease && format('--prerelease {0}', inputs.prerelease) || '' }} \
             --auto-prerelease-number
           
           NEW_VERSION=$(python -c "import tomllib; f = open('pyproject.toml', 'rb'); print(tomllib.load(f)['project']['version'])")
