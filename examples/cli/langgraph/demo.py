@@ -2,8 +2,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 
-from ak.cli import CLI
-from ak.langgraph import LangGraphModule
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
 
 from custom_agent import CustomAgent
 
