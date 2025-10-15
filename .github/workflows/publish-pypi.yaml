@@ -79,19 +79,6 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
       
-      - name: Commit version bump
-        if: inputs.environment == 'production'
-        run: |
-          git add ak-py/pyproject.toml
-          git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
-          git push origin ${{ github.ref_name }}
-      
-      - name: Create git tag
-        if: inputs.environment == 'production'
-        run: |
-          git tag "v${{ steps.bump_version.outputs.new_version }}"
-          git push origin "v${{ steps.bump_version.outputs.new_version }}"
-      
       - name: Build package
         working-directory: ak-py
         run: |
@@ -114,6 +101,19 @@ jobs:
           verbose: true
           print-hash: true
           repository-url: ${{ inputs.environment == 'test' && 'https://test.pypi.org/legacy/' || '' }}
+
+      - name: Commit version bump
+        if: inputs.environment == 'production'
+        run: |
+          git add ak-py/pyproject.toml
+          git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
+          git push origin ${{ github.ref_name }}
+      
+      - name: Create git tag
+        if: inputs.environment == 'production'
+        run: |
+          git tag "v${{ steps.bump_version.outputs.new_version }}"
+          git push origin "v${{ steps.bump_version.outputs.new_version }}"
       
       - name: Create GitHub Release
         if: inputs.environment == 'production'
