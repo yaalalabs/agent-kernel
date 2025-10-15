@@ -1,7 +1,7 @@
 from crewai import Agent
 
-from ak.cli import CLI
-from ak.crewai import CrewAIModule
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
 
 math_agent = Agent(
     role="math",
