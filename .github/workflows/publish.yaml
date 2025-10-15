@@ -139,14 +139,15 @@ jobs:
           echo "Waiting 60 seconds for PyPI to propagate the new package version..."
           sleep 60
           
-          echo "Generating uv.lock files for examples..."
+          echo "Updating example pyproject.toml files and regenerating uv.lock files..."
           python scripts/update_examples_version.py \
             --version ${{ steps.bump_version.outputs.new_version }} \
+            --force-lock \
             --lock-retries 5 \
             --lock-retry-delay 30 \
             || echo "Warning: Some lock files failed to regenerate. They may need to be updated manually."
           
-          # Check if there are any changes to lock files
+          # Check if there are any changes
           if git diff --quiet examples/; then
             echo "No example file changes"
           else

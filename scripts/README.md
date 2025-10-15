@@ -29,6 +29,9 @@ python scripts/update_examples_version.py --version 0.2.0 --skip-lock
 # Update pyproject.toml and regenerate lock files with retry logic
 python scripts/update_examples_version.py --version 0.2.0 --lock-retries 5 --lock-retry-delay 30
 
+# Force regenerate lock files even if pyproject.toml hasn't changed
+python scripts/update_examples_version.py --version 0.2.0 --force-lock --lock-retries 5
+
 # Dry run to see what would change
 python scripts/update_examples_version.py --version 0.2.0 --dry-run
 ```
@@ -36,6 +39,7 @@ python scripts/update_examples_version.py --version 0.2.0 --dry-run
 **Options:**
 - `--version`: New version to set (required)
 - `--skip-lock`: Skip regenerating uv.lock files
+- `--force-lock`: Force regenerate uv.lock files even if pyproject.toml hasn't changed
 - `--lock-retries`: Number of retry attempts for lock regeneration (default: 3)
 - `--lock-retry-delay`: Delay in seconds between retries (default: 10)
 - `--dry-run`: Show what would be changed without making modifications

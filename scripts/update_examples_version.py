@@ -51,9 +51,19 @@ def find_example_pyproject_files(examples_dir: Path) -> list[Path]:
         examples_dir: Path to the examples directory
     
     Returns:
-        List of paths to pyproject.toml files
+        List of paths to pyproject.toml files (excluding venv, terraform, etc.)
     """
-    return sorted(examples_dir.rglob("pyproject.toml"))
+    # Directories to exclude
+    exclude_patterns = {'.venv', '__pycache__', '.terraform', 'dist', 'node_modules', '.git'}
+    
+    all_files = []
+    for pyproject_file in examples_dir.rglob("pyproject.toml"):
+        # Skip if any parent directory matches exclude patterns
+        if any(part in exclude_patterns for part in pyproject_file.parts):
+            continue
+        all_files.append(pyproject_file)
+    
+    return sorted(all_files)
 
 
 def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 3, retry_delay: int = 10) -> bool:
@@ -87,7 +97,16 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr.lower()
             # Check if it's a package availability issue
-            if attempt < retries - 1 and ("not found" in error_msg or "no version" in error_msg or "could not find" in error_msg):
+            is_availability_issue = any([
+                "not found" in error_msg,
+                "no version" in error_msg,
+                "could not find" in error_msg,
+                "no solution found" in error_msg,
+                "only agentkernel" in error_msg and "is available" in error_msg,
+                "unsatisfiable" in error_msg and "agentkernel" in error_msg
+            ])
+            
+            if attempt < retries - 1 and is_availability_issue:
                 print(f"  Attempt {attempt + 1}/{retries} failed. Package may not be available yet. Retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
                 continue
@@ -127,6 +146,11 @@ def main():
         "--skip-lock",
         action="store_true",
         help="Skip regenerating uv.lock files"
+    )
+    parser.add_argument(
+        "--force-lock",
+        action="store_true",
+        help="Force regenerate uv.lock files even if pyproject.toml hasn't changed"
     )
     parser.add_argument(
         "--lock-retries",
@@ -203,7 +227,18 @@ def main():
                         print(f"  ✗ Failed to regenerate lock file")
                         lock_fail_count += 1
             else:
-                print(f"  Skipped: {relative_path} (no changes needed)")
+                # File wasn't modified but we might need to force lock regeneration
+                if args.force_lock and not args.skip_lock:
+                    print(f"  {relative_path} (no version change, regenerating lock)")
+                    print(f"  Regenerating uv.lock...")
+                    if regenerate_uv_lock(project_dir, args.dry_run, args.lock_retries, args.lock_retry_delay):
+                        print(f"  ✓ Lock file regenerated")
+                        lock_success_count += 1
+                    else:
+                        print(f"  ✗ Failed to regenerate lock file")
+                        lock_fail_count += 1
+                else:
+                    print(f"  Skipped: {relative_path} (no changes needed)")
 
     print()
     if args.dry_run:
