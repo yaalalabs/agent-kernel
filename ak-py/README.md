@@ -493,7 +493,7 @@ def run(self, agent, prompt, session):
 **Setup:**
 
 ```bash
-git clone https://github.com/yourusername/agent-kernel.git
+git clone https://github.com/yaalalabs/agent-kernel.git
 cd agent-kernel/ak-py
 uv sync  # or: pip install -e ".[dev]"
 ```
