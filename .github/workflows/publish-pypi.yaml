@@ -89,11 +89,6 @@ jobs:
         run: |
           uv run pytest -s
       
-      - name: Build distribution
-        working-directory: ak-py
-        run: |
-          ./build.sh
-      
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
