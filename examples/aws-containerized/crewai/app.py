@@ -1,5 +1,5 @@
-from ak.api import RESTAPI
-from ak.crewai import CrewAIModule
+from agentkernel.api import RESTAPI
+from agentkernel.crewai import CrewAIModule
 from crewai import Agent
 
 math_agent = Agent(

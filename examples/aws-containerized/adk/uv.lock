@@ -16,6 +16,32 @@ wheels = [
 ]
 
 [[package]]
+name = "agentkernel"
+version = "0.1.2b2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyyaml" },
+    { name = "redis" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/13/ca/34f9ab51be28b0d40648e0ebcd10c5c9755301784aeaa688c6e00aade9da/agentkernel-0.1.2b2.tar.gz", hash = "sha256:f4d88900ec61bebf6fa583bc6d6a80a4d52e8512aa89a00df8f40f713538ab1b", size = 25082, upload-time = "2025-10-15T08:08:51.656Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/ca/ec0d0737827db6d75133d076dfb95038b6c041f3880505c78a4dee7551c2/agentkernel-0.1.2b2-py3-none-any.whl", hash = "sha256:0d45a7af0d4d20971028401f3b1f7b6d9e4c32132813bb286c18d879af30dc6e", size = 39710, upload-time = "2025-10-15T08:08:50.525Z" },
+]
+
+[package.optional-dependencies]
+adk = [
+    { name = "google-adk" },
+    { name = "litellm" },
+]
+api = [
+    { name = "fastapi" },
+    { name = "gunicorn" },
+    { name = "uvicorn" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -89,32 +115,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ak"
-version = "0.1.0a1"
-source = { registry = "../../../ak-py/dist" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyyaml" },
-    { name = "redis" },
-]
-sdist = { path = "ak-0.1.0a1.tar.gz" }
-wheels = [
-    { path = "ak-0.1.0a1-py3-none-any.whl" },
-]
-
-[package.optional-dependencies]
-adk = [
-    { name = "google-adk" },
-    { name = "litellm" },
-]
-api = [
-    { name = "fastapi" },
-    { name = "gunicorn" },
-    { name = "uvicorn" },
-]
-
-[[package]]
 name = "alembic"
 version = "1.16.5"
 source = { registry = "https://pypi.org/simple" }
@@ -173,15 +173,15 @@ wheels = [
 ]
 
 [[package]]
-name = "aws-containered-adk"
+name = "aws-containerized-adk"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "ak", extra = ["adk", "api"] },
+    { name = "agentkernel", extra = ["adk", "api"] },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ak", extras = ["adk", "api"], specifier = ">=0.1.0a1" }]
+requires-dist = [{ name = "agentkernel", extras = ["adk", "api"], specifier = ">=0.1.0a1" }]
 
 [[package]]
 name = "cachetools"
