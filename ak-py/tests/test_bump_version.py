@@ -29,7 +29,11 @@ TEST_CASES = [
     ("2.0.0b1", "major", "beta", True, "2.0.0b2"),  # Another major bump beta
     ("3.2.0b1", "minor", "beta", True, "3.2.0b2"),  # Another minor bump beta
     ("0.2.0b1", "minor", "beta", True, "0.2.0b2"),  # Another minor with beta
-    ("0.2.0a1", "minor", "beta", True, "0.2.0a2"),  # Another minor with alpha
+    ("0.2.0a7", "patch", "beta", True, "0.2.0b1"),  # Alpha to beta patch
+    ("0.2.4a6", "minor", "beta", True, "0.3.0b1"),  # Alpha to beta minor
+    ("0.3.0a6", "minor", "beta", True, "0.3.0b1"),  # Alpha to beta minor
+    ("0.3.5a6", "major", "beta", True, "1.0.0b1"),  # Alpha to beta major
+    ("1.0.0a6", "major", "beta", True, "1.0.0b1"),  # Alpha to beta major
 ]
 
 

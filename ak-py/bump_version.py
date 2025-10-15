@@ -150,8 +150,9 @@ def bump_version(
     if pre_short:
         # Determine which prerelease type to use
         if current_pre and (new_major == major and new_minor == minor and new_patch == patch):
-            # Staying on same base version - keep current prerelease type
-            final_pre_short = current_pre
+            # Staying on same base version
+            # Use requested prerelease type (allow switching from alpha to beta, etc.)
+            final_pre_short = pre_short
         else:
             # New base version - use requested prerelease type
             final_pre_short = pre_short
