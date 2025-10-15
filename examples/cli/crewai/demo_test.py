@@ -19,14 +19,10 @@ async def test_client():
 @pytest.mark.order(1)
 async def test_first_question(test_client):
     await test_client.send("Who won the 1996 cricket world cup?")
-    await test_client.expect(
-        "The 1996 Cricket World Cup was won by Sri Lanka. They defeated Australia in the final, "
-        "held on March 17, 1996, at the Gaddafi Stadium in Lahore, Pakistan. Sri Lanka chased down a "
-        "target of 400 runs, winning the match by 7 wickets")
+    await test_client.expect("The 1996 Cricket World Cup was won by Sri Lanka.")
 
 
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
     await test_client.send("Which country hosted the tournament?")
-    await test_client.expect("The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka. "
-                             "The tournament took place from February 22 to March 17, 1996.")
+    await test_client.expect("Sri Lanka hosted the 1996 Cricket World Cup alongside India and Pakistan")

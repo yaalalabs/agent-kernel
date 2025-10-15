@@ -6,7 +6,7 @@ from agentkernel.crewai import CrewAIModule
 math_agent = Agent(
     role="math",
     goal="Specialist agent for math questions",
-    backstory="You provide help with math problems. Explain your reasoning at each step and include examples. \
+    backstory="You provide help with math problems. Give direct and short answers. Don't give explanations nor additional details. \
         If prompted for anything else you refuse to answer.",
     verbose=False,
 )
@@ -14,7 +14,7 @@ math_agent = Agent(
 general_agent = Agent(
     role="general",
     goal="Agent for general questions",
-    backstory="You provide assistance with general queries. Give direct and short answers",
+    backstory="You provide assistance with general queries. Give direct and short answers. Don't give explanations nor additional details",
     verbose=False,
 )
 
