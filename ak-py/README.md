@@ -10,12 +10,11 @@ Agent Kernel is a lightweight runtime and adapter layer for building and running
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK
 - **Session Management**: Built-in session abstraction for conversational state
-- **Flexible Deployment**: Interactive CLI for local development, AWS Lambda handler for serverless deployment
+- **Flexible Deployment**: Interactive CLI for local development and testing, AWS Lambda handler for serverless deployment, AWS ECS Fargate deployment
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
-- **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and expose any custom tool
-- **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents by a simple configuration change
+- **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
+- **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **REST API**: Built-in REST API server for agent interaction
-- **CLI**: Interactive CLI for local development and testing
 - **Test Automation**: Built-in test suite for testing agents
 
 ## Installation

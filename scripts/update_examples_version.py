@@ -27,18 +27,18 @@ def update_pyproject_version(file_path: Path, new_version: str) -> bool:
     """
     content = file_path.read_text()
     original_content = content
-    
+
     # Pattern to match agentkernel dependencies with version constraints
     # Matches patterns like: agentkernel[extras]>=0.1.0a1
     pattern = r'(agentkernel(?:\[[^\]]+\])?)>=[\d\.]+(?:a\d+|b\d+|rc\d+)?'
     replacement = rf'\1>={new_version}'
-    
+
     content = re.sub(pattern, replacement, content)
-    
+
     if content != original_content:
         file_path.write_text(content)
         return True
-    
+
     return False
 
 
@@ -68,10 +68,10 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False) -> bool:
     """
     if dry_run:
         return True
-    
+
     try:
         # Run uv lock in the project directory
-        result = subprocess.run(
+        subprocess.run(
             ["uv", "lock"],
             cwd=project_dir,
             check=True,
@@ -111,9 +111,9 @@ def main():
         action="store_true",
         help="Skip regenerating uv.lock files"
     )
-    
+
     args = parser.parse_args()
-    
+
     # Determine examples directory
     if args.examples_dir:
         examples_dir = args.examples_dir
@@ -121,35 +121,35 @@ def main():
         # Default to ../examples relative to this script
         script_dir = Path(__file__).parent
         examples_dir = script_dir.parent / "examples"
-    
+
     if not examples_dir.exists():
         print(f"Error: Examples directory not found: {examples_dir}", file=sys.stderr)
         sys.exit(1)
-    
+
     # Find all pyproject.toml files
     pyproject_files = find_example_pyproject_files(examples_dir)
-    
+
     if not pyproject_files:
         print(f"No pyproject.toml files found in {examples_dir}", file=sys.stderr)
         sys.exit(1)
-    
+
     print(f"Found {len(pyproject_files)} pyproject.toml file(s) in examples/")
     print(f"Updating agentkernel version to: {args.version}")
     print()
-    
+
     modified_count = 0
     lock_success_count = 0
     lock_fail_count = 0
-    
+
     for file_path in pyproject_files:
         relative_path = file_path.relative_to(examples_dir.parent)
         project_dir = file_path.parent
-        
+
         if args.dry_run:
             content = file_path.read_text()
             pattern = r'(agentkernel(?:\[[^\]]+\])?)>=[\d\.]+(?:a\d+|b\d+|rc\d+)?'
             matches = re.findall(pattern, content)
-            
+
             if matches:
                 print(f"Would update: {relative_path}")
                 for match in matches:
@@ -159,11 +159,11 @@ def main():
                 modified_count += 1
         else:
             was_modified = update_pyproject_version(file_path, args.version)
-            
+
             if was_modified:
                 print(f"✓ Updated: {relative_path}")
                 modified_count += 1
-                
+
                 # Regenerate uv.lock file
                 if not args.skip_lock:
                     print(f"  Regenerating uv.lock...")
@@ -175,7 +175,7 @@ def main():
                         lock_fail_count += 1
             else:
                 print(f"  Skipped: {relative_path} (no changes needed)")
-    
+
     print()
     if args.dry_run:
         print(f"Dry run complete. {modified_count} file(s) would be modified.")
@@ -186,7 +186,7 @@ def main():
             if lock_fail_count > 0:
                 print(f"Failed to regenerate {lock_fail_count} lock file(s).", file=sys.stderr)
                 return 1
-    
+
     return 0
 
 
