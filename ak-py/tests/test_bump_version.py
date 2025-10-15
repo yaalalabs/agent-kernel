@@ -35,6 +35,6 @@ TEST_CASES = [
 
 @pytest.mark.parametrize("current,bump,pre,auto,expected", TEST_CASES)
 def test_bump_version_cases(current, bump, pre, auto, expected):
-    pre_arg = pre if pre else Nonegg
+    pre_arg = pre if pre else None
     result = bump_version(current, bump, pre_arg, auto_increment_prerelease=auto)
     assert result == expected
