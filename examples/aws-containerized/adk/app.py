@@ -1,4 +1,4 @@
-from ak.api import RESTAPI
+from agentkernel.api import RESTAPI
 from google.adk.agents import Agent, LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 from agentkernel.aws import Lambda
