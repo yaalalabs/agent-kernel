@@ -26,7 +26,7 @@ module "vpc" {
 }
 
 module "redis" {
-  source        = "../modules/redis"
+  source        = "../common/redis"
   count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -38,7 +38,7 @@ module "redis" {
 
 module "docker_image" {
   count         = 1
-  source = "../modules/ecr"
+  source = "../common/ecr"
   # version       = "0.1.0-a1"
   env_alias     = var.env_alias
   module_name   = var.module_name
