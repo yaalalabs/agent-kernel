@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.MODULE_SYNC_TOKEN }}
       
       - name: Configure git
         run: |
@@ -144,7 +144,7 @@ jobs:
             --generate-notes \
             ak-py/dist/*
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MODULE_SYNC_TOKEN }}
 
       - name: Update examples with new version
         if: inputs.environment == 'production'
