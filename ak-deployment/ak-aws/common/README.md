@@ -146,7 +146,7 @@ This project is licensed under the terms specified in the LICENSE file.
 
 ## 🔗 Related Projects
 
-- [Agent Kernel](https://github.com/yaala-internal/agent-kernel) - The main Agent Kernel project
+- [Agent Kernel](https://github.com/yaalalabs/agent-kernel) - The main Agent Kernel project
 
 ## 📞 Support
 
