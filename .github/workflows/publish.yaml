@@ -139,7 +139,7 @@ jobs:
         if: inputs.environment == 'production'
         run: |
           python scripts/update_examples_version.py \
-            --version ${{ inputs.new_version }} \
+            --version ${{ steps.bump_version.outputs.new_version }} \
             --skip-lock
           
           echo ""
