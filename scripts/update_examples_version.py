@@ -148,8 +148,8 @@ def main():
     )
     parser.add_argument(
         "--version",
-        required=True,
-        help="New version to set (e.g., 0.1.0, 0.2.0a1)"
+        required=False,
+        help="New version to set (e.g., 0.1.0, 0.2.0a1). Required unless --force-lock is used."
     )
     parser.add_argument(
         "--examples-dir",
@@ -186,6 +186,13 @@ def main():
 
     args = parser.parse_args()
 
+    # Validate arguments
+    if not args.version and not args.force_lock:
+        parser.error("--version is required unless --force-lock is specified")
+    
+    if args.force_lock and args.skip_lock:
+        parser.error("--force-lock and --skip-lock are mutually exclusive")
+
     # Determine examples directory
     if args.examples_dir:
         examples_dir = args.examples_dir
@@ -206,7 +213,10 @@ def main():
         sys.exit(1)
 
     print(f"Found {len(pyproject_files)} pyproject.toml file(s) in examples/")
-    print(f"Updating agentkernel version to: {args.version}")
+    if args.version:
+        print(f"Updating agentkernel version to: {args.version}")
+    else:
+        print(f"Regenerating lock files without version update")
     print()
 
     modified_count = 0
@@ -222,15 +232,21 @@ def main():
             pattern = r'(agentkernel(?:\[[^\]]+\])?)>=[\d\.]+(?:a\d+|b\d+|rc\d+)?'
             matches = re.findall(pattern, content)
 
-            if matches:
+            if args.version and matches:
                 print(f"Would update: {relative_path}")
                 for match in matches:
                     print(f"  - {match}>=... → {match}>={args.version}")
                 if not args.skip_lock:
                     print(f"  - Would regenerate uv.lock")
                 modified_count += 1
+            elif not args.version and args.force_lock:
+                print(f"Would regenerate lock: {relative_path}")
+                if not args.skip_lock:
+                    print(f"  - Would regenerate uv.lock")
         else:
-            was_modified = update_pyproject_version(file_path, args.version)
+            was_modified = False
+            if args.version:
+                was_modified = update_pyproject_version(file_path, args.version)
 
             if was_modified:
                 print(f"✓ Updated: {relative_path}")
@@ -257,13 +273,18 @@ def main():
                         print(f"  ✗ Failed to regenerate lock file")
                         lock_fail_count += 1
                 else:
-                    print(f"  Skipped: {relative_path} (no changes needed)")
+                    if args.version:
+                        print(f"  Skipped: {relative_path} (no changes needed)")
 
     print()
     if args.dry_run:
-        print(f"Dry run complete. {modified_count} file(s) would be modified.")
+        if args.version:
+            print(f"Dry run complete. {modified_count} file(s) would be modified.")
+        else:
+            print(f"Dry run complete. Lock files would be regenerated for all examples.")
     else:
-        print(f"Updated {modified_count} file(s).")
+        if args.version:
+            print(f"Updated {modified_count} file(s).")
         if not args.skip_lock:
             print(f"Regenerated {lock_success_count} lock file(s).")
             if lock_fail_count > 0:
