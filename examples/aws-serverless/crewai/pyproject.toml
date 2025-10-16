@@ -5,7 +5,7 @@ description = "Demo of CrewAI based agents running in Agent Kernel on AWS Lambda
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[crewai,aws]>=0.1.2b14"
+    "agentkernel[crewai,aws]>=0.1.2b15"
 ]
 
 [tool.uv]
