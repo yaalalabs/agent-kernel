@@ -37,7 +37,7 @@ python scripts/update_examples_version.py --version 0.2.0 --dry-run
 ```
 
 **Options:**
-- `--version`: New version to set (required)
+- `--version`: New version to set (required unless --force-lock is used)
 - `--skip-lock`: Skip regenerating uv.lock files
 - `--force-lock`: Force regenerate uv.lock files even if pyproject.toml hasn't changed
 - `--lock-retries`: Number of retry attempts for lock regeneration (default: 3)
@@ -45,7 +45,7 @@ python scripts/update_examples_version.py --version 0.2.0 --dry-run
 - `--dry-run`: Show what would be changed without making modifications
 
 **Note on PyPI Propagation:**
-When running immediately after publishing to PyPI, the new package version may not be available yet. The script includes retry logic with exponential backoff, but in CI/CD pipelines, it's recommended to:
+When running immediately after publishing to PyPI, the new package version may not be available yet. The script includes retry logic with a delay between retries, but in CI/CD pipelines, it's recommended to:
 1. First update `pyproject.toml` files with `--skip-lock`
 2. Wait 60-120 seconds for PyPI propagation
 3. Then regenerate lock files with increased retry attempts

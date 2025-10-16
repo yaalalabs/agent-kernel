@@ -119,7 +119,7 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
                 continue
             
         except subprocess.TimeoutExpired:
-            last_error = f"uv lock timed out after 120 seconds"
+            last_error = f"uv lock timed out after 15 seconds"
             if attempt < retries - 1:
                 print(f"  ⚠ Attempt {attempt + 1}/{retries} timed out.")
                 print(f"  ⏳ Waiting {retry_delay}s before retry...")

@@ -150,7 +150,7 @@ jobs:
           else
             echo "Example pyproject.toml files updated"
             git add examples/
-            git commit -m "chore: update examples to use agentkernel v${{ inputs.new_version }}"
+            git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}"
             git push origin ${{ github.ref_name }}
           fi
           
