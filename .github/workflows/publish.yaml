@@ -37,6 +37,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump_version.outputs.new_version }}
     environment:
       name: ${{ inputs.environment == 'production' && 'production' || 'test' }}
       url: ${{ inputs.environment == 'production' && 'https://pypi.org/p/agentkernel' || 'https://test.pypi.org/p/agentkernel' }}
@@ -132,21 +134,28 @@ jobs:
           generate_release_notes: true
           files: |
             ak-py/dist/*
-      
+
       - name: Update examples with new version
         if: inputs.environment == 'production'
         run: |
-          python scripts/update_examples_version.py --version ${{ steps.bump_version.outputs.new_version }}
+          python scripts/update_examples_version.py \
+            --version ${{ steps.bump_version.outputs.new_version }} \
+            --skip-lock
           
+          echo ""
+          echo "Committing changes..."
           # Check if there are any changes
           if git diff --quiet examples/; then
-            echo "No changes to example files"
+            echo "No example file changes"
           else
-            echo "Example files updated with new version"
+            echo "Example pyproject.toml files updated"
             git add examples/
             git commit -m "chore: update examples to use agentkernel v${{ steps.bump_version.outputs.new_version }}"
             git push origin ${{ github.ref_name }}
           fi
+          
+          echo ""
+          echo "Example update complete!"
       
       - name: Test PyPI Summary
         if: inputs.environment == 'test'

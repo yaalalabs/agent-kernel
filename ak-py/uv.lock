@@ -41,7 +41,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.1.2b2"
+version = "0.1.2b11"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

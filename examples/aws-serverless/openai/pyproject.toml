@@ -5,7 +5,7 @@ description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,aws]>=0.1.0a1"
+    "agentkernel[openai,aws]>=0.1.2b11"
 ]
 
 [tool.uv]
