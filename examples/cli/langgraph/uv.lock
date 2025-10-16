@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.1.2b11"
+version = "0.1.2b12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -16,9 +16,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/f2/7a346628fc48d4a8af1ca10817e906e6bb4b7e261213b236ac114f8fd2d2/agentkernel-0.1.2b11.tar.gz", hash = "sha256:0ba48ccfd2ee09da471bd50e1b1abcc294770e36cf8c9509d301f82f619f9246", size = 25205, upload-time = "2025-10-16T04:11:05.725Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/11/c6443f5715f825d1f258e33eaee84fd995c6989378c262891e249949c2ec/agentkernel-0.1.2b12.tar.gz", hash = "sha256:1cb417acdb752698f405adc937ac11044d6c13939f10880600a8a47497032e98", size = 25201, upload-time = "2025-10-16T04:37:40.67Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/a2/ab4c4392b548165d8986f8868d4a58b816e2d71572d4854355fe4d0b73dc/agentkernel-0.1.2b11-py3-none-any.whl", hash = "sha256:899ca2f99e3b8f2a902272f16aa6d4321178023327104629d5becb2cdb79bc9c", size = 39836, upload-time = "2025-10-16T04:11:04.642Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/57/53c5912b491ca6efd298f848f8fb181ec342b274d028ac3952a7c4e71211/agentkernel-0.1.2b12-py3-none-any.whl", hash = "sha256:cd8918dee02ff3ee6606680c101a7e1364fe5c325e7c3227f72639aa9dfa92d4", size = 39837, upload-time = "2025-10-16T04:37:39.277Z" },
 ]
 
 [package.optional-dependencies]
@@ -245,8 +245,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "langgraph"], specifier = ">=0.1.2b11" },
-    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.2b11" },
+    { name = "agentkernel", extras = ["cli", "langgraph"], specifier = ">=0.1.2b12" },
+    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.2b12" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
     { name = "langchain-openai", specifier = ">=0.3.28" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },
