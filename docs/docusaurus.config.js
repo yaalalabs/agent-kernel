@@ -156,7 +156,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs. Built with ❤️`,
       },
       prism: {
         theme: prismThemes.github,
