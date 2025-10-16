@@ -1,0 +1,83 @@
+name: Sync Modules to Separate Repos on Tag
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on version tags like v1.0.0
+
+jobs:
+  sync-modules:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - module: 'ak-deployment/ak-aws/common'
+            repo: 'yaalalabs/terraform-aws-ak-common'
+          - module: 'ak-deployment/ak-aws/serverless'
+            repo: 'yaalalabs/terraform-aws-ak-serverless'
+          - module: 'ak-deployment/ak-aws/containerized'
+            repo: 'yaalalabs/terraform-aws-ak-containerized'
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all branches and tags
+      
+      - name: Get tag name
+        id: tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Setup Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Extract and push module
+        env:
+          GH_TOKEN: ${{ secrets.MODULE_SYNC_TOKEN }}
+        run: |
+          TAG_NAME="${{ steps.tag.outputs.TAG_NAME }}"
+          MODULE="${{ matrix.module }}"
+          TARGET_REPO="${{ matrix.repo }}"
+          
+          echo "Syncing $MODULE to $TARGET_REPO with tag $TAG_NAME"
+          
+          # Create a temporary directory
+          TEMP_DIR=$(mktemp -d)
+          cd $TEMP_DIR
+          
+          # Clone the target repository or create initial commit if new
+          if git clone https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git; then
+            cd $(basename $TARGET_REPO)
+          else
+            mkdir $(basename $TARGET_REPO)
+            cd $(basename $TARGET_REPO)
+            git init
+            git remote add origin https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git
+          fi
+          
+          # Remove all existing files (except .git)
+          find . -maxdepth 1 ! -name '.git' ! -name '.' ! -name '..' -exec rm -rf {} +
+          
+          # Copy module files from monorepo
+          cp -r $GITHUB_WORKSPACE/$MODULE/* .
+          
+          # Check if there are changes
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "Sync from monorepo tag $TAG_NAME"
+            git push origin main || git push origin master
+            
+            # Create the same tag in the target repo
+            git tag -a $TAG_NAME -m "Release $TAG_NAME from monorepo"
+            git push origin $TAG_NAME
+            
+            echo "✅ Successfully synced $MODULE to $TARGET_REPO with tag $TAG_NAME"
+          else
+            echo "ℹ️ No changes detected for $MODULE"
+          fi
+          
+          # Cleanup
+          cd $GITHUB_WORKSPACE
+          rm -rf $TEMP_DIR
