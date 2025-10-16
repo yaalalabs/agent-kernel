@@ -5,81 +5,8 @@ on:
   push:
     branches:
       - develop
-  workflow_call:
-    inputs:
-      update_examples:
-        description: 'Whether to update example versions'
-        required: false
-        type: boolean
-        default: false
-      new_version:
-        description: 'New version to update examples to'
-        required: false
-        type: string
-        default: ''
 
 jobs:
-  update-examples:
-    if: inputs.update_examples == true
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -e {0}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Install uv
-        run: |
-          pip install uv
-      
-      - name: Update examples with new version
-        run: |
-          echo "=========================================="
-          echo "Updating Examples with New Version"
-          echo "=========================================="
-          echo ""
-          echo "🔄 Updating example pyproject.toml files and regenerating uv.lock files..."
-          echo "   This will retry up to 3 times with 15-second delays if the package isn't available yet."
-          echo ""
-          
-          python scripts/update_examples_version.py \
-            --version ${{ inputs.new_version }} \
-            --force-lock \
-            --lock-retries 3 \
-            --lock-retry-delay 15 \
-            || echo "⚠️ Warning: Some lock files failed to regenerate. They may need to be updated manually."
-          
-          echo ""
-          echo "📝 Committing changes..."
-          # Check if there are any changes
-          if git diff --quiet examples/; then
-            echo "No example file changes"
-          else
-            echo "Example files updated"
-            # Pull latest changes to avoid conflicts
-            git pull --rebase origin ${{ github.ref_name }}
-            git add examples/
-            git commit -m "chore: update examples to use agentkernel v${{ inputs.new_version }}"
-            git push origin ${{ github.ref_name }}
-          fi
-          
-          echo ""
-          echo "✅ Example update complete!"
-  
   unit-test:
     runs-on: ubuntu-latest
     defaults:
@@ -110,11 +37,6 @@ jobs:
           uv run pytest -s
 
   cli-e2e-test:
-    needs: [unit-test, update-examples]
-    if: |
-      always() && 
-      needs.unit-test.result == 'success' && 
-      (needs.update-examples.result == 'success' || needs.update-examples.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -156,11 +78,6 @@ jobs:
           done
 
   api-e2e-test:
-    needs: [unit-test, update-examples]
-    if: |
-      always() && 
-      needs.unit-test.result == 'success' && 
-      (needs.update-examples.result == 'success' || needs.update-examples.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -202,11 +119,6 @@ jobs:
           done
 
   containerized-e2e-test:
-    needs: [unit-test, update-examples]
-    if: |
-      always() && 
-      needs.unit-test.result == 'success' && 
-      (needs.update-examples.result == 'success' || needs.update-examples.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:

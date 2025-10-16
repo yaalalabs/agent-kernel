@@ -134,6 +134,28 @@ jobs:
           generate_release_notes: true
           files: |
             ak-py/dist/*
+
+      - name: Update examples with new version
+        if: inputs.environment == 'production'
+        run: |
+          python scripts/update_examples_version.py \
+            --version ${{ inputs.new_version }} \
+            --skip-lock
+          
+          echo ""
+          echo "Committing changes..."
+          # Check if there are any changes
+          if git diff --quiet examples/; then
+            echo "No example file changes"
+          else
+            echo "Example pyproject.toml files updated"
+            git add examples/
+            git commit -m "chore: update examples to use agentkernel v${{ inputs.new_version }}"
+            git push origin ${{ github.ref_name }}
+          fi
+          
+          echo ""
+          echo "Example update complete!"
       
       - name: Test PyPI Summary
         if: inputs.environment == 'test'
@@ -150,24 +172,3 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> ⚠️ **Note**: This is a test release. Version was NOT committed or tagged in git." >> $GITHUB_STEP_SUMMARY
-
-  # Wait for PyPI propagation before updating examples
-  wait-for-pypi:
-    needs: publish
-    if: inputs.environment == 'production'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait for PyPI propagation
-        run: |
-          echo "⏳ Waiting 120 seconds for PyPI to propagate the new package version..."
-          sleep 120
-          echo "✅ Wait complete, ready to update examples"
-
-  # Trigger test workflow to update examples and run E2E tests
-  update-and-test-examples:
-    needs: [publish, wait-for-pypi]
-    if: inputs.environment == 'production'
-    uses: ./.github/workflows/test.yaml
-    with:
-      update_examples: true
-      new_version: ${{ needs.publish.outputs.new_version }}
