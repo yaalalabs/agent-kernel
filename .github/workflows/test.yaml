@@ -44,8 +44,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -67,11 +65,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
-          BUILD_ARG="${{ inputs.update_examples == true && '' || 'local' }}"
           for example in examples/cli/* examples/cli/a2a/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh $BUILD_ARG)
+              (cd "$example" && ./build.sh local)
               echo "=== Running tests for $example ==="
               (cd "$example" && uv run pytest -s)
             fi
@@ -85,8 +82,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -108,11 +103,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
-          BUILD_ARG="${{ inputs.update_examples == true && '' || 'local' }}"
           for example in examples/api/* examples/api/a2a/* examples/api/mcp/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh $BUILD_ARG)
+              (cd "$example" && ./build.sh local)
               echo "=== Running tests for $example ==="
               (cd "$example" && uv run pytest -s)
             fi
@@ -126,8 +120,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -144,16 +136,15 @@ jobs:
           set -e
           ./build.sh
 
-      - name: Run containerized examples
+      - name: Run Containerized Examples
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -e
-          BUILD_ARG="${{ inputs.update_examples == true && '' || 'local' }}"
-          for example in examples/containerized/*; do
+          for example in examples/containerized/* examples/containerized/a2a/*; do
             if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
               echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh $BUILD_ARG)
+              (cd "$example" && ./build.sh local)
               echo "=== Running tests for $example ==="
               (cd "$example" && uv run pytest -s)
             fi
