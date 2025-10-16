@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.MODULE_SYNC_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Configure git
         run: |
@@ -115,6 +115,16 @@ jobs:
           git tag "v${TAG_VERSION}"
           git push origin "v${TAG_VERSION}"
       
+      - name: Trigger Terraform module sync
+        if: inputs.environment == 'production'
+        run: |
+          VERSION="${{ steps.bump_version.outputs.new_version }}"
+          TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+          gh workflow run sync-terraform.yaml -f tag_name="v${TAG_VERSION}"
+          echo "✅ Triggered Terraform module sync workflow for v${TAG_VERSION}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Create GitHub Release
         if: inputs.environment == 'production'
         run: |
@@ -144,7 +154,7 @@ jobs:
             --generate-notes \
             ak-py/dist/*
         env:
-          GH_TOKEN: ${{ secrets.MODULE_SYNC_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update examples with new version
         if: inputs.environment == 'production'

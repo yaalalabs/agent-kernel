@@ -1,9 +1,12 @@
 name: Sync Terraform Modules
 
 on:
-  push:
-    tags:
-      - 'v*' # Triggers on version tags like v1.0.0
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to sync (e.g., v1.0.0)'
+        required: true
+        type: string
 
 jobs:
   sync-modules:
@@ -32,7 +35,7 @@ jobs:
       
       - name: Get tag name
         id: tag
-        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: echo "TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
       
       - name: Setup Git
         run: |
