@@ -125,7 +125,7 @@ jobs:
           
           ---
           
-          Synced from [yaalalabs/agent-kernel](https://github.com/yaala-internal/agent-kernel) ${TAG_NAME}
+          Synced from [yaalalabs/agent-kernel](https://github.com/yaalalabs/agent-kernel) ${TAG_NAME}
           EOF
           
           # Create release using gh CLI
