@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.1.2b12"
+version = "0.1.2b18"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -16,9 +16,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4e/11/c6443f5715f825d1f258e33eaee84fd995c6989378c262891e249949c2ec/agentkernel-0.1.2b12.tar.gz", hash = "sha256:1cb417acdb752698f405adc937ac11044d6c13939f10880600a8a47497032e98", size = 25201, upload-time = "2025-10-16T04:37:40.67Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/18/e4/3faa38f8c30ac972b364deec1db83e78eac95f5c25f3ebd10c5ec9d1a5ed/agentkernel-0.1.2b18.tar.gz", hash = "sha256:23bab821040deaad7cad9dd48db298e8902163dd87aed74399efca7a1fa66603", size = 25198, upload-time = "2025-10-16T12:03:33.671Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/57/53c5912b491ca6efd298f848f8fb181ec342b274d028ac3952a7c4e71211/agentkernel-0.1.2b12-py3-none-any.whl", hash = "sha256:cd8918dee02ff3ee6606680c101a7e1364fe5c325e7c3227f72639aa9dfa92d4", size = 39837, upload-time = "2025-10-16T04:37:39.277Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/ae/acc3dc49a1e67b610dd9837f26cb377cb2b510bcf31f70814f4bc5fc4c42/agentkernel-0.1.2b18-py3-none-any.whl", hash = "sha256:32d50bc153b20c0aa55ac9f123725015f94d1516e386f9cbb664684a333238cf", size = 39836, upload-time = "2025-10-16T12:03:31.041Z" },
 ]
 
 [package.optional-dependencies]
@@ -158,8 +158,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.1.2b12" },
-    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.2b12" },
+    { name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.1.2b18" },
+    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.2b18" },
 ]
 provides-extras = ["dev"]
 
