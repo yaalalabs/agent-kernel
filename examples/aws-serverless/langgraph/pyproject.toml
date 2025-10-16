@@ -5,7 +5,7 @@ description = "Demo of LangGraph based agents running in Agent Kernel on AWS Lam
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[langgraph,aws]>=0.1.2b11",
+    "agentkernel[langgraph,aws]>=0.1.2b12",
     "langchain-litellm>=0.2.2",
     "langchain-openai>=0.3.28",
     "langgraph-supervisor>=0.0.29",
