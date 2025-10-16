@@ -74,31 +74,36 @@ jobs:
           # Copy module files from agent-kernel monorepo
           cp -r $GITHUB_WORKSPACE/$MODULE/* .
           
-          # Check if there are changes
+          # Commit changes (if any)
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Sync from yaalalabs/agent-kernel tag $TAG_NAME"
             git push origin $TARGET_BRANCH
-            
-            # Create the same tag in the target repo
-            git tag -a $TAG_NAME -m "Release $TAG_NAME from yaalalabs/agent-kernel"
-            git push origin $TAG_NAME
-            
-            # Create GitHub Release
-            # Extract module name from path (e.g., 'common', 'serverless', 'containerized')
-            MODULE_NAME=$(basename $MODULE)
-            
-            # Determine if this is a prerelease based on tag format
-            if [[ "$TAG_NAME" =~ -[ab][0-9]+$ ]]; then
-              PRERELEASE_FLAG="--prerelease"
-              PRERELEASE_NOTE="⚠️ Pre-release version"
-            else
-              PRERELEASE_FLAG=""
-              PRERELEASE_NOTE="✅ Stable release"
-            fi
-            
-            # Create release body
-            cat << EOF > release_body.md
+            echo "✅ Changes committed and pushed to $TARGET_BRANCH"
+          else
+            echo "ℹ️ No file changes detected for $MODULE"
+          fi
+          
+          # Always create the tag and release
+          # Create the same tag in the target repo
+          git tag -a $TAG_NAME -m "Release $TAG_NAME from yaalalabs/agent-kernel" || true
+          git push origin $TAG_NAME
+          
+          # Create GitHub Release
+          # Extract module name from path (e.g., 'common', 'serverless', 'containerized')
+          MODULE_NAME=$(basename $MODULE)
+          
+          # Determine if this is a prerelease based on tag format
+          if [[ "$TAG_NAME" =~ -[ab][0-9]+$ ]]; then
+            PRERELEASE_FLAG="--prerelease"
+            PRERELEASE_NOTE="⚠️ Pre-release version"
+          else
+            PRERELEASE_FLAG=""
+            PRERELEASE_NOTE="✅ Stable release"
+          fi
+          
+          # Create release body
+          cat << EOF > release_body.md
           🚀 **Terraform Module: ${MODULE_NAME} ${TAG_NAME}**
           
           ${PRERELEASE_NOTE}
@@ -119,18 +124,15 @@ jobs:
           
           Synced from [yaalalabs/agent-kernel](https://github.com/yaala-internal/agent-kernel) ${TAG_NAME}
           EOF
-            
-            # Create release using gh CLI
-            gh release create "$TAG_NAME" \
-              --repo "$TARGET_REPO" \
-              --title "${TAG_NAME}" \
-              --notes-file release_body.md \
-              ${PRERELEASE_FLAG}
-            
-            echo "✅ Successfully synced $MODULE to $TARGET_REPO with tag $TAG_NAME and created release"
-          else
-            echo "ℹ️ No changes detected for $MODULE"
-          fi
+          
+          # Create release using gh CLI
+          gh release create "$TAG_NAME" \
+            --repo "$TARGET_REPO" \
+            --title "${TAG_NAME}" \
+            --notes-file release_body.md \
+            ${PRERELEASE_FLAG}
+          
+          echo "✅ Successfully synced $MODULE to $TARGET_REPO with tag $TAG_NAME and created release"
           
           # Cleanup
           cd $GITHUB_WORKSPACE
