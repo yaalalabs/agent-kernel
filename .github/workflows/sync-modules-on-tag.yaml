@@ -1,4 +1,4 @@
-name: Sync Modules to Separate Repos on Tag
+name: Sync Terraform Modules
 
 on:
   push:
