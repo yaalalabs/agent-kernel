@@ -109,31 +109,42 @@ jobs:
       - name: Create git tag
         if: inputs.environment == 'production'
         run: |
-          git tag "v${{ steps.bump_version.outputs.new_version }}"
-          git push origin "v${{ steps.bump_version.outputs.new_version }}"
+          VERSION="${{ steps.bump_version.outputs.new_version }}"
+          # Convert PEP 440 format (1.0.0a1, 1.0.0b1) to hyphenated tag format (1.0.0-a1, 1.0.0-b1)
+          TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+          git tag "v${TAG_VERSION}"
+          git push origin "v${TAG_VERSION}"
       
       - name: Create GitHub Release
         if: inputs.environment == 'production'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: "v${{ steps.bump_version.outputs.new_version }}"
-          name: "v${{ steps.bump_version.outputs.new_version }}"
-          body: |
-            🚀 **Agent Kernel v${{ steps.bump_version.outputs.new_version }}**
-            
-            ${{ inputs.prerelease && format('⚠️ Pre-release: {0}', inputs.prerelease) || '✅ Stable release' }}
-            
-            📦 [View on PyPI](https://pypi.org/project/agentkernel/${{ steps.bump_version.outputs.new_version }}/)
-            
-            ### Installation
-            ```bash
-            pip install agentkernel==${{ steps.bump_version.outputs.new_version }}
-            ```
-          draft: false
-          prerelease: ${{ inputs.prerelease != '' }}
-          generate_release_notes: true
-          files: |
+        run: |
+          VERSION="${{ steps.bump_version.outputs.new_version }}"
+          # Convert PEP 440 format to hyphenated tag format
+          TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+          
+          # Create release body
+          cat << EOF > release_body.md
+          🚀 **Agent Kernel v${VERSION}**
+          
+          ${{ inputs.prerelease && format('⚠️ Pre-release: {0}', inputs.prerelease) || '✅ Stable release' }}
+          
+          📦 [View on PyPI](https://pypi.org/project/agentkernel/${VERSION}/)
+          
+          ### Installation
+          \`\`\`bash
+          pip install agentkernel==${VERSION}
+          \`\`\`
+          EOF
+          
+          # Create release
+          gh release create "v${TAG_VERSION}" \
+            --title "v${TAG_VERSION}" \
+            --notes-file release_body.md \
+            ${{ inputs.prerelease && '--prerelease' || '' }} \
+            --generate-notes \
             ak-py/dist/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update examples with new version
         if: inputs.environment == 'production'
