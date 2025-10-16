@@ -1,4 +1,4 @@
-# AWS Serverless Module
+# Agent Kernel - AWS Serverless Module
 
 A comprehensive Terraform module for deploying serverless applications on AWS, combining Lambda functions with API Gateway to create production-ready RESTful APIs.
 

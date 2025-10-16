@@ -1,4 +1,4 @@
-# AWS Containerized Module
+# Agent Kernel - AWS Containerized Module
 
 A comprehensive Terraform module for deploying containerized applications on AWS using ECS Fargate, with Application Load Balancer, API Gateway, and optional Redis integration.
 
