@@ -14,15 +14,18 @@ jobs:
           - module: 'ak-deployment/ak-aws/common'
             repo: 'yaalalabs/terraform-aws-ak-common'
             branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-common/aws/latest'
           - module: 'ak-deployment/ak-aws/serverless'
             repo: 'yaalalabs/terraform-aws-ak-serverless'
             branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws/latest'
           - module: 'ak-deployment/ak-aws/containerized'
             repo: 'yaalalabs/terraform-aws-ak-containerized'
             branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws/latest'
 
     steps:
-      - name: Checkout monorepo
+      - name: Checkout yaalalabs/agent-kernel
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch all history for all branches and tags
@@ -44,6 +47,7 @@ jobs:
           MODULE="${{ matrix.module }}"
           TARGET_REPO="${{ matrix.repo }}"
           TARGET_BRANCH="${{ matrix.branch }}"
+          REGISTRY_LINK="${{ matrix.link }}"
           
           echo "Syncing $MODULE to $TARGET_REPO (branch: $TARGET_BRANCH) with tag $TAG_NAME"
           
@@ -67,20 +71,63 @@ jobs:
           # Remove all existing files (except .git)
           find . -maxdepth 1 ! -name '.git' ! -name '.' ! -name '..' -exec rm -rf {} +
           
-          # Copy module files from monorepo
+          # Copy module files from agent-kernel monorepo
           cp -r $GITHUB_WORKSPACE/$MODULE/* .
           
           # Check if there are changes
           if [[ -n $(git status -s) ]]; then
             git add .
-            git commit -m "Sync from monorepo tag $TAG_NAME"
+            git commit -m "Sync from yaalalabs/agent-kernel tag $TAG_NAME"
             git push origin $TARGET_BRANCH
             
             # Create the same tag in the target repo
-            git tag -a $TAG_NAME -m "Release $TAG_NAME from monorepo"
+            git tag -a $TAG_NAME -m "Release $TAG_NAME from yaalalabs/agent-kernel"
             git push origin $TAG_NAME
             
-            echo "✅ Successfully synced $MODULE to $TARGET_REPO with tag $TAG_NAME"
+            # Create GitHub Release
+            # Extract module name from path (e.g., 'common', 'serverless', 'containerized')
+            MODULE_NAME=$(basename $MODULE)
+            
+            # Determine if this is a prerelease based on tag format
+            if [[ "$TAG_NAME" =~ -[ab][0-9]+$ ]]; then
+              PRERELEASE_FLAG="--prerelease"
+              PRERELEASE_NOTE="⚠️ Pre-release version"
+            else
+              PRERELEASE_FLAG=""
+              PRERELEASE_NOTE="✅ Stable release"
+            fi
+            
+            # Create release body
+            cat << EOF > release_body.md
+          🚀 **Terraform Module: ${MODULE_NAME} ${TAG_NAME}**
+          
+          ${PRERELEASE_NOTE}
+          
+          📦 [View on Terraform Registry](${REGISTRY_LINK})
+          
+          ### Usage
+          \`\`\`hcl
+          module "${MODULE_NAME}" {
+            source  = "yaalalabs/${MODULE_NAME}/aws"
+            version = "${TAG_NAME#v}"
+            
+            # Add your configuration here
+          }
+          \`\`\`
+          
+          ---
+          
+          Synced from [yaalalabs/agent-kernel](https://github.com/yaala-internal/agent-kernel) ${TAG_NAME}
+          EOF
+            
+            # Create release using gh CLI
+            gh release create "$TAG_NAME" \
+              --repo "$TARGET_REPO" \
+              --title "${TAG_NAME}" \
+              --notes-file release_body.md \
+              ${PRERELEASE_FLAG}
+            
+            echo "✅ Successfully synced $MODULE to $TARGET_REPO with tag $TAG_NAME and created release"
           else
             echo "ℹ️ No changes detected for $MODULE"
           fi
