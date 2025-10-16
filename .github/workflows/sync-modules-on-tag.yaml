@@ -13,10 +13,13 @@ jobs:
         include:
           - module: 'ak-deployment/ak-aws/common'
             repo: 'yaalalabs/terraform-aws-ak-common'
+            branch: 'develop'
           - module: 'ak-deployment/ak-aws/serverless'
             repo: 'yaalalabs/terraform-aws-ak-serverless'
+            branch: 'develop'
           - module: 'ak-deployment/ak-aws/containerized'
             repo: 'yaalalabs/terraform-aws-ak-containerized'
+            branch: 'develop'
 
     steps:
       - name: Checkout monorepo
@@ -40,8 +43,9 @@ jobs:
           TAG_NAME="${{ steps.tag.outputs.TAG_NAME }}"
           MODULE="${{ matrix.module }}"
           TARGET_REPO="${{ matrix.repo }}"
+          TARGET_BRANCH="${{ matrix.branch }}"
           
-          echo "Syncing $MODULE to $TARGET_REPO with tag $TAG_NAME"
+          echo "Syncing $MODULE to $TARGET_REPO (branch: $TARGET_BRANCH) with tag $TAG_NAME"
           
           # Create a temporary directory
           TEMP_DIR=$(mktemp -d)
@@ -50,10 +54,13 @@ jobs:
           # Clone the target repository or create initial commit if new
           if git clone https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git; then
             cd $(basename $TARGET_REPO)
+            # Checkout or create the target branch
+            git checkout $TARGET_BRANCH 2>/dev/null || git checkout -b $TARGET_BRANCH
           else
             mkdir $(basename $TARGET_REPO)
             cd $(basename $TARGET_REPO)
             git init
+            git checkout -b $TARGET_BRANCH
             git remote add origin https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git
           fi
           
@@ -67,7 +74,7 @@ jobs:
           if [[ -n $(git status -s) ]]; then
             git add .
             git commit -m "Sync from monorepo tag $TAG_NAME"
-            git push origin main || git push origin master
+            git push origin $TARGET_BRANCH
             
             # Create the same tag in the target repo
             git tag -a $TAG_NAME -m "Release $TAG_NAME from monorepo"
