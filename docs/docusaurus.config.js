@@ -198,6 +198,10 @@ const config = {
         theme: {
           customCss: './src/css/custom.css',
         },
+        gtag: {
+          trackingID: 'G-TFXXDHX2H5',
+          anonymizeIP: true,
+        },
         sitemap: {
           lastmod: 'date',
           changefreq: 'weekly',
@@ -227,11 +231,6 @@ const config = {
           content: 'https://kernel.yaala.ai/img/card.png',
         },
       ],
-      // Google Analytics
-      gtag: {
-        trackingID: 'G-TFXXDHX2H5',
-        anonymizeIP: true,
-      },
       image: 'img/card.png',
       navbar: {
         title: 'Agent Kernel',
