@@ -156,7 +156,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs. Built with ❤️`,
+        copyright: `Copyright © ${new Date().getFullYear()} <a href="https://www.yaalalabs.com/" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. Built with ❤️`,
       },
       prism: {
         theme: prismThemes.github,
