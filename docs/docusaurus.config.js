@@ -119,6 +119,12 @@ const config = {
       },
       footer: {
         style: 'dark',
+        logo: {
+          alt: 'Yaala Labs Logo',
+          src: 'img/yaala_white.png',
+          href: 'https://www.yaalalabs.com/',
+          width: 160,
+        },
         links: [
           {
             title: 'Docs',
@@ -168,7 +174,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} <a href="https://www.yaalalabs.com/" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. Built with ❤️`,
+        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs`,
       },
       prism: {
         theme: prismThemes.oneLight,
