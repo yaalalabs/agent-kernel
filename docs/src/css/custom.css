@@ -150,12 +150,12 @@ html {
   width: 24px;
   height: 24px;
   display: flex;
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23844FBA' d='M1.5 4.5v6.7l5.8 3.4V8zm5.8 0v6.7l5.8 3.4V8zm6.4 3.6v6.7l5.8 3.4V11.5zm-6.4 7V22l5.8-3.4v-6.7z'/%3E%3C/svg%3E")
+  background: url("data:image/svg+xml,%3Csvg viewBox='-17.5 0 291 291' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='xMidYMid'%3E%3Cpolygon fill='%234040B2' points='176.485057 188.994162 256.000302 143.127442 256.000302 51.2485453 176.485057 97.2122358'%3E%3C/polygon%3E%3Cpath d='M88.2425283,51.2485453 L167.757774,97.2122358 L167.757774,188.994162 L88.2425283,143.078957 M0,91.8304113 L79.5152453,137.745617 L79.5152453,45.9152057 L0,0 M88.2425283,244.994228 L167.757774,290.909434 L167.757774,199.079023 L88.2425283,153.163817' fill='%235C4EE5'%3E%3C/path%3E%3C/svg%3E")
     no-repeat;
 }
 
 [data-theme='dark'] .header-terraform-link::before {
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23844FBA' d='M1.5 4.5v6.7l5.8 3.4V8zm5.8 0v6.7l5.8 3.4V8zm6.4 3.6v6.7l5.8 3.4V11.5zm-6.4 7V22l5.8-3.4v-6.7z'/%3E%3C/svg%3E")
+  background: url("data:image/svg+xml,%3Csvg viewBox='-17.5 0 291 291' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='xMidYMid'%3E%3Cpolygon fill='%234040B2' points='176.485057 188.994162 256.000302 143.127442 256.000302 51.2485453 176.485057 97.2122358'%3E%3C/polygon%3E%3Cpath d='M88.2425283,51.2485453 L167.757774,97.2122358 L167.757774,188.994162 L88.2425283,143.078957 M0,91.8304113 L79.5152453,137.745617 L79.5152453,45.9152057 L0,0 M88.2425283,244.994228 L167.757774,290.909434 L167.757774,199.079023 L88.2425283,153.163817' fill='%235C4EE5'%3E%3C/path%3E%3C/svg%3E")
     no-repeat;
 }
 
