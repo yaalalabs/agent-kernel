@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.1.2b20"
+version = "0.1.2b21"
 description = "Agent Kernel Python Distribution"
 readme = "README.md"
 requires-python = ">=3.12"
