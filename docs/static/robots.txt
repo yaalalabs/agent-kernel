@@ -1,0 +1,34 @@
+# robots.txt for Agent Kernel Documentation
+# https://kernel.yaala.ai/robots.txt
+
+# Allow all search engines to crawl the site
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://kernel.yaala.ai/sitemap.xml
+
+# Allow AI crawlers (GPT, Claude, etc.)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Crawl delay (optional, helps prevent server overload)
+# Crawl-delay: 1

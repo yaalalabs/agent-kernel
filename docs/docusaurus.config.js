@@ -22,6 +22,129 @@ const config = {
 
   onBrokenLinks: 'throw',
 
+  // SEO head tags
+  headTags: [
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'keywords',
+        content: 'agent kernel, AI agents, AI framework, agentic AI, Yaala, Yaala Labs, LangGraph, OpenAI, agent runtime, agent deployment, AI infrastructure, machine learning, artificial intelligence, agent orchestration, multi-agent systems, agent-to-agent communication, Python AI framework, AI DevOps, MLOps, agent monitoring, stateful agents, serverless agents',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'author',
+        content: 'Yaala Labs',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:title',
+        content: 'Agent Kernel - Production-Ready AI Agent Runtime by Yaala Labs',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:description',
+        content: 'Deploy and manage AI agents at scale with Agent Kernel. Framework-agnostic runtime supporting LangGraph, OpenAI Agents SDK and Google ADK. Built by Yaala Labs for enterprise AI infrastructure.',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:type',
+        content: 'website',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:url',
+        content: 'https://kernel.yaala.ai',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:site_name',
+        content: 'Agent Kernel by Yaala Labs',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:card',
+        content: 'summary_large_image',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:title',
+        content: 'Agent Kernel - Production-Ready AI Agent Runtime by Yaala Labs',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'twitter:description',
+        content: 'Deploy and manage AI agents at scale with Agent Kernel. Framework-agnostic runtime supporting LangGraph, OpenAI Agents SDK and Google ADK. Built by Yaala Labs.',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'robots',
+        content: 'index, follow',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'language',
+        content: 'English',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'revisit-after',
+        content: '7 days',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'company',
+        content: 'Yaala Labs',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'publisher',
+        content: 'Yaala Labs',
+      },
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'category',
+        content: 'AI Infrastructure, Machine Learning, Software Development',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'canonical',
+        href: 'https://kernel.yaala.ai',
+      },
+    },
+  ],
+
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
@@ -75,6 +198,13 @@ const config = {
         theme: {
           customCss: './src/css/custom.css',
         },
+        sitemap: {
+          lastmod: 'date',
+          changefreq: 'weekly',
+          priority: 0.5,
+          ignorePatterns: ['/tags/**'],
+          filename: 'sitemap.xml',
+        },
       }),
     ],
   ],
@@ -82,6 +212,26 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      // SEO metadata
+      metadata: [
+        {
+          name: 'description',
+          content: 'Agent Kernel by Yaala Labs is a production-ready, framework-agnostic runtime for deploying and managing AI agents. Supports LangGraph, OpenAI Agents, and custom frameworks with built-in state management, monitoring, and scalability.',
+        },
+        {
+          property: 'og:image',
+          content: 'https://kernel.yaala.ai/img/card.png',
+        },
+        {
+          name: 'twitter:image',
+          content: 'https://kernel.yaala.ai/img/card.png',
+        },
+      ],
+      // Google Analytics
+      gtag: {
+        trackingID: 'G-TFXXDHX2H5',
+        anonymizeIP: true,
+      },
       image: 'img/card.png',
       navbar: {
         title: 'Agent Kernel',
