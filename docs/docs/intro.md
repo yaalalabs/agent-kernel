@@ -154,4 +154,4 @@ Agent Kernel is released under the MIT License. See the [LICENSE](https://github
 
 ---
 
-**Built with ❤️ by Yaala Labs**
+**Built with ❤️ by [Yaala Labs](https://www.yaalalabs.com/)**

@@ -203,4 +203,4 @@ The documentation is released under the same MIT License as Agent Kernel.
 
 ---
 
-**Built with ❤️ by Yaala Labs**
+**Built with ❤️ by [Yaala Labs](https://www.yaalalabs.com/)**
