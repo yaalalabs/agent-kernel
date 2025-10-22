@@ -98,6 +98,18 @@ const config = {
           },
           {to: '/blog', label: 'Blog', position: 'left'},
           {
+            href: 'https://pypi.org/project/agentkernel/',
+            position: 'right',
+            className: 'header-pypi-link',
+            'aria-label': 'PyPI package',
+          },
+          {
+            href: 'https://registry.terraform.io/modules/yaalalabs',
+            position: 'right',
+            className: 'header-terraform-link',
+            'aria-label': 'Terraform registry',
+          },
+          {
             href: 'https://github.com/yaalalabs/agent-kernel',
             position: 'right',
             className: 'header-github-link',
