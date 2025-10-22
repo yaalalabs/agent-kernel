@@ -173,6 +173,23 @@ const config = {
               },
             ],
           },
+          {
+            title: 'Legal',
+            items: [
+              {
+                label: 'Privacy Policy',
+                to: '/privacy-policy',
+              },
+              {
+                label: 'Terms of Use',
+                to: '/terms-of-use',
+              },
+              {
+                label: 'Cookie Policy',
+                to: '/cookie-policy',
+              },
+            ],
+          },
         ],
         copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs`,
       },
