@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.MODULE_SYNC_TOKEN }}  # Use PAT to bypass branch protection
       
       - name: Configure git
         run: |
