@@ -23,23 +23,6 @@ Run:
 python my_agent.py
 ```
 
-## Interactive Session
-
-```
-Agent Kernel CLI
-Available agents:
-  - general
-  - math
-  - code
-
-Type your message (or 'quit' to exit):
-> What is 2 + 2?
-
-[Agent responds...]
-
-> quit
-Goodbye!
-```
 
 ## CLI Features
 
@@ -53,8 +36,17 @@ Goodbye!
 
 Run as a local API server:
 
+```python
+from agentkernel.api import RESTAPI
+
+if __name__ == "__main__":
+    RESTAPI.main()
+```
+
+Run:
+
 ```bash
-python my_agent.py --mode api --port 8000
+python my_agent.py
 ```
 
 Test with curl:
@@ -88,6 +80,7 @@ export AK_API_PORT=8000
 2. **Test in CLI** - `python my_agent.py`
 3. **Test API locally** - `python my_agent.py --mode api`
 4. **Deploy to cloud** when ready
+5. **Optionally create docker image** (Refer to `containerized` examples)
 
 ## Best Practices
 

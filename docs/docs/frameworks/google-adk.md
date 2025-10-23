@@ -69,4 +69,4 @@ export GEMINI_MODEL=gemini-2.0-flash-exp  # Optional
 
 ## Example
 
-See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/adk) for complete examples.
+See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk) for complete examples.

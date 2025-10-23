@@ -69,4 +69,4 @@ export OPENAI_MODEL=gpt-4  # Optional, override default
 
 ## Example
 
-See [examples/cli/openai](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/openai) for complete examples.
+See [examples/cli/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai) for complete examples.

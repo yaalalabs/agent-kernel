@@ -71,4 +71,4 @@ export OPENAI_API_KEY=sk-...  # CrewAI uses OpenAI by default
 
 ## Example
 
-See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/crewai) for complete examples.
+See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai) for complete examples.

@@ -86,4 +86,4 @@ export OPENAI_API_KEY=sk-...
 
 ## Example
 
-See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/langgraph) for complete examples.
+See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph) for complete examples.

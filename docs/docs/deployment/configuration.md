@@ -96,13 +96,13 @@ api:
 # MCP server
 mcp:
   enabled: true
-  port: 8001
+  port: 8000
 
 # A2A server
 a2a:
   enabled: true
   url: https://your-domain.com/a2a
-  port: 8002
+  port: 8000
 
 # Deployment
 deployment:
@@ -122,8 +122,21 @@ Load configuration:
 ```python
 from agentkernel.core import AKConfig
 
-config = AKConfig.from_file("ak-config.yaml")
+config = AKConfig.get()
 ```
+
+### Configuration File
+
+By default, Agent Kernel looks for `./config.yaml` in the current working directory.
+
+**Override the config file path:**
+
+```bash
+export AK_CONFIG_PATH_OVERRIDE=config.json
+# or
+export AK_CONFIG_PATH_OVERRIDE=conf/agent-kernel.yaml
+```
+
 
 ## Configuration Precedence
 
@@ -148,17 +161,6 @@ export AK_SESSION_STORAGE=redis
 export AK_REDIS_URL=redis://elasticache-endpoint:6379
 ```
 
-### Security
-
-- Never commit API keys to version control
-- Use environment variables or secrets manager
-- Use IAM roles in AWS instead of keys when possible
-
-```bash
-# Use secrets
-export OPENAI_API_KEY=$(aws secretsmanager get-secret-value --secret-id openai-key --query SecretString --output text)
-```
-
 ## Accessing Configuration
 
 ```python
@@ -166,9 +168,9 @@ from agentkernel.core import AKConfig
 
 config = AKConfig.get()
 
-print(config.log_level)
-print(config.session_storage)
-print(config.redis_url)
+print(config.debug)
+print(config.session.storage)
+print(config.redis.url)
 ```
 
 ## Validation
