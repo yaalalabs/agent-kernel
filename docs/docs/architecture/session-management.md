@@ -22,14 +22,12 @@ graph TB
     subgraph "Storage"
         D[In-Memory Dict]
         E[Redis]
-        F[Long-term DB]
     end
     
     A --> B
     B --> C
     C --> D
     C --> E
-    C --> F
     
     style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```

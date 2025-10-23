@@ -82,3 +82,11 @@ OpenAIModule([agent])
 ```
 
 Your execution code (CLI, API, deployment) remains unchanged!
+
+## Framework Portability
+
+Available soon!
+
+Features:
+    - Switch the underlying agentic framework without affecting the agent logic
+    - Effortless migration of already existing agents to the unified portable implementation

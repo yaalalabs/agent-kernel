@@ -32,17 +32,12 @@ graph TB
     subgraph "Storage Layer"
         K[In-Memory]
         L[Redis]
-        M[DynamoDB]
-        N[MongoDB]
     end
     
     subgraph "Execution Layer"
         O[CLI]
         P[REST API]
         Q[AWS Lambda]
-        R[AWS ECS]
-        S[MCP Server]
-        T[A2A Server]
     end
     
     A --> B
@@ -59,15 +54,10 @@ graph TB
     
     E --> K
     E --> L
-    E --> M
-    E --> N
     
     F --> O
     F --> P
     F --> Q
-    F --> R
-    F --> S
-    F --> T
     
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```

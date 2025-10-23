@@ -17,7 +17,7 @@ graph TB
         D[Redis Storage]
     end
     
-    subgraph "Long-term Memory"
+    subgraph "Long-term Memory (Future)"
         E[User Profiles]
         F[Knowledge Base]
         G[DynamoDB]
@@ -44,7 +44,7 @@ Managed via Session objects:
 
 ```python
 # Conversation history stored in session
-session.set("conversation_history", messages)
+session.set("session_id", data)
 ```
 
 **Storage Options:**
@@ -53,19 +53,7 @@ session.set("conversation_history", messages)
 
 ## Long-term Memory
 
-Framework-specific implementations:
-
-```python
-# LangGraph with DynamoDB
-from langgraph.checkpoint.dynamodb import DynamoDBSaver
-
-checkpointer = DynamoDBSaver(table_name="agent_memory")
-```
-
-**Storage Options:**
-- AWS DynamoDB
-- MongoDB
-- Custom implementations
+Available soon!
 
 ## Configuration
 
@@ -73,8 +61,4 @@ checkpointer = DynamoDBSaver(table_name="agent_memory")
 # Short-term (session)
 export AK_SESSION_STORAGE=redis
 export AK_REDIS_URL=redis://localhost:6379
-
-# Long-term (framework-specific)
-export DYNAMODB_TABLE=agent_memory
-export MONGODB_URI=mongodb://localhost:27017
 ```

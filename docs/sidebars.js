@@ -49,6 +49,7 @@ const sidebars = {
         'frameworks/crewai',
         'frameworks/langgraph',
         'frameworks/google-adk',
+        'frameworks/multi-framework',
       ],
     },
     {
