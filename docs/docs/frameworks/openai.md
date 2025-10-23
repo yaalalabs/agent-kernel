@@ -24,7 +24,7 @@ agent = OpenAIAgent(
     instructions="You are a helpful assistant.",
 )
 
-module = OpenAIModule([agent])
+OpenAIModule([agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -49,7 +49,7 @@ math_agent = OpenAIAgent(
     instructions="You solve math problems.",
 )
 
-module = OpenAIModule([general_agent, math_agent])
+OpenAIModule([general_agent, math_agent])
 ```
 
 ## Configuration

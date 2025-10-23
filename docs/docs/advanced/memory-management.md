@@ -4,27 +4,7 @@ sidebar_position: 1
 
 # Memory Management
 
-Agent Kernel provides pluggable memory management for both short-term and long-term storage.
-
-## Memory Types
-
-```mermaid
-graph TB
-    A[Memory Management] --> B[Short-term Memory]
-    A --> C[Long-term Memory]
-    
-    B --> D[Session State]
-    B --> E[Conversation History]
-    B --> F[In-Memory Storage]
-    B --> G[Redis Storage]
-    
-    C --> H[User Profiles]
-    C --> I[Knowledge Base]
-    C --> J[DynamoDB]
-    C --> K[MongoDB]
-    
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-```
+Agent Kernel provides pluggable memory management capabilities.
 
 ## Short-term Memory
 
@@ -33,7 +13,7 @@ Managed via Session objects for conversational context.
 ### In-Memory Storage
 
 ```bash
-export AK_SESSION_STORAGE=in-memory
+export AK_SESSION_STORAGE=in_memory
 ```
 
 **Use cases:**
@@ -67,49 +47,6 @@ export AK_SESSION_TTL=3600  # 1 hour
 - Shared across instances
 - Configurable TTL
 - High performance
-
-## Long-term Memory
-
-Framework-specific implementations for persistent knowledge.
-
-### DynamoDB (AWS)
-
-```python
-from langgraph.checkpoint.dynamodb import DynamoDBSaver
-
-checkpointer = DynamoDBSaver(
-    table_name="agent_memory",
-    region_name="us-east-1"
-)
-
-# Use with LangGraph
-graph = workflow.compile(checkpointer=checkpointer)
-```
-
-Configuration:
-
-```bash
-export DYNAMODB_TABLE=agent_memory
-export AWS_REGION=us-east-1
-```
-
-### MongoDB
-
-```python
-from langgraph.checkpoint.mongodb import MongoDBSaver
-
-checkpointer = MongoDBSaver(
-    connection_string="mongodb://localhost:27017",
-    db_name="agent_memory"
-)
-```
-
-Configuration:
-
-```bash
-export MONGODB_URI=mongodb://localhost:27017
-export MONGODB_DB=agent_memory
-```
 
 ## Memory Architecture
 

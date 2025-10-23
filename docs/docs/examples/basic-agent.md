@@ -23,7 +23,7 @@ assistant = CrewAgent(
 )
 
 # Register with Agent Kernel
-module = CrewAIModule([assistant])
+CrewAIModule([assistant])
 
 if __name__ == "__main__":
     CLI.main()

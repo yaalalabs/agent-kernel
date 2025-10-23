@@ -67,7 +67,7 @@ from agentkernel.openai import OpenAIModule
 from agentkernel.aws import lambda_handler
 
 agent = OpenAIAgent(name="assistant", ...)
-module = OpenAIModule([agent])
+OpenAIModule([agent])
 
 # Lambda entry point
 def handler(event, context):

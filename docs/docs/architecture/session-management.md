@@ -39,7 +39,7 @@ graph TB
 ### In-Memory (Development)
 
 ```bash
-export AK_SESSION_STORAGE=in-memory
+export AK_SESSION_STORAGE=in_memory
 ```
 
 - Fast, no setup required

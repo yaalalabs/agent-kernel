@@ -76,7 +76,7 @@ curl -X POST http://localhost:8000/chat \
 export AK_LOG_LEVEL=DEBUG
 
 # Session storage
-export AK_SESSION_STORAGE=in-memory
+export AK_SESSION_STORAGE=in_memory
 
 # Port (API mode)
 export AK_API_PORT=8000

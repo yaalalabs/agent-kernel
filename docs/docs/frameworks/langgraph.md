@@ -37,7 +37,7 @@ workflow.add_edge("agent", END)
 graph = workflow.compile()
 graph.name = "assistant"
 
-module = LangGraphModule([graph])
+LangGraphModule([graph])
 
 if __name__ == "__main__":
     CLI.main()

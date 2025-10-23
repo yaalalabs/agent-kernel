@@ -137,7 +137,7 @@ config = AKConfig.from_file("ak-config.yaml")
 
 ```bash
 export AK_LOG_LEVEL=DEBUG
-export AK_SESSION_STORAGE=in-memory
+export AK_SESSION_STORAGE=in_memory
 ```
 
 ### Production

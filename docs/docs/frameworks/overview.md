@@ -71,14 +71,14 @@ from crewai import Agent
 from agentkernel.crewai import CrewAIModule
 
 agent = Agent(role="assistant", ...)
-module = CrewAIModule([agent])
+CrewAIModule([agent])
 
 # Migrate to OpenAI (change 2 lines)
 from agents import Agent
 from agentkernel.openai import OpenAIModule
 
 agent = Agent(name="assistant", ...)
-module = OpenAIModule([agent])
+OpenAIModule([agent])
 ```
 
 Your execution code (CLI, API, deployment) remains unchanged!

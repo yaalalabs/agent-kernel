@@ -111,7 +111,7 @@ A container that registers agents with the Runtime.
 from agentkernel.crewai import CrewAIModule
 
 # Module groups related agents together
-module = CrewAIModule([agent1, agent2, agent3])
+CrewAIModule([agent1, agent2, agent3])
 ```
 
 **Key Features:**
@@ -200,7 +200,7 @@ graph TD
 
 ### Framework Agnostic
 
-Agent Kernel provides a consistent API regardless of the underlying framework. Switch frameworks without changing your application code.
+Agent Kernel provides a consistent API regardless of the underlying framework. Provision to switch frameworks without changing your application code.
 
 ### Minimal Overhead
 
@@ -253,7 +253,6 @@ Here's a complete example showing how all components work together:
 from crewai import Agent as CrewAgent
 from agentkernel.cli import CLI
 from agentkernel.crewai import CrewAIModule
-from agentkernel.core import Runtime
 
 # 1. Define framework-specific agents
 general_agent = CrewAgent(
@@ -271,7 +270,7 @@ math_agent = CrewAgent(
 )
 
 # 2. Create a Module to wrap them
-module = CrewAIModule([general_agent, math_agent])
+CrewAIModule([general_agent, math_agent])
 
 # 3. Module automatically registers agents with Runtime
 # Behind the scenes:

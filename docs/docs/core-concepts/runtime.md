@@ -130,29 +130,28 @@ CLI.main()
 ### REST API Mode
 
 ```python
-from agentkernel.api import create_app
+from agentkernel.api import RESTAPI
 
 # API server uses Runtime to route requests
-app = create_app()
+RESTAPI.main()
 ```
 
 ### AWS Lambda Mode
 
 ```python
-from agentkernel.aws import lambda_handler
+from agentkernel.aws import Lambda
 
 # Lambda handler uses Runtime to process events
-def handler(event, context):
-    return lambda_handler(event, context)
+handler = Labmda.handler
 ```
 
 ### MCP Server Mode
 
 ```python
-from agentkernel.mcp import MCPServer
+from agentkernel.mcp import MCP
 
 # MCP server exposes agents via Runtime
-server = MCPServer()
+server = MCP.get()  
 ```
 
 ## Runtime Lifecycle
@@ -188,22 +187,11 @@ runtime = Runtime.get()
 runtime.register_agent(custom_agent)
 ```
 
-### Runtime Events
-
-Listen to runtime events:
-
-```python
-# Future feature - event listeners
-runtime.on("agent_registered", callback)
-runtime.on("execution_started", callback)
-```
-
 ## Integration Points
 
 ### MCP Integration
 
 ```python
-# Runtime automatically exposes agents as MCP tools
 # when MCP server is enabled
 # AK_MCP_ENABLED=true
 ```
@@ -211,7 +199,6 @@ runtime.on("execution_started", callback)
 ### A2A Integration
 
 ```python
-# Runtime generates A2A capability cards
 # for all registered agents
 # AK_A2A_ENABLED=true
 ```
@@ -219,7 +206,6 @@ runtime.on("execution_started", callback)
 ### REST API Integration
 
 ```python
-# Runtime provides agent discovery endpoint
 # GET /agents - list all agents
 # POST /chat - execute agent
 ```
@@ -236,21 +222,6 @@ runtime = Runtime.get()
 
 # Don't try to instantiate
 # runtime = Runtime()  # Won't work
-```
-
-### Error Handling
-
-Handle agent not found errors:
-
-```python
-from agentkernel.core import Runtime
-
-runtime = Runtime.get()
-
-try:
-    agent = runtime.get_agent("nonexistent")
-except KeyError:
-    print("Agent not found")
 ```
 
 ### Configuration Before Execution

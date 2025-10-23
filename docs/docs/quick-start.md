@@ -417,7 +417,7 @@ export AK_REDIS_URL=redis://localhost:6379
 Or use in-memory storage (default):
 
 ```bash
-export AK_SESSION_STORAGE=in-memory
+export AK_SESSION_STORAGE=in_memory
 ```
 
 ## Common Patterns

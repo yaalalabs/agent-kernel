@@ -79,7 +79,7 @@ reviewer = CrewAgent(
     verbose=False,
 )
 
-module = CrewAIModule([supervisor, researcher, writer, reviewer])
+CrewAIModule([supervisor, researcher, writer, reviewer])
 ```
 
 ## Agent Handoff

@@ -37,7 +37,7 @@ from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
 agent = OpenAIAgent(name="assistant", instructions="...")
-module = OpenAIModule([agent])
+OpenAIModule([agent])
 ```
 
 ### CrewAIModule
@@ -47,7 +47,7 @@ from agentkernel.crewai import CrewAIModule
 from crewai import Agent as CrewAgent
 
 agent = CrewAgent(role="assistant", goal="...", backstory="...")
-module = CrewAIModule([agent])
+CrewAIModule([agent])
 ```
 
 ### LangGraphModule
@@ -58,7 +58,7 @@ from langgraph.graph import StateGraph
 
 graph = StateGraph(...).compile()
 graph.name = "assistant"
-module = LangGraphModule([graph])
+LangGraphModule([graph])
 ```
 
 ### ADKModule
@@ -68,7 +68,7 @@ from agentkernel.adk import ADKModule
 from adk import Agent as ADKAgent
 
 agent = ADKAgent(name="assistant", model="gemini-2.0-flash-exp", ...)
-module = ADKModule([agent])
+ADKModule([agent])
 ```
 
 ## Module Lifecycle
@@ -98,7 +98,7 @@ from agentkernel.crewai import CrewAIModule
 from crewai import Agent
 
 agent = Agent(role="assistant", ...)
-module = CrewAIModule([agent])
+CrewAIModule([agent])
 ```
 
 ### Multiple Agents
@@ -111,7 +111,7 @@ agent1 = Agent(role="researcher", ...)
 agent2 = Agent(role="writer", ...)
 agent3 = Agent(role="reviewer", ...)
 
-module = CrewAIModule([agent1, agent2, agent3])
+CrewAIModule([agent1, agent2, agent3])
 ```
 
 ## Module Configuration
@@ -121,7 +121,7 @@ Some modules accept configuration:
 ```python
 from agentkernel.openai import OpenAIModule
 
-module = OpenAIModule(
+OpenAIModule(
     agents=[agent1, agent2],
     model_override="gpt-4",  # Override default model
 )
@@ -131,7 +131,7 @@ module = OpenAIModule(
 
 ### One Module Per Application
 
-Typically, create one module per application:
+Typically, create one module per application. However, in the scenario of having to agents of multiple agentic frameworks, the current module mechansim does support that.
 
 ```python
 # my_agent.py
@@ -139,25 +139,11 @@ from agentkernel.crewai import CrewAIModule
 from crewai import Agent
 
 agents = [agent1, agent2, agent3]
-module = CrewAIModule(agents)
+CrewAIModule(agents)
 
 if __name__ == "__main__":
     from agentkernel.cli import CLI
     CLI.main()
-```
-
-### Organize Related Agents
-
-Group logically related agents in the same module:
-
-```python
-# Research team module
-research_agents = [
-    Agent(role="searcher", ...),
-    Agent(role="analyst", ...),
-    Agent(role="summarizer", ...),
-]
-module = CrewAIModule(research_agents)
 ```
 
 ## Summary

@@ -48,7 +48,7 @@ reviewer = CrewAgent(
 )
 
 # Register all agents
-module = CrewAIModule([supervisor, researcher, writer, reviewer])
+CrewAIModule([supervisor, researcher, writer, reviewer])
 
 if __name__ == "__main__":
     CLI.main()

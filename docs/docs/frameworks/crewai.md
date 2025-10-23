@@ -26,7 +26,7 @@ agent = CrewAgent(
     verbose=False,
 )
 
-module = CrewAIModule([agent])
+CrewAIModule([agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -52,7 +52,7 @@ writer = CrewAgent(
     verbose=False,
 )
 
-module = CrewAIModule([researcher, writer])
+CrewAIModule([researcher, writer])
 ```
 
 ## Configuration
