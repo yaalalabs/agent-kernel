@@ -8,184 +8,290 @@ Configure Agent Kernel via environment variables or configuration files.
 
 ## Environment Variables
 
+All configuration parameters can be set using environment variables with the `AK_` prefix. Use underscores to separate nested configuration levels.
+
 ### Core Configuration
 
 ```bash
-# Logging
-export AK_LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
+# Enable debug mode
+export AK_DEBUG=true  # default: false
 
-# Library version (auto-detected)
-export AK_VERSION=0.1.2b17
+# Library version (auto-detected from package metadata)
+export AK_LIBRARY_VERSION=0.1.0
 ```
 
 ### Session Storage
 
 ```bash
-# Storage type
-export AK_SESSION_STORAGE=redis  # or 'in-memory'
+# Session storage type
+export AK_SESSION_TYPE=redis  # Options: 'in_memory', 'redis' (default: 'in_memory')
 
 # Redis configuration
-export AK_REDIS_URL=redis://localhost:6379
-export AK_REDIS_DB=0
-export AK_REDIS_PASSWORD=your-password
-export AK_SESSION_TTL=3600  # seconds
+export AK_SESSION_REDIS_URL=redis://localhost:6379  # default: redis://localhost:6379
+export AK_SESSION_REDIS_TTL=604800  # TTL in seconds (default: 604800 = 7 days)
+export AK_SESSION_REDIS_PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
 ```
 
 ### API Server
 
 ```bash
-# API mode
-export AK_MODE=api
-export AK_API_PORT=8000
-export AK_API_HOST=0.0.0.0
+# API server configuration
+export AK_API_HOST=0.0.0.0  # default: 0.0.0.0
+export AK_API_PORT=8000  # default: 8000
+
+# API route configuration
+export AK_API_ENABLED_ROUTES_AGENTS=true  # Enable agent routes (default: true)
 ```
 
-### MCP Server
+### Agent-to-Agent (A2A) Server
 
 ```bash
-# Enable MCP
-export AK_MCP_ENABLED=true
-export AK_MCP_PORT=8001
+# Enable A2A functionality
+export AK_A2A_ENABLED=true  # default: false
+export AK_A2A_URL=http://localhost:8000/a2a  # default: http://localhost:8000/a2a
+export AK_A2A_AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_A2A_TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 'in_memory')
 ```
 
-### A2A Server
+### Model Context Protocol (MCP) Server
 
 ```bash
-# Enable A2A
-export AK_A2A_ENABLED=true
-export AK_A2A_URL=https://your-domain.com/a2a
-export AK_A2A_PORT=8002
-```
-
-### Framework-Specific
-
-```bash
-# OpenAI
-export OPENAI_API_KEY=sk-...
-export OPENAI_MODEL=gpt-4
-
-# Google ADK
-export GOOGLE_API_KEY=...
-export GEMINI_MODEL=gemini-2.0-flash-exp
+# Enable MCP functionality
+export AK_MCP_ENABLED=true  # default: false
+export AK_MCP_EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
+export AK_MCP_URL=http://localhost:8000/mcp  # default: http://localhost:8000/mcp
+export AK_MCP_AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 ```
 
 ## Configuration File
 
-Create `ak-config.yaml`:
+Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
+
+### Basic Configuration File
+
+Create `config.yaml`:
 
 ```yaml
 # Core settings
-log_level: INFO
-version: 0.1.2b17
+debug: true
+library_version: "0.1.0"
 
 # Session management
 session:
-  storage: redis
+  type: redis  # or 'in_memory'
   redis:
     url: redis://localhost:6379
-    db: 0
-    password: ${REDIS_PASSWORD}
-  ttl: 3600
+    ttl: 604800  # 7 days in seconds
+    prefix: "ak:sessions:"
 
 # API server
 api:
-  enabled: true
   host: 0.0.0.0
   port: 8000
+  enabled_routes:
+    agents: true
 
-# MCP server
-mcp:
-  enabled: true
-  port: 8000
-
-# A2A server
+# Agent-to-Agent communication
 a2a:
   enabled: true
-  url: https://your-domain.com/a2a
-  port: 8000
+  url: http://localhost:8000/a2a
+  agents:
+    - "*"  # Enable for all agents
+  task_store_type: redis
 
-# Deployment
-deployment:
-  profile: serverless  # or 'containerized'
-  region: us-east-1
-  lambda:
-    memory: 512
-    timeout: 30
-  ecs:
-    cpu: 512
-    memory: 1024
-    desired_count: 2
+# Model Context Protocol
+mcp:
+  enabled: true
+  expose_agents: true
+  url: http://localhost:8000/mcp
+  agents:
+    - "*"  # Expose all agents as MCP tools
 ```
 
-Load configuration:
+### JSON Configuration
 
-```python
-from agentkernel.core import AKConfig
+Alternatively, use `config.json`:
 
-config = AKConfig.get()
+```json
+{
+  "debug": true,
+  "session": {
+    "type": "redis",
+    "redis": {
+      "url": "redis://localhost:6379",
+      "ttl": 604800,
+      "prefix": "ak:sessions:"
+    }
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "enabled_routes": {
+      "agents": true
+    }
+  },
+  "a2a": {
+    "enabled": true,
+    "url": "http://localhost:8000/a2a",
+    "agents": ["*"],
+    "task_store_type": "redis"
+  },
+  "mcp": {
+    "enabled": true,
+    "expose_agents": true,
+    "url": "http://localhost:8000/mcp",
+    "agents": ["*"]
+  }
+}
 ```
 
-### Configuration File
+### Custom Configuration File Path
 
-By default, Agent Kernel looks for `./config.yaml` in the current working directory.
-
-**Override the config file path:**
+Override the default configuration file path:
 
 ```bash
-export AK_CONFIG_PATH_OVERRIDE=config.json
+export AK_CONFIG_PATH_OVERRIDE=custom-config.yaml
 # or
-export AK_CONFIG_PATH_OVERRIDE=conf/agent-kernel.yaml
+export AK_CONFIG_PATH_OVERRIDE=conf/agent-kernel.json
 ```
 
+## Configuration Schema
+
+### Complete Configuration Reference
+
+```yaml
+# Core configuration
+debug: false                    # Enable debug mode
+library_version: "0.1.0"       # Library version (auto-detected)
+
+# Session storage configuration
+session:
+  type: "in_memory"             # Storage type: 'in_memory' or 'redis'
+  redis:                        # Redis-specific settings
+    url: "redis://localhost:6379"  # Redis connection URL (supports rediss:// for SSL)
+    ttl: 604800                 # Session TTL in seconds (7 days)
+    prefix: "ak:sessions:"      # Redis key prefix
+
+# API server configuration
+api:
+  host: "0.0.0.0"              # API server host
+  port: 8000                    # API server port
+  enabled_routes:               # Route configuration
+    agents: true                # Enable agent interaction routes
+
+# Agent-to-Agent communication
+a2a:
+  enabled: false                # Enable A2A functionality
+  url: "http://localhost:8000/a2a"  # A2A endpoint URL
+  agents:                       # List of agents to enable for A2A
+    - "*"                       # "*" enables all agents
+  task_store_type: "in_memory"  # Task storage: 'in_memory' or 'redis'
+
+# Model Context Protocol
+mcp:
+  enabled: false                # Enable MCP functionality
+  expose_agents: false          # Expose agents as MCP tools
+  url: "http://localhost:8000/mcp"  # MCP endpoint URL
+  agents:                       # List of agents to expose as MCP tools
+    - "*"                       # "*" exposes all agents
+```
 
 ## Configuration Precedence
 
-1. Environment variables (highest priority)
-2. Configuration file
-3. Default values (lowest priority)
+Configuration values are resolved in the following order (highest to lowest priority):
 
-## Best Practices
+1. **Environment variables** (with `AK_` prefix)
+2. **Configuration file** (YAML/JSON)
+3. **Default values** (defined in the schema)
 
-### Development
-
-```bash
-export AK_LOG_LEVEL=DEBUG
-export AK_SESSION_STORAGE=in_memory
-```
-
-### Production
-
-```bash
-export AK_LOG_LEVEL=INFO
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://elasticache-endpoint:6379
-```
-
-## Accessing Configuration
+## Loading Configuration
 
 ```python
 from agentkernel.core import AKConfig
 
+# Get the current configuration instance
 config = AKConfig.get()
 
-print(config.debug)
-print(config.session.storage)
-print(config.redis.url)
+# Access configuration values
+print(f"Debug mode: {config.debug}")
+print(f"API port: {config.api.port}")
+print(f"Session storage: {config.session.type}")
+print(f"Redis URL: {config.session.redis.url}")
 ```
 
-## Validation
+## Environment Configuration Examples
 
-Agent Kernel validates configuration on startup:
+### Development Setup
 
-```python
-# Invalid configuration will raise error
-export AK_SESSION_STORAGE=invalid  # Error!
-export AK_LOG_LEVEL=INVALID  # Error!
+```bash
+# Enable debug mode with in-memory storage
+export AK_DEBUG=true
+export AK_SESSION_TYPE=in_memory
+export AK_API_PORT=8000
 ```
+
+### Production Setup
+
+```bash
+# Production configuration with Redis
+export AK_DEBUG=false
+export AK_SESSION_TYPE=redis
+export AK_SESSION_REDIS_URL=redis://prod-redis:6379
+export AK_SESSION_REDIS_TTL=86400  # 1 day
+export AK_API_HOST=0.0.0.0
+export AK_API_PORT=8000
+```
+
+### A2A Enabled Setup
+
+```bash
+# Enable Agent-to-Agent communication
+export AK_A2A_ENABLED=true
+export AK_A2A_TASK_STORE_TYPE=redis
+export AK_SESSION_TYPE=redis
+export AK_SESSION_REDIS_URL=redis://localhost:6379
+```
+
+### MCP Enabled Setup
+
+```bash
+# Enable Model Context Protocol
+export AK_MCP_ENABLED=true
+export AK_MCP_EXPOSE_AGENTS=true
+export AK_MCP_AGENTS="my-agent,another-agent"  # Specific agents
+```
+
+## Validation and Error Handling
+
+Agent Kernel validates all configuration values at startup:
+
+- **Invalid session storage types** will raise validation errors
+- **Invalid port numbers** will be rejected
+- **Malformed Redis URLs** will cause connection failures
+- **Invalid boolean values** will be rejected
+
+Example validation errors:
+
+```bash
+# These will cause validation errors:
+export AK_SESSION_TYPE=invalid_storage  # Must be 'in_memory' or 'redis'
+export AK_A2A_TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
+```
+
+## Best Practices
+
+1. **Use environment variables for secrets** (Redis passwords, API keys)
+2. **Use configuration files for static settings** (ports, URLs, feature flags)
+3. **Set appropriate TTL values** for your use case
+4. **Use Redis for production** session storage and task stores
+5. **Enable debug mode only in development**
+6. **Use specific agent lists** instead of "*" in production for security
 
 ## Summary
 
-- Configure via environment variables or YAML
-- Environment variables override file configuration
-- Validate configuration before deployment
-- Use secrets management for sensitive data
+- Configure via environment variables (with `AK_` prefix) or YAML/JSON files
+- Environment variables take precedence over file configuration
+- Support for nested configuration using underscore delimiter
+- Built-in validation ensures configuration integrity
+- Flexible session storage options (in-memory or Redis)
+- Optional A2A and MCP functionality with granular control
