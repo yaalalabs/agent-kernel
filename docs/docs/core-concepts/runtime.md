@@ -142,7 +142,7 @@ RESTAPI.run()
 from agentkernel.aws import Lambda
 
 # Lambda handler uses Runtime to process events
-handler = Labmda.handler
+handler = Lambda.handler
 ```
 
 ### MCP Server Mode
