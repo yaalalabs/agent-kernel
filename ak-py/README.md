@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
 
 ## Features
 

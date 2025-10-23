@@ -9,24 +9,28 @@ Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for buildi
 
 ## What is Agent Kernel?
 
-Agent Kernel (AK) is a lightweight runtime and adapter layer that enables developers to build AI agents once and run them across multiple frameworks within a unified execution environment. It eliminates the complexity of framework lock-in and provides a consistent development experience regardless of the underlying AI agent framework.
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
 
 ```mermaid
-graph LR
-    A[Your Agent Logic] --> B[Agent Kernel]
-    B --> C[OpenAI Agents]
-    B --> D[CrewAI]
-    B --> E[LangGraph]
-    B --> F[Google ADK]
-    
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+---
+config:
+  layout: dagre
+---
+flowchart LR
+    B["Unified Runtime"] --> A["Unified Execution"]
+    C["OpenAI Agents"] --> B
+    D["CrewAI"] --> B
+    E["LangGraph"] --> B
+    F["Google ADK"] --> B
+    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Why Agent Kernel?
 
-### 🔄 Framework Flexibility
+### 🔄 Effortless Migration
 
-Build agents using Agent Kernel's standardized API and switch between underlying frameworks effortlessly. No need to rewrite your agent logic when you want to try a different framework.
+Build agents using any AI agentic framework and migrate them to Agent Kernel to benefit from its execution framework capabilities. No need to build a platform code from scratch to run your agents. You can focus on domain-specific Agent development and Agent Kernel takes care of testing, deployment and execution.
 
 ### 🚀 Ready-to-Use Execution
 
@@ -35,20 +39,19 @@ Agent Kernel provides pre-built execution capabilities:
 - **REST API Server** for web integration
 - **AWS Serverless Deployment** for scalable production
 - **AWS Containerized Deployment** for consistent loads
-- **MCP Server** for Model Context Protocol integration
+- **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
 
 ### 🧩 Pluggable Architecture
 
-Easily extend Agent Kernel with custom framework adapters, memory backends, and deployment profiles.
+Easily extend Agent Kernel with custom framework adapters, memory back-ends, and deployment profiles.
 
 ### 📊 Enterprise-Ready Features
 
 - **Session Management**: Built-in conversational state tracking
-- **Memory Management**: Pluggable short-term (Redis, in-memory) and long-term (DynamoDB, MongoDB) storage
-- **Role-Based Access Control**: Control agent and tool access
+- **Memory Management**: Pluggable memory (Redis, in-memory) storage
 - **Traceability**: Track and audit all agent operations
-- **Multi-Agent Collaboration**: Build agent hierarchies and teams
+- **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 
 ## Key Features
 
@@ -77,15 +80,17 @@ Agent Kernel currently supports:
 ### Flexible Deployment
 
 ```mermaid
-graph TD
-    A[Agent Logic] --> B{Deployment Mode}
-    B -->|Local| C[CLI Testing]
-    B -->|API| D[REST API Server]
-    B -->|Cloud| E[AWS Serverless]
-    B -->|Cloud| F[AWS Containers]
-    B -->|Integration| G[MCP Server]
-    B -->|Integration| H[A2A Server]
-    
+---
+config:
+  layout: dagre
+  elk: true
+---
+flowchart LR
+    A["Agent Logic"] --> B["Deployment Mode"]
+    B -- Local --> C["CLI Testing"]
+    B -- API --> D["REST API Server"]
+    B -- Cloud --> E["AWS Serverless"] & F["AWS Containers"]
+    B -- Integration --> G["MCP Server"] & H["A2A Server"]
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
@@ -107,16 +112,16 @@ agent = CrewAgent(
 )
 
 # Register with Agent Kernel
-module = CrewAIModule([agent])
+CrewAIModule([agent])
 
 # Run with built-in CLI
 if __name__ == "__main__":
     CLI.main()
 ```
 
-Now you can:
+You can:
 - Test locally with the CLI
-- Deploy to AWS Lambda with one command
+- Deploy to AWS Lambda with one line-change
 - Expose as a REST API
 - Integrate with MCP or A2A protocols
 
@@ -147,6 +152,7 @@ Ready to get started? Here's what to do next:
 - **GitHub**: [yaalalabs/agent-kernel](https://github.com/yaalalabs/agent-kernel)
 - **PyPI**: [agentkernel](https://pypi.org/project/agentkernel/)
 - **Issues**: [Report bugs or request features](https://github.com/yaalalabs/agent-kernel/issues)
+- **Discord**: [Community Chat](https://discord.gg/k98XXq3N)
 
 ## License
 
