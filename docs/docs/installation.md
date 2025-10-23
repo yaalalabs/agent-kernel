@@ -80,7 +80,7 @@ pip install agentkernel[aws]
 
 ### CLI Testing
 
-For interactive command-line testing (included by default):
+For interactive command-line testing:
 
 ```bash
 pip install agentkernel[cli]
@@ -110,13 +110,13 @@ We recommend using a virtual environment to avoid dependency conflicts:
 
 ```bash
 # Create virtual environment
-python -m venv ak-env
+python -m venv .venv
 
 # Activate (Linux/macOS)
-source ak-env/bin/activate
+source .venv/bin/activate
 
 # Activate (Windows)
-ak-env\Scripts\activate
+.venv\Scripts\activate
 
 # Install Agent Kernel
 pip install agentkernel[openai,api]
@@ -126,10 +126,10 @@ pip install agentkernel[openai,api]
 
 ```bash
 # Create conda environment
-conda create -n ak-env python=3.12
+conda create -n .venv python=3.12
 
 # Activate
-conda activate ak-env
+conda activate .venv
 
 # Install Agent Kernel
 pip install agentkernel[openai,api]
@@ -143,7 +143,7 @@ After installation, verify that Agent Kernel is installed correctly:
 python -c "import agentkernel; print(agentkernel.__version__)"
 ```
 
-You should see the version number printed (e.g., `0.1.2b17`).
+You should see the version number printed (e.g., `0.1.2`).
 
 ## Development Installation
 
@@ -155,7 +155,10 @@ git clone https://github.com/yaalalabs/agent-kernel.git
 cd agent-kernel/ak-py
 
 # Install in development mode
-pip install -e ".[openai,crewai,langgraph,adk,api,aws,cli,test]"
+./build.sh
+
+# Go to any example and run
+./build.sh local
 ```
 
 ## Configuration
@@ -218,7 +221,6 @@ Now that you have Agent Kernel installed, proceed to the [Quick Start Guide](./q
 
 ## Version Information
 
-- **Current Version**: 0.1.2b17 (Beta)
 - **Python Requirements**: 3.12+
 - **License**: MIT
 

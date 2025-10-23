@@ -47,7 +47,7 @@ math_agent = OpenAIAgent(
 )
 
 # Register agents with Agent Kernel
-module = OpenAIModule([general_agent, math_agent])
+OpenAIModule([general_agent, math_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -101,7 +101,7 @@ math_agent = CrewAgent(
 )
 
 # Register agents with Agent Kernel
-module = CrewAIModule([general_agent, math_agent])
+CrewAIModule([general_agent, math_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -162,7 +162,7 @@ graph = workflow.compile()
 graph.name = "assistant"
 
 # Register with Agent Kernel
-module = LangGraphModule([graph])
+LangGraphModule([graph])
 
 if __name__ == "__main__":
     CLI.main()
@@ -208,7 +208,7 @@ agent = ADKAgent(
 )
 
 # Register with Agent Kernel
-module = ADKModule([agent])
+ADKModule([agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -234,18 +234,25 @@ python my_agent.py
 Once your agent is running, you'll see an interactive CLI:
 
 ```
-Agent Kernel CLI
+(kernel) >> Using in-memory session store
+AgentKernel CLI (type !help for commands or !quit to exit):
+(kernel) >> No agent was requested. Defaulting to first agent in the list
+(kernel) >> Selected agent: triage
+(kernel) >> Starting new session: 07ec500e-f103-4b0e-8ecb-d794232f5992
+(triage) >>
+(triage) >> !list
 Available agents:
-  - general
-  - math
+  triage
+  math
+  general
 
-Type your message (or 'quit' to exit):
-> What is 2 + 2?
+(triage) >> !select math
+(math) >> What is 2 + 2?
 
 [math agent responds]
-Math: 2 + 2 = 4. This is basic addition where we combine two quantities...
+(math) >> 2 + 2 = 4. This is basic addition where we combine two quantities...
 
->
+(math) >>
 ```
 
 ## Understanding the Structure
@@ -300,15 +307,52 @@ Run your agent as a REST API server:
 ```bash
 # Install API dependencies
 pip install agentkernel[api]
+```
+Use the RESTAPI module run the agents
 
+```python
+from agents import Agent as OpenAIAgent
+from agentkernel.api import RESTAPI
+from agentkernel.openai import OpenAIModule
+
+# Define your agent
+general_agent = OpenAIAgent(
+    name="general",
+    handoff_description="Agent for general questions",
+    instructions="You provide assistance with general queries. Give short and direct answers.",
+)
+
+math_agent = OpenAIAgent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Explain your reasoning.",
+)
+
+# Register agents with Agent Kernel
+OpenAIModule([general_agent, math_agent])
+
+if __name__ == "__main__":
+    RESTAPI.main()
+```
+
+Run the agents
+
+```bash
 # Run as API server
-python my_agent.py --mode api --port 8000
+python my_agent.py
+```
+
+Configure the API port by editing `config.yaml`
+
+```yaml
+api:
+    port: 8000
 ```
 
 Test it:
 
 ```bash
-curl -X POST http://localhost:8000/chat \
+curl -X POST http://localhost:8000/run \
   -H "Content-Type: application/json" \
   -d '{"agent": "general", "message": "Hello!"}'
 ```
@@ -320,9 +364,45 @@ Package and deploy to AWS Lambda:
 ```bash
 # Install AWS dependencies
 pip install agentkernel[aws]
+```
+Use the Lambda module to run the agents
 
-# Deploy (requires AWS credentials configured)
-ak-deploy --profile serverless --region us-east-1
+```python
+from agents import Agent
+from agentkernel.aws import Lambda
+from agentkernel.openai import OpenAIModule
+
+math_agent = Agent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Explain your \
+        reasoning at each step and include examples. \
+        If prompted for anything else you refuse to answer.",
+)
+
+history_agent = Agent(
+    name="history",
+    handoff_description="Specialist agent for historical questions",
+    instructions="You provide assistance with historical queries. \
+        Explain important events and context clearly.",
+)
+
+triage_agent = Agent(
+    name="triage",
+    instructions="You determine which agent to use based on the user's question.",
+    handoffs=[history_agent, math_agent],
+)
+
+OpenAIModule([triage_agent, math_agent, history_agent])
+
+handler = Lambda.handler
+```
+```bash
+# Deploy requires AWS credentials configured
+# Terraform module imported and configured (see examples)
+terraform init
+terraform apply
+
 ```
 
 ### Configure Memory
@@ -342,22 +422,6 @@ export AK_SESSION_STORAGE=in-memory
 
 ## Common Patterns
 
-### Multi-Agent Collaboration
-
-```python
-# Agents can hand off to each other
-supervisor = Agent(
-    role="supervisor",
-    goal="Coordinate work between specialists",
-    # ...
-)
-
-specialist1 = Agent(role="specialist1", ...)
-specialist2 = Agent(role="specialist2", ...)
-
-module = CrewAIModule([supervisor, specialist1, specialist2])
-```
-
 ### Session Management
 
 ```python
@@ -368,19 +432,6 @@ module = CrewAIModule([supervisor, specialist1, specialist2])
 # AK_REDIS_URL=redis://localhost:6379
 ```
 
-### Error Handling
-
-```python
-from agentkernel.core import Runtime
-
-try:
-    runtime = Runtime.get()
-    agent = runtime.get_agent("my-agent")
-    result = await agent.runner.run(agent, session, prompt)
-except Exception as e:
-    print(f"Agent error: {e}")
-```
-
 ## Examples Gallery
 
 Explore more examples in our [Examples](./examples/basic-agent) section:
@@ -388,6 +439,8 @@ Explore more examples in our [Examples](./examples/basic-agent) section:
 - [Basic Single Agent](./examples/basic-agent)
 - [Multi-Agent System](./examples/multi-agent)
 - [Custom Tools Integration](./examples/custom-tools)
+
+Example snippets can be found [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples).
 
 ## Troubleshooting
 

@@ -152,7 +152,7 @@ Ready to get started? Here's what to do next:
 - **GitHub**: [yaalalabs/agent-kernel](https://github.com/yaalalabs/agent-kernel)
 - **PyPI**: [agentkernel](https://pypi.org/project/agentkernel/)
 - **Issues**: [Report bugs or request features](https://github.com/yaalalabs/agent-kernel/issues)
-- **Discord**: [Community Chat](https://discord.gg/k98XXq3N)
+- **Discord**: [Community chat](https://discord.gg/k98XXq3N)
 
 ## License
 
