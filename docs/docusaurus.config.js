@@ -247,6 +247,12 @@ const config = {
           },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
+            href: 'https://discord.gg/k98XXq3N',
+            position: 'right',
+            className: 'header-discord-link',
+            'aria-label': 'Discord Community',
+          },
+          {
             href: 'https://pypi.org/project/agentkernel/',
             position: 'right',
             className: 'header-pypi-link',
@@ -295,6 +301,10 @@ const config = {
           {
             title: 'Community',
             items: [
+              {
+                label: 'Discord',
+                href: 'https://discord.gg/k98XXq3N',
+              },
               {
                 label: 'GitHub',
                 href: 'https://github.com/yaalalabs/agent-kernel',
