@@ -94,9 +94,9 @@ const sidebars = {
       type: 'category',
       label: 'Examples',
       items: [
+        'examples/overview',
         'examples/basic-agent',
         'examples/multi-agent',
-        'examples/custom-tools',
       ],
     },
   ],

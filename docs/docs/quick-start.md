@@ -436,9 +436,9 @@ export AK_SESSION_STORAGE=in_memory
 
 Explore more examples in our [Examples](./examples/basic-agent) section:
 
+- [Examples Overview](./examples/overview)
 - [Basic Single Agent](./examples/basic-agent)
 - [Multi-Agent System](./examples/multi-agent)
-- [Custom Tools Integration](./examples/custom-tools)
 
 Example snippets can be found [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples).
 
