@@ -234,7 +234,7 @@ except Exception as e:
 
 Check out the complete working example:
 
-- [Multi-Framework CLI Demo](https://github.com/yaala-internal/agent-kernel/tree/develop/examples/cli/multi)
+- [Multi-Framework CLI Demo](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/multi)
 
 This example demonstrates OpenAI Agents SDK and CrewAI agents running together with CLI interaction.
 
