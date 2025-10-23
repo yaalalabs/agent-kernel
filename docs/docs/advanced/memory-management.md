@@ -55,7 +55,7 @@ sequenceDiagram
     participant U as User
     participant A as Agent
     participant STM as Short-term Memory
-    participant LTM as Long-term Memory
+    participant LTM as Long-term Memory (Future)
     
     U->>A: Message
     A->>STM: Load conversation context
@@ -82,62 +82,13 @@ sequenceDiagram
 export AK_SESSION_TTL=7200  # 2 hours
 ```
 
-### Long-term Memory
+### Long-term Memory (Available soon!)
 
 - Index frequently accessed data
 - Implement data retention policies
 - Back up important data
 - Monitor storage costs
 
-### Memory Optimization
-
-```python
-# Limit conversation history
-MAX_HISTORY_MESSAGES = 20
-
-# Store only essential data
-session.set("summary", summarized_history)
-# Don't store: session.set("all_messages", all_messages)
-```
-
-## Custom Memory Backend
-
-Implement custom storage:
-
-```python
-from agentkernel.core import SessionStorage
-
-class CustomStorage(SessionStorage):
-    def get(self, session_id: str) -> dict:
-        # Your implementation
-        pass
-    
-    def set(self, session_id: str, data: dict):
-        # Your implementation
-        pass
-    
-    def delete(self, session_id: str):
-        # Your implementation
-        pass
-
-# Register custom storage
-Runtime.register_storage(CustomStorage())
-```
-
-## Monitoring
-
-Track memory usage:
-
-```python
-# Redis monitoring
-from agentkernel.core import Runtime
-
-runtime = Runtime.get()
-stats = runtime.get_storage_stats()
-
-print(f"Active sessions: {stats['session_count']}")
-print(f"Memory used: {stats['memory_mb']} MB")
-```
 
 ## Summary
 

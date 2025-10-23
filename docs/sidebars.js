@@ -86,7 +86,6 @@ const sidebars = {
       label: 'Advanced Features',
       items: [
         'advanced/memory-management',
-        'advanced/rbac',
         'advanced/traceability',
         'advanced/multi-agent',
       ],
