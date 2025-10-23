@@ -16,34 +16,25 @@ MCP (Model Context Protocol) is a standardized protocol for AI systems to intera
 export AK_MCP_ENABLED=true
 export AK_MCP_PORT=8001
 ```
+or
+```yaml
+mcp
+  enabled: true
+```
 
 ## Starting MCP Server
 
 ```python
-from agentkernel.mcp import MCPServer
+from agentkernel.api import RESTAPI
 
 if __name__ == "__main__":
-    server = MCPServer()
-    server.run()
+    RESTAPI.run()
 ```
 
 ## Agent as MCP Tool
 
-Agents are automatically exposed as MCP tools:
+Agents are automatically exposed as MCP tools if you set `mcp.expose_agents` to `true`. You can selectively expose agents as well. 
 
-```json
-{
-  "tools": [
-    {
-      "name": "assistant",
-      "description": "General assistant agent",
-      "parameters": {
-        "message": "string",
-        "session_id": "string"
-      }
-    }
-  ]
-}
 ```
 
 ## Custom Tools
@@ -51,14 +42,16 @@ Agents are automatically exposed as MCP tools:
 Expose custom tools via MCP:
 
 ```python
-from agentkernel.mcp import MCPServer, register_tool
+from agentkernel.mcp import MCP
+from agentkernel.api import RESTAPI
 
-@register_tool
+mcp = MCP.get()
+
+@mcp.tool
 def custom_tool(param: str) -> str:
     return f"Processed: {param}"
 
-server = MCPServer()
-server.run()
+RESTAPI.run()
 ```
 
 ## Configuration
@@ -66,10 +59,9 @@ server.run()
 ```yaml
 mcp:
   enabled: true
-  port: 8001
-  auth:
-    enabled: true
-    token: ${MCP_TOKEN}
+  port: 8000
+  expose_agents: true
+  agents: ['*']
 ```
 
 ## Integration
@@ -77,16 +69,8 @@ mcp:
 Use agents from other AI systems:
 
 ```python
-# From Claude, GPT, etc.
 result = mcp_client.call_tool(
-    "assistant",
-    {"message": "Hello!", "session_id": "user-123"}
+    "custom_tool",
+    {"message": "Hello!"}
 )
 ```
-
-## Best Practices
-
-- Enable authentication in production
-- Document tool capabilities
-- Handle errors gracefully
-- Monitor tool usage

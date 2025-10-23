@@ -95,10 +95,3 @@ sequenceDiagram
     API-->>User: JSON response
 ```
 
-## Performance Characteristics
-
-- **CLI**: Immediate execution
-- **REST API**: ~50-100ms overhead
-- **Lambda (cold start)**: ~1-3s first request
-- **Lambda (warm)**: ~50-200ms overhead
-- **Session load**: ~10-50ms (Redis)

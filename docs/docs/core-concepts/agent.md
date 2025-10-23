@@ -68,7 +68,7 @@ openai_agent = OpenAIAgent(
 )
 
 # Module creates AK Agent wrapper
-module = OpenAIModule([openai_agent])
+OpenAIModule([openai_agent])
 
 # AK Agent is automatically created with:
 # - name: "assistant" (from openai_agent.name)
@@ -89,7 +89,7 @@ crew_agent = CrewAgent(
 )
 
 # Module creates AK Agent wrapper
-module = CrewAIModule([crew_agent])
+CrewAIModule([crew_agent])
 
 # AK Agent is automatically created with:
 # - name: "researcher" (from crew_agent.role)
@@ -108,7 +108,7 @@ compiled = graph.compile()
 compiled.name = "assistant"
 
 # Module creates AK Agent wrapper
-module = LangGraphModule([compiled])
+LangGraphModule([compiled])
 
 # AK Agent is automatically created with:
 # - name: "assistant" (from compiled.name)
@@ -254,19 +254,23 @@ class LangGraphAgent(Agent):
 
 ## Multi-Agent Systems
 
-Agent Kernel supports multiple agents working together:
+Agent Kernel supports multiple agents working together. It also supports agents from multiple frameworks running together in the same runtime.
 
 ```python
 from crewai import Agent as CrewAgent
+from agents import Agent as OpenAIAgent
 from agentkernel.crewai import CrewAIModule
+from agentkernel.openai import OpenAIModule
 
 # Define multiple agents
 supervisor = CrewAgent(role="supervisor", ...)
 specialist1 = CrewAgent(role="specialist1", ...)
 specialist2 = CrewAgent(role="specialist2", ...)
+specialist3= OpenAIAgent(role="specialist3", ...)
 
 # Register all agents
-module = CrewAIModule([supervisor, specialist1, specialist2])
+CrewAIModule([supervisor, specialist1, specialist2])
+OpenAIModule([specialist2])
 
 # All agents are now available
 from agentkernel.core import Runtime
@@ -275,6 +279,7 @@ runtime = Runtime.get()
 supervisor_agent = runtime.get_agent("supervisor")
 specialist1_agent = runtime.get_agent("specialist1")
 specialist2_agent = runtime.get_agent("specialist2")
+specialist3_agent = runtime.get_agent("specialist3")
 ```
 
 Agent interactions are handled by the underlying framework's collaboration mechanisms.
@@ -294,6 +299,13 @@ Agents can be exposed for A2A communication:
 # describing their skills and interfaces
 ```
 
+or
+
+```yaml
+a2a:
+    enabled: true
+```
+
 ### MCP (Model Context Protocol) Support
 
 Agents can be exposed as MCP tools:
@@ -304,6 +316,13 @@ Agents can be exposed as MCP tools:
 
 # Agents become callable as MCP tools
 # from other AI systems
+```
+
+or
+
+```yaml
+mcp:
+    enabled: true
 ```
 
 ## Best Practices
@@ -337,21 +356,6 @@ writer_agent = CrewAgent(
     goal="Write clear documentation",
     backstory="You are a technical writer",
 )
-```
-
-### Error Handling
-
-Always handle potential errors when accessing agents:
-
-```python
-from agentkernel.core import Runtime
-
-runtime = Runtime.get()
-
-try:
-    agent = runtime.get_agent("assistant")
-except KeyError:
-    print("Agent not found")
 ```
 
 ## Advanced Usage

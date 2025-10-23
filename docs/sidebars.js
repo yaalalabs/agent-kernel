@@ -49,6 +49,7 @@ const sidebars = {
         'frameworks/crewai',
         'frameworks/langgraph',
         'frameworks/google-adk',
+        'frameworks/multi-framework',
       ],
     },
     {
@@ -85,7 +86,6 @@ const sidebars = {
       label: 'Advanced Features',
       items: [
         'advanced/memory-management',
-        'advanced/rbac',
         'advanced/traceability',
         'advanced/multi-agent',
       ],
@@ -94,9 +94,9 @@ const sidebars = {
       type: 'category',
       label: 'Examples',
       items: [
+        'examples/overview',
         'examples/basic-agent',
         'examples/multi-agent',
-        'examples/custom-tools',
       ],
     },
   ],

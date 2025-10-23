@@ -18,38 +18,26 @@ export AK_A2A_URL=https://your-domain.com/a2a
 export AK_A2A_PORT=8002
 ```
 
+or
+```yaml
+a2a:
+  enabled: true
+  port: 8000
+  url: https://your-domain.com/a2a
+```
+
 ## Starting A2A Server
 
 ```python
-from agentkernel.a2a import A2AServer
+from agentkernel.api import RESTAPI
 
 if __name__ == "__main__":
-    server = A2AServer()
-    server.run()
+    RESTAPI.run()
 ```
 
 ## Agent Capabilities
 
 Agents automatically generate A2A capability cards:
-
-```json
-{
-  "name": "assistant",
-  "description": "General assistant agent",
-  "url": "https://your-domain.com/a2a/assistant",
-  "version": "0.1.2b17",
-  "capabilities": {
-    "input_modes": ["text"],
-    "output_modes": ["text"],
-    "skills": [
-      {
-        "name": "general_assistance",
-        "description": "Provide general help"
-      }
-    ]
-  }
-}
-```
 
 ## Agent Discovery
 
@@ -89,18 +77,10 @@ Request:
 
 ```mermaid
 graph LR
-    A[Agent 1] -->|A2A| B[Agent 2]
-    B -->|A2A| C[Agent 3]
+    A[Agent Kernel Agent 1] -->|A2A| B[Agent Kernel Agent 2]
+    B -->|A2A| C[Third-Party Agent 3]
     C -->|A2A| A
-    A -->|A2A| D[Agent 4]
+    A -->|A2A| D[Third-Party Agent 4]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
-
-## Best Practices
-
-- Implement authentication between agents
-- Handle network failures gracefully
-- Monitor cross-agent communication
-- Document agent capabilities clearly
-- Use semantic versioning for agents

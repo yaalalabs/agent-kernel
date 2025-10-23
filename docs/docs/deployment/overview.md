@@ -34,6 +34,8 @@ graph TB
 
 ## Local Development
 
+Uses `agentkernel.CLI` module.
+
 ```bash
 python my_agent.py
 ```
@@ -46,9 +48,12 @@ python my_agent.py
 
 ## REST API Server
 
-```bash
-python my_agent.py --mode api --port 8000
+Uses `agentkernel.RESAPI` module.
+
 ```
+python my_agent.py
+```
+
 
 - HTTP endpoints
 - Easy integration
@@ -58,8 +63,11 @@ python my_agent.py --mode api --port 8000
 
 ## AWS Serverless
 
+Uses Agent Kernel terraform modules
+
 ```bash
-ak-deploy --profile serverless --region us-east-1
+# Configure the modules and run
+terraform init && terraform apply
 ```
 
 - Lambda functions
@@ -71,8 +79,11 @@ ak-deploy --profile serverless --region us-east-1
 
 ## AWS Containerized
 
+Uses Agent Kernel terraform modules
+
 ```bash
-ak-deploy --profile containerized --region us-east-1
+# Configure the modules and run
+terraform init && terraform apply
 ```
 
 - ECS Fargate

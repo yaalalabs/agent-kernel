@@ -141,18 +141,18 @@ Agent Kernel is ideal for:
 
 Ready to get started? Here's what to do next:
 
-1. [**Install Agent Kernel**](./installation) - Get up and running in minutes
-2. [**Quick Start Guide**](./quick-start) - Build your first agent
-3. [**Core Concepts**](./core-concepts/overview) - Understand the architecture
-4. [**Framework Integration**](./frameworks/overview) - Choose your framework
-5. [**Deployment Guide**](./deployment/overview) - Deploy to production
+1. [**Install Agent Kernel**](/docs/installation) - Get up and running in minutes
+2. [**Quick Start Guide**](/docs/quick-start) - Build your first agent
+3. [**Core Concepts**](/docs/core-concepts/overview) - Understand the architecture
+4. [**Framework Integration**](/docs/frameworks/overview) - Choose your framework
+5. [**Deployment Guide**](/docs/deployment/overview) - Deploy to production
 
 ## Community & Support
 
 - **GitHub**: [yaalalabs/agent-kernel](https://github.com/yaalalabs/agent-kernel)
 - **PyPI**: [agentkernel](https://pypi.org/project/agentkernel/)
 - **Issues**: [Report bugs or request features](https://github.com/yaalalabs/agent-kernel/issues)
-- **Discord**: [Community Chat](https://discord.gg/k98XXq3N)
+- **Discord**: [Community chat](https://discord.gg/k98XXq3N)
 
 ## License
 

@@ -165,7 +165,7 @@ const config = {
         language: ['en'],
         highlightSearchTermsOnTargetPage: true,
         explicitSearchResultPath: true,
-        docsRouteBasePath: '/',
+        docsRouteBasePath: '/docs',
       },
     ],
   ],
@@ -176,7 +176,7 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          routeBasePath: '/',
+          routeBasePath: '/docs',
           sidebarPath: './sidebars.js',
           editUrl:
             'https://github.com/yaalalabs/agent-kernel/tree/develop/docs/',
@@ -286,15 +286,15 @@ const config = {
             items: [
               {
                 label: 'Getting Started',
-                to: '/',
+                to: '/docs',
               },
               {
                 label: 'Architecture',
-                to: '/architecture/overview',
+                to: '/docs/architecture/overview',
               },
               {
                 label: 'API Reference',
-                to: '/api/rest-api',
+                to: '/docs/api/rest-api',
               },
             ],
           },

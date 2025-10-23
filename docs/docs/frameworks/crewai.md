@@ -26,7 +26,7 @@ agent = CrewAgent(
     verbose=False,
 )
 
-module = CrewAIModule([agent])
+CrewAIModule([agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -52,7 +52,7 @@ writer = CrewAgent(
     verbose=False,
 )
 
-module = CrewAIModule([researcher, writer])
+CrewAIModule([researcher, writer])
 ```
 
 ## Configuration
@@ -71,4 +71,4 @@ export OPENAI_API_KEY=sk-...  # CrewAI uses OpenAI by default
 
 ## Example
 
-See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/crewai) for complete examples.
+See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai) for complete examples.

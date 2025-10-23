@@ -35,26 +35,12 @@ pip install agentkernel[aws,openai]
 
 ### 2. Configure
 
-Create `ak-config.yaml`:
-
-```yaml
-deployment:
-  profile: serverless
-  region: us-east-1
-  lambda:
-    memory: 512
-    timeout: 30
-  api_gateway:
-    stage: prod
-session:
-  storage: redis
-  redis_url: ${REDIS_URL}
-```
+Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) for configuration details.
 
 ### 3. Deploy
 
 ```bash
-ak-deploy --config ak-config.yaml
+terraform init && terraform deploy
 ```
 
 ## Lambda Handler
@@ -64,17 +50,14 @@ Your agent code remains the same, just import the Lambda handler:
 ```python
 from agents import Agent as OpenAIAgent
 from agentkernel.openai import OpenAIModule
-from agentkernel.aws import lambda_handler
+from agentkernel.aws import Lambda
 
 agent = OpenAIAgent(name="assistant", ...)
-module = OpenAIModule([agent])
+OpenAIModule([agent])
 
-# Lambda entry point
-def handler(event, context):
-    return lambda_handler(event, context)
-```
-
+handler = Lambda.handler
 ## API Endpoints
+```
 
 After deployment:
 
@@ -96,12 +79,11 @@ Body:
 
 ### Lambda Configuration
 
-```yaml
-lambda:
-  memory: 512  # MB, affects price
-  timeout: 30  # seconds
-  reserved_concurrency: 10  # Optional limit
-```
+Memory: 512 MB
+Timeout: 30
+
+Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) to update the configurations.
+
 
 ### Cold Start Mitigation
 
@@ -130,10 +112,7 @@ CloudWatch metrics automatically available:
 
 - Use Redis for session storage (not in-memory)
 - Set appropriate timeout (30-60s for LLM calls)
-- Monitor cold starts
-- Use VPC for Redis access
-- Enable CloudWatch logs
 
 ## Example Deployment
 
-See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-serverless)
+See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless)
