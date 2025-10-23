@@ -131,7 +131,7 @@ OpenAIModule(
 
 ### One Module Per Application
 
-Typically, create one module per application. However, in the scenario of having to agents of multiple agentic frameworks, the current module mechansim does support that.
+Typically, create one module per application. However, in the scenario of having agents of multiple agentic frameworks, the current module mechanism does support that.
 
 ```python
 # my_agent.py
