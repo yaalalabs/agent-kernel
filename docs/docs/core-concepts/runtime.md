@@ -133,7 +133,7 @@ CLI.main()
 from agentkernel.api import RESTAPI
 
 # API server uses Runtime to route requests
-RESTAPI.main()
+RESTAPI.run()
 ```
 
 ### AWS Lambda Mode

@@ -40,7 +40,7 @@ Run as a local API server:
 from agentkernel.api import RESTAPI
 
 if __name__ == "__main__":
-    RESTAPI.main()
+    RESTAPI.run()
 ```
 
 Run:

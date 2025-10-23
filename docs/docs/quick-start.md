@@ -332,7 +332,7 @@ math_agent = OpenAIAgent(
 OpenAIModule([general_agent, math_agent])
 
 if __name__ == "__main__":
-    RESTAPI.main()
+    RESTAPI.run()
 ```
 
 Run the agents
