@@ -59,7 +59,7 @@ math_agent = CrewAgent(
 )
 
 # Register agents with Agent Kernel
-module = CrewAIModule([general_agent, math_agent])
+CrewAIModule([general_agent, math_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -77,7 +77,7 @@ sg = StateGraph(...)
 compiled = sg.compile()
 compiled.name = "assistant"
 
-module = LangGraphModule([compiled])
+LangGraphModule([compiled])
 
 if __name__ == "__main__":
     CLI.main()
@@ -96,7 +96,7 @@ general_agent = OpenAIAgent(
     instructions="You provide assistance with general queries. Give short and direct answers.",
 )
 
-module = OpenAIModule([general_agent])
+OpenAIModule([general_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -122,7 +122,7 @@ math_agent = Agent(
     """,
 )
 
-module = GoogleADKModule([math_agent])
+GoogleADKModule([math_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -167,7 +167,7 @@ from agentkernel.openai import OpenAIModule
 client = OpenAI()
 assistant = OpenAIAgent(name="assistant")
 
-module = OpenAIModule([assistant])
+OpenAIModule([assistant])
 handler = Lambda.handler
 ```
 
