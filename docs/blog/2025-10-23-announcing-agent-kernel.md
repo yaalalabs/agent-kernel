@@ -127,12 +127,12 @@ pip install agentkernel[langgraph]
 pip install agentkernel[openai]
 ```
 
-Check out our [Quick Start Guide](/quick-start) to build your first agent in minutes!
+Check out our [Quick Start Guide](/docs/quick-start) to build your first agent in minutes!
 
 ## 📚 Resources
 
 - **Documentation**: [kernel.yaala.ai](https://kernel.yaala.ai/)
-- **Examples**: [/examples](/examples/basic-agent)
+- **Examples**: [/examples](/docs/examples/basic-agent)
 - **GitHub Repository**: [github.com/yaalalabs/agent-kernel](https://github.com/yaalalabs/agent-kernel)
 
 **Want to contribute?** Check out our [GitHub repository](https://github.com/yaalalabs/agent-kernel) to see how you can get involved. We welcome contributions of all kinds - from code and documentation to bug reports and feature requests!
@@ -163,7 +163,7 @@ Agent Kernel is released under the **MIT License**, making it free to use in bot
 
 ---
 
-Ready to revolutionize your AI agent development? [Get started today](/quick-start) and experience the freedom of framework-agnostic agent development!
+Ready to revolutionize your AI agent development? [Get started today](/docs/quick-start) and experience the freedom of framework-agnostic agent development!
 
 **Happy Building! 🚀**
 
