@@ -27,7 +27,7 @@ AK's Python libraries provide developers with comprehensive tools to:
    - Bind tools and functionalities to agents for enhanced capabilities.
 
 3. **Hierarchies, Collaboration and Teamwork**
-   - Build collections of agents that can collaborate to achieve shared goals and define topologies & hierarchie by leveraging supported agentic frameworks
+   - Build collections of agents that can collaborate to achieve shared goals and define topologies & hierarchies by leveraging supported agentic frameworks
 
 4. **Context and Memory Management**
    - Handle agent memory efficiently, with in-built support for memory management.
