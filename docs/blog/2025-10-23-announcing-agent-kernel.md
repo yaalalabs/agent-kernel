@@ -20,7 +20,7 @@ We're thrilled to announce **Agent Kernel (AK)** - an open-source, versatile run
 
 Agent Kernel is a **framework-agnostic runtime** designed to streamline the entire lifecycle of AI agent development. Whether you're building with LangGraph, OpenAI Agents, CrewAI, or Google ADK, Agent Kernel lets you migrate your agent logic effortlessly and run it anywhere - from local development to cloud-native deployments.
 
-Built by [**Yaala Labs**](https://www.yaalalabs.com), Agent Kernel eliminates the complexity deployment headaches, empowering developers to focus on what matters most: building intelligent agent logic. Agent Kernel team actively working on releasing the feature of eliminating the framework lock-in and allow the AI engineers to seamless swap the underlying agentic framework with near-zero code change.
+Built by [**Yaala Labs**](https://www.yaalalabs.com), Agent Kernel eliminates complexity and deployment headaches, empowering developers to focus on what matters most: building intelligent agent logic. The Agent Kernel team is actively working on releasing features that eliminate framework lock-in and allow AI engineers to seamlessly swap the underlying agentic framework with near-zero code change.
 
 ## 🚀 Key Features
 
