@@ -2,19 +2,17 @@
 
 ## Introduction
 
-Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly switch between different AI agent frameworks without modifying the underlying agent logic.
+Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly migrate from different AI agent frameworks without modifying the underlying agent logic.
 
-AK offers a variety of execution options, each supporting multiple deployment profiles. This flexibility allows developers to deploy their agents across a range of environments, including local environments, cloud platforms, and on-premise enterprise systems. Cloud deployments can be configured as standalone solutions or integrated seamlessly into existing application infrastructures. Deployment profiles range from lightweight configurations for development purposes to robust, enterprise-level setups designed to meet stringent compliance requirements.
+AK offers a variety of execution options. This flexibility allows developers to deploy their agents across a range of environments, including local environments, cloud platforms, and on-premise enterprise systems. Cloud deployments can be configured as standalone solutions or integrated seamlessly into existing application infrastructures.
 
 ## Why Choose Agent Kernel?
 
 Agent Kernel (AK) provides a streamlined solution for developing and executing AI agents. It eliminates the need to rewrite existing agents by integrating seamlessly with your preferred agentic framework. Additionally, it offers unified development capabilities that allow engineers to focus on logic without being tied to a specific framework. Here's how Agent Kernel enhances the development experience:
 
-1. **Seamless Migration**  
-   Run existing agents on Agent Kernel's variety of execution frameworks with little to no effort required for porting.
+**Seamless Migration**  
+Run existing agents on Agent Kernel's variety of execution frameworks with little to no effort required for porting.
 
-2. **Framework Flexibility**  
-   Build agents using Agent Kernel’s standardized framework and switch between underlying agentic frameworks effortlessly.
 
 Currently, Agent Kernel supports portability across popular AI agent frameworks, including [Langraph](https://www.langchain.com/langgraph) and [OpenAI Agents](https://openai.github.io/openai-agents-python/), allowing developers to leverage these frameworks’ capabilities while benefiting from AK's versatility.
 
@@ -29,12 +27,11 @@ AK's Python libraries provide developers with comprehensive tools to:
    - Bind tools and functionalities to agents for enhanced capabilities.
 
 3. **Hierarchies, Collaboration and Teamwork**
-   - Build collections of agents that can collaborate to achieve shared goals and define topologies & hierarchies, including prebuilt setups like supervisor agents managing subordinate agents.
+   - Build collections of agents that can collaborate to achieve shared goals and define topologies & hierarchies by leveraging supported agentic frameworks
 
 4. **Context and Memory Management**
-   - Handle agent memory efficiently, with in-built support for both short-term and long-term memory management via pluggable storage types
-   - It currently offers in-memory and Redis-based options for in-built short-term memory management.
-   - For long-term memory, AK supports AWS DynamoDB and MongoDB.
+   - Handle agent memory efficiently, with in-built support for memory management.
+   - It currently offers in-memory and Redis-based options.
    - Developers can customize memory management based on their preferences.
 
 5. **Traceability and Accountability**
@@ -42,32 +39,14 @@ AK's Python libraries provide developers with comprehensive tools to:
    - Provides detailed traceability of all agent actions with multiple verbosity levels.
    - Includes tracking of collaborative actions and LLM calls.
 
-6. **Prebuilt Knowledge Sources**
-   - Leverage predefined knowledge sources, including graph databases, and manage these resources through built-in tools.
-
-7. **LLM Portability**
-   - AK agents' language models are configurable.
-   - In multi-agent collaborative setups, each agent can be configured with a preferred LLM and customized hyperparameters.
-
 8. **Built-in MCP Support**
    - AK includes built-in Multi-Context Processing (MCP) capabilities, enabling agents to connect and interact with external tools, data sources, and services seamlessly.
    - This ensures optimal collaboration and task distribution across dynamic environments.
+   - AK optionally allows to expose AI agents as MCP tools.
 
 9. **Built-in A2A Support**
    - AK provides Agent-to-Agent (A2A) communication support.
    - This enables advanced collaborative workflows, message passing, and synchronization between agents within a shared ecosystem.
-
-### Support Features
-
-The Agent Kernel includes support features to facilitate seamless integration into applications:
-
-1. **Thread Management**
-   - Support for in-built chat functionality with thread management.
-   - Features include thread history persistence, context persistence, and double text prevention.
-
-2. **Role-Based Access Control (RBAC)**
-   - Built-in capability for role-based access control for both agents and tool invocation.
-   - Includes interfaces to attach custom RBAC tools as needed.
 
 ### Agent Testing
 
@@ -95,20 +74,9 @@ Cloud deployment for AK is currently supported on AWS, offering two distinct exe
    - Suitable for scenarios with relatively consistent loads.
    - Offers reduced latency compared to serverless setups, ensuring faster response times.
 
-#### Deployment Profiles
+### On-Premise Deployment
 
-AK's cloud deployments feature multiple profiles designed to accommodate varying hardware and environment requirements, ensuring high availability and enterprise-grade standards. The supported profiles include:
+Agent Kernel is equipped with a REST API which can be bundled as a docker image. Agent Kernel examples come with a container-based solution which can be extended to implement an on-premise solution.
 
-1. **Development Profile**
-   - Optimized for minimal resource consumption.
-   - Enables quick deployment for development and testing purposes.
-
-2. **Production Profile**
-   - Delivers a robust, secure, and enterprise-standard deployment.
-   - Includes advanced features like signed code, encrypted persistent storage, and fault-tolerant configurations.
-
-3. **Staging-lite Profile**
-   - Mirrors the Production Profile but is tuned to reduce operational costs.
-   - Balances the resource and configuration similarities to production while keeping expenses in check.
 
 These versatile deployment and testing options make AK a powerful and flexible platform for building, testing, and deploying AI-based agents in diverse environments.

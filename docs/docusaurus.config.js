@@ -4,7 +4,7 @@
 // There are various equivalent ways to declare your Docusaurus config.
 // See: https://docusaurus.io/docs/api/docusaurus-config
 
-import {themes as prismThemes} from 'prism-react-renderer';
+import { themes as prismThemes } from 'prism-react-renderer';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -16,7 +16,7 @@ const config = {
   baseUrl: '/',
 
   // GitHub pages deployment config.
-  organizationName: 'yaalalabs', 
+  organizationName: 'yaalalabs',
   projectName: 'agent-kernel',
   trailingSlash: false,
 
@@ -245,7 +245,13 @@ const config = {
             position: 'left',
             label: 'Documentation',
           },
-          {to: '/blog', label: 'Blog', position: 'left'},
+          { to: '/blog', label: 'Blog', position: 'left' },
+          {
+            href: 'https://discord.gg/k98XXq3N',
+            position: 'right',
+            className: 'header-discord-link',
+            'aria-label': 'Discord Community',
+          },
           {
             href: 'https://pypi.org/project/agentkernel/',
             position: 'right',
@@ -295,6 +301,10 @@ const config = {
           {
             title: 'Community',
             items: [
+              {
+                label: 'Discord',
+                href: 'https://discord.gg/k98XXq3N',
+              },
               {
                 label: 'GitHub',
                 href: 'https://github.com/yaalalabs/agent-kernel',
@@ -352,6 +362,12 @@ const config = {
         disableSwitch: false,
         respectPrefersColorScheme: true,
       },
+      mermaid: {
+        options: {
+          look: "handDrawn",
+          handDrawnSeed: 300
+        },
+      }
     }),
 };
 

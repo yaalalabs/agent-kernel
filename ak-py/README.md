@@ -3,7 +3,7 @@
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
 
 ## Features
 
@@ -59,7 +59,7 @@ math_agent = CrewAgent(
 )
 
 # Register agents with Agent Kernel
-module = CrewAIModule([general_agent, math_agent])
+CrewAIModule([general_agent, math_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -77,7 +77,7 @@ sg = StateGraph(...)
 compiled = sg.compile()
 compiled.name = "assistant"
 
-module = LangGraphModule([compiled])
+LangGraphModule([compiled])
 
 if __name__ == "__main__":
     CLI.main()
@@ -96,7 +96,7 @@ general_agent = OpenAIAgent(
     instructions="You provide assistance with general queries. Give short and direct answers.",
 )
 
-module = OpenAIModule([general_agent])
+OpenAIModule([general_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -122,7 +122,7 @@ math_agent = Agent(
     """,
 )
 
-module = GoogleADKModule([math_agent])
+GoogleADKModule([math_agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -167,7 +167,7 @@ from agentkernel.openai import OpenAIModule
 client = OpenAI()
 assistant = OpenAIAgent(name="assistant")
 
-module = OpenAIModule([assistant])
+OpenAIModule([assistant])
 handler = Lambda.handler
 ```
 
