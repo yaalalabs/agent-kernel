@@ -28,7 +28,7 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 
 ```hcl
 module "python_api" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
   product_alias       = "myapp"
@@ -78,7 +78,7 @@ resource "aws_lambda_layer_version" "dependencies" {
 
 # Deploy Node.js function with layer
 module "nodejs_api" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
   product_alias       = "myapp"
@@ -113,7 +113,7 @@ module "nodejs_api" {
 ```hcl
 # Use ECR module to build image
 module "container_image" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/ecr"
+  source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region        = "us-west-2"
   product_alias = "myapp"
@@ -124,7 +124,7 @@ module "container_image" {
 
 # Deploy Lambda with container image
 module "container_api" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
   product_alias       = "myapp"
@@ -157,7 +157,7 @@ module "container_api" {
 ```hcl
 # Upload package to S3
 module "lambda_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -169,7 +169,7 @@ module "lambda_package" {
 
 # Deploy with code signing
 module "secure_api" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
   product_alias       = "myapp"
@@ -380,7 +380,7 @@ module "api" {
 ```hcl
 # Chat endpoint
 module "chat_api" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
   
   module_name    = "chat"
   function_name  = "handler"
@@ -391,7 +391,7 @@ module "chat_api" {
 
 # Process endpoint
 module "process_api" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
   
   module_name    = "process"
   function_name  = "handler"
@@ -409,7 +409,7 @@ module "process_api" {
 
 ```hcl
 module "event_processor" {
-  source = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source = "yaalalabs/ak-serverless/aws"
   
   # ... basic config
   
@@ -427,7 +427,7 @@ module "event_processor" {
 ```hcl
 # V1 API
 module "api_v1" {
-  source      = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source      = "yaalalabs/ak-serverless/aws"
   module_name = "api"
   api_version = "v1"
   # ... config
@@ -435,7 +435,7 @@ module "api_v1" {
 
 # V2 API (backward compatible)
 module "api_v2" {
-  source      = "app.terraform.io/yaalalabs/ak-aws-serverless/aws"
+  source      = "yaalalabs/ak-serverless/aws"
   module_name = "api"
   api_version = "v2"
   # ... config with new features

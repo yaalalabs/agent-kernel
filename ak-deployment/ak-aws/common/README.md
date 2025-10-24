@@ -27,7 +27,7 @@ Each module can be used independently by referencing it as a submodule:
 ```hcl
 # ECR Module
 module "ecr" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/ecr"
+  source = "yaalalabs/ak-common/aws//modules/ecr"
   
   region        = "us-west-2"
   product_alias = "myapp"
@@ -38,7 +38,7 @@ module "ecr" {
 
 # VPC Module
 module "vpc" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
   
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
@@ -49,7 +49,7 @@ module "vpc" {
 
 # Redis Module
 module "redis" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
   
   product_alias = "myapp"
   env_alias     = "prod"
@@ -59,7 +59,7 @@ module "redis" {
 
 # S3 Module
 module "s3" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
   
   product_alias = "myapp"
   env_alias     = "prod"
@@ -68,7 +68,7 @@ module "s3" {
 
 # Lambda Package Module
 module "lambda_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
   
   source_path   = "${path.module}/lambda"
   output_path   = "${path.module}/dist/lambda.zip"
@@ -100,7 +100,7 @@ Each module has its own comprehensive documentation:
 ```hcl
 # Create VPC for Lambda functions
 module "vpc" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
   
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -108,7 +108,7 @@ module "vpc" {
 
 # Create Redis cache
 module "redis" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
   
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -118,7 +118,7 @@ module "redis" {
 
 # Create ECR and build container image
 module "container_image" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/ecr"
+  source = "yaalalabs/ak-common/aws//modules/ecr"
   
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -128,7 +128,7 @@ module "container_image" {
 
 # Create S3 bucket for data storage
 module "storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
   
   product_alias = var.product_alias
   env_alias     = var.env_alias
