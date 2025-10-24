@@ -42,43 +42,52 @@ def update_terraform_versions(file_path: Path, new_version: str) -> Tuple[bool, 
     with open(file_path, 'r') as f:
         content = f.read()
     
-    # Pattern to match module blocks with yaalalabs/ak-* source and version
-    # This matches:
-    # module "name" {
-    #   source = "yaalalabs/ak-something/provider"
-    #   version = "x.y.z"
-    # or
-    #   source = "app.terraform.io/yaalalabs/ak-something/provider"
-    #   version = "x.y.z"
+    original_content = content
+    update_count = 0
     
-    # Pattern explanation:
-    # - Matches module blocks with yaalalabs/ak-* sources
-    # - Captures the version line
-    # - Handles both registry.terraform.io and app.terraform.io formats
-    pattern = re.compile(
-        r'(module\s+"[^"]+"\s*\{[^}]*?'  # Match module block start
-        r'source\s*=\s*"(?:app\.terraform\.io/|registry\.terraform\.io/)?yaalalabs/ak-[^"]+"\s*'  # Match source with yaalalabs/ak-
-        r'[^}]*?'  # Match any content between source and version
-        r'version\s*=\s*)"[^"]+"',  # Match version line
+    # Pattern to match entire module blocks
+    # Module names can be quoted or unquoted: module "name" or module name
+    module_pattern = re.compile(
+        r'module\s+["\w]+\s*\{[^}]*\}',
         re.MULTILINE | re.DOTALL
     )
     
-    # Count replacements
-    matches = pattern.findall(content)
-    if not matches:
-        return False, 0
+    def update_module_block(match):
+        nonlocal update_count
+        module_block = match.group(0)
+        
+        # Check if this module uses a yaalalabs/ak-* source
+        source_pattern = r'source\s*=\s*"(?:app\.terraform\.io/|registry\.terraform\.io/)?yaalalabs/ak-[^"]+"'
+        if not re.search(source_pattern, module_block):
+            # Not a yaalalabs/ak-* module, return unchanged
+            return module_block
+        
+        # Check if this module has a version attribute
+        version_pattern = r'(version\s*=\s*)"[^"]+"'
+        if not re.search(version_pattern, module_block):
+            # No version attribute, return unchanged
+            return module_block
+        
+        # Update the version
+        updated_block = re.sub(
+            version_pattern,
+            rf'\1"{new_version}"',
+            module_block
+        )
+        
+        if updated_block != module_block:
+            update_count += 1
+        
+        return updated_block
     
-    # Replace versions
-    updated_content = pattern.sub(
-        rf'\1"{new_version}"',
-        content
-    )
+    # Replace all module blocks
+    content = module_pattern.sub(update_module_block, content)
     
     # Write back if changed
-    if updated_content != content:
+    if content != original_content:
         with open(file_path, 'w') as f:
-            f.write(updated_content)
-        return True, len(matches)
+            f.write(content)
+        return True, update_count
     
     return False, 0
 

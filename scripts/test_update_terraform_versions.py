@@ -177,6 +177,79 @@ resource "aws_vpc" "main" {
         temp_path.unlink()
 
 
+def test_update_module_with_count_first():
+    """Test updating a module where count comes before source."""
+    content = '''
+module "docker_image" {
+  count         = (var.package_type == "Image") ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.1.2-b18"
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  source_path   = var.package_path
+}
+'''
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.tf', delete=False) as f:
+        f.write(content)
+        f.flush()
+        temp_path = Path(f.name)
+    
+    try:
+        was_modified, num_updates = update_terraform_versions(temp_path, "0.2.0-beta3")
+        
+        assert was_modified, "File should be modified"
+        assert num_updates == 1, f"Expected 1 update, got {num_updates}"
+        
+        with open(temp_path, 'r') as f:
+            result = f.read()
+        
+        assert 'version       = "0.2.0-beta3"' in result
+        # Make sure other attributes are preserved
+        assert 'count         = (var.package_type == "Image") ? 1 : 0' in result
+        assert 'source        = "yaalalabs/ak-common/aws//modules/ecr"' in result
+        print("✅ test_update_module_with_count_first passed")
+    finally:
+        temp_path.unlink()
+
+
+def test_update_module_without_quotes():
+    """Test updating a module with an unquoted name (Terraform allows both)."""
+    content = '''
+module docker_image {
+  count         = (var.package_type == "Image") ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.1.2-b18"
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  source_path   = var.package_path
+}
+'''
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.tf', delete=False) as f:
+        f.write(content)
+        f.flush()
+        temp_path = Path(f.name)
+    
+    try:
+        was_modified, num_updates = update_terraform_versions(temp_path, "0.2.5")
+        
+        assert was_modified, "File should be modified"
+        assert num_updates == 1, f"Expected 1 update, got {num_updates}"
+        
+        with open(temp_path, 'r') as f:
+            result = f.read()
+        
+        assert 'version       = "0.2.5"' in result
+        # Make sure module name format is preserved
+        assert 'module docker_image {' in result
+        print("✅ test_update_module_without_quotes passed")
+    finally:
+        temp_path.unlink()
+
+
 if __name__ == "__main__":
     print("Running tests for update_terraform_versions.py...\n")
     
@@ -185,5 +258,7 @@ if __name__ == "__main__":
     test_update_app_terraform_io()
     test_skip_non_yaalalabs_modules()
     test_no_changes_when_no_modules()
+    test_update_module_with_count_first()
+    test_update_module_without_quotes()
     
     print("\n✅ All tests passed!")
