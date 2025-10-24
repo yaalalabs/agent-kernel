@@ -28,7 +28,7 @@ on:
           - ''
           - alpha
           - beta
-        default: beta
+        default: ''
 
 permissions:
   contents: write
