@@ -5,12 +5,12 @@ description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel wi
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai]>=0.2.0b1",
+    "agentkernel[cli,openai]>=0.2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "agentkernel[test]>=0.2.0b1",
+    "agentkernel[test]>=0.2.0",
 ]
 
 [tool.uv]
