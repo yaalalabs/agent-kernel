@@ -35,8 +35,6 @@ if __name__ == "__main__":
 
 Agents are automatically exposed as MCP tools if you set `mcp.expose_agents` to `true`. You can selectively expose agents as well. 
 
-```
-
 ## Custom Tools
 
 Expose custom tools via MCP:
