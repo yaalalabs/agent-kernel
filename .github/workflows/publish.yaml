@@ -106,6 +106,26 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
           git push origin ${{ github.ref_name }}
       
+      - name: Update Terraform module versions
+        if: inputs.environment == 'production'
+        run: |
+          VERSION="${{ steps.bump_version.outputs.new_version }}"
+          # Convert PEP 440 format (1.0.0a1, 1.0.0b1) to hyphenated tag format (1.0.0-a1, 1.0.0-b1)
+          TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+          
+          echo "Updating Terraform module versions to ${TAG_VERSION}..."
+          python scripts/update_terraform_versions.py --version "${TAG_VERSION}"
+          
+          # Check if there are any changes
+          if git diff --quiet ak-deployment/ examples/; then
+            echo "No Terraform module version changes"
+          else
+            echo "Terraform module versions updated"
+            git add ak-deployment/ examples/
+            git commit -m "chore: update terraform module versions to ${TAG_VERSION}"
+            git push origin ${{ github.ref_name }}
+          fi
+      
       - name: Create git tag
         if: inputs.environment == 'production'
         run: |
