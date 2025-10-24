@@ -1,7 +1,7 @@
 # Containered module configuration for deploying CrewAI Agent in ECS
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
-  version = "0.2.0-b1"
+  version = "0.2.0"
 
   # Basic ECS configuration
   product_alias        = var.product_alias
