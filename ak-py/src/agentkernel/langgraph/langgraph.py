@@ -1,7 +1,6 @@
-from typing import Any, Optional
+from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.runnables.config import RunnableConfig
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
@@ -26,7 +25,7 @@ class LangGraphAgent(BaseAgent):
 
     def __init__(self, name: str, runner: 'LangGraphRunner', agent: CompiledStateGraph):
         """
-        Initializes an LangGraphAgent instance.
+        Initializes a LangGraphAgent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         :param agent: The LangGraph agent instance.
@@ -74,7 +73,7 @@ class LangGraphAgent(BaseAgent):
         )
 
 
-class LangGraphSession(BaseSession):
+class LangGraphSession:
     """
     LangGraphSession class provides a session for LangGraph Agents SDK-based agents,
     without relying on a custom TypedDict like AgentState.
@@ -84,55 +83,26 @@ class LangGraphSession(BaseSession):
         """
         Initializes a LangGraphSession instance.
         """
-        super().__init__(FRAMEWORK)
         self._checkpointer = MemorySaver()
 
-    def _get_config(self) -> dict:
-        """
-        Returns the configuration for the LangGraph session.
-        This includes the thread ID and any other necessary configuration.
-        """
-        return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=self.id)).model_dump()
-
-    async def get_state(self) -> dict:
-        """
-        Retrieve the current state from the checkpoint system.
-        Returns a dictionary with keys like 'messages'.
-        """
-        raw_config = self._get_config()
-        tup = await self._checkpointer.aget_tuple(RunnableConfig(configurable=raw_config.get("configurable", {})))
-
-        if tup is not None:
-            messages = tuple(tup.checkpoint.channel_values.get("messages", ()))
-        else:
-            messages = ()
-
-        return {
-            "messages": messages,
-        }
-
-    async def get_items(self, limit: Optional[int] = None) -> list[BaseMessage]:
-        """
-        Return list of BaseMessage in chronological order,
-        optionally truncated to the most recent `limit` messages.
-        """
-        state = await self.get_state()
-        messages = state["messages"]
-        return list(messages[-limit:] if limit else messages)
+    @property
+    def checkpointer(self):
+        return self._checkpointer
 
 
 class LangGraphRunner(BaseRunner):
     """
-    LangGraphRunner class provides a runner for LangGraph Agents SDK based agents.
+    LangGraphRunner class provides a runner for LangGraph Agents SDK-based agents.
     """
 
     def __init__(self):
         """
-        Initializes an LangGraphRunner instance.
+        Initializes a LangGraphRunner instance.
         """
         super().__init__(FRAMEWORK)
 
-    def _session(self, session: BaseSession) -> LangGraphSession:
+    @staticmethod
+    def _session(session: BaseSession) -> Any | None:
         """
         Returns the LangGraph session associated with the provided session.
         :param session: The session to retrieve the LangGraph session for.
@@ -155,7 +125,7 @@ class LangGraphRunner(BaseRunner):
                 thread_id=session.id
             )
         )
-        agent.agent.checkpointer = self._session(session)._checkpointer
+        agent.agent.checkpointer = self._session(session).checkpointer
         result = await agent.agent.ainvoke(input={"messages": [HumanMessage(content=prompt)]},
                                            config=session_config.model_dump())
         last_message = result["messages"][-1]
