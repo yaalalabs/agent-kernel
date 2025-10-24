@@ -28,14 +28,15 @@ jobs:
             link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws/latest'
 
     steps:
-      - name: Checkout yaalalabs/agent-kernel
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch all history for all branches and tags
-      
       - name: Get tag name
         id: tag
         run: echo "TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+      
+      - name: Checkout yaalalabs/agent-kernel
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.TAG_NAME }}
+          fetch-depth: 0 # Fetch all history for all branches and tags
       
       - name: Setup Git
         run: |
