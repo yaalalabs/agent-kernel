@@ -48,7 +48,7 @@ python my_agent.py
 
 ## REST API Server
 
-Uses `agentkernel.RESAPI` module.
+Uses `agentkernel.RESTAPI` module.
 
 ```
 python my_agent.py
