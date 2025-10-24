@@ -39,7 +39,7 @@ module "redis" {
 
 module "docker_image" {
   count         = 1
-  source        = "yaalalabs/ak-common/aws//modules/vpc"
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.1.2-b18"
   env_alias     = var.env_alias
   module_name   = var.module_name
