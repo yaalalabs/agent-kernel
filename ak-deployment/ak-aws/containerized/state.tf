@@ -4,18 +4,18 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  vpc_id     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_url  = var.create_redis_cluster == true ? module.redis[0].url : null
-  prefix = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name = "${local.prefix}-service"
+  vpc_id         = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr       = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids     = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  redis_url      = var.create_redis_cluster == true ? module.redis[0].url : null
+  prefix         = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  service_name   = "${local.prefix}-service"
   container_name = "${local.prefix}-app"
 }
 
 module "vpc" {
-  source               = "app.terraform.io/yaalalabs/ak-vpc/aws"
-  version              = "0.1.0-a1"
+  source               = "yaalalabs/ak-common/aws//modules/vpc"
+  version              = "0.1.2-b18"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -26,7 +26,8 @@ module "vpc" {
 }
 
 module "redis" {
-  source        = "../common/redis"
+  source        = "yaalalabs/ak-common/aws//modules/redis"
+  version       = "0.1.2-b18"
   count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -38,8 +39,8 @@ module "redis" {
 
 module "docker_image" {
   count         = 1
-  source = "../common/ecr"
-  # version       = "0.1.0-a1"
+  source        = "yaalalabs/ak-common/aws//modules/vpc"
+  version       = "0.1.2-b18"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
