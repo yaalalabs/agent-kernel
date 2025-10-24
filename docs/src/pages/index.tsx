@@ -60,7 +60,7 @@ function NavigationSection() {
     },
     {
       title: '🏢 Yaala Labs',
-      description: 'Learn more about Yaala Labs and our mission to build production-ready AI infrastructure.',
+      description: 'Learn more about Yaala Labs and our expertise in building mission-critical market infrastructure.',
       link: 'https://www.yaalalabs.com/',
       linkText: 'Visit Yaala Labs',
       color: 'orange',
