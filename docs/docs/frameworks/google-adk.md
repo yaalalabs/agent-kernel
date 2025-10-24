@@ -25,7 +25,7 @@ agent = ADKAgent(
     instructions="You are a helpful AI assistant",
 )
 
-module = ADKModule([agent])
+ADKModule([agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -49,7 +49,7 @@ specialist_agent = ADKAgent(
     instructions="You handle specialized queries",
 )
 
-module = ADKModule([general_agent, specialist_agent])
+ADKModule([general_agent, specialist_agent])
 ```
 
 ## Configuration
@@ -69,4 +69,4 @@ export GEMINI_MODEL=gemini-2.0-flash-exp  # Optional
 
 ## Example
 
-See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/adk) for complete examples.
+See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk) for complete examples.

@@ -1,0 +1,367 @@
+/* Hero Section */
+.heroBanner {
+  padding: 6rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+[data-theme='dark'] .heroBanner {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.heroContent {
+  max-width: 900px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.heroLogo {
+  height: 120px;
+  width: 120px;
+  margin-bottom: 1.5rem;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.heroTitle {
+  font-size: 3.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #2e8555 0%, #25c2a0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+[data-theme='dark'] .heroTitle {
+  background: linear-gradient(135deg, #25c2a0 0%, #4fddbf 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.heroTagline {
+  font-size: 1.5rem;
+  color: #666;
+  margin-bottom: 2rem;
+  font-weight: 400;
+}
+
+[data-theme='dark'] .heroTagline {
+  color: #94a3b8;
+}
+
+.heroButtons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Navigation Section */
+.navigationSection {
+  padding: 4rem 0;
+}
+
+.sectionTitle {
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 3rem;
+  color: #1a1a1a;
+}
+
+[data-theme='dark'] .sectionTitle {
+  color: #f1f5f9;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.card {
+  padding: 2rem;
+  border-radius: 1rem;
+  background: white;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+  transition: all 0.3s ease;
+  border-top: 4px solid;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.card:hover::before {
+  opacity: 1;
+}
+
+[data-theme='dark'] .card {
+  background: #1e293b;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme='dark'] .card:hover {
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+
+.card.blue {
+  border-top-color: #3b82f6;
+}
+
+.card.green {
+  border-top-color: #10b981;
+}
+
+.card.purple {
+  border-top-color: #8b5cf6;
+}
+
+.card.orange {
+  border-top-color: #f59e0b;
+}
+
+.cardTitle {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #1a1a1a;
+}
+
+[data-theme='dark'] .cardTitle {
+  color: #f1f5f9;
+}
+
+.cardDescription {
+  color: #666;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+  min-height: 3.2em;
+}
+
+[data-theme='dark'] .cardDescription {
+  color: #94a3b8;
+}
+
+.cardLink {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ifm-color-primary);
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.cardLink:hover {
+  color: var(--ifm-color-primary-dark);
+  transform: translateX(4px);
+  text-decoration: none;
+}
+
+/* Features Section */
+.featuresSection {
+  padding: 4rem 0;
+  background: #f8f9fa;
+}
+
+[data-theme='dark'] .featuresSection {
+  background: #0f172a;
+}
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 2rem;
+}
+
+.feature {
+  text-align: center;
+  padding: 2rem;
+  background: white;
+  border-radius: 1rem;
+  transition: transform 0.3s ease;
+}
+
+[data-theme='dark'] .feature {
+  background: #1e293b;
+}
+
+.feature:hover {
+  transform: scale(1.05);
+}
+
+.featureIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: inline-block;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.featureTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: #1a1a1a;
+}
+
+[data-theme='dark'] .featureTitle {
+  color: #f1f5f9;
+}
+
+.featureDescription {
+  color: #666;
+  line-height: 1.6;
+}
+
+[data-theme='dark'] .featureDescription {
+  color: #94a3b8;
+}
+
+/* Community Section */
+.communitySection {
+  padding: 4rem 0;
+}
+
+.communityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 2rem;
+}
+
+.communityCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 2rem;
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+  transition: all 0.3s ease;
+  text-decoration: none;
+  color: inherit;
+}
+
+[data-theme='dark'] .communityCard {
+  background: #1e293b;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.communityCard:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  text-decoration: none;
+  color: inherit;
+}
+
+[data-theme='dark'] .communityCard:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+}
+
+.communityIcon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.communityName {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #1a1a1a;
+}
+
+[data-theme='dark'] .communityName {
+  color: #f1f5f9;
+}
+
+.communityDescription {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+[data-theme='dark'] .communityDescription {
+  color: #94a3b8;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .heroTitle {
+    font-size: 2.5rem;
+  }
+
+  .heroTagline {
+    font-size: 1.25rem;
+  }
+
+  .heroButtons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sectionTitle {
+    font-size: 2rem;
+  }
+
+  .cardGrid,
+  .featuresGrid,
+  .communityGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .heroBanner {
+    padding: 4rem 0 2rem;
+  }
+
+  .heroLogo {
+    height: 80px;
+    width: 80px;
+  }
+
+  .heroTitle {
+    font-size: 2rem;
+  }
+
+  .heroTagline {
+    font-size: 1.1rem;
+  }
+}

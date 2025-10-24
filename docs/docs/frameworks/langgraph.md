@@ -37,7 +37,7 @@ workflow.add_edge("agent", END)
 graph = workflow.compile()
 graph.name = "assistant"
 
-module = LangGraphModule([graph])
+LangGraphModule([graph])
 
 if __name__ == "__main__":
     CLI.main()
@@ -86,4 +86,4 @@ export OPENAI_API_KEY=sk-...
 
 ## Example
 
-See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/langgraph) for complete examples.
+See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph) for complete examples.

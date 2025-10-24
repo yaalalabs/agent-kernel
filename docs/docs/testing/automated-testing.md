@@ -4,212 +4,295 @@ sidebar_position: 3
 
 # Automated Testing
 
-Create automated test scenarios for your agents.
+Create automated test suites for your CLI agents using pytest and the Agent Kernel Test framework.
 
-## Test Framework
+## pytest Integration
+
+The Agent Kernel Test framework integrates seamlessly with pytest for automated testing:
 
 ```python
-from agentkernel.test import TestRunner
+import pytest
+import pytest_asyncio
+from agentkernel.test import Test
 
-runner = TestRunner("my_agent.py")
-results = runner.run_tests("test_scenarios.yaml")
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-if results.all_passed:
-    print("All tests passed!")
-else:
-    print(f"Failed: {results.failed_count}")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_client():
+    test = Test("demo.py")
+    await test.start()
+    try:
+        yield test
+    finally:
+        await test.stop()
+
+@pytest.mark.order(1)
+async def test_first_question(test_client):
+    await test_client.send("Who won the 1996 cricket world cup?")
+    await test_client.expect("Sri Lanka won the 1996 cricket world cup.")
+
+@pytest.mark.order(2)
+async def test_follow_up_question(test_client):
+    await test_client.send("Which country hosted the tournament?")
+    await test_client.expect("Co-hosted by India, Pakistan and Sri Lanka.")
 ```
 
-## Test Scenarios File
+## Required Dependencies
 
-`test_scenarios.yaml`:
+Add these dependencies to your test environment:
 
-```yaml
-scenarios:
-  - name: "Basic greeting"
-    agent: "assistant"
-    inputs:
-      - message: "Hello!"
-    expectations:
-      - contains: ["hello", "hi", "greetings"]
-      - not_contains: ["error"]
-  
-  - name: "Math calculation"
-    agent: "math"
-    inputs:
-      - message: "What is 15 + 27?"
-    expectations:
-      - contains: ["42"]
-      - response_time_ms: 5000
-  
-  - name: "Multi-turn conversation"
-    agent: "assistant"
-    session_id: "test-session-1"
-    inputs:
-      - message: "My favorite color is blue"
-      - message: "What is my favorite color?"
-    expectations:
-      - contains: ["blue"]
+```bash
+pip install pytest pytest-asyncio pytest-order
 ```
 
-## Expectations
+## Test Structure
 
-### String Matching
+### Session-Scoped Fixtures
 
-```yaml
-expectations:
-  - contains: ["keyword1", "keyword2"]
-  - not_contains: ["error", "fail"]
-  - exact: "Exact expected response"
-  - regex: "\\d+ \\+ \\d+ = \\d+"
+Use session-scoped fixtures to maintain CLI state across multiple tests:
+
+```python
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_client():
+    test = Test("demo.py", match_threshold=70)
+    await test.start()
+    try:
+        yield test
+    finally:
+        await test.stop()
 ```
 
-### Response Time
+### Ordered Tests
 
-```yaml
-expectations:
-  - response_time_ms: 5000  # Max 5 seconds
+Use `pytest-order` to ensure tests run in sequence for conversation flows:
+
+```python
+@pytest.mark.order(1)
+async def test_greeting(test_client):
+    await test_client.send("Hello!")
+    await test_client.expect("Hello! How can I help you?")
+
+@pytest.mark.order(2)
+async def test_follow_up(test_client):
+    await test_client.send("What's the weather like?")
+    # This test depends on the previous interaction
 ```
 
-### Status
+## Multi-Agent Testing
 
-```yaml
-expectations:
-  - status: "success"  # or "error"
+Test CLI applications with multiple agents:
+
+```python
+@pytest.mark.order(1)
+async def test_agent_switching(test_client):
+    # Switch to general agent
+    await test_client.send("!select general")
+    await test_client.send("Who won the 1996 cricket world cup?")
+    await test_client.expect("Sri Lanka won the 1996 Cricket World Cup.")
+
+@pytest.mark.order(2)
+async def test_different_agent(test_client):
+    # Test continues with the same session
+    await test_client.send("Which countries hosted the tournament?")
+    await test_client.expect("Co-hosted by India, Pakistan and Sri Lanka.")
+```
+
+## API Testing
+
+For testing API endpoints alongside CLI agents:
+
+```python
+import asyncio
+import subprocess
+import sys
+import pytest
+import pytest_asyncio
+from agentkernel.test import Test
+
+@pytest_asyncio.fixture(scope="session")
+async def api_server():
+    # Start the API server
+    proc = subprocess.Popen(
+        ["python3", "server.py"],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    await asyncio.sleep(15)  # Wait for server to start
+    
+    try:
+        yield "http://127.0.0.1:8000"
+    finally:
+        proc.terminate()
+        proc.wait()
+
+@pytest.mark.asyncio
+async def test_api_endpoint(api_server):
+    # Test API responses using the Test.compare method
+    response = await make_api_call(api_server, "Who won the 1996 cricket world cup?")
+    Test.compare(response, "Sri Lanka won the 1996 cricket world cup.")
+```
+
+## Container Testing
+
+Test containerized applications:
+
+```python
+import shutil
+import subprocess
+import httpx
+import pytest
+
+@pytest_asyncio.fixture(scope="session")
+async def container_client():
+    if shutil.which("docker") is None:
+        pytest.skip("Docker is not installed")
+    
+    image = "yaalalabs/ak-openai-demo:latest"
+    port = 8000
+    
+    cmd = [
+        "docker", "run", "--rm",
+        "-e", f"OPENAI_API_KEY={os.environ.get('OPENAI_API_KEY')}",
+        "-p", f"{port}:8000",
+        image
+    ]
+    
+    proc = subprocess.Popen(cmd)
+    await asyncio.sleep(30)  # Wait for container to start
+    
+    try:
+        yield f"http://localhost:{port}"
+    finally:
+        proc.terminate()
+        proc.wait()
 ```
 
 ## Running Tests
 
-### Command Line
+### Basic Test Execution
 
 ```bash
-ak-test --scenarios test_scenarios.yaml --agent my_agent.py
-```
+# Run all tests
+pytest
 
-### Python Script
+# Run specific test file
+pytest test_demo.py
 
-```python
-from agentkernel.test import TestRunner
+# Run with verbose output
+pytest -v
 
-runner = TestRunner("my_agent.py")
-results = runner.run_tests("test_scenarios.yaml")
-
-for result in results.scenarios:
-    print(f"{result.name}: {'PASS' if result.passed else 'FAIL'}")
-    if not result.passed:
-        print(f"  Reason: {result.failure_reason}")
+# Run tests in parallel
+pytest -n auto
 ```
 
 ### CI/CD Integration
 
+Example GitHub Actions workflow:
+
 ```yaml
-# GitHub Actions
-name: Test Agents
-on: [push]
+name: Agent Tests
+on: [push, pull_request]
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      
       - name: Install dependencies
-        run: pip install agentkernel[test]
+        run: |
+          pip install pytest pytest-asyncio pytest-order
+          pip install -r requirements.txt
+      
       - name: Run tests
-        run: ak-test --scenarios tests/scenarios.yaml
+        run: pytest tests/ -v
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-## Test Reports
+## Test Configuration
 
-Generate test reports:
+### Custom Match Thresholds
 
-```bash
-ak-test --scenarios test_scenarios.yaml --report html --output report.html
-```
-
-## Advanced Testing
-
-### Setup/Teardown
-
-```yaml
-setup:
-  - clear_sessions
-  - initialize_data
-
-scenarios:
-  # ... your tests
-
-teardown:
-  - cleanup_data
-```
-
-### Mocking
+Configure fuzzy matching for different test scenarios:
 
 ```python
-from agentkernel.test import mock_llm_response
+# More strict matching for exact responses
+strict_test = Test("demo.py", match_threshold=90)
 
-@mock_llm_response("Mocked response")
-def test_agent():
-    # Test with mocked LLM
-    pass
+# More lenient for AI-generated content
+lenient_test = Test("demo.py", match_threshold=60)
 ```
 
-### Parallel Execution
+### Environment Variables
 
-```bash
-ak-test --scenarios test_scenarios.yaml --parallel 4
+Set up test-specific environment variables:
+
+```python
+import os
+
+@pytest.fixture(autouse=True)
+def setup_test_env():
+    os.environ["TEST_MODE"] = "true"
+    os.environ["LOG_LEVEL"] = "DEBUG"
+    yield
+    # Cleanup after test
+    del os.environ["TEST_MODE"]
 ```
 
 ## Best Practices
 
-- Test critical user flows
-- Include edge cases
-- Test error handling
-- Use meaningful test names
-- Keep scenarios simple
-- Run tests in CI/CD
-- Monitor test performance
-- Update tests with changes
+### Test Organization
+- Group related tests in the same file
+- Use descriptive test names
+- Implement proper setup and teardown
 
-## Example Test Suite
+### Assertions
+- Use appropriate fuzzy matching thresholds
+- Test both positive and negative cases
+- Include edge cases and error conditions
 
-```yaml
-name: "Agent Test Suite"
-version: "1.0"
+### Performance
+- Use session-scoped fixtures for expensive setup
+- Consider parallel test execution for independent tests
+- Mock external dependencies when possible
 
-setup:
-  - clear_sessions
+### Maintenance
+- Keep tests updated with agent changes
+- Use version control for test scenarios
+- Document test requirements and expectations
 
-scenarios:
-  - name: "Greeting"
-    agent: "assistant"
-    inputs:
-      - message: "Hi"
-    expectations:
-      - contains: ["hello", "hi"]
-  
-  - name: "Math"
-    agent: "math"
-    inputs:
-      - message: "10 + 5"
-    expectations:
-      - contains: ["15"]
-  
-  - name: "Context retention"
-    agent: "assistant"
-    session_id: "context-test"
-    inputs:
-      - message: "Remember: my ID is 12345"
-      - message: "What is my ID?"
-    expectations:
-      - contains: ["12345"]
-  
-  - name: "Error handling"
-    agent: "assistant"
-    inputs:
-      - message: "!!invalid!!"
-    expectations:
-      - status: "success"
-      - not_contains: ["exception", "traceback"]
+## Troubleshooting
 
-teardown:
-  - clear_sessions
+### Common Issues
+
+**Tests hanging indefinitely:**
+- Ensure CLI application doesn't require manual input
+- Check for proper async/await usage
+- Verify timeout settings
+
+**Fuzzy matching failures:**
+- Adjust match threshold based on response variability
+- Check for extra whitespace or formatting
+- Consider using Test.compare() for debugging
+
+**Process cleanup issues:**
+- Always use try-finally blocks
+- Ensure subprocess termination
+- Check for port conflicts in API tests
+
+### Debug Mode
+
+Enable debug output for troubleshooting:
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Or use pytest verbose output
+pytest -v -s test_file.py
 ```

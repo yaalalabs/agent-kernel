@@ -34,87 +34,7 @@ graph TB
 
 ## Deployment
 
-### 1. Create Dockerfile
-
-```dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY my_agent.py .
-
-ENV AK_MODE=api
-ENV AK_API_PORT=8000
-
-CMD ["python", "my_agent.py", "--mode", "api", "--port", "8000"]
-```
-
-### 2. Build and Push
-
-```bash
-# Build
-docker build -t my-agent .
-
-# Tag
-docker tag my-agent:latest {account}.dkr.ecr.us-east-1.amazonaws.com/my-agent:latest
-
-# Push
-docker push {account}.dkr.ecr.us-east-1.amazonaws.com/my-agent:latest
-```
-
-### 3. Deploy to ECS
-
-```bash
-ak-deploy --profile containerized --region us-east-1
-```
-
-Or use the provided CDK/Terraform templates.
-
-## ECS Configuration
-
-### Task Definition
-
-```json
-{
-  "family": "agent-kernel-task",
-  "cpu": "512",
-  "memory": "1024",
-  "networkMode": "awsvpc",
-  "containerDefinitions": [{
-    "name": "agent",
-    "image": "{account}.dkr.ecr.us-east-1.amazonaws.com/my-agent:latest",
-    "portMappings": [{
-      "containerPort": 8000,
-      "protocol": "tcp"
-    }],
-    "environment": [
-      {"name": "AK_SESSION_STORAGE", "value": "redis"},
-      {"name": "AK_REDIS_URL", "value": "redis://..."}
-    ]
-  }]
-}
-```
-
-### Service Configuration
-
-```yaml
-service:
-  desiredCount: 2
-  loadBalancer:
-    type: application
-    targetGroup:
-      port: 8000
-      healthCheck:
-        path: /health
-        interval: 30
-  autoScaling:
-    minCapacity: 2
-    maxCapacity: 10
-    targetCPUUtilization: 70
-```
+Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
 ## Advantages
 
@@ -149,17 +69,6 @@ Agent Kernel provides a health endpoint:
 # Returns 200 OK if healthy
 ```
 
-Configure ALB health check:
-
-```yaml
-healthCheck:
-  path: /health
-  interval: 30
-  timeout: 5
-  healthyThreshold: 2
-  unhealthyThreshold: 3
-```
-
 ## Best Practices
 
 - Use at least 2 tasks for high availability
@@ -171,4 +80,4 @@ healthCheck:
 
 ## Example Deployment
 
-See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-containerized)
+See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized)

@@ -101,7 +101,7 @@ result = await runner.run(agent, session, prompt)
 Fast but volatile:
 
 ```bash
-export AK_SESSION_STORAGE=in-memory
+export AK_SESSION_STORAGE=in_memory
 ```
 
 ```python
