@@ -50,23 +50,34 @@ When running immediately after publishing to PyPI, the new package version may n
 2. Wait 60-120 seconds for PyPI propagation
 3. Then regenerate lock files with increased retry attempts
 
-## test_bump_version.py
+## update_terraform_versions.py
 
-Unit tests for `bump_version.py`. Can be run directly or as part of a test suite.
+Updates Terraform module versions for all `yaalalabs/ak-*` modules in `.tf` files.
 
 **Usage:**
 ```bash
-python scripts/test_bump_version.py
+# Update all Terraform module versions
+python scripts/update_terraform_versions.py --version 0.2.0-b5
+
+# Dry run to see what would change
+python scripts/update_terraform_versions.py --version 0.2.0-b5 --dry-run
+
+# Specify custom directories to search
+python scripts/update_terraform_versions.py --version 0.2.0-b5 --directories ak-deployment examples
+
+# Add custom exclusion patterns
+python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraform .backup
 ```
 
-**Output:**
-```
-Running 24 test cases...
+**Options:**
+- `--version`: New version to set for all yaalalabs/ak-* modules (required)
+- `--directories`: Directories to search for .tf files (default: ak-deployment examples)
+- `--exclude`: Patterns to exclude from search (default: .terraform)
+- `--dry-run`: Show what would be changed without making modifications
 
-✓ Test  1: 0.1.0a1    + patch (alpha ) = 0.1.0a2   
-✓ Test  2: 0.1.1a1    + patch (alpha ) = 0.1.1a2   
-...
-================================================================================
-Test Results: 24 passed, 0 failed out of 24 total
-================================================================================
-```
+**What it does:**
+- Scans all `.tf` files in specified directories
+- Finds module declarations with `source = "yaalalabs/ak-*"` or `source = "app.terraform.io/yaalalabs/ak-*"`
+- Updates the corresponding `version` attribute to the specified version
+- Skips non-yaalalabs modules (like terraform-aws-modules)
+- Excludes `.terraform` directories by default

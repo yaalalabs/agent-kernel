@@ -28,7 +28,7 @@ Perfect for storing Lambda deployment packages, application data, logs, and any 
 
 ```hcl
 module "app_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -49,7 +49,7 @@ resource "aws_kms_key" "s3_encryption" {
 }
 
 module "prod_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -71,7 +71,7 @@ module "prod_storage" {
 ```hcl
 # Lambda deployment packages
 module "lambda_packages" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -86,7 +86,7 @@ module "lambda_packages" {
 
 # Application data storage
 module "app_data" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -167,7 +167,7 @@ The module configures two primary bucket policies:
 
 ```hcl
 module "dev_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -181,7 +181,7 @@ module "dev_storage" {
 
 ```hcl
 module "prod_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -211,7 +211,7 @@ module "prod_storage" {
 
 ```hcl
 module "lambda_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -233,7 +233,7 @@ resource "aws_s3_object" "lambda_package" {
 
 ```hcl
 module "data_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"

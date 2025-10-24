@@ -30,7 +30,7 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 ```hcl
 module "container_app" {
-  source = "app.terraform.io/yaalalabs/ak-aws-containerized/aws"
+  source = "yaalalabs/ak-containerized/aws"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -80,7 +80,7 @@ output "alb_dns" {
 ```hcl
 # Use existing VPC
 module "container_app" {
-  source = "app.terraform.io/yaalalabs/ak-aws-containerized/aws"
+  source = "yaalalabs/ak-containerized/aws"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -112,7 +112,7 @@ module "container_app" {
 
 ```hcl
 module "container_app_redis" {
-  source = "app.terraform.io/yaalalabs/ak-aws-containerized/aws"
+  source = "yaalalabs/ak-containerized/aws"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -151,7 +151,7 @@ module "container_app_redis" {
 
 ```hcl
 module "production_app" {
-  source = "app.terraform.io/yaalalabs/ak-aws-containerized/aws"
+  source = "yaalalabs/ak-containerized/aws"
 
   region               = "us-west-2"
   product_alias        = "enterprise"

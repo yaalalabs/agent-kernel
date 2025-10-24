@@ -29,7 +29,7 @@ Perfect for serverless architectures, Lambda functions requiring VPC access, Red
 
 ```hcl
 module "vpc" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
 
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
@@ -48,7 +48,7 @@ module "vpc" {
 
 ```hcl
 module "vpc" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
 
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
@@ -70,7 +70,7 @@ resource "aws_lambda_function" "api" {
 
 # Redis cluster in private subnets
 module "redis" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "myapp"
   env_alias     = "prod"
@@ -84,7 +84,7 @@ module "redis" {
 ```hcl
 # US-West-2 VPC
 module "vpc_us_west" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
 
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
@@ -99,7 +99,7 @@ module "vpc_us_west" {
 
 # EU-West-1 VPC
 module "vpc_eu_west" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
 
   vpc_cidr             = "10.1.0.0/16"
   public_subnet_cidrs  = ["10.1.1.0/24", "10.1.2.0/24"]
@@ -268,7 +268,7 @@ For production environments, consider deploying NAT Gateways in multiple AZs:
 
 ```hcl
 module "vpc" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
   
   product_alias = "myapp"
   env_alias     = "prod"

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -17,7 +17,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.1.2b21"
+version = "0.1.2b25"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -25,9 +25,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/74/02fa4ede8986f2911efd3932d5496fe2cb25ebcb337b5a876c1e7e5d6fc4/agentkernel-0.1.2b21.tar.gz", hash = "sha256:456239b4f8dbccf6f6ca707ff9daa6d3b75a4c2b8d67f45503d46c45f6116caa", size = 25201, upload-time = "2025-10-22T06:38:03.384Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/af/3a25c1785f4270079ef14401cba6756ee2c490ad8052bddd9f34be9764d7/agentkernel-0.1.2b25.tar.gz", hash = "sha256:ef238e4fa58304a684a9d531accdf83cd8aa3698119550a39e6fe5d088c6e52c", size = 25195, upload-time = "2025-10-24T11:42:52.46Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/66/22/95d91864aa7c6b5402eef6d122f2bea913c47ea38e7c2b40a34069fb9a85/agentkernel-0.1.2b21-py3-none-any.whl", hash = "sha256:d1eda4297f37ff0874a96a7467fee27efc8328f53d0715428cc03ed07c847e48", size = 39837, upload-time = "2025-10-22T06:38:01.941Z" },
+    { url = "https://files.pythonhosted.org/packages/26/45/97e5c25a1273133fcd964e7d96b04f8d4d8be757f776325c19bea9af922d/agentkernel-0.1.2b25-py3-none-any.whl", hash = "sha256:aa0a9e750a22fd1575b331e189cc5a5b567a176ee5dd5bbae546c428b832fbae", size = 39832, upload-time = "2025-10-24T11:42:51.131Z" },
 ]
 
 [package.optional-dependencies]
@@ -181,7 +181,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["adk", "api"], specifier = ">=0.1.2b21" }]
+requires-dist = [{ name = "agentkernel", extras = ["adk", "api"], specifier = ">=0.1.2b25" }]
 
 [[package]]
 name = "cachetools"
