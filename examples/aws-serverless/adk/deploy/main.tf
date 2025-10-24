@@ -1,4 +1,4 @@
-# Lambda module configuration for deploying GOogle Agent Lambda function
+# Lambda module configuration for deploying Google Agent Lambda function
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
   version = "0.1.2-b25"
