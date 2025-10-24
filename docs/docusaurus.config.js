@@ -180,6 +180,7 @@ const config = {
           sidebarPath: './sidebars.js',
           editUrl:
             'https://github.com/yaalalabs/agent-kernel/tree/develop/docs/',
+          includeCurrentVersion: false,
         },
         blog: {
           routeBasePath: 'blog',
@@ -246,6 +247,12 @@ const config = {
             label: 'Documentation',
           },
           { to: '/blog', label: 'Blog', position: 'left' },
+          {
+            type: 'docsVersionDropdown',
+            position: 'right',
+            dropdownActiveClassDisabled: true,
+            dropdownItemsAfter: [],
+          },
           {
             href: 'https://discord.gg/k98XXq3N',
             position: 'right',
