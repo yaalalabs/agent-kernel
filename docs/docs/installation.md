@@ -163,7 +163,7 @@ cd agent-kernel/ak-py
 
 ## Configuration
 
-Agent Kernel can be configured using environment variables or a configuration file. See the [Configuration Guide](./deployment/configuration) for details.
+Agent Kernel can be configured using environment variables or a configuration file. See the [Configuration Guide](./core-concepts/configuration) for details.
 
 ### Basic Environment Variables
 

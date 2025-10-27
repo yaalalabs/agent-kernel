@@ -246,7 +246,7 @@ Common configuration options:
 | `AK_SESSION_STORAGE` | Session storage backend | `in-memory` |
 | `AK_REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 
-[Learn more about Configuration →](../deployment/configuration)
+[Learn more about Configuration →](./configuration)
 
 ## Example: Putting It All Together
 

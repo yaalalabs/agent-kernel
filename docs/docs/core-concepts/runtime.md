@@ -251,5 +251,5 @@ runtime = Runtime.get()
 
 - [Deployment Overview](../deployment/overview)
 - [REST API](../api/rest-api)
-- [Configuration](../deployment/configuration)
+- [Configuration](./configuration)
 - [Advanced Features](../advanced/memory-management)
