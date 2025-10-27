@@ -9,7 +9,7 @@ Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for buildi
 
 ## What is Agent Kernel?
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffoldings to build, test and deploy your agents (and mcp tools and A2A) quickly in many deployment configurations. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
 
 ```mermaid
 ---
@@ -22,8 +22,11 @@ flowchart LR
     D["CrewAI"] --> B
     E["LangGraph"] --> B
     F["Google ADK"] --> B
+    G["Test Framework"]
+    B --> G
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
+    style G fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Why Agent Kernel?
@@ -52,6 +55,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Memory Management**: Pluggable memory (Redis, in-memory) storage
 - **Traceability**: Track and audit all agent operations
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
+- **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 
 ## Key Features
 

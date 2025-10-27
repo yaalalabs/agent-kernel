@@ -30,32 +30,16 @@ An Agent in Agent Kernel is a wrapper that:
 3. **Associates** each agent with a Runner for execution
 4. **Enables** framework-agnostic agent management
 
-## Agent Class Structure
-
-```python
-from agentkernel.core import Agent
-
-class Agent(ABC):
-    def __init__(self, name: str, runner: Runner):
-        self._name = name
-        self._runner = runner
-    
-    @property
-    def name(self) -> str:
-        """Returns the agent's name"""
-        return self._name
-    
-    @property
-    def runner(self) -> Runner:
-        """Returns the associated runner"""
-        return self._runner
-```
-
 ## Creating Agents
 
 Agents are created by framework-specific Modules. You don't typically instantiate Agent directly.
 
-### OpenAI Agent
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+<Tabs>
+<TabItem value="openai" label="OpenAI Agents" default>
 
 ```python
 from agents import Agent as OpenAIAgent
@@ -74,8 +58,8 @@ OpenAIModule([openai_agent])
 # - name: "assistant" (from openai_agent.name)
 # - runner: OpenAIRunner instance
 ```
-
-### CrewAI Agent
+</TabItem>
+<TabItem value="crewai" label="CrewAI">
 
 ```python
 from crewai import Agent as CrewAgent
@@ -95,8 +79,8 @@ CrewAIModule([crew_agent])
 # - name: "researcher" (from crew_agent.role)
 # - runner: CrewAIRunner instance
 ```
-
-### LangGraph Agent
+</TabItem>
+<TabItem value="langgraph" label="LangGraph">
 
 ```python
 from langgraph.graph import StateGraph
@@ -114,6 +98,8 @@ LangGraphModule([compiled])
 # - name: "assistant" (from compiled.name)
 # - runner: LangGraphRunner instance
 ```
+</TabItem>
+</Tabs>
 
 ## Agent Lifecycle
 
@@ -130,126 +116,6 @@ sequenceDiagram
     M->>RT: Register Agent
     RT->>RT: Store in registry
     Note over RT: Agent ready for execution
-```
-
-## Agent Properties
-
-### Name
-
-Every agent has a unique name used for identification:
-
-```python
-from agentkernel.core import Runtime
-
-runtime = Runtime.get()
-
-# Get agent by name
-agent = runtime.get_agent("assistant")
-print(agent.name)  # "assistant"
-```
-
-The name is derived from framework-specific properties:
-- **OpenAI**: `agent.name`
-- **CrewAI**: `agent.role`
-- **LangGraph**: `graph.name`
-- **Google ADK**: `agent.name`
-
-### Runner
-
-Each agent has an associated Runner that handles execution:
-
-```python
-agent = runtime.get_agent("assistant")
-runner = agent.runner
-
-# Runner executes the agent
-result = await runner.run(agent, session, prompt)
-```
-
-## Agent Registration
-
-Agents are automatically registered with the Runtime when a Module is instantiated:
-
-```mermaid
-graph TD
-    A[Module Created] --> B[Agents Wrapped]
-    B --> C[Runners Created]
-    C --> D[Register with Runtime]
-    D --> E{Runtime Registry}
-    E --> F[Available for Execution]
-    
-    style E fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-```
-
-### Accessing Registered Agents
-
-```python
-from agentkernel.core import Runtime
-
-runtime = Runtime.get()
-
-# Get a specific agent
-agent = runtime.get_agent("assistant")
-
-# List all registered agents
-all_agents = runtime.get_all_agents()
-for name, agent in all_agents.items():
-    print(f"Agent: {name}")
-```
-
-## Framework-Specific Agent Wrappers
-
-Each framework has its own Agent implementation that extends the base Agent class:
-
-### OpenAIAgent
-
-```python
-class OpenAIAgent(Agent):
-    def __init__(self, name: str, agent: OpenAIAgentType, runner: OpenAIRunner):
-        super().__init__(name, runner)
-        self._agent = agent
-    
-    @property
-    def agent(self) -> OpenAIAgentType:
-        return self._agent
-```
-
-Access the underlying framework agent:
-
-```python
-from agentkernel.core import Runtime
-
-runtime = Runtime.get()
-ak_agent = runtime.get_agent("assistant")
-
-# Access the underlying OpenAI agent
-openai_agent = ak_agent.agent
-```
-
-### CrewAIAgent
-
-```python
-class CrewAIAgent(Agent):
-    def __init__(self, name: str, agent: CrewAgent, runner: CrewAIRunner):
-        super().__init__(name, runner)
-        self._agent = agent
-    
-    @property
-    def agent(self) -> CrewAgent:
-        return self._agent
-```
-
-### LangGraphAgent
-
-```python
-class LangGraphAgent(Agent):
-    def __init__(self, name: str, graph: CompiledGraph, runner: LangGraphRunner):
-        super().__init__(name, runner)
-        self._graph = graph
-    
-    @property
-    def graph(self) -> CompiledGraph:
-        return self._graph
 ```
 
 ## Multi-Agent Systems
@@ -270,7 +136,7 @@ specialist3= OpenAIAgent(role="specialist3", ...)
 
 # Register all agents
 CrewAIModule([supervisor, specialist1, specialist2])
-OpenAIModule([specialist2])
+OpenAIModule([specialist3])
 
 # All agents are now available
 from agentkernel.core import Runtime
@@ -360,7 +226,128 @@ writer_agent = CrewAgent(
 
 ## Advanced Usage
 
-### Custom Agent Metadata
+### Agent Properties
+
+#### Name
+
+Every agent has a unique name used for identification:
+
+```python
+from agentkernel.core import Runtime
+
+runtime = Runtime.get()
+
+# Get agent by name
+agent = runtime.get_agent("assistant")
+print(agent.name)  # "assistant"
+```
+
+The name is derived from framework-specific properties:
+- **OpenAI**: `agent.name`
+- **CrewAI**: `agent.role`
+- **LangGraph**: `graph.name`
+- **Google ADK**: `agent.name`
+
+#### Runner
+
+Each agent has an associated Runner that handles execution:
+
+```python
+agent = runtime.get_agent("assistant")
+runner = agent.runner
+
+# Runner executes the agent
+result = await runner.run(agent, session, prompt)
+```
+
+### Agent Registration
+
+Agents are automatically registered with the Runtime when a Module is instantiated:
+
+```mermaid
+graph TD
+    A[Module Created] --> B[Agents Wrapped]
+    B --> C[Runners Created]
+    C --> D[Register with Runtime]
+    D --> E{Runtime Registry}
+    E --> F[Available for Execution]
+    
+    style E fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+#### Accessing Registered Agents
+
+```python
+from agentkernel.core import Runtime
+
+runtime = Runtime.get()
+
+# Get a specific agent
+agent = runtime.get_agent("assistant")
+
+# List all registered agents
+all_agents = runtime.get_all_agents()
+for name, agent in all_agents.items():
+    print(f"Agent: {name}")
+```
+
+### Framework-Specific Agent Wrappers
+
+Each framework has its own Agent implementation that extends the base Agent class:
+
+#### OpenAIAgent
+
+```python
+class OpenAIAgent(Agent):
+    def __init__(self, name: str, agent: OpenAIAgentType, runner: OpenAIRunner):
+        super().__init__(name, runner)
+        self._agent = agent
+    
+    @property
+    def agent(self) -> OpenAIAgentType:
+        return self._agent
+```
+
+Access the underlying framework agent:
+
+```python
+from agentkernel.core import Runtime
+
+runtime = Runtime.get()
+ak_agent = runtime.get_agent("assistant")
+
+# Access the underlying OpenAI agent
+openai_agent = ak_agent.agent
+```
+
+#### CrewAIAgent
+
+```python
+class CrewAIAgent(Agent):
+    def __init__(self, name: str, agent: CrewAgent, runner: CrewAIRunner):
+        super().__init__(name, runner)
+        self._agent = agent
+    
+    @property
+    def agent(self) -> CrewAgent:
+        return self._agent
+```
+
+#### LangGraphAgent
+
+```python
+class LangGraphAgent(Agent):
+    def __init__(self, name: str, graph: CompiledGraph, runner: LangGraphRunner):
+        super().__init__(name, runner)
+        self._graph = graph
+    
+    @property
+    def graph(self) -> CompiledGraph:
+        return self._graph
+```
+
+
+#### Custom Agent Metadata
 
 Store custom metadata with agents:
 
@@ -377,7 +364,7 @@ crew_agent = CrewAgent(
 
 ### Dynamic Agent Selection
 
-Select agents dynamically based on request:
+Select agents dynamically using custom logic based on request:
 
 ```python
 from agentkernel.core import Runtime

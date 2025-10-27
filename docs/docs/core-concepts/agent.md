@@ -34,7 +34,12 @@ An Agent in Agent Kernel is a wrapper that:
 
 Agents are created by framework-specific Modules. You don't typically instantiate Agent directly.
 
-### OpenAI Agent
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+<Tabs>
+<TabItem value="openai" label="OpenAI Agents" default>
 
 ```python
 from agents import Agent as OpenAIAgent
@@ -53,8 +58,8 @@ OpenAIModule([openai_agent])
 # - name: "assistant" (from openai_agent.name)
 # - runner: OpenAIRunner instance
 ```
-
-### CrewAI Agent
+</TabItem>
+<TabItem value="crewai" label="CrewAI">
 
 ```python
 from crewai import Agent as CrewAgent
@@ -74,8 +79,8 @@ CrewAIModule([crew_agent])
 # - name: "researcher" (from crew_agent.role)
 # - runner: CrewAIRunner instance
 ```
-
-### LangGraph Agent
+</TabItem>
+<TabItem value="langgraph" label="LangGraph">
 
 ```python
 from langgraph.graph import StateGraph
@@ -93,6 +98,8 @@ LangGraphModule([compiled])
 # - name: "assistant" (from compiled.name)
 # - runner: LangGraphRunner instance
 ```
+</TabItem>
+</Tabs>
 
 ## Agent Lifecycle
 

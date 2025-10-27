@@ -38,6 +38,7 @@ graph TB
         O[CLI]
         P[REST API]
         Q[AWS Lambda]
+        R[AWS ECS]
     end
     
     A --> B
@@ -58,7 +59,9 @@ graph TB
     F --> O
     F --> P
     F --> Q
-    
+    F --> R
+
+    style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff    
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 

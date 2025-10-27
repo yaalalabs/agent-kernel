@@ -115,4 +115,4 @@ terraform init && terraform apply
 - [Local Deployment](./local)
 - [AWS Serverless](./aws-serverless)
 - [AWS Containerized](./aws-containerized)
-- [Configuration](./configuration)
+- [Configuration](../core-concepts/configuration)

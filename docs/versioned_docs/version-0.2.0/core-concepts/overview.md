@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Core Concepts Overview
+# Overview
 
 Agent Kernel is built around five core abstractions that work together to provide a unified interface for AI agent development and execution.
 
@@ -43,6 +43,7 @@ graph TB
     F --> K
     F --> L
     
+    style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -202,7 +203,7 @@ graph TD
 
 ### Framework Agnostic
 
-Agent Kernel provides a consistent API regardless of the underlying framework.
+Agent Kernel provides a consistent API regardless of the Agent framework you use. In fact you can have mix frameworks for different Agents and all can run together in the same deployment. If you decide to switch the Agent framework, the kernel provides a similar interface and hence the porting can be really quick.
 
 ### Minimal Overhead
 
@@ -245,7 +246,7 @@ Common configuration options:
 | `AK_SESSION_STORAGE` | Session storage backend | `in-memory` |
 | `AK_REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
 
-[Learn more about Configuration →](../deployment/configuration)
+[Learn more about Configuration →](./configuration)
 
 ## Example: Putting It All Together
 

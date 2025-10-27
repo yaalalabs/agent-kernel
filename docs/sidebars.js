@@ -28,6 +28,7 @@ const sidebars = {
         'core-concepts/session',
         'core-concepts/module',
         'core-concepts/runtime',
+        'core-concepts/configuration',
       ],
     },
     {
@@ -60,7 +61,6 @@ const sidebars = {
         'deployment/local',
         'deployment/aws-serverless',
         'deployment/aws-containerized',
-        'deployment/configuration',
       ],
     },
     {

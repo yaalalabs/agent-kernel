@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Runtime
 
-The **Runtime** is the global orchestrator that manages all agents, sessions, and execution across Agent Kernel.
+The **Runtime** is the global orchestrator that manages all agents, sessions, and execution across Agent Kernel. You can skip this section if you are not planning to contribute to Agent Kernel.
 
 ## Overview
 
@@ -251,5 +251,5 @@ runtime = Runtime.get()
 
 - [Deployment Overview](../deployment/overview)
 - [REST API](../api/rest-api)
-- [Configuration](../deployment/configuration)
+- [Configuration](./configuration)
 - [Advanced Features](../advanced/memory-management)

@@ -180,7 +180,7 @@ const config = {
           sidebarPath: './sidebars.js',
           editUrl:
             'https://github.com/yaalalabs/agent-kernel/tree/develop/docs/',
-          includeCurrentVersion: false,
+          includeCurrentVersion: true,
         },
         blog: {
           routeBasePath: 'blog',

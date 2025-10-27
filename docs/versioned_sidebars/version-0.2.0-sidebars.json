@@ -12,7 +12,8 @@
         "core-concepts/runner",
         "core-concepts/session",
         "core-concepts/module",
-        "core-concepts/runtime"
+        "core-concepts/runtime",
+        "core-concepts/configuration"
       ]
     },
     {
@@ -44,8 +45,7 @@
         "deployment/overview",
         "deployment/local",
         "deployment/aws-serverless",
-        "deployment/aws-containerized",
-        "deployment/configuration"
+        "deployment/aws-containerized"
       ]
     },
     {
