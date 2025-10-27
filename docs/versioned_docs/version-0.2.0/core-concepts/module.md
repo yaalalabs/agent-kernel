@@ -132,7 +132,7 @@ OpenAIModule(
 
 ### One Module Per Application
 
-Typically, create one module per application. In a use case of having agents of multiple agentic frameworks, you can instentiate multiple modules. However, please note that hands offs are only possible within the assigned module. If you need to talk to agents defined in other modules they should be exposed via A2A.
+Typically, create one module per application. In a use case of having agents of multiple agentic frameworks, you can instantiate multiple modules. However, please note that hands offs are only possible within the assigned module. If you need to talk to agents defined in other modules they should be exposed via A2A.
 
 
 ```python
