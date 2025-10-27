@@ -364,7 +364,7 @@ crew_agent = CrewAgent(
 
 ### Dynamic Agent Selection
 
-Select agents dynamically based on custom logic based on request:
+Select agents dynamically using custom logic based on request:
 
 ```python
 from agentkernel.core import Runtime
