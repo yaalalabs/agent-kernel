@@ -435,6 +435,25 @@
   border-top-color: #f59e0b;
 }
 
+.cardIcon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--ifm-color-primary);
+  transition: all 0.3s ease;
+}
+
+.card:hover .cardIcon {
+  transform: scale(1.2) rotate(5deg);
+  color: var(--ifm-color-primary-dark);
+}
+
+[data-theme='dark'] .cardIcon {
+  color: var(--ifm-color-primary-light);
+}
+
 .cardTitle {
   font-size: 1.5rem;
   font-weight: 600;
@@ -525,7 +544,10 @@
 .featureIcon {
   font-size: 3rem;
   margin-bottom: 1rem;
-  display: inline-block;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--ifm-color-primary);
   animation: bounce 2s ease-in-out infinite;
   transition: all 0.4s ease;
 }
@@ -659,6 +681,10 @@
 .communityIcon {
   font-size: 3rem;
   margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--ifm-color-primary);
   transition: all 0.4s ease;
   position: relative;
   z-index: 1;
