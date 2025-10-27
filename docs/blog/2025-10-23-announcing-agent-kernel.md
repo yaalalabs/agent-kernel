@@ -94,12 +94,12 @@ Built with enterprise needs in mind:
 
 ## 🌟 Benefits at a Glance
 
-✅ **Rapid Development** - Focus on agent logic, not infrastructure  
-✅ **Cost Efficiency** - Avoid vendor lock-in and leverage optimal deployment strategies  
-✅ **Scalability** - From prototype to production without architectural changes  
-✅ **Flexibility** - Mix and match frameworks, deployment modes, and integrations  
-✅ **Reliability** - Battle-tested runtime with comprehensive error handling  
-✅ **Community-Driven** - Open source with active development and support  
+- **Rapid Development** - Focus on agent logic, not infrastructure  
+- **Cost Efficiency** - Avoid vendor lock-in and leverage optimal deployment strategies  
+- **Scalability** - From prototype to production without architectural changes  
+- **Flexibility** - Mix and match frameworks, deployment modes, and integrations  
+- **Reliability** - Battle-tested runtime with comprehensive error handling  
+- **Community-Driven** - Open source with active development and support  
 
 ## 🛠️ Get Started
 
