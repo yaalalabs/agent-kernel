@@ -16,6 +16,7 @@ graph LR
     C --> E[Runtime Registry]
     D --> E
     
+    style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
     style B fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -131,7 +132,8 @@ OpenAIModule(
 
 ### One Module Per Application
 
-Typically, create one module per application. However, in the scenario of having agents of multiple agentic frameworks, the current module mechanism does support that.
+Typically, create one module per application. In a use case of having agents of multiple agentic frameworks, you can instentiate multiple modules. However, please note that hands offs are only possible within the assigned module. If you need to talk to agents defined in other modules they should be exposed via A2A.
+
 
 ```python
 # my_agent.py

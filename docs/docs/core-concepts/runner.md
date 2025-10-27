@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Runner
 
-The **Runner** encapsulates framework-specific execution strategies, providing a consistent interface for running agents across different frameworks.
+The **Runner** encapsulates framework-specific execution strategies, providing a consistent interface for running agents across different frameworks. You can skip this section if you are not planning to contribute to Agent Kernel.
 
 ## Overview
 

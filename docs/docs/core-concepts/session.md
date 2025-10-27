@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Session
 
-The **Session** manages conversation state across multiple agent interactions, providing memory and context persistence.
+The **Session** manages conversation state across multiple agent interactions, providing memory and context persistence. Sessions are automatically created and managed.
 
 ## Overview
 
@@ -28,33 +28,6 @@ A Session:
 - **Manages** thread context
 - **Supports** multiple storage backends
 
-## Session Class
-
-```python
-from agentkernel.core import Session
-
-class Session:
-    def __init__(self, id: str):
-        self._id = id
-        self._data = {}
-    
-    @property
-    def id(self) -> str:
-        return self._id
-    
-    def get(self, key: str) -> Any:
-        """Get value from session"""
-        return self._data.get(key)
-    
-    def set(self, key: str, value: Any):
-        """Set value in session"""
-        self._data[key] = value
-    
-    def get_all_keys(self):
-        """Get all session keys"""
-        return self._data.keys()
-```
-
 ## Creating Sessions
 
 ### In CLI
@@ -71,7 +44,7 @@ CLI.main()
 
 ### In API
 
-Sessions are created per conversation:
+Sessions are created per 'session_id' and hence indirectly controlled by the API user:
 
 ```bash
 POST /chat
@@ -82,7 +55,7 @@ POST /chat
 }
 ```
 
-### Programmatically
+### Programmatically [Advanced usage]
 
 ```python
 from agentkernel.core import Session

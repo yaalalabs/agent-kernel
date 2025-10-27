@@ -26,8 +26,9 @@ graph TB
         G[CLI]
         H[REST API]
         I[AWS Lambda]
-        J[MCP Server]
-        K[A2A Server]
+        J[AWS ECS]
+        K[MCP Server]
+        L[A2A Server]
     end
     
     A --> B
@@ -40,7 +41,9 @@ graph TB
     F --> I
     F --> J
     F --> K
+    F --> L
     
+    style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -200,7 +203,7 @@ graph TD
 
 ### Framework Agnostic
 
-Agent Kernel provides a consistent API regardless of the underlying framework. Provision to switch frameworks without changing your application code.
+Agent Kernel provides a consistent API regardless of the Agent framework you use. In fact you can have mix frameworks for different Agents and all can run together in the same deployment. If you decide to switch the Agent framework, the kernel provides a similar interface and hence the porting can be really quick.
 
 ### Minimal Overhead
 
