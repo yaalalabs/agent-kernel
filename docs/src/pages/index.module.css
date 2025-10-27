@@ -201,6 +201,228 @@
   }
 }
 
+/* Futuristic Beams */
+.beam {
+  position: fixed;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(46, 133, 85, 0.4) 20%, 
+    rgba(37, 194, 160, 0.6) 50%, 
+    rgba(46, 133, 85, 0.4) 80%, 
+    transparent 100%);
+  box-shadow: 
+    0 0 20px rgba(37, 194, 160, 0.5),
+    0 0 40px rgba(46, 133, 85, 0.3),
+    0 0 60px rgba(37, 194, 160, 0.2);
+  filter: blur(2px);
+}
+
+[data-theme='dark'] .beam {
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(37, 194, 160, 0.5) 20%, 
+    rgba(34, 211, 238, 0.7) 50%, 
+    rgba(37, 194, 160, 0.5) 80%, 
+    transparent 100%);
+  box-shadow: 
+    0 0 30px rgba(34, 211, 238, 0.6),
+    0 0 60px rgba(37, 194, 160, 0.4),
+    0 0 90px rgba(34, 211, 238, 0.3);
+}
+
+/* Diagonal beam from top-left to bottom-right */
+.beam:nth-child(7) {
+  width: 200vw;
+  height: 3px;
+  top: -50vh;
+  left: -50vw;
+  transform: rotate(35deg);
+  animation: beamDiagonal1 12s ease-in-out infinite;
+}
+
+/* Diagonal beam from top-right to bottom-left */
+.beam:nth-child(8) {
+  width: 200vw;
+  height: 2px;
+  top: -50vh;
+  right: -50vw;
+  transform: rotate(-45deg);
+  animation: beamDiagonal2 15s ease-in-out infinite;
+  animation-delay: 3s;
+}
+
+/* Horizontal beam from left to right */
+.beam:nth-child(9) {
+  width: 100vw;
+  height: 2px;
+  top: 30%;
+  left: -100vw;
+  animation: beamHorizontal 10s ease-in-out infinite;
+  animation-delay: 5s;
+}
+
+/* Diagonal beam from bottom-left to top-right */
+.beam:nth-child(10) {
+  width: 200vw;
+  height: 3px;
+  bottom: -50vh;
+  left: -50vw;
+  transform: rotate(-30deg);
+  animation: beamDiagonal3 18s ease-in-out infinite;
+  animation-delay: 7s;
+}
+
+/* Vertical-ish beam */
+.beam:nth-child(11) {
+  width: 150vw;
+  height: 2px;
+  top: -50vh;
+  left: 50%;
+  transform: rotate(75deg);
+  animation: beamDiagonal4 14s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+/* Another diagonal beam */
+.beam:nth-child(12) {
+  width: 200vw;
+  height: 3px;
+  top: 60%;
+  right: -50vw;
+  transform: rotate(25deg);
+  animation: beamDiagonal5 16s ease-in-out infinite;
+  animation-delay: 9s;
+}
+
+@keyframes beamDiagonal1 {
+  0% {
+    opacity: 0;
+    transform: rotate(35deg) translateX(-100px);
+  }
+  10% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.6;
+    transform: rotate(35deg) translateX(0);
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(35deg) translateX(100px);
+  }
+}
+
+@keyframes beamDiagonal2 {
+  0% {
+    opacity: 0;
+    transform: rotate(-45deg) translateX(-150px);
+  }
+  15% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.5;
+    transform: rotate(-45deg) translateX(0);
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-45deg) translateX(150px);
+  }
+}
+
+@keyframes beamHorizontal {
+  0% {
+    opacity: 0;
+    left: -100vw;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.7;
+    left: 0;
+  }
+  90% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    left: 100vw;
+  }
+}
+
+@keyframes beamDiagonal3 {
+  0% {
+    opacity: 0;
+    transform: rotate(-30deg) translateY(100px);
+  }
+  12% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.5;
+    transform: rotate(-30deg) translateY(0);
+  }
+  88% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-30deg) translateY(-100px);
+  }
+}
+
+@keyframes beamDiagonal4 {
+  0% {
+    opacity: 0;
+    transform: rotate(75deg) translateX(-80px);
+  }
+  15% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.5;
+    transform: rotate(75deg) translateX(0);
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(75deg) translateX(80px);
+  }
+}
+
+@keyframes beamDiagonal5 {
+  0% {
+    opacity: 0;
+    transform: rotate(25deg) translateX(120px);
+  }
+  10% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.6;
+    transform: rotate(25deg) translateX(0);
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(25deg) translateX(-120px);
+  }
+}
+
 /* Hero Section */
 .heroBanner {
   padding: 6rem 0 4rem;

@@ -218,6 +218,12 @@ export default function Home() {
       <div className={styles.particle}></div>
       <div className={styles.particle}></div>
       <div className={styles.particle}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
       <HomepageHeader />
       <main>
         <NavigationSection />
