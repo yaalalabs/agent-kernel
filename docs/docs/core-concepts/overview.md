@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Core Concepts Overview
+# Overview
 
 Agent Kernel is built around five core abstractions that work together to provide a unified interface for AI agent development and execution.
 
