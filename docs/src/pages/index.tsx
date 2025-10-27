@@ -190,6 +190,13 @@ export default function Home() {
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
       description="Production-ready, framework-agnostic runtime for deploying and managing AI agents">
+      <div className={styles.animatedBackground}></div>
+      <div className={styles.gridOverlay}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
       <HomepageHeader />
       <main>
         <NavigationSection />
