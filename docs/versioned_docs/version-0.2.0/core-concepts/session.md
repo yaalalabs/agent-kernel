@@ -260,4 +260,4 @@ for key in keys:
 - [Module Organization](./module)
 - [Runtime Orchestration](./runtime)
 - [Memory Management](../advanced/memory-management)
-- [Deployment Configuration](../deployment/configuration)
+- [Deployment Configuration](./configuration)
