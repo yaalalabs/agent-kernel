@@ -31,11 +31,11 @@ flowchart LR
 
 ## Why Agent Kernel?
 
-### 🔄 Effortless Migration
+### Effortless Migration
 
 Build agents using any AI agentic framework and migrate them to Agent Kernel to benefit from its execution framework capabilities. No need to build a platform code from scratch to run your agents. You can focus on domain-specific Agent development and Agent Kernel takes care of testing, deployment and execution.
 
-### 🚀 Ready-to-Use Execution
+### Ready-to-Use Execution
 
 Agent Kernel provides pre-built execution capabilities:
 - **CLI Testing Environment** for local development
@@ -45,11 +45,11 @@ Agent Kernel provides pre-built execution capabilities:
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
 
-### 🧩 Pluggable Architecture
+### Pluggable Architecture
 
 Easily extend Agent Kernel with custom framework adapters, memory back-ends, and deployment profiles.
 
-### 📊 Enterprise-Ready Features
+### Enterprise-Ready Features
 
 - **Session Management**: Built-in conversational state tracking
 - **Memory Management**: Pluggable memory (Redis, in-memory) storage
@@ -76,10 +76,10 @@ All framework adapters expose the same core abstractions:
 
 Agent Kernel currently supports:
 
-- ✅ **OpenAI Agents SDK** - Official OpenAI agents framework
-- ✅ **CrewAI** - Role-based multi-agent framework
-- ✅ **LangGraph** - Graph-based agent orchestration
-- ✅ **Google ADK** - Google's Agent Development Kit
+- **OpenAI Agents SDK** - Official OpenAI agents framework
+- **CrewAI** - Role-based multi-agent framework
+- **LangGraph** - Graph-based agent orchestration
+- **Google ADK** - Google's Agent Development Kit
 
 ### Flexible Deployment
 
