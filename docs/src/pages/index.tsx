@@ -3,6 +3,22 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
+import { 
+  MdMenuBook, 
+  MdArticle, 
+  MdLink, 
+  MdBusiness,
+  MdPower,
+  MdRocket,
+  MdHandshake,
+  MdFlashOn,
+  MdStar,
+  MdChat,
+  MdCode,
+  MdConstruction
+} from 'react-icons/md';
+import { FaGithub, FaDiscord, FaPython } from 'react-icons/fa';
+import { SiTerraform } from 'react-icons/si';
 
 function HomepageHeader() {
   const { siteConfig } = useDocusaurusContext();
@@ -38,28 +54,32 @@ function HomepageHeader() {
 function NavigationSection() {
   const navigationCards = [
     {
-      title: '📚 Documentation',
+      title: 'Documentation',
+      icon: <MdMenuBook />,
       description: 'Explore comprehensive guides, API references, and tutorials to get the most out of Agent Kernel.',
       link: '/docs',
       linkText: 'Browse Documentation',
       color: 'blue',
     },
     {
-      title: '📝 Blog',
+      title: 'Blog',
+      icon: <MdArticle />,
       description: 'Stay updated with the latest news, release announcements, and technical articles from the team.',
       link: '/blog',
       linkText: 'Read Blog Posts',
       color: 'green',
     },
     {
-      title: '🔗 Links',
+      title: 'Links',
+      icon: <MdLink />,
       description: 'Connect with our community and explore related resources across different platforms.',
       link: '#community',
       linkText: 'Explore Links',
       color: 'purple',
     },
     {
-      title: '🏢 Yaala Labs',
+      title: 'Yaala Labs',
+      icon: <MdBusiness />,
       description: 'Learn more about Yaala Labs and our expertise in building mission-critical market infrastructure.',
       link: 'https://www.yaalalabs.com/',
       linkText: 'Visit Yaala Labs',
@@ -75,6 +95,7 @@ function NavigationSection() {
         <div className={styles.cardGrid}>
           {navigationCards.map((card, idx) => (
             <div key={idx} className={`${styles.card} ${styles[card.color]}`}>
+              <div className={styles.cardIcon}>{card.icon}</div>
               <h3 className={styles.cardTitle}>{card.title}</h3>
               <p className={styles.cardDescription}>{card.description}</p>
               <Link
@@ -95,22 +116,22 @@ function FeaturesSection() {
   const features = [
     {
       title: 'Framework Agnostic',
-      icon: '🔌',
+      icon: <MdPower />,
       description: 'Support for LangGraph, OpenAI Agents SDK, Google ADK, and custom frameworks.',
     },
     {
       title: 'Production Ready',
-      icon: '🚀',
+      icon: <MdRocket />,
       description: 'Built-in state management, monitoring, and scalability for enterprise deployments.',
     },
     {
       title: 'Multi-Agent Systems',
-      icon: '🤝',
+      icon: <MdHandshake />,
       description: 'Native support for agent-to-agent communication and orchestration.',
     },
     {
       title: 'Easy Deployment',
-      icon: '⚡',
+      icon: <MdFlashOn />,
       description: 'Deploy to AWS, containerized environments, or serverless with Terraform modules.',
     },
   ];
@@ -138,25 +159,25 @@ function CommunitySection() {
     {
       name: 'GitHub',
       description: 'Star our repository and contribute',
-      icon: '⭐',
+      icon: <FaGithub />,
       url: 'https://github.com/yaalalabs/agent-kernel',
     },
     {
       name: 'Discord',
       description: 'Join our community chat',
-      icon: '💬',
+      icon: <FaDiscord />,
       url: 'https://discord.gg/k98XXq3N',
     },
     {
       name: 'PyPI',
       description: 'Install via pip',
-      icon: '🐍',
+      icon: <FaPython />,
       url: 'https://pypi.org/project/agentkernel/',
     },
     {
       name: 'Terraform',
       description: 'Deploy with Terraform',
-      icon: '🏗️',
+      icon: <SiTerraform />,
       url: 'https://registry.terraform.io/modules/yaalalabs',
     },
   ];
@@ -190,6 +211,19 @@ export default function Home() {
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
       description="Production-ready, framework-agnostic runtime for deploying and managing AI agents">
+      <div className={styles.animatedBackground}></div>
+      <div className={styles.gridOverlay}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.particle}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
+      <div className={styles.beam}></div>
       <HomepageHeader />
       <main>
         <NavigationSection />
