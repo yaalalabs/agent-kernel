@@ -9,7 +9,7 @@ Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for buildi
 
 ## What is Agent Kernel?
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffoldings to build, test and deploy your agents ( and mcp tools and A2A) quickly in many deployment configurations. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffoldings to build, test and deploy your agents (and mcp tools and A2A) quickly in many deployment configurations. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
 
 ```mermaid
 ---
