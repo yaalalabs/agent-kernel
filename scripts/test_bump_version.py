@@ -43,6 +43,8 @@ TEST_CASES = [
     ("0.3.0a6", "minor", "beta", True, "0.3.0b1"),  # Alpha to beta minor
     ("0.3.5a6", "major", "beta", True, "1.0.0b1"),  # Alpha to beta major
     ("1.0.0a6", "major", "beta", True, "1.0.0b1"),  # Alpha to beta major
+    ("0.2.0b1", "minor", "", True, "0.2.0"),  # Stable minor from beta
+    ("0.2.0b1", "minor", "", True, "0.2.0"),  # Stable minor from beta
 ]
 
 

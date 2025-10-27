@@ -28,7 +28,7 @@ Perfect for session storage, application caching, real-time analytics, pub/sub m
 
 ```hcl
 module "redis" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "myapp"
   env_alias     = "prod"
@@ -54,7 +54,7 @@ module "redis" {
 ```hcl
 # VPC for networking
 module "vpc" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/vpc"
+  source = "yaalalabs/ak-common/aws//modules/vpc"
 
   product_alias = "myapp"
   env_alias     = "prod"
@@ -63,7 +63,7 @@ module "vpc" {
 
 # Redis cluster in private subnets
 module "redis" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "myapp"
   env_alias     = "prod"
@@ -104,7 +104,7 @@ resource "aws_lambda_function" "api" {
 ```hcl
 # Development environment (smaller, cost-optimized)
 module "redis_dev" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "myapp"
   env_alias     = "dev"
@@ -120,7 +120,7 @@ module "redis_dev" {
 
 # Production environment (larger, high-performance)
 module "redis_prod" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "myapp"
   env_alias     = "prod"
@@ -271,7 +271,7 @@ resource "aws_cloudwatch_metric_alarm" "redis_cpu" {
 
 ```hcl
 module "session_cache" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "webapp"
   env_alias     = "prod"
@@ -290,7 +290,7 @@ module "session_cache" {
 
 ```hcl
 module "api_cache" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "api"
   env_alias     = "prod"
@@ -308,7 +308,7 @@ module "api_cache" {
 
 ```hcl
 module "analytics_cache" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/aws//modules/redis"
 
   product_alias = "analytics"
   env_alias     = "prod"

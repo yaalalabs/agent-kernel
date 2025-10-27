@@ -4,8 +4,8 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.1.2b21"
-description = "Agent Kernel Python Distribution"
+version = "0.2.0"
+description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }

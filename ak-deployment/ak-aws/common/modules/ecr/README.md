@@ -28,7 +28,7 @@ Perfect for serverless applications, microservices, and containerized workloads 
 
 ```hcl
 module "api_container" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/ecr"
+  source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region        = "us-west-2"
   product_alias = "myapp"
@@ -51,7 +51,7 @@ resource "aws_lambda_function" "api" {
 ```hcl
 # Development environment
 module "dev_container" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/ecr"
+  source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region              = "us-west-2"
   product_alias       = "myapp"
@@ -63,7 +63,7 @@ module "dev_container" {
 
 # Production environment
 module "prod_container" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/ecr"
+  source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region              = "us-west-2"
   product_alias       = "myapp"

@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.1.2b21"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -16,9 +16,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/74/02fa4ede8986f2911efd3932d5496fe2cb25ebcb337b5a876c1e7e5d6fc4/agentkernel-0.1.2b21.tar.gz", hash = "sha256:456239b4f8dbccf6f6ca707ff9daa6d3b75a4c2b8d67f45503d46c45f6116caa", size = 25201, upload-time = "2025-10-22T06:38:03.384Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/e6/a91e19b4dc560b20b8f7586c81d0a2ee5f087aaf19fa2ae7db56fd5c38e1/agentkernel-0.2.0.tar.gz", hash = "sha256:ca70f9d240687f94b8dfb7efdf52d203750aea55ced4a26f78580bd0a9e6ff66", size = 25723, upload-time = "2025-10-24T16:03:58.421Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/66/22/95d91864aa7c6b5402eef6d122f2bea913c47ea38e7c2b40a34069fb9a85/agentkernel-0.1.2b21-py3-none-any.whl", hash = "sha256:d1eda4297f37ff0874a96a7467fee27efc8328f53d0715428cc03ed07c847e48", size = 39837, upload-time = "2025-10-22T06:38:01.941Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/42/2bf96a09453548334aa8c525e4de014aea3ae9cb226c790e099b8125343d/agentkernel-0.2.0-py3-none-any.whl", hash = "sha256:6a58ccd4306a7953bbfc3fb60ee12ef71947ee6c435c3f11978ba54bc0b8731b", size = 40320, upload-time = "2025-10-24T16:03:57.087Z" },
 ]
 
 [package.optional-dependencies]
@@ -245,8 +245,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "langgraph"], specifier = ">=0.1.2b21" },
-    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.1.2b21" },
+    { name = "agentkernel", extras = ["cli", "langgraph"], specifier = ">=0.2.0" },
+    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.2.0" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
     { name = "langchain-openai", specifier = ">=0.3.28" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },

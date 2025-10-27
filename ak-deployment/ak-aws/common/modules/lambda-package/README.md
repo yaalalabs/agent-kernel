@@ -29,7 +29,7 @@ Perfect for CI/CD pipelines, multi-environment deployments, and automated Lambda
 ```hcl
 # Create S3 bucket for packages
 module "lambda_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -40,7 +40,7 @@ module "lambda_storage" {
 
 # Upload Lambda function package
 module "api_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -67,7 +67,7 @@ resource "aws_lambda_function" "api" {
 ```hcl
 # Upload Lambda layer package
 module "shared_layer" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -92,7 +92,7 @@ resource "aws_lambda_layer_version" "shared" {
 ```hcl
 # Development environment
 module "dev_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -104,7 +104,7 @@ module "dev_package" {
 
 # Production environment
 module "prod_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region              = "us-west-2"
   product_alias       = "myapp"
@@ -122,7 +122,7 @@ module "prod_package" {
 ```hcl
 # Package built by CI/CD pipeline
 module "ci_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -206,7 +206,7 @@ myapp/us-west-2/dev/worker/function/worker.zip
 ```hcl
 # Development bucket
 module "dev_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
   
   product_alias = "myapp"
   env_alias     = "dev"
@@ -215,7 +215,7 @@ module "dev_storage" {
 
 # Production bucket (with versioning)
 module "prod_storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
   
   product_alias = "myapp"
   env_alias     = "prod"
@@ -321,7 +321,7 @@ cd layer && zip -r ../layer.zip . && cd ..
 ```hcl
 # 1. Create S3 bucket
 module "storage" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/s3"
+  source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
   product_alias        = "myapp"
@@ -332,7 +332,7 @@ module "storage" {
 
 # 2. Upload shared layer
 module "layer_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -353,7 +353,7 @@ resource "aws_lambda_layer_version" "dependencies" {
 
 # 4. Upload function package
 module "function_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
   product_alias    = "myapp"
@@ -457,7 +457,7 @@ Error: Access Denied
 ```hcl
 # Upload new version
 module "api_package_v2" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   module_name      = "api-v2"
   package_dir_path = "${path.module}/dist/api-v2.zip"
@@ -481,7 +481,7 @@ locals {
 }
 
 module "versioned_package" {
-  source = "app.terraform.io/yaalalabs/ak-aws-common/aws//modules/lambda-package"
+  source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   package_dir_path    = "${path.module}/dist/function-${local.version}.zip"
   product_display_name = "API v${local.version}"

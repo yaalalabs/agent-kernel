@@ -71,9 +71,10 @@ jobs:
         run: |
           pip install uv
       
-      - name: Test bump_version script
+      - name: Test bump_version scripts
         run: |
           python scripts/test_bump_version.py
+          python scripts/test_update_terraform_versions.py
 
       - name: Build and test ak-py
         working-directory: ak-py
