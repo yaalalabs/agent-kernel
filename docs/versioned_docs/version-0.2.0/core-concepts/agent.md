@@ -136,7 +136,7 @@ specialist3= OpenAIAgent(role="specialist3", ...)
 
 # Register all agents
 CrewAIModule([supervisor, specialist1, specialist2])
-OpenAIModule([specialist2])
+OpenAIModule([specialist3])
 
 # All agents are now available
 from agentkernel.core import Runtime
