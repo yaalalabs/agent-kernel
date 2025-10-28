@@ -1,14 +1,16 @@
+from abc import ABC, abstractmethod
+
 from .base import Agent
 from .runtime import Runtime
 
 
-class Module:
+class Module(ABC):
     """
     Module is the base class for all agent modules.
-    
+
     An agent module is a Python module containing a set of agents built using a supported agent
     framework. Agent Kernel provides an implementation of the Module class for each supported agent
-    framework, allowing the agents to be registered and managed in a framework agnostic manner.
+    framework, allowing the agents to be registered and managed in a framework-agnostic manner.
     """
 
     def __init__(self, agents: list[Agent]):
@@ -26,3 +28,11 @@ class Module:
         Returns the list of agents in the module.
         """
         return self._agents
+
+    @abstractmethod
+    def add(self, agent: Agent):
+        """
+        Adds an agent to the module.
+        :param agent: The agent to add.
+        """
+        raise NotImplementedError

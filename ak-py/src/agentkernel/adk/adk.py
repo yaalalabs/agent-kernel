@@ -6,7 +6,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService, Session as ADKSession
 from google.genai import types
 
-from agentkernel.core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session, Runtime
 
 FRAMEWORK = "adk"
 
@@ -161,5 +161,12 @@ class GoogleADKModule(Module):
         Initializes a Google ADK Module instance.
         :param agents: List of agents in the module.
         """
-        runner = GoogleADKRunner()
-        super().__init__(list(map(lambda agent: GoogleADKAgent(agent.name, runner, agent), agents)))
+        self.runner = GoogleADKRunner()
+        super().__init__(list(map(lambda agent: GoogleADKAgent(agent.name, self.runner, agent), agents)))
+
+    def add(self, agent: BaseAgent):
+        """
+        Adds an agent to the module.
+        :param agent: The agent to add.
+        """
+        Runtime.instance().register(GoogleADKAgent(agent.name, self.runner, agent))
