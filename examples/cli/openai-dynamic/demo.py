@@ -28,7 +28,8 @@ module = OpenAIModule([triage_agent, math_agent, general_agent])
 physics_agent = Agent(
     name="physics",
     handoff_description="Agent for physics questions",
-    instructions="You provide assistance with physics questions. Give short and direct answers exactly to the question. "
+    instructions="You provide assistance with physics questions. Give short and direct answers exactly to the question."
+                 "Don't answer with sentences "
 )
 
 module.add(physics_agent)

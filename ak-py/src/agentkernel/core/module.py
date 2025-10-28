@@ -35,4 +35,4 @@ class Module(ABC):
         Adds an agent to the module.
         :param agent: The agent to add.
         """
-        raise NotImplementedError
+        self._agents.append(agent)
