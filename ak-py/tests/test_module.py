@@ -71,7 +71,7 @@ def test_module_add_updates_agents(monkeypatch):
     mod.add(a2)
 
     assert len(mod.agents) == 2
-    assert mod.agents[-1].name is "agent2"
+    assert mod.agents[-1].name == "agent2"
     assert {a.name for a in mod.agents} == {"agent1", "agent2"}
 
     # Also verify runtime registration reflects the newly added agent
