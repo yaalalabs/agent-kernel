@@ -3,7 +3,7 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session, Runtime
 
 FRAMEWORK = "openai"
 
@@ -136,7 +136,7 @@ class OpenAIAgent(BaseAgent):
 
 class OpenAIModule(Module):
     """
-    OpenAIModule class provides a module for OpenAI Agent SDK based agents.
+    OpenAIModule class provides a module for OpenAI Agents SDK based agents.
     """
 
     def __init__(self, agents: list[Agent]):
@@ -144,5 +144,12 @@ class OpenAIModule(Module):
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         """
-        runner = OpenAIRunner()
-        super().__init__(list(map(lambda agent: OpenAIAgent(agent.name, runner, agent), agents)))
+        self.runner = OpenAIRunner()
+        super().__init__(list(map(lambda agent: OpenAIAgent(agent.name, self.runner, agent), agents)))
+
+    def add(self, agent: Agent):
+        """
+        Adds an agent to the module.
+        :param agent: The agent to add.
+        """
+        Runtime.instance().register(OpenAIAgent(agent.name, self.runner, agent))

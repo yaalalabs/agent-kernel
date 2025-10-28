@@ -6,7 +6,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, Checkpoin
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
+from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, Runtime
 
 FRAMEWORK = "langgraph"
 
@@ -294,5 +294,13 @@ class LangGraphModule(BaseModule):
         Initializes a LangGraphModule instance.
         :param agents: List of agents in the module.
         """
-        runner = LangGraphRunner()
-        super().__init__(list(map(lambda agent: LangGraphAgent(name=agent.name, runner=runner, agent=agent), agents)))
+        self.runner = LangGraphRunner()
+        super().__init__(
+            list(map(lambda agent: LangGraphAgent(name=agent.name, runner=self.runner, agent=agent), agents)))
+
+    def add(self, agent: CompiledStateGraph):
+        """
+        Adds an agent to the module.
+        :param agent: The agent to add.
+        """
+        Runtime.instance().register(LangGraphAgent(name=agent.name, runner=self.runner, agent=agent))
