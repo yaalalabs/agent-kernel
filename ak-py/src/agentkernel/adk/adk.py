@@ -169,4 +169,6 @@ class GoogleADKModule(Module):
         Adds an agent to the module.
         :param agent: The agent to add.
         """
-        Runtime.instance().register(GoogleADKAgent(agent.name, self.runner, agent))
+        ak_agent = GoogleADKAgent(agent.name, self.runner, agent)
+        super().add(ak_agent)
+        Runtime.instance().register(ak_agent)

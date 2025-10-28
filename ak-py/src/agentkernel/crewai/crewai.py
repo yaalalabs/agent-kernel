@@ -181,5 +181,7 @@ class CrewAIModule(Module):
         Adds an agent to the module.
         :param agent: The agent to add.
         """
+        ak_agent = CrewAIAgent(agent.role, self.runner, agent, self.crew)
+        super().add(ak_agent)
         self.crew.append(agent)
-        Runtime.instance().register(CrewAIAgent(agent.role, self.runner, agent, self.crew))
+        Runtime.instance().register(ak_agent)

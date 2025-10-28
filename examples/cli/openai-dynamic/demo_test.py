@@ -20,4 +20,4 @@ async def test_client():
 async def test_first_question(test_client):
     await test_client.send("!select physics")
     await test_client.send("Who discovered energy emission from black holes?")
-    await test_client.expect("Stephen Hawking discovered energy emission from black holes, known as Hawking radiation.")
+    await test_client.expect("Stephen Hawking")

@@ -303,4 +303,6 @@ class LangGraphModule(BaseModule):
         Adds an agent to the module.
         :param agent: The agent to add.
         """
-        Runtime.instance().register(LangGraphAgent(name=agent.name, runner=self.runner, agent=agent))
+        ak_agent = LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
+        super().add(ak_agent)
+        Runtime.instance().register(ak_agent)
