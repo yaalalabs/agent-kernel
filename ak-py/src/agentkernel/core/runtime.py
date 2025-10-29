@@ -78,7 +78,7 @@ class Runtime:
             self._log.debug(f"Registering agent '{agent.name}'")
             self._agents[agent.name] = agent
         else:
-            self._log.warning(f"Agent with name '{agent.name}' is already registered.")
+            raise Exception(f"Agent with name '{agent.name}' is already registered.")
 
     def deregister(self, agent: Agent) -> None:
         """

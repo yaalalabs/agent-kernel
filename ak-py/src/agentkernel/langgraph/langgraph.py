@@ -1,4 +1,4 @@
-from typing import Any, AsyncIterator, Iterator, Optional, Sequence
+from typing import Any, AsyncIterator, Iterator, Optional, Sequence, List
 
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -6,8 +6,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, Checkpoin
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from .. import Agent
-from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, Runtime
+from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
 
 FRAMEWORK = "langgraph"
 
@@ -295,23 +294,16 @@ class LangGraphModule(BaseModule):
         Initializes a LangGraphModule instance.
         :param agents: List of agents in the module.
         """
+        super().__init__()
         self.runner = LangGraphRunner()
-        super().__init__(
-            list(map(lambda agent: LangGraphAgent(name=agent.name, runner=self.runner, agent=agent), agents)))
+        self.load(agents)
 
-    def add(self, agent: CompiledStateGraph):
-        """
-        Adds an agent to the module.
-        :param agent: The agent to add.
-        """
-        ak_agent = LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
-        super().add(ak_agent)
-        Runtime.instance().register(ak_agent)
+    def _wrap(self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]) -> BaseAgent:
+        return LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
 
-    def reload(self, agents: list[Agent]):
+    def load(self, agents: list[CompiledStateGraph]):
         """
-        Reloads and replaces all agents in the module with the specified agents.
-        :param agents: List of agents to replace the current agents.
+        Loads the specified agents into the module. By replacing the current agents.
+        :param agents: List of agents to load.
         """
-        super().reload(
-            list(map(lambda agent: LangGraphAgent(name=agent.name, runner=self.runner, agent=agent), agents)))
+        super().load(agents)

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, List
 
 from .base import Agent
 from .runtime import Runtime
@@ -13,13 +14,12 @@ class Module(ABC):
     framework, allowing the agents to be registered and managed in a framework-agnostic manner.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self):
         """
         Initializes a Module instance.
         :param agents: List of agents in the module.
         """
-        self._agents = agents
-        self._load(agents)
+        self._agents = []
 
     @property
     def agents(self) -> list[Agent]:
@@ -27,14 +27,6 @@ class Module(ABC):
         Returns the list of agents in the module.
         """
         return self._agents
-
-    @abstractmethod
-    def add(self, agent: Agent):
-        """
-        Adds an agent to the module.
-        :param agent: The agent to add.
-        """
-        self._agents.append(agent)
 
     def unload(self):
         """
@@ -44,20 +36,30 @@ class Module(ABC):
             Runtime.instance().deregister(agent)
         self._agents.clear()
 
-    def _load(self, agents: list[Agent]):
+    @abstractmethod
+    def _wrap(self, agent: Any, agents: List[Any]) -> Agent:
         """
-        Loads and registers all agents to the runtime.
-        :param agents: List of agents to load.
+        Wraps an agent in a framework-specific wrapper.
+        :param agent: The agent to wrap.
+        :return: The wrapped agent.
         """
-        self._agents = agents
-        for agent in agents:
-            Runtime.instance().register(agent)
+        raise NotImplementedError
 
     @abstractmethod
-    def reload(self, agents: list[Agent]):
+    def load(self, agents: list[Any]):
         """
-        Reloads and replaces all agents in the module with the specified agents.
-        :param agents: List of agents to replace the current agents.
+        Loads and registers all agents to the runtime by replacing the current agents.
+        :param agents: List of agents to load.
         """
         self.unload()
-        self._load(agents)
+        registered = []
+        for agent in agents:
+            try:
+                wrapped = self._wrap(agent, agents)
+                Runtime.instance().register(wrapped)
+                registered.append(wrapped)
+            except:
+                self._agents = registered
+                self.unload()
+                raise
+        self._agents = registered

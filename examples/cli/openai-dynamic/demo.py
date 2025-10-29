@@ -33,8 +33,6 @@ geography_agent = Agent(
                  "Don't answer with sentences "
 )
 
-module.reload([geography_agent])
-
 # Add a new agent dynamically
 physics_agent = Agent(
     name="physics",
@@ -43,7 +41,7 @@ physics_agent = Agent(
                  "Don't answer with sentences "
 )
 
-module.add(physics_agent)
+module.load([geography_agent, physics_agent])
 
 if __name__ == "__main__":
     CLI.main()
