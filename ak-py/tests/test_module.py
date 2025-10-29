@@ -40,14 +40,14 @@ class KernelWrappedAgent(Agent):
 
 class SimpleModule(Module):
 
-    def __init__(self, agents: list[KernelWrappedAgent]):
+    def __init__(self, agents: list[FrameworkAgent]):
         super().__init__()
         self.load(agents)
 
     def _wrap(self, agent: FrameworkAgent, agents: List[FrameworkAgent]) -> Agent:
         return KernelWrappedAgent(agent.name, agent)
 
-    def load(self, agents: list[KernelWrappedAgent]):
+    def load(self, agents: list[FrameworkAgent]):
         super().load(agents)
 
 
@@ -68,7 +68,7 @@ def test_module_add_updates_agents(monkeypatch):
     monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     # Initialize with one agent
-    a1 = KernelWrappedAgent("agent1")
+    a1 = FrameworkAgent("agent1")
     mod = SimpleModule([a1])
 
     assert len(mod.agents) == 1
@@ -99,7 +99,7 @@ def test_module_add_updates_agents(monkeypatch):
     assert rt.agents() == {"agent1": mod.agents[0]}
 
     # Handle duplicates
-    a3 = KernelWrappedAgent("agent3")
+    a3 = FrameworkAgent("agent3")
 
     try:
         SimpleModule([a3, a1])

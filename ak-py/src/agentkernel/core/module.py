@@ -17,7 +17,6 @@ class Module(ABC):
     def __init__(self):
         """
         Initializes a Module instance.
-        :param agents: List of agents in the module.
         """
         self._agents = []
 
@@ -58,7 +57,7 @@ class Module(ABC):
                 wrapped = self._wrap(agent, agents)
                 Runtime.instance().register(wrapped)
                 registered.append(wrapped)
-            except:
+            except Exception:
                 self._agents = registered
                 self.unload()
                 raise
