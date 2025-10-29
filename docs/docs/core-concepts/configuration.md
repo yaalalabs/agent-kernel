@@ -88,6 +88,7 @@ session:
 api:
   host: 0.0.0.0
   port: 8000
+  custom_router_prefix: /custom
   enabled_routes:
     agents: true
 
@@ -126,6 +127,7 @@ Alternatively, use `config.json`:
   "api": {
     "host": "0.0.0.0",
     "port": 8000,
+    "custom_router_prefix": "/custom",
     "enabled_routes": {
       "agents": true
     }
@@ -176,6 +178,7 @@ session:
 api:
   host: "0.0.0.0"              # API server host
   port: 8000                    # API server port
+  custom_router_prefix: "/custom" # API path prefix for custom routes
   enabled_routes:               # Route configuration
     agents: true                # Enable agent interaction routes
 
