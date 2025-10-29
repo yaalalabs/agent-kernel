@@ -1,20 +1,20 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
 name = "agentkernel"
-version = "0.2.0"
-source = { registry = "../../../ak-py/dist" }
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { path = "agentkernel-0.2.0.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/a0/e3638ca1bd3612ce0a6483da4eae4d42edaccd31e955a257707cfd5300d8/agentkernel-0.2.1.tar.gz", hash = "sha256:da8f1f3433c175da858c596ccd9d5882f17afbf00ccd6fa5ce28830885b28698", size = 26098, upload-time = "2025-10-29T09:29:46.853Z" }
 wheels = [
-    { path = "agentkernel-0.2.0-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/46/5d/3743f4508e3df9a785bddc5d07cd57cf8e9a34701b22cac32b8c8dcd4ad9/agentkernel-0.2.1-py3-none-any.whl", hash = "sha256:94734568f9ea08382b44fede3356a272deaed857a02fb5c78c6037ba5ede9a9a", size = 40814, upload-time = "2025-10-29T09:29:45.46Z" },
 ]
 
 [package.optional-dependencies]
@@ -143,8 +143,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.2.0" },
-    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.2.0" },
+    { name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.2.1" },
+    { name = "agentkernel", extras = ["test"], marker = "extra == 'dev'", specifier = ">=0.2.1" },
 ]
 provides-extras = ["dev"]
 

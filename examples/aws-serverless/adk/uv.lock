@@ -17,7 +17,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -25,9 +25,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/e6/a91e19b4dc560b20b8f7586c81d0a2ee5f087aaf19fa2ae7db56fd5c38e1/agentkernel-0.2.0.tar.gz", hash = "sha256:ca70f9d240687f94b8dfb7efdf52d203750aea55ced4a26f78580bd0a9e6ff66", size = 25723, upload-time = "2025-10-24T16:03:58.421Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/a0/e3638ca1bd3612ce0a6483da4eae4d42edaccd31e955a257707cfd5300d8/agentkernel-0.2.1.tar.gz", hash = "sha256:da8f1f3433c175da858c596ccd9d5882f17afbf00ccd6fa5ce28830885b28698", size = 26098, upload-time = "2025-10-29T09:29:46.853Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/42/2bf96a09453548334aa8c525e4de014aea3ae9cb226c790e099b8125343d/agentkernel-0.2.0-py3-none-any.whl", hash = "sha256:6a58ccd4306a7953bbfc3fb60ee12ef71947ee6c435c3f11978ba54bc0b8731b", size = 40320, upload-time = "2025-10-24T16:03:57.087Z" },
+    { url = "https://files.pythonhosted.org/packages/46/5d/3743f4508e3df9a785bddc5d07cd57cf8e9a34701b22cac32b8c8dcd4ad9/agentkernel-0.2.1-py3-none-any.whl", hash = "sha256:94734568f9ea08382b44fede3356a272deaed857a02fb5c78c6037ba5ede9a9a", size = 40814, upload-time = "2025-10-29T09:29:45.46Z" },
 ]
 
 [package.optional-dependencies]
@@ -176,7 +176,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["adk", "aws"], specifier = ">=0.2.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["adk", "aws"], specifier = ">=0.2.1" }]
 
 [[package]]
 name = "cachetools"
