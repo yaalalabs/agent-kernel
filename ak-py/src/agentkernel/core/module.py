@@ -19,8 +19,7 @@ class Module(ABC):
         :param agents: List of agents in the module.
         """
         self._agents = agents
-        for agent in agents:
-            Runtime.instance().register(agent)
+        self._load(agents)
 
     @property
     def agents(self) -> list[Agent]:
@@ -36,3 +35,29 @@ class Module(ABC):
         :param agent: The agent to add.
         """
         self._agents.append(agent)
+
+    def unload(self):
+        """
+        Unloads and deregisters all agents in the module
+        """
+        for agent in self._agents:
+            Runtime.instance().deregister(agent)
+        self._agents.clear()
+
+    def _load(self, agents: list[Agent]):
+        """
+        Loads and registers all agents to the runtime.
+        :param agents: List of agents to load.
+        """
+        self._agents = agents
+        for agent in agents:
+            Runtime.instance().register(agent)
+
+    @abstractmethod
+    def reload(self, agents: list[Agent]):
+        """
+        Reloads and replaces all agents in the module with the specified agents.
+        :param agents: List of agents to replace the current agents.
+        """
+        self.unload()
+        self._load(agents)

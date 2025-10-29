@@ -6,6 +6,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, Checkpoin
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
+from .. import Agent
 from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession, Runtime
 
 FRAMEWORK = "langgraph"
@@ -306,3 +307,11 @@ class LangGraphModule(BaseModule):
         ak_agent = LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
         super().add(ak_agent)
         Runtime.instance().register(ak_agent)
+
+    def reload(self, agents: list[Agent]):
+        """
+        Reloads and replaces all agents in the module with the specified agents.
+        :param agents: List of agents to replace the current agents.
+        """
+        super().reload(
+            list(map(lambda agent: LangGraphAgent(name=agent.name, runner=self.runner, agent=agent), agents)))

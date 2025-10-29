@@ -37,6 +37,9 @@ class DummyAgent(Agent):
 
 
 class SimpleModule(Module):
+    def reload(self, agents: list[Agent]):
+        super().reload(list(map(lambda agent: DummyAgent(agent.name, agent), agents)))
+
     def add(self, agent: CustomAgent):
         ak_agent = DummyAgent(name=agent.name, agent=agent)
         super().add(ak_agent)
@@ -78,3 +81,14 @@ def test_module_add_updates_agents(monkeypatch):
     rt = Runtime.instance()
     assert "agent1" in rt.agents()
     assert "agent2" in rt.agents()
+
+    # Verify unload
+    mod.unload()
+    assert len(mod.agents) == 0
+    assert rt.agents() == {}
+
+    # Verify reload
+    mod.reload([a1])
+    assert len(mod.agents) == 1
+    assert mod.agents[0].name == "agent1"
+    assert rt.agents() == {"agent1": mod.agents[0]}

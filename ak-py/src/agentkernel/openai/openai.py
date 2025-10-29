@@ -155,3 +155,11 @@ class OpenAIModule(Module):
         ak_agent = OpenAIAgent(agent.name, self.runner, agent)
         super().add(ak_agent)
         Runtime.instance().register(ak_agent)
+
+    def reload(self, agents: list[Agent]):
+        """
+        Reloads and replaces all agents in the module with the specified agents.
+        :param agents: List of agents to replace the current agents.
+        """
+        super().reload(list(map(lambda agent: OpenAIAgent(agent.name, self.runner, agent), agents)))
+        pass

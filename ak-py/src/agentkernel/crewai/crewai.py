@@ -185,3 +185,12 @@ class CrewAIModule(Module):
         super().add(ak_agent)
         self.crew.append(agent)
         Runtime.instance().register(ak_agent)
+
+    def reload(self, agents: list[Agent]):
+        """
+        Reloads and replaces all agents in the module with the specified agents.
+        :param agents: List of agents to replace the current agents.
+        """
+        self.crew = agents
+        super().__init__(
+            list(map(lambda agent: CrewAIAgent(agent.role, self.runner, agent, self.crew), self.crew)))

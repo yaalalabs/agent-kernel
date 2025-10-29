@@ -6,6 +6,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService, Session as ADKSession
 from google.genai import types
 
+from .. import Agent
 from ..core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session, Runtime
 
 FRAMEWORK = "adk"
@@ -172,3 +173,10 @@ class GoogleADKModule(Module):
         ak_agent = GoogleADKAgent(agent.name, self.runner, agent)
         super().add(ak_agent)
         Runtime.instance().register(ak_agent)
+
+    def reload(self, agents: list[Agent]):
+        """
+        Reloads and replaces all agents in the module with the specified agents.
+        :param agents: List of agents to replace the current agents.
+        """
+        super().reload(list(map(lambda agent: GoogleADKAgent(agent.name, self.runner, agent), agents)))

@@ -25,6 +25,17 @@ triage_agent = Agent(
 
 module = OpenAIModule([triage_agent, math_agent, general_agent])
 
+# Reload module with one agent
+geography_agent = Agent(
+    name="geography",
+    handoff_description="Agent for geography questions",
+    instructions="You provide assistance with geography questions. Give short and direct answers exactly to the question."
+                 "Don't answer with sentences "
+)
+
+module.reload([geography_agent])
+
+# Add a new agent dynamically
 physics_agent = Agent(
     name="physics",
     handoff_description="Agent for physics questions",

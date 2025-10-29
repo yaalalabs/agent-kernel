@@ -80,6 +80,17 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is already registered.")
 
+    def deregister(self, agent: Agent) -> None:
+        """
+        Deregisters an agent from the runtime.
+        :param agent: The agent to deregister.
+        """
+        if self._agents.get(agent.name):
+            self._log.debug(f"Deregistering agent '{agent.name}'")
+            del self._agents[agent.name]
+        else:
+            self._log.warning(f"Agent with name '{agent.name}' is not registered.")
+
     async def run(self, agent: Agent, session: Session, prompt: Any) -> Any:
         """
         Runs the specified agent with the given prompt.
