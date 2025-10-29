@@ -162,4 +162,3 @@ class OpenAIModule(Module):
         :param agents: List of agents to replace the current agents.
         """
         super().reload(list(map(lambda agent: OpenAIAgent(agent.name, self.runner, agent), agents)))
-        pass

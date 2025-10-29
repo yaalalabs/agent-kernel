@@ -192,5 +192,5 @@ class CrewAIModule(Module):
         :param agents: List of agents to replace the current agents.
         """
         self.crew = agents
-        super().__init__(
+        super().reload(
             list(map(lambda agent: CrewAIAgent(agent.role, self.runner, agent, self.crew), self.crew)))
