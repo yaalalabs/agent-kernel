@@ -7,6 +7,7 @@ from fastapi.openapi.utils import get_openapi
 
 from .agent import AgentRESTRequestHandler
 from ..core.config import AKConfig
+from ..api.rest_request_handler import RESTRequestHandler
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -53,7 +54,7 @@ class RESTAPI:
         return app
 
     @classmethod
-    def run(cls):
+    def run(cls, handler: RESTRequestHandler|None = None):
         """
         Starts the REST API server.
         """
@@ -62,8 +63,11 @@ class RESTAPI:
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
 
         routers = []
-        if AKConfig.get().api.enabled_routes.agents:
-            routers.append(AgentRESTRequestHandler.get_router())
+        if handler is not None: # handler is provided, use it. It takes priority over config
+            routers.append(handler.get_router())
+        elif AKConfig.get().api.enabled_routes.agents:
+            routers.append(AgentRESTRequestHandler().get_router())
+            
         if AKConfig.get().a2a.enabled:
             from .a2a import A2ARESTRequestHandler
             routers.append(A2ARESTRequestHandler.get_catalog_router())

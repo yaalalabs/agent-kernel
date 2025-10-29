@@ -47,6 +47,9 @@ api = [
     "uvicorn>=0.37.0",
     "gunicorn>=23.0.0"
 ]
+slack = [
+    "slack-bolt==1.22.0"
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.2.0",

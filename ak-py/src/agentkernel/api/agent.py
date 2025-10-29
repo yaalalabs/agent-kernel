@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..core import AgentService, Runtime
+from ..api.rest_request_handler import RESTRequestHandler
 
-
-class AgentRESTRequestHandler:
+class AgentRESTRequestHandler(RESTRequestHandler):
     """
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
@@ -18,16 +18,15 @@ class AgentRESTRequestHandler:
     - POST /run: Run an agent with a prompt
       Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
     """
-
-    _log = logging.getLogger("ak.api.agent")
+    def __init__(self):
+        self._log = logging.getLogger("ak.api.agent")
 
     class RunRequest(BaseModel):
         prompt: str
         agent: Optional[str] = None
         session_id: Optional[str] = None
 
-    @classmethod
-    def get_router(cls) -> APIRouter:
+    def get_router(self) -> APIRouter:
         """
         Returns the APIRouter instance.
         """
@@ -44,12 +43,11 @@ class AgentRESTRequestHandler:
 
         @router.post("/run")
         async def run(req: AgentRESTRequestHandler.RunRequest):
-            return await cls.run(req)
+            return await self.run(req)
 
         return router
 
-    @classmethod
-    async def run(cls, req: RunRequest):
+    async def run(self, req: RunRequest):
         """
         Async method to run the agent.
         :param req: Request an object containing the prompt and optional agent name.
@@ -80,7 +78,7 @@ class AgentRESTRequestHandler:
         except HTTPException:
             raise
         except Exception as e:
-            cls._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
+            self._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
             raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail={
                 "error": str(e),
                 "session_id": service.get_response_session_id(None)

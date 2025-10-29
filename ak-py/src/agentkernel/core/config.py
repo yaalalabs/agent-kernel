@@ -49,6 +49,12 @@ class _MCPConfig(BaseModel):
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
+class _SLACKConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable Slack integration")
+    agent: str = Field(default="", description="Default agent to use for Slack interactions")
+    bot_token: str = Field(default="", description="Slack Bot User OAuth Token")
+    signing_secret: str = Field(default="", description="Slack Signing Secret")
+    bot_user_id: str = Field(default="", description="Slack Bot User ID")
 
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")
@@ -57,6 +63,7 @@ class AKConfig(BaseSettings):
     api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
     a2a: _A2AConfig = Field(description="Agent to Agent related configurations", default_factory=_A2AConfig)
     mcp: _MCPConfig = Field(description="Model Context Protocol related configurations", default_factory=_MCPConfig)
+    slack: _SLACKConfig = Field(description="Slack related configurations", default_factory=_SLACKConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     model_config = SettingsConfigDict(
