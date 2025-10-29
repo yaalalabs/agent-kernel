@@ -274,6 +274,11 @@ Configure the REST API server (if using the API module).
   - **Default**: `8000`
   - **Environment Variable**: `AK_API_PORT`
 
+- **Custom Router Prefix**
+  - **Field**: `api.custom_router_prefix`
+  - **Default**: `/custom`
+  - **Environment Variable**: `AK_API_CUSTOM_ROUTER_PREFIX`
+
 - **Enabled Routes**
   - **Field**: `api.enabled_routes.agents`
   - **Default**: `true`

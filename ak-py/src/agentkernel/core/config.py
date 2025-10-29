@@ -35,6 +35,7 @@ class _APIConfig(BaseModel):
     host: str = Field(default="0.0.0.0", description="API host")
     port: int = Field(default=8000, description="API port")
     enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
+    custom_router_prefix: str = Field(default="/custom", description="Custom router prefix")
 
 
 class _A2AConfig(BaseModel):
