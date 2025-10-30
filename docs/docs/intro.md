@@ -92,10 +92,12 @@ config:
 flowchart LR
     A["Agent Logic"] --> B["Deployment Mode"]
     B -- Local --> C["CLI Testing"]
-    B -- API --> D["REST API Server"]
+    B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- Cloud --> E["AWS Serverless"] & F["AWS Containers"]
-    B -- Integration --> G["MCP Server"] & H["A2A Server"]
+    D -- Integration --> I["Slack"]
+
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Quick Example

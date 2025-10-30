@@ -156,4 +156,4 @@ For more advanced Slack integrations, you can extend the `RESTRequestHandler` cl
 
 ## Example Projects
 
-Complete working examples are available in the [examples/api/slack](../../../examples/api/slack/) directory.
+Complete working examples are available in the **examples/api/slack** directory.

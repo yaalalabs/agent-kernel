@@ -43,7 +43,7 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'Framework Integration',
+      label: 'Agent Frameworks',
       items: [
         'frameworks/overview',
         'frameworks/openai',
@@ -73,7 +73,7 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'API & Integration',
+      label: 'API',
       items: [
         'api/rest-api',
         'api/mcp-server',
