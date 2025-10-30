@@ -54,6 +54,7 @@ class RESTAPI:
 
         return app
 
+    @classmethod
     def add(cls, router: APIRouter):
         cls._log.debug(f"Adding custom router")
         for route in router.routes:
