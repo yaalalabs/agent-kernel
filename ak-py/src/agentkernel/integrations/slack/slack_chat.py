@@ -138,7 +138,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             await say(channel=channel, text="Error handling your request.")
             return
         
-    def _split_reply(self, reply:str)-> list:
+    def _split_reply(self, reply: str) -> list:
         """
         Prepares the reply text.
         :param reply: The reply text.
