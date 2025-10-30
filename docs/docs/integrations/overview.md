@@ -4,6 +4,6 @@ Agent Kernel provides various built in integrations to connect your AI agents wi
 
 ## Available Integrations
 
-### Colloboration Platforms
+### Collaboration Platforms
 
 - **[Slack](./slack)** - Deploy agents as Slack bots that can respond to mentions and direct messages in Slack workspaces

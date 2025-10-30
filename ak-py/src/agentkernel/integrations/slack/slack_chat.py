@@ -34,9 +34,9 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         self._handler = AsyncSlackRequestHandler(self._slack_app)
         slack_app = self._slack_app
         
-        @slack_app.event("message") #trigger this for any message event
+        @slack_app.event("message") # trigger this for any message event
         async def handle_messages(message, say):
-            await self.handle(message,say)
+            await self.handle(message, say)
 
     def get_router(self) -> APIRouter:
         """
@@ -138,7 +138,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             await say(channel=channel, text="Error handling your request.")
             return
         
-    def _split_reply(self, reply:str)-> list:
+    def _split_reply(self, reply: str) -> list:
         """
         Prepares the reply text.
         :param reply: The reply text.
