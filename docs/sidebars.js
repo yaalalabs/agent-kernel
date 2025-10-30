@@ -65,6 +65,14 @@ const sidebars = {
     },
     {
       type: 'category',
+      label: 'Integrations',
+      items: [
+        'integrations/overview',
+        'integrations/slack',
+      ],
+    },
+    {
+      type: 'category',
       label: 'API & Integration',
       items: [
         'api/rest-api',
