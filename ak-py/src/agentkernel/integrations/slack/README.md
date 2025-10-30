@@ -12,20 +12,31 @@ The class AgentSlackRequestHandler handles simple conversations with Agents of y
 You can implement a more feature rich integration  based on the AgentSlackRequestHandler class.
 
 ## Slack setup
-You need to setup Slack app and and obtain signin-secret & a bot user token. Also enable subscription to **app_mention** event
+You need to setup Slack app and and obtain signin-secret & a bot user token. Also enable subscription to the following events.
+1. message_im
+2. message.channels
+2. app_mention
+
+When you suscribe to events some OAuth scopes are automatically added. In addition to that these minimum scopes needs to be added for the bot to function
+1. chat:write
+2. im:write
 
 You need the following environment variables for the integration. 
 
 ```
-export AK_SLACK_BOT_USER_ID=< >
 export AK_SLACK_SIGNING_SECRET=< >
 export AK_SLACK_BOT_TOKEN=< >
 ```
 
-A more detailed example is provided in the examples section.
+The AgentSlackRequestHandler listens on /slack/events, hence you need to setup the webhook URL as https://<your domain or IP>:<port>/slack/events
+During URL registration, Slack sends a challange to the URL before enbaling. The AgentSlackRequestHandler handles this, hence you dont need any separate code to activate.
+
+You can use https://pinggy.io/ or simiar for local testing. [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
+
+A detailed example is provided in the examples section.
 
 
-## Simple integration code
+## Simple Slack integration code
 
 ```
 from agents import Agent as OpenAIAgent

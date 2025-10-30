@@ -51,11 +51,9 @@ class _MCPConfig(BaseModel):
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
 class _SLACKConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Enable Slack integration")
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
     bot_token: str = Field(default="", description="Slack Bot User OAuth Token")
     signing_secret: str = Field(default="", description="Slack Signing Secret")
-    bot_user_id: str = Field(default="", description="Slack Bot User ID")
 
 class AKConfig(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode")

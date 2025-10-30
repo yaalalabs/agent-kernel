@@ -1,14 +1,11 @@
 import logging
 import traceback
-from http import HTTPStatus
-from typing import Optional
 
 from slack_sdk.errors import SlackApiError
-from slack_bolt.adapter.fastapi import SlackRequestHandler
-from slack_bolt import App
+from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
+from slack_bolt.async_app import AsyncApp
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Request
 
 from ...core import AgentService, Runtime, Config
 from ...api import RESTRequestHandler
@@ -27,24 +24,18 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         self._log = logging.getLogger("ak.api.slack")
         self._SLACK_BOT_TOKEN = Config.get().slack.bot_token
         self._SLACK_SIGNING_SECRET = Config.get().slack.signing_secret
-        self._SLACK_BOT_USER_ID = Config.get().slack.bot_user_id
         self._SLACK_AGENT = Config.get().slack.agent if Config.get().slack.agent != "" else None
-
+        self._bot_id = None
+        
         # Initialize the Slack app
-        self._slack_app = App(token=self._SLACK_BOT_TOKEN,
+        self._slack_app = AsyncApp(token=self._SLACK_BOT_TOKEN,
                         signing_secret=self._SLACK_SIGNING_SECRET)
-        self._handler = SlackRequestHandler(self._slack_app)
+        self._handler = AsyncSlackRequestHandler(self._slack_app)
         slack_app = self._slack_app
         
         @slack_app.event("message") #trigger this for any message event
-        async def handle_messages(body, event, ack, client):
-            ack() #sending the immediate acknowledgement
-            if(event["channel_type"] ==  "im"): #if this is a direct message
-                await self.handle(body,ack,client)
-
-        @slack_app.event("app_mention")
-        async def handle_mentions(body, ack, client):
-            await self.handle(body, ack, client)
+        async def handle_messages(message, say):
+            await self.handle(message,say)
 
     def get_router(self) -> APIRouter:
         """
@@ -62,46 +53,51 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             return {"agents": list(Runtime.instance().agents().keys())}
 
         @router.post("/slack/events")
-        async def events(req):
+        async def slack_events(req: Request):
+            body = await req.json()
+            # Handling the Slack challenge verification
+            if hasattr(body, "challenge"):
+                self._log.info("Received Slack challenge. Returning challenge")
+                return body.challenge
+            
+            self._log.debug("Received Slack event", body)
             return await self._handler.handle(req)
-
-        @router.post("/slack/interactions")
-        async def interactions(req):
-            return await self._handler.handle(req)
-
         
         return router
 
-    async def handle(self, body, ack, client):
+    async def handle(self, body: dict, say):
         """
         Async method to run the agent.
         :param req: Request an object containing the prompt and optional agent name.
         """
-        user = body['event']["user"]
-        text = body["event"]["text"]
-        channel = body['event']['channel']
-        ts = body['event']['ts']
-        session = f'{channel}-{user}'  # Unique session per user per channel
+        user = body["user"]
+        text = body["text"]
+        channel = body['channel']
         
+        # in Slack, thread_ts is populated if its a thread message if not, use ts
+        thread_ts = body.get("thread_ts", None) or body["ts"]
+        if self._bot_id is None:
+            self._bot_id = (await self._slack_app.client.auth_test())["user_id"]
+            
         # Avoid the bot responding to its own messages
-        if user == self._SLACK_BOT_USER_ID:
+        if user == self._bot_id:
             return
 
-        mention = f"<@{self._SLACK_BOT_USER_ID}>"
+        mention = f"<@{self._bot_id}>"
         question = text.replace(mention, "").strip()
         
-        self._log.debug(f"Received question from user {user} in channel {channel}: {question}")
+        self._log.debug(f"Received request from user {user} in channel {channel}: {question}")
         
         service = AgentService()
         try:
-            response_for_first_bot_message = client.chat_postMessage(
+            response_for_first_bot_message = await say(
                 channel=channel,
-                thread_ts=ts,
+                thread_ts=thread_ts,
                 text=f"Hi <@{user}>, Hold on tight, I'm processing your request :rolling-loader:"
             )
-            service.select(session_id=session)
+            service.select(session_id=thread_ts)
             if not service.agent:
-                client.chat_postMessage(channel=channel, text="No agent available to handle your request.")
+                say(channel=channel, text="No agent available to handle your request.")
                 return
 
             result = await service.run(question)
@@ -112,22 +108,25 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 response_text = str(result)
 
             # This will update the initial message to remove the loading text emoji 
-            client.chat_update(
+            new_ts =response_for_first_bot_message['ts']
+            await say.client.chat_update(
                 channel=response_for_first_bot_message['channel'],
-                ts=response_for_first_bot_message['ts'],
+                ts=new_ts,
                 text=f"Hi <@{user}>,"
             )
+            self._log.debug(f"Agent response: {response_text}")
+            
             # post final reply
-            client.chat_postMessage(text="Agent response", blocks=self._split_reply(response_text), channel=channel, thread=ts,
+            await say(text="Agent response", blocks=self._split_reply(response_text), channel=channel, thread=new_ts,
                                      metadata={"event_type": "first_pass",
-                                               "event_payload": {"id": ts}
+                                               "event_payload": {"id": new_ts}
                                                })
 
         except SlackApiError as e:
             self._log.error(f"Slack API Error: {e.response['error']}")
         except Exception as e:
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
-            client.chat_postMessage(channel=channel, text="Error handling your request.")
+            say(channel=channel, text="Error handling your request.")
             return
         
     def _split_reply(self, reply:str)-> list:
@@ -137,7 +136,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         :return: The prepared reply text.
         """
         response_chunks = [reply[i:i + 3000] for i in range(0, len(reply), 3000)]  # Current max chunk size in slack is 3000 characters
-        self._log.debug(f"chunk {response_chunks}")
+    
         blocks = []
         for i in range(len(response_chunks)):
             if i < 5:  # Limit to first 5 chunks:
