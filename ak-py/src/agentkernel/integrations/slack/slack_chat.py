@@ -90,6 +90,8 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         mention = f"<@{self._SLACK_BOT_USER_ID}>"
         question = text.replace(mention, "").strip()
         
+        self._log.debug(f"Received question from user {user} in channel {channel}: {question}")
+        
         service = AgentService()
         try:
             response_for_first_bot_message = client.chat_postMessage(

@@ -1,0 +1,15 @@
+# Core settings
+debug: true
+library_version: "0.1.0"
+
+# API server
+api:
+  host: 0.0.0.0
+  port: 8000
+
+# Slack integration settings
+slack:
+  enabled: true
+  bot_token: "xoxb-your-slack-bot-token"
+  signing_secret: "your-slack-signing-secret"
+  bot_user_id: "your user id for the bot"
