@@ -4,7 +4,7 @@ You need to setup the required Slack Apps and obtain the necessary slack key and
 Please enable subscription to **app_mention** event for the Bot.
 
 ## Setup
-Please refer to the [AgentSlackRequestHandler](../../../ak-py/src/agentkernel/integrations/slack/README.md) for setting up the SLack
+Please refer to the [AgentSlackRequestHandler](../../../ak-py/src/agentkernel/integrations/slack/README.md) for setting up the Slack
 
 ## Build
 
