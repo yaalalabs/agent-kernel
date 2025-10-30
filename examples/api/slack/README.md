@@ -4,16 +4,7 @@ You need to setup the required Slack Apps and obtain the necessary slack key and
 Please enable subscription to **app_mention** event for the Bot.
 
 ## Setup
-You need the following environment variables for the integration. Or you can setup the config.yaml provided in this folder
-
-```
-export AK_SLACK_BOT_USER_ID=< >
-export AK_SLACK_SIGNING_SECRET=< >
-export AK_SLACK_BOT_TOKEN=< >
-```
-
-You can use https://pinggy.io/ for local testing. See this article https://pinggy.io/blog/how_to_get_slack_webhook/
-
+Please refer to the [AgentSlackRequestHandler](../../../ak-py/src/agentkernel/integrations/slack/README.md) for setting up the SLack
 
 ## Build
 
