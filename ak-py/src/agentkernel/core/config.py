@@ -52,6 +52,7 @@ class _MCPConfig(BaseModel):
 
 class _SLACKConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
+    agent_acknowledgement: str = Field(default="", description="The message to send as an acknowledgement when a Slack message is received")
     bot_token: str = Field(default="", description="Slack Bot User OAuth Token")
     signing_secret: str = Field(default="", description="Slack Signing Secret")
 

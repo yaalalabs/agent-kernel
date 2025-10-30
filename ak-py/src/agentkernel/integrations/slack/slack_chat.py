@@ -25,6 +25,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         self._SLACK_BOT_TOKEN = Config.get().slack.bot_token
         self._SLACK_SIGNING_SECRET = Config.get().slack.signing_secret
         self._SLACK_AGENT = Config.get().slack.agent if Config.get().slack.agent != "" else None
+        self._SLACK_AGENT_ACKNOWLEDGEMENT = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         self._bot_id = None
         
         # Initialize the Slack app
@@ -90,11 +91,13 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         
         service = AgentService()
         try:
-            response_for_first_bot_message = await say(
-                channel=channel,
-                thread_ts=thread_ts,
-                text=f"Hi <@{user}>, Hold on tight, I'm processing your request :rolling-loader:"
-            )
+            response_for_first_bot_message=None
+            if self._SLACK_AGENT_ACKNOWLEDGEMENT is not None:
+                response_for_first_bot_message = await say(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=f"Hi <@{user}>, {self._SLACK_AGENT_ACKNOWLEDGEMENT} :rolling-loader:"
+                )
             service.select(session_id=thread_ts)
             if not service.agent:
                 say(channel=channel, text="No agent available to handle your request.")
@@ -107,17 +110,23 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             else:
                 response_text = str(result)
 
-            # This will update the initial message to remove the loading text emoji 
-            new_ts =response_for_first_bot_message['ts']
-            await say.client.chat_update(
-                channel=response_for_first_bot_message['channel'],
-                ts=new_ts,
-                text=f"Hi <@{user}>,"
-            )
+            # This will update the initial message to remove the loading text emoji
+            if response_for_first_bot_message is not None:
+                new_ts = response_for_first_bot_message['ts']
+                ch = response_for_first_bot_message['channel']
+                await say.client.chat_update(
+                    channel=ch,
+                    ts=new_ts,
+                    text=f"Hi <@{user}>,"
+                )
+            else:
+                new_ts = thread_ts
+                ch = channel
+            
             self._log.debug(f"Agent response: {response_text}")
             
             # post final reply
-            await say(text="Agent response", blocks=self._split_reply(response_text), channel=channel, thread=new_ts,
+            await say(text="Agent response", blocks=self._split_reply(response_text), channel=ch, thread_ts=new_ts,
                                      metadata={"event_type": "first_pass",
                                                "event_payload": {"id": new_ts}
                                                })
