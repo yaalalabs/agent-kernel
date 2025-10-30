@@ -100,7 +100,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 )
             service.select(session_id=thread_ts)
             if not service.agent:
-                say(channel=channel, text="No agent available to handle your request.")
+                await say(channel=channel, text="No agent available to handle your request.")
                 return
 
             result = await service.run(question)
@@ -135,7 +135,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             self._log.error(f"Slack API Error: {e.response['error']}")
         except Exception as e:
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
-            say(channel=channel, text="Error handling your request.")
+            await say(channel=channel, text="Error handling your request.")
             return
         
     def _split_reply(self, reply:str)-> list:
