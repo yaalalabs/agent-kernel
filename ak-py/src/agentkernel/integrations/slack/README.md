@@ -1,5 +1,5 @@
 # Slack integrations
-Slack allows developers to interact with the application coversations via SlackApps (https://api.slack.com/apps/)
+Slack allows developers to interact with the application conversations via SlackApps (https://api.slack.com/apps/)
 It uses the Slack Events Http API (https://docs.slack.dev/apis/events-api/)
 
 The class AgentSlackRequestHandler handles simple conversations with Agents of your choice in API deployment. This class does the following
