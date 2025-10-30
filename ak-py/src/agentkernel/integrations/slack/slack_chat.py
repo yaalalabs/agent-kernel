@@ -57,7 +57,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         async def slack_events(req: Request):
             body = await req.json()
             # Handling the Slack challenge verification
-            if "challenge" in body:
+            if hasattr(body, "challenge"):
                 self._log.info("Received Slack challenge. Returning challenge")
                 return body.challenge
             
