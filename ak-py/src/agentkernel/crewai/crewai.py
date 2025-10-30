@@ -1,11 +1,11 @@
 import logging
-from typing import Any
+from typing import Any, List
 
 from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent, Module, Runner, Session, Runtime
+from ..core import Agent as BaseAgent, Module, Runner, Session
 
 FRAMEWORK = "crewai"
 
@@ -171,17 +171,16 @@ class CrewAIModule(Module):
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
         """
+        super().__init__()
         self.runner = CrewAIRunner()
-        self.crew = agents
-        super().__init__(
-            list(map(lambda agent: CrewAIAgent(agent.role, self.runner, agent, self.crew), self.crew)))
+        self.load(agents)
 
-    def add(self, agent: Agent):
+    def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+        return CrewAIAgent(agent.role, self.runner, agent, agents)
+
+    def load(self, agents: list[Agent]):
         """
-        Adds an agent to the module.
-        :param agent: The agent to add.
+        Loads the specified agents into the module. By replacing the current agents.
+        :param agents: List of agents to load.
         """
-        ak_agent = CrewAIAgent(agent.role, self.runner, agent, self.crew)
-        super().add(ak_agent)
-        self.crew.append(agent)
-        Runtime.instance().register(ak_agent)
+        super().load(agents)

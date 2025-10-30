@@ -25,6 +25,14 @@ triage_agent = Agent(
 
 module = OpenAIModule([triage_agent, math_agent, general_agent])
 
+# Load new two agents
+geography_agent = Agent(
+    name="geography",
+    handoff_description="Agent for geography questions",
+    instructions="You provide assistance with geography questions. Give short and direct answers exactly to the question."
+                 "Don't answer with sentences "
+)
+
 physics_agent = Agent(
     name="physics",
     handoff_description="Agent for physics questions",
@@ -32,7 +40,7 @@ physics_agent = Agent(
                  "Don't answer with sentences "
 )
 
-module.add(physics_agent)
+module.load([geography_agent, physics_agent])
 
 if __name__ == "__main__":
     CLI.main()
