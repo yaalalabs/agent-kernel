@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, List
 
 from .base import Agent
 from .runtime import Runtime
@@ -13,14 +14,11 @@ class Module(ABC):
     framework, allowing the agents to be registered and managed in a framework-agnostic manner.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self):
         """
         Initializes a Module instance.
-        :param agents: List of agents in the module.
         """
-        self._agents = agents
-        for agent in agents:
-            Runtime.instance().register(agent)
+        self._agents = []
 
     @property
     def agents(self) -> list[Agent]:
@@ -29,10 +27,38 @@ class Module(ABC):
         """
         return self._agents
 
+    def unload(self):
+        """
+        Unloads and deregisters all agents in the module
+        """
+        for agent in self._agents:
+            Runtime.instance().deregister(agent)
+        self._agents.clear()
+
     @abstractmethod
-    def add(self, agent: Agent):
+    def _wrap(self, agent: Any, agents: List[Any]) -> Agent:
         """
-        Adds an agent to the module.
-        :param agent: The agent to add.
+        Wraps an agent in a framework-specific wrapper.
+        :param agent: The agent to wrap.
+        :return: The wrapped agent.
         """
-        self._agents.append(agent)
+        raise NotImplementedError
+
+    @abstractmethod
+    def load(self, agents: list[Any]):
+        """
+        Loads and registers all agents to the runtime by replacing the current agents.
+        :param agents: List of agents to load.
+        """
+        self.unload()
+        registered = []
+        for agent in agents:
+            try:
+                wrapped = self._wrap(agent, agents)
+                Runtime.instance().register(wrapped)
+                registered.append(wrapped)
+            except Exception:
+                self._agents = registered
+                self.unload()
+                raise
+        self._agents = registered
