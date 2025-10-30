@@ -12,7 +12,7 @@ The class AgentSlackRequestHandler handles simple conversations with Agents of y
 You can implement a more feature rich integration  based on the AgentSlackRequestHandler class.
 
 ## Slack setup
-You need to setup Slack app and and obtain signin-secret & a bot user token. Also enable subscription to the following events.
+You need to setup Slack app and obtain signing-secret & a bot user token. Also enable subscription to the following events.
 1. message_im
 2. message.channels
 2. app_mention
