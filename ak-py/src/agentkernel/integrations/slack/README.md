@@ -29,7 +29,7 @@ export AK_SLACK_BOT_TOKEN=< >
 ```
 
 The AgentSlackRequestHandler listens on /slack/events, hence you need to setup the webhook URL as https://<your domain or IP>:<port>/slack/events
-During URL registration, Slack sends a challange to the URL before enbaling. The AgentSlackRequestHandler handles this, hence you dont need any separate code to activate.
+During URL registration, Slack sends a challenge to the URL before enabling. The AgentSlackRequestHandler handles this, hence you don't need any separate code to activate.
 
 You can use https://pinggy.io/ or simiar for local testing. [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
 
