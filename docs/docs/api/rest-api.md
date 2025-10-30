@@ -99,6 +99,32 @@ Health check endpoint.
 }
 ```
 
+## Custom Routes
+
+Agent Kernel REST API allows the users to add custom routes to the existing REST server. This is a support functioanlity that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
+
+```python
+from agentkernel.api import RESTAPI
+from fastapi import APIRouter
+
+# Optional custom route to add your own endpoints
+router = APIRouter()
+
+
+@router.post("/deposit")
+async def run(req: dict):
+    amount = req.get("amount")
+    return {"result": f"Deposited ${amount} over the counter"}
+
+
+RESTAPI.add(router=router)
+# End of optional code block for REST API mode
+
+if __name__ == "__main__":
+    RESTAPI.run()
+```
+
+
 ## Streaming
 
 Support for streaming responses will be available soon

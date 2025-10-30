@@ -1,7 +1,7 @@
 import logging
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
@@ -22,6 +22,7 @@ class RESTAPI:
     Can run any FastAPI app instance or assemble one from routers.
     """
     _log = logging.getLogger("ak.api.restapi")
+    _custom_routers = []
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -53,6 +54,12 @@ class RESTAPI:
 
         return app
 
+    def add(cls, router: APIRouter):
+        cls._log.debug(f"Adding custom router")
+        for route in router.routes:
+            cls._log.debug(f"Route: {route.path} [{route.methods}]")
+        cls._custom_routers.append(router)
+
     @classmethod
     def run(cls, handler: RESTRequestHandler|None = None):
         """
@@ -79,4 +86,7 @@ class RESTAPI:
             app.mount("/mcp", mcp_app)
         else:
             app = cls._create_app(routers=routers)
+        # Add custom routers
+        for router in cls._custom_routers:
+            app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix)
         uvicorn.run(app=app, host=host, port=port, reload=False)
