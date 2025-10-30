@@ -57,7 +57,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         async def slack_events(req: Request):
             body = await req.json()
             # Handling the Slack challenge verification
-            if hasattr(body, "challenge"):
+            if "challenge" in body:
                 self._log.info("Received Slack challenge. Returning challenge")
                 return body.challenge
             
@@ -100,7 +100,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 )
             service.select(session_id=thread_ts)
             if not service.agent:
-                say(channel=channel, text="No agent available to handle your request.")
+                await say(channel=channel, text="No agent available to handle your request.")
                 return
 
             result = await service.run(question)
@@ -135,7 +135,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             self._log.error(f"Slack API Error: {e.response['error']}")
         except Exception as e:
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
-            say(channel=channel, text="Error handling your request.")
+            await say(channel=channel, text="Error handling your request.")
             return
         
     def _split_reply(self, reply:str)-> list:
@@ -152,7 +152,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": response_chunks[i]}})
             else:
                 blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "Response is truncated due to size restrictions in Slack"}})
-       
+                break
         
         return blocks
         
