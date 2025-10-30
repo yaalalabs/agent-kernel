@@ -135,7 +135,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             self._log.error(f"Slack API Error: {e.response['error']}")
         except Exception as e:
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
-            say(channel=channel, text="Error handling your request.")
+            await say(channel=channel, text="Error handling your request.")
             return
         
     def _split_reply(self, reply:str)-> list:
