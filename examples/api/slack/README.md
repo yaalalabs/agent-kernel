@@ -1,7 +1,7 @@
 # Slack integration 
 This example shows how to create a local server based slack integration
 You need to setup the required Slack Apps and obtain the necessary slack key and tokens. Please follow the instructions in https://api.slack.com/apps/
-
+Please enable subscription to **app_mention** event for the Bot.
 
 ## Setup
 You need the following environment variables for the integration. Or you can setup the config.yaml provided in this folder

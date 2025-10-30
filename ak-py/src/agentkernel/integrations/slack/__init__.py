@@ -1,7 +1,7 @@
 """
-Agent Kernel Integrations.
+Agent Kernel Integrations with Slack
 
-This package contains the Agent Kernel session store implementation.
+This package contains the Agent Kernel integration implementations for Slack chat and Slack AI Agents.
 """
 import importlib.metadata
 
