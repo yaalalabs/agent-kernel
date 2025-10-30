@@ -36,7 +36,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         
         @slack_app.event("message") # trigger this for any message event
         async def handle_messages(message, say):
-            await self.handle(message,say)
+            await self.handle(message, say)
 
     def get_router(self) -> APIRouter:
         """
