@@ -10,5 +10,3 @@ api:
 # Slack integration settings
 slack:
   agent_acknowledgement: "I'm processing your request"
-  bot_token: "xoxb-391418222144-9806375917844-4ghhw1LjkBnHttqdII8PAT5qQ" # dummy token
-  signing_secret: "14d89657200d6d3acc3b5207525989dd" # dummy secret
