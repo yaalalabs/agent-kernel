@@ -56,12 +56,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         @router.post("/slack/events")
         async def slack_events(req: Request):
             body = await req.json()
-            # Handling the Slack challenge verification
-            if hasattr(body, "challenge"):
-                self._log.info("Received Slack challenge. Returning challenge")
-                return body.challenge
-            
-            self._log.debug("Received Slack event", body)
+            self._log.debug(f"Received Slack event: {body}")
             return await self._handler.handle(req)
         
         return router
