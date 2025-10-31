@@ -22,15 +22,12 @@ class AgentSlackRequestHandler(RESTRequestHandler):
     """
     def __init__(self):
         self._log = logging.getLogger("ak.api.slack")
-        self._SLACK_BOT_TOKEN = Config.get().slack.bot_token
-        self._SLACK_SIGNING_SECRET = Config.get().slack.signing_secret
         self._SLACK_AGENT = Config.get().slack.agent if Config.get().slack.agent != "" else None
         self._SLACK_AGENT_ACKNOWLEDGEMENT = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         self._bot_id = None
         
         # Initialize the Slack app
-        self._slack_app = AsyncApp(token=self._SLACK_BOT_TOKEN,
-                        signing_secret=self._SLACK_SIGNING_SECRET)
+        self._slack_app = AsyncApp()
         self._handler = AsyncSlackRequestHandler(self._slack_app)
         slack_app = self._slack_app
         

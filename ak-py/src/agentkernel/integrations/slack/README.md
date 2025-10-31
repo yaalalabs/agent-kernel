@@ -21,11 +21,11 @@ When you suscribe to events some OAuth scopes are automatically added. In additi
 1. chat:write
 2. im:write
 
-You need the following environment variables for the integration. 
+You need to set the following environment variables for the integration. 
 
 ```
-export AK_SLACK_SIGNING_SECRET=< >
-export AK_SLACK_BOT_TOKEN=< >
+export SLACK_SIGNING_SECRET=< >
+export SLACK_BOT_TOKEN=< >
 ```
 
 The AgentSlackRequestHandler listens on /slack/events, hence you need to setup the webhook URL as https://<your domain or IP>:<port>/slack/events

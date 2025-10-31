@@ -58,8 +58,8 @@ After configuring scopes and events, install the app to your workspace to genera
 Set the following environment variables for the integration:
 
 ```bash
-export AK_SLACK_SIGNING_SECRET=your_slack_signing_secret
-export AK_SLACK_BOT_TOKEN=xoxb-your-bot-token
+export SLACK_SIGNING_SECRET=your_slack_signing_secret
+export SLACK_BOT_TOKEN=xoxb-your-bot-token
 ```
 
 ### Getting Credentials
