@@ -18,7 +18,6 @@ class AgentSlackRequestHandler(RESTRequestHandler):
     - GET /health: Health check
     - GET /agents: List available agents. Not used by Slack but useful for testing.
     - POST /slack/events: Handle Slack events
-    - POST /slack/interactions: Handle Slack interactions
     """
     def __init__(self):
         self._log = logging.getLogger("ak.api.slack")
