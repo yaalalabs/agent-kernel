@@ -2,6 +2,37 @@
 
 Agent Kernel provides various built in integrations to connect your AI agents with external platforms and services. These integrations allow you to deploy your agents in real-world environments and interact with users through different channels.
 
+## API
+For API custom integrations you can extend **RESTRequestHandler** and pass it to the RESTAPI.run() method.
+
+```python
+from fastapi import APIRouter
+from core.api import RESTRequestHandler
+
+class CustomHandler(RESTRequestHandler):
+  def get_router(self) -> APIRouter:
+      """
+        - GET /health: Health check
+        - GET /agents: List available agents
+      """
+      router = APIRouter()
+
+      @router.get("/health")
+      def health():
+          return {"status": "ok"}
+
+      @router.get("/agents")
+      def list_agents():
+          return {"agents": list(Runtime.instance().agents().keys())}
+
+      @router.get("/rag_agent")
+      def handle_rag((req: Request)):
+          return self._handler(req)
+
+  def _handler(req)
+      # Do a vectore search Search and return something
+```
+
 ## Available Integrations
 
 ### Collaboration Platforms
