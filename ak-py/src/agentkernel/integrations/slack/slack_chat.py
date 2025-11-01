@@ -147,5 +147,3 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 break
         
         return blocks
-        
-    
