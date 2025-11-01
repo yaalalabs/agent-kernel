@@ -61,7 +61,8 @@ class AgentSlackRequestHandler(RESTRequestHandler):
     async def handle(self, body: dict, say):
         """
         Async method to run the agent.
-        :param req: Request an object containing the prompt and optional agent name.
+        :param body: dict containing Slack message data.
+        :param say: function for sending messages back to Slack.
         """
         user = body["user"]
         text = body["text"]
