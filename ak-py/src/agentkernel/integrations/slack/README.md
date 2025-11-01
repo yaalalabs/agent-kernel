@@ -4,7 +4,7 @@ It uses the Slack Events Http API (https://docs.slack.dev/apis/events-api/)
 
 The class AgentSlackRequestHandler handles simple conversations with Agents of your choice in API deployment. This class does the following
 
-1. When a message is received from slack addressed to the bot it will first acknowledged with a message ("agent_acknowledgement" ) and processing emoji, if its defined in the config 
+1. When a message is received from slack addressed to the bot it will first acknowledge with a message ("agent_acknowledgement" ) and processing emoji, if it's defined in the config 
 2. The question is extracted and passed to the Agent of your choice
 3. Once the Agent response is ready, the previously posted message is modified
 4. The response is posted to the thread.
