@@ -60,10 +60,10 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModifed") -> Dict[str
     """Loads settings from a YAML file at `Config.yaml_file`
 
     "<file:xxxx>" patterns are replaced with the contents of file xxxx. The root path
-    were to find the files is configured with `secrets_dir`.
+    where to find the files is configured with `secrets_dir`.
     """
-    secrets_dir=os.environ.get("AK_SECRETS_PATH", None)
-    yaml_file=os.environ.get("AK_CONFIG_PATH_OVERRIDE", "config.yaml")
+    secrets_dir = os.environ.get("AK_SECRETS_PATH", None)
+    yaml_file = os.environ.get("AK_CONFIG_PATH_OVERRIDE", "config.yaml")
 
     path = Path(yaml_file)
 
@@ -75,7 +75,7 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModifed") -> Dict[str
         secrets_path = Path(secrets_dir)
         return yaml.safe_load(replace_secrets(secrets_path, path.read_text("utf-8")))
 
-    return yaml.safe_load( path.read_text("utf-8"))
+    return yaml.safe_load(path.read_text("utf-8"))
 
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
     """
@@ -116,7 +116,7 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 
 
 class YamlBaseSettingsModifed(BaseSettings):
-    """Allows to specificy a 'yaml_file' path in the Config section.
+    """Allows to specify a 'yaml_file' path in the Config section.
 
     The secrets injection is done differently than in BaseSettings, allowing also
     partial secret replacement (such as "postgres://user:<file:path-to-password>@...").

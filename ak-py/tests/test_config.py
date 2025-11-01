@@ -1,4 +1,3 @@
-import os
 import pytest
 
 from agentkernel.core.config import AKConfig
@@ -8,14 +7,14 @@ def test_config_defaults_no_file(monkeypatch):
     # Ensure no env interference
     monkeypatch.delenv("AK_DEBUG", raising=False)
     monkeypatch.delenv("AK_SESSION_TYPE", raising=False)
-    # Use a non-existent file path to  check defaults
+    
     cfg = AKConfig.get()
     cfg.__init__() # Reload
     assert cfg.debug is False
     assert cfg.session.type == "in_memory"
     
     # Defaults for nested redis should be None
-    assert cfg.session.redis == None
+    assert cfg.session.redis is None
 
 @pytest.mark.usefixtures("tmp_path")
 def test_config_yaml_and_env_override(tmp_path, monkeypatch):
@@ -65,7 +64,7 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     # File value
     assert cfg_1.debug is True
     
-    # File vaues overridden by env
+    # File values overridden by env
     assert cfg_1.session.type == "in_memory"
     assert cfg_1.session.redis is not None
     assert cfg_1.session.redis.ttl == 999
@@ -90,7 +89,7 @@ def test_nested_env_cases(monkeypatch):
 
     #-------------------------------------------------
 
-    monkeypatch.setenv("AK_SESSION__TYPE", "redis") #defult is in-memory
+    monkeypatch.setenv("AK_SESSION__TYPE", "redis") #default is in-memory
     monkeypatch.setenv("AK_SESSION__REDIS__TTL", "1000")
     # should be ignored as no double underscore for SESSION module separator. Hence will be taken as 'session_redis_ttl' which does not exist
     monkeypatch.setenv("AK_SESSION_REDIS_TTL", "999") 

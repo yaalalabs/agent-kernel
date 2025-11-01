@@ -3,7 +3,6 @@ from typing import Optional, List
 
 
 from pydantic import BaseModel, Field
-from pydantic_settings import SettingsConfigDict
 from .config_yaml_util import YamlBaseSettingsModifed
 
 
