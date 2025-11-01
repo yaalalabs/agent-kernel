@@ -74,25 +74,48 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     assert cfg_1.session.redis.url == "redis://example:6379"
     assert cfg_1.session.redis.prefix == "ak:test:"
 
-# @pytest.mark.parametrize(
-#     "env_key,env_val,expect",
-#     [
-#         ("AK_", "", ""),  # empty key should be ignored
-#         ("AK__", "value1", "value1"),  # double delimiter leading to empty parts ignored
-#         ("AK_SESSION__TYPE", "value2", "value2"),  # double delimiter in middle ignored
-#         ("AK_SESSION_REDIS_TTL_EXTRA", "value3", "value3"),  
-#         ("AK_SESSION-REDIS-TTL", "value4", "value4"),  # wrong delimiter
-#     ],
-# )
-# def test_env_ignored_edge_cases(tmp_path, monkeypatch, env_key, env_val, expect):
-#     # Base file values
-#     cfg_path = tmp_path / "config.yaml"
-#     cfg_path.write_text("debug: false\n")
 
-#     # Set weird env that should not break or set anything
-#     monkeypatch.setenv(env_key, env_val)
+def test_nested_env_cases(monkeypatch):
+    # Set weird env that should not break or set anything
 
-#     cfg = AKConfig.__init__()
-#     # Should remain default as in file
-#     assert cfg.debug is False
-#     assert cfg.get()
+    cfg = AKConfig()
+    # All values should remain defaults
+    assert cfg.debug is False
+    assert cfg.session.type == "in_memory"
+    assert cfg.session.redis is None
+    assert cfg.api.custom_router_prefix == "/custom"
+    assert cfg.a2a.task_store_type == "in_memory"
+    assert cfg.mcp.expose_agents is False
+    assert cfg.api.enabled_routes.agents is True    
+
+    #-------------------------------------------------
+
+    monkeypatch.setenv("AK_SESSION__TYPE", "redis") #defult is in-memory
+    monkeypatch.setenv("AK_SESSION__REDIS__TTL", "1000")
+    # should be ignored as no double underscore for SESSION module separator. Hence will be taken as 'session_redis_ttl' which does not exist
+    monkeypatch.setenv("AK_SESSION_REDIS_TTL", "999") 
+    
+    # should be ignored SESSION module has no key REDIS_XXX
+    monkeypatch.setenv("AK_SESSION__REDIS_XXX", "999") 
+    
+    monkeypatch.setenv("AK_API__CUSTOM_ROUTER_PREFIX", "/health")  # Should be valid
+    monkeypatch.setenv("AK_A2A__TASK_STORE_TYPE", "redis")  # Should be valid
+    monkeypatch.setenv("AK_MCP__EXPOSE_AGENTS", "true")  # Should be valid
+
+    monkeypatch.setenv("AK_API__CUSTOM__ROUTER_PREFIX", "/incorrect")  # Should be ignored. No submodule custom in api
+    monkeypatch.setenv("AK_API_CUSTOM_ROUTER_PREFIX", "/health")  # Should be ignored
+
+    monkeypatch.setenv("AK_API__ENABLED_ROUTES__AGENTS", "false")  # Default is true. Should be valid
+    
+    cfg = AKConfig()
+    assert cfg.debug is False # Should remain default
+    assert cfg.session.type == "redis"
+    assert cfg.session.redis is not None
+    assert cfg.session.redis.ttl == 1000  # from double underscore env
+    assert cfg.api.custom_router_prefix == "/health"
+    assert cfg.a2a.task_store_type == "redis"
+    assert cfg.mcp.expose_agents is True
+    assert cfg.api.enabled_routes.agents is False
+    
+
+    
