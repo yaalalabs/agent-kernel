@@ -26,11 +26,11 @@ class CustomHandler(RESTRequestHandler):
           return {"agents": list(Runtime.instance().agents().keys())}
 
       @router.get("/rag_agent")
-      def handle_rag((req: Request)):
+      def handle_rag(req: Request):
           return self._handler(req)
 
-  def _handler(req)
-      # Do a vectore search Search and return something
+  def _handler(req):
+      # Do a vector search and return something
 ```
 
 ## Available Integrations

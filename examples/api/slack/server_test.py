@@ -44,7 +44,7 @@ async def test_slack_agent(http_client):
     print("test_slack_agent")
     response = await http_client.send("/health", method="get")
     
-    assert response=={"status": "ok"}
+    assert response == {"status": "ok"}
     response = await http_client.send("/agents", method="get")
     assert response == {'agents': ['general']}
     

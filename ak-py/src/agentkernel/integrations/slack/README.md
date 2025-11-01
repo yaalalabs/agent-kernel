@@ -17,7 +17,7 @@ You need to setup Slack app and obtain signing-secret & a bot user token. Also e
 2. message.channels
 2. app_mention
 
-When you suscribe to events some OAuth scopes are automatically added. In addition to that these minimum scopes needs to be added for the bot to function
+When you subscribe to events some OAuth scopes are automatically added. In addition to that these minimum scopes needs to be added for the bot to function
 1. chat:write
 2. im:write
 
