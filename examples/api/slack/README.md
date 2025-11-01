@@ -19,6 +19,14 @@ Install local dependencies in development mode using:
 # Run
 Run this demo using the following.
 
+You will need to setup the following env variables
+
+```
+export SLACK_SIGNING_SECRET="your secret"
+export SLACK_BOT_TOKEN="your token"
+export OPENAI_API_KEY=<your open ai key>
+
+```
 Run server:
 
     uv run server.py

@@ -50,7 +50,7 @@ class _MCPConfig(BaseModel):
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
-class _SLACKConfig(BaseModel):
+class _SlackConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
     agent_acknowledgement: str = Field(default="", description="The message to send as an acknowledgement when a Slack message is received")
 
@@ -61,7 +61,7 @@ class AKConfig(BaseSettings):
     api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
     a2a: _A2AConfig = Field(description="Agent to Agent related configurations", default_factory=_A2AConfig)
     mcp: _MCPConfig = Field(description="Model Context Protocol related configurations", default_factory=_MCPConfig)
-    slack: _SLACKConfig = Field(description="Slack related configurations", default_factory=_SLACKConfig)
+    slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     model_config = SettingsConfigDict(

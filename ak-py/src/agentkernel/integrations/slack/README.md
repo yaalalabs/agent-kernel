@@ -13,7 +13,7 @@ You can implement a more feature rich integration  based on the AgentSlackReques
 
 ## Slack setup
 You need to setup Slack app and obtain signing-secret & a bot user token. Also enable subscription to the following events.
-1. message_im
+1. message.im
 2. message.channels
 2. app_mention
 

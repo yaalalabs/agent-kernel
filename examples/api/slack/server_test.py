@@ -1,13 +1,11 @@
 import asyncio
 import subprocess
 import sys
-from urllib import response
 import uuid
 
 import httpx
 import pytest
 import pytest_asyncio
-from agentkernel.test import Test
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
@@ -50,7 +48,7 @@ async def test_slack_agent(http_client):
     response = await http_client.send("/agents", method="get")
     assert response == {'agents': ['general']}
     
-    # This will raise HTTPStatusError because the token is invalid becuase Slack bolts lib is handling the request
+    # This will raise HTTPStatusError because the token is invalid & Slack bolts lib is handling the request
     # TODO: Write a proper test for Slack events with proper mocks
     with pytest.raises(httpx.HTTPStatusError):
         response = await http_client.send("/slack/events", method="post", 

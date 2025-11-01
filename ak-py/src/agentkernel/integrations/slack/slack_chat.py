@@ -22,8 +22,8 @@ class AgentSlackRequestHandler(RESTRequestHandler):
     """
     def __init__(self):
         self._log = logging.getLogger("ak.api.slack")
-        self._SLACK_AGENT = Config.get().slack.agent if Config.get().slack.agent != "" else None
-        self._SLACK_AGENT_ACKNOWLEDGEMENT = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
+        self._slack_agent = Config.get().slack.agent if Config.get().slack.agent != "" else None
+        self._slack_agent_acknowledgement = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         self._bot_id = None
         
         # Initialize the Slack app
@@ -84,13 +84,13 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         service = AgentService()
         try:
             response_for_first_bot_message=None
-            if self._SLACK_AGENT_ACKNOWLEDGEMENT is not None:
+            if self._slack_agent_acknowledgement is not None:
                 response_for_first_bot_message = await say(
                     channel=channel,
                     thread_ts=thread_ts,
-                    text=f"Hi <@{user}>, {self._SLACK_AGENT_ACKNOWLEDGEMENT} :rolling-loader:"
+                    text=f"Hi <@{user}>, {self._slack_agent_acknowledgement} :rolling-loader:"
                 )
-            service.select(session_id=thread_ts)
+            service.select(session_id=thread_ts, name=self._slack_agent)
             if not service.agent:
                 await say(channel=channel, text="No agent available to handle your request.")
                 return
