@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # Configuration
 
-Configure Agent Kernel via environment variables or configuration files. Ths sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
+Configure Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
 
 ## Configuration File
 
@@ -216,9 +216,7 @@ Configuration values are resolved in the following order (highest to lowest prio
 from agentkernel.core import Config
 
 # Get the current configuration instance
-config = Config.get()
-or
-config = Config()
+config = Config.get() # or config = Config()
 
 # Access configuration values
 print(f"Debug mode: {config.debug}")
@@ -229,24 +227,23 @@ print(f"Redis URL: {config.session.redis.url}")
 ### Dynamically reloading config
 You can reload the configs from scratch by calling __init__(). However, this might not change the behaviour of the core modules, if its not refering to the AKConfig instance again.
 
-```python
+You can reload the configs from scratch by calling __init__(). However, this might not change the behaviour of the core modules, if it's not refering to the AKConfig instance again.
 from agentkernel.core import Config
 
-os.environment["AK_DEBUG"]=True # default if False. Setting to True
-# Get the current configuration instance
-config = Config.get()
+import os
+from agentkernel.core import Config
+
+os.environ["AK_DEBUG"] = "True"  # default is False. Setting to True
 config.__init__()
 print(f"Debug mode: {config.debug}") # will show True
 ```
 ## Your Application configs
-You can include your application configs to the same config.yaml file. Dereive a class from AKConfig and setup your modules.
-Please note that these should be instentiated by you.
-
+You can include your application configs to the same config.yaml file. Derive a class from AKConfig and setup your modules.
+Please note that these should be instantiated by you.
 ```python
 from agentkernel.core import Config
 
-class ApplicationConfig(Config)
-    mongo_db_url:str = Field(default="http://mongo:6117", description="Mongo URL")
+class ApplicationConfig(Config):
 
 # Get the current configuration instance
 config = ApplicationConfig()

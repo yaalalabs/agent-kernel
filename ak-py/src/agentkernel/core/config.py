@@ -3,7 +3,7 @@ from typing import Optional, List
 
 
 from pydantic import BaseModel, Field
-from .config_yaml_util import YamlBaseSettingsModifed
+from .config_yaml_util import YamlBaseSettingsModified
 
 
 def _get_ak_version() -> str:
@@ -46,7 +46,7 @@ class _MCPConfig(BaseModel):
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
-class AKConfig(YamlBaseSettingsModifed):
+class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(description="Agent session / memory related configurations",
                                          default_factory=_SessionStoreConfig)

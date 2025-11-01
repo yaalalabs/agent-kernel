@@ -115,7 +115,7 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
         return d
 
 
-class YamlBaseSettingsModifed(BaseSettings):
+class YamlBaseSettingsModified(BaseSettings):
     """Allows to specify a 'yaml_file' path in the Config section.
 
     The secrets injection is done differently than in BaseSettings, allowing also
