@@ -13,7 +13,7 @@ from ...api import RESTRequestHandler
 
 class AgentSlackRequestHandler(RESTRequestHandler):
     """
-    API routers that expose endpoints to interact Slack with Agent Kernel.
+    API routers that expose endpoints to interact with Slack using Agent Kernel.
     Endpoints:
     - GET /health: Health check
     - GET /agents: List available agents. Not used by Slack but useful for testing.
