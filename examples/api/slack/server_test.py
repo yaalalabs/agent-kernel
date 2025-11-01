@@ -54,4 +54,3 @@ async def test_slack_agent(http_client):
         response = await http_client.send("/slack/events", method="post", 
                                       body={'token': 'AGRZJwRtHea5ilthqQfP2xbC', 'challenge': 'A3iJatJqh40dIMltX7VbAYVooc4M8vCEUJH5BGpKPSQUwl3WhYnX', 'type': 'url_verification'})
         print("response:", response)
-    
