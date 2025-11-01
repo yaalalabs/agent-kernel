@@ -83,7 +83,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         
         service = AgentService()
         try:
-            response_for_first_bot_message=None
+            response_for_first_bot_message = None
             if self._slack_agent_acknowledgement is not None:
                 response_for_first_bot_message = await say(
                     channel=channel,
