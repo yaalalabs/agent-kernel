@@ -51,6 +51,10 @@ async def test_slack_agent(http_client):
     # This will raise HTTPStatusError because the token is invalid & Slack bolts lib is handling the request
     # TODO: Write a proper test for Slack events with proper mocks
     with pytest.raises(httpx.HTTPStatusError):
-        response = await http_client.send("/slack/events", method="post", 
-                                      body={'token': 'AGRZJwRtHea5ilthqQfP2xbC', 'challenge': 'A3iJatJqh40dIMltX7VbAYVooc4M8vCEUJH5BGpKPSQUwl3WhYnX', 'type': 'url_verification'})
+        challenge_body = {
+            'token': 'AGRZJwRtHea5ilthqQfP2xbC',
+            'challenge': 'A3iJatJqh40dIMltX7VbAYVooc4M8vCEUJH5BGpKPSQUwl3WhYnX',
+            'type': 'url_verification'
+        }
+        response = await http_client.send("/slack/events", method="post", body=challenge_body)
         print("response:", response)
