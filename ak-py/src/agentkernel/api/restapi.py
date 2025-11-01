@@ -71,7 +71,8 @@ class RESTAPI:
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
 
         routers = []
-        if handler is not None: # handler is provided, use it. It takes priority over default handler
+        # handler is provided, use it. It takes priority over default handler
+        if handler is not None:
             routers.append(handler.get_router())
         elif AKConfig.get().api.enabled_routes.agents:
             routers.append(AgentRESTRequestHandler().get_router())
