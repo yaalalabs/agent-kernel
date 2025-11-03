@@ -94,8 +94,11 @@ class CLI:
                     self._print()
                 else:
                     self._print("No agent selected. Please select an agent using !select <agent_name>.")
+            except (KeyboardInterrupt, EOFError):
+                raise
             except Exception as e:
                 self._print(f"Error: {e}")
+                ak_logger.error("Exception in CLI run loop", exc_info=True)
 
     @classmethod
     def main(cls):
