@@ -3,7 +3,7 @@ from typing import Optional, List
 
 
 from pydantic import BaseModel, Field
-from .config_yaml_util import YamlBaseSettingsModified
+from .util.config_yaml_util import YamlBaseSettingsModified
 
 
 def _get_ak_version() -> str:
