@@ -1,7 +1,9 @@
+from agentkernel.core.sessions.in_memory import InMemorySessionStore
+from agentkernel.core.sessions.redis import RedisSessionStore
 import pytest
 
 from agentkernel import Agent, Runner
-from agentkernel.core.runtime import Runtime, _MemoryType
+from agentkernel.core.runtime import Runtime
 
 
 class DummyRunner(Runner):
@@ -34,9 +36,6 @@ class DummyAgent(Agent):
 def reset_runtime_singleton():
     # helper to reset the singleton between tests
     Runtime._instance = None
-    Runtime._agents = {}
-    Runtime._sessions = None
-    Runtime._memory_type = None
 
 
 def test_runtime_instance_redis_when_config(monkeypatch):
@@ -55,7 +54,7 @@ def test_runtime_instance_redis_when_config(monkeypatch):
 
     rt = Runtime.instance()
     # Should select REDIS memory type and initialize a session store
-    assert Runtime._memory_type == _MemoryType.REDIS
+    assert type(rt._sessions) is RedisSessionStore
     assert rt.sessions() is not None
 
 
@@ -69,7 +68,7 @@ def test_runtime_instance_invalid_fallsback(monkeypatch):
     monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     rt = Runtime.instance()
-    assert Runtime._memory_type == _MemoryType.IN_MEMORY
+    assert type(rt._sessions) is InMemorySessionStore
     # Should be able to register and list agents
     a = DummyAgent("a1")
     rt.register(a)

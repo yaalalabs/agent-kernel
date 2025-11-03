@@ -53,9 +53,6 @@ class SimpleModule(Module):
 
 def reset_runtime_singleton():
     Runtime._instance = None
-    Runtime._agents = {}
-    Runtime._sessions = None
-    Runtime._memory_type = None
 
 
 def test_module_add_updates_agents(monkeypatch):

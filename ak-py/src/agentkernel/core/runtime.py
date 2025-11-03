@@ -1,9 +1,11 @@
 import importlib
 import logging
 import traceback
+
 from enum import StrEnum
+from threading import Lock
 from types import ModuleType
-from typing import Any
+from typing import Any, Self
 
 from .base import Agent, Session
 from .config import AKConfig
@@ -20,37 +22,35 @@ class Runtime:
     """
     Runtime class provides the environment for hosting and running agents.
     """
-
-    _log = logging.getLogger("ak.runtime")
-    _instance = None
-    _agents = {}
-    _sessions: SessionStore = None
-    _memory_type: _MemoryType = None
+    _instance: Self  = None
+    _lock: Lock = Lock()
 
     def __init__(self, memory_type: _MemoryType = _MemoryType.IN_MEMORY):
-        Runtime._memory_type = memory_type
-        if Runtime._instance is not None:
-            raise Exception("Runtime is a singleton class")
+        self._log = logging.getLogger("ak.runtime")
+        self._agents = {}
+        self._sessions: SessionStore = None
         if memory_type == _MemoryType.REDIS:
             self._sessions = RedisSessionStore(RedisDriver())
             self._log.info("Using Redis session store")
         else:
-            self._log.info("Using in-memory session store")
             self._sessions = InMemorySessionStore()
-        Runtime._instance = self
+            self._log.info("Using in-memory session store")
 
     @staticmethod
     def instance() -> "Runtime":
         if Runtime._instance is None:
-            env_mem = AKConfig.get().session.type.upper()
-            try:
-                memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
-            except ValueError:
-                Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
-                Runtime._log.warning(traceback.format_exc())
-                memory_type = _MemoryType.IN_MEMORY
-            Runtime._log.debug(f"Using memory type: {memory_type}")
-            Runtime(memory_type)
+            with Runtime._lock:
+                if Runtime._instance is None:
+                    log = logging.getLogger("ak.runtime")
+                    env_mem = AKConfig.get().session.type.upper()
+                    try:
+                        memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
+                    except ValueError:
+                        log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
+                        log.warning(traceback.format_exc())
+                        memory_type = _MemoryType.IN_MEMORY
+                    log.debug(f"Using memory type: {memory_type}")
+                    Runtime._instance = Runtime(memory_type)
         return Runtime._instance
 
     def load(self, module: str) -> ModuleType:
