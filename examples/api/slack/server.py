@@ -1,7 +1,7 @@
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.slack import AgentSlackRequestHandler
+from agentkernel.slack import AgentSlackRequestHandler
 
 general_agent = OpenAIAgent(
     name="general",
