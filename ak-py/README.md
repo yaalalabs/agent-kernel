@@ -236,7 +236,7 @@ Configure where agent sessions are stored.
 - **Type**: string
 - **Options**: `in_memory`, `redis`
 - **Default**: `in_memory`
-- **Environment Variable**: `AK_SESSION_TYPE`
+- **Environment Variable**: `AK_SESSION__TYPE`
 
 ##### Redis Configuration
 
@@ -246,19 +246,19 @@ Required when `session.type=redis`:
   - **Field**: `session.redis.url`
   - **Default**: `redis://localhost:6379`
   - **Description**: Redis connection URL. Use `rediss://` for SSL
-  - **Environment Variable**: `AK_SESSION_REDIS_URL`
+  - **Environment Variable**: `AK_SESSION__REDIS__URL`
 
 - **TTL (Time to Live)**
   - **Field**: `session.redis.ttl`
   - **Default**: `604800` (7 days)
   - **Description**: Session TTL in seconds
-  - **Environment Variable**: `AK_SESSION_REDIS_TTL`
+  - **Environment Variable**: `AK_SESSION__REDIS__TTL`
 
 - **Key Prefix**
   - **Field**: `session.redis.prefix`
   - **Default**: `ak:sessions:`
   - **Description**: Key prefix for session storage
-  - **Environment Variable**: `AK_SESSION_REDIS_PREFIX`
+  - **Environment Variable**: `AK_SESSION__REDIS__PREFIX`
 
 #### API Configuration
 
@@ -267,71 +267,71 @@ Configure the REST API server (if using the API module).
 - **Host**
   - **Field**: `api.host`
   - **Default**: `0.0.0.0`
-  - **Environment Variable**: `AK_API_HOST`
+  - **Environment Variable**: `AK_API__HOST`
 
 - **Port**
   - **Field**: `api.port`
   - **Default**: `8000`
-  - **Environment Variable**: `AK_API_PORT`
+  - **Environment Variable**: `AK_API__PORT`
 
 - **Custom Router Prefix**
   - **Field**: `api.custom_router_prefix`
   - **Default**: `/custom`
-  - **Environment Variable**: `AK_API_CUSTOM_ROUTER_PREFIX`
+  - **Environment Variable**: `AK_API__CUSTOM_ROUTER_PREFIX`
 
 - **Enabled Routes**
   - **Field**: `api.enabled_routes.agents`
   - **Default**: `true`
   - **Description**: Enable agent interaction routes
-  - **Environment Variable**: `AK_API_ENABLED_ROUTES_AGENTS`
+  - **Environment Variable**: `AK_API__ENABLED_ROUTES__AGENTS`
 
 #### A2A (Agent-to-Agent) Configuration
 
 - **Enabled**
   - **Field**: `a2a.enabled`
   - **Default**: `false`
-  - **Environment Variable**: `AK_A2A_ENABLED`
+  - **Environment Variable**: `AK_A2A__ENABLED`
 
 - **Agents**
   - **Field**: `a2a.agents`
   - **Default**: `["*"]`
   - **Description**: List of agent names to enable A2A (use `["*"]` for all)
-  - **Environment Variable**: `AK_A2A_AGENTS` (comma-separated)
+  - **Environment Variable**: `AK_A2A__AGENTS` (comma-separated)
 
 - **URL**
   - **Field**: `a2a.url`
   - **Default**: `http://localhost:8000/a2a`
-  - **Environment Variable**: `AK_A2A_URL`
+  - **Environment Variable**: `AK_A2A__URL`
 
 - **Task Store Type**
   - **Field**: `a2a.task_store_type`
   - **Options**: `in_memory`, `redis`
   - **Default**: `in_memory`
-  - **Environment Variable**: `AK_A2A_TASK_STORE_TYPE`
+  - **Environment Variable**: `AK_A2A__TASK_STORE_TYPE`
 
 #### MCP (Model Context Protocol) Configuration
 
 - **Enabled**
   - **Field**: `mcp.enabled`
   - **Default**: `false`
-  - **Environment Variable**: `AK_MCP_ENABLED`
+  - **Environment Variable**: `AK_MCP__ENABLED`
 
 - **Expose Agents**
   - **Field**: `mcp.expose_agents`
   - **Default**: `false`
   - **Description**: Expose agents as MCP tools
-  - **Environment Variable**: `AK_MCP_EXPOSE_AGENTS`
+  - **Environment Variable**: `AK_MCP__EXPOSE_AGENTS`
 
 - **Agents**
   - **Field**: `mcp.agents`
   - **Default**: `["*"]`
   - **Description**: List of agent names to expose as MCP tools
-  - **Environment Variable**: `AK_MCP_AGENTS` (comma-separated)
+  - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
 
 - **URL**
   - **Field**: `mcp.url`
   - **Default**: `http://localhost:8000/mcp`
-  - **Environment Variable**: `AK_MCP_URL`
+  - **Environment Variable**: `AK_MCP__URL`
 
 ### Configuration Examples
 
@@ -341,14 +341,14 @@ Use the `AK_` prefix and underscores for nested fields:
 
 ```bash
 export AK_DEBUG=true
-export AK_SESSION_TYPE=redis
-export AK_SESSION_REDIS_URL=redis://localhost:6379
-export AK_SESSION_REDIS_TTL=604800
-export AK_SESSION_REDIS_PREFIX=ak:sessions:
-export AK_API_HOST=0.0.0.0
-export AK_API_PORT=8000
-export AK_A2A_ENABLED=true
-export AK_MCP_ENABLED=false
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
+export AK_SESSION__REDIS__TTL=604800
+export AK_SESSION__REDIS__PREFIX=ak:sessions:
+export AK_API__HOST=0.0.0.0
+export AK_API__PORT=8000
+export AK_A2A__ENABLED=true
+export AK_MCP__ENABLED=false
 ```
 
 #### .env File
@@ -357,14 +357,14 @@ Create a `.env` file in your working directory:
 
 ```env
 AK_DEBUG=false
-AK_SESSION_TYPE=redis
-AK_SESSION_REDIS_URL=rediss://my-redis:6379
-AK_SESSION_REDIS_TTL=1209600
-AK_SESSION_REDIS_PREFIX=ak:prod:sessions:
-AK_API_HOST=0.0.0.0
-AK_API_PORT=8080
-AK_A2A_ENABLED=true
-AK_A2A_URL=http://localhost:8080/a2a
+AK_SESSION__TYPE=redis
+AK_SESSION__REDIS__URL=rediss://my-redis:6379
+AK_SESSION__REDIS__TTL=1209600
+AK_SESSION__REDIS__PREFIX=ak:prod:sessions:
+AK_API__HOST=0.0.0.0
+AK_API__PORT=8080
+AK_A2A__ENABLED=true
+AK_A2A__URL=http://localhost:8080/a2a
 ```
 
 #### config.yaml
