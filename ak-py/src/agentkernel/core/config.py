@@ -60,7 +60,7 @@ class AKConfig(YamlBaseSettingsModified):
         return globals()["ak_config"]
 
     @classmethod
-    def _set(cls): 
+    def _set(cls):
         globals()["ak_config"] = AKConfig()
 
 AKConfig._set()
