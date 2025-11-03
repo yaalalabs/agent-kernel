@@ -13,8 +13,6 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 class APITestClient:
     def __init__(self, url):
         self.url = url
-        self.session_id = str(uuid.uuid4())
-
     async def send(self, endpoint: str, method: str="post", body=None):
         payload = {} if body is None else body
         async with httpx.AsyncClient(timeout=10.0) as client:
