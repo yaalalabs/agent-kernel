@@ -251,7 +251,7 @@ class ApplicationConfig(Config):
 config = ApplicationConfig()
 
 # Access configuration values
-print(config.dump())
+print(config.model_dump())
 ```
 
 
