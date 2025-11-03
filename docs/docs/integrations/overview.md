@@ -7,7 +7,7 @@ For API custom integrations you can extend **RESTRequestHandler** and pass it to
 
 ```python
 from fastapi import APIRouter
-from core.api import RESTRequestHandler
+from agentkernel.api import RESTRequestHandler
 
 class CustomHandler(RESTRequestHandler):
   def get_router(self) -> APIRouter:
