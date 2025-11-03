@@ -229,6 +229,7 @@ You can reload the configs from scratch by calling __init__(). However, this mig
 
 ```python
 from agentkernel import Config
+import os
 
 os.environ["AK_DEBUG"] = "True"  # default is False. Setting to True
 config.__init__()
