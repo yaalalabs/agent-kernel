@@ -56,7 +56,7 @@ def replace_secrets(secrets_dir: Path, data: str) -> str:
     return data
 
 
-def yaml_config_settings_source(settings: "YamlBaseSettingsModifed") -> Dict[str, Any]:
+def yaml_config_settings_source(settings: "YamlBaseSettingsModified") -> Dict[str, Any]:
     """Loads settings from a YAML file at `Config.yaml_file`
 
     "<file:xxxx>" patterns are replaced with the contents of file xxxx. The root path
@@ -68,7 +68,7 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModifed") -> Dict[str
     path = Path(yaml_file)
 
     if not path.exists():
-        print(f"Could not open yaml settings file at: {path}")
+        print(f"WARNING: Could not open yaml settings file at: {path}")
         return {}
 
     if secrets_dir is not None:
