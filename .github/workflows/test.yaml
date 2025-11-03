@@ -152,6 +152,8 @@ jobs:
       - name: Run API examples
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: |
           set -e
           for example in examples/api/* examples/api/a2a/* examples/api/mcp/*; do

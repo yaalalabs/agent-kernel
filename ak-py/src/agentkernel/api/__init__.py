@@ -11,3 +11,4 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 from .restapi import RESTAPI
+from .rest_request_handler import RESTRequestHandler
