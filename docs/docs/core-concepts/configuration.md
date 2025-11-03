@@ -241,9 +241,10 @@ Please note that these should be instantiated by you.
 
 ```python
 from agentkernel import Config
+from pydantic import Field
 
 class ApplicationConfig(Config):
-  monogdb_url:str Field(default="mongo://localhost:27017", description="MongoDB URL")
+  monogdb_url: str = Field(default="mongo://localhost:27017", description="MongoDB URL")
 
 # Get the current configuration instance
 config = ApplicationConfig()
