@@ -227,23 +227,23 @@ print(f"Redis URL: {config.session.redis.url}")
 ### Dynamically reloading config
 You can reload the configs from scratch by calling __init__(). However, this might not change the behaviour of the core modules, if its not refering to the AKConfig instance again.
 
-You can reload the configs from scratch by calling __init__(). However, this might not change the behaviour of the core modules, if it's not refering to the AKConfig instance again.
-from agentkernel.core import Config
-
-import os
-from agentkernel.core import Config
+```python
+from agentkernel import Config
 
 os.environ["AK_DEBUG"] = "True"  # default is False. Setting to True
 config.__init__()
 print(f"Debug mode: {config.debug}") # will show True
 ```
+
 ## Your Application configs
 You can include your application configs to the same config.yaml file. Derive a class from AKConfig and setup your modules.
 Please note that these should be instantiated by you.
+
 ```python
-from agentkernel.core import Config
+from agentkernel import Config
 
 class ApplicationConfig(Config):
+  monogdb_url:str Field(default="mongo://localhost:27017", description="MongoDB URL")
 
 # Get the current configuration instance
 config = ApplicationConfig()
