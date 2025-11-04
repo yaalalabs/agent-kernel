@@ -13,5 +13,4 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    handler = AgentSlackRequestHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([ AgentSlackRequestHandler()])

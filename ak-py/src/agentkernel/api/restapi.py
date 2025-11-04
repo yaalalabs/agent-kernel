@@ -62,21 +62,21 @@ class RESTAPI:
         cls._custom_routers.append(router)
 
     @classmethod
-    def run(cls, handler: RESTRequestHandler|None = None):
+    def run(cls, handlers: list[RESTRequestHandler] = None):
         """
         Starts the REST API server.
         """
+        if handlers is None:
+            handlers = [AgentRESTRequestHandler()]
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
 
         routers = []
-        # handler is provided, use it. It takes priority over default handler
-        if handler is not None:
-            routers.append(handler.get_router())
-        elif AKConfig.get().api.enabled_routes.agents:
-            routers.append(AgentRESTRequestHandler().get_router())
-            
+        for handler in handlers:
+            if handler is not None:
+                routers.append(handler.get_router())
+
         if AKConfig.get().a2a.enabled:
             from .a2a import A2ARESTRequestHandler
             routers.append(A2ARESTRequestHandler.get_catalog_router())

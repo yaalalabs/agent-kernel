@@ -38,17 +38,12 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         """
         Returns the APIRouter instance.
         """
-
         router = APIRouter()
 
         @router.get("/health")
         def health():
             return {"status": "ok"}
-
-        @router.get("/agents")
-        def list_agents():
-            return {"agents": list(Runtime.instance().agents().keys())}
-
+        
         @router.post("/slack/events")
         async def slack_events(req: Request):
             body = await req.json()
