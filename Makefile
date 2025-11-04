@@ -23,9 +23,14 @@ lint-fix:
 
 lint-check:
 	@echo "Checking import sorting with isort..."
-	cd ak-py && uv run --dev isort --skip src/agentkernel/core/__init__.py --check-only ./src ./tests
-	@echo "Checking ak-py code formatting with black..."
-	cd ak-py && uv run --dev black --check ./src ./tests
+	@EXIT_CODE=0; \
+	(cd ak-py && uv run --dev isort --skip src/agentkernel/core/__init__.py --check-only ./src ./tests) || EXIT_CODE=$$?; \
+	echo "Checking ak-py code formatting with black..."; \
+	(cd ak-py && uv run --dev black --check ./src ./tests) || EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -ne 0 ]; then \
+		echo "❌ Linting errors found in ak-py!"; \
+	fi; \
+	exit $$EXIT_CODE
 
 lint-examples:
 	@echo "Formatting examples..."
@@ -46,20 +51,25 @@ lint-examples:
 
 lint-examples-check:
 	@echo "Checking examples formatting..."
-	@for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
+	@EXIT_CODE=0; \
+	for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
 		echo "Checking $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
 			if [ -d ".venv" ]; then \
-				uv run --dev isort --check-only --skip .venv --skip .terraform --skip dist . || true; \
-				uv run --dev black --check --exclude '/(\.venv|\.terraform|dist)/' . || true; \
+				uv run --dev isort --check-only --skip .venv --skip .terraform --skip dist . || EXIT_CODE=1; \
+				uv run --dev black --check --exclude '/(\.venv|\.terraform|dist)/' . || EXIT_CODE=1; \
 			else \
-				uv run --dev isort --check-only --skip .terraform --skip dist . || true; \
-				uv run --dev black --check --exclude '/(\.terraform|dist)/' . || true; \
+				uv run --dev isort --check-only --skip .terraform --skip dist . || EXIT_CODE=1; \
+				uv run --dev black --check --exclude '/(\.terraform|dist)/' . || EXIT_CODE=1; \
 			fi && \
 			cd - > /dev/null; \
 		fi; \
-	done
+	done; \
+	if [ $$EXIT_CODE -ne 0 ]; then \
+		echo "❌ Linting errors found in examples!"; \
+	fi; \
+	exit $$EXIT_CODE
 
 lint-all: lint lint-examples
 	@echo "All linting completed!"
