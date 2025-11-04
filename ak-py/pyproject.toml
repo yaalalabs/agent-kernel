@@ -87,7 +87,6 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
-# Common tool configurations that apply to all packages
 [tool.black]
 line-length = 88
 target-version = ["py312"]
