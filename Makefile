@@ -1,6 +1,5 @@
 .PHONY: lint lint-check lint-examples lint-examples-check lint-all lint-check-all help
 
-# List of example directories to lint
 EXAMPLE_DIRS := examples/api examples/cli examples/api/a2a examples/api/mcp examples/aws-containerized examples/aws-serverless examples/containerized
 
 help:

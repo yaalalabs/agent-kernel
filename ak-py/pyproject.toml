@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
-    { name = "Yaala Labs", email = "info@yaalalabs.com" }
+    { name = "Yaala Labs", email = "agentkernel@yaalalabs.com" }
 ]
 dependencies = [
     "pydantic>=2.11.7",
