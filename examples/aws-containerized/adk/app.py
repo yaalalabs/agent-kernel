@@ -27,7 +27,7 @@ history_agent = Agent(
     """,
 )
 
-triage_agent = LlmAgent(
+triage_agent = LlmAgent (
     name="triage",
     model=LiteLlm(model="openai/gpt-4o-mini"),
     description="Agent that routes the user to the appropriate specialist agent (math or history).",
