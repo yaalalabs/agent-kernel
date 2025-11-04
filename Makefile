@@ -1,11 +1,13 @@
-.PHONY: lint lint-check lint-examples lint-examples-check help
+.PHONY: lint lint-check lint-examples lint-examples-check lint-all lint-check-all help
 
 help:
 	@echo "Available targets:"
-	@echo "  lint                - Formats python code"
-	@echo "  lint-check          - Dry run to check code formatting"
+	@echo "  lint                - Formats python code in ak-py"
+	@echo "  lint-check          - Dry run to check code formatting in ak-py"
 	@echo "  lint-examples       - Formats python code in examples directory"
 	@echo "  lint-examples-check - Dry run to check code formatting in examples"
+	@echo "  lint-all            - Formats python code in both ak-py and examples"
+	@echo "  lint-check-all      - Dry run to check code formatting in both ak-py and examples"
 	@echo "  help                - Show this help message"
 
 lint: lint-fix
@@ -55,3 +57,9 @@ lint-examples-check:
 			cd - > /dev/null; \
 		fi; \
 	done
+
+lint-all: lint lint-examples
+	@echo "All linting completed!"
+
+lint-check-all: lint-check lint-examples-check
+	@echo "All lint checks completed!"

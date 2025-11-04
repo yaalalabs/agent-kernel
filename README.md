@@ -1,4 +1,8 @@
+![Agent Kernel Banner](docs/static/img/banner.png)
+
 # Agent Kernel by Yaala Labs
+
+> **[Developer Guide](DEVELOPER_GUIDE.md)**
 
 ## Introduction
 
