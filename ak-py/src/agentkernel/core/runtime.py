@@ -44,13 +44,9 @@ class Runtime:
         if Runtime._instance is None:
             env_mem = AKConfig.get().session.type.upper()
             try:
-                memory_type: _MemoryType = (
-                    _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
-                )
+                memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
             except ValueError:
-                Runtime._log.warning(
-                    f"Invalid memory type '{env_mem}', falling back to IN_MEMORY"
-                )
+                Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
                 Runtime._log.warning(traceback.format_exc())
                 memory_type = _MemoryType.IN_MEMORY
             Runtime._log.debug(f"Using memory type: {memory_type}")

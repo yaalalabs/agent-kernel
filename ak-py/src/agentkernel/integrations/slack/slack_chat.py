@@ -21,13 +21,9 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
     def __init__(self):
         self._log = logging.getLogger("ak.api.slack")
-        self._slack_agent = (
-            Config.get().slack.agent if Config.get().slack.agent != "" else None
-        )
+        self._slack_agent = Config.get().slack.agent if Config.get().slack.agent != "" else None
         self._slack_agent_acknowledgement = (
-            Config.get().slack.agent_acknowledgement
-            if Config.get().slack.agent_acknowledgement != ""
-            else None
+            Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         )
         self._bot_id = None
 
@@ -80,9 +76,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         mention = f"<@{self._bot_id}>"
         question = text.replace(mention, "").strip()
 
-        self._log.debug(
-            f"Received request from user {user} in channel {channel}: {question}"
-        )
+        self._log.debug(f"Received request from user {user} in channel {channel}: {question}")
 
         service = AgentService()
         try:
@@ -95,9 +89,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 )
             service.select(session_id=thread_ts, name=self._slack_agent)
             if not service.agent:
-                await say(
-                    channel=channel, text="No agent available to handle your request."
-                )
+                await say(channel=channel, text="No agent available to handle your request.")
                 return
 
             result = await service.run(question)
@@ -111,9 +103,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             if response_for_first_bot_message is not None:
                 new_ts = response_for_first_bot_message["ts"]
                 ch = response_for_first_bot_message["channel"]
-                await say.client.chat_update(
-                    channel=ch, ts=new_ts, text=f"Hi <@{user}>,"
-                )
+                await say.client.chat_update(channel=ch, ts=new_ts, text=f"Hi <@{user}>,")
             else:
                 new_ts = thread_ts
                 ch = channel

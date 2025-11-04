@@ -64,9 +64,7 @@ class CheckPointer(BaseCheckpointSaver):
             if thread_id and thread_id in self._storage:
                 thread_data = self._storage[thread_id]
                 for ns, data in thread_data.items():
-                    checkpoint_config: RunnableConfig = {
-                        "configurable": {"thread_id": thread_id, "checkpoint_ns": ns}
-                    }
+                    checkpoint_config: RunnableConfig = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ns}}
                     result.append(
                         CheckpointTuple(
                             config=checkpoint_config,
@@ -122,9 +120,7 @@ class CheckPointer(BaseCheckpointSaver):
         if checkpoint_ns not in self._writes[thread_id]:
             self._writes[thread_id][checkpoint_ns] = []
 
-        self._writes[thread_id][checkpoint_ns].append(
-            {"task_id": task_id, "task_path": task_path, "writes": writes}
-        )
+        self._writes[thread_id][checkpoint_ns].append({"task_id": task_id, "task_path": task_path, "writes": writes})
 
     def delete_thread(self, thread_id: str) -> None:
         if thread_id in self._storage:
@@ -226,9 +222,7 @@ class LangGraphAgent(BaseAgent):
                         )
                     )
         # TODO extract description from graph
-        return self._generate_a2a_card(
-            agent_name=self.name, description="", skills=skills
-        )
+        return self._generate_a2a_card(agent_name=self.name, description="", skills=skills)
 
 
 class LangGraphSession:
@@ -269,9 +263,7 @@ class LangGraphRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
-    async def run(
-        self, agent: LangGraphAgent, session: BaseSession, prompt: Any
-    ) -> Any:
+    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
         """
         Runs the LangGraph agent with the provided session and prompt.
         :param agent: The LangGraph agent to run.
@@ -279,9 +271,7 @@ class LangGraphRunner(BaseRunner):
         :param prompt: The input prompt for the agent.
         :return: The response from the agent.
         """
-        session_config = LangGraphSessionConfigModel(
-            configurable=LangGraphSessionConfigurable(thread_id=session.id)
-        )
+        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
         agent.agent.checkpointer = self._session(session).checkpointer
         result = await agent.agent.ainvoke(
             input={"messages": [HumanMessage(content=prompt)]},
@@ -305,9 +295,7 @@ class LangGraphModule(BaseModule):
         self.runner = LangGraphRunner()
         self.load(agents)
 
-    def _wrap(
-        self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]
-    ) -> BaseAgent:
+    def _wrap(self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]) -> BaseAgent:
         return LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
 
     def load(self, agents: list[CompiledStateGraph]):

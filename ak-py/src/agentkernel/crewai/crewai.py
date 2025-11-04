@@ -37,9 +37,7 @@ class CrewAISession(Storage):
             agent = "Unknown"
         self._items.append({"value": value, "metadata": metadata, "agent": agent})
 
-    def search(
-        self, query: str, limit: int = 10, score_threshold: float = 0.5
-    ) -> list[dict]:
+    def search(self, query: str, limit: int = 10, score_threshold: float = 0.5) -> list[dict]:
         """
         Searches for items in the session that match the query.
         :param query: The search query.
@@ -116,9 +114,7 @@ class CrewAIAgent(BaseAgent):
     CrewAIAgent class provides an agent wrapping for CrewAI based agents.
     """
 
-    def __init__(
-        self, name: str, runner: CrewAIRunner, agent: Agent, crew: list[Agent]
-    ):
+    def __init__(self, name: str, runner: CrewAIRunner, agent: Agent, crew: list[Agent]):
         """
         Initializes a CrewAIAgent instance.
         :param name: Name of the agent.
@@ -158,14 +154,8 @@ class CrewAIAgent(BaseAgent):
 
         skills = []
         for tool in self.agent.tools:
-            skills.append(
-                AgentSkill(
-                    id=tool.name, name=tool.name, description=tool.description, tags=[]
-                )
-            )
-        return self._generate_a2a_card(
-            agent_name=self.name, description=self.agent.backstory, skills=skills
-        )
+            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
+        return self._generate_a2a_card(agent_name=self.name, description=self.agent.backstory, skills=skills)
 
 
 class CrewAIModule(Module):

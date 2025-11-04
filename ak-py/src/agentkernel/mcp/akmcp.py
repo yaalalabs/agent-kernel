@@ -37,9 +37,7 @@ class MCP:
 
         async def execute(self, session_id: str, prompt: str, ctx: Context) -> Any:
             service = AgentService()
-            await ctx.info(
-                f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}"
-            )
+            await ctx.info(f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}")
             service.select(session_id, self.agent_name)
             response = await service.run(prompt=prompt)
             await ctx.debug(f"Agent response '{response}'")
@@ -64,10 +62,7 @@ class MCP:
         if AKConfig.get().mcp.expose_agents:
             agents: dict[str, Agent] = Runtime.instance().agents()
             for name, agent in agents.items():
-                whitelisted = (
-                    AKConfig.get().mcp.agents == ["*"]
-                    or name in AKConfig.get().mcp.agents
-                )
+                whitelisted = AKConfig.get().mcp.agents == ["*"] or name in AKConfig.get().mcp.agents
                 if not whitelisted:
                     continue
                 # Add executor

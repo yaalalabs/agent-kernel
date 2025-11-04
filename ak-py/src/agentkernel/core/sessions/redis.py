@@ -58,9 +58,7 @@ class RedisDriver:
         for attempt in range(retries):
             try:
                 self._log.debug(f"Connecting to Redis using URL {self._url}")
-                client = redis.from_url(
-                    self._url, decode_responses=False, socket_connect_timeout=5
-                )
+                client = redis.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
                 client.ping()
                 self._redis_client = client
             except redis.RedisError as e:
@@ -113,9 +111,7 @@ class RedisDriver:
         """
         self._log.debug(f"HKEYS {key}")
         raw = self.client.hkeys(name=key)
-        return [
-            k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw
-        ]
+        return [k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw]
 
     def exists(self, key: str) -> bool:
         """
@@ -203,9 +199,7 @@ class RedisSessionStore(SessionStore):
         """
         for key in session.get_all_keys():
             value = session.get(key)
-            self._driver.hset(
-                self._driver.key(session.id), key, self._serde.dumps(value)
-            )
+            self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))
         if self._driver.ttl:
             self._driver.expire(self._driver.key(session.id))
 

@@ -64,9 +64,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                         status_code=HTTPStatus.BAD_REQUEST,
                         detail={
                             "error": "No agent available",
-                            "session_id": service.get_response_session_id(
-                                req.session_id
-                            ),
+                            "session_id": service.get_response_session_id(req.session_id),
                         },
                     )
             result = await service.run(req.prompt)

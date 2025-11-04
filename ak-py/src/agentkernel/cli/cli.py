@@ -54,9 +54,7 @@ class CLI:
         self._service.select()
 
         if not self._service.agent:
-            self._print(
-                "No agents available. Please load an agent module using !load <module_name>."
-            )
+            self._print("No agents available. Please load an agent module using !load <module_name>.")
 
         while True:
             try:
@@ -75,9 +73,7 @@ class CLI:
                         if len(tokens) != 2:
                             self._print("Usage: !load <module_name>")
                             continue
-                        session_id = (
-                            self._service.session.id if self._service.session else None
-                        )
+                        session_id = self._service.session.id if self._service.session else None
                         self._service.load(name=tokens[1], session_id=session_id)
                     elif command in ["!n", "!new"]:
                         self._service.new()
@@ -87,25 +83,17 @@ class CLI:
                         if len(tokens) != 2:
                             self._print("Usage: !select <agent_name>")
                             continue
-                        session_id = (
-                            self._service.session.id if self._service.session else None
-                        )
+                        session_id = self._service.session.id if self._service.session else None
                         self._service.select(name=tokens[1], session_id=session_id)
                     else:
-                        self._print(
-                            "Unknown command. Type !help for available commands."
-                        )
+                        self._print("Unknown command. Type !help for available commands.")
                     continue
 
                 if self._service.agent:
-                    self._print(
-                        f"\033[35m{await self._service.run(prompt=prompt)}\033[0m"
-                    )
+                    self._print(f"\033[35m{await self._service.run(prompt=prompt)}\033[0m")
                     self._print()
                 else:
-                    self._print(
-                        "No agent selected. Please select an agent using !select <agent_name>."
-                    )
+                    self._print("No agent selected. Please select an agent using !select <agent_name>.")
             except (KeyboardInterrupt, EOFError):
                 raise
             except Exception as e:

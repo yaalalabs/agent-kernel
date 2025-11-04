@@ -38,34 +38,24 @@ class A2A:
             self.agent_name = agent_name
             self.log = logging.getLogger(f"ak.a2a.executor.{agent_name}")
 
-        async def execute(
-            self, context: RequestContext, event_queue: EventQueue
-        ) -> None:
+        async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
             if not context.task_id or not context.context_id:
                 raise ValueError("RequestContext must have task_id and context_id")
             if not context.message:
                 raise ValueError("RequestContext must have a message")
             try:
-                response = await self._execute_agent(
-                    context.context_id, context.get_user_input()
-                )
+                response = await self._execute_agent(context.context_id, context.get_user_input())
                 await event_queue.enqueue_event(
-                    new_agent_text_message(
-                        str(response), context.context_id, context.task_id
-                    )
+                    new_agent_text_message(str(response), context.context_id, context.task_id)
                 )
             except Exception as e:
                 error = "Sorry, Agent Kernel encountered an error while processing your request"
                 self.log.error(traceback.format_exc())
                 self.log.error(f"Exception: {e}")
-                await event_queue.enqueue_event(
-                    new_agent_text_message(error, context.context_id, context.task_id)
-                )
+                await event_queue.enqueue_event(new_agent_text_message(error, context.context_id, context.task_id))
                 raise ServerError(error=InternalError()) from e
 
-        async def cancel(
-            self, context: RequestContext, event_queue: EventQueue
-        ) -> None:
+        async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
             raise ServerError(error=UnsupportedOperationError())
 
         async def _execute_agent(self, session_id: str, prompt: str) -> Any:
@@ -81,9 +71,7 @@ class A2A:
             return
         agents: dict[str, Agent] = Runtime.instance().agents()
         for name, agent in agents.items():
-            whitelisted = (
-                AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
-            )
+            whitelisted = AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
             if not whitelisted:
                 continue
             # get card
@@ -115,11 +103,7 @@ class A2A:
 
     @classmethod
     def get_task_store(cls) -> TaskStore:
-        return (
-            RedisTaskStore()
-            if AKConfig.get().a2a.task_store_type == "redis"
-            else InMemoryTaskStore()
-        )
+        return RedisTaskStore() if AKConfig.get().a2a.task_store_type == "redis" else InMemoryTaskStore()
 
 
 class RedisTaskStore(InMemoryTaskStore):

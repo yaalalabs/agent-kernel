@@ -35,9 +35,7 @@ class Lambda:
 
             service.select(session_id, name)
             if not service.agent:
-                cls._log.info(
-                    "No agents available. defaulting to first agent in the list"
-                )
+                cls._log.info("No agents available. defaulting to first agent in the list")
                 service.select(session_id)
                 if not service.agent:
                     cls._log.info("No agents available. Please load an agent module.")
@@ -46,9 +44,7 @@ class Lambda:
                         "body": json.dumps(
                             {
                                 "error": "No agent available",
-                                "session_id": service.get_response_session_id(
-                                    session_id
-                                ),
+                                "session_id": service.get_response_session_id(session_id),
                             }
                         ),
                     }

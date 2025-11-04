@@ -39,9 +39,7 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
 
     # Lets point to the file we created and reload
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
-    cfg_1 = (
-        AKConfig.get()
-    )  # instance object which has no yaml file loaded or env settings
+    cfg_1 = AKConfig.get()  # instance object which has no yaml file loaded or env settings
     cfg_2 = AKConfig()  # object which loads yaml file and env settings
 
     # defaults from cfg_1
@@ -103,14 +101,10 @@ def test_nested_env_cases(monkeypatch):
     monkeypatch.setenv("AK_A2A__TASK_STORE_TYPE", "redis")  # Should be valid
     monkeypatch.setenv("AK_MCP__EXPOSE_AGENTS", "true")  # Should be valid
 
-    monkeypatch.setenv(
-        "AK_API__CUSTOM__ROUTER_PREFIX", "/incorrect"
-    )  # Should be ignored. No submodule custom in api
+    monkeypatch.setenv("AK_API__CUSTOM__ROUTER_PREFIX", "/incorrect")  # Should be ignored. No submodule custom in api
     monkeypatch.setenv("AK_API_CUSTOM_ROUTER_PREFIX", "/health")  # Should be ignored
 
-    monkeypatch.setenv(
-        "AK_API__ENABLED_ROUTES__AGENTS", "false"
-    )  # Default is true. Should be valid
+    monkeypatch.setenv("AK_API__ENABLED_ROUTES__AGENTS", "false")  # Default is true. Should be valid
 
     cfg = AKConfig()
     assert cfg.debug is False  # Should remain default

@@ -104,9 +104,7 @@ class Test:
     @staticmethod
     def compare(actual: str, expected: str, threshold: int = 50):
         score = fuzz.ratio(actual, expected)
-        assert (
-            score > threshold
-        ), f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
+        assert score > threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
 
     async def expect(self, expected: str):
         """
@@ -114,9 +112,7 @@ class Test:
         :param expected: The expected message.
         """
         if self.latest is None:
-            raise AssertionError(
-                "No response available to compare. Ensure send() was called before expect()."
-            )
+            raise AssertionError("No response available to compare. Ensure send() was called before expect().")
         self.compare(self.latest, expected, self.match_threshold)
 
     async def stop(self):
