@@ -1,4 +1,4 @@
-.PHONY: lint lint-check lint-fix help
+.PHONY: lint lint-check help
 
 help:
 	@echo "Available targets:"
