@@ -1,5 +1,6 @@
-from fastapi import APIRouter
 from abc import abstractmethod
+
+from fastapi import APIRouter
 
 
 class RESTRequestHandler:

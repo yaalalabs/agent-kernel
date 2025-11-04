@@ -1,13 +1,13 @@
 import logging
 
 import uvicorn
-from fastapi import FastAPI, APIRouter
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from .agent import AgentRESTRequestHandler
-from ..core.config import AKConfig
 from ..api.rest_request_handler import RESTRequestHandler
+from ..core.config import AKConfig
+from .agent import AgentRESTRequestHandler
 
 logging.basicConfig(
     level=logging.DEBUG,

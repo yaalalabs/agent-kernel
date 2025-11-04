@@ -5,7 +5,7 @@ from typing import Any
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import InMemoryTaskStore, TaskStore
-from a2a.types import UnsupportedOperationError, AgentCard, InternalError
+from a2a.types import AgentCard, InternalError, UnsupportedOperationError
 from a2a.utils import new_agent_text_message
 from a2a.utils.errors import ServerError
 

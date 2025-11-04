@@ -3,7 +3,10 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as BaseAgent
+from ..core import Module
+from ..core import Runner as BaseRunner
+from ..core import Session
 
 FRAMEWORK = "openai"
 

@@ -6,9 +6,9 @@ from typing import Any, Optional
 
 import redis
 
-from .base import SessionStore
 from ..base import Session
 from ..config import AKConfig
+from .base import SessionStore
 
 
 class RedisDriver:

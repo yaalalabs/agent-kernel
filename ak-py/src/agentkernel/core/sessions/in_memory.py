@@ -1,7 +1,7 @@
 import logging
 
-from .base import SessionStore
 from ..base import Session
+from .base import SessionStore
 
 
 class InMemorySessionStore(SessionStore):

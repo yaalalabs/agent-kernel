@@ -6,8 +6,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..core import AgentService, Runtime
 from ..api.rest_request_handler import RESTRequestHandler
+from ..core import AgentService, Runtime
 
 
 class AgentRESTRequestHandler(RESTRequestHandler):

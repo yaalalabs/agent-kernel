@@ -15,5 +15,5 @@ from .config import AKConfig as Config
 from .base import Agent, Runner, Session
 from .module import Module
 from .runtime import Runtime
-from .sessions.redis import RedisDriver, RedisSessionSerde
 from .service import AgentService
+from .sessions.redis import RedisDriver, RedisSessionSerde

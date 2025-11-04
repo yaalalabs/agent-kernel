@@ -1,7 +1,7 @@
 import logging
 import uuid
 
-from ..core import Runtime, Agent, Session
+from ..core import Agent, Runtime, Session
 
 
 class AgentService:

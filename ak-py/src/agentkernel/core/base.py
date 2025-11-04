@@ -1,5 +1,5 @@
 import logging
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from typing import Any, List
 
 from .config import AKConfig
@@ -141,7 +141,7 @@ class Agent(ABC):
         :param skills: List of AgentSkill objects.
         :return: An A2A AgentCard instance.
         """
-        from a2a.types import AgentCard, AgentCapabilities
+        from a2a.types import AgentCapabilities, AgentCard
 
         return AgentCard(
             name=agent_name,
