@@ -62,10 +62,12 @@ class RESTAPI:
         cls._custom_routers.append(router)
 
     @classmethod
-    def run(cls, handlers: list[RESTRequestHandler] = [AgentRESTRequestHandler()]):
+    def run(cls, handlers: list[RESTRequestHandler] = None):
         """
         Starts the REST API server.
         """
+        if handlers is None:
+            handlers = [AgentRESTRequestHandler()]
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
