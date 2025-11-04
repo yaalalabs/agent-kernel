@@ -77,7 +77,7 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed setup instructions.
 
 ### Submitting Your PR
 
-If have followed the guidelines in [Developer Guide](DEVELOPER_GUIDE.md) to fork the repository, refer below.
+If you have followed the guidelines in [Developer Guide](DEVELOPER_GUIDE.md) to fork the repository, refer below.
 
 
 1. **Push to your fork**:
