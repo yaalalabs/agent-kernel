@@ -48,9 +48,7 @@ def replace_secrets(secrets_dir: Path, data: str) -> str:
         path = secrets_dir / relpath
 
         if not path.exists():
-            raise FileNotFoundError(
-                f"Secret file referenced in yaml file not found: {path}"
-            )
+            raise FileNotFoundError(f"Secret file referenced in yaml file not found: {path}")
 
         data = data.replace(f"<file:{match}>", path.read_text("utf-8"))
     return data
@@ -77,6 +75,7 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModified") -> Dict[st
 
     return yaml.safe_load(path.read_text("utf-8"))
 
+
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
     """
     A simple settings source class that loads variables from a YAML file
@@ -88,27 +87,19 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
         super().__init__(settings_class)
         self._yaml_data = yaml_config_settings_source(settings_class)
 
-    def get_field_value(
-        self, field: FieldInfo, field_name: str
-    ) -> Tuple[Any, str, bool]:
+    def get_field_value(self, field: FieldInfo, field_name: str) -> Tuple[Any, str, bool]:
         field_value = self._yaml_data.get(field_name)
         return field_value, field_name, False
 
-    def prepare_field_value(
-        self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool
-    ) -> Any:
+    def prepare_field_value(self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any:
         return value
 
     def __call__(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {}
 
         for field_name, field in self.settings_cls.model_fields.items():
-            field_value, field_key, value_is_complex = self.get_field_value(
-                field, field_name
-            )
-            field_value = self.prepare_field_value(
-                field_name, field, field_value, value_is_complex
-            )
+            field_value, field_key, value_is_complex = self.get_field_value(field, field_name)
+            field_value = self.prepare_field_value(field_name, field, field_value, value_is_complex)
             if field_value is not None:
                 d[field_key] = field_value
 
@@ -171,12 +162,12 @@ class YamlBaseSettingsModified(BaseSettings):
             YamlConfigSettingsSource(settings_cls),
             file_secret_settings,
         )
-    
+
     model_config = SettingsConfigDict(
-            env_file=".env",
-            env_file_encoding="utf-8",
-            env_nested_delimiter ="__",
-            env_prefix="AK_",
-            extra="ignore",
-            env_ignore_empty=True,
-        )
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        env_prefix="AK_",
+        extra="ignore",
+        env_ignore_empty=True,
+    )

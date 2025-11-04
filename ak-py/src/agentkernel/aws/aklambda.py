@@ -8,8 +8,8 @@ from ..core import AgentService
 
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    force=True,
 )
 
 
@@ -18,6 +18,7 @@ class Lambda:
     Lambda class provides an AWS Lambda interface for interacting with agents.
     Includes a handler method for AWS Lambda function integration.
     """
+
     _log = logging.getLogger("ak.aws.lambda")
 
     @classmethod
@@ -28,9 +29,9 @@ class Lambda:
         cls._log.info("Agent Kernel Agent Lambda Handler started")
         service = AgentService()
         try:
-            prompt = json.loads(event.get('body', '{}')).get('prompt', '')
-            name = json.loads(event.get('body', '{}')).get('agent', None)
-            session_id = json.loads(event.get('body', '{}')).get('session_id', None)
+            prompt = json.loads(event.get("body", "{}")).get("prompt", "")
+            name = json.loads(event.get("body", "{}")).get("agent", None)
+            session_id = json.loads(event.get("body", "{}")).get("session_id", None)
 
             service.select(session_id, name)
             if not service.agent:
@@ -39,9 +40,13 @@ class Lambda:
                 if not service.agent:
                     cls._log.info("No agents available. Please load an agent module.")
                     return {
-                        'statusCode': 400,
-                        'body': json.dumps(
-                            {'error': 'No agent available', 'session_id': service.get_response_session_id(session_id)})
+                        "statusCode": 400,
+                        "body": json.dumps(
+                            {
+                                "error": "No agent available",
+                                "session_id": service.get_response_session_id(session_id),
+                            }
+                        ),
                     }
             try:
                 loop = asyncio.get_event_loop()
@@ -55,20 +60,34 @@ class Lambda:
 
             cls._log.info(f"Result: {result}")
 
-            if hasattr(result, 'raw'):  # Handle CrewAI result
+            if hasattr(result, "raw"):  # Handle CrewAI result
                 return {
-                    'statusCode': 200,
-                    'body': json.dumps(
-                        {'result': str(result.raw), 'session_id': service.get_response_session_id(session_id)})
+                    "statusCode": 200,
+                    "body": json.dumps(
+                        {
+                            "result": str(result.raw),
+                            "session_id": service.get_response_session_id(session_id),
+                        }
+                    ),
                 }
 
             return {
-                'statusCode': 200,
-                'body': json.dumps({'result': result, 'session_id': service.get_response_session_id(session_id)})
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "result": result,
+                        "session_id": service.get_response_session_id(session_id),
+                    }
+                ),
             }
         except Exception as e:
             cls._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
             return {
-                'statusCode': 500,
-                'body': json.dumps({'error': str(e), 'session_id': service.get_response_session_id(None)})
+                "statusCode": 500,
+                "body": json.dumps(
+                    {
+                        "error": str(e),
+                        "session_id": service.get_response_session_id(None),
+                    }
+                ),
             }

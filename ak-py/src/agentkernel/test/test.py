@@ -52,7 +52,7 @@ class Test:
                 break
             output_bytes += chunk
             try:
-                output_str = output_bytes.decode('utf-8')
+                output_str = output_bytes.decode("utf-8")
             except UnicodeDecodeError:
                 continue  # wait for more bytes if multibyte char is incomplete
 
@@ -62,14 +62,15 @@ class Test:
                 captured_prompt_text = match.group(1)
                 return output_str, captured_prompt_text
 
-        return output_bytes.decode('utf-8'), captured_prompt_text
+        return output_bytes.decode("utf-8"), captured_prompt_text
 
     async def start(self):
         """
         Starts the CLI to initialize the test
         """
         self.proc = await asyncio.create_subprocess_exec(
-            sys.executable, self.path,
+            sys.executable,
+            self.path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,  # merge stderr into stdout
@@ -88,7 +89,7 @@ class Test:
         :return: The response from the subprocess.
         """
         print(f"{self._get_prompt()}{message}", flush=True)
-        self.proc.stdin.write((message + "\n").encode('utf-8'))
+        self.proc.stdin.write((message + "\n").encode("utf-8"))
         await self.proc.stdin.drain()
 
         output, prompt_text = await self._read_until_prompt()
@@ -96,8 +97,8 @@ class Test:
         response = self._prompt_regex.sub("", output).strip()
         print(response, flush=True)
         self._update_prompt(prompt_text)
-        ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
-        self.latest = ansi_escape.sub('', response)
+        ansi_escape = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+        self.latest = ansi_escape.sub("", response)
         return self.latest
 
     @staticmethod

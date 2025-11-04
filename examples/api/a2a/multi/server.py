@@ -1,7 +1,7 @@
-from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.crewai import CrewAIModule
 from agentkernel.openai import OpenAIModule
+from agents import Agent as OpenAIAgent
 from crewai import Agent as CrewAIAgent
 
 general_agent = OpenAIAgent(

@@ -12,7 +12,7 @@ ak_logger.propagate = False
 if not ak_logger.handlers:
     handler = logging.StreamHandler()
     handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter('\033[36m(kernel) >> %(message)s\033[0m'))
+    handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
     ak_logger.addHandler(handler)
 
 
@@ -26,7 +26,7 @@ class CLI:
 
     @staticmethod
     def _print(message: str = "", **kwargs):
-        kwargs.setdefault('flush', True)
+        kwargs.setdefault("flush", True)
         print(message, **kwargs)
 
     def help(self):

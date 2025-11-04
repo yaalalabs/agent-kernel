@@ -1,10 +1,10 @@
 import logging
 from typing import Any
 
-from fastmcp import FastMCP, Context
+from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
 
-from ..core import AgentService, Agent, Runtime
+from ..core import Agent, AgentService, Runtime
 from ..core.config import AKConfig
 
 
@@ -16,11 +16,12 @@ class MCP:
     interaction with Agent Kernel's FastMCP. It supports asynchronous
     execution of agents through an internal executor mechanism.
     """
+
     _fastmcp = None
     """
     FastMCP instance
     """
-    _executors: dict[str, 'MCP.Executor'] = {}
+    _executors: dict[str, "MCP.Executor"] = {}
     """
     MCP executors to expose as tools.
     """
@@ -69,6 +70,6 @@ class MCP:
                 cls._fastmcp.tool(
                     cls._executors[name].execute,
                     name=name,
-                    description=agent.get_description()
+                    description=agent.get_description(),
                 )
         cls._built = True

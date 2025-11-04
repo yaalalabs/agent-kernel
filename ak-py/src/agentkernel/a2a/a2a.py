@@ -5,7 +5,7 @@ from typing import Any
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import InMemoryTaskStore, TaskStore
-from a2a.types import UnsupportedOperationError, AgentCard, InternalError
+from a2a.types import AgentCard, InternalError, UnsupportedOperationError
 from a2a.utils import new_agent_text_message
 from a2a.utils.errors import ServerError
 
@@ -17,11 +17,12 @@ class A2A:
     """
     A2A class provides a utility method for interacting with runtime, agents and sessions.
     """
+
     _cards: dict[str, AgentCard] = {}
     """
     A2A cards
     """
-    _executors: dict[str, 'A2A.Executor'] = {}
+    _executors: dict[str, "A2A.Executor"] = {}
     """
     A2A executors. A2A expects an executor per each agent
     """
@@ -45,11 +46,12 @@ class A2A:
             try:
                 response = await self._execute_agent(context.context_id, context.get_user_input())
                 await event_queue.enqueue_event(
-                    new_agent_text_message(str(response), context.context_id, context.task_id))
+                    new_agent_text_message(str(response), context.context_id, context.task_id)
+                )
             except Exception as e:
                 error = "Sorry, Agent Kernel encountered an error while processing your request"
                 self.log.error(traceback.format_exc())
-                self.log.error(f'Exception: {e}')
+                self.log.error(f"Exception: {e}")
                 await event_queue.enqueue_event(new_agent_text_message(error, context.context_id, context.task_id))
                 raise ServerError(error=InternalError()) from e
 

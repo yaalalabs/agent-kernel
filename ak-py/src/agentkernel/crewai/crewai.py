@@ -5,7 +5,8 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent, Module, Runner, Session
+from ..core import Agent as BaseAgent
+from ..core import Module, Runner, Session
 
 FRAMEWORK = "crewai"
 
@@ -34,11 +35,7 @@ class CrewAISession(Storage):
             metadata = {}
         if agent is None:
             agent = "Unknown"
-        self._items.append({
-            "value": value,
-            "metadata": metadata,
-            "agent": agent
-        })
+        self._items.append({"value": value, "metadata": metadata, "agent": agent})
 
     def search(self, query: str, limit: int = 10, score_threshold: float = 0.5) -> list[dict]:
         """
@@ -49,8 +46,9 @@ class CrewAISession(Storage):
         :return: List of items matching the query.
         """
         self._log.debug(f"search: {query}, {limit}, {score_threshold}")
-        return list(map(lambda item: {"context": item["value"]},
-                        self._items[:limit]))  # CrewAI expects a list of dicts with a "context" key
+        return list(
+            map(lambda item: {"context": item["value"]}, self._items[:limit])
+        )  # CrewAI expects a list of dicts with a "context" key
 
     def reset(self) -> None:
         """
@@ -98,8 +96,16 @@ class CrewAIRunner(Runner):
         :return: The result of the agent's execution.
         """
         task = Task(
-            description=prompt, expected_output="An answer is plain text", agent=agent.agent)
-        crew = Crew(agents=agent.crew, tasks=[task], verbose=False, external_memory=self._memory(session))
+            description=prompt,
+            expected_output="An answer is plain text",
+            agent=agent.agent,
+        )
+        crew = Crew(
+            agents=agent.crew,
+            tasks=[task],
+            verbose=False,
+            external_memory=self._memory(session),
+        )
         return crew.kickoff(inputs={})
 
 
@@ -142,23 +148,14 @@ class CrewAIAgent(BaseAgent):
 
     def get_a2a_card(self):
         """
-          Returns the A2A AgentCard associated with the agent.
-          """
+        Returns the A2A AgentCard associated with the agent.
+        """
         from a2a.types import AgentSkill
 
         skills = []
         for tool in self.agent.tools:
-            skills.append(AgentSkill(
-                id=tool.name,
-                name=tool.name,
-                description=tool.description,
-                tags=[]
-            ))
-        return self._generate_a2a_card(
-            agent_name=self.name,
-            description=self.agent.backstory,
-            skills=skills
-        )
+            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
+        return self._generate_a2a_card(agent_name=self.name, description=self.agent.backstory, skills=skills)
 
 
 class CrewAIModule(Module):

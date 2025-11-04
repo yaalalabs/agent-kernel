@@ -1,10 +1,10 @@
 from agentkernel.aws import Lambda
 from agentkernel.langgraph import LangGraphModule
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 
 from custom_agent import CustomAgent
+from langgraph.prebuilt import create_react_agent
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
@@ -39,7 +39,7 @@ triage_agent = create_supervisor(
         "Assign work to one agent at a time, do not call agents in parallel.\n"
         "Do not do any work yourself. \n"
         "When you get a response from an agent, respond with the received response."
-    )
+    ),
 ).compile(name="triage")
 
 LangGraphModule([triage_agent, history_agent, math_agent])

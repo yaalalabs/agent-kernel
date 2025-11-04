@@ -6,15 +6,16 @@ from typing import Any, Optional
 
 import redis
 
-from .base import SessionStore
 from ..base import Session
 from ..config import AKConfig
+from .base import SessionStore
 
 
 class RedisDriver:
     """
     RedisUtil provides Redis connection and helper methods for namespaced key/value operations.
     """
+
     _redis_client = None
 
     def __init__(self):
@@ -57,9 +58,7 @@ class RedisDriver:
         for attempt in range(retries):
             try:
                 self._log.debug(f"Connecting to Redis using URL {self._url}")
-                client = redis.from_url(self._url,
-                                        decode_responses=False,
-                                        socket_connect_timeout=5)
+                client = redis.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
                 client.ping()
                 self._redis_client = client
             except redis.RedisError as e:
@@ -140,10 +139,7 @@ class RedisSessionStore(SessionStore):
     RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
     """
 
-    def __init__(
-            self,
-            driver: RedisDriver
-    ):
+    def __init__(self, driver: RedisDriver):
         """
         Initializes a RedisSessionStore instance.
         :param driver: Redis Driver instance
@@ -213,6 +209,7 @@ class RedisSessionSerde:
     RedisSessionSerde provides serialization and deserialization of Session objects for Redis
     storage using a JSON representation.
     """
+
     _log = logging.getLogger("ak.core.sessions.redisserde")
 
     # Binary headers to distinguish formats

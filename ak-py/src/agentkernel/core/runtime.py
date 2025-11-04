@@ -7,7 +7,7 @@ from typing import Any
 
 from .base import Agent, Session
 from .config import AKConfig
-from .sessions import InMemorySessionStore, SessionStore, RedisSessionStore
+from .sessions import InMemorySessionStore, RedisSessionStore, SessionStore
 from .sessions.redis import RedisDriver
 
 

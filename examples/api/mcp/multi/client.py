@@ -6,11 +6,7 @@ from typing import Any, List
 
 from fastmcp.client import Client
 
-logging.basicConfig(
-    level=logging.WARN,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
-)
+logging.basicConfig(level=logging.WARN, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", force=True)
 
 
 class MCPHttpClient:
@@ -38,12 +34,9 @@ class MCPHttpClient:
 
     async def send(self, message: str, tool: str = "history"):
         async with Client(self.server_url, auth="oauth") as client:
-            response = await client.call_tool(tool, {
-                "prompt": message,
-                "session_id": self.session_id
-            })
+            response = await client.call_tool(tool, {"prompt": message, "session_id": self.session_id})
             try:
                 result = json.loads(response.content[0].text)
-                return str(result.get('raw', result))
+                return str(result.get("raw", result))
             except (json.JSONDecodeError, TypeError):
                 return response.content[0].text

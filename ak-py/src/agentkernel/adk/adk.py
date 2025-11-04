@@ -3,10 +3,14 @@ from typing import Any, List
 
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService, Session as ADKSession
+from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import Session as ADKSession
 from google.genai import types
 
-from ..core import Agent as AKBaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as AKBaseAgent
+from ..core import Module
+from ..core import Runner as BaseRunner
+from ..core import Session
 
 FRAMEWORK = "adk"
 
@@ -75,13 +79,17 @@ class GoogleADKRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, GoogleADKSession())
 
     @staticmethod
-    def _create_runner(agent: 'GoogleADKAgent', session: GoogleADKSession):
+    def _create_runner(agent: "GoogleADKAgent", session: GoogleADKSession):
         """
         Build a Google ADK Runner wired to the given agent and session.
         :param agent: The Google ADK agent to run.
         :param session: The session to use for the agent.
         """
-        return Runner(agent=agent.agent, app_name=agent.name, session_service=session.session_service)
+        return Runner(
+            agent=agent.agent,
+            app_name=agent.name,
+            session_service=session.session_service,
+        )
 
     @staticmethod
     async def get_agent_response(runner: Runner, session_id: str, prompt: str) -> str:

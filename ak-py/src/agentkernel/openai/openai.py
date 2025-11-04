@@ -3,7 +3,10 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from ..core import Agent as BaseAgent, Module, Runner as BaseRunner, Session
+from ..core import Agent as BaseAgent
+from ..core import Module
+from ..core import Runner as BaseRunner
+from ..core import Session
 
 FRAMEWORK = "openai"
 
@@ -121,17 +124,8 @@ class OpenAIAgent(BaseAgent):
 
         skills = []
         for tool in self.agent.tools:
-            skills.append(AgentSkill(
-                id=tool.name,
-                name=tool.name,
-                description=tool.description,
-                tags=[]
-            ))
-        return self._generate_a2a_card(
-            agent_name=self.name,
-            description=self.agent.instructions,
-            skills=skills
-        )
+            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
+        return self._generate_a2a_card(agent_name=self.name, description=self.agent.instructions, skills=skills)
 
 
 class OpenAIModule(Module):

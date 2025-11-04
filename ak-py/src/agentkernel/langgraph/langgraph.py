@@ -1,12 +1,20 @@
-from typing import Any, AsyncIterator, Iterator, Optional, Sequence, List
+from typing import Any, AsyncIterator, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, CheckpointMetadata, CheckpointTuple
+from langgraph.checkpoint.base import (
+    BaseCheckpointSaver,
+    Checkpoint,
+    CheckpointMetadata,
+    CheckpointTuple,
+)
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from ..core import Agent as BaseAgent, Module as BaseModule, Runner as BaseRunner, Session as BaseSession
+from ..core import Agent as BaseAgent
+from ..core import Module as BaseModule
+from ..core import Runner as BaseRunner
+from ..core import Session as BaseSession
 
 FRAMEWORK = "langgraph"
 
@@ -39,16 +47,16 @@ class CheckPointer(BaseCheckpointSaver):
             config=config,
             checkpoint=checkpoint_data["checkpoint"],
             metadata=checkpoint_data.get("metadata", {}),
-            parent_config=checkpoint_data.get("parent_config")
+            parent_config=checkpoint_data.get("parent_config"),
         )
 
     def list(
-            self,
-            config: Optional[dict] = None,
-            *,
-            filter: Optional[dict[str, Any]] = None,
-            before: Optional[dict] = None,
-            limit: Optional[int] = None
+        self,
+        config: Optional[dict] = None,
+        *,
+        filter: Optional[dict[str, Any]] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[CheckpointTuple]:
         result = []
         if config:
@@ -56,28 +64,25 @@ class CheckPointer(BaseCheckpointSaver):
             if thread_id and thread_id in self._storage:
                 thread_data = self._storage[thread_id]
                 for ns, data in thread_data.items():
-                    checkpoint_config: RunnableConfig = {
-                        "configurable": {
-                            "thread_id": thread_id,
-                            "checkpoint_ns": ns
-                        }
-                    }
-                    result.append(CheckpointTuple(
-                        config=checkpoint_config,
-                        checkpoint=data["checkpoint"],
-                        metadata=data.get("metadata", {}),
-                        parent_config=data.get("parent_config")
-                    ))
+                    checkpoint_config: RunnableConfig = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ns}}
+                    result.append(
+                        CheckpointTuple(
+                            config=checkpoint_config,
+                            checkpoint=data["checkpoint"],
+                            metadata=data.get("metadata", {}),
+                            parent_config=data.get("parent_config"),
+                        )
+                    )
                 if limit:
                     result = result[:limit]
         return iter(result)
 
     def put(
-            self,
-            config: dict,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: dict
+        self,
+        config: dict,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: dict,
     ) -> dict:
         thread_id = config.get("configurable", {}).get("thread_id")
         checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
@@ -91,17 +96,17 @@ class CheckPointer(BaseCheckpointSaver):
         self._storage[thread_id][checkpoint_ns] = {
             "checkpoint": checkpoint,
             "metadata": metadata,
-            "parent_config": config.get("parent_config")
+            "parent_config": config.get("parent_config"),
         }
 
         return config
 
     def put_writes(
-            self,
-            config: dict,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = ""
+        self,
+        config: dict,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         thread_id = config.get("configurable", {}).get("thread_id")
         checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
@@ -115,11 +120,7 @@ class CheckPointer(BaseCheckpointSaver):
         if checkpoint_ns not in self._writes[thread_id]:
             self._writes[thread_id][checkpoint_ns] = []
 
-        self._writes[thread_id][checkpoint_ns].append({
-            "task_id": task_id,
-            "task_path": task_path,
-            "writes": writes
-        })
+        self._writes[thread_id][checkpoint_ns].append({"task_id": task_id, "task_path": task_path, "writes": writes})
 
     def delete_thread(self, thread_id: str) -> None:
         if thread_id in self._storage:
@@ -131,31 +132,31 @@ class CheckPointer(BaseCheckpointSaver):
         return self.get_tuple(config)
 
     async def alist(
-            self,
-            config: Optional[dict] = None,
-            *,
-            filter: Optional[dict[str, Any]] = None,
-            before: Optional[dict] = None,
-            limit: Optional[int] = None
+        self,
+        config: Optional[dict] = None,
+        *,
+        filter: Optional[dict[str, Any]] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
     ) -> AsyncIterator[CheckpointTuple]:
         for item in self.list(config, filter=filter, before=before, limit=limit):
             yield item
 
     async def aput(
-            self,
-            config: dict,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: dict
+        self,
+        config: dict,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: dict,
     ) -> dict:
         return self.put(config, checkpoint, metadata, new_versions)
 
     async def aput_writes(
-            self,
-            config: dict,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = ""
+        self,
+        config: dict,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         self.put_writes(config, writes, task_id, task_path)
 
@@ -176,7 +177,7 @@ class LangGraphAgent(BaseAgent):
     LangGraphAgent class provides an agent wrapping for LangGraph Agents SDK based agents.
     """
 
-    def __init__(self, name: str, runner: 'LangGraphRunner', agent: CompiledStateGraph):
+    def __init__(self, name: str, runner: "LangGraphRunner", agent: CompiledStateGraph):
         """
         Initializes a LangGraphAgent instance.
         :param name: Name of the agent.
@@ -210,20 +211,18 @@ class LangGraphAgent(BaseAgent):
         skills = []
         for node_name, node_data in graph.nodes.items():
             # TODO improve this to better extract tools
-            if hasattr(node_data, 'tools'):
+            if hasattr(node_data, "tools"):
                 for tool in node_data.tools:
-                    skills.append(AgentSkill(
-                        id=tool.name,
-                        name=tool.name,
-                        description=tool.description,
-                        tags=[]
-                    ))
+                    skills.append(
+                        AgentSkill(
+                            id=tool.name,
+                            name=tool.name,
+                            description=tool.description,
+                            tags=[],
+                        )
+                    )
         # TODO extract description from graph
-        return self._generate_a2a_card(
-            agent_name=self.name,
-            description="",
-            skills=skills
-        )
+        return self._generate_a2a_card(agent_name=self.name, description="", skills=skills)
 
 
 class LangGraphSession:
@@ -272,14 +271,12 @@ class LangGraphRunner(BaseRunner):
         :param prompt: The input prompt for the agent.
         :return: The response from the agent.
         """
-        session_config = LangGraphSessionConfigModel(
-            configurable=LangGraphSessionConfigurable(
-                thread_id=session.id
-            )
-        )
+        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
         agent.agent.checkpointer = self._session(session).checkpointer
-        result = await agent.agent.ainvoke(input={"messages": [HumanMessage(content=prompt)]},
-                                           config=session_config.model_dump())
+        result = await agent.agent.ainvoke(
+            input={"messages": [HumanMessage(content=prompt)]},
+            config=session_config.model_dump(),
+        )
         last_message = result["messages"][-1]
         return last_message.content
 

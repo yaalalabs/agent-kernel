@@ -8,10 +8,28 @@ dependencies = [
     "agentkernel[cli,crewai,openai,a2a]>=0.2.2",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "agentkernel[test]>=0.2.2",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
 ]
 
 [tool.uv]
 package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
