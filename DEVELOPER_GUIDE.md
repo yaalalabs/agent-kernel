@@ -20,20 +20,35 @@ Before you begin development, ensure you have the following installed:
 - Git
 - Make
 
-## Development Setup
+## Setup Your Development Environment
 
-1. **Clone the repository**
+1. **Fork the repository** on GitHub
+
+2. **Clone your fork** locally:
    ```bash
    git clone https://github.com/yaalalabs/agent-kernel.git
    cd agent-kernel
    ```
 
-2. **Navigate to the Python package**
+3. **Add the upstream repository**:
+   ```bash
+   git remote add upstream https://github.com/yaalalabs/agent-kernel.git
+   ```
+
+4. **Create a branch** for your changes:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+
+## Development
+
+1. **Navigate to the Python package**
    ```bash
    cd ak-py
    ```
 
-3. **Install development dependencies**
+2. **Install development dependencies**
    ```bash
    ./build.sh
    ```
