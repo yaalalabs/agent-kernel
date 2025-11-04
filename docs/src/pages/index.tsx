@@ -166,7 +166,7 @@ function CommunitySection() {
       name: 'Discord',
       description: 'Join our community chat',
       icon: <FaDiscord />,
-      url: 'https://discord.gg/k98XXq3N',
+      url: 'https://discord.gg/snrPzb46uu',
     },
     {
       name: 'PyPI',
