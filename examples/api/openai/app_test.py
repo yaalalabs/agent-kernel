@@ -17,11 +17,15 @@ class APITestClient:
         self.session_id = str(uuid.uuid4())
 
     async def send(self, prompt, endpoint: str = "/run", body=None):
-        payload = {
-            "prompt": prompt,
-            "session_id": self.session_id,
-            "agent": "support",
-        } if body is None else body
+        payload = (
+            {
+                "prompt": prompt,
+                "session_id": self.session_id,
+                "agent": "support",
+            }
+            if body is None
+            else body
+        )
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             resp.raise_for_status()
@@ -48,13 +52,17 @@ async def http_client():
 async def test_support_agent(http_client):
     print("test_support_agent")
     response = await http_client.send("I am Andy Dufresne. I did some deposits.")
-    Test.compare(response, " Hello Andy! I noticed that you made a mobile check deposit of $250. "
-                           "Could you tell me how satisfied you were with the mobile check deposit process?",
-                 threshold=10)
+    Test.compare(
+        response,
+        " Hello Andy! I noticed that you made a mobile check deposit of $250. "
+        "Could you tell me how satisfied you were with the mobile check deposit process?",
+        threshold=10,
+    )
 
     response = await http_client.send("I was extremely happy")
-    Test.compare(response, "That's great to hear! What specifically made the experience enjoyable for you?",
-                 threshold=10)
+    Test.compare(
+        response, "That's great to hear! What specifically made the experience enjoyable for you?", threshold=10
+    )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
     Test.compare(response, "Deposited $200 over the counter")

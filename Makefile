@@ -29,11 +29,11 @@ lint-examples:
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
 			if [ -d ".venv" ]; then \
-				uv run --dev isort --skip .venv --skip .terraform --skip dist . 2>/dev/null || true; \
-				uv run --dev black --exclude '/(\.venv|\.terraform|dist)/' . 2>/dev/null || true; \
+				uv run --dev isort --skip .venv --skip .terraform --skip dist . || true; \
+				uv run --dev black --exclude '/(\.venv|\.terraform|dist)/' . || true; \
 			else \
-				uv run --dev isort --skip .terraform --skip dist . 2>/dev/null || true; \
-				uv run --dev black --exclude '/(\.terraform|dist)/' . 2>/dev/null || true; \
+				uv run --dev isort --skip .terraform --skip dist . || true; \
+				uv run --dev black --exclude '/(\.terraform|dist)/' . || true; \
 			fi && \
 			cd - > /dev/null; \
 		fi; \

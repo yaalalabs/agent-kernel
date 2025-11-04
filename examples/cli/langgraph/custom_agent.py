@@ -1,16 +1,18 @@
-from typing import Any, Sequence, TypedDict, Annotated, Callable, List
+from typing import Annotated, Any, Callable, List, Sequence, TypedDict
 
 from langchain_core.messages import BaseMessage, SystemMessage
-from langchain_core.tools import StructuredTool
-from langgraph.graph import StateGraph, END, add_messages
+from langchain_core.tools import BaseTool, StructuredTool
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_core.tools import BaseTool
-from langgraph.graph.state import CompiledStateGraph
+
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph, add_messages
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
+
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
+
 
 class CustomAgent:
     def __init__(
@@ -20,7 +22,7 @@ class CustomAgent:
         model: ChatOpenAI,
         system_prompt: str,
         tool_functions: List[Callable[..., Any]] = [],
-        verbose: bool = False
+        verbose: bool = False,
     ):
         self.name = name
         self.description = description
@@ -30,8 +32,11 @@ class CustomAgent:
         self.model = model
 
         self.tools = [
-            StructuredTool.from_function(func=fn, name=fn.__name__, description=fn.__doc__)
-            if not isinstance(fn, BaseTool) else fn
+            (
+                StructuredTool.from_function(func=fn, name=fn.__name__, description=fn.__doc__)
+                if not isinstance(fn, BaseTool)
+                else fn
+            )
             for fn in tool_functions
         ]
         self._initialize_graph()

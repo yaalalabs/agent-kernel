@@ -1,9 +1,8 @@
-from agents import Agent as OpenAIAgent
-from crewai import Agent as CrewAIAgent
-
 from agentkernel.cli import CLI
 from agentkernel.crewai import CrewAIModule
 from agentkernel.openai import OpenAIModule
+from agents import Agent as OpenAIAgent
+from crewai import Agent as CrewAIAgent
 
 general_agent = OpenAIAgent(
     name="general",

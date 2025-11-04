@@ -13,7 +13,8 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 class APITestClient:
     def __init__(self, url):
         self.url = url
-    async def send(self, endpoint: str, method: str="post", body=None):
+
+    async def send(self, endpoint: str, method: str = "post", body=None):
         payload = {} if body is None else body
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.request(method, f"{self.url}{endpoint}", json=payload)
@@ -41,18 +42,18 @@ async def http_client():
 async def test_slack_agent(http_client):
     print("test_slack_agent")
     response = await http_client.send("/health", method="get")
-    
+
     assert response == {"status": "ok"}
     # response = await http_client.send("/agents", method="get")
     # assert response == {'agents': ['general']}
-    
+
     # This will raise HTTPStatusError because the token is invalid & Slack bolts lib is handling the request
     # TODO: Write a proper test for Slack events with proper mocks
     with pytest.raises(httpx.HTTPStatusError):
         challenge_body = {
-            'token': 'AGRZJwRtHea5ilthqQfP2xbC',
-            'challenge': 'A3iJatJqh40dIMltX7VbAYVooc4M8vCEUJH5BGpKPSQUwl3WhYnX',
-            'type': 'url_verification'
+            "token": "AGRZJwRtHea5ilthqQfP2xbC",
+            "challenge": "A3iJatJqh40dIMltX7VbAYVooc4M8vCEUJH5BGpKPSQUwl3WhYnX",
+            "type": "url_verification",
         }
         response = await http_client.send("/slack/events", method="post", body=challenge_body)
         print("response:", response)
