@@ -9,7 +9,7 @@ general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers. "
-                 "Give direct and correct answers. Answer the question only. Don't give any explanation",
+    "Give direct and correct answers. Answer the question only. Don't give any explanation",
 )
 
 math_agent = OpenAIAgent(

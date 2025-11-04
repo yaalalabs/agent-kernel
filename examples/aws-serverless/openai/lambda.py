@@ -1,6 +1,6 @@
-from agents import Agent
 from agentkernel.aws import Lambda
 from agentkernel.openai import OpenAIModule
+from agents import Agent
 
 math_agent = Agent(
     name="math",

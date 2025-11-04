@@ -7,7 +7,7 @@ from slack_bolt.async_app import AsyncApp
 from slack_sdk.errors import SlackApiError
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config, Runtime
+from ...core import AgentService, Config
 
 
 class AgentSlackRequestHandler(RESTRequestHandler):
