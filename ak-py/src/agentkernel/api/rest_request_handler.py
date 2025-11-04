@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 from abc import abstractmethod
+
+
 class RESTRequestHandler:
     @abstractmethod
     def get_router(self) -> APIRouter:
@@ -8,7 +10,7 @@ class RESTRequestHandler:
         E.g.:
         - GET /health: Health check
         - GET /agents: List available agents
-        
+
         router = APIRouter()
 
         @router.get("/health")
@@ -18,6 +20,6 @@ class RESTRequestHandler:
         @router.get("/agents")
         def list_agents():
             return {"agents": list(Runtime.instance().agents().keys())}
-        
+
         """
         pass

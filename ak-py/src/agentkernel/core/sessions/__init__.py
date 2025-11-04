@@ -3,6 +3,7 @@ Agent Kernel Core.
 
 This package contains the Agent Kernel session store implementation.
 """
+
 import importlib.metadata
 
 try:

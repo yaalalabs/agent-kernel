@@ -16,11 +16,12 @@ class MCP:
     interaction with Agent Kernel's FastMCP. It supports asynchronous
     execution of agents through an internal executor mechanism.
     """
+
     _fastmcp = None
     """
     FastMCP instance
     """
-    _executors: dict[str, 'MCP.Executor'] = {}
+    _executors: dict[str, "MCP.Executor"] = {}
     """
     MCP executors to expose as tools.
     """
@@ -36,7 +37,9 @@ class MCP:
 
         async def execute(self, session_id: str, prompt: str, ctx: Context) -> Any:
             service = AgentService()
-            await ctx.info(f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}")
+            await ctx.info(
+                f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}"
+            )
             service.select(session_id, self.agent_name)
             response = await service.run(prompt=prompt)
             await ctx.debug(f"Agent response '{response}'")
@@ -61,7 +64,10 @@ class MCP:
         if AKConfig.get().mcp.expose_agents:
             agents: dict[str, Agent] = Runtime.instance().agents()
             for name, agent in agents.items():
-                whitelisted = AKConfig.get().mcp.agents == ["*"] or name in AKConfig.get().mcp.agents
+                whitelisted = (
+                    AKConfig.get().mcp.agents == ["*"]
+                    or name in AKConfig.get().mcp.agents
+                )
                 if not whitelisted:
                     continue
                 # Add executor
@@ -69,6 +75,6 @@ class MCP:
                 cls._fastmcp.tool(
                     cls._executors[name].execute,
                     name=name,
-                    description=agent.get_description()
+                    description=agent.get_description(),
                 )
         cls._built = True

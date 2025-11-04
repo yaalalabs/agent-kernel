@@ -29,7 +29,9 @@ class InMemorySessionStore(SessionStore):
             if strict:
                 raise KeyError(f"Session {session_id} not found")
             else:
-                self._log.warning(f"Session {session_id} not found, creating new session")
+                self._log.warning(
+                    f"Session {session_id} not found, creating new session"
+                )
                 session = self.new(session_id)
         return session
 

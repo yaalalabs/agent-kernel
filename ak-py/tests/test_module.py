@@ -65,7 +65,9 @@ def test_module_add_updates_agents(monkeypatch):
         class session:
             type = "in_memory"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr(
+        "agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg)
+    )
 
     # Initialize with one agent
     a1 = FrameworkAgent("agent1")

@@ -3,6 +3,7 @@ Agent Kernel REST package.
 
 This package contains the REST API implementation for exposing Agent Kernel over HTTP.
 """
+
 import importlib.metadata
 
 try:

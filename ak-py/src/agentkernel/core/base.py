@@ -102,7 +102,7 @@ class Runner(ABC):
 class Agent(ABC):
     """
     Agent is the base class for all agents.
-    
+
     Agent Kernel provides an implementation of the Agent class for each supported agent framework,
     allowing the runtime to manage agents in a framework-agnostic manner. These implementations
     inherit from the Agent class and encapsulate the agent implementation provided by that
@@ -142,16 +142,17 @@ class Agent(ABC):
         :return: An A2A AgentCard instance.
         """
         from a2a.types import AgentCard, AgentCapabilities
+
         return AgentCard(
             name=agent_name,
             description=description,
-            url=f'{AKConfig.get().a2a.url}/{agent_name}',
+            url=f"{AKConfig.get().a2a.url}/{agent_name}",
             version=AKConfig.get().library_version,
             default_input_modes=["text"],
             default_output_modes=["json"],
             preferred_transport="HTTP+JSON",
             capabilities=AgentCapabilities(streaming=False),
-            skills=skills
+            skills=skills,
         )
 
     @abstractmethod

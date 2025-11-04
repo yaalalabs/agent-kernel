@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from ..core import AgentService, Runtime
 from ..api.rest_request_handler import RESTRequestHandler
 
+
 class AgentRESTRequestHandler(RESTRequestHandler):
     """
     API routers that expose endpoints to interact with Agent Kernel.
@@ -18,6 +19,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     - POST /run: Run an agent with a prompt
       Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
     """
+
     def __init__(self):
         self._log = logging.getLogger("ak.api.agent")
 
@@ -58,28 +60,36 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if not service.agent:
                 service.select(req.session_id)
                 if not service.agent:
-                    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail={
-                        "error": "No agent available",
-                        "session_id": service.get_response_session_id(req.session_id)
-                    })
+                    raise HTTPException(
+                        status_code=HTTPStatus.BAD_REQUEST,
+                        detail={
+                            "error": "No agent available",
+                            "session_id": service.get_response_session_id(
+                                req.session_id
+                            ),
+                        },
+                    )
             result = await service.run(req.prompt)
 
-            if hasattr(result, 'raw'):
+            if hasattr(result, "raw"):
                 payload = {
                     "result": str(result.raw),
-                    "session_id": service.get_response_session_id(req.session_id)
+                    "session_id": service.get_response_session_id(req.session_id),
                 }
             else:
                 payload = {
                     "result": result,
-                    "session_id": service.get_response_session_id(req.session_id)
+                    "session_id": service.get_response_session_id(req.session_id),
                 }
             return payload
         except HTTPException:
             raise
         except Exception as e:
             self._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail={
-                "error": str(e),
-                "session_id": service.get_response_session_id(None)
-            })
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": str(e),
+                    "session_id": service.get_response_session_id(None),
+                },
+            )

@@ -75,13 +75,17 @@ class GoogleADKRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, GoogleADKSession())
 
     @staticmethod
-    def _create_runner(agent: 'GoogleADKAgent', session: GoogleADKSession):
+    def _create_runner(agent: "GoogleADKAgent", session: GoogleADKSession):
         """
         Build a Google ADK Runner wired to the given agent and session.
         :param agent: The Google ADK agent to run.
         :param session: The session to use for the agent.
         """
-        return Runner(agent=agent.agent, app_name=agent.name, session_service=session.session_service)
+        return Runner(
+            agent=agent.agent,
+            app_name=agent.name,
+            session_service=session.session_service,
+        )
 
     @staticmethod
     async def get_agent_response(runner: Runner, session_id: str, prompt: str) -> str:
@@ -94,9 +98,13 @@ class GoogleADKRunner(BaseRunner):
         """
         new_message = types.Content(role="user", parts=[types.Part(text=prompt)])
         response_text = None
-        async for event in runner.run_async(user_id=session_id, session_id=session_id, new_message=new_message):
+        async for event in runner.run_async(
+            user_id=session_id, session_id=session_id, new_message=new_message
+        ):
             if event.is_final_response() and event.content and event.content.parts:
-                text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
+                text_parts = [
+                    p.text for p in event.content.parts if hasattr(p, "text") and p.text
+                ]
                 response_text = " ".join(text_parts) if text_parts else None
                 break
         return response_text
@@ -112,7 +120,9 @@ class GoogleADKRunner(BaseRunner):
         adk_session = self._session(session)
         runner = self._create_runner(agent=agent, session=adk_session)
         session_id, _ = await adk_session.get_adk_session(app_name=agent.name)
-        return await self.get_agent_response(runner=runner, session_id=session_id, prompt=prompt)
+        return await self.get_agent_response(
+            runner=runner, session_id=session_id, prompt=prompt
+        )
 
 
 class GoogleADKAgent(AKBaseAgent):

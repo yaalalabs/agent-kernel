@@ -121,16 +121,13 @@ class OpenAIAgent(BaseAgent):
 
         skills = []
         for tool in self.agent.tools:
-            skills.append(AgentSkill(
-                id=tool.name,
-                name=tool.name,
-                description=tool.description,
-                tags=[]
-            ))
+            skills.append(
+                AgentSkill(
+                    id=tool.name, name=tool.name, description=tool.description, tags=[]
+                )
+            )
         return self._generate_a2a_card(
-            agent_name=self.name,
-            description=self.agent.instructions,
-            skills=skills
+            agent_name=self.name, description=self.agent.instructions, skills=skills
         )
 
 

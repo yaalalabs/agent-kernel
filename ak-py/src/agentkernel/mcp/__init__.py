@@ -3,6 +3,7 @@ Agent Kernel MCP package.
 
 This package contains the MCP implementation for exposing Agents.
 """
+
 import importlib.metadata
 
 try:

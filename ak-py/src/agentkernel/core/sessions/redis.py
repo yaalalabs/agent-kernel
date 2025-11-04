@@ -15,6 +15,7 @@ class RedisDriver:
     """
     RedisUtil provides Redis connection and helper methods for namespaced key/value operations.
     """
+
     _redis_client = None
 
     def __init__(self):
@@ -57,9 +58,9 @@ class RedisDriver:
         for attempt in range(retries):
             try:
                 self._log.debug(f"Connecting to Redis using URL {self._url}")
-                client = redis.from_url(self._url,
-                                        decode_responses=False,
-                                        socket_connect_timeout=5)
+                client = redis.from_url(
+                    self._url, decode_responses=False, socket_connect_timeout=5
+                )
                 client.ping()
                 self._redis_client = client
             except redis.RedisError as e:
@@ -112,7 +113,9 @@ class RedisDriver:
         """
         self._log.debug(f"HKEYS {key}")
         raw = self.client.hkeys(name=key)
-        return [k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw]
+        return [
+            k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw
+        ]
 
     def exists(self, key: str) -> bool:
         """
@@ -140,10 +143,7 @@ class RedisSessionStore(SessionStore):
     RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
     """
 
-    def __init__(
-            self,
-            driver: RedisDriver
-    ):
+    def __init__(self, driver: RedisDriver):
         """
         Initializes a RedisSessionStore instance.
         :param driver: Redis Driver instance
@@ -203,7 +203,9 @@ class RedisSessionStore(SessionStore):
         """
         for key in session.get_all_keys():
             value = session.get(key)
-            self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))
+            self._driver.hset(
+                self._driver.key(session.id), key, self._serde.dumps(value)
+            )
         if self._driver.ttl:
             self._driver.expire(self._driver.key(session.id))
 
@@ -213,6 +215,7 @@ class RedisSessionSerde:
     RedisSessionSerde provides serialization and deserialization of Session objects for Redis
     storage using a JSON representation.
     """
+
     _log = logging.getLogger("ak.core.sessions.redisserde")
 
     # Binary headers to distinguish formats

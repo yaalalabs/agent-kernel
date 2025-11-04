@@ -77,6 +77,7 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModified") -> Dict[st
 
     return yaml.safe_load(path.read_text("utf-8"))
 
+
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
     """
     A simple settings source class that loads variables from a YAML file
@@ -171,12 +172,12 @@ class YamlBaseSettingsModified(BaseSettings):
             YamlConfigSettingsSource(settings_cls),
             file_secret_settings,
         )
-    
+
     model_config = SettingsConfigDict(
-            env_file=".env",
-            env_file_encoding="utf-8",
-            env_nested_delimiter ="__",
-            env_prefix="AK_",
-            extra="ignore",
-            env_ignore_empty=True,
-        )
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        env_prefix="AK_",
+        extra="ignore",
+        env_ignore_empty=True,
+    )

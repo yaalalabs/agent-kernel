@@ -34,7 +34,9 @@ class A2ARESTRequestHandler:
 
     @classmethod
     def get_catalog_router(cls) -> APIRouter:
-        router = APIRouter(prefix="/a2a")  # Update the configs to reflect the correct Agent URL
+        router = APIRouter(
+            prefix="/a2a"
+        )  # Update the configs to reflect the correct Agent URL
 
         @router.get("/catalog")
         def list_cards():
@@ -55,21 +57,19 @@ class A2ARESTRequestHandler:
                 agent_card=A2A.get_card(agent),
                 http_handler=DefaultRequestHandler(
                     agent_executor=A2A.get_executor(agent),
-                    task_store=A2A.get_task_store()
-                )
+                    task_store=A2A.get_task_store(),
+                ),
             )
             router = APIRouter(prefix=f"/a2a/{agent}")
             # Create A2A protocol mandated routes including authenticated card
             for route, callback in adapter.routes().items():
-                router.add_api_route(
-                    f'{route[0]}', callback, methods=[route[1]]
-                )
+                router.add_api_route(f"{route[0]}", callback, methods=[route[1]])
             routers.append(router)
 
         # Create the well-known (public) endpoint
         card_router = APIRouter(prefix="/a2a")
 
-        @card_router.get(f'/{{agent_name}}{AGENT_CARD_WELL_KNOWN_PATH}')
+        @card_router.get(f"/{{agent_name}}{AGENT_CARD_WELL_KNOWN_PATH}")
         async def get_agent_card(agent_name: str):
             card = A2A.get_card(agent_name)
             return card.model_dump()

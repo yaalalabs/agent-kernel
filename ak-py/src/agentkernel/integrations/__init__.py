@@ -3,6 +3,7 @@ Agent Kernel Integrations.
 
 This package contains the Agent Kernel integration implementations.
 """
+
 import importlib.metadata
 
 try:

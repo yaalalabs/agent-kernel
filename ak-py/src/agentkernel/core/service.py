@@ -57,7 +57,9 @@ class AgentService:
             else:
                 self._log.warning(f"No agent found with name '{name}'")
         else:
-            self._log.info("No agent was requested. Defaulting to first agent in the list")
+            self._log.info(
+                "No agent was requested. Defaulting to first agent in the list"
+            )
             agents = list(self._runtime.agents().values())
             self._agent = agents[0] if agents else None
             if self._agent:
