@@ -110,7 +110,7 @@ Built with enterprise needs in mind:
   <a href="https://pypi.org/project/agentkernel/" target="_blank" style={{textDecoration: 'none'}}>
     <img src="https://img.shields.io/badge/PyPI-3775A9?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI" />
   </a>
-  <a href="https://discord.gg/yaalalabs" target="_blank" style={{textDecoration: 'none'}}>
+  <a href="https://discord.gg/snrPzb46uu" target="_blank" style={{textDecoration: 'none'}}>
     <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
   </a>
   <a href="https://registry.terraform.io/modules/yaalalabs" target="_blank" style={{textDecoration: 'none'}}>
@@ -153,7 +153,7 @@ We're just getting started! Our roadmap includes:
 
 We'd love to hear from you! Whether you're building your first agent or deploying a complex multi-agent system, we're here to help:
 
-- **Discord**: Join our [community server](https://discord.gg/k98XXq3N) for discussions and support
+- **Discord**: Join our [community server](https://discord.gg/snrPzb46uu) for discussions and support
 - **GitHub**: [Star the repo](https://github.com/yaalalabs/agent-kernel), open issues, or submit PRs
 - **Website**: Learn more about Yaala Labs at [www.yaalalabs.com](https://www.yaalalabs.com)
 

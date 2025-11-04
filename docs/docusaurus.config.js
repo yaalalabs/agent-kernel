@@ -254,7 +254,7 @@ const config = {
             dropdownItemsAfter: [],
           },
           {
-            href: 'https://discord.gg/k98XXq3N',
+            href: 'https://discord.gg/snrPzb46uu',
             position: 'right',
             className: 'header-discord-link',
             'aria-label': 'Discord Community',
@@ -310,7 +310,7 @@ const config = {
             items: [
               {
                 label: 'Discord',
-                href: 'https://discord.gg/k98XXq3N',
+                href: 'https://discord.gg/snrPzb46uu',
               },
               {
                 label: 'GitHub',
