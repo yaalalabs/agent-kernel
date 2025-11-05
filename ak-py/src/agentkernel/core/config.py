@@ -1,6 +1,5 @@
 import importlib.metadata
 from typing import List, Optional
-
 from pydantic import BaseModel, Field
 
 from .util.config_yaml_util import YamlBaseSettingsModified

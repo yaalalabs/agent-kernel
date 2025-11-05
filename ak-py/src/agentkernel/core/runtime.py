@@ -3,7 +3,6 @@ import logging
 from threading import RLock
 from types import ModuleType
 from typing import Any, Optional
-
 from singleton_type import Singleton
 
 from .base import Agent, Session

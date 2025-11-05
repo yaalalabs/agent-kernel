@@ -1,5 +1,5 @@
 import logging
-import traceback
+from enum import StrEnum
 
 from .config import AKConfig
 from .sessions import SessionStore
