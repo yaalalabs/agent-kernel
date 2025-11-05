@@ -30,7 +30,7 @@ class SessionStoreType(StrEnum):
 class SessionStoreBuilder(Builder):
     @staticmethod
     def build() -> SessionStore:
-        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type.upper())
+        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
 
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
