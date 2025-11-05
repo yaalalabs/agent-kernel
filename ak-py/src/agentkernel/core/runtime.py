@@ -17,19 +17,44 @@ class Runtime:
     """
 
     def __init__(self, sessions: SessionStore):
+        """
+        Initialize the Runtime.
+
+        :sessions: The session store instance used to manage agent sessions.
+        """
         self._log = logging.getLogger("ak.runtime")
         self._agents = {}
         self._sessions = sessions
 
     def __enter__(self) -> "Runtime":
+        """
+        Enter the Runtime context manager and attach the Runtime to the ModuleLoader.
+
+        This method is called when entering a 'with' statement block. It attaches
+        the ModuleLoader to this runtime instance, making it the active runtime
+        context for module loading operations.
+
+        :return: The runtime instance itself, allowing it to be used as a context manager in with statements.
+        """
         ModuleLoader.attach(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """
+        Exit the Runtime context manager and detach from the ModuleLoader.
+
+        This method is called when exiting a 'with' statement block. It detaches
+        the runtime instance from the ModuleLoader, performing necessary cleanup.
+        """
         ModuleLoader.detach(self)
 
     @staticmethod
     def instance() -> "Runtime":
+        """
+        Get the global singleton instance of the Runtime.
+
+        :return: The global singleton instance of the Runtime class.
+        """
         return GlobalRuntime.instance()
 
     def load(self, module: str) -> ModuleType:
@@ -130,6 +155,16 @@ class ModuleLoader:
 
     @staticmethod
     def attach(runtime: Runtime):
+        """
+        Attach a Runtime instance to the ModuleLoader.
+
+        This method sets the Runtime instance that will be used by the ModuleLoader for
+        loading and managing modules. It ensures thread-safety using a lock and validates
+        that only one Runtime can be attached at a time.
+
+        :param runtime: The Runtime instance to attach to the ModuleLoader.
+        :raises Exception: If a different runtime instance is already attached to the ModuleLoader.
+        """
         with ModuleLoader._lock:
             if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
                 raise Exception("A different runtime is already attached")
@@ -137,11 +172,19 @@ class ModuleLoader:
 
     @staticmethod
     def detach(runtime: Runtime):
+        """
+        Detach a Runtime instance from the ModuleLoader.
+
+        This method removes the Runtime association from the ModuleLoader in a thread-safe manner.
+        It validates that the runtime being detached matches the currently attached runtime before
+        proceeding with the detachment.
+
+        :param runtime: The runtime instance to detach from the ModuleLoader.
+        :raises Exception: If a different runtime is currently attached than the one being detached.
+        """
         with ModuleLoader._lock:
-            if ModuleLoader._runtime is None:
-                raise Exception("No runtime is currently attached")
-            if ModuleLoader._runtime != runtime:
-                raise Exception("A different runtime is currently attached")
+            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
+                raise Exception("A different runtime is already attached")
             ModuleLoader._runtime = None
 
     @staticmethod
