@@ -1,7 +1,9 @@
 import importlib
 import logging
-import traceback
+
 from enum import StrEnum
+from agentkernel.core.builder import SessionStoreBuilder
+from singleton_type import Singleton
 from types import ModuleType
 from typing import Any
 
@@ -11,47 +13,19 @@ from .sessions import InMemorySessionStore, RedisSessionStore, SessionStore
 from .sessions.redis import RedisDriver
 
 
-class _MemoryType(StrEnum):
-    IN_MEMORY = "IN_MEMORY"
-    REDIS = "REDIS"
-
-
 class Runtime:
     """
     Runtime class provides the environment for hosting and running agents.
     """
 
-    _log = logging.getLogger("ak.runtime")
-    _instance = None
-    _agents = {}
-    _sessions: SessionStore = None
-    _memory_type: _MemoryType = None
-
-    def __init__(self, memory_type: _MemoryType = _MemoryType.IN_MEMORY):
-        Runtime._memory_type = memory_type
-        if Runtime._instance is not None:
-            raise Exception("Runtime is a singleton class")
-        if memory_type == _MemoryType.REDIS:
-            self._sessions = RedisSessionStore(RedisDriver())
-            self._log.info("Using Redis session store")
-        else:
-            self._log.info("Using in-memory session store")
-            self._sessions = InMemorySessionStore()
-        Runtime._instance = self
+    def __init__(self, sessions: SessionStore):
+        self._log = logging.getLogger("ak.runtime")
+        self._agents = {}
+        self._sessions = sessions
 
     @staticmethod
     def instance() -> "Runtime":
-        if Runtime._instance is None:
-            env_mem = AKConfig.get().session.type.upper()
-            try:
-                memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
-            except ValueError:
-                Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
-                Runtime._log.warning(traceback.format_exc())
-                memory_type = _MemoryType.IN_MEMORY
-            Runtime._log.debug(f"Using memory type: {memory_type}")
-            Runtime(memory_type)
-        return Runtime._instance
+        return GlobalRuntime()
 
     def load(self, module: str) -> ModuleType:
         """
@@ -108,3 +82,15 @@ class Runtime:
         :return: The session storage.
         """
         return self._sessions
+
+
+class GlobalRuntime(Runtime, metaclass=Singleton):
+    """
+    GlobalRuntime is a singleton instance of Runtime that can be accessed globally.
+    """
+
+    _log = logging.getLogger("ak.runtime")
+
+    def __init__(self):
+        sessions = SessionStoreBuilder.build()
+        super().__init__(sessions)
