@@ -4,7 +4,7 @@ from threading import Lock
 
 from singleton_type import Singleton
 from types import ModuleType
-from typing import Any
+from typing import Any, Optional
 
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
@@ -117,7 +117,7 @@ class ModuleLoader:
     ModuleLoader is responsible for loading agent modules dynamically.
     """
 
-    _runtime: Runtime = None
+    _runtime: Optional[Runtime] = None
     _lock: Lock = Lock()
 
     @staticmethod
