@@ -20,7 +20,7 @@ class Runtime:
         """
         Initialize the Runtime.
 
-        :sessions: The session store instance used to manage agent sessions.
+        :param sessions: The session store instance used to manage agent sessions.
         """
         self._log = logging.getLogger("ak.runtime")
         self._agents = {}
