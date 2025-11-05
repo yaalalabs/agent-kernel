@@ -1,6 +1,6 @@
 import importlib
 import logging
-from threading import Lock
+from threading import RLock
 
 from singleton_type import Singleton
 from types import ModuleType
@@ -118,7 +118,7 @@ class ModuleLoader:
     """
 
     _runtime: Optional[Runtime] = None
-    _lock: Lock = Lock()
+    _lock: RLock = RLock()
 
     @staticmethod
     def runtime() -> Runtime:
