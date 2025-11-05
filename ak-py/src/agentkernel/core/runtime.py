@@ -1,10 +1,10 @@
 import importlib
 import logging
 from threading import RLock
-
-from singleton_type import Singleton
 from types import ModuleType
 from typing import Any, Optional
+
+from singleton_type import Singleton
 
 from .base import Agent, Session
 from .builder import SessionStoreBuilder

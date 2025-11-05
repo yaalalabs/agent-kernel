@@ -1,12 +1,11 @@
 import logging
-from enum import StrEnum
 import traceback
+from enum import StrEnum
 
 from .config import AKConfig
-from .sessions.in_memory import InMemorySessionStore
-from .sessions.redis import RedisSessionStore
-from .sessions.redis import RedisDriver
 from .sessions import SessionStore
+from .sessions.in_memory import InMemorySessionStore
+from .sessions.redis import RedisDriver, RedisSessionStore
 
 
 class Builder:
