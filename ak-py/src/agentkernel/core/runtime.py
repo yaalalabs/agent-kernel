@@ -143,7 +143,7 @@ class ModuleLoader:
         :return: The imported module object.
 
         :raises ModuleNotFoundError: If the specified module cannot be found.
-        :raise ImportError: If there's an error during the module import process.
+        :raises ImportError: If there's an error during the module import process.
         """
         with runtime:
             return importlib.import_module(module)
