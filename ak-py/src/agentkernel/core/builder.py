@@ -23,14 +23,14 @@ class SessionStoreType(StrEnum):
             return cls[type_str.upper()]
         except KeyError:
             Builder._log.warning(f"Invalid session store type '{type_str}', falling back to IN_MEMORY")
-            Builder._log.warning(traceback.format_exc())
+            # Traceback logging removed as this is an expected control flow case
             return SessionStoreType.IN_MEMORY
 
 
 class SessionStoreBuilder(Builder):
     @staticmethod
     def build() -> SessionStore:
-        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type.upper())
+        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
 
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
