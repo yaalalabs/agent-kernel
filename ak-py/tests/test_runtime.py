@@ -44,7 +44,7 @@ def test_runtime_instance_redis_when_config(monkeypatch):
                 ttl = 60
                 prefix = "ak:test:"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
     # Should select REDIS memory type and initialize a session store
@@ -57,7 +57,7 @@ def test_runtime_instance_invalid_fallsback(monkeypatch):
         class session:
             type = "not-a-real-type"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
     assert runtime.sessions() is not None
@@ -75,7 +75,7 @@ async def test_runtime_run_calls_runner(monkeypatch):
         class session:
             type = "in_memory"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
     agent = DummyAgent("agent")

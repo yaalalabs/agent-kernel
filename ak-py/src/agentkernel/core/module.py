@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List
 
 from .base import Agent
-from .runtime import Runtime
+from .runtime import ModuleLoader
 
 
 class Module(ABC):
@@ -32,7 +32,7 @@ class Module(ABC):
         Unloads and deregisters all agents in the module
         """
         for agent in self._agents:
-            Runtime.instance().deregister(agent)
+            ModuleLoader.runtime().deregister(agent)
         self._agents.clear()
 
     @abstractmethod
@@ -55,7 +55,7 @@ class Module(ABC):
         for agent in agents:
             try:
                 wrapped = self._wrap(agent, agents)
-                Runtime.instance().register(wrapped)
+                ModuleLoader.runtime().register(wrapped)
                 registered.append(wrapped)
             except Exception:
                 self._agents = registered

@@ -1,16 +1,13 @@
 import importlib
 import logging
 
-from enum import StrEnum
-from agentkernel.core.builder import SessionStoreBuilder
 from singleton_type import Singleton
 from types import ModuleType
 from typing import Any
 
 from .base import Agent, Session
-from .config import AKConfig
-from .sessions import InMemorySessionStore, RedisSessionStore, SessionStore
-from .sessions.redis import RedisDriver
+from .builder import SessionStoreBuilder
+from .sessions import SessionStore
 
 
 class Runtime:
@@ -23,9 +20,16 @@ class Runtime:
         self._agents = {}
         self._sessions = sessions
 
+    def __enter__(self) -> "Runtime":
+        ModuleLoader.attach(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        ModuleLoader.detach()
+
     @staticmethod
     def instance() -> "Runtime":
-        return GlobalRuntime()
+        return GlobalRuntime.instance()
 
     def load(self, module: str) -> ModuleType:
         """
@@ -34,7 +38,7 @@ class Runtime:
         :return: The loaded module.
         """
         self._log.debug(f"Loading module '{module}'")
-        return importlib.import_module(module)
+        return ModuleLoader.load(self, module)
 
     def agents(self) -> dict[str, Agent]:
         """
@@ -87,10 +91,59 @@ class Runtime:
 class GlobalRuntime(Runtime, metaclass=Singleton):
     """
     GlobalRuntime is a singleton instance of Runtime that can be accessed globally.
+
+    This is the default runtime instance used by all operations unless otherwise specified.
     """
 
-    _log = logging.getLogger("ak.runtime")
-
     def __init__(self):
+        """
+        Initialize the global singleton Runtime instance based on the configuration.
+        """
         sessions = SessionStoreBuilder.build()
         super().__init__(sessions)
+
+    @staticmethod
+    def instance() -> Runtime:
+        """
+        Get the global singleton instance of the Runtime.
+        :return: The global singleton runtime instance.
+        """
+        return GlobalRuntime()
+
+
+class ModuleLoader:
+    """
+    ModuleLoader is responsible for loading agent modules dynamically.
+    """
+
+    _runtime: Runtime = None
+
+    @staticmethod
+    def runtime() -> Runtime:
+        """
+        Return the Runtime instance set to load the module. By default this is the
+        global singleton Runtime instance.
+        """
+        return ModuleLoader._runtime or GlobalRuntime.instance()
+
+    @staticmethod
+    def attach(runtime: Runtime):
+        ModuleLoader._runtime = runtime
+
+    @staticmethod
+    def detach():
+        ModuleLoader._runtime = None
+
+    @staticmethod
+    def load(runtime: Runtime, module: str) -> ModuleType:
+        """
+        Load a module within the context of a given runtime.
+        :param runtime: The runtime environment to be associated with the module loading process.
+        :param module: The name of the module to import (e.g., 'os.path' or 'mypackage.mymodule').
+        :return: The imported module object.
+
+        :raises ModuleNotFoundError: If the specified module cannot be found.
+        :raise ImportError: If there's an error during the module import process.
+        """
+        with runtime:
+            return importlib.import_module(module)
