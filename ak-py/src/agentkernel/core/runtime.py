@@ -1,5 +1,6 @@
 import importlib
 import logging
+from threading import Lock
 
 from singleton_type import Singleton
 from types import ModuleType
@@ -25,7 +26,7 @@ class Runtime:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        ModuleLoader.detach()
+        ModuleLoader.detach(self)
 
     @staticmethod
     def instance() -> "Runtime":
@@ -117,6 +118,7 @@ class ModuleLoader:
     """
 
     _runtime: Runtime = None
+    _lock: Lock = Lock()
 
     @staticmethod
     def runtime() -> Runtime:
@@ -128,11 +130,19 @@ class ModuleLoader:
 
     @staticmethod
     def attach(runtime: Runtime):
-        ModuleLoader._runtime = runtime
+        with ModuleLoader._lock:
+            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
+                raise Exception("A different runtime is already attached")
+            ModuleLoader._runtime = runtime
 
     @staticmethod
-    def detach():
-        ModuleLoader._runtime = None
+    def detach(runtime: Runtime):
+        with ModuleLoader._lock:
+            if ModuleLoader._runtime is None:
+                raise Exception("No runtime is currently attached")
+            if ModuleLoader._runtime != runtime:
+                raise Exception("A different runtime is currently attached")
+            ModuleLoader._runtime = None
 
     @staticmethod
     def load(runtime: Runtime, module: str) -> ModuleType:
@@ -145,5 +155,5 @@ class ModuleLoader:
         :raises ModuleNotFoundError: If the specified module cannot be found.
         :raise ImportError: If there's an error during the module import process.
         """
-        with runtime:
+        with ModuleLoader._lock, runtime:
             return importlib.import_module(module)
