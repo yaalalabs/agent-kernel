@@ -1,9 +1,9 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from fastapi import APIRouter
 
 
-class RESTRequestHandler:
+class RESTRequestHandler(ABC):
     @abstractmethod
     def get_router(self) -> APIRouter:
         """

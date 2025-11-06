@@ -5,7 +5,7 @@ description = "Demo of LangGraph based agents running in Agent Kernel with a CLI
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph]>=0.2.2",
+    "agentkernel[cli,langgraph]>=0.2.3",
     "langchain-litellm>=0.2.2",
     "langchain-openai>=0.3.28",
     "langgraph-supervisor>=0.0.29",
@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.2",
+    "agentkernel[test]>=0.2.3",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
