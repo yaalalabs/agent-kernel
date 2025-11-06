@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Agent Kernel! We welcome contribu
 
 - [Code of Conduct](#code-of-conduct)
 - [How to Contribute](#how-to-contribute)
-- [Getting Started](#getting-started)
+- [Developer Guide](#developer-guide)
 - [Pull Request Process](#pull-request-process)
 - [Reporting Bugs](#reporting-bugs)
 - [Suggesting Features](#suggesting-features)
