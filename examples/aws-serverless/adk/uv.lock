@@ -17,17 +17,18 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.2"
+version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "redis" },
+    { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8c/b2/602179caaf4b07688a7b5dc4dc75868140ef5debdee5b7c7150a762fee1d/agentkernel-0.2.2.tar.gz", hash = "sha256:536321dcc637f5dfbff86ede06d0250c1b98c3a4699e66e3618d8c8fd29993a9", size = 26360, upload-time = "2025-10-30T06:06:54.934Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/c3/90369c61faab91aa94ae95e6139676f646e031dfadb1d7296a7726ba29bd/agentkernel-0.2.3.tar.gz", hash = "sha256:5dd81b2c3ed82f747a8aa16be7cf7a6e8e66ec07972b8fa99c576fc9f158fd53", size = 32665, upload-time = "2025-11-06T10:48:56.371Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/91/6f3ff4ce4f5a4363e0140b74065933eedea88a658fd895940121cc4d3a3c/agentkernel-0.2.2-py3-none-any.whl", hash = "sha256:90f2c06853e0c226c6a6964c316ff52f75c27a798a7e13698764ad5394d67ffb", size = 41084, upload-time = "2025-10-30T06:06:53.652Z" },
+    { url = "https://files.pythonhosted.org/packages/02/69/6135752126a737194d3ec8e9fe3359a401e2e0c3156a83f0e5a628ea00f8/agentkernel-0.2.3-py3-none-any.whl", hash = "sha256:e9d80429f363533acbab24fd5d466c5c241d9c0aba286d91e3c3e440d8b6ff80", size = 50048, upload-time = "2025-11-06T10:48:54.857Z" },
 ]
 
 [package.optional-dependencies]
@@ -183,7 +184,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["adk", "aws"], specifier = ">=0.2.2" }]
+requires-dist = [{ name = "agentkernel", extras = ["adk", "aws"], specifier = ">=0.2.3" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2315,6 +2316,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7c/75/c24ed871c576d7e2b64b04b1fe3d075157f6eb54e59670d3f5ffb36e25c7/shapely-2.1.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:361b6d45030b4ac64ddd0a26046906c8202eb60d0f9f53085f5179f1d23021a0", size = 4169511, upload-time = "2025-09-24T13:51:36.297Z" },
     { url = "https://files.pythonhosted.org/packages/b1/f7/b3d1d6d18ebf55236eec1c681ce5e665742aab3c0b7b232720a7d43df7b6/shapely-2.1.2-cp314-cp314t-win32.whl", hash = "sha256:b54df60f1fbdecc8ebc2c5b11870461a6417b3d617f555e5033f1505d36e5735", size = 1602607, upload-time = "2025-09-24T13:51:37.757Z" },
     { url = "https://files.pythonhosted.org/packages/9a/f6/f09272a71976dfc138129b8faf435d064a811ae2f708cb147dccdf7aacdb/shapely-2.1.2-cp314-cp314t-win_amd64.whl", hash = "sha256:0036ac886e0923417932c2e6369b6c52e38e0ff5d9120b90eef5cd9a5fc5cae9", size = 1796682, upload-time = "2025-09-24T13:51:39.233Z" },
+]
+
+[[package]]
+name = "singleton-type"
+version = "0.0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/9d/ad466bb2d879e951b2500639700e906c4d8d5e28ac39c1b0616a2087447a/singleton-type-0.0.5.tar.gz", hash = "sha256:c2c7a052f3fb151db5fc7aff547b754f8c4649c6d3ac86a49560d54466d935cb", size = 6966, upload-time = "2022-06-19T16:43:20.176Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/1d/f98e31e80e4322d3921a8e26d900733fda6a9db4b44564678693cb491994/singleton_type-0.0.5-py3-none-any.whl", hash = "sha256:f63617e856afdf23a2c67ac050454508b3d00739ecdbb69803627e5c2c8cc02c", size = 7715, upload-time = "2022-06-19T16:43:18.067Z" },
 ]
 
 [[package]]
