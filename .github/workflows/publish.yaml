@@ -48,16 +48,26 @@ jobs:
         shell: bash -e {0}
     
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+      
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.MODULE_SYNC_TOKEN }}  # Use PAT to bypass branch protection
+          token: ${{ steps.app-token.outputs.token }}
       
       - name: Configure git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "agent-kernel-ci[bot]"
+          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -145,7 +155,7 @@ jobs:
             -f tag_name="v${TAG_VERSION}"
           echo "✅ Triggered Terraform module sync workflow for v${TAG_VERSION}"
         env:
-          GH_TOKEN: ${{ secrets.MODULE_SYNC_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
       
       - name: Create GitHub Release
         if: inputs.environment == 'production'

@@ -1,0 +1,59 @@
+name: Test GitHub App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets are set
+        run: |
+          echo "Checking if secrets are configured..."
+          if [ -z "${{ secrets.APP_ID }}" ]; then
+            echo "❌ APP_ID secret is not set"
+            exit 1
+          else
+            echo "✅ APP_ID is set"
+          fi
+          
+          if [ -z "${{ secrets.APP_PRIVATE_KEY }}" ]; then
+            echo "❌ APP_PRIVATE_KEY secret is not set"
+            exit 1
+          else
+            echo "✅ APP_PRIVATE_KEY is set"
+          fi
+          
+          # Check if private key has correct format
+          if echo "${{ secrets.APP_PRIVATE_KEY }}" | grep -q "BEGIN RSA PRIVATE KEY"; then
+            echo "✅ APP_PRIVATE_KEY has correct header"
+          elif echo "${{ secrets.APP_PRIVATE_KEY }}" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "✅ APP_PRIVATE_KEY has correct header (non-RSA format)"
+          else
+            echo "❌ APP_PRIVATE_KEY doesn't have correct BEGIN header"
+            exit 1
+          fi
+          
+          if echo "${{ secrets.APP_PRIVATE_KEY }}" | grep -q "END.*PRIVATE KEY"; then
+            echo "✅ APP_PRIVATE_KEY has correct footer"
+          else
+            echo "❌ APP_PRIVATE_KEY doesn't have correct END footer"
+            exit 1
+          fi
+      
+      - name: Test GitHub App Token Generation
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+      
+      - name: Verify token works
+        run: |
+          echo "✅ Token generated successfully!"
+          # Test the token by making an API call
+          curl -s -H "Authorization: token ${{ steps.app-token.outputs.token }}" \
+            https://api.github.com/repos/yaalalabs/agent-kernel | jq -r '.full_name'
