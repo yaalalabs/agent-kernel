@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..api.rest_request_handler import RESTRequestHandler
-from ..core import AgentService, Runtime
+from ..core import AgentService, GlobalRuntime
 
 
 class AgentRESTRequestHandler(RESTRequestHandler):
@@ -41,7 +41,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         @router.get("/agents")
         def list_agents():
-            return {"agents": list(Runtime.instance().agents().keys())}
+            return {"agents": list(GlobalRuntime.instance().agents().keys())}
 
         @router.post("/run")
         async def run(req: AgentRESTRequestHandler.RunRequest):

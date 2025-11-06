@@ -4,6 +4,7 @@ from threading import RLock
 from types import ModuleType
 from typing import Any, Optional
 
+from deprecated import deprecated
 from singleton_type import Singleton
 
 from .base import Agent, Session
@@ -48,6 +49,7 @@ class Runtime:
         """
         ModuleLoader.detach(self)
 
+    @deprecated(version="0.2.4", reason="Use GlobalRuntime.instance() instead")
     @staticmethod
     def instance() -> "Runtime":
         """

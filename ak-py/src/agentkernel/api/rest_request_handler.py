@@ -20,7 +20,7 @@ class RESTRequestHandler(ABC):
 
         @router.get("/agents")
         def list_agents():
-            return {"agents": list(Runtime.instance().agents().keys())}
+            return {"agents": list(GlobalRuntime.instance().agents().keys())}
 
         """
         pass
