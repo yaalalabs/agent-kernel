@@ -51,6 +51,9 @@ api = [
 slack = [
     "slack-bolt==1.22.0"
 ]
+whatsapp = [
+    "httpx>=0.27.0"
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.2.0",
