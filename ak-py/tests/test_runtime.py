@@ -1,7 +1,10 @@
 import pytest
 
 from agentkernel import Agent, Runner
-from agentkernel.core.runtime import Runtime, _MemoryType
+from agentkernel.core.builder import SessionStoreBuilder
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.sessions.in_memory import InMemorySessionStore
+from agentkernel.core.sessions.redis import RedisSessionStore
 
 
 class DummyRunner(Runner):
@@ -31,17 +34,7 @@ class DummyAgent(Agent):
         pass
 
 
-def reset_runtime_singleton():
-    # helper to reset the singleton between tests
-    Runtime._instance = None
-    Runtime._agents = {}
-    Runtime._sessions = None
-    Runtime._memory_type = None
-
-
 def test_runtime_instance_redis_when_config(monkeypatch):
-    reset_runtime_singleton()
-
     class FakeCfg:
         class session:
             type = "redis"
@@ -51,45 +44,43 @@ def test_runtime_instance_redis_when_config(monkeypatch):
                 ttl = 60
                 prefix = "ak:test:"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    rt = Runtime.instance()
+    runtime = Runtime(SessionStoreBuilder.build())
     # Should select REDIS memory type and initialize a session store
-    assert Runtime._memory_type == _MemoryType.REDIS
-    assert rt.sessions() is not None
+    assert runtime.sessions() is not None
+    assert type(runtime.sessions()) is RedisSessionStore
 
 
 def test_runtime_instance_invalid_fallsback(monkeypatch):
-    reset_runtime_singleton()
-
     class FakeCfg:
         class session:
             type = "not-a-real-type"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    rt = Runtime.instance()
-    assert Runtime._memory_type == _MemoryType.IN_MEMORY
+    runtime = Runtime(SessionStoreBuilder.build())
+    assert runtime.sessions() is not None
+    assert type(runtime.sessions()) is InMemorySessionStore
+
     # Should be able to register and list agents
-    a = DummyAgent("a1")
-    rt.register(a)
-    assert "a1" in rt.agents()
+    agent = DummyAgent("a1")
+    runtime.register(agent)
+    assert "a1" in runtime.agents()
 
 
 @pytest.mark.asyncio
 async def test_runtime_run_calls_runner(monkeypatch):
-    reset_runtime_singleton()
-
     class FakeCfg:
         class session:
             type = "in_memory"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    rt = Runtime.instance()
-    a = DummyAgent("agent")
-    rt.register(a)
-    sess = rt.sessions().new("s1")
+    runtime = Runtime(SessionStoreBuilder.build())
+    agent = DummyAgent("agent")
+    runtime.register(agent)
+    session = runtime.sessions().new("s1")
 
-    out = await rt.run(a, sess, "ping")
+    out = await runtime.run(agent, session, "ping")
     assert out == "ok:ping"

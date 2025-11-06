@@ -1,19 +1,14 @@
 import importlib
 import logging
-import traceback
-from enum import StrEnum
+from threading import RLock
 from types import ModuleType
-from typing import Any
+from typing import Any, Optional
+
+from singleton_type import Singleton
 
 from .base import Agent, Session
-from .config import AKConfig
-from .sessions import InMemorySessionStore, RedisSessionStore, SessionStore
-from .sessions.redis import RedisDriver
-
-
-class _MemoryType(StrEnum):
-    IN_MEMORY = "IN_MEMORY"
-    REDIS = "REDIS"
+from .builder import SessionStoreBuilder
+from .sessions import SessionStore
 
 
 class Runtime:
@@ -21,37 +16,46 @@ class Runtime:
     Runtime class provides the environment for hosting and running agents.
     """
 
-    _log = logging.getLogger("ak.runtime")
-    _instance = None
-    _agents = {}
-    _sessions: SessionStore = None
-    _memory_type: _MemoryType = None
+    def __init__(self, sessions: SessionStore):
+        """
+        Initialize the Runtime.
 
-    def __init__(self, memory_type: _MemoryType = _MemoryType.IN_MEMORY):
-        Runtime._memory_type = memory_type
-        if Runtime._instance is not None:
-            raise Exception("Runtime is a singleton class")
-        if memory_type == _MemoryType.REDIS:
-            self._sessions = RedisSessionStore(RedisDriver())
-            self._log.info("Using Redis session store")
-        else:
-            self._log.info("Using in-memory session store")
-            self._sessions = InMemorySessionStore()
-        Runtime._instance = self
+        :param sessions: The session store instance used to manage agent sessions.
+        """
+        self._log = logging.getLogger("ak.runtime")
+        self._agents = {}
+        self._sessions = sessions
+
+    def __enter__(self) -> "Runtime":
+        """
+        Enter the Runtime context manager and attach the Runtime to the ModuleLoader.
+
+        This method is called when entering a 'with' statement block. It attaches
+        the ModuleLoader to this runtime instance, making it the active runtime
+        context for module loading operations.
+
+        :return: The runtime instance itself, allowing it to be used as a context manager in with statements.
+        """
+        ModuleLoader.attach(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """
+        Exit the Runtime context manager and detach from the ModuleLoader.
+
+        This method is called when exiting a 'with' statement block. It detaches
+        the runtime instance from the ModuleLoader, performing necessary cleanup.
+        """
+        ModuleLoader.detach(self)
 
     @staticmethod
     def instance() -> "Runtime":
-        if Runtime._instance is None:
-            env_mem = AKConfig.get().session.type.upper()
-            try:
-                memory_type: _MemoryType = _MemoryType(env_mem) if env_mem else _MemoryType.IN_MEMORY
-            except ValueError:
-                Runtime._log.warning(f"Invalid memory type '{env_mem}', falling back to IN_MEMORY")
-                Runtime._log.warning(traceback.format_exc())
-                memory_type = _MemoryType.IN_MEMORY
-            Runtime._log.debug(f"Using memory type: {memory_type}")
-            Runtime(memory_type)
-        return Runtime._instance
+        """
+        Get the global singleton instance of the Runtime.
+
+        :return: The global singleton instance of the Runtime class.
+        """
+        return GlobalRuntime.instance()
 
     def load(self, module: str) -> ModuleType:
         """
@@ -60,7 +64,7 @@ class Runtime:
         :return: The loaded module.
         """
         self._log.debug(f"Loading module '{module}'")
-        return importlib.import_module(module)
+        return ModuleLoader.load(self, module)
 
     def agents(self) -> dict[str, Agent]:
         """
@@ -108,3 +112,91 @@ class Runtime:
         :return: The session storage.
         """
         return self._sessions
+
+
+class GlobalRuntime(Runtime, metaclass=Singleton):
+    """
+    GlobalRuntime is a singleton instance of Runtime that can be accessed globally.
+
+    This is the default runtime instance used by all operations unless otherwise specified.
+    """
+
+    def __init__(self):
+        """
+        Initialize the global singleton Runtime instance based on the configuration.
+        """
+        sessions = SessionStoreBuilder.build()
+        super().__init__(sessions)
+
+    @staticmethod
+    def instance() -> Runtime:
+        """
+        Get the global singleton instance of the Runtime.
+        :return: The global singleton runtime instance.
+        """
+        return GlobalRuntime()
+
+
+class ModuleLoader:
+    """
+    ModuleLoader is responsible for loading agent modules dynamically.
+    """
+
+    _runtime: Optional[Runtime] = None
+    _lock: RLock = RLock()
+
+    @staticmethod
+    def runtime() -> Runtime:
+        """
+        Return the Runtime instance set to load the module. By default this is the
+        global singleton Runtime instance.
+        """
+        return ModuleLoader._runtime or GlobalRuntime.instance()
+
+    @staticmethod
+    def attach(runtime: Runtime):
+        """
+        Attach a Runtime instance to the ModuleLoader.
+
+        This method sets the Runtime instance that will be used by the ModuleLoader for
+        loading and managing modules. It ensures thread-safety using a lock and validates
+        that only one Runtime can be attached at a time.
+
+        :param runtime: The Runtime instance to attach to the ModuleLoader.
+        :raises Exception: If a different runtime instance is already attached to the ModuleLoader.
+        """
+        with ModuleLoader._lock:
+            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
+                raise Exception("A different runtime is already attached")
+            ModuleLoader._runtime = runtime
+
+    @staticmethod
+    def detach(runtime: Runtime):
+        """
+        Detach a Runtime instance from the ModuleLoader.
+
+        This method removes the Runtime association from the ModuleLoader in a thread-safe manner.
+        It validates that the runtime being detached matches the currently attached runtime before
+        proceeding with the detachment.
+
+        :param runtime: The runtime instance to detach from the ModuleLoader.
+        :raises Exception: If a different runtime is currently attached than the one being detached.
+        """
+        with ModuleLoader._lock:
+            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
+                raise Exception("A different runtime is already attached")
+            ModuleLoader._runtime = None
+
+    @staticmethod
+    def load(runtime: Runtime, module: str) -> ModuleType:
+        """
+        Load a module within the context of a given runtime.
+        :param runtime: The runtime environment to be associated with the module loading process.
+        :param module: The name of the module to import (e.g., 'os.path' or 'mypackage.mymodule').
+        :return: The imported module object.
+
+        :raises ModuleNotFoundError: If the specified module cannot be found.
+        :raises ImportError: If there's an error during the module import process.
+        """
+        with ModuleLoader._lock, runtime:
+            return importlib.import_module(module)

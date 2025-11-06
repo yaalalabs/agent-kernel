@@ -1,6 +1,7 @@
 from typing import List
 
 from agentkernel import Agent, Runner
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.module import Module
 from agentkernel.core.runtime import Runtime
 
@@ -51,61 +52,103 @@ class SimpleModule(Module):
         super().load(agents)
 
 
-def reset_runtime_singleton():
-    Runtime._instance = None
-    Runtime._agents = {}
-    Runtime._sessions = None
-    Runtime._memory_type = None
-
-
 def test_module_add_updates_agents(monkeypatch):
-    reset_runtime_singleton()
-
     class FakeCfg:
         class session:
             type = "in_memory"
 
-    monkeypatch.setattr("agentkernel.core.runtime.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    # Initialize with one agent
-    a1 = FrameworkAgent("agent1")
-    mod = SimpleModule([a1])
+    with Runtime(SessionStoreBuilder.build()) as runtime:
+        # Initialize with one agent
+        a1 = FrameworkAgent("agent1")
+        mod = SimpleModule([a1])
 
-    assert len(mod.agents) == 1
-    assert mod.agents[0].name == "agent1"
+        assert len(mod.agents) == 1
+        assert mod.agents[0].name == "agent1"
 
-    # Add a second agent and verify it appears in the module.agents list
-    a2 = FrameworkAgent("agent2")
-    mod.load([a1, a2])
+        # Add a second agent and verify it appears in the module.agents list
+        a2 = FrameworkAgent("agent2")
+        mod.load([a1, a2])
 
-    assert len(mod.agents) == 2
-    assert mod.agents[-1].name == "agent2"
-    assert {a.name for a in mod.agents} == {"agent1", "agent2"}
+        assert len(mod.agents) == 2
+        assert mod.agents[-1].name == "agent2"
+        assert {a.name for a in mod.agents} == {"agent1", "agent2"}
 
-    # Verify runtime registration reflects the newly added agent
-    rt = Runtime.instance()
-    assert "agent1" in rt.agents()
-    assert "agent2" in rt.agents()
+        # Verify runtime registration reflects the newly added agent
+        assert "agent1" in runtime.agents()
+        assert "agent2" in runtime.agents()
 
-    # Verify unload
-    mod.unload()
-    assert len(mod.agents) == 0
-    assert rt.agents() == {}
+        # Verify unload
+        mod.unload()
+        assert len(mod.agents) == 0
+        assert runtime.agents() == {}
 
-    # Verify reload
-    mod.load([a1])
-    assert len(mod.agents) == 1
-    assert mod.agents[0].name == "agent1"
-    assert rt.agents() == {"agent1": mod.agents[0]}
+        # Verify reload
+        mod.load([a1])
+        assert len(mod.agents) == 1
+        assert mod.agents[0].name == "agent1"
+        assert runtime.agents() == {"agent1": mod.agents[0]}
 
-    # Handle duplicates
-    a3 = FrameworkAgent("agent3")
+        # Handle duplicates
+        a3 = FrameworkAgent("agent3")
 
-    try:
-        SimpleModule([a3, a1])
-    except Exception as e:
-        assert "Agent with name 'agent1' is already registered." in str(e)
+        try:
+            SimpleModule([a3, a1])
+        except Exception as e:
+            assert "Agent with name 'agent1' is already registered." in str(e)
 
-    # Runtime should be intact after exception
-    assert len(mod.agents) == 1
-    assert rt.agents() == {"agent1": mod.agents[0]}
+        # Runtime should be intact after exception
+        assert len(mod.agents) == 1
+        assert runtime.agents() == {"agent1": mod.agents[0]}
+
+
+def test_load_modules_with_unique_agent_names():
+    with Runtime(SessionStoreBuilder.build()) as runtime:
+        a1 = FrameworkAgent("agent1")
+        SimpleModule([a1])
+        assert len(runtime.agents()) == 1
+        assert "agent1" in runtime.agents().keys()
+
+        a2 = FrameworkAgent("agent2")
+        a3 = FrameworkAgent("agent3")
+        SimpleModule([a2, a3])
+        assert len(runtime.agents()) == 3
+        assert "agent1" in runtime.agents().keys()
+        assert "agent2" in runtime.agents().keys()
+        assert "agent3" in runtime.agents().keys()
+
+
+def test_load_modules_with_duplicate_agent_names():
+    with Runtime(SessionStoreBuilder.build()) as runtime:
+        a1 = FrameworkAgent("agent1")
+        mod1 = SimpleModule([a1])
+        assert len(runtime.agents()) == 1
+        assert "agent1" in runtime.agents().keys()
+
+        a2 = FrameworkAgent("agent2")
+        a1x = FrameworkAgent("agent1")
+        try:
+            SimpleModule([a2, a1x])
+        except Exception as e:
+            assert "Agent with name 'agent1' is already registered." in str(e)
+
+        assert len(runtime.agents()) == 1
+        assert runtime.agents() == {"agent1": mod1.agents[0]}
+
+
+def test_load_modules_with_duplicate_agent_names_across_runtimes():
+    runtime1 = Runtime(SessionStoreBuilder.build())
+    with runtime1:
+        a1 = FrameworkAgent("agent1")
+        mod1 = SimpleModule([a1])
+        assert len(runtime1.agents()) == 1
+        assert runtime1.agents() == {"agent1": mod1.agents[0]}
+
+    runtime2 = Runtime(SessionStoreBuilder.build())
+    with runtime2:
+        a1x = FrameworkAgent("agent1")
+        a2 = FrameworkAgent("agent2")
+        mod2 = SimpleModule([a1x, a2])
+        assert len(runtime2.agents()) == 2
+        assert runtime2.agents() == {"agent1": mod2.agents[0], "agent2": mod2.agents[1]}
