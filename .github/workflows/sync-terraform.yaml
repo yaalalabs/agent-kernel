@@ -36,6 +36,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: yaalalabs
           repositories: |
+            agent-kernel
             terraform-aws-ak-common
             terraform-aws-ak-serverless
             terraform-aws-ak-containerized
