@@ -155,7 +155,7 @@ jobs:
             -f tag_name="v${TAG_VERSION}"
           echo "✅ Triggered Terraform module sync workflow for v${TAG_VERSION}"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.MODULE_SYNC_TOKEN }}
       
       - name: Create GitHub Release
         if: inputs.environment == 'production'
