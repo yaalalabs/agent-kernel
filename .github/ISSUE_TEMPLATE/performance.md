@@ -3,7 +3,7 @@ name: Performance Issue
 about: Report performance problems or optimization opportunities
 title: '[PERF] '
 labels: performance
-assignees: ''
+assignees: amithad
 ---
 
 ## Performance Issue

@@ -1,18 +1,9 @@
 ---
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: bug
-assignees: amithad
-
----
-
----
 name: Bug Report
 about: Report a bug or unexpected behavior in Agent Kernel
 title: '[BUG] '
 labels: bug
-assignees: ''
+assignees: amithad
 ---
 
 ## Bug Description
