@@ -2,7 +2,7 @@
 name: Documentation Issue
 about: Report issues with documentation or suggest improvements
 title: '[DOCS] '
-labels: documentation, type: task
+labels: documentation
 assignees: amithad
 ---
 

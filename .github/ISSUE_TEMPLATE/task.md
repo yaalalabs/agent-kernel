@@ -2,7 +2,7 @@
 name: Task
 about: Create a general task or work item for Agent Kernel
 title: '[TASK] '
-labels: type: task
+labels: task
 assignees: amithad
 ---
 

@@ -2,7 +2,7 @@
 name: Performance Issue
 about: Report performance problems or optimization opportunities
 title: '[PERF] '
-labels: performance, type: task
+labels: performance
 assignees: amithad
 ---
 
