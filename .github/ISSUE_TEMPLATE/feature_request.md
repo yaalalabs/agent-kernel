@@ -2,7 +2,7 @@
 name: Feature Request
 about: Suggest a new feature or enhancement for Agent Kernel
 title: '[FEATURE] '
-labels: enhancement
+labels: enhancement, type: feature
 assignees: amithad
 ---
 
