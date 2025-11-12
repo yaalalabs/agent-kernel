@@ -22,6 +22,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+langfuse = [
+    "langfuse>=3.9.2",
+    "nest-asyncio>=1.6.0",
+]
 crewai = [
     "crewai>=0.150.0"
 ]
@@ -38,7 +42,8 @@ aws = [
 
 ]
 openai = [
-    "openai-agents>=0.2.3"
+    "openai-agents>=0.2.3",
+    "openinference-instrumentation-openai-agents>=1.3.0",
 ]
 adk = [
     "google-adk>=1.14.1",

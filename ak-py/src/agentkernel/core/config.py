@@ -60,6 +60,11 @@ class _SlackConfig(BaseModel):
     )
 
 
+class _TraceConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable tracing")
+    type: str = Field(default="langfuse", pattern="^(langfuse|traceloops)$")
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -73,6 +78,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
+    trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

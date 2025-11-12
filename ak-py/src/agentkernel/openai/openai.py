@@ -7,6 +7,7 @@ from ..core import Agent as BaseAgent
 from ..core import Module
 from ..core import Runner as BaseRunner
 from ..core import Session
+from ..trace import Trace
 
 FRAMEWORK = "openai"
 
@@ -141,6 +142,7 @@ class OpenAIModule(Module):
         super().__init__()
         self.runner = OpenAIRunner()
         self.load(agents)
+        self.trace = Trace().openai()
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         return OpenAIAgent(agent.name, self.runner, agent)
