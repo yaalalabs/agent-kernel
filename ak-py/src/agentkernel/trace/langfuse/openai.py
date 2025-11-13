@@ -29,7 +29,7 @@ class LangFuseOpenAIRunner(OpenAIRunner):
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """
-        with self._client.start_as_current_span(name=session.id) as span:
+        with self._client.start_as_current_span(name="Agent Kernel OpenAI") as span:
             result = await super().run(agent=agent, prompt=prompt, session=session)
             span.update_trace(session_id=session.id, input=prompt, output=result)
         return result
