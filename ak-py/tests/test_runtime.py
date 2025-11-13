@@ -8,7 +8,7 @@ from agentkernel.core.sessions.redis import RedisSessionStore
 
 
 class DummyRunner(Runner):
-    async def run(self, agent, session, prompt):
+    async def run(self, agent, session, prompt, trace=False):
         return f"ok:{prompt}"
 
 

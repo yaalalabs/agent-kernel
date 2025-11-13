@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+import logging
+
+from langfuse import Langfuse, get_client
+
+from ..base import BaseTrace
+from .openai import LangFuseOpenAI
+
+
+class LangFuse(BaseTrace):
+    def __init__(self):
+        """
+        Initializes a LangFuse instance.
+        """
+        self._client: Langfuse | None = None
+        self._log = logging.getLogger("ak.trace.langfuse")
+
+    def init(self):
+        """
+        Initializes the Langfuse client.
+        """
+        self._client = get_client()
+        if self._client.auth_check():
+            self._log.debug("Langfuse client is authenticated and ready!")
+        else:
+            raise Exception("Langfuse client is not authenticated!")
+
+    def openai(self):
+        """
+        Returns the Langfuse OpenAI runner instance.
+        """
+        return LangFuseOpenAI(self._client)

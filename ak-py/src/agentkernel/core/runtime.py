@@ -9,6 +9,7 @@ from singleton_type import Singleton
 
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
+from .config import AKConfig
 from .sessions import SessionStore
 
 
@@ -106,7 +107,7 @@ class Runtime:
         :return: The result of the agent's execution.
         """
         self._log.debug(f"Running agent '{agent.name}' with prompt: {prompt}")
-        return await agent.runner.run(agent, session, prompt)
+        return await agent.runner.run(agent, session, prompt, AKConfig.get().trace.enabled)
 
     def sessions(self) -> SessionStore:
         """

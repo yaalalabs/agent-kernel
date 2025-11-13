@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, List
 
 from agents import Agent, Runner
@@ -67,7 +69,8 @@ class OpenAIRunner(BaseRunner):
         """
         super().__init__(FRAMEWORK)
 
-    def _session(self, session: Session) -> OpenAISession:
+    @staticmethod
+    def session(session: Session) -> OpenAISession | None:
         """
         Returns the OpenAI session associated with the provided session.
         :param session: The session to retrieve the OpenAI session for.
@@ -77,21 +80,25 @@ class OpenAIRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, OpenAISession())
 
-    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, prompt: Any, trace: bool = False) -> Any:
         """
         Runs the OpenAI agent with the provided prompt.
         :param agent: The OpenAI agent to run.
         :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
+        :param trace: If True, enables tracing for the agent.
         :return: The result of the agent's execution.
         """
-        result = await Runner.run(agent.agent, prompt, session=self._session(session))
-        return result.final_output
+        if trace:
+            return await Trace().openai().run(agent, session, prompt)
+        else:
+            result = await Runner.run(agent.agent, prompt, session=self.session(session))
+            return result.final_output
 
 
 class OpenAIAgent(BaseAgent):
     """
-    OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK based agents.
+    OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK-based agents.
     """
 
     def __init__(self, name: str, runner: OpenAIRunner, agent: Agent):
@@ -142,7 +149,6 @@ class OpenAIModule(Module):
         super().__init__()
         self.runner = OpenAIRunner()
         self.load(agents)
-        self.trace = Trace().openai()
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         return OpenAIAgent(agent.name, self.runner, agent)

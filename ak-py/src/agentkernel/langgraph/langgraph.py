@@ -263,12 +263,13 @@ class LangGraphRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
-    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
+    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any, trace: bool = False) -> Any:
         """
         Runs the LangGraph agent with the provided session and prompt.
         :param agent: The LangGraph agent to run.
         :param session: The session to run the agent in.
         :param prompt: The input prompt for the agent.
+        :param trace: If True, enables tracing for the agent.
         :return: The response from the agent.
         """
         session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
