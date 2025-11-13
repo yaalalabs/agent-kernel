@@ -88,7 +88,7 @@ class Runner(ABC):
         return self._name
 
     @abstractmethod
-    async def run(self, agent: Any, session: Session, prompt: Any, trace: bool = False) -> Any:
+    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
         Runs the agent with the provided prompt.
         :param agent: The agent to run.

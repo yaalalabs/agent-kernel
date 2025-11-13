@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any
 
-from ..core import Session
+from ..core import Runner
 
 
 class BaseTrace(ABC):
@@ -13,21 +12,15 @@ class BaseTrace(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def openai(self):
+    def openai(self) -> Runner:
         """
         Initialize OpenAI Agents SDK instrumentation
         """
         raise NotImplementedError
 
-
-class BaseRunner(ABC):
     @abstractmethod
-    async def run(self, agent: Any, session: Session, prompt: Any):
+    def langgraph(self) -> Runner:
         """
-        Runs the agent with the provided prompt.
-        :param agent: The agent to run.
-        :param session: The session to use for the agent.
-        :param prompt: The prompt to provide to the agent.
-        :return: The result of the agent's execution.
+        Initialize LangGraph instrumentation
         """
         raise NotImplementedError

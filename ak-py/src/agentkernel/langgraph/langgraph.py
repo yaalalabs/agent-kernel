@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, AsyncIterator, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage
@@ -15,6 +17,8 @@ from ..core import Agent as BaseAgent
 from ..core import Module as BaseModule
 from ..core import Runner as BaseRunner
 from ..core import Session as BaseSession
+from ..core.config import AKConfig
+from ..trace import Trace
 
 FRAMEWORK = "langgraph"
 
@@ -263,13 +267,12 @@ class LangGraphRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
-    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any, trace: bool = False) -> Any:
+    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
         """
         Runs the LangGraph agent with the provided session and prompt.
         :param agent: The LangGraph agent to run.
         :param session: The session to run the agent in.
         :param prompt: The input prompt for the agent.
-        :param trace: If True, enables tracing for the agent.
         :return: The response from the agent.
         """
         session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
@@ -284,7 +287,7 @@ class LangGraphRunner(BaseRunner):
 
 class LangGraphModule(BaseModule):
     """
-    LangGraphModule class provides a module for LangGraph Agent SDK based agents.
+    LangGraphModule class provides a module for LangGraph Agent SDK-based agents.
     """
 
     def __init__(self, agents: list[CompiledStateGraph]):
@@ -293,7 +296,10 @@ class LangGraphModule(BaseModule):
         :param agents: List of agents in the module.
         """
         super().__init__()
-        self.runner = LangGraphRunner()
+        if AKConfig.get().trace.enabled:
+            self.runner = Trace.get().langgraph()
+        else:
+            self.runner = LangGraphRunner()
         self.load(agents)
 
     def _wrap(self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]) -> BaseAgent:

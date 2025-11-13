@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from ..core import Runner
 from ..core.config import AKConfig
-from .base import BaseRunner, BaseTrace
+from .base import BaseTrace
 
 
 class Trace(BaseTrace):
@@ -48,10 +49,18 @@ class Trace(BaseTrace):
         if self._instance is not None:
             self._instance.init()
 
-    def openai(self) -> BaseRunner | None:
+    def openai(self) -> Runner | None:
         """
         Returns the OpenAI trace runner instance.
         """
         if self._instance is not None:
             return self._instance.openai()
+        return None
+
+    def langgraph(self) -> Runner | None:
+        """
+        Returns the LangGraph trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.langgraph()
         return None

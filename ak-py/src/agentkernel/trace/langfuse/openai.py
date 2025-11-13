@@ -1,24 +1,23 @@
 import logging
 from typing import Any
 
-from agents import Runner
 from langfuse import Langfuse
+from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
 from ...core import Session
 from ...openai.openai import OpenAIRunner
-from ..base import BaseRunner
 
 
-class LangFuseOpenAI(BaseRunner):
+class LangFuseOpenAIRunner(OpenAIRunner):
 
     def __init__(self, client: Langfuse):
         """
-        Initializes a LangFuseOpenAI instance.
+        Initializes a LangFuseOpenAIRunner instance.
         :param client: The Langfuse client instance.
         """
+        super().__init__()
         self._client = client
         self._log = logging.getLogger("ak.trace.langfuse.openai")
-        from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
         OpenAIAgentsInstrumentor().instrument()
 
@@ -31,6 +30,6 @@ class LangFuseOpenAI(BaseRunner):
         :return: The result of the agent's execution.
         """
         with self._client.start_as_current_span(name=session.id) as span:
-            result = await Runner.run(agent.agent, prompt, session=OpenAIRunner.session(session))
-            span.update_trace(session_id=session.id)
-        return result.final_output
+            result = await super().run(agent=agent, prompt=prompt, session=session)
+            span.update_trace(session_id=session.id, input=prompt, output=result)
+        return result

@@ -109,13 +109,12 @@ class GoogleADKRunner(BaseRunner):
                 break
         return response_text
 
-    async def run(self, agent: Any, session: Session, prompt: Any, trace: bool = False) -> Any:
+    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
         Run the agent with the given prompt and return the response text.
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param prompt: The prompt to send to the agent.
-        :param trace: If True, enables tracing for the agent.
         :return: The response text from the agent.
         """
         adk_session = self._session(session)

@@ -5,10 +5,10 @@ import logging
 from langfuse import Langfuse, get_client
 
 from ..base import BaseTrace
-from .openai import LangFuseOpenAI
 
 
 class LangFuse(BaseTrace):
+
     def __init__(self):
         """
         Initializes a LangFuse instance.
@@ -30,4 +30,14 @@ class LangFuse(BaseTrace):
         """
         Returns the Langfuse OpenAI runner instance.
         """
-        return LangFuseOpenAI(self._client)
+        from .openai import LangFuseOpenAIRunner
+
+        return LangFuseOpenAIRunner(self._client)
+
+    def langgraph(self):
+        """
+        Returns the Langfuse LangGraph runner instance.
+        """
+        from .langgraph import LangFuseLangGraph
+
+        return LangFuseLangGraph(self._client)

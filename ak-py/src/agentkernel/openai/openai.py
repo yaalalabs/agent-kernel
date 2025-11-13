@@ -69,11 +69,9 @@ class OpenAIRunner(BaseRunner):
         Initializes an OpenAIRunner instance.
         """
         super().__init__(FRAMEWORK)
-        if AKConfig.get().trace.enabled:
-            self._trace = Trace.get().openai()
 
     @staticmethod
-    def session(session: Session) -> OpenAISession | None:
+    def _session(session: Session) -> OpenAISession | None:
         """
         Returns the OpenAI session associated with the provided session.
         :param session: The session to retrieve the OpenAI session for.
@@ -83,20 +81,16 @@ class OpenAIRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, OpenAISession())
 
-    async def run(self, agent: Any, session: Session, prompt: Any, trace: bool = False) -> Any:
+    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
         """
         Runs the OpenAI agent with the provided prompt.
         :param agent: The OpenAI agent to run.
         :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
-        :param trace: If True, enables tracing for the agent.
         :return: The result of the agent's execution.
         """
-        if trace:
-            return await self._trace.run(agent, session, prompt)
-        else:
-            result = await Runner.run(agent.agent, prompt, session=self.session(session))
-            return result.final_output
+        result = await Runner.run(agent.agent, prompt, session=self._session(session))
+        return result.final_output
 
 
 class OpenAIAgent(BaseAgent):
@@ -150,7 +144,10 @@ class OpenAIModule(Module):
         :param agents: List of agents in the module.
         """
         super().__init__()
-        self.runner = OpenAIRunner()
+        if AKConfig.get().trace.enabled:
+            self.runner = Trace.get().openai()
+        else:
+            self.runner = OpenAIRunner()
         self.load(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
