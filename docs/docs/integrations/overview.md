@@ -46,4 +46,5 @@ if __name__ == "__main__":
 
 ### Observability & Monitoring
 
-- **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability & Observability](../advanced/traceability) for detailed setup and usage.
+- **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
+- **Traceloops** - Available soon!

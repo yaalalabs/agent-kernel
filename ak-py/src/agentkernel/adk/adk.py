@@ -44,6 +44,7 @@ class GoogleADKSession(Session):
             self._session = await self._session_service.create_session(
                 app_name=app_name, user_id=user_id, session_id=session_id
             )
+        return self._session
 
 
 class GoogleADKRunner(BaseRunner):
