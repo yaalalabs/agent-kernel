@@ -5,7 +5,7 @@ from typing import Any, List
 
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService, BaseSessionService
+from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
 from ..core import Agent as AKBaseAgent
@@ -41,8 +41,9 @@ class GoogleADKSession(Session):
 
     async def create_session(self, app_name: str, user_id: str, session_id: str) -> Any:
         if self._session is None:
-            self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id,
-                                                                 session_id=session_id)
+            self._session = await self._session_service.create_session(
+                app_name=app_name, user_id=user_id, session_id=session_id
+            )
 
 
 class GoogleADKRunner(BaseRunner):
