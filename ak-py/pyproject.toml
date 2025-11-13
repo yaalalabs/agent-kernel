@@ -27,7 +27,9 @@ langfuse = [
     "nest-asyncio>=1.6.0",
 ]
 crewai = [
-    "crewai>=0.150.0"
+    "crewai>=0.150.0",
+    "openinference-instrumentation-crewai>=0.1.16",
+    "openinference-instrumentation-litellm>=0.1.28",
 ]
 langgraph = [
     "langgraph~=0.6.2",

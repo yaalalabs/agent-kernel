@@ -31,5 +31,5 @@ class LangFuseOpenAIRunner(OpenAIRunner):
         """
         with self._client.start_as_current_span(name="Agent Kernel OpenAI") as span:
             result = await super().run(agent=agent, prompt=prompt, session=session)
-            span.update_trace(session_id=session.id, input=prompt, output=result)
+            span.update_trace(session_id=session.id, input=prompt, output=result, tags=["agentkernel"])
         return result

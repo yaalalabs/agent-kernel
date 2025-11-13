@@ -4,6 +4,7 @@ import logging
 
 from langfuse import Langfuse, get_client
 
+from ... import Runner
 from ..base import BaseTrace
 
 
@@ -41,3 +42,8 @@ class LangFuse(BaseTrace):
         from .langgraph import LangFuseLangGraph
 
         return LangFuseLangGraph(self._client)
+
+    def crewai(self) -> Runner:
+        from .crewai import LangFuseCrewAIRunner
+
+        return LangFuseCrewAIRunner(self._client)

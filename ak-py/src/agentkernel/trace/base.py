@@ -24,3 +24,10 @@ class BaseTrace(ABC):
         Initialize LangGraph instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def crewai(self) -> Runner:
+        """
+        Initialize CrewAI instrumentation
+        """
+        raise NotImplementedError

@@ -64,3 +64,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.langgraph()
         return None
+
+    def crewai(self) -> Runner | None:
+        """
+        Returns the CrewAI trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.crewai()
+        return None

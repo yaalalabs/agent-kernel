@@ -7,6 +7,8 @@ from crewai.memory.storage.interface import Storage
 
 from ..core import Agent as BaseAgent
 from ..core import Module, Runner, Session
+from ..core.config import AKConfig
+from ..trace import Trace
 
 FRAMEWORK = "crewai"
 
@@ -169,7 +171,10 @@ class CrewAIModule(Module):
         :param agents: List of agents in the module.
         """
         super().__init__()
-        self.runner = CrewAIRunner()
+        if AKConfig.get().trace.enabled:
+            self.runner = Trace.get().crewai()
+        else:
+            self.runner = CrewAIRunner()
         self.load(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
