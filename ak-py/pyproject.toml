@@ -49,7 +49,8 @@ openai = [
 ]
 adk = [
     "google-adk>=1.14.1",
-    "litellm~=1.74.3"
+    "litellm~=1.74.3",
+    "openinference-instrumentation-google-adk>=0.1.6",
 ]
 api = [
     "fastapi>=0.118.0",

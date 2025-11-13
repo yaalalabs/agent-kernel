@@ -31,3 +31,10 @@ class BaseTrace(ABC):
         Initialize CrewAI instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def adk(self) -> Runner:
+        """
+        Initialize Google ADK instrumentation
+        """
+        raise NotImplementedError

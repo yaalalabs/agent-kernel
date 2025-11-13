@@ -44,6 +44,17 @@ class LangFuse(BaseTrace):
         return LangFuseLangGraph(self._client)
 
     def crewai(self) -> Runner:
+        """
+        Returns the Langfuse CrewAI runner instance.
+        """
         from .crewai import LangFuseCrewAIRunner
 
         return LangFuseCrewAIRunner(self._client)
+
+    def adk(self) -> Runner:
+        """
+        Returns the Langfuse ADK runner instance.
+        """
+        from .adk import LangFuseADKRunner
+
+        return LangFuseADKRunner(self._client)

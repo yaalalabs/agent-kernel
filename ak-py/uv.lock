@@ -59,6 +59,7 @@ a2a = [
 adk = [
     { name = "google-adk" },
     { name = "litellm" },
+    { name = "openinference-instrumentation-google-adk" },
 ]
 api = [
     { name = "fastapi" },
@@ -124,6 +125,7 @@ requires-dist = [
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.2.3" },
     { name = "openinference-instrumentation-crewai", marker = "extra == 'crewai'", specifier = ">=0.1.16" },
+    { name = "openinference-instrumentation-google-adk", marker = "extra == 'adk'", specifier = ">=0.1.6" },
     { name = "openinference-instrumentation-litellm", marker = "extra == 'crewai'", specifier = ">=0.1.28" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'openai'", specifier = ">=1.3.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
@@ -3017,6 +3019,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a1/fc/02eb76c5e29acff99a98f8c2a3b50ddd5a16cc4bb1541ccda5df923b8c4b/openinference_instrumentation_crewai-0.1.16.tar.gz", hash = "sha256:c2367e2809dca28a7bd9ec70cbdd72d7f1f74f5776995d58716404b612d15356", size = 11192, upload-time = "2025-10-30T18:49:59.785Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/94/79/44b0d211ebdb0d759904d4ea5671dca49f629ad84ff277d2d4687c70060b/openinference_instrumentation_crewai-0.1.16-py3-none-any.whl", hash = "sha256:8eb19e755cdebb0306365144c47f12b21b7d80758b165ab7f9e3b6c56078899d", size = 12701, upload-time = "2025-10-30T18:49:58.624Z" },
+]
+
+[[package]]
+name = "openinference-instrumentation-google-adk"
+version = "0.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openinference-instrumentation" },
+    { name = "openinference-semantic-conventions" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "typing-extensions" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/57/67726039822ed94e27932b1d7298cb255a4a271af66cef5cedff9b54d2ee/openinference_instrumentation_google_adk-0.1.6.tar.gz", hash = "sha256:9c19669c0b830156bdcfe912e616b14500e32f3869f05979059737243ee4d364", size = 11849, upload-time = "2025-10-10T03:49:13.916Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/7c/ad27e45075049ddd034ba96dabeb7a488f743824ed7c4c9f47512e263085/openinference_instrumentation_google_adk-0.1.6-py3-none-any.whl", hash = "sha256:a18ae167260411a005b4a3981de6f6f6c049c6bc09f02ff6a5964fbfe77d0801", size = 13654, upload-time = "2025-10-10T03:48:51.706Z" },
 ]
 
 [[package]]

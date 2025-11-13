@@ -72,3 +72,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.crewai()
         return None
+
+    def adk(self) -> Runner | None:
+        """
+        Returns the ADK trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.adk()
+        return None
