@@ -9,6 +9,7 @@ from ..core import Agent as BaseAgent
 from ..core import Module
 from ..core import Runner as BaseRunner
 from ..core import Session
+from ..core.config import AKConfig
 from ..trace import Trace
 
 FRAMEWORK = "openai"
@@ -68,6 +69,8 @@ class OpenAIRunner(BaseRunner):
         Initializes an OpenAIRunner instance.
         """
         super().__init__(FRAMEWORK)
+        if AKConfig.get().trace.enabled:
+            self._trace = Trace.get().openai()
 
     @staticmethod
     def session(session: Session) -> OpenAISession | None:
@@ -90,7 +93,7 @@ class OpenAIRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         if trace:
-            return await Trace().openai().run(agent, session, prompt)
+            return await self._trace.run(agent, session, prompt)
         else:
             result = await Runner.run(agent.agent, prompt, session=self.session(session))
             return result.final_output
