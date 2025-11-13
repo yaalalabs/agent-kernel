@@ -333,6 +333,47 @@ Configure the REST API server (if using the API module).
   - **Default**: `http://localhost:8000/mcp`
   - **Environment Variable**: `AK_MCP__URL`
 
+#### Trace (Observability) Configuration
+
+Configure tracing and observability for monitoring agent execution.
+
+- **Enabled**
+  - **Field**: `trace.enabled`
+  - **Default**: `false`
+  - **Description**: Enable tracing/observability
+  - **Environment Variable**: `AK_TRACE__ENABLED`
+
+- **Type**
+  - **Field**: `trace.type`
+  - **Options**: `langfuse`, `traceloops`
+  - **Default**: `langfuse`
+  - **Description**: Type of tracing provider to use
+  - **Environment Variable**: `AK_TRACE__TYPE`
+
+**Langfuse Setup:**
+
+To use Langfuse for tracing, install the langfuse extra:
+
+```bash
+pip install agentkernel[langfuse]
+```
+
+Configure Langfuse credentials via environment variables:
+
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://cloud.langfuse.com  # or your self-hosted instance
+```
+
+Enable tracing in your configuration:
+
+```yaml
+trace:
+  enabled: true
+  type: langfuse
+```
+
 ### Configuration Examples
 
 #### Environment Variables
@@ -349,6 +390,8 @@ export AK_API__HOST=0.0.0.0
 export AK_API__PORT=8000
 export AK_A2A__ENABLED=true
 export AK_MCP__ENABLED=false
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=langfuse
 ```
 
 #### .env File
@@ -365,6 +408,8 @@ AK_API__HOST=0.0.0.0
 AK_API__PORT=8080
 AK_A2A__ENABLED=true
 AK_A2A__URL=http://localhost:8080/a2a
+AK_TRACE__ENABLED=true
+AK_TRACE__TYPE=langfuse
 ```
 
 #### config.yaml
@@ -392,6 +437,9 @@ mcp:
   expose_agents: false
   agents: ["*"]
   url: http://localhost:8000/mcp
+trace:
+  enabled: true
+  type: langfuse
 ```
 
 #### config.json
@@ -425,6 +473,10 @@ mcp:
     "expose_agents": false,
     "agents": ["*"],
     "url": "http://localhost:8000/mcp"
+  },
+  "trace": {
+    "enabled": true,
+    "type": "langfuse"
   }
 }
 ```
