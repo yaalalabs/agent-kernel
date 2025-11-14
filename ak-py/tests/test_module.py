@@ -7,7 +7,7 @@ from agentkernel.core.runtime import Runtime
 
 
 class DummyRunner(Runner):
-    async def run(self, agent, session, prompt, trace=False):
+    async def run(self, agent, session, prompt):
         return f"ok:{prompt}"
 
 

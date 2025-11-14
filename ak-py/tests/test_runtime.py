@@ -75,10 +75,6 @@ async def test_runtime_run_calls_runner(monkeypatch):
         class session:
             type = "in_memory"
 
-        class trace:
-            enabled = False
-            type = "langfuse"
-
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
