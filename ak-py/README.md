@@ -374,6 +374,29 @@ trace:
   type: langfuse
 ```
 
+**OpenLLMetry (Traceloop) Setup:**
+
+To use OpenLLMetry for tracing, install the openllmetry extra:
+
+```bash
+pip install agentkernel[openllmetry]
+```
+
+Configure Traceloop credentials via environment variables:
+
+```bash
+export TRACELOOP_API_KEY=your-api-key
+export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: for self-hosted
+```
+
+Enable tracing in your configuration:
+
+```yaml
+trace:
+  enabled: true
+  type: openllmetry
+```
+
 ### Configuration Examples
 
 #### Environment Variables
@@ -391,7 +414,13 @@ export AK_API__PORT=8000
 export AK_A2A__ENABLED=true
 export AK_MCP__ENABLED=false
 export AK_TRACE__ENABLED=true
-export AK_TRACE__TYPE=langfuse
+export AK_TRACE__TYPE=langfuse  # or openllmetry
+# For Langfuse:
+# export LANGFUSE_PUBLIC_KEY=pk-lf-...
+# export LANGFUSE_SECRET_KEY=sk-lf-...
+# export LANGFUSE_HOST=https://cloud.langfuse.com
+# For OpenLLMetry:
+# export TRACELOOP_API_KEY=your-api-key
 ```
 
 #### .env File
@@ -409,7 +438,13 @@ AK_API__PORT=8080
 AK_A2A__ENABLED=true
 AK_A2A__URL=http://localhost:8080/a2a
 AK_TRACE__ENABLED=true
-AK_TRACE__TYPE=langfuse
+AK_TRACE__TYPE=langfuse  # or openllmetry
+# Langfuse credentials (if using langfuse):
+# LANGFUSE_PUBLIC_KEY=pk-lf-...
+# LANGFUSE_SECRET_KEY=sk-lf-...
+# LANGFUSE_HOST=https://cloud.langfuse.com
+# OpenLLMetry credentials (if using openllmetry):
+# TRACELOOP_API_KEY=your-api-key
 ```
 
 #### config.yaml
