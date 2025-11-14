@@ -35,6 +35,10 @@ class Trace(BaseTrace):
                 from .langfuse.langfuse import LangFuse
 
                 instance = LangFuse()
+            elif trace_type == "openllmetry":
+                from .openllmetry.openllmetry import OpenLLMetry
+
+                instance = OpenLLMetry()
             else:
                 raise Exception(f"Unknown trace type: {trace_type}")
 
