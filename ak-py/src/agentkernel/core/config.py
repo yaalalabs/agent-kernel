@@ -62,7 +62,7 @@ class _SlackConfig(BaseModel):
 
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
-    type: str = Field(default="langfuse", pattern="^(langfuse|traceloops)$")
+    type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
 
 
 class AKConfig(YamlBaseSettingsModified):

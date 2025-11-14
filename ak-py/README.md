@@ -345,7 +345,7 @@ Configure tracing and observability for monitoring agent execution.
 
 - **Type**
   - **Field**: `trace.type`
-  - **Options**: `langfuse`, `traceloops`
+  - **Options**: `langfuse`, `openllmetry`
   - **Default**: `langfuse`
   - **Description**: Type of tracing provider to use
   - **Environment Variable**: `AK_TRACE__TYPE`

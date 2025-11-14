@@ -20,7 +20,7 @@ graph TB
     D --> G[Trace Events]
     E --> G
     F --> G
-    G --> H[Langfuse/Traceloops]
+    G --> H[Langfuse/OpenLLMetry]
     
     style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style H fill:#ff6b35,stroke:#fff,stroke-width:2px,color:#fff
@@ -31,7 +31,7 @@ graph TB
 Agent Kernel currently supports the following observability platforms:
 
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications
-- **Traceloops** (Coming Soon) - OpenTelemetry-based observability for LLM applications
+- **OpenLLMetry** (Coming Soon) - OpenTelemetry-based observability for LLM applications
 
 ## Getting Started with Langfuse
 
@@ -229,7 +229,7 @@ export LANGFUSE_HOST=https://langfuse.your-domain.com
 
 Upcoming observability features:
 
-- **Traceloops Integration**: OpenTelemetry-based tracing
+- **OpenLLMetry Integration**: OpenTelemetry-based tracing
 - **Custom Spans**: Manual span creation for custom tracking
 - **Trace Sampling**: Configurable sampling strategies
 - **Metric Exports**: Prometheus and StatsD integrations

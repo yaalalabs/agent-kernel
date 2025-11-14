@@ -163,7 +163,7 @@ export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 ```bash
 # Enable tracing functionality
 export AK_TRACE__ENABLED=true  # default: false
-export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'traceloops' (default: 'langfuse')
+export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry' (default: 'langfuse')
 
 # Langfuse-specific configuration (required when using Langfuse)
 export LANGFUSE_PUBLIC_KEY=pk-lf-...  # Your Langfuse public key
@@ -217,7 +217,7 @@ mcp:
 # Trace / Observability
 trace:
   enabled: false                # Enable tracing
-  type: "langfuse"              # Trace provider: 'langfuse' or 'traceloops'
+  type: "langfuse"              # Trace provider: 'langfuse' or 'openllmetry'
 ```
 
 ## Configuration Precedence
@@ -349,7 +349,7 @@ Example validation errors:
 # These will cause validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory' or 'redis'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
-export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'traceloops'
+export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
 ```
 
 ## Best Practices
