@@ -69,6 +69,7 @@ const sidebars = {
       items: [
         'integrations/overview',
         'integrations/slack',
+        'integrations/whatsapp',
       ],
     },
     {

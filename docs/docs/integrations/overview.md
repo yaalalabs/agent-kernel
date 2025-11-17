@@ -43,3 +43,4 @@ if __name__ == "__main__":
 ### Collaboration Platforms
 
 - **[Slack](./slack)** - Deploy agents as Slack bots that can respond to mentions and direct messages in Slack workspaces
+- **[WhatsApp](./whatsapp)** - Deploy agents as WhatsApp bots
