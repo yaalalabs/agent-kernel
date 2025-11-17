@@ -71,6 +71,8 @@ class _WhatsAppConfig(BaseModel):
     app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")

@@ -1,9 +1,9 @@
 import logging
 
-from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agents import Agent as OpenAIAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
