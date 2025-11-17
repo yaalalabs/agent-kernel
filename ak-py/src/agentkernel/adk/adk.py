@@ -1,16 +1,19 @@
+from __future__ import annotations
+
 import logging
 from typing import Any, List
 
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.adk.sessions import Session as ADKSession
+from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
 from ..core import Agent as AKBaseAgent
 from ..core import Module
 from ..core import Runner as BaseRunner
 from ..core import Session
+from ..core.config import AKConfig
+from ..trace import Trace
 
 FRAMEWORK = "adk"
 
@@ -26,38 +29,22 @@ class GoogleADKSession(Session):
         """
         super().__init__(FRAMEWORK)
         self._session_service = InMemorySessionService()
-        self._sessions = {}
         self._log = logging.getLogger("ak.adk.session")
+        self._session = None
 
     @property
-    def session_service(self):
+    def session_service(self) -> BaseSessionService:
         """
         Return the in-memory session service instance.
         """
         return self._session_service
 
-    async def get_adk_session(self, app_name: str) -> tuple[str, ADKSession]:
-        """
-        Create a new session or return an existing one.
-        :param app_name: app name to namespace the session.
-        :return: Tuple of (session_id, session object).
-        """
-        session_id = f"{self.id}-{app_name}"
-
-        if session_id in self._sessions:
-            self._log.debug(f"Session already exists for ID: {session_id}")
-            return session_id, self._sessions[session_id]
-
-        self._log.debug(f"Creating session with ID: {session_id}, AppName: {app_name}")
-        session = await self._session_service.create_session(
-            app_name=app_name,
-            user_id=session_id,
-            session_id=session_id,
-        )
-
-        self._log.debug(f"Created Session: {session}")
-        self._sessions[session_id] = session
-        return session_id, session
+    async def create_session(self, app_name: str, user_id: str, session_id: str) -> Any:
+        if self._session is None:
+            self._session = await self._session_service.create_session(
+                app_name=app_name, user_id=user_id, session_id=session_id
+            )
+        return self._session
 
 
 class GoogleADKRunner(BaseRunner):
@@ -68,7 +55,7 @@ class GoogleADKRunner(BaseRunner):
         super().__init__(FRAMEWORK)
 
     @staticmethod
-    def _session(session: Session) -> GoogleADKSession:
+    def _session(session: Session) -> GoogleADKSession | None:
         """
         Returns the Google ADK session associated with the provided session.
         :param session: The session to retrieve the Google ADK session for.
@@ -79,30 +66,18 @@ class GoogleADKRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, GoogleADKSession())
 
     @staticmethod
-    def _create_runner(agent: "GoogleADKAgent", session: GoogleADKSession):
-        """
-        Build a Google ADK Runner wired to the given agent and session.
-        :param agent: The Google ADK agent to run.
-        :param session: The session to use for the agent.
-        """
-        return Runner(
-            agent=agent.agent,
-            app_name=agent.name,
-            session_service=session.session_service,
-        )
-
-    @staticmethod
-    async def get_agent_response(runner: Runner, session_id: str, prompt: str) -> str:
+    async def get_response(runner: Runner, user_id: str, session_id: str, prompt: str) -> str:
         """
         Send a message to the agent and return the final response text asynchronously.
         :param runner: The Google ADK Runner to use for the agent.
+        :param user_id: The user ID to use for the agent.
         :param session_id: The session ID to use for the agent.
         :param prompt: The message text to send to the agent.
         :return: The final response text from the agent.
         """
         new_message = types.Content(role="user", parts=[types.Part(text=prompt)])
         response_text = None
-        async for event in runner.run_async(user_id=session_id, session_id=session_id, new_message=new_message):
+        for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
             if event.is_final_response() and event.content and event.content.parts:
                 text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
                 response_text = " ".join(text_parts) if text_parts else None
@@ -117,10 +92,12 @@ class GoogleADKRunner(BaseRunner):
         :param prompt: The prompt to send to the agent.
         :return: The response text from the agent.
         """
+        app_name = "AgentKernel"
+        user_id = "AgentKernel"
         adk_session = self._session(session)
-        runner = self._create_runner(agent=agent, session=adk_session)
-        session_id, _ = await adk_session.get_adk_session(app_name=agent.name)
-        return await self.get_agent_response(runner=runner, session_id=session_id, prompt=prompt)
+        await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+        runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+        return await self.get_response(runner=runner, session_id=session.id, prompt=prompt, user_id=user_id)
 
 
 class GoogleADKAgent(AKBaseAgent):
@@ -170,7 +147,10 @@ class GoogleADKModule(Module):
         :param agents: List of agents in the module.
         """
         super().__init__()
-        self.runner = GoogleADKRunner()
+        if AKConfig.get().trace.enabled:
+            self.runner = Trace.get().adk()
+        else:
+            self.runner = GoogleADKRunner()
         self.load(agents)
 
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:

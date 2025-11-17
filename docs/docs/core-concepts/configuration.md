@@ -158,6 +158,23 @@ export AK_MCP__URL=http://localhost:8000/mcp  # default: http://localhost:8000/m
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 ```
 
+### Trace / Observability
+
+```bash
+# Enable tracing functionality
+export AK_TRACE__ENABLED=true  # default: false
+export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry' (default: 'langfuse')
+
+# Langfuse-specific configuration (required when using Langfuse)
+export LANGFUSE_PUBLIC_KEY=pk-lf-...  # Your Langfuse public key
+export LANGFUSE_SECRET_KEY=sk-lf-...  # Your Langfuse secret key
+export LANGFUSE_HOST=https://cloud.langfuse.com  # Langfuse host (or self-hosted instance)
+
+# OpenLLMetry (Traceloop) configuration (required when using OpenLLMetry)
+export TRACELOOP_API_KEY=your-api-key  # Your Traceloop API key
+export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base URL (for self-hosted)
+```
+
 
 
 ## Configuration Schema
@@ -200,6 +217,11 @@ mcp:
   url: "http://localhost:8000/mcp"  # MCP endpoint URL
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
+
+# Trace / Observability
+trace:
+  enabled: false                # Enable tracing
+  type: "langfuse"              # Trace provider: 'langfuse' or 'openllmetry'
 ```
 
 ## Configuration Precedence
@@ -297,6 +319,46 @@ export AK_MCP__EXPOSE_AGENTS=true
 export AK_MCP__AGENTS="my-agent,another-agent"  # Specific agents
 ```
 
+### Observability / Tracing Setup
+
+**Langfuse:**
+
+```bash
+# Enable Langfuse tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=langfuse
+
+# Langfuse credentials
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+Install the langfuse extra:
+
+```bash
+pip install agentkernel[langfuse]
+```
+
+**OpenLLMetry (Traceloop):**
+
+```bash
+# Enable OpenLLMetry tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=openllmetry
+
+# Traceloop credentials
+export TRACELOOP_API_KEY=your-api-key
+# Optional: for self-hosted
+export TRACELOOP_BASE_URL=https://api.traceloop.com
+```
+
+Install the openllmetry extra:
+
+```bash
+pip install agentkernel[openllmetry]
+```
+
 ## Validation and Error Handling
 
 Agent Kernel validates all configuration values at startup:
@@ -312,6 +374,7 @@ Example validation errors:
 # These will cause validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory' or 'redis'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
+export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
 ```
 
 ## Best Practices

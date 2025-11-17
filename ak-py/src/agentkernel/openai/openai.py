@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, List
 
 from agents import Agent, Runner
@@ -7,6 +9,8 @@ from ..core import Agent as BaseAgent
 from ..core import Module
 from ..core import Runner as BaseRunner
 from ..core import Session
+from ..core.config import AKConfig
+from ..trace import Trace
 
 FRAMEWORK = "openai"
 
@@ -66,7 +70,8 @@ class OpenAIRunner(BaseRunner):
         """
         super().__init__(FRAMEWORK)
 
-    def _session(self, session: Session) -> OpenAISession:
+    @staticmethod
+    def _session(session: Session) -> OpenAISession | None:
         """
         Returns the OpenAI session associated with the provided session.
         :param session: The session to retrieve the OpenAI session for.
@@ -90,7 +95,7 @@ class OpenAIRunner(BaseRunner):
 
 class OpenAIAgent(BaseAgent):
     """
-    OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK based agents.
+    OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK-based agents.
     """
 
     def __init__(self, name: str, runner: OpenAIRunner, agent: Agent):
@@ -139,7 +144,10 @@ class OpenAIModule(Module):
         :param agents: List of agents in the module.
         """
         super().__init__()
-        self.runner = OpenAIRunner()
+        if AKConfig.get().trace.enabled:
+            self.runner = Trace.get().openai()
+        else:
+            self.runner = OpenAIRunner()
         self.load(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
