@@ -70,7 +70,7 @@ class _WhatsAppConfig(BaseModel):
     access_token: str = Field(default="", description="WhatsApp Business API access token")
     app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
-    api_version: str = Field(default="v21.0", description="WhatsApp API version")
+    api_version: str = Field(default="v24.0", description="WhatsApp API version")
 
 
 class AKConfig(YamlBaseSettingsModified):

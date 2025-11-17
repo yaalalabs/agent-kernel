@@ -1,4 +1,3 @@
 whatsapp:
   agent: "general"
-  agent_acknowledgement: "Processing your message..."
-  api_version: "v22.0"
+  api_version: "v24.0"

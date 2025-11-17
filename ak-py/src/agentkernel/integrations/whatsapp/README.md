@@ -44,7 +44,7 @@ export AK_WHATSAPP__VERIFY_TOKEN="your_verify_token"
 export AK_WHATSAPP__ACCESS_TOKEN="your_permanent_access_token"
 export AK_WHATSAPP__APP_SECRET="your_app_secret"
 export AK_WHATSAPP__PHONE_NUMBER_ID="your test or business whats app phone number"
-export AK_WHATSAPP__API_VERSION="v21.0"  # Optional, defaults to v21.0
+export AK_WHATSAPP__API_VERSION="v21.0"  # Optional, defaults to v24.0
 ```
 
 ### Webhook Verification

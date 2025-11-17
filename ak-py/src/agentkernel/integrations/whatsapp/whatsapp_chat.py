@@ -35,7 +35,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._access_token = Config.get().whatsapp.access_token
         self._app_secret = Config.get().whatsapp.app_secret
         self._phone_number_id = Config.get().whatsapp.phone_number_id
-        self._api_version = Config.get().whatsapp.api_version or "v21.0"
+        self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         if not all([self._verify_token, self._access_token, self._phone_number_id]):
             self._log.error("WhatsApp configuration is incomplete. Please set verify_token, access_token, and phone_number_id.")
@@ -100,7 +100,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
 
         # Verify request signature if app secret is configured
         if self._app_secret:
-            signature = request.headers.get("X-Hub-Signature-256", "")
+            signature = request.headers.get("x-hub-signature-256", "")
             if not self._verify_signature(await request.body(), signature):
                 self._log.warning("Invalid request signature")
                 raise HTTPException(status_code=403, detail="Invalid signature")
@@ -143,7 +143,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
             payload,
             hashlib.sha256
         ).hexdigest()
-        
+
         received_signature = signature[7:]  # Remove 'sha256=' prefix
         return hmac.compare_digest(expected_signature, received_signature)
 
