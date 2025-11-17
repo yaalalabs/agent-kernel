@@ -5,7 +5,7 @@ description = "WhatsApp integration example for Agent Kernel"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,whatsapp]>=0.2.0"
+    "agentkernel[api,openai,whatsapp]>=0.2.3"
 ]
 
 [dependency-groups]

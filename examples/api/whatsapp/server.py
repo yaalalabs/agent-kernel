@@ -16,4 +16,4 @@ OpenAIModule([general_agent])
 
 if __name__ == "__main__":
     handler = AgentWhatsAppRequestHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([handler])
