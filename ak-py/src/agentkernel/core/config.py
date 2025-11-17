@@ -71,6 +71,9 @@ class _WhatsAppConfig(BaseModel):
     app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
+class _TraceConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable tracing")
+    type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
 
 
 class AKConfig(YamlBaseSettingsModified):
@@ -87,6 +90,7 @@ class AKConfig(YamlBaseSettingsModified):
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
+    trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

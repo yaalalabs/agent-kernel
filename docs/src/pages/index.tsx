@@ -91,7 +91,7 @@ function NavigationSection() {
   return (
     <section className={styles.navigationSection}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Where would you like to go?</h2>
+        <h2 className={styles.sectionTitle}>Explore</h2>
         <div className={styles.cardGrid}>
           {navigationCards.map((card, idx) => (
             <div key={idx} className={`${styles.card} ${styles[card.color]}`}>
@@ -106,6 +106,103 @@ function NavigationSection() {
               </Link>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function IntegrationsSection() {
+  const frameworks = [
+    {
+      name: 'OpenAI Agents SDK',
+      logo: '/img/integrations/openai.svg',
+      link: '/docs/frameworks/openai',
+    },
+    {
+      name: 'LangGraph',
+      logo: '/img/integrations/langgraph.svg',
+      link: '/docs/frameworks/langgraph',
+    },
+    {
+      name: 'CrewAI',
+      logo: '/img/integrations/crewai.svg',
+      link: '/docs/frameworks/crewai',
+    },
+    {
+      name: 'Google ADK',
+      logo: '/img/integrations/adk.png',
+      link: '/docs/frameworks/google-adk',
+    },
+  ];
+
+  const traceability = [
+    {
+      name: 'LangFuse',
+      logo: '/img/integrations/langfuse.png',
+      link: '/docs/advanced/traceability',
+    },
+    {
+      name: 'TraceLoop OpenLLMetry',
+      logo: '/img/integrations/traceloop.png',
+      link: '/docs/advanced/traceability',
+    },
+  ];
+
+  return (
+    <section className={styles.integrationsSection}>
+      <div className="container">
+        <div className={styles.integrationsHeader}>
+          <h2 className={styles.integrationsSectionTitle}>Powered by Industry-Leading Frameworks</h2>
+          <p className={styles.integrationsSectionSubtitle}>
+            Agent Kernel seamlessly integrates with your favorite agentic frameworks and observability tools
+          </p>
+        </div>
+
+        <div className={styles.integrationsContainer}>
+          <div className={styles.integrationsCategory}>
+            <h3 className={styles.integrationsCategoryTitle}>Agentic Frameworks</h3>
+            <div className={styles.integrationsGrid}>
+              {frameworks.map((framework, idx) => (
+                <Link
+                  key={idx}
+                  to={framework.link}
+                  className={styles.integrationCard}
+                  style={{ animationDelay: `${idx * 0.1}s` }}>
+                  <div className={styles.integrationLogoWrapper}>
+                    <img 
+                      src={framework.logo} 
+                      alt={framework.name}
+                      className={styles.integrationLogo}
+                    />
+                  </div>
+                  <h4 className={styles.integrationName}>{framework.name}</h4>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.integrationsCategory}>
+            <h3 className={styles.integrationsCategoryTitle}>Traceability & Observability</h3>
+            <div className={styles.integrationsGrid}>
+              {traceability.map((tool, idx) => (
+                <Link
+                  key={idx}
+                  to={tool.link}
+                  className={styles.integrationCard}
+                  style={{ animationDelay: `${(frameworks.length + idx) * 0.1}s` }}>
+                  <div className={styles.integrationLogoWrapper}>
+                    <img 
+                      src={tool.logo} 
+                      alt={tool.name}
+                      className={styles.integrationLogo}
+                    />
+                  </div>
+                  <h4 className={styles.integrationName}>{tool.name}</h4>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -227,6 +324,7 @@ export default function Home() {
       <HomepageHeader />
       <main>
         <NavigationSection />
+        <IntegrationsSection />
         <FeaturesSection />
         <CommunitySection />
       </main>

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, AsyncIterator, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage
@@ -15,6 +17,8 @@ from ..core import Agent as BaseAgent
 from ..core import Module as BaseModule
 from ..core import Runner as BaseRunner
 from ..core import Session as BaseSession
+from ..core.config import AKConfig
+from ..trace import Trace
 
 FRAMEWORK = "langgraph"
 
@@ -283,7 +287,7 @@ class LangGraphRunner(BaseRunner):
 
 class LangGraphModule(BaseModule):
     """
-    LangGraphModule class provides a module for LangGraph Agent SDK based agents.
+    LangGraphModule class provides a module for LangGraph Agent SDK-based agents.
     """
 
     def __init__(self, agents: list[CompiledStateGraph]):
@@ -292,7 +296,10 @@ class LangGraphModule(BaseModule):
         :param agents: List of agents in the module.
         """
         super().__init__()
-        self.runner = LangGraphRunner()
+        if AKConfig.get().trace.enabled:
+            self.runner = Trace.get().langgraph()
+        else:
+            self.runner = LangGraphRunner()
         self.load(agents)
 
     def _wrap(self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]) -> BaseAgent:
