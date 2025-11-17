@@ -151,7 +151,6 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         message_id = message.get("id")
         from_number = message.get("from")
         message_type = message.get("type")
-        timestamp = message.get("timestamp")
 
         if not from_number or not message_id:
             self._log.warning("Message missing required fields (from/id)")

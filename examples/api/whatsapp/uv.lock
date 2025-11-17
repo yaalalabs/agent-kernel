@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 [[package]]
 name = "agentkernel"
 version = "0.2.4"
-source = { registry = "../../../ak-py/dist" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -14,9 +14,9 @@ dependencies = [
     { name = "redis" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.2.4.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/f7/25f7760d6f0a05a46b1a28033793be268c1e31e0f1c089167e4879f8e289/agentkernel-0.2.4.tar.gz", hash = "sha256:9fc38b6bfe9dc9f221df099b89320812f7db5bf1e51e7a5ea6164265904d5b6f", size = 36503, upload-time = "2025-11-17T10:47:01.442Z" }
 wheels = [
-    { path = "agentkernel-0.2.4-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/5e/cf/a62ce54474863f9022047112e430769ee654e28250245be725fb246f74cb/agentkernel-0.2.4-py3-none-any.whl", hash = "sha256:5a319483ff69f6e976c43e6d85e4f3228a0788dd3c337c180a5f2257982f4241", size = 60450, upload-time = "2025-11-17T10:47:00.039Z" },
 ]
 
 [package.optional-dependencies]
@@ -36,9 +36,6 @@ test = [
     { name = "pytest-html" },
     { name = "pytest-order" },
     { name = "rapidfuzz" },
-]
-whatsapp = [
-    { name = "httpx" },
 ]
 
 [[package]]
@@ -78,7 +75,7 @@ name = "api-whatsapp"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["api", "openai", "whatsapp"] },
+    { name = "agentkernel", extra = ["api", "openai"] },
 ]
 
 [package.dev-dependencies]
@@ -94,7 +91,7 @@ requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "whatsapp"],
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.3" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.4" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
