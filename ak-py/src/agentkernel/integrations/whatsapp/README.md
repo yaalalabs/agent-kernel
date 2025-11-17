@@ -40,16 +40,15 @@ Please follow the steps in here ( https://developers.facebook.com/docs/whatsapp/
 ### Required Environment Variables
 
 ```bash
-export AK_WHATSAPP_VERIFY_TOKEN="your_verify_token"
-export AK_WHATSAPP_ACCESS_TOKEN="your_permanent_access_token"
-export AK_WHATSAPP_APP_SECRET="your_app_secret"
-export AK_WHATSAPP_PHONE_NUMBER_ID="your test or business whats app phone number"
-export AK_WHATSAPP_API_VERSION="v21.0"  # Optional, defaults to v21.0
+export AK_WHATSAPP__VERIFY_TOKEN="your_verify_token"
+export AK_WHATSAPP__ACCESS_TOKEN="your_permanent_access_token"
+export AK_WHATSAPP__APP_SECRET="your_app_secret"
+export AK_WHATSAPP__PHONE_NUMBER_ID="your test or business whats app phone number"
+export AK_WHATSAPP__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
 
 ### Webhook Verification
-
-The handler automatically responds to WhatsApp's webhook verification challenge. When you configure the webhook URL in Meta's developer portal, WhatsApp will send a GET request to verify the endpoint. The handler processes this automatically.
+The handler automatically responds to WhatsApp's webhook verification challenge via  <hosted URL>/whatsapp/webhook. (E.g. http://localhost:8000/whatsapp/webhook). When you configure the webhook URL in Meta's developer portal, WhatsApp will send a GET request to verify the endpoint. The handler processes this automatically.
 
 ## Simple WhatsApp Integration Code
 

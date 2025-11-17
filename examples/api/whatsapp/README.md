@@ -26,11 +26,11 @@ You'll need:
 Create a `.env` file or export these variables:
 
 ```bash
-export AK_WHATSAPP_VERIFY_TOKEN="your_secure_verify_token"
-export AK_WHATSAPP_ACCESS_TOKEN="your_permanent_access_token"
-export AK_WHATSAPP_APP_SECRET="your_app_secret"
-export AK_WHATSAPP_PHONE_NUMBER_ID="123456789012345"
-export AK_WHATSAPP_API_VERSION="v21.0"  # Optional
+export AK_WHATSAPP__VERIFY_TOKEN="your_secure_verify_token"
+export AK_WHATSAPP__ACCESS_TOKEN="your_permanent_access_token"
+export AK_WHATSAPP__APP_SECRET="your_app_secret"
+export AK_WHATSAPP__PHONE_NUMBER_ID="123456789012345"
+export AK_WHATSAPP__API_VERSION="v21.0"  # Optional
 
 # OpenAI API Key for the agent
 export OPENAI_API_KEY="your_openai_api_key"
