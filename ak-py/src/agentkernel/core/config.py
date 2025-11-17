@@ -86,9 +86,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
-    whatsapp: _WhatsAppConfig = Field(
-        description="WhatsApp related configurations", default_factory=_WhatsAppConfig
-    )
+    whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

@@ -14,9 +14,9 @@ from ...core import AgentService, Config
 class AgentWhatsAppRequestHandler(RESTRequestHandler):
     """
     API routers that expose endpoints to interact with WhatsApp Business API using Agent Kernel.
-    
+
     This handler uses WhatsApp Cloud API webhooks to receive messages and send responses.
-    
+
     Endpoints:
     - GET /health: Health check
     - GET /whatsapp/webhook: Webhook verification (required by WhatsApp)
@@ -27,9 +27,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._log = logging.getLogger("ak.api.whatsapp")
         self._whatsapp_agent = Config.get().whatsapp.agent if Config.get().whatsapp.agent != "" else None
         self._whatsapp_agent_acknowledgement = (
-            Config.get().whatsapp.agent_acknowledgement
-            if Config.get().whatsapp.agent_acknowledgement != ""
-            else None
+            Config.get().whatsapp.agent_acknowledgement if Config.get().whatsapp.agent_acknowledgement != "" else None
         )
         self._verify_token = Config.get().whatsapp.verify_token
         self._access_token = Config.get().whatsapp.access_token
@@ -38,7 +36,9 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         if not all([self._verify_token, self._access_token, self._phone_number_id]):
-            self._log.error("WhatsApp configuration is incomplete. Please set verify_token, access_token, and phone_number_id.")
+            self._log.error(
+                "WhatsApp configuration is incomplete. Please set verify_token, access_token, and phone_number_id."
+            )
             raise ValueError("Incomplete WhatsApp configuration.")
 
     def get_router(self) -> APIRouter:
@@ -71,7 +71,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
     async def _verify_webhook(self, request: Request):
         """
         Verify the webhook with WhatsApp.
-        
+
         :param request: FastAPI Request object
         :return: The challenge string or error
         """
@@ -91,7 +91,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
     async def _handle_webhook(self, request: Request):
         """
         Handle incoming WhatsApp messages.
-        
+
         :param request: FastAPI Request object
         :return: Success response
         """
@@ -111,12 +111,12 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                 for entry in body.get("entry", []):
                     for change in entry.get("changes", []):
                         value = change.get("value", {})
-                        
+
                         # Check if there are messages
                         if "messages" in value:
                             for message in value["messages"]:
                                 await self._handle_message(message, value)
-                        
+
                         # Check for status updates (message delivery, read receipts, etc.)
                         if "statuses" in value:
                             for status in value["statuses"]:
@@ -130,19 +130,15 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
     def _verify_signature(self, payload: bytes, signature: str) -> bool:
         """
         Verify the webhook signature from WhatsApp.
-        
+
         :param payload: Raw request body
         :param signature: X-Hub-Signature-256 header value
         :return: True if signature is valid
         """
         if not signature.startswith("sha256="):
             return False
-        
-        expected_signature = hmac.new(
-            self._app_secret.encode(),
-            payload,
-            hashlib.sha256
-        ).hexdigest()
+
+        expected_signature = hmac.new(self._app_secret.encode(), payload, hashlib.sha256).hexdigest()
 
         received_signature = signature[7:]  # Remove 'sha256=' prefix
         return hmac.compare_digest(expected_signature, received_signature)
@@ -150,7 +146,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
     async def _handle_message(self, message: dict, value: dict):
         """
         Handle an individual WhatsApp message.
-        
+
         :param message: Message object from webhook
         :param value: Value object containing metadata
         """
@@ -192,19 +188,13 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         try:
             # Send acknowledgement if configured
             if self._whatsapp_agent_acknowledgement:
-                await self._send_message(
-                    from_number,
-                    self._whatsapp_agent_acknowledgement,
-                    message_id
-                )
+                await self._send_message(from_number, self._whatsapp_agent_acknowledgement, message_id)
 
             # Select and run agent
             service.select(session_id=session_id, name=self._whatsapp_agent)
             if not service.agent:
                 await self._send_message(
-                    from_number,
-                    "Sorry, no agent is available to handle your request.",
-                    message_id
+                    from_number, "Sorry, no agent is available to handle your request.", message_id
                 )
                 return
 
@@ -223,35 +213,23 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
 
         except Exception as e:
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
-            await self._send_message(
-                from_number,
-                "Sorry, there was an error processing your request.",
-                message_id
-            )
+            await self._send_message(from_number, "Sorry, there was an error processing your request.", message_id)
 
-    async def _send_message(
-        self,
-        to_number: str,
-        text: str,
-        reply_to_message_id: Optional[str] = None
-    ):
+    async def _send_message(self, to_number: str, text: str, reply_to_message_id: Optional[str] = None):
         """
         Send a WhatsApp message using the Cloud API.
-        
+
         :param to_number: Recipient phone number
         :param text: Message text
         :param reply_to_message_id: Optional message ID to reply to
         """
         url = f"{self._base_url}/{self._phone_number_id}/messages"
-        
-        headers = {
-            "Authorization": f"Bearer {self._access_token}",
-            "Content-Type": "application/json"
-        }
+
+        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
 
         # Split message if it exceeds WhatsApp's limit (4096 characters)
         max_length = 4096
-        messages = [text[i:i + max_length] for i in range(0, len(text), max_length)]
+        messages = [text[i : i + max_length] for i in range(0, len(text), max_length)]
 
         async with httpx.AsyncClient() as client:
             for i, message_text in enumerate(messages):
@@ -260,7 +238,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                     "recipient_type": "individual",
                     "to": to_number,
                     "type": "text",
-                    "text": {"body": message_text}
+                    "text": {"body": message_text},
                 }
 
                 # Only add context for the first message
@@ -271,10 +249,10 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                     response = await client.post(url, json=payload, headers=headers)
                     response.raise_for_status()
                     self._log.debug(f"Message sent successfully: {response.json()}")
-                    
+
                     if len(messages) > 1 and i < len(messages) - 1:
                         self._log.info(f"Sent part {i+1}/{len(messages)} of split message")
-                        
+
                 except httpx.HTTPStatusError as e:
                     self._log.error(f"Failed to send message: {e.response.text}")
                     raise
@@ -285,21 +263,14 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
     async def _mark_message_as_read(self, message_id: str):
         """
         Mark a message as read.
-        
+
         :param message_id: ID of the message to mark as read
         """
         url = f"{self._base_url}/{self._phone_number_id}/messages"
-        
-        headers = {
-            "Authorization": f"Bearer {self._access_token}",
-            "Content-Type": "application/json"
-        }
 
-        payload = {
-            "messaging_product": "whatsapp",
-            "status": "read",
-            "message_id": message_id
-        }
+        headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
+
+        payload = {"messaging_product": "whatsapp", "status": "read", "message_id": message_id}
 
         try:
             async with httpx.AsyncClient() as client:
