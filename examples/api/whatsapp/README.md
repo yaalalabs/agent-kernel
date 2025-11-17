@@ -44,11 +44,7 @@ Create `config.yaml`:
 whatsapp:
   agent: "general"
   agent_acknowledgement: "Processing your message..."
-  verify_token: "${AK_WHATSAPP_VERIFY_TOKEN}"
-  access_token: "${AK_WHATSAPP_ACCESS_TOKEN}"
-  app_secret: "${AK_WHATSAPP_APP_SECRET}"
-  phone_number_id: "${AK_WHATSAPP_PHONE_NUMBER_ID}"
-  api_version: "v21.0"
+  api_version: "<your preferred version>"
 ```
 
 ## Build

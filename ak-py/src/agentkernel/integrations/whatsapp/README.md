@@ -27,7 +27,7 @@ Please follow the steps in here ( https://developers.facebook.com/docs/whatsapp/
 2. **Get Your Credentials**
    - **Phone Number ID**: This is the test number you are given or it could be an actual business phone number you have setup. Test number can be found in WhatsApp > Getting Started
    - **Access Token**: Generate a permanent token in WhatsApp > Getting Started
-   - **App Secret**: Found in App Settings > Basic
+   - **App Secret**: A token is an optional validation to verify that the webhook is called from WhatsApp. This is recommended, but the handler will work without setting this
    - **Verify Token**: Create your own secure random string for webhook verification
 
 3. **Configure Webhook**
@@ -40,9 +40,9 @@ Please follow the steps in here ( https://developers.facebook.com/docs/whatsapp/
 ### Required Environment Variables
 
 ```bash
-export AK_WHATSAPP__VERIFY_TOKEN="your_verify_token"
+export AK_WHATSAPP__VERIFY_TOKEN="your_verify_token" # Optional, used when verification of the webhook URL is required
 export AK_WHATSAPP__ACCESS_TOKEN="your_permanent_access_token"
-export AK_WHATSAPP__APP_SECRET="your_app_secret"
+export AK_WHATSAPP__APP_SECRET="your_app_secret"  # Optional.
 export AK_WHATSAPP__PHONE_NUMBER_ID="your test or business whats app phone number"
 export AK_WHATSAPP__API_VERSION="v21.0"  # Optional, defaults to v24.0
 ```
@@ -80,13 +80,10 @@ if __name__ == "__main__":
 ```yaml
 whatsapp:
   agent: "general"  # Name of the agent to handle WhatsApp messages
-  agent_acknowledgement: "Processing your request..."  # Optional acknowledgement message
-  verify_token: "${AK_WHATSAPP_VERIFY_TOKEN}"
-  access_token: "${AK_WHATSAPP_ACCESS_TOKEN}"
-  app_secret: "${AK_WHATSAPP_APP_SECRET}"
-  phone_number_id: "${AK_WHATSAPP_PHONE_NUMBER_ID}"
+  agent_acknowledgement: "Processing your request..."  # Optional acknowledgement message before answering the query
   api_version: "v21.0"  # Optional
 ```
+It is strongly recommended not to keep secrets and keys in the config file. Set them as env variables
 
 ## Features
 
@@ -162,38 +159,6 @@ class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
         await super()._handle_message(message, value)
 ```
 
-### Multi-Agent Routing
-
-```python
-from agents import Agent as OpenAIAgent
-from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
-
-support_agent = OpenAIAgent(
-    name="support",
-    handoff_description="Technical support agent",
-    instructions="Provide technical support and troubleshooting help."
-)
-
-sales_agent = OpenAIAgent(
-    name="sales",
-    handoff_description="Sales and product inquiries",
-    instructions="Help with product information and sales questions."
-)
-
-general_agent = OpenAIAgent(
-    name="general",
-    handoff_description="General inquiries",
-    instructions="Handle general questions and route to specialized agents when needed."
-)
-
-OpenAIModule([general_agent, support_agent, sales_agent])
-
-if __name__ == "__main__":
-    handler = AgentWhatsAppRequestHandler()
-    RESTAPI.run(handler=handler)
-```
-
 ## Troubleshooting
 
 ### Common Issues
@@ -235,25 +200,6 @@ WhatsApp Cloud API has rate limits:
 - **Messaging**: Based on your business tier (80-250 messages/second)
 - **Business Initiated Conversations**: Limited per 24-hour window
 - **Webhooks**: No specific limit but must respond within 20 seconds
-
-## Production Considerations
-
-### Scaling
-- Use async processing for long-running agent operations
-- Implement request queuing for high message volumes
-- Consider multiple webhook endpoints with load balancing
-
-### Monitoring
-- Monitor webhook delivery success rates
-- Track agent response times
-- Log failed message deliveries
-- Monitor API quota usage
-
-### Security
-- Always verify webhook signatures
-- Use environment variables for sensitive data
-- Rotate access tokens periodically
-- Implement rate limiting on your endpoints
 
 ## References
 
