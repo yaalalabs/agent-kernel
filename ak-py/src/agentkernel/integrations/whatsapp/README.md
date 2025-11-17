@@ -15,20 +15,17 @@ The `AgentWhatsAppRequestHandler` class handles conversations with agents via Wh
 ## WhatsApp Business API Setup
 
 ### Prerequisites
-
-1. **Meta Business Account**: Create at Meta Business Suite (https://business.facebook.com/)
-2. **WhatsApp Business App**: Create an app at https://developers.facebook.com/apps
-3. **Phone Number**: Add and verify a phone number for your WhatsApp Business
+Please follow the steps in here ( https://developers.facebook.com/docs/whatsapp/cloud-api/get-started)
 
 ### Configuration Steps
 
 1. **Create a WhatsApp Business App**
-   - Go to https://developers.facebook.com/apps
+   - Login to whats app developer account
    - Create a new app and select "Business" type
    - Add WhatsApp product to your app
 
 2. **Get Your Credentials**
-   - **Phone Number ID**: Found in WhatsApp > Getting Started
+   - **Phone Number ID**: This is the test number you are given or it could be an actual business phone number you have setup. Test number can be found in WhatsApp > Getting Started
    - **Access Token**: Generate a permanent token in WhatsApp > Getting Started
    - **App Secret**: Found in App Settings > Basic
    - **Verify Token**: Create your own secure random string for webhook verification
@@ -46,7 +43,7 @@ The `AgentWhatsAppRequestHandler` class handles conversations with agents via Wh
 export AK_WHATSAPP_VERIFY_TOKEN="your_verify_token"
 export AK_WHATSAPP_ACCESS_TOKEN="your_permanent_access_token"
 export AK_WHATSAPP_APP_SECRET="your_app_secret"
-export AK_WHATSAPP_PHONE_NUMBER_ID="your_phone_number_id"
+export AK_WHATSAPP_PHONE_NUMBER_ID="your test or business whats app phone number"
 export AK_WHATSAPP_API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
 

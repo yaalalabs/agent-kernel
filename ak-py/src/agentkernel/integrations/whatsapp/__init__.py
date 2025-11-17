@@ -1,7 +1,14 @@
 """
-WhatsApp integration for Agent Kernel.
+Agent Kernel Integrations with Whatsapp
+
+This package contains the Agent Kernel integration implementations for Whats App chats.
 """
 
-from .whatsapp_chat import AgentWhatsAppRequestHandler
+import importlib.metadata
 
-__all__ = ["AgentWhatsAppRequestHandler"]
+try:
+    __version__ = importlib.metadata.version("agentkernel")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.1.0"
+
+from .whatsapp_chat import AgentWhatsAppRequestHandler
