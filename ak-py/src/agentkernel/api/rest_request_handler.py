@@ -1,9 +1,9 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from fastapi import APIRouter
 
 
-class RESTRequestHandler:
+class RESTRequestHandler(ABC):
     @abstractmethod
     def get_router(self) -> APIRouter:
         """
@@ -20,7 +20,7 @@ class RESTRequestHandler:
 
         @router.get("/agents")
         def list_agents():
-            return {"agents": list(Runtime.instance().agents().keys())}
+            return {"agents": list(GlobalRuntime.instance().agents().keys())}
 
         """
         pass

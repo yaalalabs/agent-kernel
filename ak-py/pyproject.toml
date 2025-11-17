@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.2.2"
+version = "0.2.3"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,6 +13,7 @@ authors = [
     { name = "Yaala Labs", email = "agentkernel@yaalalabs.com" }
 ]
 dependencies = [
+    "deprecated>=1.3.1",
     "pydantic>=2.11.7",
     "pydantic-settings>=2.10.1",
     "pyyaml>=6.0.2",

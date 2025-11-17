@@ -1,0 +1,66 @@
+name: Publish Docs Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number to publish (e.g., 0.3.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-version:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+      
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+      
+      - name: Configure git
+        run: |
+          git config user.name "agent-kernel-ci[bot]"
+          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: docs/package-lock.json
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Create new version
+        run: |
+          npm run docusaurus docs:version ${{ inputs.version }}
+          echo "Created version ${{ inputs.version }}"
+          
+      - name: Commit and push version changes
+        run: |
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "docs: Create version ${{ inputs.version }}"
+            git push
+            echo "✅ Version ${{ inputs.version }} created and committed. The deploy-docs workflow will automatically deploy the changes."
+          fi

@@ -4,7 +4,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
 
-from ..core import Agent, AgentService, Runtime
+from ..core import Agent, AgentService, GlobalRuntime
 from ..core.config import AKConfig
 
 
@@ -60,7 +60,7 @@ class MCP:
         if cls._fastmcp is None:
             cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance")
         if AKConfig.get().mcp.expose_agents:
-            agents: dict[str, Agent] = Runtime.instance().agents()
+            agents: dict[str, Agent] = GlobalRuntime.instance().agents()
             for name, agent in agents.items():
                 whitelisted = AKConfig.get().mcp.agents == ["*"] or name in AKConfig.get().mcp.agents
                 if not whitelisted:
