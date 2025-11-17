@@ -35,9 +35,9 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._phone_number_id = Config.get().whatsapp.phone_number_id
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
-        if not all([self._verify_token, self._access_token, self._phone_number_id]):
+        if not all([self._access_token, self._phone_number_id]):
             self._log.error(
-                "WhatsApp configuration is incomplete. Please set verify_token, access_token, and phone_number_id."
+                "WhatsApp configuration is incomplete. Please set access_token and phone_number_id."
             )
             raise ValueError("Incomplete WhatsApp configuration.")
 
