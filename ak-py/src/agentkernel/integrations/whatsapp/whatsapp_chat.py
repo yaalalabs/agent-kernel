@@ -37,6 +37,9 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._phone_number_id = Config.get().whatsapp.phone_number_id
         self._api_version = Config.get().whatsapp.api_version or "v21.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
+        if not all([self._verify_token, self._access_token, self._phone_number_id]):
+            self._log.error("WhatsApp configuration is incomplete. Please set verify_token, access_token, and phone_number_id.")
+            raise ValueError("Incomplete WhatsApp configuration.")
 
     def get_router(self) -> APIRouter:
         """
@@ -76,7 +79,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         token = request.query_params.get("hub.verify_token")
         challenge = request.query_params.get("hub.challenge")
 
-        self._log.debug(f"Webhook verification request: mode={mode}, token={token}")
+        self._log.debug(f"Webhook verification request: mode={mode}, token={token}, challenge={challenge}")
 
         if mode == "subscribe" and token == self._verify_token and challenge:
             self._log.info("Webhook verified successfully")
