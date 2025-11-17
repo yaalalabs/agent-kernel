@@ -1,22 +1,12 @@
 #!/bin/bash
 
-# Build script for WhatsApp integration example
+set -euo pipefail
+uv venv --allow-existing
 
-set -e
-
-echo "Building WhatsApp integration example..."
-
-# Check if we should use local agent-kernel
-if [ "$1" = "local" ]; then
-    echo "Using local agent-kernel source..."
-    uv sync --extra openai
-    uv pip install -e ../../../ak-py
+if [[ ${1-} != "local" ]]; then
+  uv sync --all-extras
 else
-    echo "Using published agent-kernel..."
-    uv sync --extra openai
+  # For local development of agentkernel, you can force reinstall from local dist
+  uv sync --find-links ../../../ak-py/dist --all-extras
+  uv pip install --force-reinstall --find-links ../../../ak-py/dist agentkernel[api,openai,whatsapp] || true
 fi
-
-echo "Build complete!"
-echo ""
-echo "To run the server:"
-echo "  uv run server.py"
