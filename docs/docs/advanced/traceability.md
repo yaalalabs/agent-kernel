@@ -447,7 +447,7 @@ class MyCustomOpenAIRunner(OpenAIRunner):
 Initialize the module with your custom runner
 
 ```python
-OpenAIModule([general_agent], runner = MyCustomOpenAIRunner())
+OpenAIModule([general_agent], runner=MyCustomOpenAIRunner())
 ```
 
 Custom runner supercedes all other trace configurations
