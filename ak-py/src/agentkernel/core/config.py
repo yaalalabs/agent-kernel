@@ -60,6 +60,19 @@ class _SlackConfig(BaseModel):
     )
 
 
+class _WhatsAppConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for WhatsApp interactions")
+    agent_acknowledgement: str = Field(
+        default="",
+        description="The message to send as an acknowledgement when a WhatsApp message is received",
+    )
+    verify_token: str = Field(default="", description="WhatsApp webhook verify token")
+    access_token: str = Field(default="", description="WhatsApp Business API access token")
+    app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
+    phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
+    api_version: str = Field(default="v24.0", description="WhatsApp API version")
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -78,6 +91,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
+    whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 

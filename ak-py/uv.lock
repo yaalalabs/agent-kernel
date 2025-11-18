@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -102,6 +102,9 @@ test = [
     { name = "pytest-order" },
     { name = "rapidfuzz" },
 ]
+whatsapp = [
+    { name = "httpx" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -119,6 +122,7 @@ requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=2.12.4" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
+    { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
     { name = "langchain-community", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
     { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=3.9.2" },
@@ -146,7 +150,7 @@ requires-dist = [
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
 ]
-provides-extras = ["langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "openai", "adk", "api", "slack", "test", "a2a", "mcp"]
+provides-extras = ["langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "openai", "adk", "api", "slack", "whatsapp", "test", "a2a", "mcp"]
 
 [package.metadata.requires-dev]
 dev = [
