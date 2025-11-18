@@ -450,7 +450,7 @@ Initialize the module with your custom runner
 OpenAIModule([general_agent], runner=MyCustomOpenAIRunner())
 ```
 
-Custom runner supercedes all other trace configurations
+Custom runner supersedes all other trace configurations
 
 ```bash
 export MY_TRACE_API_KEY=your-api-key
