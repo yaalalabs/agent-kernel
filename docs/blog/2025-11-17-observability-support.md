@@ -384,24 +384,15 @@ class MyCustomOpenAIRunner(OpenAIRunner):
             return result
 ```
 
-3. **Register Your Implementation**
+3. **Initialize the module with the custom runner**
 
-Add your platform to the Trace factory in `agentkernel/trace/trace.py`:
+Initialize the module with your custom runner
 
 ```python
-if trace_type == "mycustom":
-    from .mycustom.mycustom import MyCustomTrace
-    instance = MyCustomTrace()
+OpenAIModule([general_agent], runner = MyCustomOpenAIRunner())
 ```
 
-4. **Configure and Use**
-
-```yaml
-# config.yaml
-trace:
-  enabled: true
-  type: mycustom
-```
+Custom runner supercedes all other trace configurations
 
 ```bash
 export MY_TRACE_API_KEY=your-api-key

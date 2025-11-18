@@ -141,13 +141,17 @@ class GoogleADKModule(Module):
     GoogleADKModule class provides a module for Google ADK-based agents.
     """
 
-    def __init__(self, agents: list[BaseAgent]):
+    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None):
         """
         Initializes a Google ADK Module instance.
         :param agents: List of agents in the module.
+        :param runner: Custom runner associated with the module.
         """
         super().__init__()
-        if AKConfig.get().trace.enabled:
+
+        if runner is not None:
+            self.runner = runner
+        elif AKConfig.get().trace.enabled:
             self.runner = Trace.get().adk()
         else:
             self.runner = GoogleADKRunner()

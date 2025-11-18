@@ -374,6 +374,99 @@ export TRACELOOP_BASE_URL=http://your-otel-collector:4318
 
 See [OpenLLMetry documentation](https://www.traceloop.com/docs/openllmetry/integrations) for more backend options.
 
+
+## Integrate to Your Own Traceability Platform
+
+Agent Kernel's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
+
+### How to Add Your Own Platform
+
+1. **Implement the BaseTrace Interface**
+
+Create a new class that extends `BaseTrace` and implements the required methods:
+
+```python
+from agentkernel.trace.base import BaseTrace
+from agentkernel.core import Runner
+
+class MyCustomTrace(BaseTrace):
+    def __init__(self):
+        self._client = None
+    
+    def init(self):
+        # Initialize your tracing client
+        self._client = MyTracingClient(
+            api_key=os.getenv("MY_TRACE_API_KEY")
+        )
+    
+    def openai(self) -> Runner:
+        from .openai_runner import MyCustomOpenAIRunner
+        return MyCustomOpenAIRunner(self._client)
+    
+    def langgraph(self) -> Runner:
+        from .langgraph_runner import MyCustomLangGraphRunner
+        return MyCustomLangGraphRunner(self._client)
+    
+    def crewai(self) -> Runner:
+        from .crewai_runner import MyCustomCrewAIRunner
+        return MyCustomCrewAIRunner(self._client)
+    
+    def adk(self) -> Runner:
+        from .adk_runner import MyCustomADKRunner
+        return MyCustomADKRunner(self._client)
+```
+
+2. **Create Framework-Specific Runners**
+
+Each runner wraps the framework's execution with your tracing logic:
+
+```python
+from agentkernel.openai.openai import OpenAIRunner
+from agentkernel.core import Session
+
+class MyCustomOpenAIRunner(OpenAIRunner):
+    def __init__(self, client):
+        super().__init__()
+        self._client = client
+    
+    async def run(self, agent, session: Session, prompt):
+        # Start a trace span
+        with self._client.start_span("agent-execution") as span:
+            span.set_attribute("session_id", session.id)
+            span.set_attribute("prompt", prompt)
+            
+            # Run the agent
+            result = await super().run(agent=agent, prompt=prompt, session=session)
+            
+            span.set_attribute("result", result)
+            return result
+```
+
+3. **Initialize the module with the custom runner**
+
+Initialize the module with your custom runner
+
+```python
+OpenAIModule([general_agent], runner = MyCustomOpenAIRunner())
+```
+
+Custom runner supercedes all other trace configurations
+
+```bash
+export MY_TRACE_API_KEY=your-api-key
+```
+
+Your custom observability platform is now integrated with Agent Kernel.
+
+### Example Use Cases
+
+- **Proprietary Monitoring Systems**: Integrate with your company's internal monitoring tools
+- **Compliance Requirements**: Route traces to approved, compliant systems
+- **Custom Aggregation**: Combine multiple backends or add custom processing
+- **Cost Optimization**: Use cheaper or self-hosted alternatives
+
+The extensible architecture ensures you're never locked into a specific platform.
+
 ## Roadmap
 
 Upcoming observability features:

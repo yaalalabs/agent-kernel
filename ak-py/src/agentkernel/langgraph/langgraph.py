@@ -290,13 +290,16 @@ class LangGraphModule(BaseModule):
     LangGraphModule class provides a module for LangGraph Agent SDK-based agents.
     """
 
-    def __init__(self, agents: list[CompiledStateGraph]):
+    def __init__(self, agents: list[CompiledStateGraph], runner: LangGraphRunner = None):
         """
         Initializes a LangGraphModule instance.
         :param agents: List of agents in the module.
+        :param runner: Custom runner associated with the module.
         """
         super().__init__()
-        if AKConfig.get().trace.enabled:
+        if runner is not None:
+            self.runner = runner
+        elif AKConfig.get().trace.enabled:
             self.runner = Trace.get().langgraph()
         else:
             self.runner = LangGraphRunner()
