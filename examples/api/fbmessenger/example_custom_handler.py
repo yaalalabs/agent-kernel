@@ -1,8 +1,8 @@
 import logging
 
 from agentkernel.api import RESTAPI
-from agentkernel.openai import OpenAIModule
 from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
 # Configure logging
@@ -30,8 +30,7 @@ class CustomMessengerHandler(AgentFBMessengerRequestHandler):
             # Handle non-text messages
             if "attachments" in message:
                 await self._send_message(
-                    sender_id,
-                    "I received your attachment, but I can only process text messages at the moment."
+                    sender_id, "I received your attachment, but I can only process text messages at the moment."
                 )
             return
 
@@ -76,10 +75,7 @@ Type /help to see available commands."""
             await self._send_message(sender_id, welcome_text)
 
         else:
-            await self._send_message(
-                sender_id,
-                f"Unknown command: {command}\nType /help for available commands."
-            )
+            await self._send_message(sender_id, f"Unknown command: {command}\nType /help for available commands.")
 
         await self._send_typing_indicator(sender_id, False)
 

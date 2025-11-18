@@ -175,7 +175,7 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
         try:
             # Mark message as seen
             await self._mark_seen(sender_id)
-            
+
             # Send typing indicator
             await self._send_typing_indicator(sender_id, True)
 
@@ -235,7 +235,7 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
         try:
             # Mark message as seen
             await self._mark_seen(sender_id)
-            
+
             # Send typing indicator
             await self._send_typing_indicator(sender_id, True)
 

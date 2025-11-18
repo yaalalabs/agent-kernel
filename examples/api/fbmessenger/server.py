@@ -1,6 +1,6 @@
 from agentkernel.api import RESTAPI
-from agentkernel.openai import OpenAIModule
 from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
 # Create your agent
