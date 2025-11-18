@@ -138,13 +138,16 @@ class OpenAIModule(Module):
     OpenAIModule class provides a module for OpenAI Agents SDK based agents.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self, agents: list[Agent], runner: OpenAIRunner = None):
         """
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
+        :param runner: Custom runner associated with the module.
         """
         super().__init__()
-        if AKConfig.get().trace.enabled:
+        if runner is not None:
+            self.runner = runner
+        elif AKConfig.get().trace.enabled:
             self.runner = Trace.get().openai()
         else:
             self.runner = OpenAIRunner()

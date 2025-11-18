@@ -165,13 +165,16 @@ class CrewAIModule(Module):
     CrewAIModule class provides a module for CrewAI based agents.
     """
 
-    def __init__(self, agents: list[Agent]):
+    def __init__(self, agents: list[Agent], runner: CrewAIRunner = None):
         """
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
+        :param runner: Custom runner associated with the module.
         """
         super().__init__()
-        if AKConfig.get().trace.enabled:
+        if runner is not None:
+            self.runner = runner
+        elif AKConfig.get().trace.enabled:
             self.runner = Trace.get().crewai()
         else:
             self.runner = CrewAIRunner()

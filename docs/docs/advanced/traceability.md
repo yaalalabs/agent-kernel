@@ -374,6 +374,65 @@ export TRACELOOP_BASE_URL=http://your-otel-collector:4318
 
 See [OpenLLMetry documentation](https://www.traceloop.com/docs/openllmetry/integrations) for more backend options.
 
+
+## Integrate with Your Own Traceability Platform
+
+Agent Kernel's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
+
+### How to Add Your Own Platform
+
+
+1. **Create Framework-Specific Runners**
+
+Runner wraps the framework's execution with your tracing logic:
+
+```python
+from agentkernel.openai.openai import OpenAIRunner
+from agentkernel.core import Session
+
+class MyCustomOpenAIRunner(OpenAIRunner):
+    def __init__(self, client):
+        super().__init__()
+        self._client = client
+    
+    async def run(self, agent, session: Session, prompt):
+        # Start a trace span
+        with self._client.start_span("agent-execution") as span:
+            span.set_attribute("session_id", session.id)
+            span.set_attribute("prompt", prompt)
+            
+            # Run the agent
+            result = await super().run(agent=agent, prompt=prompt, session=session)
+            
+            span.set_attribute("result", result)
+            return result
+```
+
+2. **Initialize the module with the custom runner**
+
+Initialize the module with your custom runner
+
+```python
+OpenAIModule([general_agent], runner=MyCustomOpenAIRunner())
+```
+
+Custom runner supersedes all other trace configurations
+
+```bash
+export MY_TRACE_API_KEY=your-api-key
+```
+
+Your custom observability platform is now integrated with Agent Kernel.
+
+### Example Use Cases
+
+- **Proprietary Monitoring Systems**: Integrate with your company's internal monitoring tools
+- **Compliance Requirements**: Route traces to approved, compliant systems
+- **Custom Aggregation**: Combine multiple backends or add custom processing
+- **Cost Optimization**: Use cheaper or self-hosted alternatives
+
+The extensible architecture ensures you're never locked into a specific platform.
+
 ## Roadmap
 
 Upcoming observability features:
