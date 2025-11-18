@@ -375,7 +375,7 @@ export TRACELOOP_BASE_URL=http://your-otel-collector:4318
 See [OpenLLMetry documentation](https://www.traceloop.com/docs/openllmetry/integrations) for more backend options.
 
 
-## Integrate to Your Own Traceability Platform
+## Integrate with Your Own Traceability Platform
 
 Agent Kernel's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
 
