@@ -323,42 +323,8 @@ Agent Kernel's plugin architecture makes it easy to integrate your own observabi
 
 ### How to Add Your Own Platform
 
-1. **Implement the BaseTrace Interface**
 
-Create a new class that extends `BaseTrace` and implements the required methods:
-
-```python
-from agentkernel.trace.base import BaseTrace
-from agentkernel.core import Runner
-
-class MyCustomTrace(BaseTrace):
-    def __init__(self):
-        self._client = None
-    
-    def init(self):
-        # Initialize your tracing client
-        self._client = MyTracingClient(
-            api_key=os.getenv("MY_TRACE_API_KEY")
-        )
-    
-    def openai(self) -> Runner:
-        from .openai_runner import MyCustomOpenAIRunner
-        return MyCustomOpenAIRunner(self._client)
-    
-    def langgraph(self) -> Runner:
-        from .langgraph_runner import MyCustomLangGraphRunner
-        return MyCustomLangGraphRunner(self._client)
-    
-    def crewai(self) -> Runner:
-        from .crewai_runner import MyCustomCrewAIRunner
-        return MyCustomCrewAIRunner(self._client)
-    
-    def adk(self) -> Runner:
-        from .adk_runner import MyCustomADKRunner
-        return MyCustomADKRunner(self._client)
-```
-
-2. **Create Framework-Specific Runners**
+1. **Create Framework-Specific Runners**
 
 Each runner wraps the framework's execution with your tracing logic:
 
@@ -384,7 +350,7 @@ class MyCustomOpenAIRunner(OpenAIRunner):
             return result
 ```
 
-3. **Initialize the module with the custom runner**
+2. **Initialize the module with the custom runner**
 
 Initialize the module with your custom runner
 
