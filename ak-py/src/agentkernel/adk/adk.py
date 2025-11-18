@@ -148,7 +148,6 @@ class GoogleADKModule(Module):
         :param runner: Custom runner associated with the module.
         """
         super().__init__()
-
         if runner is not None:
             self.runner = runner
         elif AKConfig.get().trace.enabled:
