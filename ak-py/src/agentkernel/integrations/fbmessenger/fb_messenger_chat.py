@@ -29,7 +29,7 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
         self._verify_token = Config.get().fbmessenger.verify_token
         self._access_token = Config.get().fbmessenger.access_token
         self._app_secret = Config.get().fbmessenger.app_secret
-        self._api_version = Config.get().fbmessenger.api_version or "v21.0"
+        self._api_version = Config.get().fbmessenger.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         if not all([self._access_token]):
             self._log.error("Facebook Messenger configuration is incomplete. Please set access_token.")

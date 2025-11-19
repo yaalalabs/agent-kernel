@@ -78,7 +78,7 @@ class _FBMessengerConfig(BaseModel):
     verify_token: str = Field(default="", description="Facebook Messenger webhook verify token")
     access_token: str = Field(default="", description="Facebook Page access token")
     app_secret: str = Field(default="", description="Facebook app secret for signature verification")
-    api_version: str = Field(default="v21.0", description="Facebook Graph API version")
+    api_version: str = Field(default="v24.0", description="Facebook Graph API version")
 
 
 class _TraceConfig(BaseModel):
