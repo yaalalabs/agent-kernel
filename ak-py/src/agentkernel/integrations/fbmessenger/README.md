@@ -29,24 +29,30 @@ Please follow the steps in the [Messenger Platform Getting Started Guide](https:
    - Link your page to the app in Messenger Settings
 
 3. **Get Your Credentials**
-   - **Page Access Token**: Generate a token in Messenger > Settings > Access Tokens
-   - **App Secret**: Found in Settings > Basic (optional but recommended for security)
+   - **Page Access Token**:  Generate a token in App > Left side panel > Select 'Use cases' > Select 'Engage with customers on messenger from Meta' > Select 'Customise'
+          - Click on 'Messenger API settings' > Select "Generate Access Tokens" and do the needful
+
+   - **App Secret**: [Optional but recommended for security]. App > App Setting > Basic
+         
    - **Verify Token**: Create your own secure random string for webhook verification
 
 4. **Configure Webhook**
-   - Go to Messenger > Settings
-   - In the "Webhooks" section, click "Add Callback URL"
-   - Set callback URL: `https://your-domain.com/messenger/webhook`
-   - Set verify token: Your chosen verify token
+   - Go to 'Messenger API settings' (described above) > Select "Config Webhooks"
+   - click "Add Callback URL". Set callback URL: `https://your-domain.com/messenger/webhook`
+   - Set verify token: Your chosen verify token. Click "Verify and Save"
    - Subscribe to these webhook fields:
      - `messages` - To receive messages
+     - `messaging_optins` - To receive messages
      - `messaging_postbacks` - To handle button clicks
      - `message_deliveries` - For delivery confirmations (optional)
      - `message_reads` - For read receipts (optional)
 
 5. **Subscribe Your Page**
-   - After webhook verification, subscribe your page to receive events
-   - Select the page and click "Subscribe"
+   - After webhook verification, subscribe your page to receive events. To do that go back to "Generate Access Token" > "Webhook Subcription"
+    - Subscribe to these webhook fields:
+     - `messages` - To receive messages
+     - `messaging_optins` - To receive messages
+     - `messaging_postbacks` - To handle button clicks
 
 ### Required Environment Variables
 
