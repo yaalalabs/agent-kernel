@@ -14,7 +14,7 @@ This example demonstrates how to create a Facebook Messenger Platform integratio
 
 ### 1. Get Facebook Messenger Credentials
 
-Follow the setup guide in [AgentFBMessengerRequestHandler](../../../ak-py/src/agentkernel/integrations/fbmessenger/README.md)
+Follow the setup guide in [AgentMessengerRequestHandler](../../../ak-py/src/agentkernel/integrations/messenger/README.md)
 
 You'll need:
 - Page Access Token
@@ -26,10 +26,10 @@ You'll need:
 Create a `.env` file or export these variables:
 
 ```bash
-export AK_FBMESSENGER__VERIFY_TOKEN="your_secure_verify_token"
-export AK_FBMESSENGER__ACCESS_TOKEN="your_page_access_token"
-export AK_FBMESSENGER__APP_SECRET="your_app_secret"
-export AK_FBMESSENGER__API_VERSION="v21.0"  # Optional
+export AK_MESSENGER__VERIFY_TOKEN="your_secure_verify_token"
+export AK_MESSENGER__ACCESS_TOKEN="your_page_access_token"
+export AK_MESSENGER__APP_SECRET="your_app_secret"
+export AK_MESSENGER__API_VERSION="v21.0"  # Optional
 
 # OpenAI API Key for the agent
 export OPENAI_API_KEY="your_openai_api_key"
@@ -40,7 +40,7 @@ export OPENAI_API_KEY="your_openai_api_key"
 Create `config.yaml`:
 
 ```yaml
-fbmessenger:
+messenger:
   agent: "general"
   api_version: "v21.0"
 ```
@@ -93,7 +93,7 @@ Copy the HTTPS URL and configure it in your Facebook Messenger webhook settings.
 4. In the "Webhooks" section, click "Add Callback URL"
 5. Enter:
    - **Callback URL**: `https://your-tunnel-url.com/messenger/webhook`
-   - **Verify Token**: Same as `AK_FBMESSENGER__VERIFY_TOKEN`
+   - **Verify Token**: Same as `AK_MESSENGER__VERIFY_TOKEN`
 6. Click "Verify and Save"
 7. Subscribe to these webhook fields:
    - `messages`
@@ -127,9 +127,9 @@ Can you answer technical questions?
 See `example_custom_handler.py` for extending the handler with custom logic:
 
 ```python
-from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 
-class CustomMessengerHandler(AgentFBMessengerRequestHandler):
+class CustomMessengerHandler(AgentMessengerRequestHandler):
     async def _handle_message(self, messaging_event: dict):
         # Custom preprocessing
         message = messaging_event.get("message", {})
@@ -273,7 +273,7 @@ Extend this example with:
 - [Webhook Reference](https://developers.facebook.com/docs/messenger-platform/webhooks)
 - [Platform Policy](https://developers.facebook.com/docs/messenger-platform/policy-overview)
 - [Agent Kernel Documentation](../../../docs/)
-- [Facebook Messenger Integration Guide](../../../ak-py/src/agentkernel/integrations/fbmessenger/README.md)
+- [Facebook Messenger Integration Guide](../../../ak-py/src/agentkernel/integrations/messenger/README.md)
 
 ## Support
 

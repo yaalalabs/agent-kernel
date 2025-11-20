@@ -1,5 +1,5 @@
 from agentkernel.api import RESTAPI
-from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
@@ -15,5 +15,5 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    handler = AgentFBMessengerRequestHandler()
+    handler = AgentMessengerRequestHandler()
     RESTAPI.run([handler])

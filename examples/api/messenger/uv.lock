@@ -25,7 +25,7 @@ api = [
     { name = "gunicorn" },
     { name = "uvicorn" },
 ]
-fbmessenger = [
+messenger = [
     { name = "httpx" },
 ]
 openai = [
@@ -74,11 +74,11 @@ wheels = [
 ]
 
 [[package]]
-name = "api-fbmessenger"
+name = "api-messenger"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["api", "fbmessenger", "openai"] },
+    { name = "agentkernel", extra = ["api", "messenger", "openai"] },
 ]
 
 [package.dev-dependencies]
@@ -90,7 +90,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "fbmessenger"], specifier = ">=0.2.4" }]
+requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "messenger"], specifier = ">=0.2.4" }]
 
 [package.metadata.requires-dev]
 dev = [

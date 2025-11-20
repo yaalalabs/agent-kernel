@@ -10,7 +10,7 @@ from ...api import RESTRequestHandler
 from ...core import AgentService, Config
 
 
-class AgentFBMessengerRequestHandler(RESTRequestHandler):
+class AgentMessengerRequestHandler(RESTRequestHandler):
     """
     API routers that expose endpoints to interact with Facebook Messenger API using Agent Kernel.
 
@@ -23,12 +23,12 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
     """
 
     def __init__(self):
-        self._log = logging.getLogger("ak.api.fbmessenger")
-        self._messenger_agent = Config.get().fbmessenger.agent if Config.get().fbmessenger.agent != "" else None
-        self._verify_token = Config.get().fbmessenger.verify_token
-        self._access_token = Config.get().fbmessenger.access_token
-        self._app_secret = Config.get().fbmessenger.app_secret
-        self._api_version = Config.get().fbmessenger.api_version or "v24.0"
+        self._log = logging.getLogger("ak.api.messenger")
+        self._messenger_agent = Config.get().messenger.agent if Config.get().messenger.agent != "" else None
+        self._verify_token = Config.get().messenger.verify_token
+        self._access_token = Config.get().messenger.access_token
+        self._app_secret = Config.get().messenger.app_secret
+        self._api_version = Config.get().messenger.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         if not all([self._access_token, self._verify_token]):
             self._log.error("Facebook Messenger configuration is incomplete. Please set access_token and verify_token.")

@@ -2,7 +2,7 @@
 
 Facebook Messenger Platform integration for Agent Kernel using webhooks.
 
-The `AgentFBMessengerRequestHandler` class handles conversations with agents via Facebook Messenger Platform webhooks. This integration uses the Messenger Send API (https://developers.facebook.com/docs/messenger-platform) without requiring third-party libraries beyond standard HTTP clients.
+The `AgentMessengerRequestHandler` class handles conversations with agents via Facebook Messenger Platform webhooks. This integration uses the Messenger Send API (https://developers.facebook.com/docs/messenger-platform) without requiring third-party libraries beyond standard HTTP clients.
 
 ## How It Works
 
@@ -62,10 +62,10 @@ Please follow the steps in the [Messenger Platform Getting Started Guide](https:
 ### Required Environment Variables
 
 ```bash
-export AK_FBMESSENGER__VERIFY_TOKEN="your_verify_token"  # Required for webhook verification
-export AK_FBMESSENGER__ACCESS_TOKEN="your_page_access_token"  # Required
-export AK_FBMESSENGER__APP_SECRET="your_app_secret"  # Optional, but strongly recommended
-export AK_FBMESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only change if you wants to move to a different version
+export AK_MESSENGER__VERIFY_TOKEN="your_verify_token"  # Required for webhook verification
+export AK_MESSENGER__ACCESS_TOKEN="your_page_access_token"  # Required
+export AK_MESSENGER__APP_SECRET="your_app_secret"  # Optional, but strongly recommended
+export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only change if you wants to move to a different version
 ```
 
 ### Webhook Verification
@@ -77,7 +77,7 @@ The handler automatically responds to Facebook's webhook verification challenge 
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.integrations.messenger import AgentMessengerRequestHandler
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -90,7 +90,7 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentFBMessengerRequestHandler()
+    handler = AgentMessengerRequestHandler()
     RESTAPI.run(handler=handler)
 ```
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
 ### config.yaml
 
 ```yaml
-fbmessenger:
+messenger:
   agent: "general"  # Name of the agent to handle Messenger messages
   api_version: "v21.0"  # Optional, defaults to v24.0
 ```
@@ -161,9 +161,9 @@ This assumes that you have successfully verified the Webhook URL and correct sub
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 
-class CustomMessengerHandler(AgentFBMessengerRequestHandler):
+class CustomMessengerHandler(AgentMessengerRequestHandler):
     async def _handle_message(self, messaging_event: dict):
         # Add custom preprocessing
         message = messaging_event.get("message", {})

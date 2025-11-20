@@ -1,7 +1,7 @@
 import logging
 
 from agentkernel.api import RESTAPI
-from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class CustomMessengerHandler(AgentFBMessengerRequestHandler):
+class CustomMessengerHandler(AgentMessengerRequestHandler):
     """
     Custom Facebook Messenger handler with enhanced features:
     - Command support (/help, /start)

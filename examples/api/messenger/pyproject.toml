@@ -1,11 +1,11 @@
 [project]
-name = "api-fbmessenger"
+name = "api-messenger"
 version = "0.1.0"
 description = "Facebook Messenger integration example for Agent Kernel"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,fbmessenger]>=0.2.4"
+    "agentkernel[api,openai,messenger]>=0.2.4"
 ]
 
 [dependency-groups]

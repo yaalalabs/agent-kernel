@@ -73,7 +73,7 @@ class _WhatsAppConfig(BaseModel):
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
 
 
-class _FBMessengerConfig(BaseModel):
+class _MessengerConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Facebook Messenger interactions")
     verify_token: str = Field(default="", description="Facebook Messenger webhook verify token")
     access_token: str = Field(default="", description="Facebook Page access token")
@@ -100,8 +100,8 @@ class AKConfig(YamlBaseSettingsModified):
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
-    fbmessenger: _FBMessengerConfig = Field(
-        description="Facebook Messenger related configurations", default_factory=_FBMessengerConfig
+    messenger: _MessengerConfig = Field(
+        description="Facebook Messenger related configurations", default_factory=_MessengerConfig
     )
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

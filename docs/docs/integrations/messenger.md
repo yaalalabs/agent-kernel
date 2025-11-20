@@ -4,7 +4,7 @@ Deploy your Agent Kernel agents as Facebook Messenger bots that can respond to m
 
 ## Overview
 
-The `AgentFBMessengerRequestHandler` provides a seamless bridge between your Agent Kernel agents and Facebook Messenger. When users message your Facebook Page, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Messenger.
+The `AgentMessengerRequestHandler` provides a seamless bridge between your Agent Kernel agents and Facebook Messenger. When users message your Facebook Page, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Messenger.
 
 **How it works:**
 
@@ -58,13 +58,13 @@ Before you begin, you'll need:
 
 1. In **Messenger API settings**, find "Access Tokens"
 2. Click **Generate Access Tokens** for your page
-3. Copy and save this token securely - you'll need it as `AK_FBMESSENGER__ACCESS_TOKEN`
+3. Copy and save this token securely - you'll need it as `AK_MESSENGER__ACCESS_TOKEN`
 
 **Get your App Secret (recommended):**
 
 1. Go to **App Settings** → **Basic** in the left sidebar
 2. Click **Show** next to "App Secret"
-3. Copy and save this secret - you'll use it as `AK_FBMESSENGER__APP_SECRET`
+3. Copy and save this secret - you'll use it as `AK_MESSENGER__APP_SECRET`
 
 **Create a Verify Token:**
 
@@ -72,17 +72,17 @@ This is a random string you create yourself for webhook verification. Choose som
 ```bash
 openssl rand -hex 32
 ```
-Save this as `AK_FBMESSENGER__VERIFY_TOKEN`
+Save this as `AK_MESSENGER__VERIFY_TOKEN`
 
 ### 3. Configure Environment Variables
 
 Set these environment variables before starting your application:
 
 ```bash
-export AK_FBMESSENGER__VERIFY_TOKEN="your_random_verify_token"
-export AK_FBMESSENGER__ACCESS_TOKEN="your_page_access_token"
-export AK_FBMESSENGER__APP_SECRET="your_app_secret"  # Optional but recommended
-export AK_FBMESSENGER__API_VERSION="v21.0"  # Optional, defaults to v21.0
+export AK_MESSENGER__VERIFY_TOKEN="your_random_verify_token"
+export AK_MESSENGER__ACCESS_TOKEN="your_page_access_token"
+export AK_MESSENGER__APP_SECRET="your_app_secret"  # Optional but recommended
+export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
 
 ### 4. Set Up Your Webhook
@@ -127,7 +127,7 @@ Here's a complete example to get your Messenger bot running:
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.integrations.messenger import AgentMessengerRequestHandler
 
 # Create your AI agent
 customer_service_agent = OpenAIAgent(
@@ -145,7 +145,7 @@ OpenAIModule([customer_service_agent])
 
 # Start the server with Messenger integration
 if __name__ == "__main__":
-    handler = AgentFBMessengerRequestHandler()
+    handler = AgentMessengerRequestHandler()
     RESTAPI.run(handler=handler)
 ```
 
@@ -154,7 +154,7 @@ if __name__ == "__main__":
 Optionally configure your agent and API settings in `config.yaml`:
 
 ```yaml
-fbmessenger:
+messenger:
   agent: "customer_service"  # Which agent handles Messenger messages
   api_version: "v21.0"  # Facebook Graph API version. 24 is the default. Only set if you want a different version
 ```
@@ -194,9 +194,9 @@ Once your webhook is configured:
 Extend the handler to add custom logic, commands, or preprocessing:
 
 ```python
-from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 
-class CustomMessengerHandler(AgentFBMessengerRequestHandler):
+class CustomMessengerHandler(AgentMessengerRequestHandler):
     async def _handle_message(self, messaging_event: dict):
         message = messaging_event.get("message", {})
         message_text = message.get("text", "").strip()
@@ -261,7 +261,7 @@ if __name__ == "__main__":
 Route different types of conversations to specialized agents:
 
 ```python
-from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 
 # Create specialized agents
 sales_agent = OpenAIAgent(
@@ -341,7 +341,7 @@ Automatically logged for monitoring and debugging purposes.
 **Problem:** "Invalid signature" or authentication-related errors
 
 **Solutions:**
-- Verify `AK_FBMESSENGER__APP_SECRET` matches your app's actual secret
+- Verify `AK_MESSENGER__APP_SECRET` matches your app's actual secret
 - Ensure the app secret hasn't been regenerated in Facebook
 - Check that webhook payloads haven't been modified in transit
 - Review server logs for signature validation details
@@ -387,7 +387,7 @@ Facebook Messenger enforces rate limits to ensure platform stability:
 import asyncio
 from asyncio import Queue
 
-class RateLimitedMessengerHandler(AgentFBMessengerRequestHandler):
+class RateLimitedMessengerHandler(AgentMessengerRequestHandler):
     def __init__(self):
         super().__init__()
         self.message_queue = Queue()
@@ -412,7 +412,7 @@ Before deploying to production:
 
 2. ✅ **Security Measures**
    - Use environment variables for all secrets
-   - Enable app secret verification (`AK_FBMESSENGER__APP_SECRET`)
+   - Enable app secret verification (`AK_MESSENGER__APP_SECRET`)
    - Implement HTTPS with valid SSL certificate
    - Use secure secret management (AWS Secrets Manager, HashiCorp Vault)
 

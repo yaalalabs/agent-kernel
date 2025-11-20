@@ -26,8 +26,8 @@ class APITestClient:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
     my_env = os.environ.copy()
-    my_env["AK_FBMESSENGER__ACCESS_TOKEN"] = "EAABsbCS1iHgBO6YjZCiVnqhNGZBfvDKZCw"
-    my_env["AK_FBMESSENGER__VERIFY_TOKEN"] = "test_verify_token_12345"
+    my_env["AK_MESSENGER__ACCESS_TOKEN"] = "EAABsbCS1iHgBO6YjZCiVnqhNGZBfvDKZCw"
+    my_env["AK_MESSENGER__VERIFY_TOKEN"] = "test_verify_token_12345"
     proc = subprocess.Popen(
         ["python3", "server.py"],
         stdout=sys.stdout,
