@@ -64,8 +64,8 @@ Please follow the steps in the [Messenger Platform Getting Started Guide](https:
 ```bash
 export AK_FBMESSENGER__VERIFY_TOKEN="your_verify_token"  # Required for webhook verification
 export AK_FBMESSENGER__ACCESS_TOKEN="your_page_access_token"  # Required
-export AK_FBMESSENGER__APP_SECRET="your_app_secret"  # Optional but recommended
-export AK_FBMESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0
+export AK_FBMESSENGER__APP_SECRET="your_app_secret"  # Optional, but strongly recommended
+export AK_FBMESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only change if you wants to move to a different version
 ```
 
 ### Webhook Verification

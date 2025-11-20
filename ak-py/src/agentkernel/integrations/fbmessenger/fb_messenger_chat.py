@@ -2,7 +2,6 @@ import hashlib
 import hmac
 import logging
 import traceback
-from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -154,7 +153,7 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
 
         # Skip messages with attachments that don't have text
         if not message_text:
-            self._log.warning("Message has no text or attachments")
+            self._log.warning("Message has no text content")
             return
             # TODO: Optionally handle attachments
             # if "attachments" in message:
