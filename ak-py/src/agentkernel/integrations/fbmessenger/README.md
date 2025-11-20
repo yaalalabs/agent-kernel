@@ -161,7 +161,7 @@ This assumes that you have successfully verified the Webhook URL and correct sub
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.integrations.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
 
 class CustomMessengerHandler(AgentFBMessengerRequestHandler):
     async def _handle_message(self, messaging_event: dict):

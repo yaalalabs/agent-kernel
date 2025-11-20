@@ -30,8 +30,8 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
         self._app_secret = Config.get().fbmessenger.app_secret
         self._api_version = Config.get().fbmessenger.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
-        if not all([self._access_token]):
-            self._log.error("Facebook Messenger configuration is incomplete. Please set access_token.")
+        if not all([self._access_token, self._verify_token]):
+            self._log.error("Facebook Messenger configuration is incomplete. Please set access_token and verify_token.")
             raise ValueError("Incomplete Facebook Messenger configuration.")
 
     def get_router(self) -> APIRouter:
@@ -88,18 +88,17 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
         :param request: FastAPI Request object
         :return: Success response
         """
-        body = await request.json()
-        self._log.debug(f"Received Messenger webhook: {body}")
-
         # Verify request signature if app secret is configured
         if self._app_secret:
             signature = request.headers.get("x-hub-signature-256", "")
             if not self._verify_signature(await request.body(), signature):
                 self._log.warning("Invalid request signature")
                 raise HTTPException(status_code=403, detail="Invalid signature")
-
+        
         # Process the webhook payload
-        try:
+        try:    
+            body = await request.json()
+            self._log.debug(f"Received Messenger webhook: {body}")
             if body.get("object") == "page":
                 for entry in body.get("entry", []):
                     for messaging_event in entry.get("messaging", []):
@@ -114,11 +113,10 @@ class AgentFBMessengerRequestHandler(RESTRequestHandler):
                         elif "read" in messaging_event:
                             # Message read receipt
                             self._log.debug(f"Message read receipt: {messaging_event['read']}")
-
-            return {"status": "ok"}
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
-            return {"status": "error", "message": str(e)}
+            
+        return {"status": "ok"} # always return 200 OK to Facebook to avoid retries with erroneous messages
 
     def _verify_signature(self, payload: bytes, signature: str) -> bool:
         """

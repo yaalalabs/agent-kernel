@@ -156,7 +156,7 @@ Optionally configure your agent and API settings in `config.yaml`:
 ```yaml
 fbmessenger:
   agent: "customer_service"  # Which agent handles Messenger messages
-  api_version: "v21.0"  # Facebook Graph API version
+  api_version: "v21.0"  # Facebook Graph API version. 24 is the default. Only set if you want a different version
 ```
 
 **Security Note:** Never store tokens or secrets in configuration files. Always use environment variables for sensitive credentials.
@@ -194,7 +194,7 @@ Once your webhook is configured:
 Extend the handler to add custom logic, commands, or preprocessing:
 
 ```python
-from agentkernel.integrations.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
 
 class CustomMessengerHandler(AgentFBMessengerRequestHandler):
     async def _handle_message(self, messaging_event: dict):
@@ -261,7 +261,7 @@ if __name__ == "__main__":
 Route different types of conversations to specialized agents:
 
 ```python
-from agentkernel.integrations.fbmessenger import AgentFBMessengerRequestHandler
+from agentkernel.fbmessenger import AgentFBMessengerRequestHandler
 
 # Create specialized agents
 sales_agent = OpenAIAgent(
