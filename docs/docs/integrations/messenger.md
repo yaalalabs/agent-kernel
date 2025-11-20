@@ -127,7 +127,7 @@ Here's a complete example to get your Messenger bot running:
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.messenger import AgentMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 
 # Create your AI agent
 customer_service_agent = OpenAIAgent(
