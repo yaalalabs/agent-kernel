@@ -91,7 +91,7 @@ Health check endpoint.
 
 ## Custom Routes
 
-Agent Kernel REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functioanlity that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
+Agent Kernel REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
 
 ### Option 1
 
