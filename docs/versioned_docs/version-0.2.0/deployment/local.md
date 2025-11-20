@@ -52,7 +52,7 @@ python my_agent.py
 Test with curl:
 
 ```bash
-curl -X POST http://localhost:8000/chat \
+curl -X POST http://localhost:8000/run \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "general",

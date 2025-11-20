@@ -47,7 +47,7 @@ CLI.main()
 Sessions are created per 'session_id' and hence indirectly controlled by the API user:
 
 ```bash
-POST /chat
+POST /run
 {
   "agent": "assistant",
   "message": "Hello!",

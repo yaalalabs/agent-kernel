@@ -77,7 +77,7 @@ sequenceDiagram
     participant Session
     participant Storage
     
-    User->>API: POST /chat
+    User->>API: POST /run
     API->>Runtime: get_agent("assistant")
     Runtime-->>API: Agent instance
     API->>Runtime: get_session("user-123")
