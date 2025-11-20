@@ -29,7 +29,7 @@ Please follow the steps in the [Messenger Platform Getting Started Guide](https:
    - Link your page to the app in Messenger Settings
 
 3. **Get Your Credentials**
-   - **Page Access Token**:  Generate a token in App > Left side panel > Select 'Use cases' > Select 'Engage with customers on messenger from Meta' > Select 'Customise'
+   - **Page Access Token**:  App > Left side panel > Select 'Use cases' > Select 'Engage with customers on messenger from Meta' > Select 'Customise'
           - Click on 'Messenger API settings' > Select "Generate Access Tokens" and do the needful
 
    - **App Secret**: [Optional but recommended for security]. App > App Setting > Basic
@@ -48,11 +48,16 @@ Please follow the steps in the [Messenger Platform Getting Started Guide](https:
      - `message_reads` - For read receipts (optional)
 
 5. **Subscribe Your Page**
-   - After webhook verification, subscribe your page to receive events. To do that go back to "Generate Access Token" > "Webhook Subcription"
-    - Subscribe to these webhook fields:
-     - `messages` - To receive messages
-     - `messaging_optins` - To receive messages
-     - `messaging_postbacks` - To handle button clicks
+   * After webhook verification, subscribe your page to receive events. To do that go back to "Generate Access Token" > "Webhook Subcription"
+    * Subscribe to these webhook fields:
+      * `messages` - To receive messages
+      * `messaging_optins` - To receive messages
+      * `messaging_postbacks` - To handle button clicks
+
+6. **Testing**
+  * See the  Testing steps at the bottom
+  * You need to get the approval for the FB page to enable message flow from the page to the Agent.
+    * From 'Messenger API settings' > 'Complete App Review' section > Select 'Request Permission'
 
 ### Required Environment Variables
 
@@ -96,7 +101,7 @@ if __name__ == "__main__":
 ```yaml
 fbmessenger:
   agent: "general"  # Name of the agent to handle Messenger messages
-  api_version: "v21.0"  # Optional, defaults to v21.0
+  api_version: "v21.0"  # Optional, defaults to v24.0
 ```
 It is strongly recommended not to keep secrets and keys in the config file. Set them as environment variables.
 
@@ -142,19 +147,12 @@ ssh -p443 -R0:localhost:8000 a.pinggy.io
 Update your Facebook webhook URL with the tunnel URL.
 
 ### Testing Steps
+This assumes that you have successfully verified the Webhook URL and correct subscriptions are enabled.
 
-1. Start your local server
-2. Set up the tunnel
-3. Configure Facebook webhook with tunnel URL
-4. Send a test message to your Facebook Page
-5. Check logs for request/response flow
-
-### Test from Facebook
-
-You can also test directly from the Facebook Developer Portal:
-1. Go to Messenger > Settings > Webhooks
-2. Use the "Test" button to send test events
-3. Review the response in real-time
+1. App > Left side panel > Select 'Use cases' > Select 'Engage with customers on messenger from Meta' > Select 'Customise'
+          - Click on 'Messenger API settings' > Select "API integration helper"
+2. In the API integration helper, insert your page access token and the page will automatically get selected.
+3. From there select a recipient, insert the test message and click on "Send message"
 
 ## Advanced Usage
 
