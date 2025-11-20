@@ -253,7 +253,7 @@ Just send any message to chat with me!"""
 # Use your custom handler
 if __name__ == "__main__":
     handler = CustomMessengerHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([handler])
 ```
 
 ### Multi-Agent Setup
