@@ -70,7 +70,7 @@ const sidebars = {
         'integrations/overview',
         'integrations/slack',
         'integrations/whatsapp',
-        'integrations/facebook-messenger',
+        'integrations/messenger',
       ],
     },
     {

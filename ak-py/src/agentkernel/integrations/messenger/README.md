@@ -91,7 +91,7 @@ OpenAIModule([general_agent])
 
 if __name__ == "__main__":
     handler = AgentMessengerRequestHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([handler])
 ```
 
 ## Configuration Options

@@ -1,4 +1,4 @@
-# Facebook Messenger Integration
+# Messenger Integration
 
 Deploy your Agent Kernel agents as Facebook Messenger bots that can respond to messages in real-time. This integration connects your AI agents directly to Facebook Messenger, enabling natural conversations with users through one of the world's most popular messaging platforms.
 
@@ -146,7 +146,7 @@ OpenAIModule([customer_service_agent])
 # Start the server with Messenger integration
 if __name__ == "__main__":
     handler = AgentMessengerRequestHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([handler])
 ```
 
 ### Configuration File
