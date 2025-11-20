@@ -179,9 +179,9 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
             # Select and run agent
             service.select(session_id=session_id, name=self._messenger_agent)
             if not service.agent:
-                self._log.warning(f"No agent available for name: {self._messenger_agent} (session_id: {session_id})")  
+                self._log.warning(f"No agent available for name: {self._messenger_agent} (session_id: {session_id})")
                 await self._send_message(sender_id, "Sorry, no agent is available to handle your request.")
-                await self._send_typing_indicator(sender_id, False) 
+                await self._send_typing_indicator(sender_id, False)
                 return
 
             # Run the agent

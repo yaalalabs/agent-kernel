@@ -29,7 +29,7 @@ Create a `.env` file or export these variables:
 export AK_MESSENGER__VERIFY_TOKEN="your_secure_verify_token"
 export AK_MESSENGER__ACCESS_TOKEN="your_page_access_token"
 export AK_MESSENGER__APP_SECRET="your_app_secret"
-export AK_MESSENGER__API_VERSION="v21.0"  # Optional
+export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only change if you want to move to a different version
 
 # OpenAI API Key for the agent
 export OPENAI_API_KEY="your_openai_api_key"
