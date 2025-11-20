@@ -126,7 +126,7 @@ Add the default Agent REST API handler
 class CustomRESTRequestHandler(AgentRESTRequestHandler):
 
     def __init__(self):
-        super.__init()
+        super().__init__()
 
 
     def get_router(self) -> APIRouter:
