@@ -32,6 +32,8 @@ lint-check:
 	exit $$EXIT_CODE
 
 lint-examples:
+	@echo "Building ak-py to ensure dependencies are installed..."
+	cd ak-py && ./build.sh
 	@echo "Formatting examples..."
 	@for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
 		echo "Processing $$dir..."; \
@@ -44,6 +46,8 @@ lint-examples:
 	done
 
 lint-examples-check:
+	@echo "Building ak-py to ensure dependencies are installed..."
+	cd ak-py && ./build.sh
 	@echo "Checking examples formatting..."
 	@EXIT_CODE=0; \
 	for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
