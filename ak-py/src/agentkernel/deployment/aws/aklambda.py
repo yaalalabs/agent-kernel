@@ -4,7 +4,7 @@ import logging
 import traceback
 from typing import Any, Dict
 
-from ..core import AgentService
+from ...core import AgentService
 
 logging.basicConfig(
     level=logging.DEBUG,

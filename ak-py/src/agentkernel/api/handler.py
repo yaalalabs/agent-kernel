@@ -1,13 +1,36 @@
 import logging
 import traceback
+from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..api.rest_request_handler import RESTRequestHandler
 from ..core import AgentService, GlobalRuntime
+
+
+class RESTRequestHandler(ABC):
+    @abstractmethod
+    def get_router(self) -> APIRouter:
+        """
+        Returns the APIRouter instance which has configured routes
+        E.g.:
+        - GET /health: Health check
+        - GET /agents: List available agents
+
+        router = APIRouter()
+
+        @router.get("/health")
+        def health():
+            return {"status": "ok"}
+
+        @router.get("/agents")
+        def list_agents():
+            return {"agents": list(GlobalRuntime.instance().agents().keys())}
+
+        """
+        pass
 
 
 class AgentRESTRequestHandler(RESTRequestHandler):

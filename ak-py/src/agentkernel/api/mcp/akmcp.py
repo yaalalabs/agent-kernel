@@ -4,8 +4,8 @@ from typing import Any
 from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
 
-from ..core import Agent, AgentService, GlobalRuntime
-from ..core.config import AKConfig
+from ...core import Agent, AgentService, GlobalRuntime
+from ...core.config import AKConfig
 
 
 class MCP:
