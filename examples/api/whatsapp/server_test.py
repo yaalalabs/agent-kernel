@@ -28,6 +28,7 @@ async def http_client():
     my_env = os.environ.copy()
     my_env["AK_WHATSAPP__ACCESS_TOKEN"] = "EAAR7B1enri8BPw70fXu5QVkD1wSfSZCjQBgWpSYVxt3"
     my_env["AK_WHATSAPP__PHONE_NUMBER_ID"] = "123456789012345"
+    my_env["AK_WHATSAPP__VERIFY_TOKEN"] = "123456789012345"
     proc = subprocess.Popen(
         ["python3", "server.py"],
         stdout=sys.stdout,
