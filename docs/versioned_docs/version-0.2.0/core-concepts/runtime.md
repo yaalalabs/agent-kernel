@@ -207,7 +207,7 @@ runtime.register_agent(custom_agent)
 
 ```python
 # GET /agents - list all agents
-# POST /chat - execute agent
+# POST /run - execute agent
 ```
 
 ## Best Practices

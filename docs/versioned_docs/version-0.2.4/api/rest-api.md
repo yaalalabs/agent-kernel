@@ -23,7 +23,7 @@ python my_agent.py
 
 ## Endpoints
 
-### POST /chat
+### POST /run
 
 Execute an agent with a message.
 
@@ -128,10 +128,6 @@ if __name__ == "__main__":
 ## Streaming
 
 Support for streaming responses will be available soon
-
-```python
-POST /chat/stream
-```
 
 ## Best Practices
 

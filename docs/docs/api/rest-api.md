@@ -23,7 +23,7 @@ python my_agent.py
 
 ## Endpoints
 
-### POST /chat
+### POST /run
 
 Execute an agent with a message.
 
@@ -32,7 +32,7 @@ Execute an agent with a message.
 ```json
 {
   "agent": "assistant",
-  "message": "What is 2 + 2?",
+  "prompt": "What is 2 + 2?",
   "session_id": "user-123"
 }
 ```
@@ -41,8 +41,7 @@ Execute an agent with a message.
 
 ```json
 {
-  "response": "2 + 2 equals 4.",
-  "agent": "assistant",
+  "result": "2 + 2 equals 4.",
   "session_id": "user-123"
 }
 ```
@@ -67,8 +66,7 @@ Health check endpoint.
 
 ```json
 {
-  "status": "healthy",
-  "version": "0.1.2b17"
+  "status": "ok"
 }
 ```
 
@@ -82,26 +80,22 @@ Health check endpoint.
 }
 ```
 
-**404 Not Found:**
-
-```json
-{
-  "error": "Agent not found: nonexistent"
-}
-```
-
 **500 Internal Server Error:**
 
 ```json
 {
   "error": "Agent execution failed",
-  "details": "Error details..."
+  "session_id": "session-x"
 }
 ```
 
 ## Custom Routes
 
-Agent Kernel REST API allows the users to add custom routes to the existing REST server. This is a support functioanlity that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
+Agent Kernel REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
+
+### Option 1
+
+Add a route directly
 
 ```python
 from agentkernel.api import RESTAPI
@@ -124,14 +118,35 @@ if __name__ == "__main__":
     RESTAPI.run()
 ```
 
+### Option 2
+
+Add the default Agent REST API handler
+
+```python
+class CustomRESTRequestHandler(AgentRESTRequestHandler):
+
+    def __init__(self):
+        super().__init__()
+
+
+    def get_router(self) -> APIRouter:
+        router = super().get_router()
+
+        @router.get("/custom")
+        def custom():
+            return custom_request_handler()
+
+        return router
+
+if __name__ == "__main__":
+    RESTAPI.run(handler=CustomRESTRequestHandler())
+```
+
 
 ## Streaming
 
 Support for streaming responses will be available soon
 
-```python
-POST /chat/stream
-```
 
 ## Best Practices
 
