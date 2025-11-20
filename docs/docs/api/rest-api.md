@@ -134,7 +134,7 @@ class CustomRESTRequestHandler(AgentRESTRequestHandler):
 
         @router.get("/custom")
         def custom():
-            return cutom_request_handler()
+            return custom_request_handler()
 
         return router
 
