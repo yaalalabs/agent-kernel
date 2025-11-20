@@ -540,8 +540,8 @@ async def setup_persistent_menu(self):
 
 Complete working examples with different configurations:
 
-- **Basic Example**: `examples/api/fbmessenger/server.py`
-- **Custom Handler**: `examples/api/fbmessenger/example_custom_handler.py`
+- **Basic Example**: `examples/api/messenger/server.py`
+- **Custom Handler**: `examples/api/messenger/example_custom_handler.py`
 
 ## Additional Resources
 
