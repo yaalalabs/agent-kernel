@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
 ### Option 2
 
-Add a the default Agent REST API handler
+Add the default Agent REST API handler
 
 ```python
 class CustomRESTRequestHandler(AgentRESTRequestHandler):
