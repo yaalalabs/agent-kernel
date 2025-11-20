@@ -96,7 +96,7 @@ Here's a simple example of setting up a WhatsApp integration:
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -141,7 +141,7 @@ whatsapp:
 For advanced WhatsApp integrations, you can extend the base handler:
 
 ```python
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
     async def _handle_message(self, message: dict, value: dict):

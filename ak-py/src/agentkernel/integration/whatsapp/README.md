@@ -56,7 +56,7 @@ The handler automatically responds to WhatsApp's webhook verification challenge 
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.integration.whatsapp import AgentWhatsAppRequestHandler
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -139,13 +139,14 @@ Update your WhatsApp webhook URL with the tunnel URL.
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.integration.whatsapp import AgentWhatsAppRequestHandler
+
 
 class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
     async def _handle_message(self, message: dict, value: dict):
         # Add custom preprocessing
         message_text = message.get("text", {}).get("body", "")
-        
+
         # Custom logic here
         if message_text.startswith("/help"):
             await self._send_message(
@@ -154,7 +155,7 @@ class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
                 message["id"]
             )
             return
-        
+
         # Call parent handler
         await super()._handle_message(message, value)
 ```

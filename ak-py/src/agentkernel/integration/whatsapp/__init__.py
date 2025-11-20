@@ -1,5 +1,5 @@
 """
-Agent Kernel Integrations with Whatsapp
+Agent Kernel Integration with WhatsApp
 
 This package contains the Agent Kernel integration implementations for Whats App chats.
 """
