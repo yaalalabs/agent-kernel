@@ -36,7 +36,9 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         if not all([self._access_token, self._phone_number_id, self._verify_token]):
-            self._log.error("WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token.")
+            self._log.error(
+                "WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token."
+            )
             raise ValueError("Incomplete WhatsApp configuration.")
 
     def get_router(self) -> APIRouter:
@@ -119,11 +121,10 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                             for status in value["statuses"]:
                                 self._log.debug(f"Message status update: {status}")
 
-
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
-        
-        return {"status": "ok"} # always reply with 200 to avoid automatic retries with erroneous messages
+
+        return {"status": "ok"}  # always reply with 200 to avoid automatic retries with erroneous messages
 
     def _verify_signature(self, payload: bytes, signature: str) -> bool:
         """

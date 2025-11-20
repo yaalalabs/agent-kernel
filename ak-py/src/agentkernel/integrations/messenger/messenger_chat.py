@@ -94,9 +94,9 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
             if not self._verify_signature(await request.body(), signature):
                 self._log.warning("Invalid request signature")
                 raise HTTPException(status_code=403, detail="Invalid signature")
-        
+
         # Process the webhook payload
-        try:    
+        try:
             body = await request.json()
             self._log.debug(f"Received Messenger webhook: {body}")
             if body.get("object") == "page":
@@ -115,8 +115,8 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
                             self._log.debug(f"Message read receipt: {messaging_event['read']}")
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
-            
-        return {"status": "ok"} # always return 200 OK to Facebook to avoid retries with erroneous messages
+
+        return {"status": "ok"}  # always return 200 OK to Facebook to avoid retries with erroneous messages
 
     def _verify_signature(self, payload: bytes, signature: str) -> bool:
         """
