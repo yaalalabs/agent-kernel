@@ -56,7 +56,7 @@ The handler automatically responds to WhatsApp's webhook verification challenge 
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integration.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 # Create your agent
 general_agent = OpenAIAgent(
