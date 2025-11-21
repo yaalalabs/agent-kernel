@@ -17,8 +17,9 @@ import {
   MdCode,
   MdConstruction
 } from 'react-icons/md';
-import { FaGithub, FaDiscord, FaPython } from 'react-icons/fa';
-import { SiTerraform } from 'react-icons/si';
+import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
+import { SiTerraform, SiGmail } from 'react-icons/si';
+import { FaFacebookMessenger } from 'react-icons/fa6';
 
 function HomepageHeader() {
   const { siteConfig } = useDocusaurusContext();
@@ -121,7 +122,7 @@ function IntegrationsSection() {
     },
     {
       name: 'LangGraph',
-      logo: '/img/integrations/langgraph.svg',
+      logo: '/img/integrations/langgraph.png',
       link: '/docs/frameworks/langgraph',
     },
     {
@@ -202,6 +203,137 @@ function IntegrationsSection() {
                 </Link>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MessagingIntegrationsSection() {
+  const activeIntegrations = [
+    {
+      name: 'Slack',
+      icon: <FaSlack />,
+      description: 'Build AI agents for Slack workspaces',
+      status: 'active',
+      color: '#4A154B',
+      link: '/docs/integrations/slack',
+    },
+    {
+      name: 'WhatsApp',
+      icon: <FaWhatsapp />,
+      description: 'Deploy agents on WhatsApp Business',
+      status: 'active',
+      color: '#25D366',
+      link: '/docs/integrations/whatsapp',
+    },
+    {
+      name: 'Messenger',
+      icon: <FaFacebookMessenger />,
+      description: 'Integrate with Facebook Messenger',
+      status: 'active',
+      color: '#0084FF',
+      link: '/docs/integrations/messenger',
+    },
+  ];
+
+  const comingSoonIntegrations = [
+    {
+      name: 'Instagram',
+      icon: <FaInstagram />,
+      description: 'Instagram messaging integration',
+      status: 'coming-soon',
+      color: '#E4405F',
+    },
+    {
+      name: 'Gmail',
+      icon: <SiGmail />,
+      description: 'Email conversation handling with Gmail',
+      status: 'coming-soon',
+      color: '#EA4335',
+    },
+    {
+      name: 'Telegram',
+      icon: <FaTelegram />,
+      description: 'Build Telegram bots with agents',
+      status: 'coming-soon',
+      color: '#0088CC',
+    },
+  ];
+
+  return (
+    <section className={styles.messagingIntegrationsSection}>
+      <div className="container">
+        <div className={styles.integrationsHeader}>
+          <h2 className={styles.integrationsSectionTitle}>Messaging Platform Integrations</h2>
+          <p className={styles.integrationsSectionSubtitle}>
+            Connect your AI agents to popular messaging platforms and reach your users where they are
+          </p>
+        </div>
+
+        <div className={styles.messagingIntegrationsContainer}>
+          <div className={styles.messagingIntegrationsGrid}>
+            {/* First set of cards */}
+            {activeIntegrations.map((platform, idx) => (
+              <Link
+                key={`active-1-${idx}`}
+                to={platform.link}
+                className={styles.messagingIntegrationCard}>
+                <div 
+                  className={styles.messagingIntegrationIcon}
+                  style={{ color: platform.color }}>
+                  {platform.icon}
+                </div>
+                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
+                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
+                <span className={styles.integrationStatusBadge}>Available</span>
+              </Link>
+            ))}
+            {comingSoonIntegrations.map((platform, idx) => (
+              <div
+                key={`coming-1-${idx}`}
+                className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
+                <div 
+                  className={styles.messagingIntegrationIcon}
+                  style={{ color: platform.color }}>
+                  {platform.icon}
+                </div>
+                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
+                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
+                <span className={`${styles.integrationStatusBadge} ${styles.comingSoonBadge}`}>Coming Soon</span>
+              </div>
+            ))}
+            {/* Duplicate set for seamless loop */}
+            {activeIntegrations.map((platform, idx) => (
+              <Link
+                key={`active-2-${idx}`}
+                to={platform.link}
+                className={styles.messagingIntegrationCard}>
+                <div 
+                  className={styles.messagingIntegrationIcon}
+                  style={{ color: platform.color }}>
+                  {platform.icon}
+                </div>
+                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
+                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
+                <span className={styles.integrationStatusBadge}>Available</span>
+              </Link>
+            ))}
+            {comingSoonIntegrations.map((platform, idx) => (
+              <div
+                key={`coming-2-${idx}`}
+                className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
+                <div 
+                  className={styles.messagingIntegrationIcon}
+                  style={{ color: platform.color }}>
+                  {platform.icon}
+                </div>
+                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
+                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
+                <span className={`${styles.integrationStatusBadge} ${styles.comingSoonBadge}`}>Coming Soon</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -325,6 +457,7 @@ export default function Home() {
       <main>
         <NavigationSection />
         <IntegrationsSection />
+        <MessagingIntegrationsSection />
         <FeaturesSection />
         <CommunitySection />
       </main>
