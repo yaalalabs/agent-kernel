@@ -5,7 +5,7 @@ description = "Demo of CrewAI based agents running in Agent Kernel on AWS ECS"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[crewai,api]>=0.2.4"
+    "agentkernel[crewai,api]>=0.2.5"
 ]
 
 [dependency-groups]

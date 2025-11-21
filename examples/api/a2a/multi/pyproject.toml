@@ -5,12 +5,12 @@ description = "Demo of CrewAI and OpenAI Agents SDK based agents running in Agen
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,crewai,openai,a2a]>=0.2.4",
+    "agentkernel[cli,crewai,openai,a2a]>=0.2.5",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.4",
+    "agentkernel[test]>=0.2.5",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
