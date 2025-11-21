@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -41,7 +41,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.4"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "deprecated" },
@@ -71,9 +71,6 @@ crewai = [
     { name = "openinference-instrumentation-crewai" },
     { name = "openinference-instrumentation-litellm" },
 ]
-messenger = [
-    { name = "httpx" },
-]
 langfuse = [
     { name = "langfuse" },
     { name = "nest-asyncio" },
@@ -86,6 +83,9 @@ langgraph = [
 ]
 mcp = [
     { name = "fastmcp" },
+]
+messenger = [
+    { name = "httpx" },
 ]
 openai = [
     { name = "openai-agents" },
