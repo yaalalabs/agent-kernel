@@ -26,9 +26,8 @@ class APITestClient:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
     my_env = os.environ.copy()
-    my_env["AK_WHATSAPP__ACCESS_TOKEN"] = "EAAR7B1enri8BPw70fXu5QVkD1wSfSZCjQBgWpSYVxt3"
-    my_env["AK_WHATSAPP__PHONE_NUMBER_ID"] = "123456789012345"
-    my_env["AK_WHATSAPP__VERIFY_TOKEN"] = "123456789012345"
+    my_env["AK_MESSENGER__ACCESS_TOKEN"] = "EAABsbCS1iHgBO6YjZCiVnqhNGZBfvDKZCw"
+    my_env["AK_MESSENGER__VERIFY_TOKEN"] = "test_verify_token_12345"
     proc = subprocess.Popen(
         ["python3", "server.py"],
         stdout=sys.stdout,
@@ -44,9 +43,9 @@ async def http_client():
 
 
 @pytest.mark.asyncio
-async def test_whatsapp_agent(http_client):
-    print("test_whatsapp_agent")
+async def test_messenger_agent(http_client):
+    print("test_messenger_agent")
     response = await http_client.send("/health", method="get")
 
     assert response == {"status": "ok"}
-    # TODO: Write proper tests for WhatsApp webhook events with proper mocks
+    # TODO: Write proper tests for Messenger webhook events with proper mocks

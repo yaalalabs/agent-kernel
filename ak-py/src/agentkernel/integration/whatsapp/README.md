@@ -40,7 +40,7 @@ Please follow the steps in here ( https://developers.facebook.com/docs/whatsapp/
 ### Required Environment Variables
 
 ```bash
-export AK_WHATSAPP__VERIFY_TOKEN="your_verify_token" # Optional, used when verification of the webhook URL is required
+export AK_WHATSAPP__VERIFY_TOKEN="your_verify_token" # Used when verification of the webhook URL is required
 export AK_WHATSAPP__ACCESS_TOKEN="your_permanent_access_token"
 export AK_WHATSAPP__APP_SECRET="your_app_secret"  # Optional.
 export AK_WHATSAPP__PHONE_NUMBER_ID="your test or business whats app phone number"
@@ -139,8 +139,7 @@ Update your WhatsApp webhook URL with the tunnel URL.
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.integration.whatsapp import AgentWhatsAppRequestHandler
-
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
     async def _handle_message(self, message: dict, value: dict):
