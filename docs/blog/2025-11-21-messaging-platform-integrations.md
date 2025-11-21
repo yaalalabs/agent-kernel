@@ -1,5 +1,5 @@
 ---
-slug: /blog/messaging-platform-integrations
+slug: /messaging-platform-integrations
 title: "Connect Everywhere: Agent Kernel Now Supports Slack, WhatsApp, and Messenger"
 authors: [yaala]
 tags: [agent-kernel, integrations, slack, whatsapp, messenger, messaging, chatbots, ai-agents]
