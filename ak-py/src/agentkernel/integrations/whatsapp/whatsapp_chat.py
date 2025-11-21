@@ -35,8 +35,10 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._phone_number_id = Config.get().whatsapp.phone_number_id
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
-        if not all([self._access_token, self._phone_number_id]):
-            self._log.error("WhatsApp configuration is incomplete. Please set access_token and phone_number_id.")
+        if not all([self._access_token, self._phone_number_id, self._verify_token]):
+            self._log.error(
+                "WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token."
+            )
             raise ValueError("Incomplete WhatsApp configuration.")
 
     def get_router(self) -> APIRouter:
@@ -93,9 +95,6 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         :param request: FastAPI Request object
         :return: Success response
         """
-        body = await request.json()
-        self._log.debug(f"Received WhatsApp webhook: {body}")
-
         # Verify request signature if app secret is configured
         if self._app_secret:
             signature = request.headers.get("x-hub-signature-256", "")
@@ -105,6 +104,8 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
 
         # Process the webhook payload
         try:
+            body = await request.json()
+            self._log.debug(f"Received WhatsApp webhook: {body}")
             if body.get("object") == "whatsapp_business_account":
                 for entry in body.get("entry", []):
                     for change in entry.get("changes", []):
@@ -120,10 +121,10 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                             for status in value["statuses"]:
                                 self._log.debug(f"Message status update: {status}")
 
-            return {"status": "ok"}
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
-            return {"status": "error", "message": str(e)}
+
+        return {"status": "ok"}  # always reply with 200 to avoid automatic retries with erroneous messages
 
     def _verify_signature(self, payload: bytes, signature: str) -> bool:
         """

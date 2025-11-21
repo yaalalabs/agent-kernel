@@ -141,7 +141,7 @@ whatsapp:
 For advanced WhatsApp integrations, you can extend the base handler:
 
 ```python
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
     async def _handle_message(self, message: dict, value: dict):
