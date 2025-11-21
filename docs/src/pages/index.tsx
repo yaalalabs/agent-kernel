@@ -249,7 +249,7 @@ function MessagingIntegrationsSection() {
     {
       name: 'Gmail',
       icon: <SiGmail />,
-      description: 'Email automation with Gmail',
+      description: 'Email conversation handling with Gmail',
       status: 'coming-soon',
       color: '#EA4335',
     },
