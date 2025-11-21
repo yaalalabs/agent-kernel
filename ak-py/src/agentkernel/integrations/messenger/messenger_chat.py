@@ -153,22 +153,40 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
         if not message_text:
             self._log.warning("Message has no text content")
             return
-            # TODO: Optionally handle attachments
-            # if "attachments" in message:
-            #     attachments = message["attachments"]
-            #     attachment_types = [att.get("type") for att in attachments]
-            #     self._log.info(f"Received attachments: {attachment_types}")
-            #     message_text = f"[Received {', '.join(attachment_types)}]"
-            # else:
-            #     self._log.warning("Message has no text or attachments")
-            #     return
 
         self._log.debug(f"Processing message {message_id} from {sender_id}: {message_text}")
+        await self._process_agent_message(sender_id, message_text)
 
-        # Use sender_id as session_id to maintain conversation context
-        session_id = sender_id
+    async def _handle_postback(self, messaging_event: dict):
+        """
+        Handle a postback event (button clicks, quick replies, etc.).
 
+        :param messaging_event: Messaging event object from webhook
+        """
+        sender_id = messaging_event.get("sender", {}).get("id")
+        postback = messaging_event.get("postback", {})
+        payload = postback.get("payload")
+        title = postback.get("title")
+
+        if not sender_id:
+            self._log.warning("Postback missing sender id")
+            return
+
+        self._log.debug(f"Processing postback from {sender_id}: {title} - {payload}")
+
+        # Treat postback title as message text
+        message_text = title or payload
+
+        if not message_text:
+            self._log.warning("Postback has no title or payload")
+            return
+
+        self._log.debug(f"Processing postback from {sender_id}: {message_text}")
+        await self._process_agent_message(sender_id, message_text)
+
+    async def _process_agent_message(self, sender_id: str, message_text: str):
         service = AgentService()
+        session_id = sender_id  # Use sender_id as session_id to maintain conversation context
         try:
             # Mark message as seen
             await self._mark_seen(sender_id)
@@ -200,66 +218,6 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
 
         except Exception as e:
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
-            await self._send_typing_indicator(sender_id, False)
-            await self._send_message(sender_id, "Sorry, there was an error processing your request.")
-
-    async def _handle_postback(self, messaging_event: dict):
-        """
-        Handle a postback event (button clicks, quick replies, etc.).
-
-        :param messaging_event: Messaging event object from webhook
-        """
-        sender_id = messaging_event.get("sender", {}).get("id")
-        postback = messaging_event.get("postback", {})
-        payload = postback.get("payload")
-        title = postback.get("title")
-
-        if not sender_id:
-            self._log.warning("Postback missing sender id")
-            return
-
-        self._log.debug(f"Processing postback from {sender_id}: {title} - {payload}")
-
-        # Treat postback title as message text
-        message_text = title or payload
-
-        if not message_text:
-            self._log.warning("Postback has no title or payload")
-            return
-
-        # Use sender_id as session_id to maintain conversation context
-        session_id = sender_id
-
-        service = AgentService()
-        try:
-            # Mark message as seen
-            await self._mark_seen(sender_id)
-
-            # Send typing indicator
-            await self._send_typing_indicator(sender_id, True)
-
-            # Select and run agent
-            service.select(session_id=session_id, name=self._messenger_agent)
-            if not service.agent:
-                await self._send_message(sender_id, "Sorry, no agent is available to handle your request.")
-                return
-
-            # Run the agent with the postback text
-            result = await service.run(message_text)
-
-            if hasattr(result, "raw"):
-                response_text = str(result.raw)
-            else:
-                response_text = str(result)
-
-            self._log.debug(f"Agent response to postback: {response_text}")
-
-            # Turn off typing indicator and send the response
-            await self._send_typing_indicator(sender_id, False)
-            await self._send_message(sender_id, response_text)
-
-        except Exception as e:
-            self._log.error(f"Error handling postback: {e}\n{traceback.format_exc()}")
             await self._send_typing_indicator(sender_id, False)
             await self._send_message(sender_id, "Sorry, there was an error processing your request.")
 
