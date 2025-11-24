@@ -9,7 +9,15 @@ Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for buildi
 
 ## What is Agent Kernel?
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffoldings to build, test and deploy your agents ( and mcp tools and A2A) quickly in many deployment configurations. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
+Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffolding to build, test and deploy your agents, mcp tools and A2A quickly in many deployment configurations. The unified execution environment provides the session and memory management seamlessly. 
+
+Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
+
+Its not
+- a substitute for popular Agent frameworks and SDKs like LangGraph and OpenAI 
+- another heavy abstraction that you have to learn
+
+Its a lightweight, simple, intuitive framework to make your life easy.
 
 ```mermaid
 ---
@@ -40,6 +48,11 @@ Build agents using any AI agentic framework and migrate them to Agent Kernel to 
 Agent Kernel provides pre-built execution capabilities:
 - **CLI Testing Environment** for local development
 - **REST API Server** for web integration
+- **Built in popular integrations** for pluggable integrations and ability build custom integrations quickly
+  - Slack
+  - WhatsApp
+  - Messenger
+  - Instagram
 - **AWS Serverless Deployment** for scalable production
 - **AWS Containerized Deployment** for consistent loads
 - **MCP Server** for Model Context Protocol tool publishing
@@ -52,10 +65,17 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 ### Enterprise-Ready Features
 
 - **Session Management**: Built-in conversational state tracking
-- **Memory Management**: Pluggable memory (Redis, in-memory) storage
+- **Memory Management**: Pluggable memory 
+  - In-memory
+  - Redis
+  - DynamoDB
+  - Mem0 [coming soon]
 - **Traceability**: Track and audit all agent operations
+  - LangFuse
+  - OpenLLMetry
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
+- **Governance**: Guard rails and human in the middle capabilities are coming soon 
 
 ## Key Features
 
@@ -94,10 +114,13 @@ flowchart LR
     B -- Local --> C["CLI Testing"]
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- Cloud --> E["AWS Serverless"] & F["AWS Containers"]
-    D -- Integration --> I["Slack"]
+    D -- Integration --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Quick Example
