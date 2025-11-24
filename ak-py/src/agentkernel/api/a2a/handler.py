@@ -7,7 +7,7 @@ from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..a2a.a2a import A2A
+from .a2a import A2A
 
 
 class A2ARESTRequestHandler:

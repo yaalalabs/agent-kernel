@@ -5,10 +5,10 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from ..core import Agent as BaseAgent
-from ..core import Module, Runner, Session
-from ..core.config import AKConfig
-from ..trace import Trace
+from ...core import Agent as BaseAgent
+from ...core import Module, Runner, Session
+from ...core.config import AKConfig
+from ...trace import Trace
 
 FRAMEWORK = "crewai"
 

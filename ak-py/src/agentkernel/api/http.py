@@ -5,9 +5,8 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from ..api.rest_request_handler import RESTRequestHandler
 from ..core.config import AKConfig
-from .agent import AgentRESTRequestHandler
+from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,7 +21,7 @@ class RESTAPI:
     Can run any FastAPI app instance or assemble one from routers.
     """
 
-    _log = logging.getLogger("ak.api.restapi")
+    _log = logging.getLogger("ak.api.http")
     _custom_routers = []
 
     @classmethod
@@ -79,12 +78,12 @@ class RESTAPI:
                 routers.append(handler.get_router())
 
         if AKConfig.get().a2a.enabled:
-            from .a2a import A2ARESTRequestHandler
+            from .a2a.handler import A2ARESTRequestHandler
 
             routers.append(A2ARESTRequestHandler.get_catalog_router())
             routers.extend(A2ARESTRequestHandler.get_agent_routers())
         if AKConfig.get().mcp.enabled:
-            from ..mcp.akmcp import MCP
+            from .mcp.akmcp import MCP
 
             mcp_app = MCP.get_http_app()
             app = cls._create_app(routers=routers, lifespan=mcp_app.lifespan)

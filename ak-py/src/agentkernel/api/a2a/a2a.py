@@ -9,8 +9,8 @@ from a2a.types import AgentCard, InternalError, UnsupportedOperationError
 from a2a.utils import new_agent_text_message
 from a2a.utils.errors import ServerError
 
-from ..core import Agent, AgentService, GlobalRuntime
-from ..core.config import AKConfig
+from ...core import Agent, AgentService, GlobalRuntime
+from ...core.config import AKConfig
 
 
 class A2A:

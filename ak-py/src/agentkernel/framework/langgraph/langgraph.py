@@ -13,12 +13,12 @@ from langgraph.checkpoint.base import (
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from ..core import Agent as BaseAgent
-from ..core import Module as BaseModule
-from ..core import Runner as BaseRunner
-from ..core import Session as BaseSession
-from ..core.config import AKConfig
-from ..trace import Trace
+from ...core import Agent as BaseAgent
+from ...core import Module as BaseModule
+from ...core import Runner as BaseRunner
+from ...core import Session as BaseSession
+from ...core.config import AKConfig
+from ...trace import Trace
 
 FRAMEWORK = "langgraph"
 

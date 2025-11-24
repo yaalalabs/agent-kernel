@@ -96,7 +96,7 @@ Here's a simple example of setting up a WhatsApp integration:
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
 # Create your agent
 general_agent = OpenAIAgent(
