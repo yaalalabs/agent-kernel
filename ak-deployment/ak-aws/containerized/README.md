@@ -58,7 +58,20 @@ module "container_app" {
   
   # API Gateway
   api_version    = "v1"
-  agent_endpoint = "api"
+  api_base_path  = "api"
+  agent_endpoint = "chat"
+  gateway_endpoints = [
+      {
+         path           = "app",
+         method         = "GET",
+         overwrite_path = "/custom/task"
+      },
+      {
+         path           = "data",
+         method         = "POST",
+         overwrite_path = "/app/library/data"
+      }
+   ] 
   
   tags = {
     Environment = "production"
