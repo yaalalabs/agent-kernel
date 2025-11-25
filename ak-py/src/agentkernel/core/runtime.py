@@ -100,7 +100,7 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
-    async def run(self, agent: Agent, session: Session, prompt: Any) -> Any:
+    async def run(self, agent: Agent, session: Session, prompt: Any, additional_context: Any | None = None) -> Any:
         """
         Runs the specified agent with the given prompt.
         :param agent: The agent to run.
@@ -112,7 +112,7 @@ class Runtime:
         original_prompt = prompt
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
-            proceed, modified_prompt = await hook.on_run(session, agent, original_prompt, prompt)
+            proceed, modified_prompt = await hook.on_run(session, agent, original_prompt, prompt, additional_context)
             if not proceed:
                 self._log.debug(f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}'")
                 return modified_prompt

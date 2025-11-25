@@ -91,7 +91,8 @@ class MyPrehook(Prehook):
         session: Session, 
         agent: Agent, 
         original_prompt: str, 
-        prompt: str
+        prompt: str,
+        additional_context: Any | None = None
     ) -> tuple[bool, str]:
         """
         Process the prompt before agent execution.
@@ -101,6 +102,7 @@ class MyPrehook(Prehook):
             agent: The agent that will execute the prompt
             original_prompt: The original unmodified user prompt
             prompt: The current prompt (possibly modified by previous hooks)
+            additional_context: Additional context passed with the prompt
         
         Returns:
             tuple[bool, str]: (proceed, modified_prompt)
@@ -212,7 +214,7 @@ Validate input and block inappropriate content:
 class GuardRailHook(Prehook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "malware"]
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         prompt_lower = prompt.lower()
         
         # Check for blocked content
@@ -239,7 +241,7 @@ class RAGHook(Prehook):
     def __init__(self, knowledge_base):
         self.knowledge_base = knowledge_base
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Search knowledge base for relevant context
         context = self.knowledge_base.search(prompt)
         
@@ -311,7 +313,7 @@ class AnalyticsHook(Prehook):
     def __init__(self, logger):
         self.logger = logger
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Log the interaction
         self.logger.log({
             "session_id": session.id,
@@ -371,7 +373,7 @@ Hooks should not crash - handle errors and return sensible defaults:
 
 ```python
 class RobustRAGHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         try:
             context = self.knowledge_base.search(prompt)
             if context:
@@ -397,7 +399,7 @@ class OptimizedRAGHook(Prehook):
         self.vector_store = vector_store
         self.cache = LRUCache(maxsize=100)  # Cache results
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Check cache first
         cache_key = hash(prompt)
         if cache_key in self.cache:
@@ -423,7 +425,7 @@ class ConfigurableGuardRailHook(Prehook):
         self.blocked_keywords = blocked_keywords or []
         self.max_length = max_length
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Validate based on configuration
         if len(prompt) > self.max_length:
             return False, f"Input too long (max {self.max_length} chars)"
@@ -448,7 +450,7 @@ class AsyncRAGHook(Prehook):
         self.vector_store = vector_store
         self.embeddings_api = embeddings_api
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Perform async operations
         embedding = await self.embeddings_api.embed(prompt)
         results = await self.vector_store.search(embedding, top_k=3)
@@ -484,7 +486,7 @@ from agents import Agent
 
 # Define hooks
 class RAGHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Simulate knowledge base lookup
         context = self._search_knowledge_base(prompt)
         if context:
@@ -502,7 +504,7 @@ class RAGHook(Prehook):
 class GuardRailHook(Prehook):
     BLOCKED = ["hack", "illegal", "malware"]
     
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         for keyword in self.BLOCKED:
             if keyword in prompt.lower():
                 return False, f"Cannot assist with '{keyword}'"
@@ -614,7 +616,8 @@ class Prehook:
         session: Session,
         agent: Agent,
         original_prompt: str,
-        prompt: str
+        prompt: str,
+        additional_context: Any | None = None
     ) -> tuple[bool, str]:
         """
         Args:
@@ -622,6 +625,7 @@ class Prehook:
             agent: Agent that will execute
             original_prompt: Original user prompt
             prompt: Current prompt (possibly modified)
+            additional_context: Additional context passed with the prompt
         
         Returns:
             (proceed: bool, modified_prompt: str)
@@ -723,12 +727,12 @@ return True, modified_prompt
 
 ```python
 # ❌ Wrong: Returns original
-async def on_run(self, session, agent, original_prompt, prompt):
+async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
     enriched = f"Context: {context}\n{prompt}"
     return True, prompt  # Returns original!
 
 # ✅ Correct: Returns modified
-async def on_run(self, session, agent, original_prompt, prompt):
+async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
     enriched = f"Context: {context}\n{prompt}"
     return True, enriched  # Returns modified
 ```
@@ -775,7 +779,7 @@ runtime.register_pre_hooks("agent", [GuardRailHook(), RAGHook()])
 
 ```python
 class AsyncRAGHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Can now use async operations
         context = await self.vector_db.search(prompt)
         return True, self._enrich(prompt, context)
@@ -804,4 +808,4 @@ Execution hooks provide powerful extension points for:
 - Each hook receives modifications from previous hooks
 - Keep hooks focused, fast, and error-resistant
 
-Get started with the [complete working example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai-hooks) to see hooks in action!
+Get started with the [complete working example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks) to see hooks in action!

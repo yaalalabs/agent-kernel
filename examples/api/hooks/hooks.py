@@ -2,6 +2,8 @@
 Hook implementations demonstrating pre-execution hooks for guard rails and RAG simulation.
 """
 
+from typing import Any
+
 from agentkernel.core.base import Agent, Session
 from agentkernel.core.hooks import Prehook
 
@@ -24,7 +26,9 @@ class GuardRailHook(Prehook):
         "virus",
     ]
 
-    async def on_run(self, session: Session, agent: Agent, original_prompt: str, prompt: str) -> tuple[bool, str]:
+    async def on_run(
+        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None = None
+    ) -> tuple[bool, str]:
         """
         Validates the prompt for inappropriate content.
 
@@ -33,6 +37,7 @@ class GuardRailHook(Prehook):
             agent: The agent that will execute the prompt
             original_prompt: The original unmodified prompt
             prompt: The current prompt (possibly modified by previous hooks)
+            additional_context: Additional context passed with the prompt (not used in this hook)
 
         Returns:
             tuple[bool, str]: (proceed, modified_prompt)
@@ -92,7 +97,9 @@ class RAGHook(Prehook):
         ),
     }
 
-    async def on_run(self, session: Session, agent: Agent, original_prompt: str, prompt: str) -> tuple[bool, str]:
+    async def on_run(
+        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None = None
+    ) -> tuple[bool, str]:
         """
         Simulates RAG by searching the knowledge base and injecting relevant context.
 
@@ -101,6 +108,7 @@ class RAGHook(Prehook):
             agent: The agent that will execute the prompt
             original_prompt: The original unmodified prompt
             prompt: The current prompt (possibly modified by previous hooks)
+            additional_context: Additional context that can help with RAG (e.g., user metadata, search filters)
 
         Returns:
             tuple[bool, str]: (True, enriched_prompt) - always proceeds with enriched prompt
