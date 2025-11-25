@@ -61,6 +61,17 @@ variable "gateway_endpoints" {
     overwrite_path = string # backend path override for ALB target, e.g. "/run"
   }))
   default = []
+  validation {
+    condition = alltrue([
+      for ep in var.gateway_endpoints : (
+        length(trim(ep.path)) > 0 &&
+        length(trim(ep.method)) > 0 &&
+        length(trim(ep.overwrite_path)) > 0 &&
+        contains(["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"], upper(ep.method))
+      )
+    ])
+    error_message = "Each gateway_endpoints object must have non-empty 'path', 'method', and 'overwrite_path' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
+  }
 }
 
 variable "tags" {
