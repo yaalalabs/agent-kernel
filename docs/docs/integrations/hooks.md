@@ -23,7 +23,7 @@ sequenceDiagram
     participant PostHook2
     
     User->>Runtime: Send Prompt
-    Runtime->>PreHook1: on_pre_execution()
+    Runtime->>PreHook1: on_run()
     PreHook1->>PreHook2: Modified Prompt
     PreHook2->>Runtime: Validated Prompt
     
@@ -32,7 +32,7 @@ sequenceDiagram
     else Execution Proceeds
         Runtime->>Agent: Execute
         Agent->>Runtime: Reply
-        Runtime->>PostHook1: on_post_execution()
+        Runtime->>PostHook1: on_run()
         PostHook1->>PostHook2: Modified Reply
         PostHook2->>Runtime: Final Reply
         Runtime-->>User: Response
@@ -86,7 +86,7 @@ from agentkernel.core.hooks import Prehook
 from agentkernel.core.base import Session, Agent
 
 class MyPrehook(Prehook):
-    async def on_pre_execution(
+    async def on_run(
         self, 
         session: Session, 
         agent: Agent, 
@@ -125,7 +125,7 @@ from agentkernel.core.hooks import Posthook
 from agentkernel.core.base import Session, Agent
 
 class MyPosthook(Posthook):
-    async def on_post_execution(
+    async def on_run(
         self,
         session: Session,
         input_prompt: str,
@@ -212,7 +212,7 @@ Validate input and block inappropriate content:
 class GuardRailHook(Prehook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "malware"]
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         prompt_lower = prompt.lower()
         
         # Check for blocked content
@@ -239,7 +239,7 @@ class RAGHook(Prehook):
     def __init__(self, knowledge_base):
         self.knowledge_base = knowledge_base
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Search knowledge base for relevant context
         context = self.knowledge_base.search(prompt)
         
@@ -266,7 +266,7 @@ Apply safety filters to agent responses:
 
 ```python
 class ModerationHook(Posthook):
-    async def on_post_execution(self, session, input_prompt, agent, agent_reply):
+    async def on_run(self, session, input_prompt, agent, agent_reply):
         # Check reply for inappropriate content
         if self._contains_sensitive_info(agent_reply):
             return (
@@ -290,7 +290,7 @@ Append legal or compliance disclaimers to responses:
 
 ```python
 class DisclaimerHook(Posthook):
-    async def on_post_execution(self, session, input_prompt, agent, agent_reply):
+    async def on_run(self, session, input_prompt, agent, agent_reply):
         disclaimer = (
             "\n\n---\n"
             "*Disclaimer: This information is for general guidance only "
@@ -311,7 +311,7 @@ class AnalyticsHook(Prehook):
     def __init__(self, logger):
         self.logger = logger
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Log the interaction
         self.logger.log({
             "session_id": session.id,
@@ -371,7 +371,7 @@ Hooks should not crash - handle errors and return sensible defaults:
 
 ```python
 class RobustRAGHook(Prehook):
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         try:
             context = self.knowledge_base.search(prompt)
             if context:
@@ -397,7 +397,7 @@ class OptimizedRAGHook(Prehook):
         self.vector_store = vector_store
         self.cache = LRUCache(maxsize=100)  # Cache results
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Check cache first
         cache_key = hash(prompt)
         if cache_key in self.cache:
@@ -423,7 +423,7 @@ class ConfigurableGuardRailHook(Prehook):
         self.blocked_keywords = blocked_keywords or []
         self.max_length = max_length
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Validate based on configuration
         if len(prompt) > self.max_length:
             return False, f"Input too long (max {self.max_length} chars)"
@@ -448,7 +448,7 @@ class AsyncRAGHook(Prehook):
         self.vector_store = vector_store
         self.embeddings_api = embeddings_api
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Perform async operations
         embedding = await self.embeddings_api.embed(prompt)
         results = await self.vector_store.search(embedding, top_k=3)
@@ -484,7 +484,7 @@ from agents import Agent
 
 # Define hooks
 class RAGHook(Prehook):
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Simulate knowledge base lookup
         context = self._search_knowledge_base(prompt)
         if context:
@@ -502,18 +502,11 @@ class RAGHook(Prehook):
 class GuardRailHook(Prehook):
     BLOCKED = ["hack", "illegal", "malware"]
     
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         for keyword in self.BLOCKED:
             if keyword in prompt.lower():
                 return False, f"Cannot assist with '{keyword}'"
         return True, prompt
-    
-    def name(self):
-        return "GuardRailHook"
-
-class DisclaimerHook(Posthook):
-    async def on_post_execution(self, session, input_prompt, agent, agent_reply):
-        return agent_reply + "\n\n*[AI-generated response]*"
     
     def name(self):
         return "DisclaimerHook"
@@ -616,7 +609,7 @@ async def test_chaining():
 ```python
 class Prehook:
     @abstractmethod
-    async def on_pre_execution(
+    async def on_run(
         self,
         session: Session,
         agent: Agent,
@@ -646,7 +639,7 @@ class Prehook:
 ```python
 class Posthook:
     @abstractmethod
-    async def on_post_execution(
+    async def on_run(
         self,
         session: Session,
         input_prompt: str,
@@ -730,12 +723,12 @@ return True, modified_prompt
 
 ```python
 # ❌ Wrong: Returns original
-async def on_pre_execution(self, session, agent, original_prompt, prompt):
+async def on_run(self, session, agent, original_prompt, prompt):
     enriched = f"Context: {context}\n{prompt}"
     return True, prompt  # Returns original!
 
 # ✅ Correct: Returns modified
-async def on_pre_execution(self, session, agent, original_prompt, prompt):
+async def on_run(self, session, agent, original_prompt, prompt):
     enriched = f"Context: {context}\n{prompt}"
     return True, enriched  # Returns modified
 ```
@@ -782,7 +775,7 @@ runtime.register_pre_hooks("agent", [GuardRailHook(), RAGHook()])
 
 ```python
 class AsyncRAGHook(Prehook):
-    async def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt):
         # Can now use async operations
         context = await self.vector_db.search(prompt)
         return True, self._enrich(prompt, context)

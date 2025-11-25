@@ -12,7 +12,7 @@ Currently, they will get only called for the initial execution of an agent when 
 
 class Prehook(ABC):
     @abstractmethod
-    async def on_pre_execution(
+    async def on_run(
         self, session: Session, agent: Agent, original_prompt: str, prompt: str
     ) -> tuple[bool, str]:
         """
@@ -47,7 +47,7 @@ class Prehook(ABC):
 
 class Posthook(ABC):
     @abstractmethod
-    async def on_post_execution(self, session: Session, input_prompt: str, agent: Agent, agent_reply: str) -> str:
+    async def on_run(self, session: Session, input_prompt: str, agent: Agent, agent_reply: str) -> str:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails

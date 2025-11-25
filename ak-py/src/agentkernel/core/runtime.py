@@ -112,7 +112,7 @@ class Runtime:
         original_prompt = prompt
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
-            proceed, modified_prompt = await hook.on_pre_execution(session, agent, original_prompt, prompt)
+            proceed, modified_prompt = await hook.on_run(session, agent, original_prompt, prompt)
             if not proceed:
                 self._log.debug(f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}'")
                 return modified_prompt
@@ -123,7 +123,7 @@ class Runtime:
 
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
-            reply = await hook.on_post_execution(session, prompt, agent, reply)
+            reply = await hook.on_run(session, prompt, agent, reply)
             self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
 

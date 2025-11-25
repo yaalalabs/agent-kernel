@@ -24,7 +24,7 @@ class GuardRailHook(Prehook):
         "virus",
     ]
 
-    async def on_pre_execution(
+    async def on_run(
         self, session: Session, agent: Agent, original_prompt: str, prompt: str
     ) -> tuple[bool, str]:
         """
@@ -94,7 +94,7 @@ class RAGHook(Prehook):
         ),
     }
 
-    async def on_pre_execution(
+    async def on_run(
         self, session: Session, agent: Agent, original_prompt: str, prompt: str
     ) -> tuple[bool, str]:
         """

@@ -1,6 +1,8 @@
 """
 Direct usage example demonstrating how to use hooks with Agent Kernel.
 
+NOTE: Direct execution via run time is not recommended. This example is for demonstration purposes only.
+
 This script shows the minimal setup required to use hooks without the REST API,
 useful for understanding the core concepts and for CLI-based applications.
 """
