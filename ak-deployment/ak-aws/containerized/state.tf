@@ -11,6 +11,26 @@ locals {
   prefix         = "${var.product_alias}-${var.env_alias}-${var.module_name}"
   service_name   = "${local.prefix}-service"
   container_name = "${local.prefix}-app"
+
+  api_base_segment = try(trim(var.api_base_path, "/"), "")
+  default_endpoint_path = "/${join("/", compact([local.api_base_segment, var.api_version, var.agent_endpoint]))}"
+  default_gateway_endpoint = {
+    path           = local.default_endpoint_path
+    method         = "POST"
+    overwrite_path = "/run"
+  }
+  default_gateway_map = {
+    "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
+  }
+  user_gateway_map = {
+    for ep in var.gateway_endpoints :
+    (
+      lower(try(ep["method"], "")) == "$default"
+      ? "$default"
+      : "${upper(try(ep["method"], "ANY"))} /${join("/", compact([local.api_base_segment, var.api_version, trim(try(ep["path"], ""), "/")]))}"
+    ) => ep
+  }
+  gateway_endpoints_map = merge(local.default_gateway_map, local.user_gateway_map)
 }
 
 module "vpc" {

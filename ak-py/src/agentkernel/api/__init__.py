@@ -11,5 +11,5 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .handler import RESTRequestHandler
+from .handler import AgentRESTRequestHandler, RESTRequestHandler
 from .http import RESTAPI
