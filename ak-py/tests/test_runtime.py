@@ -3,8 +3,8 @@ import pytest
 from agentkernel import Agent, Runner
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.runtime import Runtime
-from agentkernel.core.sessions.in_memory import InMemorySessionStore
-from agentkernel.core.sessions.redis import RedisSessionStore
+from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.core.session.redis import RedisSessionStore
 
 
 class DummyRunner(Runner):

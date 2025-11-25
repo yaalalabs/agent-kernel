@@ -139,14 +139,13 @@ class RedisSessionStore(SessionStore):
     RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
     """
 
-    def __init__(self, driver: RedisDriver):
+    def __init__(self):
         """
         Initializes a RedisSessionStore instance.
-        :param driver: Redis Driver instance
         """
         self._log = logging.getLogger("ak.core.sessions.redis")
         self._serde = RedisSessionSerde()
-        self._driver = driver
+        self._driver = RedisDriver()
 
     def load(self, session_id: str, strict: bool = False) -> Session:
         """
