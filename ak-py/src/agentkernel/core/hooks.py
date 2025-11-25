@@ -46,7 +46,9 @@ class Prehook(ABC):
 
 class Posthook(ABC):
     @abstractmethod
-    async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str:
+    async def on_run(
+        self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str
+    ) -> str:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails

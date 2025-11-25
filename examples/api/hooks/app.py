@@ -1,5 +1,5 @@
-from agentkernel.api import RESTAPI
 from agentkernel import GlobalRuntime
+from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 

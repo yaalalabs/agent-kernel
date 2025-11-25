@@ -109,7 +109,9 @@ class Runtime:
         :param additional_context: Additional context to pass to pre-execution hooks.
         :return: The result of the agent's execution.
         """
-        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt} and additional_context: {additional_context}")
+        self._log.debug(
+            f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt} and additional_context: {additional_context}"
+        )
         original_prompt = prompt
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
