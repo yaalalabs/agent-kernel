@@ -11,7 +11,7 @@ Currently, they will get only called for the initial execution of an agent when 
 
 class Prehook:
     @abstractmethod
-    def on_pre_execution(self, session: Session, agent: Agent, original_prompt:str, prompt: str) -> tuple[bool, str]:
+    async def on_pre_execution(self, session: Session, agent: Agent, original_prompt:str, prompt: str) -> tuple[bool, str]:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -42,7 +42,7 @@ class Prehook:
     
 class Posthook:
     @abstractmethod
-    def on_post_execution(self, session: Session, input_prompt: str,  agent: Agent, agent_reply: str ) -> str:
+    async def on_post_execution(self, session: Session, input_prompt: str,  agent: Agent, agent_reply: str ) -> str:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails

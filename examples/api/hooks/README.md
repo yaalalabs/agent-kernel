@@ -142,7 +142,7 @@ Hooks that run **before** the agent executes:
 from agentkernel.core.hooks import Prehook
 
 class MyHook(Prehook):
-    def on_pre_execution(self, session, agent, original_prompt, prompt):
+    async def on_pre_execution(self, session, agent, original_prompt, prompt):
         # Return (proceed, modified_prompt)
         # proceed=False halts execution
         # proceed=True continues with modified_prompt
@@ -151,6 +151,8 @@ class MyHook(Prehook):
     def name(self):
         return "MyHook"
 ```
+
+**Note:** Hook methods are async, allowing you to perform asynchronous operations like database queries, API calls, or vector searches.
 
 ### Hook Execution Order
 Hooks execute in the order registered:
