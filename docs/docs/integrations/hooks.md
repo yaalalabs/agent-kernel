@@ -271,7 +271,7 @@ Apply safety filters to agent responses:
 
 ```python
 class ModerationHook(Posthook):
-    async def on_run(self, session, input_prompt, agent, agent_reply):
+    async def on_run(self, session, input_prompt, additional_context, agent, agent_reply):
         # Check reply for inappropriate content
         if self._contains_sensitive_info(agent_reply):
             return (
