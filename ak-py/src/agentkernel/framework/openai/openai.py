@@ -5,12 +5,12 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from ..core import Agent as BaseAgent
-from ..core import Module
-from ..core import Runner as BaseRunner
-from ..core import Session
-from ..core.config import AKConfig
-from ..trace import Trace
+from ...core import Agent as BaseAgent
+from ...core import Module
+from ...core import Runner as BaseRunner
+from ...core import Session
+from ...core.config import AKConfig
+from ...trace import Trace
 
 FRAMEWORK = "openai"
 

@@ -8,12 +8,12 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
-from ..core import Agent as AKBaseAgent
-from ..core import Module
-from ..core import Runner as BaseRunner
-from ..core import Session
-from ..core.config import AKConfig
-from ..trace import Trace
+from ...core import Agent as AKBaseAgent
+from ...core import Module
+from ...core import Runner as BaseRunner
+from ...core import Session
+from ...core.config import AKConfig
+from ...trace import Trace
 
 FRAMEWORK = "adk"
 

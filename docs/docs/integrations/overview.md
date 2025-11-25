@@ -2,8 +2,57 @@
 
 Agent Kernel provides various built in integrations to connect your AI agents with external platforms and services. These integrations allow you to deploy your agents in real-world environments and interact with users through different channels.
 
-## API
-For API custom integrations you can implement **RESTRequestHandler** and pass it to the RESTAPI.run() method.
+
+## Observability & Monitoring
+
+- **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
+- **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
+
+## Social media
+These are built on REST APIs and you can install custom integrations as well.
+
+### Built-in
+The following built-in integrations are available.
+
+- **[Slack](./slack)** - Deploy agents as Slack bots that can respond to mentions and direct messages in Slack workspaces
+- **[WhatsApp](./whatsapp)** - Deploy agents as WhatsApp bots
+- **[Messenger](./messenger)** - Deploy agents as FB Messenger bots
+
+```mermaid
+---
+config:
+  layout: dagre
+  elk: true
+---
+flowchart LR
+    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"]
+
+    style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+### Custom
+For REST API based 'custom integrations' you can implement **RESTRequestHandler** and pass it to the RESTAPI.run() method. The built-in integrations are also developed similarly.
+
+
+```mermaid
+---
+config:
+  layout: dagre
+  elk: true
+---
+flowchart LR
+    
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & N["CustomHandler"]
+
+    style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
+    style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style K fill:#b5667b,stroke:#fff,stroke-width:2px,color:#fff
+    style M fill:#484c7a,stroke:#fff,stroke-width:2px,color:#fff
+    style N fill:#bd7e4a,stroke:#fff,stroke-width:2px,color:#fff
+```
 
 ```python
 from fastapi import APIRouter
@@ -37,16 +86,3 @@ class CustomHandler(RESTRequestHandler):
 if __name__ == "__main__":
     RESTAPI.run([ AgentSlackRequestHandler(), CustomHandler()]) # Can pass multiple handlers
 ```
-
-## Available Integrations
-
-### Collaboration Platforms
-
-- **[Slack](./slack)** - Deploy agents as Slack bots that can respond to mentions and direct messages in Slack workspaces
-- **[WhatsApp](./whatsapp)** - Deploy agents as WhatsApp bots
-- **[Messenger](./messenger)** - Deploy agents as FB Messenger bots
-
-### Observability & Monitoring
-
-- **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
-- **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.

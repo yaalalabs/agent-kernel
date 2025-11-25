@@ -77,7 +77,7 @@ The handler automatically responds to Facebook's webhook verification challenge 
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.messenger import AgentMessengerRequestHandler
+from agentkernel.messenger import AgentMessengerRequestHandler
 
 # Create your agent
 general_agent = OpenAIAgent(

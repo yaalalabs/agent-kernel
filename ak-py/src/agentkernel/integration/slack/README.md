@@ -1,4 +1,4 @@
-# Slack integrations
+# Slack integration
 Slack allows developers to interact with the application conversations via SlackApps (https://api.slack.com/apps/)
 It uses the Slack Events Http API (https://docs.slack.dev/apis/events-api/)
 
@@ -42,7 +42,7 @@ A detailed example is provided in the examples section.
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.integrations.slack import AgentSlackRequestHandler
+from agentkernel.slack import AgentSlackRequestHandler
 
 general_agent = OpenAIAgent(
     name="general",

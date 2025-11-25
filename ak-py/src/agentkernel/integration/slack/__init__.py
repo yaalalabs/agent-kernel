@@ -1,5 +1,5 @@
 """
-Agent Kernel Integrations with Slack
+Agent Kernel Integration with Slack
 
 This package contains the Agent Kernel integration implementations for Slack chat and Slack AI Agents.
 """
