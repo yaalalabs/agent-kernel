@@ -10,7 +10,7 @@ from singleton_type import Singleton
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .sessions import SessionStore
-
+from .hooks import Prehook, Posthook
 
 class Runtime:
     """
@@ -26,6 +26,8 @@ class Runtime:
         self._log = logging.getLogger("ak.runtime")
         self._agents = {}
         self._sessions = sessions
+        self._pre_hooks: dict[str, list[Prehook]] = {}
+        self._post_hooks: dict[str, list[Posthook]] = {}
 
     def __enter__(self) -> "Runtime":
         """
@@ -105,8 +107,24 @@ class Runtime:
         :param prompt: The prompt to provide to the agent.
         :return: The result of the agent's execution.
         """
+        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt}")
+        original_prompt = prompt
+        prehooks = self._pre_hooks.get(agent.name, [])
+        for hook in prehooks:
+            proceed, modified_prompt = hook.on_pre_execution(session, agent, original_prompt, prompt)
+            if not proceed:
+                self._log.debug(f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}'")
+                return modified_prompt
+            prompt = modified_prompt
         self._log.debug(f"Running agent '{agent.name}' with prompt: {prompt}")
-        return await agent.runner.run(agent, session, prompt)
+        
+        reply = await agent.runner.run(agent, session, prompt)
+        
+        posthooks = self._post_hooks.get(agent.name, [])
+        for hook in posthooks:
+            reply = hook.on_post_execution(session, prompt, agent, reply)
+            self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
+        return reply
 
     def sessions(self) -> SessionStore:
         """
@@ -115,6 +133,25 @@ class Runtime:
         """
         return self._sessions
 
+    def register_pre_hooks(self, agent_name: str, hooks: list[Prehook]) -> None:
+        """
+        Registers pre-execution hooks for a specific agent. The pre-hooks will be executed in the provided order unless, execution is interrupted by a hook.
+        Note: if hook changes the prompt, the modified prompt will be sent to the next hook for processing.
+              if you want to remove a hook or modify the processing order, always return a new list. hint. use get_pre_hooks to get the existing list.
+        :param agent_name: The name of the agent.
+        :param hooks: A list of pre-execution hooks to register.
+        """
+        self._pre_hooks[agent_name] = hooks
+
+    def register_post_hooks(self, agent_name: str, hooks: list[Posthook]) -> None:
+        """
+        Registers post-execution hooks for a specific agent. The post-hooks will be executed in the provided order.
+        Note: if hook changes the reply, the modified reply will be sent to the next hook for processing.
+              if you want to remove a hook or modify the processing order, always return a new list. hint. use get_post_hooks to get the existing list.
+        :param agent_name: The name of the agent.
+        :param hooks: A list of post-execution hooks to register.
+        """
+        self._post_hooks[agent_name] = hooks
 
 class GlobalRuntime(Runtime, metaclass=Singleton):
     """
