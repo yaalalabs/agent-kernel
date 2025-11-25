@@ -24,9 +24,7 @@ class GuardRailHook(Prehook):
         "virus",
     ]
 
-    async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str
-    ) -> tuple[bool, str]:
+    async def on_run(self, session: Session, agent: Agent, original_prompt: str, prompt: str) -> tuple[bool, str]:
         """
         Validates the prompt for inappropriate content.
 
@@ -94,9 +92,7 @@ class RAGHook(Prehook):
         ),
     }
 
-    async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str
-    ) -> tuple[bool, str]:
+    async def on_run(self, session: Session, agent: Agent, original_prompt: str, prompt: str) -> tuple[bool, str]:
         """
         Simulates RAG by searching the knowledge base and injecting relevant context.
 

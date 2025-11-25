@@ -1,4 +1,4 @@
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 
 from .base import Agent, Session
 
@@ -12,9 +12,7 @@ Currently, they will get only called for the initial execution of an agent when 
 
 class Prehook(ABC):
     @abstractmethod
-    async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str
-    ) -> tuple[bool, str]:
+    async def on_run(self, session: Session, agent: Agent, original_prompt: str, prompt: str) -> tuple[bool, str]:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
