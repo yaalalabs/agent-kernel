@@ -109,6 +109,7 @@ class AgentService:
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.
+        :param additional_context: Additional context to pass to pre and post execution hooks.
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")

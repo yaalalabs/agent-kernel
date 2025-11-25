@@ -141,7 +141,9 @@ class MyPosthook(Posthook):
             session: The current session instance
             input_prompt: The original prompt provided to the agent
             agent: The agent that executed the prompt
-            agent_reply: The unmodified reply from the agent
+            agent_reply: The reply from the agent. For the first posthook, this is 
+                the unmodified agent reply. For subsequent posthooks, this is 
+                the reply modified by previous posthooks in the chain.
         
         Returns:
             str: The modified reply (or original if no changes)
@@ -515,7 +517,7 @@ class GuardRailHook(Prehook):
 
 class DisclaimerHook(Posthook):   
     async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str::
-        return f"{agent_reply} \n \n Disclaimer: The responses are AI generated and may not be accurate"
+        return  return agent_reply + "\n\n*Disclaimer: AI-generated content.*"
     
     def name(self):
         return "DisclaimerHook"
