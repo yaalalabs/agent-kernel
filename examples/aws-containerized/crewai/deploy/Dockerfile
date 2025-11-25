@@ -12,4 +12,4 @@ ENV TMPDIR=/tmp \
 
 EXPOSE 8000
 
-CMD ["python", "-c", "from app import runner; runner()"]
+CMD ["python", "-c", "from app import main; main()"]

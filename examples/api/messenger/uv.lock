@@ -4,8 +4,8 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agentkernel"
-version = "0.2.4"
-source = { registry = "../../../ak-py/dist" }
+version = "0.2.5"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -14,9 +14,9 @@ dependencies = [
     { name = "redis" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.2.4.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/dd/4e793a479999493ed262d21c3ecef1d318e485c8120a2035136851383963/agentkernel-0.2.5.tar.gz", hash = "sha256:f97cb48aef748052046c77b686c39c3f59da3bd985ee04489c68e518b446270b", size = 48676, upload-time = "2025-11-21T11:18:04.8Z" }
 wheels = [
-    { path = "agentkernel-0.2.4-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/d0/4c/277ae45ae0bb27d12f19b7729580f23509f0697326f6c1bc33a8a047002a/agentkernel-0.2.5-py3-none-any.whl", hash = "sha256:dad87e0e9cffc61ffd0cb4a93b09f9361dcff906ff9e177a7c7b765f6e0a2fb0", size = 77200, upload-time = "2025-11-21T11:18:03.178Z" },
 ]
 
 [package.optional-dependencies]
@@ -90,11 +90,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "messenger"], specifier = ">=0.2.4" }]
+requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "messenger"], specifier = ">=0.2.5" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.4" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.5" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

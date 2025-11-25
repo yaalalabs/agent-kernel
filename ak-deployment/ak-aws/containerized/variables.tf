@@ -47,6 +47,22 @@ variable "agent_endpoint" {
   default     = "chat"
 }
 
+variable "api_base_path" {
+  type        = string
+  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
+  default     = "api"
+}
+
+variable "gateway_endpoints" {
+  description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+  type = list(object({
+    path = string        # e.g. "chat"
+    method = string        # e.g. "GET", "POST", "PUT", "DELETE", "ANY"
+    overwrite_path = string # backend path override for ALB target, e.g. "/run"
+  }))
+  default = []
+}
+
 variable "tags" {
   type = map(string)
   description = "Resource tags"
