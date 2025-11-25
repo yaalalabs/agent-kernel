@@ -2,6 +2,13 @@
 
 Agent Kernel provides various built in integrations to connect your AI agents with external platforms and services. These integrations allow you to deploy your agents in real-world environments and interact with users through different channels.
 
+## Pre and Post hooks
+The run time provides a simple way to hook into the execution loop via hooks. 
+
+- **PreHooks** : Provides a simpler way to modify the input prompt and/or stop execution. This can be used to implement guardrails, instrumentation or RAG context injection 
+- **PostHooks**: Provides a simple wat to modify the reply back to the user.
+
+Note: Currently run time is only capable to hook into the fist agent execution and unable to track agent to agent handoffs. This will be provided in future
 
 ## Observability & Monitoring
 

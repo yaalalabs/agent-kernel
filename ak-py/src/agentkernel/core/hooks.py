@@ -1,7 +1,6 @@
 from abc import abstractmethod
 
-from agentkernel.core.service import AgentService
-from agentkernel.core.base import Session, Agent
+from .base import Session, Agent
 
 """
 Prehook and Posthook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
