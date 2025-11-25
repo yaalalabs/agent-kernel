@@ -78,7 +78,9 @@ class SessionStoreBuilder(Builder):
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
             from .session.redis import RedisSessionStore
+
             return RedisSessionStore()
         else:
             from .session.in_memory import InMemorySessionStore
+
             return InMemorySessionStore()
