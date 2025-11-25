@@ -480,8 +480,8 @@ Here's a full example combining multiple hooks:
 ```python
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel.core import GlobalRuntime
-from agentkernel.core.hooks import Prehook, Posthook
+from agentkernel import GlobalRuntime
+from agentkernel import Prehook, Posthook
 from agents import Agent
 
 # Define hooks
@@ -509,6 +509,13 @@ class GuardRailHook(Prehook):
             if keyword in prompt.lower():
                 return False, f"Cannot assist with '{keyword}'"
         return True, prompt
+    
+    def name(self):
+        return "GuardRailHook"
+
+class DisclaimerHook(Posthook):   
+    async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str::
+        return f"{agent_reply} \n \n Disclaimer: The responses are AI generated and may not be accurate"
     
     def name(self):
         return "DisclaimerHook"
@@ -609,63 +616,77 @@ async def test_chaining():
 ### Prehook Interface
 
 ```python
-class Prehook:
+class Prehook(ABC):
     @abstractmethod
     async def on_run(
-        self,
-        session: Session,
-        agent: Agent,
-        original_prompt: str,
-        prompt: str,
-        additional_context: Any | None = None
+        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None
     ) -> tuple[bool, str]:
         """
-        Args:
-            session: Current session instance
-            agent: Agent that will execute
-            original_prompt: Original user prompt
-            prompt: Current prompt (possibly modified)
-            additional_context: Additional context passed with the prompt
-        
-        Returns:
-            (proceed: bool, modified_prompt: str)
+        Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
+        Some use cases:
+          - RAG context injection
+          - Prompt validation like input guard rails
+          - Logging or analytics
+
+        :param: session (Session): The session instance.
+        :param: agent (Agent): The agent that will execute the prompt.
+        :param: original_prompt (str): The original unmodified prompt provided to the agent.
+        :param: prompt (str): The current prompt to be executed.
+        :param: additional_context (Any|None): Additional context that may have been passed with the prompt. This may help RAG hooks to fetch relevant context.
+        :return: tuple[bool, str]: A tuple containing:
+                - bool: Whether to proceed with execution.
+                - str: The modified prompt. In case of stopping execution, a clear reason to be sent back
+                       to the user. Otherwise, a modified prompt (e.g. RAG context)
+                       can be sent for further processing.
         """
-        pass
-    
+        raise NotImplementedError
+
     @abstractmethod
     def name(self) -> str:
-        """Returns the hook name."""
-        pass
+        """
+        Returns the name of the prehook.
+        """
+        raise NotImplementedError
 ```
 
 ### Posthook Interface
 
 ```python
-class Posthook:
+class Posthook(ABC):
     @abstractmethod
-    async def on_run(
-        self,
-        session: Session,
-        input_prompt: str,
-        agent: Agent,
-        agent_reply: str
-    ) -> str:
+    async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str:
         """
-        Args:
-            session: Current session instance
-            input_prompt: Original user prompt
-            agent: Agent that executed
-            agent_reply: Unmodified agent reply
-        
-        Returns:
-            str: Modified reply
+        Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
+          - Moderation of agent replies. e.g. output guardrails
+          - Adding disclaimers or additional information to the reply
+          - Logging or analytics
+
+        Note: if the hook changes the reply, the modified reply will be sent to the next hook for processing.
+              the agent_reply parameter contains the unmodified reply from the agent. the following code snippet will help to correctly handle the response
+
+              if hasattr(result, "raw"):
+                response_text = str(result.raw)
+              else:
+                response_text = str(result)
+
+        :param:  session (Session): The session instance.
+        :param:  input_prompt (str): The original prompt provided to the agent after any pre-execution hooks have been applied.
+        :param: additional_context (Any|None): Additional context that may have been passed with the prompt.
+        :param:  agent (Agent): The agent that executed the prompt.
+        :param:  agent_reply (str): The reply to process. For the first posthook, this is the unmodified
+                              agent reply. For subsequent posthooks, this is the reply modified by
+                              previous posthooks in the chain.
+
+        :return: The modified reply. If not modified, return the current reply.
         """
-        pass
-    
+        raise NotImplementedError
+
     @abstractmethod
     def name(self) -> str:
-        """Returns the hook name."""
-        pass
+        """
+        :return: the name of the posthook.
+        """
+        raise NotImplementedError
 ```
 
 ### Runtime Hook Methods

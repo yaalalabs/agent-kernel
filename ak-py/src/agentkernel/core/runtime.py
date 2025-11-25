@@ -106,9 +106,10 @@ class Runtime:
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
+        :param additional_context: Additional context to pass to pre-execution hooks.
         :return: The result of the agent's execution.
         """
-        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt}")
+        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt} and additional_context: {additional_context}")
         original_prompt = prompt
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
@@ -123,7 +124,7 @@ class Runtime:
 
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
-            reply = await hook.on_run(session, prompt, agent, reply)
+            reply = await hook.on_run(session, prompt, additional_context, agent, reply)
             self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
 

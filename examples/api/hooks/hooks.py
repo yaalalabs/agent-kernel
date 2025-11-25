@@ -4,8 +4,8 @@ Hook implementations demonstrating pre-execution hooks for guard rails and RAG s
 
 from typing import Any
 
-from agentkernel.core.base import Agent, Session
-from agentkernel.core.hooks import Prehook
+from agentkernel import Agent, Session
+from agentkernel import Prehook
 
 
 class GuardRailHook(Prehook):

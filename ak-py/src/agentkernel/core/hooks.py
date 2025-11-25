@@ -27,7 +27,7 @@ class Prehook(ABC):
         :param: agent (Agent): The agent that will execute the prompt.
         :param: original_prompt (str): The original unmodified prompt provided to the agent.
         :param: prompt (str): The current prompt to be executed.
-        :param: additional_context (Any|None): Additional context that may be have been passed with the prompt. This may help RAG hooks to fetch relevant context.
+        :param: additional_context (Any|None): Additional context that may have been passed with the prompt. This may help RAG hooks to fetch relevant context.
         :return: tuple[bool, str]: A tuple containing:
                 - bool: Whether to proceed with execution.
                 - str: The modified prompt. In case of stopping execution, a clear reason to be sent back
@@ -46,7 +46,7 @@ class Prehook(ABC):
 
 class Posthook(ABC):
     @abstractmethod
-    async def on_run(self, session: Session, input_prompt: str, agent: Agent, agent_reply: str) -> str:
+    async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails
@@ -62,7 +62,8 @@ class Posthook(ABC):
                 response_text = str(result)
 
         :param:  session (Session): The session instance.
-        :param:  input_prompt (str): The original prompt provided to the agent.
+        :param:  input_prompt (str): The original prompt provided to the agent after any pre-execution hooks have been applied.
+        :param: additional_context (Any|None): Additional context that may have been passed with the prompt.
         :param:  agent (Agent): The agent that executed the prompt.
         :param:  agent_reply (str): The reply to process. For the first posthook, this is the unmodified
                               agent reply. For subsequent posthooks, this is the reply modified by

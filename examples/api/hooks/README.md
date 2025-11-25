@@ -31,7 +31,7 @@ This order ensures that:
 ## How It Works
 
 ```python
-from agentkernel.core import GlobalRuntime
+from agentkernel import GlobalRuntime
 
 # Get runtime instance
 runtime = GlobalRuntime.instance()
@@ -140,10 +140,10 @@ Hooks that run **before** the agent executes:
 
 ### Hook Interface
 ```python
-from agentkernel.core.hooks import Prehook
+from agentkernel import Prehook
 
 class MyHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt):
+    async def on_run(self, session, agent, original_prompt, prompt,additional_context=Any|None):
         # Return (proceed, modified_prompt)
         # proceed=False halts execution
         # proceed=True continues with modified_prompt

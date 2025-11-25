@@ -9,7 +9,7 @@ useful for understanding the core concepts and for CLI-based applications.
 
 import asyncio
 
-from agentkernel.core import GlobalRuntime
+from agentkernel import GlobalRuntime
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
