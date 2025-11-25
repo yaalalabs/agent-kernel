@@ -119,7 +119,7 @@ The test suite validates:
 ## File Structure
 
 ```
-openai-hooks/
+hooks/
 ├── app.py           # Main application with agent and hook registration
 ├── hooks.py         # GuardRailHook and RAGHook implementations
 ├── app_test.py      # Automated test suite

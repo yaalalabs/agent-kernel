@@ -290,7 +290,7 @@ Append legal or compliance disclaimers to responses:
 
 ```python
 class DisclaimerHook(Posthook):
-    def on_post_execution(self, session, input_prompt, agent, agent_reply):
+    async def on_post_execution(self, session, input_prompt, agent, agent_reply):
         disclaimer = (
             "\n\n---\n"
             "*Disclaimer: This information is for general guidance only "
@@ -512,7 +512,7 @@ class GuardRailHook(Prehook):
         return "GuardRailHook"
 
 class DisclaimerHook(Posthook):
-    def on_post_execution(self, session, input_prompt, agent, agent_reply):
+    async def on_post_execution(self, session, input_prompt, agent, agent_reply):
         return agent_reply + "\n\n*[AI-generated response]*"
     
     def name(self):
@@ -551,7 +551,7 @@ if __name__ == "__main__":
 
 See the complete hooks demonstration in the repository:
 
-📁 **[examples/api/openai-hooks/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai-hooks)**
+📁 **[examples/api/hooks/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks)**
 
 This example includes:
 - `hooks.py` - Guard rail and RAG hook implementations
@@ -570,7 +570,7 @@ This example includes:
 ### Running the Example
 
 ```bash
-cd examples/api/openai-hooks
+cd examples/api/hooks
 
 # Build environment
 ./build.sh
@@ -685,6 +685,16 @@ runtime.register_post_hooks(
     agent_name: str,
     hooks: list[Posthook]
 ) -> None
+
+# Get registered pre-execution hooks
+runtime.get_pre_hooks(
+    agent_name: str
+) -> list[Prehook]
+
+# Get registered post-execution hooks
+runtime.get_post_hooks(
+    agent_name: str
+) -> list[Posthook]
 ```
 
 ## Troubleshooting

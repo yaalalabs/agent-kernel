@@ -13,7 +13,7 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from agentkernel.test import Test
+
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

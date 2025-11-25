@@ -136,7 +136,7 @@ class Runtime:
 
     def register_pre_hooks(self, agent_name: str, hooks: list[Prehook]) -> None:
         """
-        Registers pre-execution hooks for a specific agent. The pre-hooks will be executed in the provided order unless, execution is interrupted by a hook.
+        Registers pre-execution hooks for a specific agent. The pre-hooks will be executed in the provided order unless execution is interrupted by a hook.
         Note: if hook changes the prompt, the modified prompt will be sent to the next hook for processing.
               if you want to remove a hook or modify the processing order, always return a new list. hint. use get_pre_hooks to get the existing list.
         :param agent_name: The name of the agent.
@@ -153,6 +153,22 @@ class Runtime:
         :param hooks: A list of post-execution hooks to register.
         """
         self._post_hooks[agent_name] = hooks
+
+    def get_pre_hooks(self, agent_name: str) -> list[Prehook]:
+        """
+        Retrieves the registered pre-execution hooks for a specific agent.
+        :param agent_name: The name of the agent.
+        :return: A list of pre-execution hooks registered for the agent, or an empty list if none are registered.
+        """
+        return self._pre_hooks.get(agent_name, [])
+
+    def get_post_hooks(self, agent_name: str) -> list[Posthook]:
+        """
+        Retrieves the registered post-execution hooks for a specific agent.
+        :param agent_name: The name of the agent.
+        :return: A list of post-execution hooks registered for the agent, or an empty list if none are registered.
+        """
+        return self._post_hooks.get(agent_name, [])
 
 
 class GlobalRuntime(Runtime, metaclass=Singleton):
