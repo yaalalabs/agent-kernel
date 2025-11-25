@@ -131,6 +131,7 @@ class MyPosthook(Posthook):
         self,
         session: Session,
         input_prompt: str,
+        additional_context: Any | None,
         agent: Agent,
         agent_reply: str
     ) -> str:
@@ -294,7 +295,7 @@ Append legal or compliance disclaimers to responses:
 
 ```python
 class DisclaimerHook(Posthook):
-    async def on_run(self, session, input_prompt, agent, agent_reply):
+    async def on_run(self, session, input_prompt, additional_context, agent, agent_reply):
         disclaimer = (
             "\n\n---\n"
             "*Disclaimer: This information is for general guidance only "
@@ -517,7 +518,7 @@ class GuardRailHook(Prehook):
 
 class DisclaimerHook(Posthook):   
     async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str::
-        return  return agent_reply + "\n\n*Disclaimer: AI-generated content.*"
+        return agent_reply + "\n\n*Disclaimer: AI-generated content.*"
     
     def name(self):
         return "DisclaimerHook"

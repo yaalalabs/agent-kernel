@@ -143,7 +143,7 @@ Hooks that run **before** the agent executes:
 from agentkernel import Prehook
 
 class MyHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt,additional_context=Any|None):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=Any|None):
         # Return (proceed, modified_prompt)
         # proceed=False halts execution
         # proceed=True continues with modified_prompt
