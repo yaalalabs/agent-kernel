@@ -13,7 +13,9 @@ Currently, they will get only called for the initial execution of an agent when 
 
 class Prehook(ABC):
     @abstractmethod
-    async def on_run(self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context:Any|None) -> tuple[bool, str]:
+    async def on_run(
+        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None
+    ) -> tuple[bool, str]:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -53,12 +55,12 @@ class Posthook(ABC):
 
         Note: if the hook changes the reply, the modified reply will be sent to the next hook for processing.
               the agent_reply parameter contains the unmodified reply from the agent. the following code snippet will help to correctly handle the response
-           
+
               if hasattr(result, "raw"):
                 response_text = str(result.raw)
               else:
                 response_text = str(result)
-           
+
         :param:  session (Session): The session instance.
         :param:  input_prompt (str): The original prompt provided to the agent.
         :param:  agent (Agent): The agent that executed the prompt.
