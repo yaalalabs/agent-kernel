@@ -14,7 +14,6 @@ import httpx
 import pytest
 import pytest_asyncio
 
-
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

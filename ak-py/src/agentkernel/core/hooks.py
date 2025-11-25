@@ -65,8 +65,8 @@ class Posthook:
         :param:  session (Session): The session instance.
         :param:  input_prompt (str): The original prompt provided to the agent.
         :param:  agent (Agent): The agent that executed the prompt.
-        :param:  agent_reply (str): The reply to process. For the first posthook, this is the unmodified 
-                              agent reply. For subsequent posthooks, this is the reply modified by 
+        :param:  agent_reply (str): The reply to process. For the first posthook, this is the unmodified
+                              agent reply. For subsequent posthooks, this is the reply modified by
                               previous posthooks in the chain.
 
         :return: The modified reply. If not modified, return the current reply.
