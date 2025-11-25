@@ -71,7 +71,7 @@ Agent Kernel provides a health endpoint:
 
 ## Application Endpoints
 
-Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
+Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
 
 
 ## Best Practices
