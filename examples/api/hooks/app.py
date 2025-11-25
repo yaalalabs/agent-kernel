@@ -1,6 +1,6 @@
 from agentkernel.api import RESTAPI
-from agentkernel.openai import OpenAIModule
 from agentkernel.core import GlobalRuntime
+from agentkernel.openai import OpenAIModule
 from agents import Agent
 
 from hooks import GuardRailHook, RAGHook

@@ -1,6 +1,6 @@
 from abc import abstractmethod
 
-from .base import Session, Agent
+from .base import Agent, Session
 
 """
 Prehook and Posthook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
@@ -9,9 +9,12 @@ These hooks allow for modification of prompts before execution and replies after
 Currently, they will get only called for the initial execution of an agent when a user prompt is provided. Its unable to hook into agent-to-agent calls within a workflow. This will be a future enhancement.
 """
 
+
 class Prehook:
     @abstractmethod
-    async def on_pre_execution(self, session: Session, agent: Agent, original_prompt:str, prompt: str) -> tuple[bool, str]:
+    async def on_pre_execution(
+        self, session: Session, agent: Agent, original_prompt: str, prompt: str
+    ) -> tuple[bool, str]:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -28,21 +31,23 @@ class Prehook:
         Returns:
             tuple[bool, str]: A tuple containing:
                 - bool: Whether to proceed with execution.
-                - str: The modified prompt. In case of stopping execution, a clear reason to be sent back 
-                       to the user or the next agent. Otherwise, a modified prompt (e.g. RAG context) 
+                - str: The modified prompt. In case of stopping execution, a clear reason to be sent back
+                       to the user or the next agent. Otherwise, a modified prompt (e.g. RAG context)
                        can be sent for further processing.
         """
         pass
+
     @abstractmethod
     def name(self) -> str:
         """
         Returns the name of the prehook.
         """
         pass
-    
+
+
 class Posthook:
     @abstractmethod
-    async def on_post_execution(self, session: Session, input_prompt: str,  agent: Agent, agent_reply: str ) -> str:
+    async def on_post_execution(self, session: Session, input_prompt: str, agent: Agent, agent_reply: str) -> str:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails
@@ -73,4 +78,4 @@ class Posthook:
         """
         Returns the name of the posthook.
         """
-        pass  
+        pass

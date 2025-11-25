@@ -9,8 +9,9 @@ from singleton_type import Singleton
 
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
+from .hooks import Posthook, Prehook
 from .sessions import SessionStore
-from .hooks import Prehook, Posthook
+
 
 class Runtime:
     """
@@ -117,9 +118,9 @@ class Runtime:
                 return modified_prompt
             prompt = modified_prompt
         self._log.debug(f"Running agent '{agent.name}' with prompt: {prompt}")
-        
+
         reply = await agent.runner.run(agent, session, prompt)
-        
+
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
             reply = await hook.on_post_execution(session, prompt, agent, reply)
@@ -152,6 +153,7 @@ class Runtime:
         :param hooks: A list of post-execution hooks to register.
         """
         self._post_hooks[agent_name] = hooks
+
 
 class GlobalRuntime(Runtime, metaclass=Singleton):
     """
