@@ -1,5 +1,6 @@
 import logging
 import uuid
+from typing import Any
 
 from ..core import Agent, GlobalRuntime, Runtime, Session
 
@@ -24,14 +25,14 @@ class AgentService:
         return self._runtime
 
     @property
-    def agent(self) -> Agent:
+    def agent(self) -> Agent | None:
         """
         Returns the selected agent.
         """
         return self._agent
 
     @property
-    def session(self) -> Session:
+    def session(self) -> Session | None:
         """
         Returns the selected session.
         """
@@ -104,12 +105,17 @@ class AgentService:
             self._log.info(f"No module found with name '{name}': {e}")
             return None
 
-    async def run(self, prompt: str):
+    async def run(self, prompt: str, additional_context: Any | None = None):
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.
+        :param additional_context: Additional context to pass to pre and post execution hooks.
         """
-        result = await self._runtime.run(self._agent, self._session, prompt)
+        if not self._agent:
+            raise ValueError("No agent selected. Please select an agent before running.")
+        if not self._session:
+            raise ValueError("No session available. Please create or load a session before running.")
+        result = await self._runtime.run(self._agent, self._session, prompt, additional_context)
         self._runtime.sessions().store(self._session)
         return result
 
