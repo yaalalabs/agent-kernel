@@ -49,7 +49,7 @@ class CustomHandler(AgentRESTRequestHandler):
 # Adding custom routes - Option 3
 # Create your own Router inheriting from RESTRequestHandler. In this case you'll have to
 # map agent invocation endpoints by yourself.
-# This example, however, shows cases a combination of option 1 and 2.
+# This example, however, showcases a combination of option 1 and 2.
 
 
 CrewAIModule([math_agent, history_agent])

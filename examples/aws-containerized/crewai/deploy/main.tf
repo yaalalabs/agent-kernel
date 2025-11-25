@@ -1,4 +1,4 @@
-# Containered module configuration for deploying CrewAI Agent in ECS
+# Containerized module configuration for deploying CrewAI Agent in ECS
 # This example exposes the following endpoints via API Gateway
 # /api/v1/chat - Agent execution
 # /api/v1/app - Custom endpoint created via a direct route addition
@@ -16,7 +16,7 @@ module "containered_agents" {
   region               = var.region
   vpc_id               = "vpc-09033229d67314c1c"
   private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
-  product_display_name = "AK CrewAI Containered Example"
+  product_display_name = "AK CrewAI Containerized Example"
   ecs_container_port   = 8000
   gateway_endpoints = [
     {
