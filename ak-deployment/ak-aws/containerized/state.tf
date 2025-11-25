@@ -17,7 +17,7 @@ locals {
   default_gateway_endpoint = {
     path           = local.default_endpoint_path
     method         = "POST"
-      overwrite_path = "/run"
+    overwrite_path = "/run"
   }
   default_gateway_map = {
     "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
