@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 
 from .base import Agent, Session
 
@@ -10,7 +10,7 @@ Currently, they will get only called for the initial execution of an agent when 
 """
 
 
-class Prehook:
+class Prehook(ABC):
     @abstractmethod
     async def on_pre_execution(
         self, session: Session, agent: Agent, original_prompt: str, prompt: str
@@ -32,20 +32,20 @@ class Prehook:
             tuple[bool, str]: A tuple containing:
                 - bool: Whether to proceed with execution.
                 - str: The modified prompt. In case of stopping execution, a clear reason to be sent back
-                       to the user or the next agent. Otherwise, a modified prompt (e.g. RAG context)
+                       to the user. Otherwise, a modified prompt (e.g. RAG context)
                        can be sent for further processing.
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def name(self) -> str:
         """
         Returns the name of the prehook.
         """
-        pass
+        raise NotImplementedError
 
 
-class Posthook:
+class Posthook(ABC):
     @abstractmethod
     async def on_post_execution(self, session: Session, input_prompt: str, agent: Agent, agent_reply: str) -> str:
         """
@@ -71,11 +71,11 @@ class Posthook:
 
         :return: The modified reply. If not modified, return the current reply.
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def name(self) -> str:
         """
         :return: the name of the posthook.
         """
-        pass
+        raise NotImplementedError
