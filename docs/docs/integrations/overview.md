@@ -9,7 +9,7 @@ Agent Kernel provides various built in integrations to connect your AI agents wi
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 
 ## Social media
-These are built on REST APIs and is you can install custom integrations as well.
+These are built on REST APIs and you can install custom integrations as well.
 
 ### Built-in
 The following built-in integrations are available.
@@ -45,7 +45,7 @@ config:
 ---
 flowchart LR
     
-    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandlers"] & N["CustomHandler"]
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & N["CustomHandler"]
 
     style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
