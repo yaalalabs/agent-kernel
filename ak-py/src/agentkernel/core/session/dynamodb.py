@@ -6,10 +6,10 @@ import boto3
 from boto3.dynamodb.conditions import Key as DDBKey
 from boto3.dynamodb.types import Binary
 
-from .base import SessionStore
-from .serde import BinarySerde
 from ..base import Session
 from ..config import AKConfig
+from .base import SessionStore
+from .serde import BinarySerde
 
 
 class DynamoDBDriver:
@@ -145,10 +145,13 @@ class DynamoDBDriver:
         """
         try:
             with self.table.batch_writer() as batch:
-                resp = self.table.scan(ProjectionExpression="#pk,#sk", ExpressionAttributeNames={
-                    "#pk": "session_id",
-                    "#sk": "key",
-                })
+                resp = self.table.scan(
+                    ProjectionExpression="#pk,#sk",
+                    ExpressionAttributeNames={
+                        "#pk": "session_id",
+                        "#sk": "key",
+                    },
+                )
                 items = resp.get("Items", [])
                 for it in items:
                     batch.delete_item(Key={"session_id": it["session_id"], "key": it["key"]})
@@ -160,9 +163,7 @@ class DynamoDBDriver:
                     )
                     items = resp.get("Items", [])
                     for it in items:
-                        batch.delete_item(
-                            Key={"session_id": it["session_id"], "key": it["key"]}
-                        )
+                        batch.delete_item(Key={"session_id": it["session_id"], "key": it["key"]})
         except Exception as e:
             self._log.error("Failed to clear DynamoDB table %s: %s", self._table_name, e)
             raise

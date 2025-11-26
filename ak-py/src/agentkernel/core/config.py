@@ -28,8 +28,7 @@ class _DynamoDBConfig(BaseModel):
     )
     ttl: int = Field(
         default=604800,
-        description=
-        "DynamoDB item TTL in seconds (0 disables). Used to compute UNIX epoch 'expiry_time' attribute written per item.",
+        description="DynamoDB item TTL in seconds (0 disables). Used to compute UNIX epoch 'expiry_time' attribute written per item.",
     )
 
 

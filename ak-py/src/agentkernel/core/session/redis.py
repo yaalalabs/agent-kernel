@@ -5,10 +5,10 @@ from typing import Any, Optional
 
 import redis
 
-from .base import SessionStore
-from .serde import BinarySerde
 from ..base import Session
 from ..config import AKConfig
+from .base import SessionStore
+from .serde import BinarySerde
 
 
 class RedisDriver:
