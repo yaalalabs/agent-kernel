@@ -100,7 +100,7 @@ session = Session(id="user-123")
 
 **Key Features:**
 - Conversation history tracking
-- State persistence (in-memory or Redis)
+- State persistence (in-memory, Redis, or DynamoDB)
 - Thread management
 - Context preservation
 
@@ -243,8 +243,9 @@ Common configuration options:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AK_LOG_LEVEL` | Logging level | `INFO` |
-| `AK_SESSION_STORAGE` | Session storage backend | `in-memory` |
-| `AK_REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
+| `AK_SESSION__TYPE` | Session storage backend | `in_memory` |
+| `AK_SESSION__REDIS__URL` | Redis connection URL | `redis://localhost:6379` |
+| `AK_SESSION__DYNAMODB__TABLE_NAME` | DynamoDB table name | - |
 
 [Learn more about Configuration →](./configuration)
 

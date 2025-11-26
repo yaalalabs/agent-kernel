@@ -35,7 +35,7 @@ AK's Python libraries provide developers with comprehensive tools to:
 
 4. **Context and Memory Management**
    - Handle agent memory efficiently, with in-built support for memory management.
-   - It currently offers in-memory and Redis-based options.
+   - It currently offers in-memory, Redis, and DynamoDB options.
    - Developers can customize memory management based on their preferences.
 
 5. **Traceability and Accountability**
