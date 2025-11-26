@@ -1,9 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, List
+from typing import Any, List, Literal, Union
 
 from .config import AKConfig
-
+from pydantic import BaseModel
 
 class Session:
     """
@@ -62,7 +62,38 @@ class Session:
         self._data[key] = value
         return value
 
+class AgentRequestText(BaseModel):
+    """
+    AgentRequestText encapsulates a text request to an agent.
+    """
+    prompt: str
+    type: Literal["text"]
+class AgentRequestFile(BaseModel):
+    """
+    AgentRequestFile encapsulates a file attachment request to an agent
+    """
+    file_data: bytes | str  # This could be base64 encoded string or bytes or url
+    name: str
+    type: Literal["file"]
+    mime_type: str | None = None # Optional MIME The IANA standard MIME type of the source data
 
+class AgentRequestImage(BaseModel):
+    """
+    AgentRequestImage encapsulates an image request to an agent
+    """
+    image_data: bytes | str  # This could be base64 encoded string or bytes or url
+    name: str
+    type: Literal["image"]
+    mime_type: str | None = None # Optional MIME The IANA standard MIME type of the source data
+
+class AgentRequestAny(BaseModel):
+    """
+    AgentRequestAny encapsulates a passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
+    """
+    additional_context: Any | None = None
+    type: Literal["other"]
+    
+AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
 class Runner(ABC):
     """
     Runner is the base class for all agent runners.
@@ -94,6 +125,17 @@ class Runner(ABC):
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param prompt: The prompt to provide to the agent.
+        :return: The result of the agent's execution.
+        """
+        pass
+    
+    @abstractmethod    
+    async def run_multi(self, agent: Any, session: Session, requests: List[AgentRequest]) -> Any:
+        """
+        Runs the agent with the provided multi modal inputs.
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
         """
         pass

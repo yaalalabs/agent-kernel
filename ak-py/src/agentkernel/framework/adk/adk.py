@@ -18,7 +18,7 @@ from ...trace import Trace
 FRAMEWORK = "adk"
 
 
-class GoogleADKSession(Session):
+class GoogleADKSession:
     """
     Manages Google ADK user sessions and underlying session service.
     """
