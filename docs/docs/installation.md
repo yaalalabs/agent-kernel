@@ -171,9 +171,13 @@ Agent Kernel can be configured using environment variables or a configuration fi
 # Set log level
 export AK_LOG_LEVEL=INFO
 
-# Set session storage
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://localhost:6379
+# Set session storage - Redis
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
+
+# Set session storage - DynamoDB (for AWS deployments)
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 ```
 
 ## Troubleshooting

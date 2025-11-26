@@ -6,7 +6,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "6.11.0" # pin terraform provider version
+      version = ">= 6.11.0" # pin terraform provider version
     }
     docker = {
       source  = "kreuzwerker/docker"

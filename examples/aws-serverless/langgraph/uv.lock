@@ -157,7 +157,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["langgraph", "aws"], specifier = ">=0.2.5" },
+    { name = "agentkernel", extras = ["langgraph", "redis"], specifier = ">=0.2.5" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
     { name = "langchain-openai", specifier = ">=0.3.28" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },

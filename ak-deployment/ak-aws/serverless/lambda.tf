@@ -33,6 +33,35 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment"
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
+resource "aws_iam_policy" "lambda_dynamodb_describe_policy" {
+  count = var.create_dynamodb_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-dynamodb"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ],
+        Resource = local.dynamodb_memory_table_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb_describe_attachment" {
+  count      = var.create_dynamodb_memory_table == true ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_dynamodb_describe_policy[0].arn
+}
+
 data "aws_s3_object" "source_code" {
   count  = (var.package_type == "S3Zip") ? 1 : 0
   bucket = module.source_storage[0].source_storage_s3_bucket
@@ -123,9 +152,10 @@ module "lambda_deployment" {
     version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
   } : {}
 
-  environment_variables = merge(var.environment_variables, {
-    AK_SESSION_REDIS_URL = local.redis_url
-  })
+  environment_variables = merge(var.environment_variables, local.redis_url != null ? {
+    AK_SESSION__REDIS__URL = local.redis_url
+  } : {}
+  )
   event_source_mapping = var.event_source_mapping
 
   timeout     = var.timeout

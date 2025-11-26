@@ -22,12 +22,14 @@ graph TB
     subgraph "Storage"
         D[In-Memory Dict]
         E[Redis]
+        F[DynamoDB]
     end
     
     A --> B
     B --> C
     C --> D
     C --> E
+    C --> F
     
     style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -37,7 +39,7 @@ graph TB
 ### In-Memory (Development)
 
 ```bash
-export AK_SESSION_STORAGE=in_memory
+export AK_SESSION__TYPE=in_memory
 ```
 
 - Fast, no setup required
@@ -47,12 +49,24 @@ export AK_SESSION_STORAGE=in_memory
 ### Redis (Production)
 
 ```bash
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://localhost:6379
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
 ```
 
 - Persistent
 - Multi-process/distributed
+- Configurable TTL
+
+### DynamoDB (AWS Serverless)
+
+```bash
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+```
+
+- Serverless, fully managed
+- Auto-scaling
+- AWS-native integration
 - Configurable TTL
 
 ## Session Lifecycle
@@ -72,5 +86,6 @@ stateDiagram-v2
 
 - Use unique session IDs per user conversation
 - Configure appropriate TTL in production
-- Use Redis for distributed deployments
+- Use Redis for distributed/containerized deployments
+- Use DynamoDB for AWS serverless deployments
 - Monitor session storage size

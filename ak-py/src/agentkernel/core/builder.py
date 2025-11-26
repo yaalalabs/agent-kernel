@@ -2,9 +2,7 @@ import logging
 from enum import StrEnum
 
 from .config import AKConfig
-from .sessions import SessionStore
-from .sessions.in_memory import InMemorySessionStore
-from .sessions.redis import RedisDriver, RedisSessionStore
+from .session import SessionStore
 
 
 class Builder:
@@ -29,6 +27,7 @@ class SessionStoreType(StrEnum):
 
     IN_MEMORY = "IN_MEMORY"
     REDIS = "REDIS"
+    DYNAMODB = "DYNAMODB"
 
     @classmethod
     def from_str(cls, type_str: str) -> "SessionStoreType":
@@ -67,9 +66,10 @@ class SessionStoreBuilder(Builder):
 
         This static method reads the session store type from the application configuration
         and instantiates the appropriate SessionStore implementation. Currently supports
-        Redis-backed and in-memory session stores.
+        Redis-backed, DynamoDB-backed, and in-memory session stores.
 
-        :returns: An instance of either RedisSessionStore (if configured type is REDIS)
+        :returns: An instance of RedisSessionStore (if configured type is REDIS),
+            DynamoDBSessionStore (if configured type is DYNAMODB),
             or InMemorySessionStore (for all other types).
 
         :raises: Any exceptions raised by SessionStoreType.from_str(), AKConfig.get(),
@@ -79,6 +79,14 @@ class SessionStoreBuilder(Builder):
 
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
-            return RedisSessionStore(RedisDriver())
+            from .session.redis import RedisSessionStore
+
+            return RedisSessionStore()
+        elif session_store_type == SessionStoreType.DYNAMODB:
+            from .session.dynamodb import DynamoDBSessionStore
+
+            return DynamoDBSessionStore()
         else:
+            from .session.in_memory import InMemorySessionStore
+
             return InMemorySessionStore()

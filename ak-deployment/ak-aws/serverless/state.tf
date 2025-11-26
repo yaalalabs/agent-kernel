@@ -12,6 +12,7 @@ locals {
   vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
   subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
+  dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
 }
 
 module "vpc" {
@@ -71,4 +72,22 @@ module "redis" {
   vpc_cidr      = local.vpc_cidr
   vpc_id        = local.vpc_id
   subnet_ids    = local.subnet_ids
+}
+
+module dynamodb_memory {
+  source = "../common/modules/dynamodb"
+  # version = "0.2.5"
+  count = var.create_dynamodb_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "key", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "key"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "session_store"
+  ttl_attribute_name = "expiry_time"
 }

@@ -21,11 +21,14 @@ library_version: "0.1.0"
 
 # Session management
 session:
-  type: redis  # or 'in_memory'
+  type: redis  # or 'in_memory' or 'dynamodb'
   redis:
     url: redis://localhost:6379
     ttl: 604800  # 7 days in seconds
     prefix: "ak:sessions:"
+  dynamodb:
+    table_name: agent-kernel-sessions
+    ttl: 604800  # 7 days in seconds
 
 # API server
 api:
@@ -65,6 +68,10 @@ Alternatively, use `config.json`:
       "url": "redis://localhost:6379",
       "ttl": 604800,
       "prefix": "ak:sessions:"
+    },
+    "dynamodb": {
+      "table_name": "agent-kernel-sessions",
+      "ttl": 604800
     }
   },
   "api": {
@@ -119,12 +126,16 @@ export AK_LIBRARY_VERSION=0.1.0
 
 ```bash
 # Session storage type
-export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis' (default: 'in_memory')
+export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (default: 'in_memory')
 
 # Redis configuration
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
 export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
+
+# DynamoDB configuration
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
+export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
 ```
 
 ### API Server
@@ -188,11 +199,14 @@ library_version: "0.1.0"       # Library version (auto-detected)
 
 # Session storage configuration
 session:
-  type: "in_memory"             # Storage type: 'in_memory' or 'redis'
+  type: "in_memory"             # Storage type: 'in_memory', 'redis', or 'dynamodb'
   redis:                        # Redis-specific settings
     url: "redis://localhost:6379"  # Redis connection URL (supports rediss:// for SSL)
     ttl: 604800                 # Session TTL in seconds (7 days)
     prefix: "ak:sessions:"      # Redis key prefix
+  dynamodb:                     # DynamoDB-specific settings
+    table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
+    ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
 
 # API server configuration
 api:
@@ -300,14 +314,36 @@ export AK_API__HOST=0.0.0.0
 export AK_API__PORT=8000
 ```
 
+### Production Setup with DynamoDB (AWS Serverless)
+
+```bash
+# Production configuration with DynamoDB
+export AK_DEBUG=false
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions-prod
+export AK_SESSION__DYNAMODB__TTL=86400  # 1 day
+export AK_API__HOST=0.0.0.0
+export AK_API__PORT=8000
+```
+
 ### A2A Enabled Setup
 
 ```bash
-# Enable Agent-to-Agent communication
+# Enable Agent-to-Agent communication with Redis
 export AK_A2A__ENABLED=true
 export AK_A2A__TASK_STORE_TYPE=redis
 export AK_SESSION__TYPE=redis
 export AK_SESSION__REDIS__URL=redis://localhost:6379
+```
+
+### A2A Enabled Setup with DynamoDB (AWS)
+
+```bash
+# Enable Agent-to-Agent communication with DynamoDB
+export AK_A2A__ENABLED=true
+export AK_A2A__TASK_STORE_TYPE=redis  # A2A tasks still use Redis or in-memory
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 ```
 
 ### MCP Enabled Setup
@@ -372,19 +408,22 @@ Example validation errors:
 
 ```bash
 # These will cause validation errors:
-export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory' or 'redis'
+export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', or 'dynamodb'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
 export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
 ```
 
 ## Best Practices
 
-1. **Use environment variables for secrets** (Redis passwords, API keys)
+1. **Use environment variables for secrets** (Redis passwords, API keys, AWS credentials)
 2. **Use configuration files for static settings** (ports, URLs, feature flags)
 3. **Set appropriate TTL values** for your use case
-4. **Use Redis for production** session storage and task stores
+4. **Use Redis or DynamoDB for production** session storage
+   - Use **DynamoDB** for non-performance-critical deployments
+   - Use **Redis** for performance-critical deployments
 5. **Enable debug mode only in development**
 6. **Use specific agent lists** instead of "*" in production for security
+7. **Ensure DynamoDB table has correct schema** (partition key: 'session_id', sort key: 'key')
 
 ## Summary
 
@@ -392,5 +431,6 @@ export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
 - Environment variables take precedence over file configuration
 - Support for nested configuration using underscore delimiter
 - Built-in validation ensures configuration integrity
-- Flexible session storage options (in-memory or Redis)
+- Flexible session storage options (in-memory, Redis, or DynamoDB)
 - Optional A2A and MCP functionality with granular control
+- DynamoDB recommended for non-performance-critical deployments

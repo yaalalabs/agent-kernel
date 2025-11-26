@@ -15,6 +15,7 @@ graph LR
     C --> D[Agent Kernel Runtime]
     D --> E[Your Agent]
     C --> F[Redis/ElastiCache]
+    C --> G[DynamoDB]
     
     style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -93,12 +94,39 @@ Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-
 
 ## Session Storage
 
-Use ElastiCache Redis for session persistence:
+For serverless deployments, use DynamoDB or ElastiCache Redis for session persistence:
+
+### DynamoDB (Recommended for Serverless)
 
 ```bash
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://elasticache-endpoint:6379
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+export AK_SESSION__DYNAMODB__TTL=3600  # 1 hour
 ```
+
+**Benefits:**
+- Serverless, fully managed
+- Auto-scaling
+- No cold starts
+- Pay-per-use
+- AWS-native integration
+
+**Requirements:**
+- DynamoDB table with partition key `session_id` (String) and sort key `key` (String)
+- Lambda IAM role with DynamoDB permissions (`dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:DescribeTable`)
+
+### ElastiCache Redis
+
+```bash
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://elasticache-endpoint:6379
+```
+
+**Benefits:**
+- High performance
+- Shared cache across functions
+
+**Note:** Redis requires VPC configuration for Lambda, which can impact cold start times.
 
 ## Monitoring
 
@@ -110,7 +138,8 @@ CloudWatch metrics automatically available:
 
 ## Best Practices
 
-- Use Redis for session storage (not in-memory)
+- Use DynamoDB for session storage (serverless-native)
+- Alternatively, use Redis for session storage if already using ElastiCache
 - Set appropriate timeout (30-60s for LLM calls)
 
 ## Example Deployment

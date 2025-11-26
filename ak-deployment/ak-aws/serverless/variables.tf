@@ -136,7 +136,13 @@ variable "private_subnet_ids" {
 
 variable "create_redis_cluster" {
   type        = bool
-  description = "Agent memory type. Accepted values are redis or in_memory"
+  description = "Create a redis cluster to store Agent memory"
+  default     = false
+}
+
+variable "create_dynamodb_memory_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the Agent memory"
   default     = false
 }
 
