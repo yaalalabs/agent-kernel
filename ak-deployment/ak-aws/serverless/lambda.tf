@@ -123,9 +123,10 @@ module "lambda_deployment" {
     version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
   } : {}
 
-  environment_variables = merge(var.environment_variables, {
-    AK_SESSION_REDIS_URL = local.redis_url
-  })
+  environment_variables = merge(var.environment_variables, local.redis_url != null ? {
+    AK_SESSION__REDIS__URL = local.redis_url
+  } : {}
+  )
   event_source_mapping = var.event_source_mapping
 
   timeout     = var.timeout
