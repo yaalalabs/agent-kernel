@@ -2,4 +2,4 @@ debug: true
 session:
   type: dynamodb
   dynamodb:
-    table: "ak:openai:example:"
+    table_name: "ak-oai-ddb-dev-examples-session_store"

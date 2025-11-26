@@ -81,10 +81,12 @@ module dynamodb_memory {
     { name = "session_id", type = "S" },
     { name = "key", type = "S" },
   ]
-  hash_key      = "session_id"
-  range_key     = "key"
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  table_name    = "session_store"
+  hash_key           = "session_id"
+  range_key          = "key"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "session_store"
+  ttl_attribute_name = "expiry_time"
 }

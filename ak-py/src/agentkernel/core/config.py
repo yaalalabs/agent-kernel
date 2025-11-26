@@ -22,9 +22,21 @@ class _RedisConfig(BaseModel):
     prefix: str = Field(default="ak:sessions:", description="Key prefix for Redis session storage")
 
 
+class _DynamoDBConfig(BaseModel):
+    table_name: str = Field(
+        description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'"
+    )
+    ttl: int = Field(
+        default=604800,
+        description=
+        "DynamoDB item TTL in seconds (0 disables). Used to compute UNIX epoch 'expiry_time' attribute written per item.",
+    )
+
+
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
+    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb)$")
     redis: Optional[_RedisConfig] = None
+    dynamodb: Optional[_DynamoDBConfig] = None
 
 
 class _RoutesConfig(BaseModel):
