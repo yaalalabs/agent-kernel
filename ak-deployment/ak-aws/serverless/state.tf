@@ -72,3 +72,19 @@ module "redis" {
   vpc_id        = local.vpc_id
   subnet_ids    = local.subnet_ids
 }
+
+module dynamodb_memory {
+  source = "../common/modules/dynamodb"
+  # version = "0.2.5"
+  count = var.create_dynamodb_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "key", type = "S" },
+  ]
+  hash_key      = "session_id"
+  range_key     = "key"
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  table_name    = "session_store"
+}
