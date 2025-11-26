@@ -14,7 +14,7 @@ class InMemorySessionStore(SessionStore):
         Initializes an InMemorySessionStore instance.
         """
         self._sessions = {}
-        self._log = logging.getLogger("ak.core.sessions.inmemory")
+        self._log = logging.getLogger("ak.core.session.inmemory")
 
     def load(self, session_id: str, strict: bool = False) -> Session:
         """

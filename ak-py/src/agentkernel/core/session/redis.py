@@ -1,14 +1,14 @@
 import logging
-import pickle
 import time
 import traceback
 from typing import Any, Optional
 
 import redis
 
+from .base import SessionStore
+from .serde import BinarySerde
 from ..base import Session
 from ..config import AKConfig
-from .base import SessionStore
 
 
 class RedisDriver:
@@ -19,7 +19,7 @@ class RedisDriver:
     _redis_client = None
 
     def __init__(self):
-        self._log = logging.getLogger("ak.core.sessions.redis.util")
+        self._log = logging.getLogger("ak.core.session.redis.util")
         self._url = AKConfig.get().session.redis.url
         self._prefix = AKConfig.get().session.redis.prefix
         self._ttl = int(AKConfig.get().session.redis.ttl)
@@ -143,8 +143,8 @@ class RedisSessionStore(SessionStore):
         """
         Initializes a RedisSessionStore instance.
         """
-        self._log = logging.getLogger("ak.core.sessions.redis")
-        self._serde = RedisSessionSerde()
+        self._log = logging.getLogger("ak.core.session.redis")
+        self._serde = BinarySerde()
         self._driver = RedisDriver()
 
     def load(self, session_id: str, strict: bool = False) -> Session:
@@ -201,38 +201,3 @@ class RedisSessionStore(SessionStore):
             self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))
         if self._driver.ttl:
             self._driver.expire(self._driver.key(session.id))
-
-
-class RedisSessionSerde:
-    """
-    RedisSessionSerde provides serialization and deserialization of Session objects for Redis
-    storage using a JSON representation.
-    """
-
-    _log = logging.getLogger("ak.core.sessions.redisserde")
-
-    # Binary headers to distinguish formats
-
-    @classmethod
-    def dumps(cls, obj: Any) -> bytes:
-        """
-        Serialize a value to JSON, falling back to repr for non-serializable objects.
-        :param obj: The value to serialize.
-        :return: The serialized value as a JSON string.
-        """
-        cls._log.debug(f"dumped: {obj}")
-        return pickle.dumps(obj)
-
-    @classmethod
-    def loads(cls, payload: bytes) -> Any:
-        """
-        Deserialize a JSON string/bytes back into a Python object; returns None if missing.
-        :param payload: The JSON string or bytes to deserialize.
-        :return: The deserialized value.
-        """
-        cls._log.debug(f"loads: {type(payload)}")
-        if payload is None:
-            return None
-        loaded = pickle.loads(payload)
-        cls._log.debug(f"loaded: {loaded}")
-        return loaded
