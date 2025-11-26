@@ -1,0 +1,5 @@
+debug: true
+session:
+  type: dynamodb
+  dynamodb:
+    table: "ak:openai:example:"

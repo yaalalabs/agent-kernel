@@ -1,0 +1,28 @@
+# Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Redis as agent memory
+
+This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda using redis as agent memory.
+
+## Deployed Resources
+
+This demo deploys the following AWS resources:
+
+- AWS Lambda function running the Agent Kernel implementation.
+- API Gateway endpoint for the Lambda function.
+- Configuration changes to enable redis as agent memory (Refer to `config.yaml` for details).
+
+## Prerequisites
+
+- AWS CLI configured with appropriate credentials.
+- Terraform (`1.9.5` or higher) installed.
+
+## Deployment Steps
+
+1. Configure environment variables:
+    ```bash
+    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    ```
+
+2. Navigate to the deployment directory and run the deployment script:
+    ```bash
+    cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
+    ```
