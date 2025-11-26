@@ -12,6 +12,7 @@ locals {
   vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
   subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
+  dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
 }
 
 module "vpc" {
