@@ -118,6 +118,7 @@ class AgentService:
         self._session.set_context()
         result = await self._runtime.run(self._agent, self._session, prompt, additional_context)
         self._runtime.sessions().store(self._session)
+        self._session.get_volatile_cache().clear()
         self._session.reset_context()
         return result
 
