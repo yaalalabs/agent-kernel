@@ -41,6 +41,11 @@ function HomepageHeader() {
               Get Started →
             </Link>
             <Link
+              className={`button button--secondary button--lg ${styles.featuresButton}`}
+              to="/features">
+              Explore Features
+            </Link>
+            <Link
               className="button button--secondary button--lg"
               to="https://github.com/yaalalabs/agent-kernel">
               View on GitHub
@@ -92,7 +97,7 @@ function NavigationSection() {
   return (
     <section className={styles.navigationSection}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Explore</h2>
+        <h2 className={styles.sectionTitle}>Nagivate</h2>
         <div className={styles.cardGrid}>
           {navigationCards.map((card, idx) => (
             <div key={idx} className={`${styles.card} ${styles[card.color]}`}>

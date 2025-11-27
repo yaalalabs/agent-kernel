@@ -1,4 +1,4 @@
-# Messenger Integration
+# Messenger
 
 Deploy your Agent Kernel agents as Facebook Messenger bots that can respond to messages in real-time. This integration connects your AI agents directly to Facebook Messenger, enabling natural conversations with users through one of the world's most popular messaging platforms.
 

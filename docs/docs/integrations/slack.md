@@ -1,4 +1,4 @@
-# Slack Integration
+# Slack
 
 The Slack integration allows you to deploy Agent Kernel agents as Slack bots that can respond to mentions and direct messages within Slack workspaces. This integration uses the Slack Events HTTP API to provide real-time conversational AI capabilities.
 
