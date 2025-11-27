@@ -40,7 +40,8 @@ function FeaturesHero() {
         <div className={styles.heroContent}>
           <h1 className={styles.heroTitle}>Agent Kernel Features</h1>
           <p className={styles.heroSubtitle}>
-            A comprehensive platform for building, deploying, and managing AI agents at scale
+            A versatile, framework-agnostic runtime for building and deploying AI agents. 
+            Migrate your existing agents and instantly utilize pre-built execution and testing capabilities.
           </p>
           <div className={styles.heroButtons}>
             <Link
@@ -73,8 +74,9 @@ function OverviewSection() {
             </div>
             <h3>Framework Agnostic</h3>
             <p>
-              Seamlessly migrate between LangGraph, OpenAI Agents SDK, Google ADK, and custom frameworks 
-              without rewriting your agent logic. Your code, your choice.
+              Build agents using any AI agentic framework and migrate them to Agent Kernel to benefit from 
+              its execution framework capabilities. No vendor lock-in - seamlessly migrate between LangGraph, 
+              OpenAI Agents SDK, Google ADK, CrewAI, and custom frameworks without rewriting your agent logic.
             </p>
           </div>
           <div className={styles.overviewCard}>
@@ -83,8 +85,9 @@ function OverviewSection() {
             </div>
             <h3>Production Ready</h3>
             <p>
-              Built-in state management, traceability, monitoring, and enterprise-grade security. 
-              Deploy with confidence from day one.
+              Enterprise-grade features including built-in session management, conversational state tracking, 
+              pluggable memory backends, comprehensive traceability with LangFuse and OpenLLMetry, and 
+              multi-agent collaboration support. Deploy with confidence from day one.
             </p>
           </div>
           <div className={styles.overviewCard}>
@@ -93,18 +96,19 @@ function OverviewSection() {
             </div>
             <h3>Deploy Anywhere</h3>
             <p>
-              From local testing to AWS serverless, containerized environments, or on-premise deployments. 
-              One codebase, multiple deployment options.
+              From CLI testing for local development to REST API servers, AWS serverless, containerized environments, 
+              or on-premise deployments. One codebase, multiple deployment options. Switch deployment modes 
+              without changing your agent code.
             </p>
           </div>
           <div className={styles.overviewCard}>
             <div className={styles.overviewIcon}>
-              <MdGroup />
+              <MdIntegrationInstructions />
             </div>
-            <h3>Multi-Agent Systems</h3>
+            <h3>Versatile Integrations</h3>
             <p>
-              Native support for agent-to-agent communication, hierarchies, and collaborative workflows. 
-              Build complex agentic systems with ease.
+              Built-in integrations for popular messaging platforms including Slack, WhatsApp, and Messenger. 
+              Support for MCP Server and A2A Server protocols. Easy-to-build custom integrations with pluggable architecture.
             </p>
           </div>
         </div>
@@ -118,15 +122,15 @@ function CoreFeaturesSection() {
     {
       icon: <MdCode />,
       title: 'Agent Design & Definition',
-      description: 'Define agents with clear roles, capabilities, and behaviors using intuitive Python APIs.',
-      highlights: ['Python-first SDK', 'Role-based design', 'Flexible configuration'],
+      description: 'Define agents with clear roles, capabilities, and behaviors using intuitive Python APIs. All framework adapters expose the same core abstractions: Agent, Runner, Session, Module, and Runtime.',
+      highlights: ['Python-first SDK', 'Unified API across frameworks', 'Role-based design', 'Flexible configuration'],
       link: '/docs/frameworks/overview'
     },
     {
       icon: <MdExtension />,
       title: 'Tool Integration',
-      description: 'Bind custom tools, APIs, and functionalities to your agents for enhanced capabilities.',
-      highlights: ['Custom tool support', 'API integrations', 'Built-in MCP tools'],
+      description: 'Bind custom tools, APIs, and functionalities to your agents for enhanced capabilities. Publish tools via MCP Server for Model Context Protocol integration.',
+      highlights: ['Custom tool support', 'API integrations', 'MCP tool publishing', 'Pluggable architecture'],
       link: '/docs/api/mcp-server'
     },
     {
@@ -292,7 +296,8 @@ function MemorySection() {
           <span className={styles.sectionNumber}>04</span>
           <h2 className={styles.sectionTitle}>Memory Management</h2>
           <p className={styles.sectionSubtitle}>
-            Flexible memory backends for every use case
+            Pluggable memory architecture with flexible backends for every use case. 
+            Choose the right storage solution for your development, testing, and production needs.
           </p>
         </div>
         <div className={styles.memoryGrid}>
@@ -330,7 +335,8 @@ function TestingSection() {
           <span className={styles.sectionNumber}>05</span>
           <h2 className={styles.sectionTitle}>Testing & Development</h2>
           <p className={styles.sectionSubtitle}>
-            Comprehensive tools for testing agents locally
+            Built-in agent test framework for local development. Focus on domain-specific agent development 
+            while Agent Kernel takes care of testing, deployment, and execution.
           </p>
         </div>
         <div className={styles.testingContent}>
@@ -385,7 +391,8 @@ function DeploymentSection() {
           <span className={styles.sectionNumber}>06</span>
           <h2 className={styles.sectionTitle}>Deployment Options</h2>
           <p className={styles.sectionSubtitle}>
-            Deploy anywhere, from local to global scale
+            Ready-to-use execution capabilities for every environment. Deploy anywhere, from local development 
+            to global scale production, without changing your agent code.
           </p>
         </div>
         
@@ -545,7 +552,8 @@ function MessagingSection() {
           <span className={styles.sectionNumber}>08</span>
           <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
           <p className={styles.sectionSubtitle}>
-            Deploy agents on popular messaging platforms
+            Connect your AI agents to popular messaging platforms and reach your users where they are. 
+            Built-in integrations for Slack, WhatsApp, and Messenger, with more coming soon.
           </p>
         </div>
         
@@ -578,6 +586,11 @@ function CTASection() {
         <div className={styles.ctaContent}>
           <h2>Ready to Build Your AI Agents?</h2>
           <p>
+            Agent Kernel is ideal for AI engineers who want framework flexibility, teams building production 
+            AI agent systems, developers migrating between frameworks, organizations requiring enterprise-grade 
+            deployment, and researchers exploring different agent frameworks.
+          </p>
+          <p style={{ marginTop: '1rem' }}>
             Get started with Agent Kernel today and bring your agentic applications to production.
           </p>
           <div className={styles.ctaButtons}>
