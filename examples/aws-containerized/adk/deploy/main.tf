@@ -1,5 +1,5 @@
 # Containered module configuration for deploying Google ADK Agent in ECS
-module "containerized_agents" {
+module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
   version = "0.2.5"
 
