@@ -97,7 +97,7 @@ function NavigationSection() {
   return (
     <section className={styles.navigationSection}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Nagivate</h2>
+        <h2 className={styles.sectionTitle}>Navigate</h2>
         <div className={styles.cardGrid}>
           {navigationCards.map((card, idx) => (
             <div key={idx} className={`${styles.card} ${styles[card.color]}`}>
