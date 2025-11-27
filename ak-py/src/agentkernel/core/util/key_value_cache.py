@@ -15,7 +15,7 @@ class KeyValueCache(BaseModel, Generic[T]):
     JSON-serializable.
 
     Examples:
-        >>> store = KeyValueStore()
+        >>> store = KeyValueCache()
         >>> store.set("name", "John")
         >>> store.get("name")
         'John'

@@ -151,7 +151,7 @@ class Runtime:
 
     def get_non_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
         """
-        Retrieves the volatile key-value cache associated with the provided session.
+        Retrieves the non-volatile key-value cache associated with the provided session.
         :param session_id: The session to retrieve the non volatile cache for. if not provided the current context is used to find the session
         :return: The non volatile key-value cache.
         """

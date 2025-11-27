@@ -8,19 +8,18 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.5"
+version = "0.2.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
-    { name = "redis" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/dd/4e793a479999493ed262d21c3ecef1d318e485c8120a2035136851383963/agentkernel-0.2.5.tar.gz", hash = "sha256:f97cb48aef748052046c77b686c39c3f59da3bd985ee04489c68e518b446270b", size = 48676, upload-time = "2025-11-21T11:18:04.8Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/d1/f1ed86f6215e3e6ec93ab9d1fd84c7d87aeea23439c412df00bb0a560b59/agentkernel-0.2.6.tar.gz", hash = "sha256:c4f9cabdee92e6afd2ed9dd3c9d849a24a6cb459278d8ea7fefdb5663da0c941", size = 52000, upload-time = "2025-11-27T10:22:33.451Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/4c/277ae45ae0bb27d12f19b7729580f23509f0697326f6c1bc33a8a047002a/agentkernel-0.2.5-py3-none-any.whl", hash = "sha256:dad87e0e9cffc61ffd0cb4a93b09f9361dcff906ff9e177a7c7b765f6e0a2fb0", size = 77200, upload-time = "2025-11-21T11:18:03.178Z" },
+    { url = "https://files.pythonhosted.org/packages/97/e5/854492642282ad6401ef462173632c53c1ccc627104827692852669b44db/agentkernel-0.2.6-py3-none-any.whl", hash = "sha256:e53a95b547df2806528611fbe9fb292beb81e726264489b07ff9c705321980ed", size = 84850, upload-time = "2025-11-27T10:22:32.077Z" },
 ]
 
 [package.optional-dependencies]
@@ -33,6 +32,9 @@ crewai = [
     { name = "crewai" },
     { name = "openinference-instrumentation-crewai" },
     { name = "openinference-instrumentation-litellm" },
+]
+redis = [
+    { name = "redis" },
 ]
 
 [[package]]
@@ -163,7 +165,7 @@ name = "aws-serverless-crewai"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["api", "crewai"] },
+    { name = "agentkernel", extra = ["api", "crewai", "redis"] },
 ]
 
 [package.dev-dependencies]
@@ -174,7 +176,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["crewai", "api", "redis"], specifier = ">=0.2.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["crewai", "api", "redis"], specifier = ">=0.2.6" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2417,11 +2419,11 @@ wheels = [
 
 [[package]]
 name = "redis"
-version = "6.4.0"
+version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0d/d6/e8b92798a5bd67d659d51a18170e91c16ac3b59738d91894651ee255ed49/redis-6.4.0.tar.gz", hash = "sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010", size = 4647399, upload-time = "2025-08-07T08:10:11.441Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/c8/983d5c6579a411d8a99bc5823cc5712768859b5ce2c8afe1a65b37832c81/redis-7.1.0.tar.gz", hash = "sha256:b1cc3cfa5a2cb9c2ab3ba700864fb0ad75617b41f01352ce5779dabf6d5f9c3c", size = 4796669, upload-time = "2025-11-19T15:54:39.961Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/02/89e2ed7e85db6c93dfa9e8f691c5087df4e3551ab39081a4d7c6d1f90e05/redis-6.4.0-py3-none-any.whl", hash = "sha256:f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f", size = 279847, upload-time = "2025-08-07T08:10:09.84Z" },
+    { url = "https://files.pythonhosted.org/packages/89/f0/8956f8a86b20d7bb9d6ac0187cf4cd54d8065bc9a1a09eb8011d4d326596/redis-7.1.0-py3-none-any.whl", hash = "sha256:23c52b208f92b56103e17c5d06bdc1a6c2c0b3106583985a76a18f83b265de2b", size = 354159, upload-time = "2025-11-19T15:54:38.064Z" },
 ]
 
 [[package]]

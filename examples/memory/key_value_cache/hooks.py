@@ -5,7 +5,7 @@ Pre-execution hooks:
 - RAGHook: Simulates adding extra information to a vector store for a tool use
 """
 
-import os
+
 from typing import Any
 
 from agentkernel import Agent, Posthook, Prehook, Session, KeyValueCache, Runtime
