@@ -3,8 +3,11 @@ from abc import ABC, abstractmethod
 from typing import Any, List
 
 from .config import AKConfig
+from .sessions import KeyValueCache
 
+import contextvars
 
+current_session = contextvars.ContextVar('session_id', default="")
 class Session:
     """
     Session is the base class for a stacking state across related interactions with agents.
@@ -16,6 +19,13 @@ class Session:
     are persisted and are available across multiple invocations of the runtime). This is governed by
     the runtime configuration.
     """
+    @classmethod
+    def get_current_session_id(cls) -> str:
+        """
+        Returns the current session ID from the context variable.
+        :return: The current session ID.
+        """
+        return current_session.get()
 
     def __init__(self, id: str):
         """
@@ -25,6 +35,10 @@ class Session:
         self._log = logging.getLogger("ak.core.session")
         self._id = id
         self._data = {}
+        
+        # Pre-initialize key-value caches to be used by application code which will not be part of the agent context
+        self.set("v_cache", KeyValueCache())
+        self.set("nv_cache", KeyValueCache())
 
     @property
     def id(self) -> str:
@@ -61,7 +75,17 @@ class Session:
         self._log.debug(f"Setting session object for key {key}: {value}")
         self._data[key] = value
         return value
-
+    
+    def set_context(self):
+        """
+        Sets the current session context variable to this session's ID.
+        """
+        self._token = current_session.set(self._id)
+    def reset_context(self):
+        """
+        Resets the current session context variable to the previous value.
+        """
+        current_session.reset(self._token)
 
 class Runner(ABC):
     """

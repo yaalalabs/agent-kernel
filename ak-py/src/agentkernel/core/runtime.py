@@ -4,6 +4,7 @@ from threading import RLock
 from types import ModuleType
 from typing import Any, Optional
 
+from agentkernel.core.sessions.key_value_cache import KeyValueCache
 from deprecated import deprecated
 from singleton_type import Singleton
 
@@ -136,6 +137,26 @@ class Runtime:
         :return: The session storage.
         """
         return self._sessions
+    
+    def get_volatile_cache(self, session_id:str|None=None) -> KeyValueCache:
+        """
+        Retrieves the volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the volatile cache for. if not provided the current context is used to find the session
+        :return: The volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+        return self._sessions.load(session_id).get("v_cache")
+
+    def get_non_volatile_cache(self, session_id:str|None=None) -> KeyValueCache:
+        """
+        Retrieves the volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the non volatile cache for. if not provided the current context is used to find the session
+        :return: The non volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+        return self._sessions.load(session_id).get("nv_cache")
 
     def register_pre_hooks(self, agent_name: str, hooks: list[Prehook]) -> None:
         """

@@ -4,7 +4,6 @@ from typing import Any
 
 from ..core import Agent, GlobalRuntime, Runtime, Session
 
-
 class AgentService:
     """
     AgentService class provides a utility method for interacting with runtime, agents and sessions.
@@ -115,8 +114,10 @@ class AgentService:
             raise ValueError("No agent selected. Please select an agent before running.")
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
+        self._session.set_context()
         result = await self._runtime.run(self._agent, self._session, prompt, additional_context)
         self._runtime.sessions().store(self._session)
+        self._session.reset_context()
         return result
 
     def get_response_session_id(self, session_id: str | None = None) -> str | None:
