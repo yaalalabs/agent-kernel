@@ -1,4 +1,4 @@
-# Containered module configuration for deploying Google ADK Agent in ECS
+# Containered module configuration for deploying OpenAI Agent in ECS
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
   version = "0.2.5"
