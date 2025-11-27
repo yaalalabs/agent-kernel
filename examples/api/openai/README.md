@@ -5,7 +5,7 @@ can interact with agents via the Agent Kernel REST API. The example also demonst
 to the Agent Kernel REST API. This allows the users to utilize existing REST server for their custom REST endpoint
 creations.
 
-Example also demonstrates how to optionally add a custom route and customer middleware (prehook) to manage additional
+Example also demonstrates how to optionally add a custom route and custom middleware (prehook) to manage additional
 context passed to the agent.
 
 Install dependencies using:
