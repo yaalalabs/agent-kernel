@@ -27,7 +27,8 @@ import {
   MdPower,
   MdGroup,
   MdMessage,
-  MdSettings
+  MdSettings,
+  MdHealthAndSafety
 } from 'react-icons/md';
 import { FaPython, FaAws, FaDocker, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
 import { SiTerraform, SiRedis, SiAmazondynamodb, SiOpenai, SiGmail } from 'react-icons/si';
@@ -153,6 +154,13 @@ function CoreFeaturesSection() {
       description: 'Customize agent behavior with pre and post-execution hooks for guardrails, RAG, and response moderation.',
       highlights: ['Pre-execution hooks', 'Post-execution hooks', 'Context injection'],
       link: '/docs/integrations/hooks'
+    },
+    {
+      icon: <MdHealthAndSafety />,
+      title: 'Fault Tolerance',
+      description: 'Production-grade resilience with multi-AZ deployments, automatic failure recovery, and health monitoring for high availability.',
+      highlights: ['Multi-AZ deployment', 'Auto-recovery', 'Health monitoring', 'Zero downtime'],
+      // link: '/docs/core-concepts/fault-tolerance' // Available in next release
     },
     {
       icon: <MdVisibility />,
@@ -539,7 +547,7 @@ function MessagingSection() {
   const platforms = [
     { name: 'Slack', icon: <FaSlack />, status: 'Available' },
     { name: 'WhatsApp', icon: <FaWhatsapp />, status: 'Available' },
-    { name: 'Facebook Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
+    { name: 'Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
     { name: 'Instagram', icon: <FaInstagram />, status: 'Coming Soon' },
     { name: 'Gmail', icon: <SiGmail />, status: 'Coming Soon' },
     { name: 'Telegram', icon: <FaTelegram />, status: 'Coming Soon' },

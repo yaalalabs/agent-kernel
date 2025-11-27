@@ -23,14 +23,14 @@ graph TB
 
 ## Quick Comparison
 
-| Mode | Best For | Scalability | Cold Start | Cost |
-|------|----------|-------------|------------|------|
-| **Local/CLI** | Development, testing | N/A | Instant | Free |
-| **REST API** | Web apps, APIs | Manual scaling | Instant | Server costs |
-| **AWS Lambda** | Variable load | Auto-scaling | 1-3s | Pay per use |
-| **AWS ECS** | Consistent load | Auto-scaling | Instant | Running containers |
-| **MCP Server** | AI integrations | Manual | Instant | Server costs |
-| **A2A Server** | Agent networks | Manual | Instant | Server costs |
+| Mode | Best For | Scalability | Cold Start | Cost | Fault Tolerance |
+|------|----------|-------------|------------|------|-----------------|
+| **Local/CLI** | Development, testing | N/A | Instant | Free | Manual restart |
+| **REST API** | Web apps, APIs | Manual scaling | Instant | Server costs | Manual |
+| **AWS Lambda** | Variable load | Auto-scaling | 1-3s | Pay per use | **High** - Auto-retry, multi-AZ |
+| **AWS ECS** | Consistent load | Auto-scaling | Instant | Running containers | **Very High** - Multi-AZ, auto-recovery |
+| **MCP Server** | AI integrations | Manual | Instant | Server costs | Manual |
+| **A2A Server** | Agent networks | Manual | Instant | Server costs | Manual |
 
 ## Local Development
 
@@ -110,9 +110,43 @@ terraform init && terraform apply
 ### AI Integration
 → **MCP/A2A**: Protocol-based integration
 
+## Fault Tolerance Considerations
+
+Agent Kernel provides different levels of fault tolerance depending on your deployment mode:
+
+### Production-Grade Fault Tolerance
+
+**AWS ECS/Fargate** offers the highest level of fault tolerance:
+- Multi-AZ task distribution for zone-level failures
+- Automatic task replacement on failures
+- Health check-based routing
+- Configurable auto-scaling
+- Rolling deployments with zero downtime
+- Application Load Balancer with health monitoring
+
+[Learn more about ECS fault tolerance →](./aws-containerized#fault-tolerance)
+
+**AWS Lambda** provides built-in fault tolerance:
+- Serverless architecture with automatic scaling
+- Multi-AZ execution by default
+- Automatic retry on failures
+- No infrastructure management
+- Inherently resilient to hardware failures
+
+[Learn more about serverless fault tolerance →](./aws-serverless#fault-tolerance)
+
+### State Persistence
+
+Both production deployment modes support resilient state management:
+- **DynamoDB**: Multi-AZ replication, automatic backups, 99.999% SLA
+- **Redis**: Cluster mode with automatic failover, replication
+
+[Learn more about fault tolerance →](../core-concepts/fault-tolerance)
+
 ## Next Steps
 
 - [Local Deployment](./local)
 - [AWS Serverless](./aws-serverless)
 - [AWS Containerized](./aws-containerized)
+- [Fault Tolerance](../core-concepts/fault-tolerance)
 - [Configuration](../core-concepts/configuration)

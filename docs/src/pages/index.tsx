@@ -15,7 +15,8 @@ import {
   MdStar,
   MdChat,
   MdCode,
-  MdConstruction
+  MdConstruction,
+  MdHealthAndSafety
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
 import { SiTerraform, SiGmail } from 'react-icons/si';
@@ -358,6 +359,11 @@ function FeaturesSection() {
       title: 'Production Ready',
       icon: <MdRocket />,
       description: 'Built-in state management, monitoring, and scalability for enterprise deployments.',
+    },
+    {
+      title: 'Fault Tolerant',
+      icon: <MdHealthAndSafety />,
+      description: 'Multi-AZ deployments with automatic recovery, health monitoring, and zero downtime.',
     },
     {
       title: 'Multi-Agent Systems',
