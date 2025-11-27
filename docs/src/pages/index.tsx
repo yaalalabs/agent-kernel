@@ -159,9 +159,10 @@ function IntegrationsSection() {
     <section className={styles.integrationsSection}>
       <div className="container">
         <div className={styles.integrationsHeader}>
-          <h2 className={styles.integrationsSectionTitle}>Powered by Industry-Leading Frameworks</h2>
+          <h2 className={styles.integrationsSectionTitle}>Production Runtime for Leading Agentic Frameworks</h2>
           <p className={styles.integrationsSectionSubtitle}>
-            Agent Kernel seamlessly integrates with your favorite agentic frameworks and observability tools
+            Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel. 
+            A framework-agnostic runtime with enterprise-grade features.
           </p>
         </div>
 
@@ -443,8 +444,8 @@ export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Production-ready, framework-agnostic runtime for deploying and managing AI agents">
+      title="Agent Kernel - Agentic Framework Runtime for LangGraph, OpenAI, Google ADK & CrewAI"
+      description="Production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI with enterprise features. Framework-agnostic alternative to Semantic Kernel for AI agent deployment, orchestration, and monitoring.">
       <div className={styles.animatedBackground}></div>
       <div className={styles.gridOverlay}></div>
       <div className={styles.particle}></div>
