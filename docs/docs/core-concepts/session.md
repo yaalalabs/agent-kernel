@@ -16,6 +16,7 @@ graph LR
     
     B --> E[In-Memory Storage]
     B --> F[Redis Storage]
+    B --> G[DynamoDB Storage]
     
     style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -74,7 +75,7 @@ result = await runner.run(agent, session, prompt)
 Fast but volatile:
 
 ```bash
-export AK_SESSION_STORAGE=in_memory
+export AK_SESSION__TYPE=in_memory
 ```
 
 ```python
@@ -87,14 +88,30 @@ export AK_SESSION_STORAGE=in_memory
 Persistent and scalable:
 
 ```bash
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://localhost:6379
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
 ```
 
 ```python
 # Sessions persist across restarts
 # Good for production
 # Supports distributed deployments
+```
+
+### DynamoDB Storage
+
+Serverless and fully managed:
+
+```bash
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+```
+
+```python
+# Serverless, auto-scaling storage
+# Good for AWS serverless deployments
+# No infrastructure to manage
+# Pay-per-use pricing
 ```
 
 ## Session Lifecycle
@@ -172,15 +189,17 @@ Configure session behavior via environment variables:
 
 ```bash
 # Storage type
-export AK_SESSION_STORAGE=redis  # or 'in-memory'
+export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb'
 
 # Redis configuration
-export AK_REDIS_URL=redis://localhost:6379
-export AK_REDIS_DB=0
-export AK_REDIS_PASSWORD=your-password
+export AK_SESSION__REDIS__URL=redis://localhost:6379
+export AK_SESSION__REDIS__PASSWORD=your-password
+export AK_SESSION__REDIS__TTL=3600  # 1 hour
+export AK_SESSION__REDIS__PREFIX=ak:sessions:
 
-# Session expiration (seconds)
-export AK_SESSION_TTL=3600  # 1 hour
+# DynamoDB configuration
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+export AK_SESSION__DYNAMODB__TTL=3600  # 1 hour (0 to disable)
 ```
 
 ## Best Practices
@@ -202,8 +221,8 @@ session_id = "session1"
 Clean up old sessions in production:
 
 ```python
-# Redis sessions can have TTL (time-to-live)
-# Configure via AK_SESSION_TTL
+# Redis and DynamoDB sessions can have TTL (time-to-live)
+# Configure via AK_SESSION__REDIS__TTL or AK_SESSION__DYNAMODB__TTL
 # Sessions automatically expire after inactivity
 ```
 
@@ -250,7 +269,7 @@ for key in keys:
 ## Summary
 
 - Sessions manage conversation state and history
-- Support in-memory and Redis storage
+- Support in-memory, Redis, and DynamoDB storage
 - Automatically handled by Runners
 - Enable multi-turn conversations
 - Store framework-specific state
