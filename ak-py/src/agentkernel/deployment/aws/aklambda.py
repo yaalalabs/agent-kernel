@@ -30,6 +30,7 @@ class Lambda:
         service = AgentService()
         try:
             prompt = json.loads(event.get("body", "{}")).get("prompt", "")
+            additional_context = json.loads(event.get("body", "{}")).get("additional_context", "")
             name = json.loads(event.get("body", "{}")).get("agent", None)
             session_id = json.loads(event.get("body", "{}")).get("session_id", None)
 
@@ -52,11 +53,11 @@ class Lambda:
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():
                     asyncio.set_event_loop(asyncio.new_event_loop())
-                    result = asyncio.run(service.run(prompt))
+                    result = asyncio.run(service.run(prompt, additional_context))
                 else:
-                    result = loop.run_until_complete(service.run(prompt))
+                    result = loop.run_until_complete(service.run(prompt, additional_context))
             except RuntimeError:
-                result = asyncio.run(service.run(prompt))
+                result = asyncio.run(service.run(prompt, additional_context))
 
             cls._log.info(f"Result: {result}")
 
