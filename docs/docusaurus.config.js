@@ -153,7 +153,7 @@ const config = {
         '@type': 'SoftwareApplication',
         name: 'Agent Kernel',
         applicationCategory: 'DeveloperApplication',
-        description: 'Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Framework-agnostic framework.',
+        description: 'Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Framework-agnostic runtime.',
         operatingSystem: 'Linux, macOS, Windows',
         offers: {
           '@type': 'Offer',
