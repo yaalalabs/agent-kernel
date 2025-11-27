@@ -29,10 +29,11 @@ class Lambda:
         cls._log.info("Agent Kernel Agent Lambda Handler started")
         service = AgentService()
         try:
-            prompt = json.loads(event.get("body", "{}")).get("prompt", "")
-            additional_context = json.loads(event.get("body", "{}")).get("additional_context", None)
-            name = json.loads(event.get("body", "{}")).get("agent", None)
-            session_id = json.loads(event.get("body", "{}")).get("session_id", None)
+            body = json.loads(event.get("body", "{}"))
+            prompt = body.get("prompt", "")
+            additional_context = body.get("additional_context", None)
+            name = body.get("agent", None)
+            session_id = body.get("session_id", None)
 
             service.select(session_id, name)
             if not service.agent:
