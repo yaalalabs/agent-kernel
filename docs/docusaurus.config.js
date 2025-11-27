@@ -9,9 +9,8 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Agent Kernel',
-  tagline: 'Framework-agnostic runtime for AI agents',
+  tagline: 'Production-ready framework-agnostic runtime for AI agents - Deploy agents built with your favorite framework enabling enterprise features',
   favicon: 'img/favicon.ico',
-
   url: 'https://kernel.yaala.ai',
   baseUrl: '/',
 
@@ -28,7 +27,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'keywords',
-        content: 'agent kernel, AI agents, AI framework, agentic AI, Yaala, Yaala Labs, LangGraph, OpenAI, agent runtime, agent deployment, AI infrastructure, machine learning, artificial intelligence, agent orchestration, multi-agent systems, agent-to-agent communication, Python AI framework, AI DevOps, MLOps, agent monitoring, stateful agents, serverless agents',
+        content: 'agent kernel, agentic framework, agentic frameworks, AI agent runtime, LangGraph runtime, OpenAI Agents deployment, Google ADK deployment, CrewAI deployment, agent kernel vs semantic kernel, production AI agents, AI agent orchestration, multi-agent systems, LangGraph production, OpenAI Agents SDK, Google Gemini ADK, framework-agnostic agents, agent deployment platform, stateful AI agents, AI agent monitoring, LangGraph alternative, OpenAI agent framework, Python AI agents, enterprise AI agents, AI DevOps, MLOps agents, agent-to-agent communication, serverless agents, containerized agents',
       },
     },
     {
@@ -42,14 +41,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel - Production-Ready AI Agent Runtime by Yaala Labs',
+        content: 'Agent Kernel - Production Runtime for LangGraph, OpenAI, Google ADK & CrewAI | Agentic Framework',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Deploy and manage AI agents at scale with Agent Kernel. Framework-agnostic runtime supporting LangGraph, OpenAI Agents SDK and Google ADK. Built by Yaala Labs for enterprise AI infrastructure.',
+        content: 'Agent Kernel: The production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI with built-in state management, monitoring, and enterprise scalability. Framework-agnostic alternative to Semantic Kernel.',
       },
     },
     {
@@ -84,14 +83,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel - Production-Ready AI Agent Runtime by Yaala Labs',
+        content: 'Agent Kernel - Production Runtime for LangGraph, OpenAI, Google ADK & CrewAI',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         name: 'twitter:description',
-        content: 'Deploy and manage AI agents at scale with Agent Kernel. Framework-agnostic runtime supporting LangGraph, OpenAI Agents SDK and Google ADK. Built by Yaala Labs.',
+        content: 'Production agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Enterprise-ready alternative to Semantic Kernel with state management and monitoring.',
       },
     },
     {
@@ -142,6 +141,60 @@ const config = {
         rel: 'canonical',
         href: 'https://kernel.yaala.ai',
       },
+    },
+    // Structured Data (JSON-LD) for better SEO
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'Agent Kernel',
+        applicationCategory: 'DeveloperApplication',
+        description: 'Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Framework-agnostic runtime.',
+        operatingSystem: 'Linux, macOS, Windows',
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
+        },
+        author: {
+          '@type': 'Organization',
+          name: 'Yaala Labs',
+          url: 'https://www.yaalalabs.com',
+        },
+        url: 'https://kernel.yaala.ai',
+        keywords: 'Agent kernel, agentic framework, LangGraph runtime, OpenAI Agents, Google ADK, CrewAI, AI agent deployment, agent kernel vs semantic kernel',
+        featureList: [
+          'LangGraph support',
+          'OpenAI Agents SDK support',
+          'Google ADK (Gemini) support',
+          'CrewAI support',
+          'Multi-agent orchestration',
+          'State management',
+          'Production monitoring',
+          'Framework-agnostic runtime',
+        ],
+      }),
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: 'Yaala Labs',
+        url: 'https://www.yaalalabs.com',
+        logo: 'https://kernel.yaala.ai/img/logo.svg',
+        sameAs: [
+          'https://github.com/yaalalabs/agent-kernel',
+        ],
+        description: 'Enterprise AI infrastructure and agentic framework solutions',
+      }),
     },
   ],
 
@@ -209,6 +262,34 @@ const config = {
           priority: 0.5,
           ignorePatterns: ['/tags/**'],
           filename: 'sitemap.xml',
+          createSitemapItems: async (params) => {
+            const {defaultCreateSitemapItems, ...rest} = params;
+            const items = await defaultCreateSitemapItems(rest);
+            return items.map((item) => {
+              // Set highest priority for key landing pages
+              if (item.url === 'https://kernel.yaala.ai/' || 
+                  item.url === 'https://kernel.yaala.ai/docs' ||
+                  item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
+                  item.url === 'https://kernel.yaala.ai/docs/installation' ||
+                  item.url === 'https://kernel.yaala.ai/features' ||
+                  item.url === 'https://kernel.yaala.ai/blog') {
+                return {...item, priority: 1.0, changefreq: 'daily'};
+              }
+              // High priority for blog posts
+              if (item.url.includes('/blog/') && !item.url.includes('/blog/tags') && !item.url.includes('/blog/archive')) {
+                return {...item, priority: 0.8, changefreq: 'weekly'};
+              }
+              // Medium priority for documentation pages
+              if (item.url.includes('/docs/')) {
+                return {...item, priority: 0.7, changefreq: 'weekly'};
+              }
+              // Lower priority for blog tags and archives
+              if (item.url.includes('/blog/tags') || item.url.includes('/blog/archive') || item.url.includes('/blog/authors')) {
+                return {...item, priority: 0.3};
+              }
+              return item;
+            });
+          },
         },
       }),
     ],
@@ -219,9 +300,9 @@ const config = {
     ({
       // SEO metadata
       metadata: [
-        {
+        { 
           name: 'description',
-          content: 'Agent Kernel by Yaala Labs is a production-ready, framework-agnostic runtime for deploying and managing AI agents. Supports LangGraph, OpenAI Agents, and custom frameworks with built-in state management, monitoring, and scalability.',
+          content: 'Agent Kernel: Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI. Deploy and scale AI agents with enterprise features. Framework-agnostic alternative to Semantic Kernel with built-in state management, monitoring, and observability.',
         },
         {
           property: 'og:image',
@@ -240,13 +321,14 @@ const config = {
           src: 'img/logo.svg',
         },
         items: [
+          { to: '/features', label: 'Explore Features', position: 'left' },
           {
             type: 'docSidebar',
             sidebarId: 'tutorialSidebar',
             position: 'left',
             label: 'Documentation',
           },
-          { to: '/blog', label: 'Blog', position: 'left' },
+          { to: '/blog', label: 'Blog', position: 'left' }, 
           {
             type: 'docsVersionDropdown',
             position: 'right',

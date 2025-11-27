@@ -1,4 +1,4 @@
-# Integrations Overview
+# Overview
 
 Agent Kernel provides various built in integrations to connect your AI agents with external platforms and services. These integrations allow you to deploy your agents in real-world environments and interact with users through different channels.
 
