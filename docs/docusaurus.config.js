@@ -209,6 +209,34 @@ const config = {
           priority: 0.5,
           ignorePatterns: ['/tags/**'],
           filename: 'sitemap.xml',
+          createSitemapItems: async (params) => {
+            const {defaultCreateSitemapItems, ...rest} = params;
+            const items = await defaultCreateSitemapItems(rest);
+            return items.map((item) => {
+              // Set highest priority for key landing pages
+              if (item.url === 'https://kernel.yaala.ai/' || 
+                  item.url === 'https://kernel.yaala.ai/docs' ||
+                  item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
+                  item.url === 'https://kernel.yaala.ai/docs/installation' ||
+                  item.url === 'https://kernel.yaala.ai/features' ||
+                  item.url === 'https://kernel.yaala.ai/blog') {
+                return {...item, priority: 1.0, changefreq: 'daily'};
+              }
+              // High priority for blog posts
+              if (item.url.includes('/blog/') && !item.url.includes('/blog/tags') && !item.url.includes('/blog/archive')) {
+                return {...item, priority: 0.8, changefreq: 'weekly'};
+              }
+              // Medium priority for documentation pages
+              if (item.url.includes('/docs/')) {
+                return {...item, priority: 0.7, changefreq: 'weekly'};
+              }
+              // Lower priority for blog tags and archives
+              if (item.url.includes('/blog/tags') || item.url.includes('/blog/archive') || item.url.includes('/blog/authors')) {
+                return {...item, priority: 0.3};
+              }
+              return item;
+            });
+          },
         },
       }),
     ],
@@ -219,7 +247,7 @@ const config = {
     ({
       // SEO metadata
       metadata: [
-        {
+        { 
           name: 'description',
           content: 'Agent Kernel by Yaala Labs is a production-ready, framework-agnostic runtime for deploying and managing AI agents. Supports LangGraph, OpenAI Agents, and custom frameworks with built-in state management, monitoring, and scalability.',
         },
