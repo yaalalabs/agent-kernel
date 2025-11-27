@@ -11,7 +11,7 @@ from singleton_type import Singleton
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .hooks import Posthook, Prehook
-from .sessions import SessionStore
+from .session import SessionStore
 
 
 class Runtime:

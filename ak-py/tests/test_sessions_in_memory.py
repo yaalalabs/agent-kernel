@@ -1,6 +1,6 @@
 import pytest
 
-from agentkernel.core.sessions.in_memory import InMemorySessionStore
+from agentkernel.core.session.in_memory import InMemorySessionStore
 
 
 def test_in_memory_session_store_new_and_load():

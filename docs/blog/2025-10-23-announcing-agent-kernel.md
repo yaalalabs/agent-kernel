@@ -45,7 +45,7 @@ Migrate your agents to Agent Kernel without rewriting your agent logic!
 - Create complex agent topologies
 
 ### 4. **Context & Memory Management**
-- Built-in memory management (in-memory & Redis)
+- Built-in memory management (in-memory, Redis, and DynamoDB)
 - Customizable storage backends
 - Persistent conversation context
 - State management across sessions

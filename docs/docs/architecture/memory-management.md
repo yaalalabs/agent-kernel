@@ -15,6 +15,7 @@ graph TB
         B[Conversation History]
         C[In-Memory Storage]
         D[Redis Storage]
+        I[DynamoDB Storage]
     end
     
     subgraph "Long-term Memory (Future)"
@@ -26,8 +27,10 @@ graph TB
     
     A --> C
     A --> D
+    A --> I
     B --> C
     B --> D
+    B --> I
     
     E --> G
     E --> H
@@ -50,6 +53,7 @@ session.set("session_id", data)
 **Storage Options:**
 - In-memory (development)
 - Redis (production)
+- DynamoDB (AWS serverless)
 
 ## Long-term Memory
 
@@ -58,7 +62,11 @@ Available soon!
 ## Configuration
 
 ```bash
-# Short-term (session)
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://localhost:6379
+# Short-term (session) - Redis
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
+
+# Short-term (session) - DynamoDB
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 ```
