@@ -76,7 +76,7 @@ nv_cache: KeyValueCache = session.get_non_volatile_cache()
 v_cache: KeyValueCache = GlobalRuntime.instance().get_volatile_cache()
 nv_cache: KeyValueCache =  GlobalRuntime.instance().get_non_volatile_cache()
 ```
-A comprehensive example is provided in **[examples/memory/key_value_cache/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/key_value_cache)**
+A comprehensive example is provided in **[examples/memory/key-value-cache/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/key-value-cache)**
 ## Configuration
 
 ```bash
