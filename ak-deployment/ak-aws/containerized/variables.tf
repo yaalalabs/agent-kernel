@@ -116,6 +116,13 @@ variable "create_redis_cluster" {
   default     = false
 }
 
+variable "create_dynamodb_memory_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the Agent memory"
+  default     = false
+}
+
+
 variable "ecs_cpu" {
   type        = number
   description = "Fargate CPU units"

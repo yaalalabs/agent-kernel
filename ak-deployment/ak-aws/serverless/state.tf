@@ -13,6 +13,7 @@ locals {
   subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
+  dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
 }
 
 module "vpc" {
@@ -75,9 +76,9 @@ module "redis" {
 }
 
 module dynamodb_memory {
-  source = "../common/modules/dynamodb"
-  # version = "0.2.5"
-  count = var.create_dynamodb_memory_table == true ? 1 : 0
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.5"
+  count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
     { name = "key", type = "S" },

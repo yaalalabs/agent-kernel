@@ -1,0 +1,5 @@
+debug: true
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: "ak-oai-ddb-ecs-dev-examples-session_store"
