@@ -56,6 +56,8 @@ class Session:
         self.set("v_cache", KeyValueCache())
         self.set("nv_cache", KeyValueCache())
 
+        self._token = None
+
     @property
     def id(self) -> str:
         """
@@ -102,7 +104,8 @@ class Session:
         """
         Resets the current session context variable to the previous value.
         """
-        current_session.reset(self._token)
+        if self._token:
+            current_session.reset(self._token)
 
 
 class Runner(ABC):

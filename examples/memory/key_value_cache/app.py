@@ -1,12 +1,12 @@
 from agentkernel import GlobalRuntime, KeyValueCache
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agents import Agent,function_tool
+from agents import Agent, function_tool
 
 from hooks import  RAGHook
 
 @function_tool
-def query_private_knowledge_base(query:str ) -> str:
+def query_private_knowledge_base(query: str) -> str:
     """
     Simulated function to query a private knowledge base.
     In a real implementation, this would query a secure database or document store.

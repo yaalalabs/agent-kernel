@@ -1,13 +1,11 @@
 """Key-value store for storing serializable data."""
 
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-T = TypeVar("T")
 
-
-class KeyValueCache(BaseModel, Generic[T]):
+class KeyValueCache(BaseModel):
     """A generic key-value store for storing serializable data.
 
     This class provides a simple interface for storing and retrieving
