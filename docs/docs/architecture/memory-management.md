@@ -56,12 +56,12 @@ This memory is not directly manipulatable by you, but it is automatically change
 - DynamoDB (AWS serverless)
 
 ## Long-term Memory
-This will be a knowledge based that has been collected over a timer for a specific user or a session. It will be stored separately and added to the context at a start of a session.
+This will be a knowledge base that has been collected over a time for a specific user or a session. It will be stored separately and added to the context at a start of a session.
 
 Available soon!
 
 ## Auxiliary Memory
-Agent Kernel also supports an "Auxiliary memory" which is not part of the LLM context. This memory can be used to store additional data to support Tools without worrying about the context lengths. You can directly store/retrieve from this memory and add to the conversational state as required. Consider this as build in key value DB.  You can select either volatile or non volatile key value store or both. 
+Agent Kernel also supports an "Auxiliary memory" which is not part of the LLM context. This memory can be used to store additional data to support Tools without worrying about the context lengths. You can directly store/retrieve from this memory and add to the conversational state as required. Consider this as built-in key value DB.  You can select either volatile or non volatile key value store or both. 
 
 **Note**: Non-volatile KV Store uses the same memory store type (i.e. InMemory, DynamoDB, Redis) you select for the short term memory.
 
@@ -69,14 +69,14 @@ You can manipulate Auxiliary memory in Pre/Post Hooks and Tools
 
 ```python
 # when you have the session object directly
-v_cach: KeyValueCache = session.get_volatile_cache()
+v_cache: KeyValueCache = session.get_volatile_cache()
 nv_cache: KeyValueCache = session.get_non_volatile_cache()
 
 # when you dont have the session object, you can use the GlobalRuntime.instance().get_volatile_cache()
-v_cach: KeyValueCache = GlobalRuntime.instance().get_volatile_cache()
+v_cache: KeyValueCache = GlobalRuntime.instance().get_volatile_cache()
 nv_cache: KeyValueCache =  GlobalRuntime.instance().get_non_volatile_cache()
 ```
-A comprehensive example is provide in **[examples/memory/key_value_cache/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/key_value_cache)**
+A comprehensive example is provided in **[examples/memory/key_value_cache/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/key_value_cache)**
 ## Configuration
 
 ```bash

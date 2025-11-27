@@ -32,7 +32,7 @@ senior_agent = Agent(
     name="senior_assistant",
     instructions=(
         "You are a helpful AI assistant that answers questions accurately. You must always call the provided tool to fetch additional information before answering any question"
-        "If you cant find any information, respond with 'I don't know'."
+        "If you can't find any information, respond with 'I don't know'."
     ),
     tools=[query_private_knowledge_base],
 )
@@ -41,7 +41,7 @@ junior_agent = Agent(
     name="junior_assistant",
     instructions=(
         "You are a helpful AI assistant that answers questions accurately. You must always call the provided tool to fetch additional information before answering any question"
-        "If you cant find any information, respond with 'I don't know'."
+        "If you can't find any information, respond with 'I don't know'."
     ),
     tools=[query_private_knowledge_base],
 )
