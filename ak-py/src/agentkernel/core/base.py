@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List
 
 from .config import AKConfig
-from .sessions import KeyValueCache
+from .util.key_value_cache import KeyValueCache
 
 import contextvars
 

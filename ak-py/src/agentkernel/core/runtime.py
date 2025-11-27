@@ -4,7 +4,7 @@ from threading import RLock
 from types import ModuleType
 from typing import Any, Optional
 
-from agentkernel.core.sessions.key_value_cache import KeyValueCache
+from agentkernel.core.util.key_value_cache import KeyValueCache
 from deprecated import deprecated
 from singleton_type import Singleton
 

@@ -12,4 +12,3 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 from .base import SessionStore
-from .key_value_cache import KeyValueCache
