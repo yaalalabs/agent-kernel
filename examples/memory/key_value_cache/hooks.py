@@ -41,7 +41,7 @@ class RAGHook(Prehook):
             if topic in prompt:
                 relevant_contexts.append({topic: context})
 
-        cache:KeyValueCache = session.get_volatile_cache()
+        cache: KeyValueCache = session.get_volatile_cache()
         cache.set("rag_context", relevant_contexts)
         print(f"RAGHook: Injected context into volatile cache: {relevant_contexts}")
         

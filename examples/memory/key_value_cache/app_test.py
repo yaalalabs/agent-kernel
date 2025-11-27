@@ -1,7 +1,7 @@
 """
 Test suite for auxiliary memory.
 
-This test validates that the RAG pre-hook correctly injects context into non-volatile memory and its used be a search tool later
+This test validates that the RAG pre-hook correctly injects context into the volatile cache and its use by a search tool later
 """
 
 import asyncio

@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agentkernel"
-version = "0.2.5"
+version = "0.2.6"
 source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
@@ -13,9 +13,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.2.5.tar.gz" }
+sdist = { path = "agentkernel-0.2.6.tar.gz" }
 wheels = [
-    { path = "agentkernel-0.2.5-py3-none-any.whl" },
+    { path = "agentkernel-0.2.6-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -650,11 +650,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.2.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.2.6" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.5" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.6" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
