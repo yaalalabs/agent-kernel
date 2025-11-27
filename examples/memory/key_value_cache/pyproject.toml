@@ -1,0 +1,35 @@
+[project]
+name = "keyvalue-cache-demo"
+version = "0.1.0"
+description = "Demo of use of key value cache with OpenAI Agents in Agent Kernel"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[openai,api]>=0.2.5",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.2.5",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

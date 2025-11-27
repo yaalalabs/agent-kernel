@@ -147,7 +147,7 @@ class Runtime:
         """
         if session_id is None:
             session_id = Session.get_current_session_id()
-        return self._sessions.load(session_id).get("v_cache")
+        return self._sessions.load(session_id).get_volatile_cache()
 
     def get_non_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
         """
@@ -157,7 +157,7 @@ class Runtime:
         """
         if session_id is None:
             session_id = Session.get_current_session_id()
-        return self._sessions.load(session_id).get("nv_cache")
+        return self._sessions.load(session_id).get_non_volatile_cache()
 
     def register_pre_hooks(self, agent_name: str, hooks: list[Prehook]) -> None:
         """

@@ -29,6 +29,20 @@ class Session:
         """
         return current_session.get()
 
+    def get_volatile_cache(self) -> KeyValueCache:
+        """
+        Returns the volatile key-value cache associated with this session.
+        :return: The volatile KeyValueCache instance.
+        """
+        return self.get("v_cache")
+    
+    def get_non_volatile_cache(self) -> KeyValueCache:
+        """
+        Returns the non-volatile key-value cache associated with this session.
+        :return: The non-volatile KeyValueCache instance.
+        """
+        return self.get("nv_cache")
+    
     def __init__(self, id: str):
         """
         Initializes a Session instance.
