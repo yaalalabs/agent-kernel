@@ -55,7 +55,7 @@ class RAGPreHook(Prehook):
         """
         REST API's 'additional_context' parameter is passed here as 'additional_context'
         'additional_context' is a dictionary containing the request body
-        In this example, we are using it to fetch the bank agent's name and assume that additional_context['agent_name'] is the bank agent's name
+        In this example, we are using it to fetch the bank agent's name and assume that additional_context['bank_agent'] is the bank agent's name
         """
         bank_agent = additional_context.get("bank_agent") if additional_context else None
 
