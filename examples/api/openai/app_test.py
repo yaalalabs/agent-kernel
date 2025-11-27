@@ -68,7 +68,7 @@ async def test_support_agent(http_client):
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
     Test.compare(response, "Deposited $200 over the counter")
 
-    # Prehook RAG example
+    # Test additional_context parameter passed through prehook for RAG
     response = await http_client.send(
         "In which movie my bank agent's name appeared in? Just give me the name of the movie",
         additional_context={"bank_agent": "Ellis Boyd Red Redding"},
