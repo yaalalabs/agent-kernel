@@ -50,7 +50,7 @@ Migrate your agents to Agent Kernel without rewriting your agent logic!
 - Persistent conversation context
 - State management across sessions
 
-### 5. **Traceability & Observability (Available soon)**
+### 5. **Traceability & Observability**
 - Comprehensive logging with multiple verbosity levels
 - Track all agent operations and LLM calls
 - Audit collaborative agent interactions
