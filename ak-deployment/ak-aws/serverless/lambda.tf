@@ -154,7 +154,10 @@ module "lambda_deployment" {
 
   environment_variables = merge(var.environment_variables, local.redis_url != null ? {
     AK_SESSION__REDIS__URL = local.redis_url
-  } : {}
+  } : {},
+      local.dynamodb_memory_table_arn != null ? {
+      AK_SESSION__DYNAMODB__TABLE_NAME = local.dynamodb_memory_table_name
+    } : {}
   )
   event_source_mapping = var.event_source_mapping
 

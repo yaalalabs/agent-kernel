@@ -4,14 +4,15 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  vpc_id                    = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr                  = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids                = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_url                 = var.create_redis_cluster == true ? module.redis[0].url : null
-  dynamodb_memory_table_arn = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
-  prefix                    = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name              = "${local.prefix}-service"
-  container_name            = "${local.prefix}-app"
+  vpc_id                     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
+  dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
+  dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+  prefix                     = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  service_name               = "${local.prefix}-service"
+  container_name             = "${local.prefix}-app"
 
   api_base_segment = try(trim(var.api_base_path, "/"), "")
   default_endpoint_path = "/${join("/", compact([local.api_base_segment, var.api_version, var.agent_endpoint]))}"
@@ -69,8 +70,8 @@ module "docker_image" {
 }
 
 module dynamodb_memory {
-  source  = "../common/modules/dynamodb"
-  # version = "0.2.5"
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.5"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
