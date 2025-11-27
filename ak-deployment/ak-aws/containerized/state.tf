@@ -4,13 +4,14 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  vpc_id         = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr       = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids     = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_url      = var.create_redis_cluster == true ? module.redis[0].url : null
-  prefix         = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name   = "${local.prefix}-service"
-  container_name = "${local.prefix}-app"
+  vpc_id                    = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr                  = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids                = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  redis_url                 = var.create_redis_cluster == true ? module.redis[0].url : null
+  dynamodb_memory_table_arn = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
+  prefix                    = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  service_name              = "${local.prefix}-service"
+  container_name            = "${local.prefix}-app"
 
   api_base_segment = try(trim(var.api_base_path, "/"), "")
   default_endpoint_path = "/${join("/", compact([local.api_base_segment, var.api_version, var.agent_endpoint]))}"
@@ -65,4 +66,22 @@ module "docker_image" {
   module_name   = var.module_name
   product_alias = var.product_alias
   source_path   = var.package_path
+}
+
+module dynamodb_memory {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.5"
+  count   = var.create_dynamodb_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "key", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "key"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "session_store"
+  ttl_attribute_name = "expiry_time"
 }
