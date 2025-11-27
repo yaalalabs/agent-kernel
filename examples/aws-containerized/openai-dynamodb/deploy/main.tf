@@ -1,4 +1,4 @@
-# Containered module configuration for deploying Google ADK Agent in ECS
+# Containered module configuration for deploying OpenAI Agent in ECS
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
   version = "0.2.5"
@@ -13,7 +13,7 @@ module "containered_agents" {
   vpc_id                       = "vpc-09033229d67314c1c"
   create_dynamodb_memory_table = true
   private_subnet_ids           = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
-  product_display_name         = "AK Google ADK Containered Example"
+  product_display_name         = "OpenAI Agents"
   ecs_container_port           = 8000
 
   # Environment variables passed to container
