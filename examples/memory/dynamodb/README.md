@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS Serverless (Lambda)
+# Agent Kernel running OpenAI Agents SDK based agents in AWS Lambda with AWS DynamoDB as agent memory
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda.
+This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda using AWS DynamoDB as agent memory
 
 ## Deployed Resources
 
@@ -8,6 +8,7 @@ This demo deploys the following AWS resources:
 
 - AWS Lambda function running the Agent Kernel implementation.
 - API Gateway endpoint for the Lambda function.
+- Configuration changes to enable dynamodb as agent memory (Refer to `config.yaml` for details).
 
 ## Prerequisites
 
