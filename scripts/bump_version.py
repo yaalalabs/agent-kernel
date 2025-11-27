@@ -68,15 +68,12 @@ def bump_version(
        - If the base version would need to change, change it and reset prerelease to 1
        - If the base version stays same, increment prerelease number, keep prerelease type
     
-    Args:
-        current_version: Current version string (e.g., "1.2.3" or "1.2.3a1")
-        bump_type: One of "major", "minor", or "patch"
-        prerelease: Pre-release type ("alpha" or "beta") or None for stable
-        prerelease_number: Pre-release number (default: 1)
-        auto_increment_prerelease: If True, auto-increment prerelease number based on current version
-    
-    Returns:
-        New version string
+    :param current_version: Current version string (e.g., "1.2.3" or "1.2.3a1")
+    :param bump_type: One of "major", "minor", or "patch"
+    :param prerelease: Pre-release type ("alpha" or "beta") or None for stable
+    :param prerelease_number: Pre-release number (default: 1)
+    :param auto_increment_prerelease: If True, auto-increment prerelease number based on current version
+    :return: New version string
     """
     major, minor, patch, current_pre, current_pre_num = parse_version(current_version)
 

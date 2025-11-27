@@ -31,12 +31,9 @@ class KeyValueCache(BaseModel, Generic[T]):
     def set(self, key: str, value: Any) -> None:
         """Store a value with the given key.
         
-        Args:
-            key: The key to store the value under
-            value: The value to store (must be JSON-serializable)
-            
-        Raises:
-            ValueError: If the key is empty or None
+        :param key: The key to store the value under
+        :param value: The value to store (must be JSON-serializable)
+        :raises ValueError: If the key is empty or None
         """
         if not key:
             raise ValueError("Key cannot be empty or None")
@@ -45,23 +42,17 @@ class KeyValueCache(BaseModel, Generic[T]):
     def get(self, key: str, default: Optional[Any] = None) -> Any:
         """Retrieve a value by key.
         
-        Args:
-            key: The key to retrieve the value for
-            default: The default value to return if key is not found
-            
-        Returns:
-            The stored value, or the default if the key doesn't exist
+        :param key: The key to retrieve the value for
+        :param default: The default value to return if key is not found
+        :return: The stored value, or the default if the key doesn't exist
         """
         return self.data.get(key, default)
     
     def delete(self, key: str) -> bool:
         """Delete a key-value pair.
         
-        Args:
-            key: The key to delete
-            
-        Returns:
-            True if the key was found and deleted, False otherwise
+        :param key: The key to delete
+        :return: True if the key was found and deleted, False otherwise
         """
         if key in self.data:
             del self.data[key]
@@ -71,11 +62,8 @@ class KeyValueCache(BaseModel, Generic[T]):
     def has(self, key: str) -> bool:
         """Check if a key exists in the store.
         
-        Args:
-            key: The key to check for
-            
-        Returns:
-            True if the key exists, False otherwise
+        :param key: The key to check for
+        :return: True if the key exists, False otherwise
         """
         return key in self.data
     
@@ -86,32 +74,28 @@ class KeyValueCache(BaseModel, Generic[T]):
     def keys(self) -> list[str]:
         """Get all keys in the store.
         
-        Returns:
-            A list of all keys
+        :return: A list of all keys
         """
         return list(self.data.keys())
     
     def values(self) -> list[Any]:
         """Get all values in the store.
         
-        Returns:
-            A list of all values
+        :return: A list of all values
         """
         return list(self.data.values())
     
     def items(self) -> list[tuple[str, Any]]:
         """Get all key-value pairs in the store.
         
-        Returns:
-            A list of (key, value) tuples
+        :return: A list of (key, value) tuples
         """
         return list(self.data.items())
     
     def update(self, other: Dict[str, Any]) -> None:
         """Update the store with key-value pairs from a dictionary.
         
-        Args:
-            other: A dictionary of key-value pairs to add/update
+        :param other: A dictionary of key-value pairs to add/update
         """
         self.data.update(other)
     

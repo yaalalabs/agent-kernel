@@ -31,17 +31,14 @@ class GuardRailHook(Prehook):
         """
         Validates the prompt for inappropriate content.
 
-        Args:
-            session: The session instance
-            agent: The agent that will execute the prompt
-            original_prompt: The original unmodified prompt
-            prompt: The current prompt (possibly modified by previous hooks)
-            additional_context: Additional context passed with the prompt (not used in this hook)
-
-        Returns:
-            tuple[bool, str]: (proceed, modified_prompt)
-                - proceed: False if guard rail triggered, True otherwise
-                - modified_prompt: Rejection message if halted, or original prompt if safe
+        :param session: The session instance
+        :param agent: The agent that will execute the prompt
+        :param original_prompt: The original unmodified prompt
+        :param prompt: The current prompt (possibly modified by previous hooks)
+        :param additional_context: Additional context passed with the prompt (not used in this hook)
+        :return: tuple[bool, str]: (proceed, modified_prompt)
+            - proceed: False if guard rail triggered, True otherwise
+            - modified_prompt: Rejection message if halted, or original prompt if safe
         """
         prompt_lower = prompt.lower()
 
@@ -102,15 +99,12 @@ class RAGHook(Prehook):
         """
         Simulates RAG by searching the knowledge base and injecting relevant context.
 
-        Args:
-            session: The session instance
-            agent: The agent that will execute the prompt
-            original_prompt: The original unmodified prompt
-            prompt: The current prompt (possibly modified by previous hooks)
-            additional_context: Additional context that can help with RAG (e.g., user metadata, search filters)
-
-        Returns:
-            tuple[bool, str]: (True, enriched_prompt) - always proceeds with enriched prompt
+        :param session: The session instance
+        :param agent: The agent that will execute the prompt
+        :param original_prompt: The original unmodified prompt
+        :param prompt: The current prompt (possibly modified by previous hooks)
+        :param additional_context: Additional context that can help with RAG (e.g., user metadata, search filters)
+        :return: tuple[bool, str]: (True, enriched_prompt) - always proceeds with enriched prompt
         """
         prompt_lower = prompt.lower()
 

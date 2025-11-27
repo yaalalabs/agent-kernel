@@ -12,13 +12,10 @@ def fetch_customer_activity(name: str, operations: List[str] | None = None) -> D
     the exact operations they recently performed. If "operations" are provided,
     the tool will filter to those operation types
 
-    Args:
-        name: The full name of the customer.
-        operations: Optional list of operation types to include, e.g.,
-            ["deposit", "withdrawal", "transfer", "bill_payment"].
-
-    Returns:
-        A JSON object containing the customer's name and a list of activity
+    :param name: The full name of the customer.
+    :param operations: Optional list of operation types to include, e.g.,
+        ["deposit", "withdrawal", "transfer", "bill_payment"].
+    :return: A JSON object containing the customer's name and a list of activity
         records. Each record contains: type, amount, currency, and a short note.
     """
     sample: List[Dict[str, object]] = [
