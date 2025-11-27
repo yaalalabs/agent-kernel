@@ -33,8 +33,8 @@ def query_private_knowledge_base(query:str ) -> str:
 senior_agent = Agent(
     name="senior_assistant",
     instructions=(
-        "You are a helpful AI assistant that answers questions accurately. You must always call the provided tool to fetch extra information before answering"
-        "Keep your responses concise and informative and if you cant find any information, respond with 'I don't know'."
+        "You are a helpful AI assistant that answers questions accurately. You must always call the provided tool to fetch additional information before answering any question"
+        "If you cant find any information, respond with 'I don't know'."
     ),
     tools=[query_private_knowledge_base],
 )
@@ -42,8 +42,8 @@ senior_agent = Agent(
 junior_agent = Agent(
     name="junior_assistant",
     instructions=(
-        "You are a helpful AI assistant that answers questions accurately. You must always call the provided tool to fetch extra information before answering"
-        "Keep your responses concise and informative and if you cant find any information, respond with 'I don't know'."
+        "You are a helpful AI assistant that answers questions accurately. You must always call the provided tool to fetch additional information before answering any question"
+        "If you cant find any information, respond with 'I don't know'."
     ),
     tools=[query_private_knowledge_base],
 )
