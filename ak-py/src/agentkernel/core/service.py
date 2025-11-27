@@ -4,6 +4,7 @@ from typing import Any
 
 from ..core import Agent, GlobalRuntime, Runtime, Session
 
+
 class AgentService:
     """
     AgentService class provides a utility method for interacting with runtime, agents and sessions.
