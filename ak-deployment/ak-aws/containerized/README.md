@@ -1,6 +1,6 @@
 # Agent Kernel - AWS Containerized Module
 
-A comprehensive Terraform module for deploying containerized applications on AWS using ECS Fargate, with Application Load Balancer, API Gateway, and optional Redis integration.
+A comprehensive Terraform module for deploying containerized applications on AWS using ECS Fargate, with Application Load Balancer, API Gateway, and optional Redis or DynamoDB integration.
 
 ## 📋 Overview
 
@@ -10,7 +10,7 @@ This module provides a complete containerized deployment solution on AWS:
 - 🔄 **Application Load Balancer**: Intelligent traffic distribution and health checks
 - 🌐 **API Gateway HTTP API**: RESTful API endpoints with custom routing
 - 🔒 **VPC Networking**: Private subnets, NAT Gateway, and security groups
-- 💾 **Redis Integration**: Optional ElastiCache Redis for session/state management
+- 💾 **State Management**: Optional ElastiCache Redis or DynamoDB for session/state persistence
 - 📊 **CloudWatch Monitoring**: Container logs and application metrics
 - 🏗️ **Automated Build**: Docker image building and ECR management
 
@@ -160,6 +160,44 @@ module "container_app_redis" {
 }
 ```
 
+### With DynamoDB for Session Storage
+
+```hcl
+module "container_app_dynamodb" {
+  source = "yaalalabs/ak-containerized/aws"
+
+  region               = "us-west-2"
+  product_alias        = "myapp"
+  env_alias            = "prod"
+  product_display_name = "Serverless State API"
+  
+  module_name  = "serverless-api"
+  package_path = "${path.module}/app"
+  
+  # Create new VPC
+  vpc_cidr             = "10.2.0.0/16"
+  public_subnet_cidrs  = ["10.2.1.0/24", "10.2.2.0/24"]
+  private_subnet_cidrs = ["10.2.10.0/23", "10.2.12.0/23"]
+  
+  # Enable DynamoDB for session storage
+  create_dynamodb_memory_table = true
+  
+  # ECS Configuration
+  ecs_cpu            = 1024
+  ecs_memory         = 2048
+  ecs_desired_count  = 2
+  ecs_container_port = 8000
+  
+  environment_variables = {
+    NODE_ENV = "production"
+    # DynamoDB table name automatically injected as AK_SESSION__DYNAMODB__TABLE_NAME
+  }
+  
+  api_version    = "v1"
+  agent_endpoint = "chat"
+}
+```
+
 ### High-Availability Production Setup
 
 ```hcl
@@ -177,7 +215,7 @@ module "production_app" {
   # High-performance VPC
   vpc_cidr = "10.0.0.0/16"
   
-  # Redis for session management
+  # Redis for low-latency session management (or use DynamoDB with create_dynamodb_memory_table = true)
   create_redis_cluster = true
   
   # High-performance ECS
@@ -251,8 +289,9 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | `ecs_container_port` | Container port exposed by service | `number` | `8000` | no |
 | `ecs_health_check_path` | Health check path for ALB | `string` | `"/health"` | no |
 | `container_type` | Container orchestration type (ecs or eks) | `string` | `"ecs"` | no |
-| **Redis Configuration** |
+| **State Management** |
 | `create_redis_cluster` | Enable Redis ElastiCache cluster | `bool` | `false` | no |
+| `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 
 ## 📤 Outputs
 
@@ -265,6 +304,8 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | `agent_invoke_url` | Full HTTPS URL to invoke API | `https://abc123.execute-api.us-west-2.amazonaws.com/api/v1/chat` |
 | `vpc_id` | VPC ID (created or used) | `vpc-0abc123def456789` |
 | `redis_url` | Redis connection URL (if enabled) | `redis://myapp-prod-cache.abc123.cache.amazonaws.com:6379` |
+| `dynamodb_memory_table_arn` | DynamoDB table ARN (if enabled) | `arn:aws:dynamodb:us-west-2:123456789012:table/myapp-prod-api-session_store` |
+| `dynamodb_memory_table_name` | DynamoDB table name (if enabled) | `myapp-prod-api-session_store` |
 
 ## ✨ Features
 

@@ -4,9 +4,38 @@ resource "aws_service_discovery_http_namespace" "this" {
   tags        = var.tags
 }
 
+resource "aws_iam_policy" "dynamodb_policy" {
+  count       = local.dynamodb_memory_table_arn != null ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-policy"
+  description = "Policy for DynamoDB access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          local.dynamodb_memory_table_arn,
+          "${local.dynamodb_memory_table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+
+  tags = var.tags
+}
 module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"
-  version = "6.3.0"
+  version = "6.10.0"
 
   cluster_name = "${var.product_alias}-${var.env_alias}-${var.module_name}"
 
@@ -43,6 +72,10 @@ module "ecs" {
         ]
       }
 
+      # Attach DynamoDB access to the task role if a memory table exists
+      create_tasks_iam_role   = true
+      tasks_iam_role_policies = local.dynamodb_memory_table_arn != null ? { DynamoDB = aws_iam_policy.dynamodb_policy[0].arn } : {}
+
       container_definitions = {
         (local.container_name) = {
           cpu                    = var.ecs_cpu
@@ -62,7 +95,10 @@ module "ecs" {
           environment               = [
             for k, v in merge(var.environment_variables, local.redis_url != null ? {
               AK_SESSION__REDIS__URL = local.redis_url
-            } : {}
+            } : {},
+                local.dynamodb_memory_table_arn != null ? {
+                AK_SESSION__DYNAMODB__TABLE_NAME = local.dynamodb_memory_table_name
+              } : {}
             ) : {
               name  = k
               value = v
