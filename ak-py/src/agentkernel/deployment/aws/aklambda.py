@@ -30,7 +30,7 @@ class Lambda:
         service = AgentService()
         try:
             prompt = json.loads(event.get("body", "{}")).get("prompt", "")
-            additional_context = json.loads(event.get("body", "{}")).get("additional_context", "")
+            additional_context = json.loads(event.get("body", "{}")).get("additional_context", None)
             name = json.loads(event.get("body", "{}")).get("agent", None)
             session_id = json.loads(event.get("body", "{}")).get("session_id", None)
 
