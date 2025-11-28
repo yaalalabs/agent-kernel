@@ -155,6 +155,10 @@ class Runtime:
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
             reply = await hook.on_run(session, requests, agent, reply)
+            if not isinstance(reply, AgentReplyText) and not isinstance(reply, str):
+                raise TypeError(
+                    f"Posthook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
+                )
             self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
 
