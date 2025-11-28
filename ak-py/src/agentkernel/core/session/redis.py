@@ -197,7 +197,7 @@ class RedisSessionStore(SessionStore):
         :param session: The session to store.
         """
         for key in session.get_all_keys():
-            if key == "v_cache":  # Do not store volatile cache
+            if key == Session.VOLATILE_CACHE_KEY:  # Do not store volatile cache
                 continue
             value = session.get(key)
             self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))

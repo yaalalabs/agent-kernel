@@ -21,6 +21,9 @@ class Session:
     the runtime configuration.
     """
 
+    VOLATILE_CACHE_KEY = "v_cache"
+    NON_VOLATILE_CACHE_KEY = "nv_cache"
+
     @classmethod
     def get_current_session_id(cls) -> str:
         """
@@ -34,14 +37,14 @@ class Session:
         Returns the volatile key-value cache associated with this session.
         :return: The volatile KeyValueCache instance.
         """
-        return self.get("v_cache")
+        return self.get(self.VOLATILE_CACHE_KEY)
 
     def get_non_volatile_cache(self) -> KeyValueCache:
         """
         Returns the non-volatile key-value cache associated with this session.
         :return: The non-volatile KeyValueCache instance.
         """
-        return self.get("nv_cache")
+        return self.get(self.NON_VOLATILE_CACHE_KEY)
 
     def __init__(self, id: str):
         """
@@ -53,8 +56,8 @@ class Session:
         self._data = {}
 
         # Pre-initialize key-value caches to be used by application code which will not be part of the agent context
-        self.set("v_cache", KeyValueCache())
-        self.set("nv_cache", KeyValueCache())
+        self.set(self.VOLATILE_CACHE_KEY, KeyValueCache())
+        self.set(self.NON_VOLATILE_CACHE_KEY, KeyValueCache())
 
         self._token = None
 
