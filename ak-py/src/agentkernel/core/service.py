@@ -4,7 +4,7 @@ from typing import Any, List
 
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestAny, AgentRequestText
 
-from ..core import Agent, GlobalRuntime, Runtime, Session, AgentRequest
+from ..core import Agent, AgentRequest, GlobalRuntime, Runtime, Session
 
 
 class AgentService:
@@ -114,11 +114,11 @@ class AgentService:
         :param additional_context: Additional context to pass to pre and post execution hooks.
         """
         requests = [AgentRequestText(text=prompt), AgentRequestAny(content=additional_context, name="additional")]
-        
-        result =  await self.run_multi(requests)
+
+        result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
             result = result.text
-       
+
         return result
 
     async def run_multi(self, requests: list[AgentRequest]) -> AgentReply:
@@ -137,7 +137,7 @@ class AgentService:
         self._session.get_volatile_cache().clear()
         self._session.reset_context()
         return result
-    
+
     def get_response_session_id(self, session_id: str | None = None) -> str | None:
         """
         Method will return the session's ID if exists. If not, it will

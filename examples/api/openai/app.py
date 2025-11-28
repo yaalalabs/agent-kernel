@@ -50,7 +50,9 @@ OpenAIModule([triage_agent, general_agent, customer_support_agent])
 
 # Optionally Using additional context passed in a pre-hook to be used in a RAG
 class RAGPreHook(Prehook):
-    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
+    async def on_run(
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
         REST API's 'additional_context' parameter is passed here in AgentRequestAny with name  'additional'
         'additional_context' is a dictionary containing the request body
@@ -61,7 +63,7 @@ class RAGPreHook(Prehook):
         for req in requests:
             if isinstance(req, AgentRequestText):
                 prompt = req.text
-                
+
             if isinstance(req, AgentRequestAny) and req.name == "additional":
                 additional_context = req.content
                 break

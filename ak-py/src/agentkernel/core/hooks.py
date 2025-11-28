@@ -13,7 +13,8 @@ Currently, they will get only called for the initial execution of an agent when 
 class Prehook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -24,11 +25,11 @@ class Prehook(ABC):
         :param: session (Session): The session instance.
         :param: agent (Agent): The agent that will execute the prompt.
         :param: requests (list[AgentRequest]): The list of requests provided to the agent.
-        :return: 
+        :return:
                 - AgentReply: If the hook decides to halt execution, it can return an AgentReply which will be sent
                 - list[AgentRequest]: The modified requests or the input list. You can modify the requests in place without taking copies
                                       You can also add additional content to the requests list. e.g. files, images, etc.
-                       
+
         """
         raise NotImplementedError
 

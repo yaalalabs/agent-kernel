@@ -4,9 +4,11 @@ from typing import Any
 from langfuse import Langfuse
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+
 from ...core import Session
 from ...openai.openai import OpenAIRunner
-from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
+
 
 class LangFuseOpenAIRunner(OpenAIRunner):
 
@@ -33,7 +35,7 @@ class LangFuseOpenAIRunner(OpenAIRunner):
             result = await super().run(agent=agent, prompt=prompt, session=session)
             span.update_trace(session_id=session.id, input=prompt, output=result, tags=["agentkernel"])
         return result
-    
+
     async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the OpenAI agent with provided multi modal inputs.
@@ -50,10 +52,10 @@ class LangFuseOpenAIRunner(OpenAIRunner):
             else:
                 reply = "Sorry. Agent kernel OpenAI runner is unable to handle content other than text at the moment"
             break
-        
+
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:
             reply = str(reply)
-                
+
         return AgentReplyText(text=reply)

@@ -5,10 +5,11 @@ from langfuse import Langfuse
 from openinference.instrumentation.crewai import CrewAIInstrumentor
 from openinference.instrumentation.litellm import LiteLLMInstrumentor
 
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+
 from ...core import Session
 from ...crewai.crewai import CrewAIRunner
 
-from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 
 class LangFuseCrewAIRunner(CrewAIRunner):
 
@@ -36,7 +37,7 @@ class LangFuseCrewAIRunner(CrewAIRunner):
             result = await super().run(agent=agent, prompt=prompt, session=session)
             span.update_trace(session_id=session.id, input=prompt, output=str(result), tags=["agentkernel"])
         return result
-    
+
     async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the CrewAI agent with provided multi modal inputs.

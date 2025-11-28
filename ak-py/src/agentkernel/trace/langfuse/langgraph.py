@@ -5,10 +5,11 @@ from langchain_core.messages import HumanMessage
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+
 from ...core import Session
 from ...langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
 
-from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 
 class LangFuseLangGraph(LangGraphRunner):
 
@@ -45,7 +46,7 @@ class LangFuseLangGraph(LangGraphRunner):
             output = last_message.content
             span.update_trace(session_id=session.id, input=prompt, output=output, tags=["agentkernel"])
         return output
-    
+
     async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the LangGraph agent with provided multi modal inputs.
@@ -62,10 +63,10 @@ class LangFuseLangGraph(LangGraphRunner):
             else:
                 reply = "Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment"
             break
-        
+
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:
             reply = str(reply)
-                
-        return AgentReplyText(text=reply)  
+
+        return AgentReplyText(text=reply)

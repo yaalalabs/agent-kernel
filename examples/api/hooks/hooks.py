@@ -34,7 +34,8 @@ class GuardRailHook(Prehook):
     ]
 
     async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
         Validates the prompt for inappropriate content.
 
@@ -51,7 +52,7 @@ class GuardRailHook(Prehook):
             prompt = requests[0].text
         else:
             return requests  # No text prompt to validate
-        
+
         prompt_lower = prompt.lower()
 
         # Check for blocked keywords
@@ -65,7 +66,9 @@ class GuardRailHook(Prehook):
 
         # Check for excessively long inputs (potential abuse)
         if len(prompt) > 5000:
-            return AgentReplyText(text="Your input is too long. Please keep your questions concise (under 5000 characters).")
+            return AgentReplyText(
+                text="Your input is too long. Please keep your questions concise (under 5000 characters)."
+            )
         # Prompt is safe - proceed with execution
         return requests
 
@@ -103,8 +106,10 @@ class RAGHook(Prehook):
             "The OpenAI API provides access to language models like GPT-4 for various applications."
         ),
     }
+
     async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
          Simulates RAG by searching the knowledge base and injecting relevant context
 
@@ -121,7 +126,7 @@ class RAGHook(Prehook):
             prompt = requests[0].text
         else:
             return requests  # No text prompt to validate
-        
+
         prompt_lower = prompt.lower()
 
         # Search for relevant context in the knowledge base

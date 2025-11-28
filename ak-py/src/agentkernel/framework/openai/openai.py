@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, List
 
-
-from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
+
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 
 from ...core import Agent as BaseAgent
 from ...core import Module
@@ -93,7 +93,7 @@ class OpenAIRunner(BaseRunner):
         """
         result = await Runner.run(agent.agent, prompt, session=self._session(session))
         return result.final_output
-    
+
     async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the OpenAI agent with provided multi modal inputs.
@@ -110,7 +110,7 @@ class OpenAIRunner(BaseRunner):
             else:
                 reply = "Sorry. Agent kernel OpenAI runner is unable to handle content other than text at the moment"
             break
-        
+
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:

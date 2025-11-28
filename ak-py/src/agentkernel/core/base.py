@@ -3,12 +3,14 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, List, Literal, Union
 
-from .config import AKConfig
 from pydantic import BaseModel
+
+from .config import AKConfig
+from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
-from .model import AgentRequest, AgentReply
 
 current_session = contextvars.ContextVar("session_id", default="")
+
 
 class Session:
     """
@@ -97,7 +99,7 @@ class Session:
         self._log.debug(f"Setting session object for key {key}: {value}")
         self._data[key] = value
         return value
-    
+
     def set_context(self):
         """
         Sets the current session context variable to this session's ID.
@@ -146,8 +148,8 @@ class Runner(ABC):
         :return: The result of the agent's execution.
         """
         pass
-    
-    @abstractmethod    
+
+    @abstractmethod
     async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the agent with the provided multi modal inputs.

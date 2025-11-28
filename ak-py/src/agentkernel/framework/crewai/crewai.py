@@ -5,12 +5,12 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Session
 from ...core.config import AKConfig
 from ...trace import Trace
-
-from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 
 FRAMEWORK = "crewai"
 
@@ -111,7 +111,7 @@ class CrewAIRunner(Runner):
             external_memory=self._memory(session),
         )
         return crew.kickoff(inputs={})
-    
+
     async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the CrewAI agent with provided multi modal inputs.
@@ -128,12 +128,12 @@ class CrewAIRunner(Runner):
             else:
                 reply = "Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment"
             break
-        
+
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:
             reply = str(reply)
-                
+
         return AgentReplyText(text=reply)
 
 

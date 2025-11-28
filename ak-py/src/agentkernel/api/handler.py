@@ -4,9 +4,10 @@ from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Optional
 
-from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
 
 from ..core import AgentService, GlobalRuntime
 
@@ -92,13 +93,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                             "session_id": service.get_response_session_id(req.session_id),
                         },
                     )
-            result = await service.run_multi([AgentRequestText(text=req.prompt), AgentRequestAny(name="additional", content=req.additional_context)])
+            result = await service.run_multi(
+                [AgentRequestText(text=req.prompt), AgentRequestAny(name="additional", content=req.additional_context)]
+            )
 
             return {
-                    "result": result.text if isinstance(result, AgentReplyText) else result,
-                    "session_id": service.get_response_session_id(req.session_id),
-                }
-           
+                "result": result.text if isinstance(result, AgentReplyText) else result,
+                "session_id": service.get_response_session_id(req.session_id),
+            }
+
         except HTTPException:
             raise
         except Exception as e:

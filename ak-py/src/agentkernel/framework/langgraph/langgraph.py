@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Iterator, List, Optional, Sequence
 
-from agentkernel.core.base import Session
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -14,6 +13,9 @@ from langgraph.checkpoint.base import (
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
+from agentkernel.core.base import Session
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import Runner as BaseRunner
@@ -21,9 +23,8 @@ from ...core import Session as BaseSession
 from ...core.config import AKConfig
 from ...trace import Trace
 
-from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
-
 FRAMEWORK = "langgraph"
+
 
 class CheckPointer(BaseCheckpointSaver):
     """
@@ -302,13 +303,14 @@ class LangGraphRunner(BaseRunner):
             else:
                 reply = "Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment"
             break
-        
+
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:
             reply = str(reply)
-                
-        return AgentReplyText(text=reply)  
+
+        return AgentReplyText(text=reply)
+
 
 class LangGraphModule(BaseModule):
     """
