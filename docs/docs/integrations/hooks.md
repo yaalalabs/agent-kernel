@@ -97,18 +97,15 @@ class MyPrehook(Prehook):
         """
         Process the prompt before agent execution.
         
-        Args:
-            session: The current session instance
-            agent: The agent that will execute the prompt
-            original_prompt: The original unmodified user prompt
-            prompt: The current prompt (possibly modified by previous hooks)
-            additional_context: Additional context passed with the prompt
-        
-        Returns:
-            tuple[bool, str]: (proceed, modified_prompt)
-                - proceed: True to continue execution, False to halt
-                - modified_prompt: The prompt to use (if proceeding) or 
-                                  rejection message (if halting)
+        :param session: The current session instance
+        :param agent: The agent that will execute the prompt
+        :param original_prompt: The original unmodified user prompt
+        :param prompt: The current prompt (possibly modified by previous hooks)
+        :param additional_context: Additional context passed with the prompt
+        :return: tuple[bool, str]: (proceed, modified_prompt)
+            - proceed: True to continue execution, False to halt
+            - modified_prompt: The prompt to use (if proceeding) or 
+                              rejection message (if halting)
         """
         # Your logic here
         return True, prompt  # Proceed with original prompt
@@ -138,16 +135,13 @@ class MyPosthook(Posthook):
         """
         Process the agent's reply after execution.
         
-        Args:
-            session: The current session instance
-            input_prompt: The original prompt provided to the agent
-            agent: The agent that executed the prompt
-            agent_reply: The reply from the agent. For the first posthook, this is 
-                the unmodified agent reply. For subsequent posthooks, this is 
-                the reply modified by previous posthooks in the chain.
-        
-        Returns:
-            str: The modified reply (or original if no changes)
+        :param session: The current session instance
+        :param input_prompt: The original prompt provided to the agent
+        :param agent: The agent that executed the prompt
+        :param agent_reply: The reply from the agent. For the first posthook, this is 
+            the unmodified agent reply. For subsequent posthooks, this is 
+            the reply modified by previous posthooks in the chain.
+        :return: str: The modified reply (or original if no changes)
         """
         # Your logic here
         return agent_reply  # Return original reply

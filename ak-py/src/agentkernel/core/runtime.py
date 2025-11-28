@@ -7,6 +7,8 @@ from typing import Any, Optional
 from deprecated import deprecated
 from singleton_type import Singleton
 
+from agentkernel.core.util.key_value_cache import KeyValueCache
+
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .hooks import Posthook, Prehook
@@ -136,6 +138,32 @@ class Runtime:
         :return: The session storage.
         """
         return self._sessions
+
+    def get_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
+        """
+        Retrieves the volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the volatile cache for. If not provided, the current context is used to find the session
+        :return: The volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+
+        if session_id is None or session_id == "":
+            raise Exception("No current session context available to retrieve volatile cache.")
+        return self._sessions.load(session_id).get_volatile_cache()
+
+    def get_non_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
+        """
+        Retrieves the non-volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the non volatile cache for. If not provided, the current context is used to find the session
+        :return: The non volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+
+        if session_id is None or session_id == "":
+            raise Exception("No current session context available to retrieve non-volatile cache.")
+        return self._sessions.load(session_id).get_non_volatile_cache()
 
     def register_pre_hooks(self, agent_name: str, hooks: list[Prehook]) -> None:
         """

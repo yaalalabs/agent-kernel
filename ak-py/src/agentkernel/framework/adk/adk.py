@@ -27,7 +27,6 @@ class GoogleADKSession:
         """
         Initialize the session store and logging for Google ADK sessions.
         """
-        super().__init__(FRAMEWORK)
         self._session_service = InMemorySessionService()
         self._log = logging.getLogger("ak.adk.session")
         self._session = None

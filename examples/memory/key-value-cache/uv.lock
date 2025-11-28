@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 [[package]]
 name = "agentkernel"
 version = "0.2.6"
-source = { registry = "https://pypi.org/simple" }
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -13,9 +13,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7f/d1/f1ed86f6215e3e6ec93ab9d1fd84c7d87aeea23439c412df00bb0a560b59/agentkernel-0.2.6.tar.gz", hash = "sha256:c4f9cabdee92e6afd2ed9dd3c9d849a24a6cb459278d8ea7fefdb5663da0c941", size = 52000, upload-time = "2025-11-27T10:22:33.451Z" }
+sdist = { path = "agentkernel-0.2.6.tar.gz" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/e5/854492642282ad6401ef462173632c53c1ccc627104827692852669b44db/agentkernel-0.2.6-py3-none-any.whl", hash = "sha256:e53a95b547df2806528611fbe9fb292beb81e726264489b07ff9c705321980ed", size = 84850, upload-time = "2025-11-27T10:22:32.077Z" },
+    { path = "agentkernel-0.2.6-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -634,6 +634,33 @@ wheels = [
 ]
 
 [[package]]
+name = "keyvalue-cache-demo"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "agentkernel", extra = ["api", "openai"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "agentkernel", extra = ["test"] },
+    { name = "black" },
+    { name = "isort" },
+    { name = "mypy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.2.6" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.6" },
+    { name = "black", specifier = ">=23.0.0" },
+    { name = "isort", specifier = ">=5.0.0" },
+    { name = "mypy", specifier = ">=1.0.0" },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -800,33 +827,6 @@ wheels = [
 ]
 
 [[package]]
-name = "openai-hooks-demo"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "agentkernel", extra = ["api", "openai"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "agentkernel", extra = ["test"] },
-    { name = "black" },
-    { name = "isort" },
-    { name = "mypy" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.2.6" }]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.6" },
-    { name = "black", specifier = ">=23.0.0" },
-    { name = "isort", specifier = ">=5.0.0" },
-    { name = "mypy", specifier = ">=1.0.0" },
-]
-
-[[package]]
 name = "openinference-instrumentation"
 version = "0.1.42"
 source = { registry = "https://pypi.org/simple" }
@@ -970,7 +970,7 @@ wheels = [
 
 [[package]]
 name = "pydantic"
-version = "2.12.4"
+version = "2.12.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-types" },
@@ -978,9 +978,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/96/ad/a17bc283d7d81837c061c49e3eaa27a45991759a1b7eae1031921c6bd924/pydantic-2.12.4.tar.gz", hash = "sha256:0f8cb9555000a4b5b617f66bfd2566264c4984b27589d3b845685983e8ea85ac", size = 821038, upload-time = "2025-11-05T10:50:08.59Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/44/36f1a6e523abc58ae5f928898e4aca2e0ea509b5aa6f6f392a5d882be928/pydantic-2.12.5.tar.gz", hash = "sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49", size = 821591, upload-time = "2025-11-26T15:11:46.471Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/2f/e68750da9b04856e2a7ec56fc6f034a5a79775e9b9a81882252789873798/pydantic-2.12.4-py3-none-any.whl", hash = "sha256:92d3d202a745d46f9be6df459ac5a064fdaa3c1c4cd8adcfa332ccf3c05f871e", size = 463400, upload-time = "2025-11-05T10:50:06.732Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl", hash = "sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d", size = 463580, upload-time = "2025-11-26T15:11:44.605Z" },
 ]
 
 [[package]]
