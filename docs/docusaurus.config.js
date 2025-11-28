@@ -41,14 +41,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel - Production Runtime for LangGraph, OpenAI, Google ADK & CrewAI | Agentic Framework',
+        content: 'Agent Kernel - Production-ready framework-agnostic runtime for AI agents',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Agent Kernel: The production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI with built-in state management, monitoring, and enterprise scalability. Framework-agnostic alternative to Semantic Kernel.',
+        content: 'Agent Kernel: The production-ready agentic framework-agnostic runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI with built-in state management, monitoring, and enterprise scalability.',
       },
     },
     {
@@ -83,14 +83,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel - Production Runtime for LangGraph, OpenAI, Google ADK & CrewAI',
+        content: 'Agent Kernel - Production-ready framework-agnostic runtime for AI agents',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         name: 'twitter:description',
-        content: 'Production agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Enterprise-ready alternative to Semantic Kernel with state management and monitoring.',
+        content: 'Production agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Enterprise-ready framework with state management and monitoring.',
       },
     },
     {
@@ -132,7 +132,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'category',
-        content: 'AI Infrastructure, Machine Learning, Software Development',
+        content: 'AI Infrastructure, Machine Learning, Software Development, Agentic AI',
       },
     },
     {
@@ -166,11 +166,11 @@ const config = {
           url: 'https://www.yaalalabs.com',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent kernel, agentic framework, LangGraph runtime, OpenAI Agents, Google ADK, CrewAI, AI agent deployment, agent kernel vs semantic kernel',
+        keywords: 'Agent kernel, agentic framework, LangGraph runtime, OpenAI Agents, Google ADK, CrewAI, AI agent deployment, agent kernel vs semantic kernel, Agentic AI',
         featureList: [
           'LangGraph support',
           'OpenAI Agents SDK support',
-          'Google ADK (Gemini) support',
+          'Google ADK support',
           'CrewAI support',
           'Multi-agent orchestration',
           'State management',
@@ -302,7 +302,7 @@ const config = {
       metadata: [
         { 
           name: 'description',
-          content: 'Agent Kernel: Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI. Deploy and scale AI agents with enterprise features. Framework-agnostic alternative to Semantic Kernel with built-in state management, monitoring, and observability.',
+          content: 'Agent Kernel: Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Deploy and scale AI agents with enterprise features. Framework-agnostic framework with built-in state management, monitoring, and observability.',
         },
         {
           property: 'og:image',
