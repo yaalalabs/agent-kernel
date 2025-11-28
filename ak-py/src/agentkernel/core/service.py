@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Any, List
 
-from agentkernel.core.base import AgentReply, AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestAny, AgentRequestText
 
 from ..core import Agent, GlobalRuntime, Runtime, Session, AgentRequest
 

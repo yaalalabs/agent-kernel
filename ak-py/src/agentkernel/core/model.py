@@ -11,10 +11,7 @@ class AgentRequestText(BaseModel):
     type: Literal["text"]
     """
     text: str
-    type: Literal["text"]
-    def __init__(self, *args: Any, **kwds: Any):
-        self.type = "text"
-        return super().__init__(*args, **kwds)
+    type: str = "text"
     
 class AgentRequestFile(BaseModel):
     """
@@ -27,12 +24,8 @@ class AgentRequestFile(BaseModel):
     """
     file_data: str  # This could be base64 encoded string or url
     name: str
-    type: Literal["file"]
+    type: str = "file"
     mime_type: str | None = None # Optional MIME The IANA standard MIME type of the source data
-    
-    def __init__(self, *args: Any, **kwds: Any):
-        self.type = "file"
-        return super().__init__(*args, **kwds)
     
 class AgentRequestImage(BaseModel):
     """
@@ -45,13 +38,10 @@ class AgentRequestImage(BaseModel):
     """
     image_data: str
     name: str
-    type: Literal["image"]
+    type: str = "image"
     mime_type: str | None = None 
 
-    def __init__(self, *args: Any, **kwds: Any):
-        self.type = "image"
-        return super().__init__(*args, **kwds)  
-    
+   
 class AgentRequestAny(BaseModel):
     """
     AgentRequestAny encapsulates a passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
@@ -62,12 +52,7 @@ class AgentRequestAny(BaseModel):
     """
     content: Any
     name: str
-    type: Literal["other"]
-
-    def __init__(self, *args: Any, **kwds: Any):
-        self.type = "other"
-        return super().__init__(*args, **kwds)
-    
+    type: str = "other"
 class AgentReplyText(AgentRequestText):
     """
     AgentReplyText encapsulates a text reply from an agent.
@@ -75,10 +60,6 @@ class AgentReplyText(AgentRequestText):
     text: str  : This is the agent output text
     type: Literal["text"]
     """
-    text: str
-    type: Literal["text"]
-    def __init__(self, *args: Any, **kwds: Any):
-        return super().__init__(*args, **kwds)  
-    
+   
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
 type AgentReply = Union[str, AgentReplyText, dict]

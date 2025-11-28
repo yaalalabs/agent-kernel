@@ -151,7 +151,7 @@ class Runtime:
             
         self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
-        reply = await agent.runner.run(agent, session, requests)
+        reply = await agent.runner.run_multi(agent, session, requests)
 
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
