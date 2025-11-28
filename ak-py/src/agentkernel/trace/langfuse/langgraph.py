@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 
 from ...core import Session
 from ...langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
@@ -57,12 +57,14 @@ class LangFuseLangGraph(LangGraphRunner):
         """
         reply = "No valid requests found"
         for req in requests:
+            if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
+                continue
             if isinstance(req, AgentRequestText):
                 reply = await self.run(agent, session, req.text)
                 break
             else:
                 reply = "Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment"
-            break
+                break
 
         if hasattr(reply, "raw"):
             reply = str(reply.raw)

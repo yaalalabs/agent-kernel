@@ -111,28 +111,7 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
-    async def run(self, agent: Agent, session: Session, prompt: Any, additional_context: Any | None = None) -> Any:
-        """
-        Runs the specified agent with the given prompt.
-        :param agent: The agent to run.
-        :param session: The session to use for the agent.
-        :param prompt: The prompt to provide to the agent.
-        :param additional_context: Additional context to pass to pre-execution hooks.
-        :return: The result of the agent's execution.
-        """
-        self._log.debug(
-            f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt} and additional_context: {additional_context}"
-        )
-
-        reply = await agent.runner.run_multi(
-            agent,
-            session,
-            [AgentRequestText(text=prompt), AgentRequestAny(content=additional_context, name="additional")],
-        )
-
-        return reply
-
-    async def run_multi(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
+    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the specified agent with the multi modal requests.
         :param agent: The agent to run.
@@ -145,7 +124,7 @@ class Runtime:
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
             reply = await hook.on_run(session, agent, requests)
-            if isinstance(reply, AgentReplyText):
+            if isinstance(reply, AgentReplyText) or isinstance(reply, str):
                 self._log.debug(
                     f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
                 )

@@ -8,7 +8,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 
 from ...core import Agent as AKBaseAgent
 from ...core import Module
@@ -110,12 +110,14 @@ class GoogleADKRunner(BaseRunner):
         """
         reply = "No valid requests found"
         for req in requests:
+            if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
+                continue
             if isinstance(req, AgentRequestText):
                 reply = await self.run(agent, session, req.text)
                 break
             else:
                 reply = "Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment"
-            break
+                break
 
         if hasattr(reply, "raw"):
             reply = str(reply.raw)

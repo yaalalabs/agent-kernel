@@ -1,9 +1,7 @@
 import contextvars
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, List, Literal, Union
-
-from pydantic import BaseModel
+from typing import Any, List
 
 from .config import AKConfig
 from .model import AgentReply, AgentRequest

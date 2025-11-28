@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
-from .base import Agent, AgentReply, AgentRequest, Session
+from .base import Agent, Session
+from .model import AgentReply, AgentRequest
 
 """
 Prehook and Posthook classes define the interface for hooks that can be executed before and after an agent's execution respectively.

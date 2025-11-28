@@ -12,7 +12,7 @@ class AgentRequestText(BaseModel):
     """
 
     text: str
-    type: str = "text"
+    type: Literal["text"] = "text"
 
 
 class AgentRequestFile(BaseModel):
@@ -27,7 +27,7 @@ class AgentRequestFile(BaseModel):
 
     file_data: str  # This could be base64 encoded string or url
     name: str
-    type: str = "file"
+    type: Literal["file"] = "file"
     mime_type: str | None = None  # Optional MIME The IANA standard MIME type of the source data
 
 
@@ -43,7 +43,7 @@ class AgentRequestImage(BaseModel):
 
     image_data: str
     name: str
-    type: str = "image"
+    type: Literal["image"] = "image"
     mime_type: str | None = None
 
 
@@ -51,14 +51,14 @@ class AgentRequestAny(BaseModel):
     """
     AgentRequestAny encapsulates a passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
 
-    any_data: Any : This could be base64 encoded string or bytes or url
+    content: Any : This could be base64 encoded string or bytes or url
     name: str : name of the data
     type: Literal["other"]
     """
 
     content: Any
     name: str
-    type: str = "other"
+    type: Literal["other"] = "other"
 
 
 class AgentReplyText(AgentRequestText):

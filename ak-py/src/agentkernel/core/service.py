@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, List
+from typing import Any
 
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestAny, AgentRequestText
 
@@ -132,7 +132,7 @@ class AgentService:
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
         self._session.set_context()
-        result = await self._runtime.run_multi(self._agent, self._session, requests)
+        result = await self._runtime.run(self._agent, self._session, requests)
         self._runtime.sessions().store(self._session)
         self._session.get_volatile_cache().clear()
         self._session.reset_context()

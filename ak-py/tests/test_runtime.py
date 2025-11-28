@@ -87,5 +87,5 @@ async def test_runtime_run_calls_runner(monkeypatch):
     runtime.register(agent)
     session = runtime.sessions().new("s1")
 
-    out = await runtime.run(agent, session, "ping")
+    out = await runtime.run(agent, session, [AgentRequestText(text="ping")])
     assert out == "ok:ping"

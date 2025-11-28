@@ -5,7 +5,7 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Session
@@ -122,12 +122,15 @@ class CrewAIRunner(Runner):
         """
         reply = "No valid requests found"
         for req in requests:
+            if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
+                continue
+
             if isinstance(req, AgentRequestText):
                 reply = await self.run(agent, session, req.text)
                 break
             else:
                 reply = "Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment"
-            break
+                break
 
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
