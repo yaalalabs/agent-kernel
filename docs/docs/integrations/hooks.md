@@ -82,33 +82,28 @@ Post-execution hooks run **after** an agent generates a response. They can:
 Create a class that inherits from `Prehook` and implements the required methods:
 
 ```python
-from agentkernel.core.hooks import Prehook
-from agentkernel.core.base import Session, Agent
+from agentkernel import Prehook, Agent, Session
+from agentkernel.core.model import AgentRequest, AgentReply, AgentRequestText, AgentReplyText
 
 class MyPrehook(Prehook):
     async def on_run(
         self, 
         session: Session, 
         agent: Agent, 
-        original_prompt: str, 
-        prompt: str,
-        additional_context: Any | None = None
-    ) -> tuple[bool, str]:
+        requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
-        Process the prompt before agent execution.
+        Process the requests before agent execution.
         
         :param session: The current session instance
-        :param agent: The agent that will execute the prompt
-        :param original_prompt: The original unmodified user prompt
-        :param prompt: The current prompt (possibly modified by previous hooks)
-        :param additional_context: Additional context passed with the prompt
-        :return: tuple[bool, str]: (proceed, modified_prompt)
-            - proceed: True to continue execution, False to halt
-            - modified_prompt: The prompt to use (if proceeding) or 
-                              rejection message (if halting)
+        :param agent: The agent that will execute the requests
+        :param requests: List of requests to the agent (can include text, files, images, etc.)
+        :return: AgentReply: If the hook decides to halt execution, return an AgentReply
+                 list[AgentRequest]: The modified requests or original list. You can modify in place
+                                     or add additional content (e.g., files, images, RAG context)
         """
-        # Your logic here
-        return True, prompt  # Proceed with original prompt
+        # Your logic here - example: pass through unchanged
+        return requests
     
     def name(self) -> str:
         """Return the hook name for logging/debugging."""
@@ -120,28 +115,27 @@ class MyPrehook(Prehook):
 Create a class that inherits from `Posthook`:
 
 ```python
-from agentkernel.core.hooks import Posthook
-from agentkernel.core.base import Session, Agent
+from agentkernel import Posthook, Agent, Session
+from agentkernel.core.model import AgentRequest, AgentReply, AgentReplyText
 
 class MyPosthook(Posthook):
     async def on_run(
         self,
         session: Session,
-        input_prompt: str,
-        additional_context: Any | None,
+        requests: list[AgentRequest],
         agent: Agent,
-        agent_reply: str
-    ) -> str:
+        agent_reply: AgentReply
+    ) -> AgentReply:
         """
         Process the agent's reply after execution.
         
         :param session: The current session instance
-        :param input_prompt: The original prompt provided to the agent
-        :param agent: The agent that executed the prompt
+        :param requests: The original requests provided to the agent after pre-hooks
+        :param agent: The agent that executed the requests
         :param agent_reply: The reply from the agent. For the first posthook, this is 
-            the unmodified agent reply. For subsequent posthooks, this is 
-            the reply modified by previous posthooks in the chain.
-        :return: str: The modified reply (or original if no changes)
+                           the unmodified agent reply. For subsequent posthooks, this is 
+                           the reply modified by previous posthooks in the chain.
+        :return: AgentReply: The modified reply (or original if no changes)
         """
         # Your logic here
         return agent_reply  # Return original reply
@@ -208,22 +202,32 @@ runtime.register_pre_hooks("agent_name", new_order)
 Validate input and block inappropriate content:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReplyText
+
 class GuardRailHook(Prehook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "malware"]
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request (assuming single text request)
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests  # No text to validate
+        
         prompt_lower = prompt.lower()
         
         # Check for blocked content
         for keyword in self.BLOCKED_KEYWORDS:
             if keyword in prompt_lower:
-                return False, (
-                    f"I cannot assist with requests related to '{keyword}'. "
-                    "Please ask a different question."
+                # Halt execution and return rejection message
+                return AgentReplyText(
+                    text=f"I cannot assist with requests related to '{keyword}'. "
+                         "Please ask a different question."
                 )
         
-        # Prompt is safe
-        return True, prompt
+        # Prompt is safe - continue with execution
+        return requests
     
     def name(self):
         return "GuardRailHook"
@@ -234,11 +238,20 @@ class GuardRailHook(Prehook):
 Enrich prompts with relevant context from a knowledge base:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequestText
+
 class RAGHook(Prehook):
     def __init__(self, knowledge_base):
         self.knowledge_base = knowledge_base
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request (assuming single text request)
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests  # No text to enrich
+        
         # Search knowledge base for relevant context
         context = self.knowledge_base.search(prompt)
         
@@ -250,10 +263,10 @@ class RAGHook(Prehook):
 Question: {prompt}
 
 Please answer the question using the provided context."""
-            return True, enriched_prompt
+            return [AgentRequestText(text=enriched_prompt)]
         
-        # No relevant context found
-        return True, prompt
+        # No relevant context found - return original
+        return requests
     
     def name(self):
         return "RAGHook"
@@ -264,13 +277,22 @@ Please answer the question using the provided context."""
 Apply safety filters to agent responses:
 
 ```python
+from agentkernel import Posthook
+from agentkernel.core.model import AgentReplyText
+
 class ModerationHook(Posthook):
-    async def on_run(self, session, input_prompt, additional_context, agent, agent_reply):
+    async def on_run(self, session, requests, agent, agent_reply):
+        # Extract text from reply
+        if isinstance(agent_reply, AgentReplyText):
+            reply_text = agent_reply.text
+        else:
+            return agent_reply  # Can't moderate non-text replies
+        
         # Check reply for inappropriate content
-        if self._contains_sensitive_info(agent_reply):
-            return (
-                "I apologize, but I cannot provide that information. "
-                "Please rephrase your question."
+        if self._contains_sensitive_info(reply_text):
+            return AgentReplyText(
+                text="I apologize, but I cannot provide that information. "
+                     "Please rephrase your question."
             )
         
         return agent_reply
@@ -288,14 +310,22 @@ class ModerationHook(Posthook):
 Append legal or compliance disclaimers to responses:
 
 ```python
+from agentkernel import Posthook
+from agentkernel.core.model import AgentReplyText
+
 class DisclaimerHook(Posthook):
-    async def on_run(self, session, input_prompt, additional_context, agent, agent_reply):
+    async def on_run(self, session, requests, agent, agent_reply):
         disclaimer = (
             "\n\n---\n"
             "*Disclaimer: This information is for general guidance only "
             "and should not be considered professional advice.*"
         )
-        return agent_reply + disclaimer
+        
+        # Add disclaimer to text replies
+        if isinstance(agent_reply, AgentReplyText):
+            return AgentReplyText(text=agent_reply.text + disclaimer)
+        
+        return agent_reply
     
     def name(self):
         return "DisclaimerHook"
@@ -306,21 +336,30 @@ class DisclaimerHook(Posthook):
 Track user interactions and agent performance:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequestText
+from datetime import datetime
+
 class AnalyticsHook(Prehook):
     def __init__(self, logger):
         self.logger = logger
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text for logging (if available)
+        prompt_text = None
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt_text = requests[0].text
+        
         # Log the interaction
         self.logger.log({
             "session_id": session.id,
             "agent": agent.name,
-            "prompt": original_prompt,
+            "prompt": prompt_text,
             "timestamp": datetime.now(),
         })
         
         # Pass through without modification
-        return True, prompt
+        return requests
     
     def name(self):
         return "AnalyticsHook"
@@ -369,18 +408,28 @@ runtime.register_pre_hooks("agent", [
 Hooks should not crash - handle errors and return sensible defaults:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequestText
+
 class RobustRAGHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests
+        
         try:
             context = self.knowledge_base.search(prompt)
             if context:
-                return True, self._enrich_prompt(prompt, context)
+                enriched = self._enrich_prompt(prompt, context)
+                return [AgentRequestText(text=enriched)]
         except Exception as e:
             # Log error but don't crash
             self.logger.error(f"RAG lookup failed: {e}")
         
-        # Fallback to original prompt
-        return True, prompt
+        # Fallback to original requests
+        return requests
     
     def name(self):
         return "RobustRAGHook"
@@ -391,22 +440,32 @@ class RobustRAGHook(Prehook):
 Hooks execute on every request - keep them fast:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequestText
+from functools import lru_cache
+
 class OptimizedRAGHook(Prehook):
     def __init__(self, vector_store):
         self.vector_store = vector_store
-        self.cache = LRUCache(maxsize=100)  # Cache results
+        self.cache = {}  # Simple cache (consider LRU in production)
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests
+        
         # Check cache first
         cache_key = hash(prompt)
         if cache_key in self.cache:
-            return True, self.cache[cache_key]
+            return [AgentRequestText(text=self.cache[cache_key])]
         
         # Perform lookup
         enriched = self._do_rag(prompt)
         self.cache[cache_key] = enriched
         
-        return True, enriched
+        return [AgentRequestText(text=enriched)]
     
     def name(self):
         return "OptimizedRAGHook"
@@ -417,21 +476,30 @@ class OptimizedRAGHook(Prehook):
 Allow hooks to be customized without code changes:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequestText, AgentReplyText
+
 class ConfigurableGuardRailHook(Prehook):
     def __init__(self, blocked_keywords=None, max_length=5000):
         self.blocked_keywords = blocked_keywords or []
         self.max_length = max_length
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests
+        
         # Validate based on configuration
         if len(prompt) > self.max_length:
-            return False, f"Input too long (max {self.max_length} chars)"
+            return AgentReplyText(text=f"Input too long (max {self.max_length} chars)")
         
         for keyword in self.blocked_keywords:
             if keyword in prompt.lower():
-                return False, f"Cannot process requests about '{keyword}'"
+                return AgentReplyText(text=f"Cannot process requests about '{keyword}'")
         
-        return True, prompt
+        return requests
     
     def name(self):
         return "ConfigurableGuardRailHook"
@@ -442,12 +510,21 @@ class ConfigurableGuardRailHook(Prehook):
 Hook methods are async, allowing you to perform I/O operations efficiently:
 
 ```python
+from agentkernel import Prehook
+from agentkernel.core.model import AgentRequestText
+
 class AsyncRAGHook(Prehook):
     def __init__(self, vector_store, embeddings_api):
         self.vector_store = vector_store
         self.embeddings_api = embeddings_api
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests
+        
         # Perform async operations
         embedding = await self.embeddings_api.embed(prompt)
         results = await self.vector_store.search(embedding, top_k=3)
@@ -455,9 +532,9 @@ class AsyncRAGHook(Prehook):
         if results:
             context = "\n".join([r.text for r in results])
             enriched = f"Context:\n{context}\n\nQuestion: {prompt}"
-            return True, enriched
+            return [AgentRequestText(text=enriched)]
         
-        return True, prompt
+        return requests
     
     def name(self):
         return "AsyncRAGHook"
@@ -482,14 +559,22 @@ from agentkernel import Prehook, Posthook
 from agents import Agent
 
 # Define hooks
+from agentkernel.core.model import AgentRequestText, AgentReplyText
+
 class RAGHook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests
+        
         # Simulate knowledge base lookup
         context = self._search_knowledge_base(prompt)
         if context:
             enriched = f"Context: {context}\n\nQuestion: {prompt}"
-            return True, enriched
-        return True, prompt
+            return [AgentRequestText(text=enriched)]
+        return requests
     
     def _search_knowledge_base(self, query):
         # Your RAG implementation
@@ -501,18 +586,26 @@ class RAGHook(Prehook):
 class GuardRailHook(Prehook):
     BLOCKED = ["hack", "illegal", "malware"]
     
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
+    async def on_run(self, session, agent, requests):
+        # Extract text from first request
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests
+        
         for keyword in self.BLOCKED:
             if keyword in prompt.lower():
-                return False, f"Cannot assist with '{keyword}'"
-        return True, prompt
+                return AgentReplyText(text=f"Cannot assist with '{keyword}'")
+        return requests
     
     def name(self):
         return "GuardRailHook"
 
 class DisclaimerHook(Posthook):   
-    async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str::
-        return agent_reply + "\n\n*Disclaimer: AI-generated content.*"
+    async def on_run(self, session, requests, agent, agent_reply):
+        if isinstance(agent_reply, AgentReplyText):
+            return AgentReplyText(text=agent_reply.text + "\n\n*Disclaimer: AI-generated content.*")
+        return agent_reply
     
     def name(self):
         return "DisclaimerHook"
@@ -613,28 +706,32 @@ async def test_chaining():
 ### Prehook Interface
 
 ```python
+from agentkernel.core.model import AgentRequest, AgentReply
+
 class Prehook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None
-    ) -> tuple[bool, str]:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
-        Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
+        Hook method called before an agent starts executing a request. These hooks can modify 
+        the requests or halt execution.
+        
         Some use cases:
           - RAG context injection
           - Prompt validation like input guard rails
           - Logging or analytics
 
-        :param: session (Session): The session instance.
-        :param: agent (Agent): The agent that will execute the prompt.
-        :param: original_prompt (str): The original unmodified prompt provided to the agent.
-        :param: prompt (str): The current prompt to be executed.
-        :param: additional_context (Any|None): Additional context that may have been passed with the prompt. This may help RAG hooks to fetch relevant context.
-        :return: tuple[bool, str]: A tuple containing:
-                - bool: Whether to proceed with execution.
-                - str: The modified prompt. In case of stopping execution, a clear reason to be sent back
-                       to the user. Otherwise, a modified prompt (e.g. RAG context)
-                       can be sent for further processing.
+        :param session: The session instance
+        :param agent: The agent that will execute the requests
+        :param requests: List of requests to the agent (can include text, files, images, etc.)
+        
+        :return: AgentReply: If the hook decides to halt execution, return an AgentReply 
+                            which will be sent back to the user
+                 list[AgentRequest]: The modified requests or the input list. You can modify 
+                                    the requests in place without taking copies. You can also 
+                                    add additional content to the requests list (e.g., files, 
+                                    images, RAG context)
         """
         raise NotImplementedError
 
@@ -649,30 +746,32 @@ class Prehook(ABC):
 ### Posthook Interface
 
 ```python
+from agentkernel.core.model import AgentRequest, AgentReply
+
 class Posthook(ABC):
     @abstractmethod
-    async def on_run(self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str) -> str:
+    async def on_run(
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+    ) -> AgentReply:
         """
-        Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
-          - Moderation of agent replies. e.g. output guardrails
+        Hook method called after an agent finishes executing a request. These hooks can modify 
+        the agent's reply.
+        
+        Some use cases:
+          - Moderation of agent replies (e.g., output guardrails)
           - Adding disclaimers or additional information to the reply
           - Logging or analytics
 
-        Note: if the hook changes the reply, the modified reply will be sent to the next hook for processing.
-              the agent_reply parameter contains the unmodified reply from the agent. the following code snippet will help to correctly handle the response
+        Note: If the hook changes the reply, the modified reply will be sent to the next hook 
+              for processing.
 
-              if hasattr(result, "raw"):
-                response_text = str(result.raw)
-              else:
-                response_text = str(result)
-
-        :param:  session (Session): The session instance.
-        :param:  input_prompt (str): The original prompt provided to the agent after any pre-execution hooks have been applied.
-        :param: additional_context (Any|None): Additional context that may have been passed with the prompt.
-        :param:  agent (Agent): The agent that executed the prompt.
-        :param:  agent_reply (str): The reply to process. For the first posthook, this is the unmodified
-                              agent reply. For subsequent posthooks, this is the reply modified by
-                              previous posthooks in the chain.
+        :param session: The session instance
+        :param requests: The original requests provided to the agent after any pre-execution 
+                        hooks have been applied
+        :param agent: The agent that executed the requests
+        :param agent_reply: The reply to process. For the first posthook, this is the unmodified
+                           agent reply. For subsequent posthooks, this is the reply modified by
+                           previous posthooks in the chain.
 
         :return: The modified reply. If not modified, return the current reply.
         """
@@ -731,10 +830,10 @@ runtime.get_post_hooks(
 
 ```python
 # ❌ Wrong: Halts execution
-return False, modified_prompt
+return AgentReplyText(text="Execution halted")
 
 # ✅ Correct: Continues execution
-return True, modified_prompt
+return requests  # or modified requests list
 ```
 
 ### Modified Prompt Not Used
@@ -745,14 +844,18 @@ return True, modified_prompt
 
 ```python
 # ❌ Wrong: Returns original
-async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
-    enriched = f"Context: {context}\n{prompt}"
-    return True, prompt  # Returns original!
+async def on_run(self, session, agent, requests):
+    if requests and isinstance(requests[0], AgentRequestText):
+        prompt = requests[0].text
+        enriched = f"Context: {context}\n{prompt}"
+    return requests  # Returns original!
 
 # ✅ Correct: Returns modified
-async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
-    enriched = f"Context: {context}\n{prompt}"
-    return True, enriched  # Returns modified
+async def on_run(self, session, agent, requests):
+    if requests and isinstance(requests[0], AgentRequestText):
+        prompt = requests[0].text
+        enriched = f"Context: {context}\n{prompt}"
+        return [AgentRequestText(text=enriched)]  # Returns modified
 ```
 
 ### Hooks Executing in Wrong Order

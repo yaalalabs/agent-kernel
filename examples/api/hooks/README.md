@@ -176,11 +176,9 @@ Hooks that run **after** the agent generates a response:
 from agentkernel import Prehook
 
 class MyPrehook(Prehook):
-    async def on_run(self, session, agent, original_prompt, prompt, additional_context=Any|None):
-        # Return (proceed, modified_prompt)
-        # proceed=False halts execution
-        # proceed=True continues with modified_prompt
-        return True, prompt
+     async def on_run(
+        self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
+       return requests # modify as required or send AgentReply to stop execution
     
     def name(self):
         return "MyPrehook"
@@ -191,11 +189,11 @@ class MyPrehook(Prehook):
 from agentkernel import Posthook
 
 class MyPosthook(Posthook):
-    async def on_run(self, session, input_prompt, additional_context, agent, agent_reply):
-        # Modify and return the agent's reply
-        # Cannot halt execution
-        return agent_reply  # or modified version
-    
+    async def on_run(
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+    ) -> AgentReply:
+      return agent_reply # modify as required
+
     def name(self):
         return "MyPosthook"
 ```
