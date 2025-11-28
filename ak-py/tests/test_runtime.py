@@ -1,3 +1,4 @@
+from agentkernel.core.model import AgentRequestText
 import pytest
 
 from agentkernel import Agent, Runner
@@ -11,6 +12,9 @@ class DummyRunner(Runner):
     async def run(self, agent, session, prompt):
         return f"ok:{prompt}"
 
+    async def run_multi(self, agent, session, requests):
+        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
+        return f"ok:{prompt}"
 
 class DummyAgent(Agent):
 
