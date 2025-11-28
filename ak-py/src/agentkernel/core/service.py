@@ -107,14 +107,15 @@ class AgentService:
             self._log.info(f"No module found with name '{name}': {e}")
             return None
 
-    async def run(self, prompt: str, additional_context: Any | None = None):
+    async def run(self, prompt: str):
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.
         :param additional_context: Additional context to pass to pre and post execution hooks.
         """
-        requests = [AgentRequestText(text=prompt), AgentRequestAny(content=additional_context, name="additional")]
-
+        requests = []
+        requests.append(AgentRequestText(text=prompt))
+        
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
             result = result.text

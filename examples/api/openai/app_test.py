@@ -22,7 +22,7 @@ class APITestClient:
                 "prompt": prompt,
                 "session_id": self.session_id,
                 "agent": "support",
-                "additional_context": additional_context,
+                "additional": additional_context,
             }
             if body is None
             else body

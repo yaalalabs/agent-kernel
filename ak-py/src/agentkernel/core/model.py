@@ -22,7 +22,7 @@ class AgentRequestFile(BaseModel):
     file_data: str  : This could be base64 encoded string or url
     name: str : name of the file
     type: Literal["file"]
-    mime_type: str | None = None : Optional MIME The IANA standard MIME type of
+    mime_type: str | None = None : Optional. The IANA standard MIME type of the file
     """
 
     file_data: str  # This could be base64 encoded string or url
@@ -38,7 +38,7 @@ class AgentRequestImage(BaseModel):
     image_data: str  : This should be base64 encoded string
     name: str : name of the image
     type: Literal["image"]
-    mime_type: str | None = None : Optional MIME The IANA standard MIME type of
+    mime_type: str | None = None : Optional. The IANA standard MIME type of the image
     """
 
     image_data: str

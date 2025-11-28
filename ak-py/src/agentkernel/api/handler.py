@@ -5,7 +5,7 @@ from http import HTTPStatus
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
 
@@ -49,10 +49,11 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         self._log = logging.getLogger("ak.api.agent")
 
     class RunRequest(BaseModel):
+        model_config = ConfigDict(extra='allow')
+        
         prompt: str
         agent: Optional[str] = None
         session_id: Optional[str] = None
-        additional_context: Optional[dict] = None
 
     def get_router(self) -> APIRouter:
         """
@@ -70,33 +71,35 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             return {"agents": list(GlobalRuntime.instance().agents().keys())}
 
         @router.post("/run")
-        async def run(req: AgentRESTRequestHandler.RunRequest):
-            return await self.run(req)
+        async def run(body: AgentRESTRequestHandler.RunRequest):
+            return await self.run(body)
 
         return router
 
     async def run(self, req: RunRequest):
         """
         Async method to run the agent.
-        :param req: Request an object containing the prompt and optional agent name.
+        :param req: Request object containing the prompt, optional agent name, and additional properties.
         """
+        requests=[]
+        requests.append(AgentRequestText(text=req.prompt))
+            
+        # Pack additional properties into AgentRequestAny
+        known_fields = {"prompt", "agent", "session_id"}
+        for key, value in req.model_dump().items():
+            if key not in known_fields:
+                self._log.debug(f"Adding additional context: {key}={value}")
+                requests.append(AgentRequestAny(name=key, content=value))
         service = AgentService()
+        
         try:
             service.select(req.session_id, req.agent)
             if not service.agent:
-                service.select(req.session_id)
-                if not service.agent:
-                    raise HTTPException(
-                        status_code=HTTPStatus.BAD_REQUEST,
-                        detail={
-                            "error": "No agent available",
-                            "session_id": service.get_response_session_id(req.session_id),
-                        },
-                    )
-            result = await service.run_multi(
-                [AgentRequestText(text=req.prompt), AgentRequestAny(name="additional", content=req.additional_context)]
-            )
-
+                raise ValueError("No agent available")
+                   
+            result = await service.run_multi(requests=requests)
+            self._log.debug(f"Result: {result}")
+            
             return {
                 "result": result.text if isinstance(result, AgentReplyText) else result,
                 "session_id": service.get_response_session_id(req.session_id),
@@ -104,6 +107,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         except HTTPException:
             raise
+        except ValueError as e:
+            self._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail={
+                    "error": str(e),
+                    "session_id": service.get_response_session_id(req.session_id),
+                },
+            )
         except Exception as e:
             self._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
             raise HTTPException(
