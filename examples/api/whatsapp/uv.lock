@@ -4,19 +4,18 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agentkernel"
-version = "0.2.5"
+version = "0.2.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
-    { name = "redis" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/dd/4e793a479999493ed262d21c3ecef1d318e485c8120a2035136851383963/agentkernel-0.2.5.tar.gz", hash = "sha256:f97cb48aef748052046c77b686c39c3f59da3bd985ee04489c68e518b446270b", size = 48676, upload-time = "2025-11-21T11:18:04.8Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/d1/f1ed86f6215e3e6ec93ab9d1fd84c7d87aeea23439c412df00bb0a560b59/agentkernel-0.2.6.tar.gz", hash = "sha256:c4f9cabdee92e6afd2ed9dd3c9d849a24a6cb459278d8ea7fefdb5663da0c941", size = 52000, upload-time = "2025-11-27T10:22:33.451Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/4c/277ae45ae0bb27d12f19b7729580f23509f0697326f6c1bc33a8a047002a/agentkernel-0.2.5-py3-none-any.whl", hash = "sha256:dad87e0e9cffc61ffd0cb4a93b09f9361dcff906ff9e177a7c7b765f6e0a2fb0", size = 77200, upload-time = "2025-11-21T11:18:03.178Z" },
+    { url = "https://files.pythonhosted.org/packages/97/e5/854492642282ad6401ef462173632c53c1ccc627104827692852669b44db/agentkernel-0.2.6-py3-none-any.whl", hash = "sha256:e53a95b547df2806528611fbe9fb292beb81e726264489b07ff9c705321980ed", size = 84850, upload-time = "2025-11-27T10:22:32.077Z" },
 ]
 
 [package.optional-dependencies]
@@ -90,11 +89,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "whatsapp"], specifier = ">=0.2.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "whatsapp"], specifier = ">=0.2.6" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.5" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.6" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -1326,15 +1325,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a1/d1/5ab148e03f7e6ec8cd220ccf7af74d3aaa4de26dd96df58936beb7cba820/rapidfuzz-3.14.3-cp314-cp314t-win32.whl", hash = "sha256:7ccbf68100c170e9a0581accbe9291850936711548c6688ce3bfb897b8c589ad", size = 1793465, upload-time = "2025-11-01T11:54:35.331Z" },
     { url = "https://files.pythonhosted.org/packages/cd/97/433b2d98e97abd9fff1c470a109b311669f44cdec8d0d5aa250aceaed1fb/rapidfuzz-3.14.3-cp314-cp314t-win_amd64.whl", hash = "sha256:9ec02e62ae765a318d6de38df609c57fc6dacc65c0ed1fd489036834fd8a620c", size = 1623491, upload-time = "2025-11-01T11:54:38.085Z" },
     { url = "https://files.pythonhosted.org/packages/e2/f6/e2176eb94f94892441bce3ddc514c179facb65db245e7ce3356965595b19/rapidfuzz-3.14.3-cp314-cp314t-win_arm64.whl", hash = "sha256:e805e52322ae29aa945baf7168b6c898120fbc16d2b8f940b658a5e9e3999253", size = 851487, upload-time = "2025-11-01T11:54:40.176Z" },
-]
-
-[[package]]
-name = "redis"
-version = "7.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/57/8f/f125feec0b958e8d22c8f0b492b30b1991d9499a4315dfde466cf4289edc/redis-7.0.1.tar.gz", hash = "sha256:c949df947dca995dc68fdf5a7863950bf6df24f8d6022394585acc98e81624f1", size = 4755322, upload-time = "2025-10-27T14:34:00.33Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/97/9f22a33c475cda519f20aba6babb340fb2f2254a02fb947816960d1e669a/redis-7.0.1-py3-none-any.whl", hash = "sha256:4977af3c7d67f8f0eb8b6fec0dafc9605db9343142f634041fb0235f67c0588a", size = 339938, upload-time = "2025-10-27T14:33:58.553Z" },
 ]
 
 [[package]]

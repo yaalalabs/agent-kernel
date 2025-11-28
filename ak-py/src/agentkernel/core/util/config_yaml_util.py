@@ -144,15 +144,12 @@ class YamlBaseSettingsModified(BaseSettings):
         """
         Define the sources and their order for loading the settings values.
 
-        Args:
-            settings_cls: The Settings class.
-            init_settings: The `InitSettingsSource` instance.
-            env_settings: The `EnvSettingsSource` instance.
-            dotenv_settings: The `DotEnvSettingsSource` instance.
-            file_secret_settings: The `SecretsSettingsSource` instance.
-
-        Returns:
-            A tuple containing the sources and their order for
+        :param settings_cls: The Settings class.
+        :param init_settings: The `InitSettingsSource` instance.
+        :param env_settings: The `EnvSettingsSource` instance.
+        :param dotenv_settings: The `DotEnvSettingsSource` instance.
+        :param file_secret_settings: The `SecretsSettingsSource` instance.
+        :return: A tuple containing the sources and their order for
             loading the settings values.
         """
         return (

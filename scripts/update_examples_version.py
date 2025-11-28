@@ -19,12 +19,9 @@ def update_pyproject_version(file_path: Path, new_version: str) -> bool:
     """
     Update agentkernel version in a pyproject.toml file.
     
-    Args:
-        file_path: Path to the pyproject.toml file
-        new_version: The new version to set (e.g., "0.1.0", "0.2.0a1")
-    
-    Returns:
-        True if the file was modified, False otherwise
+    :param file_path: Path to the pyproject.toml file
+    :param new_version: The new version to set (e.g., "0.1.0", "0.2.0a1")
+    :return: True if the file was modified, False otherwise
     """
     content = file_path.read_text()
     original_content = content
@@ -47,11 +44,8 @@ def find_example_pyproject_files(examples_dir: Path) -> list[Path]:
     """
     Find all pyproject.toml files in the examples directory.
     
-    Args:
-        examples_dir: Path to the examples directory
-    
-    Returns:
-        List of paths to pyproject.toml files (excluding venv, terraform, etc.)
+    :param examples_dir: Path to the examples directory
+    :return: List of paths to pyproject.toml files (excluding venv, terraform, etc.)
     """
     # Directories to exclude
     exclude_patterns = {'.venv', '__pycache__', '.terraform', 'dist', 'node_modules', '.git'}
@@ -70,14 +64,11 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
     """
     Regenerate uv.lock file for a project with retry logic.
     
-    Args:
-        project_dir: Path to the project directory containing pyproject.toml
-        dry_run: If True, don't actually run the command
-        retries: Number of retry attempts (default: 3)
-        retry_delay: Delay in seconds between retries (default: 10)
-    
-    Returns:
-        True if successful, False otherwise
+    :param project_dir: Path to the project directory containing pyproject.toml
+    :param dry_run: If True, don't actually run the command
+    :param retries: Number of retry attempts (default: 3)
+    :param retry_delay: Delay in seconds between retries (default: 10)
+    :return: True if successful, False otherwise
     """
     if dry_run:
         return True
