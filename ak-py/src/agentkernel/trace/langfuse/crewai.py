@@ -8,6 +8,7 @@ from openinference.instrumentation.litellm import LiteLLMInstrumentor
 from ...core import Session
 from ...crewai.crewai import CrewAIRunner
 
+from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 
 class LangFuseCrewAIRunner(CrewAIRunner):
 
@@ -35,3 +36,25 @@ class LangFuseCrewAIRunner(CrewAIRunner):
             result = await super().run(agent=agent, prompt=prompt, session=session)
             span.update_trace(session_id=session.id, input=prompt, output=str(result), tags=["agentkernel"])
         return result
+    
+    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Runs the CrewAI agent with provided multi modal inputs.
+        :param agent: The CrewAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
+        """
+        reply = "No valid requests found"
+        for req in requests:
+            if isinstance(req, AgentRequestText):
+                reply = await self.run(agent, session, req.text)
+                break
+            else:
+                reply = "Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment"
+            break
+        if hasattr(reply, "raw"):
+            reply = str(reply.raw)
+        else:
+            reply = str(reply)
+        return AgentReplyText(text=reply)

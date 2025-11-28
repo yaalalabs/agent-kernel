@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, List
 
+from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
@@ -97,6 +98,31 @@ class GoogleADKRunner(BaseRunner):
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
         runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
         return await self.get_response(runner=runner, session_id=session.id, prompt=prompt, user_id=user_id)
+    
+    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Runs the ADK agent with provided multi modal inputs.
+        :param agent: The ADK agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
+        """
+        reply = "No valid requests found"
+        for req in requests:
+            if isinstance(req, AgentRequestText):
+                reply = await self.run(agent, session, req.text)
+                break
+            else:
+                reply = "Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment"
+            break
+        
+        if hasattr(reply, "raw"):
+            reply = str(reply.raw)
+        else:
+            reply = str(reply)
+            
+        return AgentReplyText(text=reply)
+
 
 
 class GoogleADKAgent(AKBaseAgent):

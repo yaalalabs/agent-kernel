@@ -1,8 +1,10 @@
 import logging
 import uuid
-from typing import Any
+from typing import Any, List
 
-from ..core import Agent, GlobalRuntime, Runtime, Session
+from agentkernel.core.base import AgentReply, AgentReplyText, AgentRequestAny, AgentRequestText
+
+from ..core import Agent, GlobalRuntime, Runtime, Session, AgentRequest
 
 
 class AgentService:
@@ -111,17 +113,31 @@ class AgentService:
         :param prompt: Prompt to send to the agent.
         :param additional_context: Additional context to pass to pre and post execution hooks.
         """
+        requests = [AgentRequestText(text=prompt), AgentRequestAny(content=additional_context, name="additional")]
+        
+        result =  await self.run_multi(requests)
+        if isinstance(result, AgentReplyText):
+            result = result.text
+       
+        return result
+
+    async def run_multi(self, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Async method to run the agent.
+        :param prompt: Prompt to send to the agent.
+        :param additional_context: Additional context to pass to pre and post execution hooks.
+        """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
         self._session.set_context()
-        result = await self._runtime.run(self._agent, self._session, prompt, additional_context)
+        result = await self._runtime.run_multi(self._agent, self._session, requests)
         self._runtime.sessions().store(self._session)
         self._session.get_volatile_cache().clear()
         self._session.reset_context()
         return result
-
+    
     def get_response_session_id(self, session_id: str | None = None) -> str | None:
         """
         Method will return the session's ID if exists. If not, it will

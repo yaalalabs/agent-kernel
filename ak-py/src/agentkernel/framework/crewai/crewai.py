@@ -10,6 +10,8 @@ from ...core import Module, Runner, Session
 from ...core.config import AKConfig
 from ...trace import Trace
 
+from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
+
 FRAMEWORK = "crewai"
 
 
@@ -109,6 +111,30 @@ class CrewAIRunner(Runner):
             external_memory=self._memory(session),
         )
         return crew.kickoff(inputs={})
+    
+    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Runs the CrewAI agent with provided multi modal inputs.
+        :param agent: The CrewAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
+        """
+        reply = "No valid requests found"
+        for req in requests:
+            if isinstance(req, AgentRequestText):
+                reply = await self.run(agent, session, req.text)
+                break
+            else:
+                reply = "Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment"
+            break
+        
+        if hasattr(reply, "raw"):
+            reply = str(reply.raw)
+        else:
+            reply = str(reply)
+                
+        return AgentReplyText(text=reply)
 
 
 class CrewAIAgent(BaseAgent):

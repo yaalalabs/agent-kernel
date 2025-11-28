@@ -10,6 +10,7 @@ from singleton_type import Singleton
 from agentkernel.core.util.key_value_cache import KeyValueCache
 
 from .base import Agent, Session
+from .model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
 from .builder import SessionStoreBuilder
 from .hooks import Posthook, Prehook
 from .session import SessionStore
@@ -114,24 +115,50 @@ class Runtime:
         self._log.debug(
             f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt} and additional_context: {additional_context}"
         )
-        original_prompt = prompt
-        prehooks = self._pre_hooks.get(agent.name, [])
-        for hook in prehooks:
-            proceed, modified_prompt = await hook.on_run(session, agent, original_prompt, prompt, additional_context)
-            if not proceed:
-                self._log.debug(f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}'")
-                return modified_prompt
-            prompt = modified_prompt
-        self._log.debug(f"Running agent '{agent.name}' with prompt: {prompt}")
 
-        reply = await agent.runner.run(agent, session, prompt)
+        reply = await agent.runner.run_multi(agent, session, [AgentRequestText(text=prompt), AgentRequestAny(content=additional_context, name="additional")])
+        
+        return reply
+
+    async def run_multi(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Runs the specified agent with the multi modal requests.
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The inputs to provided to the agent.
+        :return: The result of the agent's execution.
+        """
+        self._log.debug(
+            f"Executing pre hooks with agent '{agent.name}' and requests: {requests}"
+        )
+
+        prehooks = self._pre_hooks.get(agent.name, [])
+        for hook in prehooks:       
+            reply = await hook.on_run(session, agent, requests)
+            if isinstance(reply, AgentReplyText):
+                self._log.debug(f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
+                return reply    
+
+            # Validation to ensure correct type is returned from the hooks. This is important to avoid runtime errors.
+            if isinstance(reply, list):
+                for item in reply:
+                    if not isinstance(item, AgentRequestText) and not isinstance(item, AgentRequestFile) and \
+                         not isinstance(item, AgentRequestImage) and not isinstance(item, AgentRequestAny):
+                        raise TypeError(f"Prehook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}")
+            else:
+                raise TypeError(f"Prehook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")    
+            requests = reply
+            
+        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
+
+        reply = await agent.runner.run(agent, session, requests)
 
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
-            reply = await hook.on_run(session, prompt, additional_context, agent, reply)
+            reply = await hook.on_run(session, requests, agent, reply)
             self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
-
+    
     def sessions(self) -> SessionStore:
         """
         Retrieves the session storage.

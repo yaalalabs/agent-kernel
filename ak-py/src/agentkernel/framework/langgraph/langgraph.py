@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Iterator, List, Optional, Sequence
 
+from agentkernel.core.base import Session
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -20,8 +21,9 @@ from ...core import Session as BaseSession
 from ...core.config import AKConfig
 from ...trace import Trace
 
-FRAMEWORK = "langgraph"
+from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReply, AgentReplyText
 
+FRAMEWORK = "langgraph"
 
 class CheckPointer(BaseCheckpointSaver):
     """
@@ -284,6 +286,29 @@ class LangGraphRunner(BaseRunner):
         last_message = result["messages"][-1]
         return last_message.content
 
+    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Runs the LangGraph agent with provided multi modal inputs.
+        :param agent: The LangGraph agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
+        """
+        reply = "No valid requests found"
+        for req in requests:
+            if isinstance(req, AgentRequestText):
+                reply = await self.run(agent, session, req.text)
+                break
+            else:
+                reply = "Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment"
+            break
+        
+        if hasattr(reply, "raw"):
+            reply = str(reply.raw)
+        else:
+            reply = str(reply)
+                
+        return AgentReplyText(text=reply)  
 
 class LangGraphModule(BaseModule):
     """
