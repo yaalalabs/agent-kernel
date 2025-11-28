@@ -35,17 +35,16 @@ class Lambda:
             prompt = body.get("prompt", None)
             agent = body.get("agent", None)
             session_id = body.get("session_id", None)
-            
+
             if session_id is None:
                 raise ValueError("No session_id is provided in the request")
-            
-            requests=[]
+
+            requests = []
             if prompt:
                 requests.append(AgentRequestText(text=prompt))
             else:
                 raise ValueError("No prompt provided in the request")
-                
-            
+
             for key, value in body.items():
                 if key in ["prompt", "agent", "session_id"]:
                     continue
@@ -65,7 +64,7 @@ class Lambda:
             except RuntimeError:
                 result = asyncio.run(service.run_multi(requests=requests))
             cls._log.debug(f"Result: {result}")
-            
+
             return {
                 "statusCode": 200,
                 "body": json.dumps(
@@ -86,7 +85,7 @@ class Lambda:
                         "session_id": service.get_response_session_id(None),
                     }
                 ),
-            }   
+            }
         except Exception as e:
             cls._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
             return {

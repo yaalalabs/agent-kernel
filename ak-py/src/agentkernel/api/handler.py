@@ -49,8 +49,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         self._log = logging.getLogger("ak.api.agent")
 
     class RunRequest(BaseModel):
-        model_config = ConfigDict(extra='allow')
-        
+        model_config = ConfigDict(extra="allow")
+
         prompt: str
         agent: Optional[str] = None
         session_id: Optional[str] = None
@@ -81,9 +81,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         Async method to run the agent.
         :param req: Request object containing the prompt, optional agent name, and additional properties.
         """
-        requests=[]
+        requests = []
         requests.append(AgentRequestText(text=req.prompt))
-            
+
         # Pack additional properties into AgentRequestAny
         known_fields = {"prompt", "agent", "session_id"}
         for key, value in req.model_dump().items():
@@ -91,15 +91,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 self._log.debug(f"Adding additional context: {key}={value}")
                 requests.append(AgentRequestAny(name=key, content=value))
         service = AgentService()
-        
+
         try:
             service.select(req.session_id, req.agent)
             if not service.agent:
                 raise ValueError("No agent available")
-                   
+
             result = await service.run_multi(requests=requests)
             self._log.debug(f"Result: {result}")
-            
+
             return {
                 "result": result.text if isinstance(result, AgentReplyText) else result,
                 "session_id": service.get_response_session_id(req.session_id),

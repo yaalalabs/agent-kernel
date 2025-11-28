@@ -115,7 +115,7 @@ class AgentService:
         """
         requests = []
         requests.append(AgentRequestText(text=prompt))
-        
+
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
             result = result.text
