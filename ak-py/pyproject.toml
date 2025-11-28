@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.2.5"
+version = "0.2.6"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,7 +18,6 @@ dependencies = [
     "pydantic-settings>=2.10.1",
     "pyyaml>=6.0.2",
     "singleton-type>=0.0.5",
-    "redis>=6.4.0",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +43,10 @@ cli = [
 
 ]
 aws = [
-
+    "boto3>=1.41.4",
+]
+redis = [
+    "redis>=7.1.0",
 ]
 openai = [
     "openai-agents>=0.2.3",

@@ -194,6 +194,42 @@ module "secure_api" {
 }
 ```
 
+### With DynamoDB for Session Storage
+
+```hcl
+module "serverless_api_dynamodb" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region              = "us-west-2"
+  product_alias       = "myapp"
+  env_alias           = "prod"
+  product_display_name = "Serverless API with DynamoDB"
+  
+  module_name          = "chat"
+  function_name        = "handler"
+  function_description = "Chat API with DynamoDB session storage"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
+  
+  package_type = "LocalZip"
+  package_path = "${path.module}/dist/function.zip"
+  
+  # Enable DynamoDB for session storage
+  create_dynamodb_memory_table = true
+  
+  timeout     = 30
+  memory_size = 512
+  
+  environment_variables = {
+    ENVIRONMENT = "production"
+    # DynamoDB table name automatically injected as AK_SESSION__DYNAMODB__TABLE_NAME
+  }
+  
+  api_version    = "v1"
+  agent_endpoint = "chat"
+}
+```
+
 
 ## 📥 Inputs
 
@@ -219,6 +255,7 @@ module "secure_api" {
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
+| `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
 
 ## 📤 Outputs
@@ -231,6 +268,8 @@ module "secure_api" {
 | `agent_invoke_url` | Full HTTPS URL to invoke the API endpoint | `https://abc123.execute-api.us-west-2.amazonaws.com/agents/api/v1/chat` |
 | `api_gateway_id` | API Gateway REST API ID | `abc123defg` |
 | `api_gateway_stage_name` | API Gateway stage name | `agents` |
+| `dynamodb_memory_table_arn` | DynamoDB table ARN (if enabled) | `arn:aws:dynamodb:us-west-2:123456789012:table/myapp-prod-api-session_store` |
+| `dynamodb_memory_table_name` | DynamoDB table name (if enabled) | `myapp-prod-api-session_store` |
 
 ## ✨ Features
 

@@ -70,6 +70,11 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - Redis
   - DynamoDB
   - Mem0 [coming soon]
+- **Fault Tolerance**: Production-grade resilience
+  - Multi-AZ deployments for high availability
+  - Automatic failure recovery and retry mechanisms
+  - Health monitoring and auto-scaling (auto-scaling will be made available soon)
+  - Persistent state across failures
 - **Traceability**: Track and audit all agent operations
   - LangFuse
   - OpenLLMetry

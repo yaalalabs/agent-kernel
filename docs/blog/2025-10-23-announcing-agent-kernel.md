@@ -45,12 +45,12 @@ Migrate your agents to Agent Kernel without rewriting your agent logic!
 - Create complex agent topologies
 
 ### 4. **Context & Memory Management**
-- Built-in memory management (in-memory & Redis)
+- Built-in memory management (in-memory, Redis, and DynamoDB)
 - Customizable storage backends
 - Persistent conversation context
 - State management across sessions
 
-### 5. **Traceability & Observability (Available soon)**
+### 5. **Traceability & Observability**
 - Comprehensive logging with multiple verbosity levels
 - Track all agent operations and LLM calls
 - Audit collaborative agent interactions

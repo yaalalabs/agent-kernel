@@ -29,6 +29,7 @@ const sidebars = {
         'core-concepts/module',
         'core-concepts/runtime',
         'core-concepts/configuration',
+        'core-concepts/fault-tolerance',
       ],
     },
     {

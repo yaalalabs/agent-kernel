@@ -170,7 +170,7 @@ graph LR
 All messaging integrations are designed with production deployments in mind:
 
 ▸ **Stateless Design** - Handle messages without instance state concerns  
-▸ **Session Persistence** - Conversation context stored in Redis or in-memory  
+▸ **Session Persistence** - Conversation context stored in Redis, DynamoDB, or in-memory  
 ▸ **Horizontal Scaling** - Deploy multiple instances behind a load balancer  
 ▸ **Observability** - Full tracing with Langfuse or OpenLLMetry integration
 

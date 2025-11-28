@@ -50,6 +50,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         prompt: str
         agent: Optional[str] = None
         session_id: Optional[str] = None
+        additional_context: Optional[dict] = None
 
     def get_router(self) -> APIRouter:
         """
@@ -90,7 +91,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                             "session_id": service.get_response_session_id(req.session_id),
                         },
                     )
-            result = await service.run(req.prompt)
+            result = await service.run(prompt=req.prompt, additional_context=req.additional_context)
 
             if hasattr(result, "raw"):
                 payload = {

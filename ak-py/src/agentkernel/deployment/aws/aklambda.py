@@ -29,9 +29,11 @@ class Lambda:
         cls._log.info("Agent Kernel Agent Lambda Handler started")
         service = AgentService()
         try:
-            prompt = json.loads(event.get("body", "{}")).get("prompt", "")
-            name = json.loads(event.get("body", "{}")).get("agent", None)
-            session_id = json.loads(event.get("body", "{}")).get("session_id", None)
+            body = json.loads(event.get("body", "{}"))
+            prompt = body.get("prompt", "")
+            additional_context = body.get("additional_context", None)
+            name = body.get("agent", None)
+            session_id = body.get("session_id", None)
 
             service.select(session_id, name)
             if not service.agent:
@@ -52,11 +54,11 @@ class Lambda:
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():
                     asyncio.set_event_loop(asyncio.new_event_loop())
-                    result = asyncio.run(service.run(prompt))
+                    result = asyncio.run(service.run(prompt, additional_context))
                 else:
-                    result = loop.run_until_complete(service.run(prompt))
+                    result = loop.run_until_complete(service.run(prompt, additional_context))
             except RuntimeError:
-                result = asyncio.run(service.run(prompt))
+                result = asyncio.run(service.run(prompt, additional_context))
 
             cls._log.info(f"Result: {result}")
 

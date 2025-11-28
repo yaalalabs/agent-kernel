@@ -186,7 +186,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["adk", "aws"], specifier = ">=0.2.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["adk", "redis"], specifier = ">=0.2.5" }]
 
 [package.metadata.requires-dev]
 dev = [
