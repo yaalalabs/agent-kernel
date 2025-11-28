@@ -62,4 +62,4 @@ class AgentReplyText(AgentRequestText):
     """
    
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
-type AgentReply = Union[str, AgentReplyText, dict]
+type AgentReply = Union[str, AgentReplyText]
