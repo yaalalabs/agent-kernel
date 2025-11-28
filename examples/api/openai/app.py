@@ -52,7 +52,7 @@ OpenAIModule([triage_agent, general_agent, customer_support_agent])
 class RAGPreHook(Prehook):
     async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
         """
-        REST API's 'additional_context' parameter is passed here as 'additional_context'
+        REST API's 'additional_context' parameter is passed here in AgentRequestAny with name  'additional'
         'additional_context' is a dictionary containing the request body
         In this example, we are using it to fetch the bank agent's name and assume that additional_context['bank_agent'] is the bank agent's name
         """
