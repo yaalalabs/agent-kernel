@@ -83,6 +83,7 @@ from agentkernel.core import Runner
 - Framework-specific execution
 - Async/await support
 - Error handling and retry logic
+- Fault-tolerant execution patterns
 
 [Learn more about Runners →](./runner)
 
@@ -142,6 +143,7 @@ agent = runtime.get_agent("my-agent")
 - Centralized configuration
 - Execution coordination
 - Service integration (API, MCP, A2A)
+- Fault tolerance and health monitoring
 
 [Learn more about Runtime →](./runtime)
 
@@ -223,6 +225,9 @@ Built-in features for production deployment:
 - Error handling
 - Logging and traceability
 - Multiple deployment modes
+- Fault tolerance and high availability
+
+[Learn more about Fault Tolerance →](./fault-tolerance)
 
 ## Configuration
 
@@ -301,6 +306,7 @@ Dive deeper into each core concept:
 - [**Session**](./session) - Master conversation state management
 - [**Module**](./module) - Organize your agents effectively
 - [**Runtime**](./runtime) - Control the global orchestrator
+- [**Fault Tolerance**](./fault-tolerance) - Build resilient agent systems
 
 Or explore specific use cases:
 

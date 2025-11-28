@@ -16,12 +16,13 @@ class APITestClient:
         self.url = url
         self.session_id = str(uuid.uuid4())
 
-    async def send(self, prompt, endpoint: str = "/run", body=None):
+    async def send(self, prompt, endpoint: str = "/run", additional_context=None, body=None):
         payload = (
             {
                 "prompt": prompt,
                 "session_id": self.session_id,
                 "agent": "support",
+                "additional_context": additional_context,
             }
             if body is None
             else body
@@ -66,3 +67,10 @@ async def test_support_agent(http_client):
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
     Test.compare(response, "Deposited $200 over the counter")
+
+    # Test additional_context parameter passed through prehook for RAG
+    response = await http_client.send(
+        "In which movie my bank agent's name appeared in? Just give me the name of the movie",
+        additional_context={"bank_agent": "Ellis Boyd Red Redding"},
+    )
+    Test.compare(response, " the movie 'The Shawshank Redemption'.", threshold=20)

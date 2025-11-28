@@ -43,6 +43,132 @@ Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/
 - **Consistent performance** - predictable latency
 - **Better for high traffic** - efficient resource usage
 - **Full control** - customize container, resources, etc.
+- **High availability** - multi-AZ deployment with automatic failover
+- **Fault tolerant** - automatic recovery and health-based routing
+
+## Fault Tolerance
+
+AWS ECS deployment provides comprehensive fault tolerance features with extensive configurability.
+
+### Multi-AZ Architecture
+
+Tasks are automatically distributed across multiple Availability Zones:
+
+```mermaid
+graph TB
+    A[Application Load Balancer] --> B[AZ-1a]
+    A --> C[AZ-1b]
+    A --> D[AZ-1c]
+    
+    B --> E[Task 1]
+    C --> F[Task 2]
+    D --> G[Task 3]
+    
+    E --> H[Session Store<br/>Redis/DynamoDB]
+    F --> H
+    G --> H
+    
+    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style H fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+**Benefits:**
+- Survives entire AZ failures
+- No single point of failure
+- Automatic traffic distribution
+- Geographic redundancy
+
+### Automatic Task Recovery
+
+ECS Service maintains desired task count with automatic recovery:
+
+**Features:**
+- Failed tasks automatically restarted
+- Desired count maintained at all times
+- Rolling deployments with zero downtime
+- Gradual task replacement during updates
+
+### Health Check Configuration
+
+Application Load Balancer performs continuous health monitoring:
+
+**How it works:**
+1. ALB sends requests to `/health` endpoint every 30 seconds
+2. Unhealthy tasks removed from load balancer rotation
+3. Traffic routed only to healthy tasks
+4. Failed tasks replaced automatically
+5. Connection draining ensures graceful shutdown
+
+### Auto-Scaling for Resilience (Available soon)
+
+ECS Service auto-scaling maintains capacity during failures and load spikes.
+
+**Auto-scaling triggers:**
+- CPU utilization
+- Memory utilization
+- Request count per target
+- Custom CloudWatch metrics
+
+**Benefits:**
+- Automatic capacity adjustment
+- Handles traffic spikes
+- Compensates for task failures
+- Cost optimization during low traffic
+
+### Network Resilience
+
+**Connection Draining:**
+- Existing connections complete before task termination
+- Configurable timeout (default 30 seconds)
+- Prevents abrupt connection drops
+- Graceful shutdown process
+
+**Load Balancer Features:**
+- Sticky sessions (optional) for stateful apps
+- Cross-zone load balancing enabled
+- Health-based routing
+- Automatic DNS failover
+
+### Recovery Time Objectives
+
+**Typical Recovery Times:**
+- Task failure detection: 5-30 seconds (health check interval)
+- Task replacement: 30-60 seconds (container startup)
+- Traffic rerouting: Immediate (ALB handles)
+- **Total RTO**: < 2 minutes for most failures
+
+**Recovery Point Objectives:**
+- With DynamoDB: Continuous (multi-AZ replication)
+- With Redis Cluster: < 1 second (automatic failover)
+
+### Configuration Best Practices
+
+**Minimum Task Count**: Run at least 2 tasks (3+ recommended)
+   ```hcl
+   ecs_desired_count = 3
+   ```
+
+### Testing Fault Tolerance
+
+**Simulate Failures:**
+```bash
+# Stop a task to test auto-recovery
+aws ecs stop-task --cluster my-cluster --task task-id
+
+# Kill a container to test health checks
+docker stop container-id
+
+# Simulate AZ failure (in test environment)
+# Manually stop all tasks in one AZ
+```
+
+**Validate:**
+- Tasks automatically restarted
+- No service interruption
+- Load balanced across remaining tasks
+- Metrics show recovery
+
+[Learn more about fault tolerance →](../core-concepts/fault-tolerance)
 
 ## Session Storage
 
