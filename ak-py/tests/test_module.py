@@ -10,10 +10,11 @@ from agentkernel.core.runtime import Runtime
 class DummyRunner(Runner):
     async def run(self, agent, session, prompt):
         return f"ok:{prompt}"
-    
+
     async def run_multi(self, agent, session, requests):
         prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
         return f"ok:{prompt}"
+
 
 class FrameworkAgent:
     def __init__(self, name: str = None):

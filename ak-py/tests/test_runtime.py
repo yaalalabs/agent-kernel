@@ -1,8 +1,8 @@
-from agentkernel.core.model import AgentRequestText
 import pytest
 
 from agentkernel import Agent, Runner
 from agentkernel.core.builder import SessionStoreBuilder
+from agentkernel.core.model import AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
@@ -15,6 +15,7 @@ class DummyRunner(Runner):
     async def run_multi(self, agent, session, requests):
         prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
         return f"ok:{prompt}"
+
 
 class DummyAgent(Agent):
 
