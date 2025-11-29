@@ -36,7 +36,7 @@ class LangFuseLangGraph(LangGraphRunner):
             if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
                 continue
             if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text
+                prompt = prompt + "\n" + req.text if prompt else req.text
             else:
                 return AgentReplyText(
                     text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",

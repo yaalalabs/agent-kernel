@@ -50,6 +50,7 @@ class AgentService:
     def select(self, session_id: str | None = None, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
+
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent to select.
         """
@@ -96,6 +97,7 @@ class AgentService:
     def load(self, session_id: str, name: str):
         """
         Loads an agent module by name.
+
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent module to load.
         """
@@ -110,6 +112,7 @@ class AgentService:
     async def run(self, prompt: str) -> str:
         """
         Async method to run the agent.
+
         :param prompt: Prompt to send to the agent.
         """
         requests = []
@@ -126,7 +129,9 @@ class AgentService:
     async def run_multi(self, requests: list[AgentRequest]) -> AgentReply:
         """
         Async method to run the agent.
-        :param prompt: Prompt to send to the agent.
+
+        :param requests: List of requests to send to the agent. These list can contain multi modal inputs. It will be submitted to the agent as a single request
+                        AgentRequestText objects will be concatenated into a single text prompt. AgentRequestAny objects will be ignored by the agent.
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
@@ -143,6 +148,7 @@ class AgentService:
         """
         Method will return the session's ID if exists. If not, it will
         return the ID sent by the user. If neither exists, it will return None.
+
         :param session_id: Unique identifier for the session.
         """
         if self._session:

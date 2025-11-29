@@ -115,9 +115,11 @@ class Runtime:
     async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the specified agent with the multi modal requests.
+
         :param agent: The agent to run.
         :param session: The session to use for the agent.
-        :param requests: The inputs to provided to the agent.
+        :param requests: The multi-modal inputs to provided to the agent.  It will be submitted to the agent as a single request
+                        AgentRequestText objects will be concatenated into a single text prompt. AgentRequestAny objects will be ignored by the agent.
         :return: The result of the agent's execution.
         """
         self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")

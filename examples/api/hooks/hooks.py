@@ -147,7 +147,7 @@ Please use this context to help answer the following question:
 
 If the context is relevant, incorporate it into your answer. If not, answer based on your general knowledge."""
 
-            return [AgentRequestText(text=enriched_prompt)]
+            return [AgentRequestText(text=enriched_prompt)]  # Note: We assume that there is only one text request
 
         # No relevant context found - proceed with original prompt
         return requests
