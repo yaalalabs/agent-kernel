@@ -37,7 +37,6 @@ class LangFuseLangGraph(LangGraphRunner):
                 continue
             if isinstance(req, AgentRequestText):
                 prompt = prompt + "\n" + req.text
-                break
             else:
                 return AgentReplyText(
                     text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",

@@ -99,7 +99,6 @@ class GoogleADKRunner(BaseRunner):
                 continue
             if isinstance(req, AgentRequestText):
                 prompt = prompt + "\n" + req.text
-                break
             else:
                 return AgentReplyText(
                     text="Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment",

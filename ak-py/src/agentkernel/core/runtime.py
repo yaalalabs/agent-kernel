@@ -125,7 +125,7 @@ class Runtime:
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
             reply = await hook.on_run(session, agent, requests)
-            if isinstance(reply, AgentReplyText) or isinstance(reply, str):
+            if isinstance(reply, AgentReplyText) or isinstance(reply, AgentReplyImage):
                 self._log.debug(
                     f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
                 )
