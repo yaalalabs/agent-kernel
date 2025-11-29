@@ -65,9 +65,9 @@ class AgentReplyText(AgentRequestText):
     """
     AgentReplyText encapsulates a text reply from an agent.
 
-    text: str  : This is the agent output text
-    type: Literal["text"]
     prompt: str : The text prompt sent to the agent
+
+    Inherits fields `text` and `type` from AgentRequestText.
     """
 
     prompt: str = ""
