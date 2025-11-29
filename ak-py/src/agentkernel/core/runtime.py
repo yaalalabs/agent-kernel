@@ -136,12 +136,7 @@ class Runtime:
             # Validation to ensure correct type is returned from the hooks. This is important to avoid runtime errors.
             if isinstance(reply, list):
                 for item in reply:
-                    if (
-                        not isinstance(item, AgentRequestText)
-                        and not isinstance(item, AgentRequestFile)
-                        and not isinstance(item, AgentRequestImage)
-                        and not isinstance(item, AgentRequestAny)
-                    ):
+                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
                         raise TypeError(
                             f"Prehook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
                         )
