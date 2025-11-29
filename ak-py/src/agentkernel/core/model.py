@@ -52,7 +52,7 @@ class AgentRequestImage(BaseModel):
 
 class AgentRequestAny(BaseModel):
     """
-    AgentRequestAny encapsulates a passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
+    AgentRequestAny encapsulates passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
 
     content: Any : This could be base64 encoded string or bytes or url
     name: str : name of the data
