@@ -54,7 +54,7 @@ class Posthook(ABC):
           - Logging or analytics
 
         Note: if the hook changes the reply, the modified reply will be sent to the next hook for processing.
-              the agent_reply parameter contains the unmodified reply from the agent. the following code snippet will help to correctly handle the response
+              The agent_reply parameter contains the unmodified reply from the agent for the first posthook, and the reply modified by previous posthooks for subsequent hooks.
 
         :param:  session (Session): The session instance.
         :param:  requests (list[AgentRequest]): The original requests provided to the agent after any pre-execution hooks have been applied.
