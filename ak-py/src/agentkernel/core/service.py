@@ -130,7 +130,7 @@ class AgentService:
         """
         Async method to run the agent.
 
-        :param requests: List of requests to send to the agent. These list can contain multi modal inputs. It will be submitted to the agent as a single request
+        :param requests: List of requests to send to the agent. This list can contain multi modal inputs. It will be submitted to the agent as a single request
                         AgentRequestText objects will be concatenated into a single text prompt. AgentRequestAny objects will be ignored by the agent.
         """
         if not self._agent:
