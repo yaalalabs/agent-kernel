@@ -69,7 +69,7 @@ class RAGPreHook(Prehook):
                 break
         bank_agent = additional_context.get("bank_agent") if additional_context else None
 
-        # If bank_agent is not provided, return True and the original prompt
+        # If bank_agent is not provided, return the original requests list unchanged
         if bank_agent is None:
             return requests
 
