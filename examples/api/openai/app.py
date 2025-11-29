@@ -67,7 +67,9 @@ class RAGPreHook(Prehook):
             if isinstance(req, AgentRequestAny) and req.name == "additional":
                 additional_context = req.content
                 break
-        bank_agent = additional_context.get("bank_agent") if additional_context and hasattr(additional_context, 'get') else None
+        bank_agent = (
+            additional_context.get("bank_agent") if additional_context and hasattr(additional_context, "get") else None
+        )
 
         # If bank_agent is not provided, return the original requests list unchanged
         if bank_agent is None:
