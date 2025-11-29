@@ -101,20 +101,22 @@ class GoogleADKRunner(BaseRunner):
                 prompt = prompt + "\n" + req.text
                 break
             else:
-                return AgentReplyText(text="Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment",
-                                      prompt=prompt)
-        
+                return AgentReplyText(
+                    text="Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+
         if prompt.strip() == "":
             return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
-            
+
         app_name = "AgentKernel"
         user_id = "AgentKernel"
         adk_session = self._session(session)
-        
+
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
         runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
         reply = await self.get_response(runner=runner, session_id=session.id, prompt=prompt, user_id=user_id)
- 
+
         return AgentReplyText(text=reply, prompt=prompt)
 
 

@@ -107,7 +107,7 @@ class AgentService:
             self._log.info(f"No module found with name '{name}': {e}")
             return None
 
-    async def run(self, prompt: str)->str:
+    async def run(self, prompt: str) -> str:
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.

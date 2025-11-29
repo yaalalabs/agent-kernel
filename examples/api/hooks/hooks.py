@@ -183,7 +183,7 @@ class DisclaimerHook(Posthook):
         :param:  agent_reply (AgentReply): The reply to process. For the first posthook, this is the unmodified
                               agent reply. For subsequent posthooks, this is the reply modified by previous posthooks in the chain.
         :return: The modified reply with disclaimer appended
-        """  
+        """
         agent_reply.text = agent_reply.text + self.DISCLAIMER
         return agent_reply
 

@@ -2,19 +2,16 @@ import pytest
 
 from agentkernel import Agent, Runner
 from agentkernel.core.builder import SessionStoreBuilder
-from agentkernel.core.model import AgentRequestText
+from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
 
 
 class DummyRunner(Runner):
-    async def run(self, agent, session, prompt):
-        return f"ok:{prompt}"
-
-    async def run_multi(self, agent, session, requests):
+    async def run(self, agent, session, requests):
         prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
-        return f"ok:{prompt}"
+        return AgentReplyText(text=f"ok:{prompt}")
 
 
 class DummyAgent(Agent):
@@ -88,4 +85,4 @@ async def test_runtime_run_calls_runner(monkeypatch):
     session = runtime.sessions().new("s1")
 
     out = await runtime.run(agent, session, [AgentRequestText(text="ping")])
-    assert out == "ok:ping"
+    assert out.text == "ok:ping"

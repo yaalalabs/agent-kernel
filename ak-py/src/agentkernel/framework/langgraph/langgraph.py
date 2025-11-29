@@ -286,12 +286,14 @@ class LangGraphRunner(BaseRunner):
                 prompt = prompt + "\n" + req.text
                 break
             else:
-                return AgentReplyText(text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
-                                      prompt=prompt)
-        
+                return AgentReplyText(
+                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+
         if prompt.strip() == "":
             return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
-        
+
         session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
         agent.agent.checkpointer = self._session(session).checkpointer
         result = await agent.agent.ainvoke(

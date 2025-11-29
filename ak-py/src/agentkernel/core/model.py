@@ -69,7 +69,9 @@ class AgentReplyText(AgentRequestText):
     type: Literal["text"]
     prompt: str : The text prompt sent to the agent
     """
+
     prompt: str = ""
+
 
 class AgentReplyImage(BaseModel):
     """
@@ -89,6 +91,7 @@ class AgentReplyImage(BaseModel):
     name: str
     type: Literal["image"] = "image"
     mime_type: str | None = None
+
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
 type AgentReply = Union[AgentReplyText, AgentReplyImage]

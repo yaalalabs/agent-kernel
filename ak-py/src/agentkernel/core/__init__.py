@@ -20,7 +20,7 @@ from .model import (
     AgentRequestText,
     AgentReply,
     AgentReplyText,
-    AgentReplyImage
+    AgentReplyImage,
 )
 from .config import AKConfig as Config
 from .module import Module

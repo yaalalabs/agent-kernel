@@ -99,19 +99,21 @@ class OpenAIRunner(BaseRunner):
                 prompt = prompt + "\n" + req.text
                 break
             else:
-                return AgentReplyText(text="Sorry. Agent kernel OpenAI runner is unable to handle content other than text at the moment",
-                                      prompt=prompt)
-        
+                return AgentReplyText(
+                    text="Sorry. Agent kernel OpenAI runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+
         if prompt.strip() == "":
             return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
-        
+
         reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:
             reply = str(reply)
 
-        return AgentReplyText(text=reply ,prompt=prompt)
+        return AgentReplyText(text=reply, prompt=prompt)
 
 
 class OpenAIAgent(BaseAgent):
