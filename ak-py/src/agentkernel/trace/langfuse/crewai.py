@@ -5,7 +5,7 @@ from langfuse import Langfuse
 from openinference.instrumentation.crewai import CrewAIInstrumentor
 from openinference.instrumentation.litellm import LiteLLMInstrumentor
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import AgentReply, AgentRequest
 
 from ...core import Session
 from ...crewai.crewai import CrewAIRunner
@@ -25,20 +25,7 @@ class LangFuseCrewAIRunner(CrewAIRunner):
         CrewAIInstrumentor().instrument(skip_dep_check=True)
         LiteLLMInstrumentor().instrument()
 
-    async def run(self, agent: Any, session: Session, prompt: Any):
-        """
-        Runs the CrewAI agent with the provided prompt.
-        :param agent: The CrewAI agent to run.
-        :param session: The session to use for the agent.
-        :param prompt: The prompt to provide to the agent.
-        :return: The result of the agent's execution.
-        """
-        with self._client.start_as_current_span(name="Agent Kernel CrewAI") as span:
-            result = await super().run(agent=agent, prompt=prompt, session=session)
-            span.update_trace(session_id=session.id, input=prompt, output=str(result), tags=["agentkernel"])
-        return result
-
-    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the CrewAI agent with provided multi modal inputs.
         :param agent: The CrewAI agent to run.
@@ -46,18 +33,7 @@ class LangFuseCrewAIRunner(CrewAIRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        reply = "No valid requests found"
-        for req in requests:
-            if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
-                continue
-            if isinstance(req, AgentRequestText):
-                reply = await self.run(agent, session, req.text)
-                break
-            else:
-                reply = "Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment"
-                break
-        if hasattr(reply, "raw"):
-            reply = str(reply.raw)
-        else:
-            reply = str(reply)
-        return AgentReplyText(text=reply)
+        with self._client.start_as_current_span(name="Agent Kernel CrewAI") as span:
+            result = await super().run(agent, session, requests)
+            span.update_trace(session_id=session.id, input=result.prompt, output=str(result), tags=["agentkernel"])
+        return result

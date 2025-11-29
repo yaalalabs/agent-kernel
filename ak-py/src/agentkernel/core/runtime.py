@@ -14,6 +14,7 @@ from .builder import SessionStoreBuilder
 from .hooks import Posthook, Prehook
 from .model import (
     AgentReply,
+    AgentReplyImage,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -150,12 +151,12 @@ class Runtime:
 
         self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
-        reply = await agent.runner.run_multi(agent, session, requests)
+        reply = await agent.runner.run(agent, session, requests)
 
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
             reply = await hook.on_run(session, requests, agent, reply)
-            if not isinstance(reply, AgentReplyText) and not isinstance(reply, str):
+            if not isinstance(reply, AgentReplyText) and not isinstance(reply, AgentReplyImage):
                 raise TypeError(
                     f"Posthook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
                 )

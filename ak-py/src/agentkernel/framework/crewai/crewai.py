@@ -91,14 +91,27 @@ class CrewAIRunner(Runner):
             previous = session.get(FRAMEWORK)
         return ExternalMemory(previous)
 
-    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the CrewAI agent with the provided prompt.
+        Runs the CrewAI agent with provided multi modal inputs.
         :param agent: The CrewAI agent to run.
         :param session: The session to use for the agent.
-        :param prompt: The prompt to provide to the agent.
+        :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        prompt = ""
+        for req in requests:
+            if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.text
+                break
+            else:
+                return AgentReplyText(text="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment", prompt=prompt)
+        
+        if prompt.strip() == "":
+            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+        
         task = Task(
             description=prompt,
             expected_output="An answer is plain text",
@@ -110,34 +123,13 @@ class CrewAIRunner(Runner):
             verbose=False,
             external_memory=self._memory(session),
         )
-        return crew.kickoff(inputs={})
-
-    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
-        """
-        Runs the CrewAI agent with provided multi modal inputs.
-        :param agent: The CrewAI agent to run.
-        :param session: The session to use for the agent.
-        :param requests: The requests to the agent.
-        :return: The result of the agent's execution.
-        """
-        reply = "No valid requests found"
-        for req in requests:
-            if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
-                continue
-
-            if isinstance(req, AgentRequestText):
-                reply = await self.run(agent, session, req.text)
-                break
-            else:
-                reply = "Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment"
-                break
-
+        reply = crew.kickoff(inputs={})
         if hasattr(reply, "raw"):
             reply = str(reply.raw)
         else:
             reply = str(reply)
 
-        return AgentReplyText(text=reply)
+        return AgentReplyText(text=reply, prompt=prompt)
 
 
 class CrewAIAgent(BaseAgent):

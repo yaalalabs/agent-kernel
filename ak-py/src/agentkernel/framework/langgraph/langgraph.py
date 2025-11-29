@@ -270,24 +270,7 @@ class LangGraphRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
-    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
-        """
-        Runs the LangGraph agent with the provided session and prompt.
-        :param agent: The LangGraph agent to run.
-        :param session: The session to run the agent in.
-        :param prompt: The input prompt for the agent.
-        :return: The response from the agent.
-        """
-        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-        agent.agent.checkpointer = self._session(session).checkpointer
-        result = await agent.agent.ainvoke(
-            input={"messages": [HumanMessage(content=prompt)]},
-            config=session_config.model_dump(),
-        )
-        last_message = result["messages"][-1]
-        return last_message.content
-
-    async def run_multi(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the LangGraph agent with provided multi modal inputs.
         :param agent: The LangGraph agent to run.
@@ -295,23 +278,28 @@ class LangGraphRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        reply = "No valid requests found"
+        prompt = ""
         for req in requests:
             if isinstance(req, AgentRequestAny):  # will not handle this request type in the Agent
                 continue
             if isinstance(req, AgentRequestText):
-                reply = await self.run(agent, session, req.text)
+                prompt = prompt + "\n" + req.text
                 break
             else:
-                reply = "Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment"
-                break
-
-        if hasattr(reply, "raw"):
-            reply = str(reply.raw)
-        else:
-            reply = str(reply)
-
-        return AgentReplyText(text=reply)
+                return AgentReplyText(text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                                      prompt=prompt)
+        
+        if prompt.strip() == "":
+            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+        
+        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+        agent.agent.checkpointer = self._session(session).checkpointer
+        result = await agent.agent.ainvoke(
+            input={"messages": [HumanMessage(content=prompt)]},
+            config=session_config.model_dump(),
+        )
+        last_message = result["messages"][-1]
+        return AgentReplyText(text=last_message.content, prompt=prompt)
 
 
 class LangGraphModule(BaseModule):

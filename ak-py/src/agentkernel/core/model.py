@@ -67,8 +67,28 @@ class AgentReplyText(AgentRequestText):
 
     text: str  : This is the agent output text
     type: Literal["text"]
+    prompt: str : The text prompt sent to the agent
+    """
+    prompt: str = ""
+
+class AgentReplyImage(BaseModel):
+    """
+    AgentReplyImage encapsulates a text & image reply from an agent.
+
+    text: str  : This is the agent output text
+    prompt: str : The text prompt sent to the agent
+    image_data: str  : This should be base64 encoded string
+    name: str : name of the image
+    type: Literal["image"]
+    mime_type: str | None = None : Optional. The IANA standard MIME type of the image
     """
 
+    text: str
+    prompt: str = ""
+    image_data: str
+    name: str
+    type: Literal["image"] = "image"
+    mime_type: str | None = None
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
-type AgentReply = Union[str, AgentReplyText]
+type AgentReply = Union[AgentReplyText, AgentReplyImage]
