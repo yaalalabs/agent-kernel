@@ -69,7 +69,11 @@ class Lambda:
                 "statusCode": 200,
                 "body": json.dumps(
                     {
-                        "result": result.text if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received", # sending image is not supported at the moment
+                        "result": (
+                            result.text
+                            if isinstance(result, (AgentReplyText, AgentReplyImage))
+                            else "Non textual result received"
+                        ),  # sending image is not supported at the moment
                         "session_id": service.get_response_session_id(session_id),
                     }
                 ),
