@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Any
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestText
 
 from ..core import Agent, AgentRequest, GlobalRuntime, Runtime, Session
 
@@ -111,7 +111,6 @@ class AgentService:
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.
-        :param additional_context: Additional context to pass to pre and post execution hooks.
         """
         requests = []
         requests.append(AgentRequestText(text=prompt))
@@ -128,7 +127,6 @@ class AgentService:
         """
         Async method to run the agent.
         :param prompt: Prompt to send to the agent.
-        :param additional_context: Additional context to pass to pre and post execution hooks.
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
