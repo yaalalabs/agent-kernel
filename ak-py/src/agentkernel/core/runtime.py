@@ -118,7 +118,7 @@ class Runtime:
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.
-        :param requests: The multi-modal inputs to provided to the agent.  It will be submitted to the agent as a single request
+        :param requests: The multi-modal inputs provided to the agent.  It will be submitted to the agent as a single request
                         AgentRequestText objects will be concatenated into a single text prompt. AgentRequestAny objects will be ignored by the agent.
         :return: The result of the agent's execution.
         """
