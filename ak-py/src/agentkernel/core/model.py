@@ -14,6 +14,9 @@ class AgentRequestText(BaseModel):
     text: str
     type: Literal["text"] = "text"
 
+    def __str__(self) -> str:
+        return self.text
+
 
 class AgentRequestFile(BaseModel):
     """
@@ -72,6 +75,9 @@ class AgentReplyText(AgentRequestText):
 
     prompt: str = ""
 
+    def __str__(self) -> str:
+        return self.text
+
 
 class AgentReplyImage(BaseModel):
     """
@@ -91,6 +97,9 @@ class AgentReplyImage(BaseModel):
     name: str
     type: Literal["image"] = "image"
     mime_type: str | None = None
+
+    def __str__(self) -> str:
+        return self.text
 
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
