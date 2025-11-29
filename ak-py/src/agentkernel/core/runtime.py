@@ -127,7 +127,7 @@ class Runtime:
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
             reply = await hook.on_run(session, agent, requests)
-            if isinstance(reply, AgentReplyText) or isinstance(reply, AgentReplyImage):
+            if isinstance(reply, (AgentReplyText, AgentReplyImage)):
                 self._log.debug(
                     f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
                 )
@@ -158,7 +158,7 @@ class Runtime:
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
             reply = await hook.on_run(session, requests, agent, reply)
-            if not isinstance(reply, AgentReplyText) and not isinstance(reply, AgentReplyImage):
+            if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
                 raise TypeError(
                     f"Posthook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
                 )

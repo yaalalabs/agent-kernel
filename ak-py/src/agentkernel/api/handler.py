@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 
 from ..core import AgentService, GlobalRuntime
 
@@ -101,7 +101,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             self._log.debug(f"Result: {result}")
 
             return {
-                "result": result.text if isinstance(result, AgentReplyText) else result,
+                "result": result.text if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received", # sending image is not supported at the moment
                 "session_id": service.get_response_session_id(req.session_id),
             }
 
