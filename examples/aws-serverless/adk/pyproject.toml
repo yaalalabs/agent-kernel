@@ -5,7 +5,7 @@ description = "Demo of Google ADK based agents running in Agent Kernel on AWS La
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[adk,redis]>=0.2.6"
+    "agentkernel[adk,redis]>=0.2.7"
 ]
 
 [dependency-groups]
