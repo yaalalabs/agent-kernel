@@ -70,7 +70,7 @@ class Lambda:
                 "body": json.dumps(
                     {
                         "result": (
-                            result.text
+                            result
                             if isinstance(result, (AgentReplyText, AgentReplyImage))
                             else "Non textual result received"
                         ),  # sending image is not supported at the moment

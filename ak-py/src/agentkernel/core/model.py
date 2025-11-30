@@ -99,7 +99,7 @@ class AgentReplyImage(BaseModel):
     mime_type: str | None = None
 
     def __str__(self) -> str:
-        return self.text
+        return f"{self.text}. Image {self.name} is attached."
 
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]

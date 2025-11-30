@@ -111,7 +111,7 @@ class RAGHook(Prehook):
         self, session: Session, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
-         Simulates RAG by searching the knowledge base and injecting relevant context
+        Simulates RAG by searching the knowledge base and injecting relevant context
 
         :param session: The session instance
         :param agent: The agent that will execute the prompt

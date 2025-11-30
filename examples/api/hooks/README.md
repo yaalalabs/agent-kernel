@@ -190,7 +190,7 @@ from agentkernel import Posthook
 
 class MyPosthook(Posthook):
     async def on_run(
-      self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
       return agent_reply # modify as required
 

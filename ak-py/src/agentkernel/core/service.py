@@ -131,7 +131,8 @@ class AgentService:
         Async method to run the agent.
 
         :param requests: List of requests to send to the agent. This list can contain multi modal inputs. It will be submitted to the agent as a single request
-                        AgentRequestText objects will be concatenated into a single text prompt. AgentRequestAny objects will be ignored by the agent.
+                        AgentRequestText objects will be concatenated into a single text prompt.
+                        AgentRequestAny is handled only by pre-hooks, not by the agent itself
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
