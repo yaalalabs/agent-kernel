@@ -60,6 +60,13 @@ Pre-execution hooks run **before** an agent processes a prompt. They can:
 - User authentication/authorization
 - Request logging and analytics
 
+:::info Passing additional context to PreHooks
+The built in REST and Lambda servers automatically packs any properties in the request body, other than ["session_id", "prompt", "agent"] as AgentRequestAny objects (with the key name). 
+These will be passed to PreHooks and will be ignored by the LLM agents
+
+A complete example is provided [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
+:::
+
 ### Post-Execution Hooks (Posthook)
 
 Post-execution hooks run **after** an agent generates a response. They can:

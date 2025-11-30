@@ -102,9 +102,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
             return {
                 "result": (
-                    result
-                    if isinstance(result, (AgentReplyText, AgentReplyImage))
-                    else "Non textual result received"
+                    result if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
                 ),  # sending image is not supported at the moment
                 "session_id": service.get_response_session_id(req.session_id),
             }

@@ -119,7 +119,8 @@ class Runtime:
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param requests: The multi-modal inputs provided to the agent.  It will be submitted to the agent as a single request
-                        AgentRequestText objects will be concatenated into a single text prompt. AgentRequestAny objects will be ignored by the agent.
+                        AgentRequestText objects will be concatenated into a single text prompt.
+                        AgentRequestAny is handled only by pre-hooks, not by the agent itself
         :return: The result of the agent's execution.
         """
         self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")

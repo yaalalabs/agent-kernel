@@ -54,9 +54,9 @@ class RAGPreHook(Prehook):
     ) -> list[AgentRequest] | AgentReply:
         """
         REST API will pack all keys and their values from the request body into AgentRequestAny objects.
-        In this example, we look for an AgentRequestAny with name 'additional' to get the additional_context (i.e. a dictionary)
-        we packed into the request body under the key 'additional'.
-        In this example, we are using it to fetch the bank agent's name and assume that additional['bank_agent'] is the bank agent's name
+        In this example, we look for an AgentRequestAny with name 'additional_context' to get the additional_context (i.e. a dictionary)
+        we packed into the request body under the key 'additional_context'.
+        In this example, we are using it to fetch the bank agent's name and assume that additional_context['bank_agent'] is the bank agent's name
         """
         additional_context = None
         prompt = ""
@@ -64,7 +64,7 @@ class RAGPreHook(Prehook):
             if isinstance(req, AgentRequestText):
                 prompt = req.text
 
-            if isinstance(req, AgentRequestAny) and req.name == "additional":
+            if isinstance(req, AgentRequestAny) and req.name == "additional_context":
                 additional_context = req.content
                 break
         bank_agent = (
