@@ -2,7 +2,9 @@ import logging
 import uuid
 from typing import Any
 
-from ..core import Agent, GlobalRuntime, Runtime, Session
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestText
+
+from ..core import Agent, AgentRequest, GlobalRuntime, Runtime, Session
 
 
 class AgentService:
@@ -48,6 +50,7 @@ class AgentService:
     def select(self, session_id: str | None = None, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
+
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent to select.
         """
@@ -94,6 +97,7 @@ class AgentService:
     def load(self, session_id: str, name: str):
         """
         Loads an agent module by name.
+
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent module to load.
         """
@@ -105,18 +109,37 @@ class AgentService:
             self._log.info(f"No module found with name '{name}': {e}")
             return None
 
-    async def run(self, prompt: str, additional_context: Any | None = None):
+    async def run(self, prompt: str) -> str:
         """
         Async method to run the agent.
+
         :param prompt: Prompt to send to the agent.
-        :param additional_context: Additional context to pass to pre and post execution hooks.
+        """
+        requests = []
+        requests.append(AgentRequestText(text=prompt))
+
+        result = await self.run_multi(requests)
+        if isinstance(result, AgentReplyText):
+            result = result.text
+        else:
+            result = "Non-text reply given"
+
+        return result
+
+    async def run_multi(self, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Async method to run the agent.
+
+        :param requests: List of requests to send to the agent. This list can contain multi modal inputs. It will be submitted to the agent as a single request
+                        AgentRequestText objects will be concatenated into a single text prompt.
+                        AgentRequestAny is handled only by pre-hooks, not by the agent itself
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
         self._session.set_context()
-        result = await self._runtime.run(self._agent, self._session, prompt, additional_context)
+        result = await self._runtime.run(self._agent, self._session, requests)
         self._runtime.sessions().store(self._session)
         self._session.get_volatile_cache().clear()
         self._session.reset_context()
@@ -126,6 +149,7 @@ class AgentService:
         """
         Method will return the session's ID if exists. If not, it will
         return the ID sent by the user. If neither exists, it will return None.
+
         :param session_id: Unique identifier for the session.
         """
         if self._session:

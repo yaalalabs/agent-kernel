@@ -12,6 +12,7 @@ Post-execution hooks:
 from typing import Any
 
 from agentkernel import Agent, Posthook, Prehook, Session
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 
 
 class GuardRailHook(Prehook):
@@ -33,20 +34,25 @@ class GuardRailHook(Prehook):
     ]
 
     async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None = None
-    ) -> tuple[bool, str]:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
         Validates the prompt for inappropriate content.
 
         :param session: The session instance
         :param agent: The agent that will execute the prompt
-        :param original_prompt: The original unmodified prompt
-        :param prompt: The current prompt (possibly modified by previous hooks)
-        :param additional_context: Additional context passed with the prompt (not used in this hook)
-        :return: tuple[bool, str]: (proceed, modified_prompt)
-            - proceed: False if guard rail triggered, True otherwise
-            - modified_prompt: Rejection message if halted, or original prompt if safe
+        :param requests: requests to agent
+
+        :return: AgentReply: If the hook decides to halt execution, it can return an AgentReply which will be sent
+                 list[AgentRequest]: The modified requests or the input list. You can modify the requests in place without taking copies
+                                      You can also add additional content to the requests list. e.g. files, images, etc.
         """
+        # NOTE:  we are assuming single text request for simplicity
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests  # No text prompt to validate
+
         prompt_lower = prompt.lower()
 
         # Check for blocked keywords
@@ -56,14 +62,15 @@ class GuardRailHook(Prehook):
                     f"I apologize, but I cannot assist with requests related to '{keyword}'. "
                     "Please ask a different question that complies with ethical guidelines."
                 )
-                return False, rejection_message
+                return AgentReplyText(text=rejection_message)
 
         # Check for excessively long inputs (potential abuse)
         if len(prompt) > 5000:
-            return False, "Your input is too long. Please keep your questions concise (under 5000 characters)."
-
+            return AgentReplyText(
+                text="Your input is too long. Please keep your questions concise (under 5000 characters)."
+            )
         # Prompt is safe - proceed with execution
-        return True, prompt
+        return requests
 
     def name(self) -> str:
         return "GuardRailHook"
@@ -101,18 +108,25 @@ class RAGHook(Prehook):
     }
 
     async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None = None
-    ) -> tuple[bool, str]:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
-        Simulates RAG by searching the knowledge base and injecting relevant context.
+        Simulates RAG by searching the knowledge base and injecting relevant context
 
         :param session: The session instance
         :param agent: The agent that will execute the prompt
-        :param original_prompt: The original unmodified prompt
-        :param prompt: The current prompt (possibly modified by previous hooks)
-        :param additional_context: Additional context that can help with RAG (e.g., user metadata, search filters)
-        :return: tuple[bool, str]: (True, enriched_prompt) - always proceeds with enriched prompt
+        :param requests: requests to agent
+
+        :return: AgentReply: If the hook decides to halt execution, it can return an AgentReply which will be sent
+                 list[AgentRequest]: The modified requests or the input list. You can modify the requests in place without taking copies
+                                      You can also add additional content to the requests list. e.g. files, images, etc.
         """
+        # NOTE:  we are assuming single text request for simplicity
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests  # No text prompt to validate
+
         prompt_lower = prompt.lower()
 
         # Search for relevant context in the knowledge base
@@ -133,10 +147,10 @@ Please use this context to help answer the following question:
 
 If the context is relevant, incorporate it into your answer. If not, answer based on your general knowledge."""
 
-            return True, enriched_prompt
+            return [AgentRequestText(text=enriched_prompt)]  # Note: We assume that there is only one text request
 
         # No relevant context found - proceed with original prompt
-        return True, prompt
+        return requests
 
     def name(self) -> str:
         return "RAGHook"
@@ -159,34 +173,19 @@ class DisclaimerHook(Posthook):
     )
 
     async def on_run(
-        self,
-        session: Session,
-        input_prompt: str,
-        additional_context: Any | None,
-        agent: Agent,
-        agent_reply: str,
-    ) -> str:
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+    ) -> AgentReply:
         """
         Adds a disclaimer to the agent's response.
-
-        :param session: The session instance
-        :param input_prompt: The original prompt provided to the agent
-        :param additional_context: Additional context passed with the prompt (not used in this hook)
-        :param agent: The agent that executed the prompt
-        :param agent_reply: The reply from the agent (potentially modified by previous post-hooks)
+        :param:  session (Session): The session instance.
+        :param:  requests (list[AgentRequest]): The original requests provided to the agent after any pre-execution hooks have been applied.
+        :param:  agent (Agent): The agent that executed the prompt.
+        :param:  agent_reply (AgentReply): The reply to process. For the first posthook, this is the unmodified
+                              agent reply. For subsequent posthooks, this is the reply modified by previous posthooks in the chain.
         :return: The modified reply with disclaimer appended
         """
-        # Extract the response text from the agent reply
-        # Handle both raw response objects and string responses
-        if hasattr(agent_reply, "raw"):
-            response_text = str(agent_reply.raw)
-        else:
-            response_text = str(agent_reply)
-
-        # Append disclaimer to the response
-        modified_reply = response_text + self.DISCLAIMER
-
-        return modified_reply
+        agent_reply.text = agent_reply.text + self.DISCLAIMER
+        return agent_reply
 
     def name(self) -> str:
         return "DisclaimerHook"

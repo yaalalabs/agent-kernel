@@ -2,13 +2,15 @@ from typing import List
 
 from agentkernel import Agent, Runner
 from agentkernel.core.builder import SessionStoreBuilder
+from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.module import Module
 from agentkernel.core.runtime import Runtime
 
 
 class DummyRunner(Runner):
-    async def run(self, agent, session, prompt):
-        return f"ok:{prompt}"
+    async def run(self, agent, session, requests):
+        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
+        return AgentReplyText(text=f"ok:{prompt}")
 
 
 class FrameworkAgent:

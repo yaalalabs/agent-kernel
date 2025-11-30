@@ -89,6 +89,24 @@ Health check endpoint.
 }
 ```
 
+## Passing additional context
+
+You can pass additional properties in the request body. These will be automatically passed to the PreHooks with the key name, to be handled by the your code. These will not be passed to the Agents as input.
+
+In the following example,  **user_id (string)** and **additional_context (dict)** will be passed PreHooks as two **AgentRequestAny** objects with names "user_id"and "additional_context". A complete example is provided [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
+
+```json
+{
+  "agent": "assistant",
+  "prompt": "What is 2 + 2?",
+  "session_id": "user-123",
+  "user_id" : "anne",
+  "additional_context": { "ui_selections"=[], profile_name="custom"}
+}
+```
+
+Please study the [Hooks documentation](../integrations/hooks.md) for the use of hooks to implement various use cases.
+
 ## Custom Routes
 
 Agent Kernel REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.

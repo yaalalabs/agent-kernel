@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List
 
 from .config import AKConfig
+from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
 
 current_session = contextvars.ContextVar("session_id", default="")
@@ -136,12 +137,12 @@ class Runner(ABC):
         return self._name
 
     @abstractmethod
-    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the agent with the provided prompt.
+        Runs the agent with the provided multi modal inputs.
         :param agent: The agent to run.
         :param session: The session to use for the agent.
-        :param prompt: The prompt to provide to the agent.
+        :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
         """
         pass

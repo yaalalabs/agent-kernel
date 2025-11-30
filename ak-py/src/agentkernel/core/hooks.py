@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any
 
 from .base import Agent, Session
+from .model import AgentReply, AgentRequest
 
 """
 Prehook and Posthook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
@@ -14,8 +14,8 @@ Currently, they will get only called for the initial execution of an agent when 
 class Prehook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None
-    ) -> tuple[bool, str]:
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -25,14 +25,12 @@ class Prehook(ABC):
 
         :param: session (Session): The session instance.
         :param: agent (Agent): The agent that will execute the prompt.
-        :param: original_prompt (str): The original unmodified prompt provided to the agent.
-        :param: prompt (str): The current prompt to be executed.
-        :param: additional_context (Any|None): Additional context that may have been passed with the prompt. This may help RAG hooks to fetch relevant context.
-        :return: tuple[bool, str]: A tuple containing:
-                - bool: Whether to proceed with execution.
-                - str: The modified prompt. In case of stopping execution, a clear reason to be sent back
-                       to the user. Otherwise, a modified prompt (e.g. RAG context)
-                       can be sent for further processing.
+        :param: requests (list[AgentRequest]): The list of requests provided to the agent.
+        :return:
+                - AgentReply: If the hook decides to halt execution, it can return an AgentReply which will be sent
+                - list[AgentRequest]: The modified requests or the input list. You can modify the requests in place without taking copies
+                                      You can also add additional content to the requests list. e.g. files, images, etc.
+
         """
         raise NotImplementedError
 
@@ -47,8 +45,8 @@ class Prehook(ABC):
 class Posthook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Session, input_prompt: str, additional_context: Any | None, agent: Agent, agent_reply: str
-    ) -> str:
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+    ) -> AgentReply:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails
@@ -56,20 +54,13 @@ class Posthook(ABC):
           - Logging or analytics
 
         Note: if the hook changes the reply, the modified reply will be sent to the next hook for processing.
-              the agent_reply parameter contains the unmodified reply from the agent. the following code snippet will help to correctly handle the response
-
-              if hasattr(result, "raw"):
-                response_text = str(result.raw)
-              else:
-                response_text = str(result)
+              The agent_reply parameter contains the unmodified reply from the agent for the first posthook, and the reply modified by previous posthooks for subsequent hooks.
 
         :param:  session (Session): The session instance.
-        :param:  input_prompt (str): The original prompt provided to the agent after any pre-execution hooks have been applied.
-        :param: additional_context (Any|None): Additional context that may have been passed with the prompt.
+        :param:  requests (list[AgentRequest]): The original requests provided to the agent after any pre-execution hooks have been applied.
         :param:  agent (Agent): The agent that executed the prompt.
-        :param:  agent_reply (str): The reply to process. For the first posthook, this is the unmodified
-                              agent reply. For subsequent posthooks, this is the reply modified by
-                              previous posthooks in the chain.
+        :param:  agent_reply (AgentReply): The reply to process. For the first posthook, this is the unmodified
+                              agent reply. For subsequent posthooks, this is the reply modified by previous posthooks in the chain.
 
         :return: The modified reply. If not modified, return the current reply.
         """

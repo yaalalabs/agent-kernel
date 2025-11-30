@@ -8,6 +8,8 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+
 from ...core import Agent as AKBaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
@@ -83,20 +85,40 @@ class GoogleADKRunner(BaseRunner):
                 break
         return response_text
 
-    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Run the agent with the given prompt and return the response text.
-        :param agent: The agent to run.
+        Runs the ADK agent with provided multi modal inputs.
+        :param agent: The ADK agent to run.
         :param session: The session to use for the agent.
-        :param prompt: The prompt to send to the agent.
-        :return: The response text from the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
         """
+        prompt = ""
+        for req in requests:
+            if isinstance(
+                req, AgentRequestAny
+            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.text if prompt else req.text
+            else:
+                return AgentReplyText(
+                    text="Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+
+        if prompt.strip() == "":
+            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+
         app_name = "AgentKernel"
         user_id = "AgentKernel"
         adk_session = self._session(session)
+
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
         runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-        return await self.get_response(runner=runner, session_id=session.id, prompt=prompt, user_id=user_id)
+        reply = await self.get_response(runner=runner, session_id=session.id, prompt=prompt, user_id=user_id)
+
+        return AgentReplyText(text=reply, prompt=prompt)
 
 
 class GoogleADKAgent(AKBaseAgent):

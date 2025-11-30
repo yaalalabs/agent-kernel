@@ -12,6 +12,16 @@ from agentkernel.core.util.key_value_cache import KeyValueCache
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .hooks import Posthook, Prehook
+from .model import (
+    AgentReply,
+    AgentReplyImage,
+    AgentReplyText,
+    AgentRequest,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+)
 from .session import SessionStore
 
 
@@ -102,33 +112,52 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
-    async def run(self, agent: Agent, session: Session, prompt: Any, additional_context: Any | None = None) -> Any:
+    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the specified agent with the given prompt.
+        Runs the specified agent with the multi modal requests.
+
         :param agent: The agent to run.
         :param session: The session to use for the agent.
-        :param prompt: The prompt to provide to the agent.
-        :param additional_context: Additional context to pass to pre-execution hooks.
+        :param requests: The multi-modal inputs provided to the agent.  It will be submitted to the agent as a single request
+                        AgentRequestText objects will be concatenated into a single text prompt.
+                        AgentRequestAny is handled only by pre-hooks, not by the agent itself
         :return: The result of the agent's execution.
         """
-        self._log.debug(
-            f"Executing pre hooks with agent '{agent.name}' and prompt: {prompt} and additional_context: {additional_context}"
-        )
-        original_prompt = prompt
+        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
+
         prehooks = self._pre_hooks.get(agent.name, [])
         for hook in prehooks:
-            proceed, modified_prompt = await hook.on_run(session, agent, original_prompt, prompt, additional_context)
-            if not proceed:
-                self._log.debug(f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}'")
-                return modified_prompt
-            prompt = modified_prompt
-        self._log.debug(f"Running agent '{agent.name}' with prompt: {prompt}")
+            reply = await hook.on_run(session, agent, requests)
+            if isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                self._log.debug(
+                    f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
+                )
+                return reply
 
-        reply = await agent.runner.run(agent, session, prompt)
+            # Validation to ensure correct type is returned from the hooks. This is important to avoid runtime errors.
+            if isinstance(reply, list):
+                for item in reply:
+                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
+                        raise TypeError(
+                            f"Prehook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
+                        )
+            else:
+                raise TypeError(
+                    f"Prehook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}"
+                )
+            requests = reply
+
+        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
+
+        reply = await agent.runner.run(agent, session, requests)
 
         posthooks = self._post_hooks.get(agent.name, [])
         for hook in posthooks:
-            reply = await hook.on_run(session, prompt, additional_context, agent, reply)
+            reply = await hook.on_run(session, requests, agent, reply)
+            if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                raise TypeError(
+                    f"Posthook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
+                )
             self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
 

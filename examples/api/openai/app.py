@@ -1,7 +1,7 @@
-from typing import Any
-
+from agentkernel import Agent as AKAgent
 from agentkernel import GlobalRuntime, Prehook, Session
 from agentkernel.api import RESTAPI
+from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestText
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 from fastapi import APIRouter
@@ -50,23 +50,35 @@ OpenAIModule([triage_agent, general_agent, customer_support_agent])
 # Optionally Using additional context passed in a pre-hook to be used in a RAG
 class RAGPreHook(Prehook):
     async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None
-    ) -> tuple[bool, str]:
+        self, session: Session, agent: AKAgent, requests: list[AgentRequest]
+    ) -> list[AgentRequest] | AgentReply:
         """
-        REST API's 'additional_context' parameter is passed here as 'additional_context'
-        'additional_context' is a dictionary containing the request body
+        REST API will pack all keys and their values from the request body into AgentRequestAny objects.
+        In this example, we look for an AgentRequestAny with name 'additional_context' to get the additional_context (i.e. a dictionary)
+        we packed into the request body under the key 'additional_context'.
         In this example, we are using it to fetch the bank agent's name and assume that additional_context['bank_agent'] is the bank agent's name
         """
-        bank_agent = additional_context.get("bank_agent") if additional_context else None
+        additional_context = None
+        prompt = ""
+        for req in requests:
+            if isinstance(req, AgentRequestText):
+                prompt = req.text
 
-        # If bank_agent is not provided, return True and the original prompt
+            if isinstance(req, AgentRequestAny) and req.name == "additional_context":
+                additional_context = req.content
+                break
+        bank_agent = (
+            additional_context.get("bank_agent") if additional_context and hasattr(additional_context, "get") else None
+        )
+
+        # If bank_agent is not provided, return the original requests list unchanged
         if bank_agent is None:
-            return True, prompt
+            return requests
 
         # Otherwise, add the bank agent to the prompt
         modified_prompt = prompt + ". My bank agent was " + bank_agent + "."
 
-        return True, modified_prompt
+        return [AgentRequestText(text=modified_prompt)]
 
     def name(self) -> str:
         return "bank_agent_prehook"

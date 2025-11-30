@@ -4,6 +4,8 @@ import logging
 import traceback
 from typing import Any, Dict
 
+from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
+
 from ...core import AgentService
 
 logging.basicConfig(
@@ -30,55 +32,61 @@ class Lambda:
         service = AgentService()
         try:
             body = json.loads(event.get("body", "{}"))
-            prompt = body.get("prompt", "")
-            additional_context = body.get("additional_context", None)
-            name = body.get("agent", None)
+            prompt = body.get("prompt", None)
+            agent = body.get("agent", None)
             session_id = body.get("session_id", None)
 
-            service.select(session_id, name)
+            if session_id is None:
+                raise ValueError("No session_id is provided in the request")
+
+            requests = []
+            if prompt:
+                requests.append(AgentRequestText(text=prompt))
+            else:
+                raise ValueError("No prompt provided in the request")
+
+            for key, value in body.items():
+                if key in ["prompt", "agent", "session_id"]:
+                    continue
+                cls._log.info(f"Adding additional context: {key}={value}")
+                requests.append(AgentRequestAny(name=key, content=value))
+
+            service.select(session_id, agent)
             if not service.agent:
-                cls._log.info("No agents available. defaulting to first agent in the list")
-                service.select(session_id)
-                if not service.agent:
-                    cls._log.info("No agents available. Please load an agent module.")
-                    return {
-                        "statusCode": 400,
-                        "body": json.dumps(
-                            {
-                                "error": "No agent available",
-                                "session_id": service.get_response_session_id(session_id),
-                            }
-                        ),
-                    }
+                raise ValueError("No agent available")
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():
                     asyncio.set_event_loop(asyncio.new_event_loop())
-                    result = asyncio.run(service.run(prompt, additional_context))
+                    result = asyncio.run(service.run_multi(requests=requests))
                 else:
-                    result = loop.run_until_complete(service.run(prompt, additional_context))
+                    result = loop.run_until_complete(service.run_multi(requests=requests))
             except RuntimeError:
-                result = asyncio.run(service.run(prompt, additional_context))
-
-            cls._log.info(f"Result: {result}")
-
-            if hasattr(result, "raw"):  # Handle CrewAI result
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps(
-                        {
-                            "result": str(result.raw),
-                            "session_id": service.get_response_session_id(session_id),
-                        }
-                    ),
-                }
+                result = asyncio.run(service.run_multi(requests=requests))
+            cls._log.debug(f"Result: {result}")
 
             return {
                 "statusCode": 200,
                 "body": json.dumps(
                     {
-                        "result": result,
+                        "result": (
+                            str(result)
+                            if isinstance(result, (AgentReplyText, AgentReplyImage))
+                            else "Non textual result received"
+                        ),  # sending image is not supported at the moment
                         "session_id": service.get_response_session_id(session_id),
+                    }
+                ),
+            }
+
+        except ValueError as ve:
+            cls._log.error(f"ValueError processing request: {ve}\n{traceback.format_exc()}")
+            return {
+                "statusCode": 400,
+                "body": json.dumps(
+                    {
+                        "error": str(ve),
+                        "session_id": service.get_response_session_id(None),
                     }
                 ),
             }

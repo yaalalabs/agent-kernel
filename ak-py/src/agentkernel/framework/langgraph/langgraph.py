@@ -13,6 +13,9 @@ from langgraph.checkpoint.base import (
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
+from agentkernel.core.base import Session
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import Runner as BaseRunner
@@ -267,14 +270,31 @@ class LangGraphRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
-    async def run(self, agent: LangGraphAgent, session: BaseSession, prompt: Any) -> Any:
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the LangGraph agent with the provided session and prompt.
+        Runs the LangGraph agent with provided multi modal inputs.
         :param agent: The LangGraph agent to run.
-        :param session: The session to run the agent in.
-        :param prompt: The input prompt for the agent.
-        :return: The response from the agent.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
         """
+        prompt = ""
+        for req in requests:
+            if isinstance(
+                req, AgentRequestAny
+            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.text if prompt else req.text
+            else:
+                return AgentReplyText(
+                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+
+        if prompt.strip() == "":
+            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+
         session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
         agent.agent.checkpointer = self._session(session).checkpointer
         result = await agent.agent.ainvoke(
@@ -282,7 +302,7 @@ class LangGraphRunner(BaseRunner):
             config=session_config.model_dump(),
         )
         last_message = result["messages"][-1]
-        return last_message.content
+        return AgentReplyText(text=last_message.content, prompt=prompt)
 
 
 class LangGraphModule(BaseModule):

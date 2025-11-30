@@ -9,6 +9,7 @@ Pre-execution hooks:
 from typing import Any
 
 from agentkernel import Agent, Prehook, Session, KeyValueCache
+from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestText
 
 
 class RAGHook(Prehook):
@@ -30,11 +31,17 @@ class RAGHook(Prehook):
     }
 
     async def on_run(
-        self, session: Session, agent: Agent, original_prompt: str, prompt: str, additional_context: Any | None = None
-    ) -> tuple[bool, str]:
+        self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
         """
         Simulates injecting of additional information into the memory to be used by the agent tool during execution.
         """
+        
+        # NOTE:  we are assuming single text request for simplicity
+        if requests and isinstance(requests[0], AgentRequestText):
+            prompt = requests[0].text
+        else:
+            return requests  # No text prompt to validate
+        
         # Search for relevant context in the knowledge base
         relevant_contexts = []
         for topic, context in self.KNOWLEDGE_BASE.items():
@@ -45,7 +52,7 @@ class RAGHook(Prehook):
         cache.set("rag_context", relevant_contexts)
         print(f"RAGHook: Injected context into volatile cache: {relevant_contexts}")
         
-        return True, prompt
+        return requests
 
     def name(self) -> str:
         return "RAGHook"

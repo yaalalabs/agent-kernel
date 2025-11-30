@@ -5,6 +5,8 @@ from langchain_core.messages import HumanMessage
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+
 from ...core import Session
 from ...langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
 
@@ -21,14 +23,31 @@ class LangFuseLangGraph(LangGraphRunner):
         self._log = logging.getLogger("ak.trace.langfuse.langgraph")
         self._callback_handler = CallbackHandler()
 
-    async def run(self, agent: Any, session: Session, prompt: Any):
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the LangGraph agent with the provided session and prompt.
+        Runs the LangGraph agent with provided multi modal inputs.
         :param agent: The LangGraph agent to run.
-        :param session: The session to run the agent in.
-        :param prompt: The input prompt for the agent.
-        :return: The response from the agent.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
         """
+        prompt = ""
+        for req in requests:
+            if isinstance(
+                req, AgentRequestAny
+            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.text if prompt else req.text
+            else:
+                return AgentReplyText(
+                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+
+        if prompt.strip() == "":
+            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+
         with self._client.start_as_current_span(name="Agent Kernel LangGraph") as span:
             session_config = LangGraphSessionConfigModel(
                 configurable=LangGraphSessionConfigurable(thread_id=session.id)
@@ -41,6 +60,6 @@ class LangFuseLangGraph(LangGraphRunner):
                 config=config,
             )
             last_message = result["messages"][-1]
-            output = last_message.content
-            span.update_trace(session_id=session.id, input=prompt, output=output, tags=["agentkernel"])
-        return output
+            span.update_trace(session_id=session.id, input=prompt, output=last_message.content, tags=["agentkernel"])
+
+        return AgentReplyText(text=last_message.content, prompt=prompt)
