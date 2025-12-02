@@ -53,6 +53,7 @@ def test_session_clear():
     session.get_volatile_cache().set("vkey1", "vvalue1")
     session.get_non_volatile_cache().set("nvkey1", "nvvalue1")
     session.clear()
+    assert session.id == "test-session"
     assert len(session.get_all_keys()) == 2
     assert session.get("key1") is None
     assert session.get("key2") is None
