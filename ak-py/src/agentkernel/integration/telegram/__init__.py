@@ -2,7 +2,7 @@
 Agent Kernel Integration with Telegram
 
 This package contains the Agent Kernel integration implementations for Telegram Bot API.
-"""s
+"""
 
 import importlib.metadata
 

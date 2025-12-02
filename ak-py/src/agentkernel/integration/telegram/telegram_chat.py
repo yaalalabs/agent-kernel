@@ -28,7 +28,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._webhook_secret = Config.get().telegram.webhook_secret
         self._api_version = Config.get().telegram.api_version or "bot"
         self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
-        
+
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
             raise ValueError("Incomplete Telegram configuration.")
@@ -70,7 +70,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         try:
             body = await request.json()
             self._log.debug(f"Received Telegram update: {body}")
-            
+
             # Handle different update types
             if "message" in body:
                 await self._handle_message(body["message"])
@@ -82,11 +82,11 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                 # Log unhandled update types
                 update_keys = list(body.keys())
                 self._log.debug(f"Unhandled update type: {update_keys}")
-                
+
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
 
-        return {"ok": True}  
+        return {"ok": True}
 
     async def _handle_message(self, message: dict):
         """
@@ -96,12 +96,12 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         """
         chat_id = message.get("chat", {}).get("id")
         message_id = message.get("message_id")
-  
+
         text = message.get("text")
-        
+
         # Handle different message types
         if not text:
-            
+
             self._log.warning("Message has no text content")
             return
 
@@ -110,7 +110,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             return
 
         self._log.debug(f"Processing message {message_id} from chat {chat_id}: {text}")
-        
+
         # Check if it's a bot command
         if text.startswith("/"):
             await self._handle_command(chat_id, text)
@@ -155,11 +155,16 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         :param command: Command text (e.g., "/start")
         """
         self._log.debug(f"Processing command: {command}")
-        
+
         if command == "/start":
-            await self._send_message(chat_id, "👋 Hello! I'm an AI assistant powered by Agent Kernel. How can I help you today?")
+            await self._send_message(
+                chat_id, "👋 Hello! I'm an AI assistant powered by Agent Kernel. How can I help you today?"
+            )
         elif command == "/help":
-            await self._send_message(chat_id, "Send me any message and I'll respond using AI. Available commands:\n/start - Start conversation\n/help - Show this help")
+            await self._send_message(
+                chat_id,
+                "Send me any message and I'll respond using AI. Available commands:\n/start - Start conversation\n/help - Show this help",
+            )
         else:
             # Unknown command - process as regular message
             await self._process_agent_message(chat_id, command)
@@ -173,7 +178,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         """
         service = AgentService()
         session_id = str(chat_id)  # Use chat_id as session_id
-        
+
         try:
             # Send typing action
             await self._send_chat_action(chat_id, "typing")
@@ -223,10 +228,10 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                     "chat_id": chat_id,
                     "text": message_text,
                 }
-                
+
                 if parse_mode:
                     payload["parse_mode"] = parse_mode
-                
+
                 # Only add reply_markup to the last message
                 if reply_markup and i == len(messages) - 1:
                     payload["reply_markup"] = reply_markup
@@ -281,7 +286,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         payload = {
             "callback_query_id": callback_query_id,
         }
-        
+
         if text:
             payload["text"] = text
         if show_alert:
