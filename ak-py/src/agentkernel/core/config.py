@@ -91,6 +91,11 @@ class _MessengerConfig(BaseModel):
     app_secret: str = Field(default="", description="Facebook app secret for signature verification")
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
 
+class _TelegramConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Telegram")
+    bot_token: str = Field(default="", description="Telegram bot token from BotFather")
+    webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
+    api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
 
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
