@@ -1,6 +1,6 @@
 from agentkernel.api import RESTAPI
-from agentkernel.telegram import AgentTelegramRequestHandler
 from agentkernel.openai import OpenAIModule
+from agentkernel.telegram import AgentTelegramRequestHandler
 from agents import Agent as OpenAIAgent
 
 # Create your agent
