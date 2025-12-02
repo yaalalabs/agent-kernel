@@ -85,7 +85,7 @@ class Session:
         Retrieves the specified session data object.
         :param key: The key of the session data object.
         :return: The matching session object associated with the key, or None
-        if the there is no data object with the specified key.
+        if there is no data object with the specified key.
         """
         result = self._data.get(key)
         self._log.debug(f"Retrieved session {self._id} data object for key {key}: {result}")
