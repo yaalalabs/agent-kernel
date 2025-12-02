@@ -122,11 +122,12 @@ class Session:
         Clears all session data objects.
         """
         self._log.debug(f"Clearing session {self._id} data objects")
+        self._data = {
+            self.VOLATILE_CACHE_KEY: self.get_volatile_cache(),
+            self.NON_VOLATILE_CACHE_KEY: self.get_non_volatile_cache()
+        }
         self.get_volatile_cache().clear()
         self.get_non_volatile_cache().clear()
-        self._data = {
-            key: self._data[key] for key in self._data if key in (self.VOLATILE_CACHE_KEY, self.NON_VOLATILE_CACHE_KEY)
-        }
 
     def set_context(self):
         """

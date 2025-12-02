@@ -1,5 +1,3 @@
-import pytest
-
 from agentkernel.core.base import Session
 
 
@@ -44,7 +42,7 @@ def test_session_non_volatile_cache():
     session = Session("test-session")
     cache = session.get_non_volatile_cache()
     cache.set("nvkey1", "nvvalue1")
-    assert "nvkey1" in cache.keys()
+    assert cache.get("nvkey1") == "nvvalue1"
     assert "nvkey1" in cache.keys()
 
 
