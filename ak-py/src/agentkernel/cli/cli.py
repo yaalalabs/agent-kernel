@@ -35,6 +35,7 @@ class CLI:
         self._print("!ld, !load <module_name> - Load agent module")
         self._print("!ls, !list - List available agents")
         self._print("!n, !new - Start a new session")
+        self._print("!c, !clear - Clear the current session memory")
         self._print("!s, !select <agent_name> - Select an agent to run the prompt")
         self._print("!q, !quit - Exit the program")
         self._print()
@@ -65,16 +66,18 @@ class CLI:
                 if prompt.startswith("!"):
                     tokens = prompt.lower().split()
                     command = tokens[0]
-                    if command in ["!h", "!help"]:
+                    if command in ["!c", "!clear"]:
+                        self._service.clear()
+                    elif command in ["!h", "!help"]:
                         self.help()
-                    elif command in ["!ls", "!list"]:
-                        self.list()
                     elif command in ["!ld", "!load"]:
                         if len(tokens) != 2:
                             self._print("Usage: !load <module_name>")
                             continue
                         session_id = self._service.session.id if self._service.session else None
                         self._service.load(name=tokens[1], session_id=session_id)
+                    elif command in ["!ls", "!list"]:
+                        self.list()
                     elif command in ["!n", "!new"]:
                         self._service.new()
                     elif command in ["!q", "!quit"]:
