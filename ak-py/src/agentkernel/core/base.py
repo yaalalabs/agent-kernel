@@ -124,7 +124,7 @@ class Session:
         self._log.debug(f"Clearing session {self._id} data objects")
         self._data = {
             self.VOLATILE_CACHE_KEY: self.get_volatile_cache(),
-            self.NON_VOLATILE_CACHE_KEY: self.get_non_volatile_cache()
+            self.NON_VOLATILE_CACHE_KEY: self.get_non_volatile_cache(),
         }
         self.get_volatile_cache().clear()
         self.get_non_volatile_cache().clear()
