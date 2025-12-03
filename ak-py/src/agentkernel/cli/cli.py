@@ -66,10 +66,10 @@ class CLI:
                 if prompt.startswith("!"):
                     tokens = prompt.lower().split()
                     command = tokens[0]
-                    if command in ["!c", "!clear"]:
-                        self._service.clear()
-                    elif command in ["!h", "!help"]:
+                    if command in ["!h", "!help"]:
                         self.help()
+                    elif command in ["!c", "!clear"]:
+                        self._service.clear()
                     elif command in ["!ld", "!load"]:
                         if len(tokens) != 2:
                             self._print("Usage: !load <module_name>")
