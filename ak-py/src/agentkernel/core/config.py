@@ -121,6 +121,7 @@ class AKConfig(YamlBaseSettingsModified):
     messenger: _MessengerConfig = Field(
         description="Facebook Messenger related configurations", default_factory=_MessengerConfig
     )
+    telegram: _TelegramConfig = Field(description="Telegram related configurations", default_factory=_TelegramConfig)
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
