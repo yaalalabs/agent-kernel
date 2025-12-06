@@ -1,0 +1,12 @@
+agents:
+  - name: general
+    provider: openai
+    model: gpt-4
+    temperature: 0.7
+
+gmail:
+  agent: general
+  credentials_file: "credentials.json"  # Path to Google OAuth2 credentials
+  token_file: "token.pickle"            # Where to save OAuth2 token
+  poll_interval: 30                     # Check for emails every 30 seconds
+  label_filter: "INBOX"                 # Monitor INBOX label
