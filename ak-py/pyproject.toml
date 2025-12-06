@@ -74,6 +74,12 @@ messenger = [
 telegram = [
     "httpx>=0.27.0"
 ]
+gmail = [
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-api-python-client>=2.0.0",
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.2.0",

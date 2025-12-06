@@ -1,3 +1,5 @@
+"""This package contains the Agent Kernel integration implementations for Gmail API."""
+
 import importlib.metadata
 
 try:
@@ -5,4 +7,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .integration.telegram import *
+from .gmail_chat import AgentGmailHandler

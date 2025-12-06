@@ -91,11 +91,21 @@ class _MessengerConfig(BaseModel):
     app_secret: str = Field(default="", description="Facebook app secret for signature verification")
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
 
+
 class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
     webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
+
+
+class _GmailConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Gmail")
+    credentials_file: str = Field(default="", description="Path to Google OAuth2 credentials JSON file")
+    token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
+    poll_interval: int = Field(default=30, description="Email polling interval in seconds")
+    label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
+
 
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
@@ -119,6 +129,12 @@ class AKConfig(YamlBaseSettingsModified):
     messenger: _MessengerConfig = Field(
         description="Facebook Messenger related configurations", default_factory=_MessengerConfig
     )
+
+    telegram: _TelegramConfig = Field(
+        description="Telegram Bot related configurations", default_factory=_TelegramConfig
+    )
+    gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
+
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 

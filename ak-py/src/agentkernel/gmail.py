@@ -5,4 +5,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .integration.telegram import *
+from .integration.gmail import *
