@@ -38,9 +38,7 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         # Use graph.instagram.com for Business Login for Instagram (without Facebook)
         self._base_url = f"https://graph.instagram.com/{self._api_version}"
         if not all([self._access_token, self._verify_token]):
-            self._log.error(
-                "Instagram configuration is incomplete. Please set access_token and verify_token."
-            )
+            self._log.error("Instagram configuration is incomplete. Please set access_token and verify_token.")
             raise ValueError("Incomplete Instagram configuration.")
 
     def get_router(self) -> APIRouter:
@@ -108,7 +106,7 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         try:
             body = await request.json()
             self._log.debug(f"Received Instagram webhook: {body}")
-            
+
             # Instagram webhooks come with object="instagram"
             if body.get("object") == "instagram":
                 for entry in body.get("entry", []):
@@ -122,7 +120,7 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
                             self._log.debug(f"Message read receipt: {messaging_event['read']}")
                         elif "reaction" in messaging_event:
                             self._log.debug(f"Reaction received: {messaging_event['reaction']}")
-                            
+
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
 
@@ -207,7 +205,7 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         """
         service = AgentService()
         session_id = sender_id  # Use sender_id as session_id to maintain conversation context
-        
+
         try:
             # Mark message as seen
             await self._mark_seen(sender_id)
@@ -326,4 +324,3 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
                 self._log.debug(f"Message marked as seen: {recipient_id}")
         except Exception as e:
             self._log.warning(f"Failed to mark message as seen: {e}")
-
