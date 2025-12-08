@@ -177,8 +177,6 @@ await self._send_message(
 - Text messages
 - Commands (e.g., /start, /help)
 - Inline keyboards and callback queries
-- Attachments (basic support)
-- Session management per chat
 
 ## Troubleshooting
 
