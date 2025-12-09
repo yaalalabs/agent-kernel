@@ -74,7 +74,7 @@ module "ecs" {
 
       # Attach DynamoDB access to the task role if a memory table exists
       create_tasks_iam_role   = true
-      tasks_iam_role_policies = var.create_tasks_iam_role ? {
+      tasks_iam_role_policies = var.create_dynamodb_memory_table ? {
         DynamoDB = var.create_dynamodb_memory_table ? aws_iam_policy.dynamodb_policy[0].arn : null
       } : {}
 
