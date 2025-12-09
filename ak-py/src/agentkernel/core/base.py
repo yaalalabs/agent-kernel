@@ -12,7 +12,7 @@ current_session = contextvars.ContextVar("session_id", default="")
 
 class Session:
     """
-    Session is the base class for a stacking state across related interactions with agents.
+    Session is the base class for a tracking state across related interactions with agents.
 
     Agent Kernel provides an implementation of the Session class for each supported agent framework,
     allowing the runtime to track and share state across multiple related agent logic invocations.
@@ -20,6 +20,15 @@ class Session:
     Sessions may be volatile (meaning that they are not persisted) or durable (meaning that they
     are persisted and are available across multiple invocations of the runtime). This is governed by
     the runtime configuration.
+
+    Session class stores framework-specific session data objects in a key-value store, allowing
+    different agent frameworks to store and retrieve their own session data without interfering with
+    each other.
+
+    In addition, there are two pre-defined key-value caches for storing data that is either volatile
+    (i.e., not persisted across runtime invocations) or non-volatile (i.e., persisted across runtime
+    invocations). These caches can be used by application code to store data that is not part of the
+    agent context but needs to be retained across multiple interactions within the same session.
     """
 
     VOLATILE_CACHE_KEY = "v_cache"
@@ -28,8 +37,8 @@ class Session:
     @classmethod
     def get_current_session_id(cls) -> str:
         """
-        Returns the current session ID from the context variable.
-        :return: The current session ID.
+        Returns the current session identifier from the context variable.
+        :return: The current session identifier.
         """
         return current_session.get()
 
@@ -56,7 +65,8 @@ class Session:
         self._id = id
         self._data = {}
 
-        # Pre-initialize key-value caches to be used by application code which will not be part of the agent context
+        # Pre-initialize key-value caches to be used by application code
+        # which will not be part of the agent context.
         self.set(self.VOLATILE_CACHE_KEY, KeyValueCache())
         self.set(self.NON_VOLATILE_CACHE_KEY, KeyValueCache())
 
@@ -72,13 +82,13 @@ class Session:
 
     def get(self, key: str) -> Any:
         """
-        Retrieves a framework-specific session object from the session data.
-        :param key: The key to retrieve the session object for.
-        :return: The framework-specific session object associated with the key, or None if the key
-        does not exist.
+        Retrieves the specified session data object.
+        :param key: The key of the session data object.
+        :return: The matching session object associated with the key, or None
+        if there is no data object with the specified key.
         """
         result = self._data.get(key)
-        self._log.debug(f"Retrieved session object for key {key}: {result}")
+        self._log.debug(f"Retrieved session {self._id} data object for key {key}: {result}")
         return result
 
     def get_all_keys(self):
@@ -90,13 +100,34 @@ class Session:
 
     def set(self, key: str, value: Any) -> Any:
         """
-        Sets a framework-specific session object in the session data.
-        :param key: The key to set the session object for.
-        :param value: The framework-specific session object to set.
+        Sets a session data object for the specified key.
+        :param key: The key of the session data object.
+        :param value: The session data object.
         """
-        self._log.debug(f"Setting session object for key {key}: {value}")
+        self._log.debug(f"Setting session {self._id} data object for key {key}: {value}")
         self._data[key] = value
         return value
+
+    def delete(self, key: str) -> None:
+        """
+        Deletes the session data object for the specified key.
+        :param key: The key of the session data object to be deleted.
+        """
+        if key in self._data:
+            self._log.debug(f"Deleting session {self._id} data object for key {key}")
+            del self._data[key]
+
+    def clear(self) -> None:
+        """
+        Clears all session data objects.
+        """
+        self._log.debug(f"Clearing session {self._id} data objects")
+        self._data = {
+            self.VOLATILE_CACHE_KEY: self.get_volatile_cache(),
+            self.NON_VOLATILE_CACHE_KEY: self.get_non_volatile_cache(),
+        }
+        self.get_volatile_cache().clear()
+        self.get_non_volatile_cache().clear()
 
     def set_context(self):
         """

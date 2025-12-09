@@ -266,6 +266,15 @@ for key in keys:
     print(f"{key}: {value}")
 ```
 
+### Session Clearing
+
+Delete all session data while preserving the session id:
+
+```python
+# Clear session data but preserve session id
+session.clear()
+```
+
 ## Summary
 
 - Sessions manage conversation state and history
