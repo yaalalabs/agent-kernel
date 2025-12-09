@@ -149,7 +149,6 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         :param messaging_event: Messaging event object from webhook
         """
         sender_id = messaging_event.get("sender", {}).get("id")
-        recipient_id = messaging_event.get("recipient", {}).get("id")
         message = messaging_event.get("message", {})
         message_id = message.get("mid")
         message_text = message.get("text")
