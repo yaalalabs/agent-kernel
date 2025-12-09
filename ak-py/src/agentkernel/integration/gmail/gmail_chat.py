@@ -59,12 +59,14 @@ class AgentGmailRequestHandler:
     def authenticate(self):
         """
         Authenticate with Gmail API using OAuth2.
-
-        Creates or loads credentials from token file.
-        If credentials don't exist or are invalid, initiates OAuth2 flow.
+        Skips authentication if AK_TEST_MODE=1 is set in the environment.
         """
-        creds = None
+        if os.environ.get("AK_TEST_MODE") == "1":
+            self._log.info("Test mode enabled: Skipping Gmail authentication.")
+            self._service = None
+            return
 
+        creds = None
         # Load existing credentials if available
         if os.path.exists(self._token_file):
             with open(self._token_file, "rb") as token:
