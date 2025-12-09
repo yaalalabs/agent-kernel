@@ -119,9 +119,11 @@ class AgentGmailRequestHandler:
     async def _check_new_emails(self):
         """
         Check for new unread emails.
-
-        Fetches unread emails from specified label and processes them.
+        Skips in test mode (when self._service is None).
         """
+        if self._service is None:
+            self._log.info("Test mode: Skipping email check.")
+            return
         try:
             # Query for unread emails
             query = f"is:unread label:{self._label_filter}"
@@ -154,9 +156,12 @@ class AgentGmailRequestHandler:
     async def _process_email(self, message_id: str):
         """
         Process a single email.
-
+        Skips in test mode (when self._service is None).
         :param message_id: Gmail message ID
         """
+        if self._service is None:
+            self._log.info("Test mode: Skipping email processing.")
+            return
         try:
             # Get full message details
             message = self._service.users().messages().get(userId="me", id=message_id, format="full").execute()
@@ -273,13 +278,16 @@ class AgentGmailRequestHandler:
     async def _send_reply(self, original_message_id: str, thread_id: str, to: str, subject: str, body: str):
         """
         Send email reply.
-
+        Skips in test mode (when self._service is None).
         :param original_message_id: Original message ID
         :param thread_id: Thread ID for threading
         :param to: Recipient email
         :param subject: Email subject (will add Re: if needed)
         :param body: Email body
         """
+        if self._service is None:
+            self._log.info("Test mode: Skipping send reply.")
+            return
         try:
             # Add "Re: " to subject if not already there
             if not subject.lower().startswith("re:"):
@@ -306,9 +314,12 @@ class AgentGmailRequestHandler:
     def _mark_as_read(self, message_id: str):
         """
         Mark email as read.
-
+        Skips in test mode (when self._service is None).
         :param message_id: Gmail message ID
         """
+        if self._service is None:
+            self._log.info("Test mode: Skipping mark as read.")
+            return
         try:
             self._service.users().messages().modify(
                 userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
