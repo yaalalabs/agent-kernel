@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.6"
+version = "0.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -17,9 +17,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7f/d1/f1ed86f6215e3e6ec93ab9d1fd84c7d87aeea23439c412df00bb0a560b59/agentkernel-0.2.6.tar.gz", hash = "sha256:c4f9cabdee92e6afd2ed9dd3c9d849a24a6cb459278d8ea7fefdb5663da0c941", size = 52000, upload-time = "2025-11-27T10:22:33.451Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/2f/a4b74cab024eb94527cbc2efef4dd212c545b2959b2b9c6581bed0522633/agentkernel-0.2.7.tar.gz", hash = "sha256:237ab554f348d4e2fe63b8a48a554e5e09cec875657393dfe4375f3496d20b34", size = 55358, upload-time = "2025-11-30T15:40:54.071Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/e5/854492642282ad6401ef462173632c53c1ccc627104827692852669b44db/agentkernel-0.2.6-py3-none-any.whl", hash = "sha256:e53a95b547df2806528611fbe9fb292beb81e726264489b07ff9c705321980ed", size = 84850, upload-time = "2025-11-27T10:22:32.077Z" },
+    { url = "https://files.pythonhosted.org/packages/45/91/ecc63b8bd453e30e73a68c27055fa9da86b8765f8a9bc5ead4d31038acb6/agentkernel-0.2.7-py3-none-any.whl", hash = "sha256:48693d308ec3e4621cba1f1883ca51e08bf0dbae2e97ef85c72889c7281d8ecf", size = 90346, upload-time = "2025-11-30T15:40:52.432Z" },
 ]
 
 [package.optional-dependencies]
@@ -159,7 +159,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["langgraph", "redis"], specifier = ">=0.2.6" },
+    { name = "agentkernel", extras = ["langgraph", "redis"], specifier = ">=0.2.7" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
     { name = "langchain-openai", specifier = ">=0.3.28" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },
