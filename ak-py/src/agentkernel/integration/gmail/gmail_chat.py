@@ -15,7 +15,7 @@ from googleapiclient.discovery import build
 from ...core import AgentService, Config
 
 
-class AgentGmailHandler:
+class AgentGmailRequestHandler:
     """
     Gmail integration handler for Agent Kernel.
 
