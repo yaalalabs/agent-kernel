@@ -163,5 +163,11 @@ variable "container_type" {
   }
 }
 
+variable "create_tasks_iam_role" {
+  type        = bool
+  description = "Whether to create a tasks IAM role in the ECS service"
+  default     = true
+}
+
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
