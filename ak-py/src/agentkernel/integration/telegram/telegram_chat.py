@@ -101,7 +101,6 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
 
         # Handle different message types
         if not text:
-
             self._log.warning("Message has no text content")
             return
 
