@@ -5,6 +5,7 @@ import sys
 
 import httpx
 from fastapi import FastAPI, Request
+from starlette.testclient import TestClient
 import pytest
 import pytest_asyncio
 
@@ -12,32 +13,23 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 
 
 class APITestClient:
-    def __init__(self, url: str | None = None, client: httpx.AsyncClient | None = None):
-        self.url = url
-        self._client = client
+    def __init__(self, client):
+        self.client = client
 
     async def send(self, endpoint: str, method: str = "post", body=None):
         payload = {} if body is None else body
-        # Use provided in-process client if available (avoids real network)
-        if self._client is not None:
-            resp = await self._client.request(method, f"{self.url}{endpoint}", json=payload)
-        else:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.request(method, f"{self.url}{endpoint}", json=payload)
-
+        # TestClient is synchronous; run in executor to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(
+            None,
+            lambda: self.client.request(method, endpoint, json=payload)
+        )
         resp.raise_for_status()
         return resp.json()
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
-    # Set environment variables expected by the code under test (kept for parity)
-    my_env = os.environ.copy()
-    my_env["AK_GMAIL__CREDENTIALS_FILE"] = "test_credentials.json"
-    my_env["AK_GMAIL__TOKEN_FILE"] = "test_token.pickle"
-    my_env["AK_GMAIL__AGENT"] = "test_gmail_agent"
-    my_env["AK_TEST_MODE"] = "1"
-
     # Instead of launching the project's `server.py` (which is a polling-only process
     # and does not expose HTTP endpoints), create a small in-process FastAPI app
     # that provides the endpoints the tests expect. This keeps `server.py` unchanged.
@@ -56,15 +48,9 @@ async def http_client():
             pass
         return {"status": "ok"}
 
-    # Create an in-process httpx AsyncClient bound to the FastAPI app.
-    # Some httpx versions don't accept `app=`; use ASGITransport for widest compatibility.
-    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000", timeout=10.0)
-    # Enter the AsyncClient context so it is ready for requests
-    await client.__aenter__()
-    try:
-        yield APITestClient("http://localhost:8000", client=client)
-    finally:
-        await client.aclose()
+    # Use Starlette's TestClient (works synchronously, no transport issues)
+    client = TestClient(app)
+    yield APITestClient(client)
 
 
 @pytest.mark.asyncio
