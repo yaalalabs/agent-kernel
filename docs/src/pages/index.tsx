@@ -3,10 +3,10 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
-import { 
-  MdMenuBook, 
-  MdArticle, 
-  MdLink, 
+import {
+  MdMenuBook,
+  MdArticle,
+  MdLink,
   MdBusiness,
   MdPower,
   MdRocket,
@@ -28,9 +28,9 @@ function HomepageHeader() {
     <header className={styles.heroBanner}>
       <div className="container">
         <div className={styles.heroContent}>
-          <img 
-            src="/img/logo.svg" 
-            alt="Agent Kernel Logo" 
+          <img
+            src="/img/logo.svg"
+            alt="Agent Kernel Logo"
             className={styles.heroLogo}
           />
           <h1 className={styles.heroTitle}>{siteConfig.title}</h1>
@@ -162,7 +162,7 @@ function IntegrationsSection() {
         <div className={styles.integrationsHeader}>
           <h2 className={styles.integrationsSectionTitle}>Production Runtime for Leading Agentic Frameworks</h2>
           <p className={styles.integrationsSectionSubtitle}>
-            Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel. 
+            Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel.
             A framework-agnostic runtime with enterprise-grade features.
           </p>
         </div>
@@ -178,8 +178,8 @@ function IntegrationsSection() {
                   className={styles.integrationCard}
                   style={{ animationDelay: `${idx * 0.1}s` }}>
                   <div className={styles.integrationLogoWrapper}>
-                    <img 
-                      src={framework.logo} 
+                    <img
+                      src={framework.logo}
                       alt={framework.name}
                       className={styles.integrationLogo}
                     />
@@ -200,8 +200,8 @@ function IntegrationsSection() {
                   className={styles.integrationCard}
                   style={{ animationDelay: `${(frameworks.length + idx) * 0.1}s` }}>
                   <div className={styles.integrationLogoWrapper}>
-                    <img 
-                      src={tool.logo} 
+                    <img
+                      src={tool.logo}
                       alt={tool.name}
                       className={styles.integrationLogo}
                     />
@@ -287,7 +287,7 @@ function MessagingIntegrationsSection() {
                 key={`active-1-${idx}`}
                 to={platform.link}
                 className={styles.messagingIntegrationCard}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -301,7 +301,7 @@ function MessagingIntegrationsSection() {
               <div
                 key={`coming-1-${idx}`}
                 className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -317,7 +317,7 @@ function MessagingIntegrationsSection() {
                 key={`active-2-${idx}`}
                 to={platform.link}
                 className={styles.messagingIntegrationCard}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -331,7 +331,7 @@ function MessagingIntegrationsSection() {
               <div
                 key={`coming-2-${idx}`}
                 className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -450,8 +450,8 @@ export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title="Agent Kernel - Agentic Framework Runtime for LangGraph, OpenAI, Google ADK & CrewAI"
-      description="Production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI with enterprise features. Framework-agnostic alternative to Semantic Kernel for AI agent deployment, orchestration, and monitoring.">
+      title={`${siteConfig.title} - ${siteConfig.tagline}`}
+      description="Production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI with enterprise features. Framework-agnostic alternative to Semantic Kernel for AI agent deployment, orchestration, and monitoring.">
       <div className={styles.animatedBackground}></div>
       <div className={styles.gridOverlay}></div>
       <div className={styles.particle}></div>
