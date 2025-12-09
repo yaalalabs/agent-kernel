@@ -96,7 +96,7 @@ class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
     webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
-    api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
+    api_prefix: str = Field(default="bot", description="Telegram Bot API URL prefix (should always be 'bot'). This is not a version number.")
 
 
 class _GmailConfig(BaseModel):
