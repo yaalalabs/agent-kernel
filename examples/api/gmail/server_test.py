@@ -1,12 +1,12 @@
-
 import asyncio
 import os
 import subprocess
 import sys
+from unittest.mock import patch
+
 import httpx
 import pytest
 import pytest_asyncio
-from unittest.mock import patch
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
