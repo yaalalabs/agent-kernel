@@ -9,6 +9,7 @@ import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
+
 class APITestClient:
     def __init__(self, url):
         self.url = url
@@ -20,6 +21,7 @@ class APITestClient:
             resp.raise_for_status()
             data = resp.json()
             return data
+
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
@@ -40,11 +42,13 @@ async def http_client():
         proc.terminate()
         proc.wait()
 
+
 @pytest.mark.asyncio
 async def test_gmail_health(http_client):
     print("test_gmail_health")
     response = await http_client.send("/health", method="get")
     assert response == {"status": "ok"}
+
 
 @pytest.mark.asyncio
 async def test_gmail_webhook(http_client):
@@ -54,12 +58,10 @@ async def test_gmail_webhook(http_client):
         "email_id": "test_email_id_123",
         "from": "testuser@gmail.com",
         "subject": "Test Subject",
-        "body": "Hello from Gmail!"
+        "body": "Hello from Gmail!",
     }
     try:
-        response = await http_client.send(
-            "/gmail/webhook", method="post", body=gmail_event
-        )
+        response = await http_client.send("/gmail/webhook", method="post", body=gmail_event)
         assert response == {"status": "ok"}
     except httpx.HTTPStatusError:
         pass

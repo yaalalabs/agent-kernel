@@ -1,6 +1,6 @@
 import asyncio
 
-from agentkernel.gmail import AgentGmailHandler
+from agentkernel.gmail import AgentGmailRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
@@ -28,7 +28,7 @@ OpenAIModule([general_agent])
 
 async def main():
     """Main function to run Gmail bot."""
-    handler = AgentGmailHandler()
+    handler = AgentGmailRequestHandler()
 
     # Authenticate with Gmail
     handler.authenticate()
