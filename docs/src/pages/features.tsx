@@ -43,6 +43,8 @@ function FeaturesHero() {
           <p className={styles.heroSubtitle}>
             Agent Kernel isn’t just a runtime; it’s your acceleration engine.
             Migrate any agent, unlock powerful execution and observability tools, and ship production-ready AI workflows with confidence.
+          </p>
+          <p className={styles.heroSubtitle}>
             It is a modular, framework-agnostic runtime designed for scalable agent execution. Bring your own agents,
             leverage built-in features, and deploy with production-grade performance and reliability.
           </p>

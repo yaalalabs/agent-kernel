@@ -569,12 +569,12 @@
   border: 2px solid rgba(139, 92, 246, 0.3) !important;
   font-weight: 600 !important;
   animation: shimmer 3s linear infinite !important;
-  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4), 0 0 10px rgba(139, 92, 246, 0.2) !important;
+  box-shadow: 0 1px 5px rgba(139, 92, 246, 0.4), 0 0 5px rgba(139, 92, 246, 0.2) !important;
 }
 
 .featuresButton:hover {
   transform: translateY(-5px) scale(1.08) !important;
-  box-shadow: 0 15px 10px rgba(139, 92, 246, 0.5), 0 0 10px rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 0 1px 5px rgba(139, 92, 246, 0.5), 0 0 5px rgba(139, 92, 246, 0.3) !important;
   animation: shimmer 1.5s linear infinite, pulse 1s ease-in-out infinite !important;
 }
 
@@ -599,11 +599,11 @@
 [data-theme='dark'] .featuresButton {
   background: linear-gradient(135deg, #a78bfa 0%, #818cf8 50%, #a78bfa 100%) !important;
   border: 2px solid rgba(167, 139, 250, 0.4) !important;
-  box-shadow: 0 4px 10px rgba(167, 139, 250, 0.5), 0 0 10px rgba(167, 139, 250, 0.3) !important;
+  box-shadow: 0 1px 5px rgba(167, 139, 250, 0.5), 0 0 5px rgba(167, 139, 250, 0.3) !important;
 }
 
 [data-theme='dark'] .featuresButton:hover {
-  box-shadow: 0 15px 10px rgba(167, 139, 250, 0.6), 0 0 10px rgba(167, 139, 250, 0.4) !important;
+  box-shadow: 0 1px 5px rgba(167, 139, 250, 0.6), 0 0 5px rgba(167, 139, 250, 0.4) !important;
 }
 
 /* Navigation Section */
