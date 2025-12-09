@@ -31,20 +31,18 @@ async def http_client():
     my_env["AK_GMAIL__TOKEN_FILE"] = "test_token.pickle"
     my_env["AK_GMAIL__AGENT"] = "test_gmail_agent"
     my_env["AK_TEST_MODE"] = "1"
-    # Patch authenticate to do nothing so server starts without real credentials
-    with patch("agentkernel.integration.gmail.gmail_chat.AgentGmailRequestHandler.authenticate", return_value=None):
-        proc = subprocess.Popen(
-            ["python3", "server.py"],
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=my_env,
-        )
-        await asyncio.sleep(5)
-        try:
-            yield APITestClient(f"http://localhost:8000")
-        finally:
-            proc.terminate()
-            proc.wait()
+    proc = subprocess.Popen(
+        ["python3", "server.py"],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        env=my_env,
+    )
+    await asyncio.sleep(5)
+    try:
+        yield APITestClient(f"http://localhost:8000")
+    finally:
+        proc.terminate()
+        proc.wait()
 
 
 @pytest.mark.asyncio
