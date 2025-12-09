@@ -1,11 +1,12 @@
+
 import asyncio
 import os
 import subprocess
 import sys
-
 import httpx
 import pytest
 import pytest_asyncio
+from unittest.mock import patch
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
@@ -29,18 +30,20 @@ async def http_client():
     my_env["AK_GMAIL__CREDENTIALS_FILE"] = "test_credentials.json"
     my_env["AK_GMAIL__TOKEN_FILE"] = "test_token.pickle"
     my_env["AK_GMAIL__AGENT"] = "test_gmail_agent"
-    proc = subprocess.Popen(
-        ["python3", "server.py"],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        env=my_env,
-    )
-    await asyncio.sleep(5)
-    try:
-        yield APITestClient(f"http://localhost:8000")
-    finally:
-        proc.terminate()
-        proc.wait()
+    # Patch authenticate to do nothing so server starts without real credentials
+    with patch("agentkernel.integration.gmail.gmail_chat.AgentGmailRequestHandler.authenticate", return_value=None):
+        proc = subprocess.Popen(
+            ["python3", "server.py"],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            env=my_env,
+        )
+        await asyncio.sleep(5)
+        try:
+            yield APITestClient(f"http://localhost:8000")
+        finally:
+            proc.terminate()
+            proc.wait()
 
 
 @pytest.mark.asyncio
