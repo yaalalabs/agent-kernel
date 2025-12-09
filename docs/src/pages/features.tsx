@@ -39,10 +39,14 @@ function FeaturesHero() {
     <header className={styles.featuresHero}>
       <div className="container">
         <div className={styles.heroContent}>
-          <h1 className={styles.heroTitle}>Agent Kernel Features</h1>
+          <h1 className={styles.heroTitle}>Why Agent Kernel Changes the Game</h1>
           <p className={styles.heroSubtitle}>
-            A versatile, framework-agnostic runtime for building and deploying AI agents. 
-            Migrate your existing agents and instantly utilize pre-built execution and testing capabilities.
+            Agent Kernel isn’t just a runtime; it’s your acceleration engine.
+            Migrate any agent, unlock powerful execution and observability tools, and ship production-ready AI workflows with confidence.
+          </p>
+          <p className={styles.heroSubtitle}>
+            It is a modular, framework-agnostic runtime designed for scalable agent execution. Bring your own agents,
+            leverage built-in features, and deploy with production-grade performance and reliability.
           </p>
           <div className={styles.heroButtons}>
             <Link
@@ -160,7 +164,7 @@ function CoreFeaturesSection() {
       title: 'Fault Tolerance',
       description: 'Production-grade resilience with multi-AZ deployments, automatic failure recovery, and health monitoring for high availability.',
       highlights: ['Multi-AZ deployment', 'Auto-recovery', 'Health monitoring', 'Zero downtime'],
-      // link: '/docs/core-concepts/fault-tolerance' // Available in next release
+      link: '/docs/core-concepts/fault-tolerance'
     },
     {
       icon: <MdVisibility />,
