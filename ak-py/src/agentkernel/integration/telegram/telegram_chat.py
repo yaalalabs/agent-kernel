@@ -10,7 +10,7 @@ from ...core import AgentService, Config
 
 class AgentTelegramRequestHandler(RESTRequestHandler):
     """
-    API routers that expose endpoints to interact with Telegram Bot API using Agent Kernel.
+    API router that exposes endpoints to interact with Telegram Bot API using Agent Kernel.
 
     This handler uses Telegram Bot webhooks to receive messages and send responses.
 
@@ -25,7 +25,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._bot_token = Config.get().telegram.bot_token
         self._webhook_secret = Config.get().telegram.webhook_secret
         self._api_version = Config.get().telegram.api_version or "bot"
-        self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
+        self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}/"
 
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
@@ -84,7 +84,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
 
-        return {"status": "ok"}
+        return {"ok": True}
 
     async def _handle_message(self, message: dict):
         """
@@ -99,6 +99,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
 
         # Handle different message types
         if not text:
+
             self._log.warning("Message has no text content")
             return
 
