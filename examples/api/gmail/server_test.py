@@ -56,8 +56,9 @@ async def http_client():
             pass
         return {"status": "ok"}
 
-    # Create an in-process httpx AsyncClient bound to the FastAPI app
-    client = httpx.AsyncClient(app=app, base_url="http://localhost:8000", timeout=10.0)
+    # Create an in-process httpx AsyncClient bound to the FastAPI app.
+    # Some httpx versions don't accept `app=`; use ASGITransport for widest compatibility.
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost:8000", timeout=10.0)
     # Enter the AsyncClient context so it is ready for requests
     await client.__aenter__()
     try:
