@@ -84,7 +84,7 @@ async def test_telegram_webhook(http_client):
         response = await http_client.send(
             "/telegram/webhook", method="post", body=telegram_update
         )
-        assert response == {"status": "ok"}
+        assert response == {"ok": True}
     except httpx.HTTPStatusError:
         # Expected if webhook secret validation fails with test token
         pass
