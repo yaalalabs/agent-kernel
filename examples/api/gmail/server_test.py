@@ -30,7 +30,7 @@ async def http_client():
     my_env["AK_GMAIL__CREDENTIALS_FILE"] = "test_credentials.json"
     my_env["AK_GMAIL__TOKEN_FILE"] = "test_token.pickle"
     my_env["AK_GMAIL__AGENT"] = "test_gmail_agent"
-    my_env["AK_TEST_MODE"] = "1"s
+    my_env["AK_TEST_MODE"] = "1"
     # Patch authenticate to do nothing so server starts without real credentials
     with patch("agentkernel.integration.gmail.gmail_chat.AgentGmailRequestHandler.authenticate", return_value=None):
         proc = subprocess.Popen(
