@@ -86,7 +86,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
 
-        return {"ok": True}
+        return {"status": "ok"}
 
     async def _handle_message(self, message: dict):
         """
