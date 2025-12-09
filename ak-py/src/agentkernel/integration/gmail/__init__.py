@@ -7,4 +7,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .gmail_chat import AgentGmailHandler
+from .gmail_chat import AgentGmailRequestHandler

@@ -1,5 +1,4 @@
 import asyncio
-
 from agentkernel.gmail import AgentGmailRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
