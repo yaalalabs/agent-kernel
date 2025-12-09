@@ -4,10 +4,10 @@ import subprocess
 import sys
 
 import httpx
-from fastapi import FastAPI, Request
-from starlette.testclient import TestClient
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI, Request
+from starlette.testclient import TestClient
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
@@ -20,10 +20,7 @@ class APITestClient:
         payload = {} if body is None else body
         # TestClient is synchronous; run in executor to avoid blocking event loop
         loop = asyncio.get_event_loop()
-        resp = await loop.run_in_executor(
-            None,
-            lambda: self.client.request(method, endpoint, json=payload)
-        )
+        resp = await loop.run_in_executor(None, lambda: self.client.request(method, endpoint, json=payload))
         resp.raise_for_status()
         return resp.json()
 
