@@ -4,7 +4,7 @@ Deploy your Agent Kernel agents as Gmail bots that automatically read and reply 
 
 ## Overview
 
-The `AgentGmailRequestHandler` bridges Agent Kernel and Gmail. Incoming emails are processed by your agent, which generates and sends replies via Gmail. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
+The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are processed by your agent, which generates and sends replies via Gmail. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
 
 ### How it works:
 
