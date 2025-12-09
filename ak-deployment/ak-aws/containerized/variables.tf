@@ -64,9 +64,9 @@ variable "gateway_endpoints" {
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
-        length(trim(ep.path)) > 0 &&
-        length(trim(ep.method)) > 0 &&
-        length(trim(ep.overwrite_path)) > 0 &&
+        length(trimspace(ep.path)) > 0 &&
+        length(trimspace(ep.method)) > 0 &&
+        length(trimspace(ep.overwrite_path)) > 0 &&
         contains(["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"], upper(ep.method))
       )
     ])
