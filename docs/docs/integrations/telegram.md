@@ -127,7 +127,7 @@ class CustomTelegramHandler(AgentTelegramRequestHandler):
             await super()._handle_command(chat_id, command)
 ```
 
-### Multi-Agent Setup (Telegram)
+### Multi-Agent Setup
 
 ```python
 support_agent = OpenAIAgent(
