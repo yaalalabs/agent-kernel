@@ -128,39 +128,42 @@ function NavigationSection() {
 }
 
 function IntegrationsSection() {
-  const frameworks = [
+  const integrations = [
     {
       name: 'OpenAI Agents SDK',
       logo: '/img/integrations/openai.svg',
       link: '/docs/frameworks/openai',
+      category: 'Agentic Frameworks',
     },
     {
       name: 'LangGraph',
       logo: '/img/integrations/langgraph.png',
       link: '/docs/frameworks/langgraph',
+      category: 'Agentic Frameworks',
     },
     {
       name: 'CrewAI',
       logo: '/img/integrations/crewai.svg',
       link: '/docs/frameworks/crewai',
+      category: 'Agentic Frameworks',
     },
     {
       name: 'Google ADK',
       logo: '/img/integrations/adk.png',
       link: '/docs/frameworks/google-adk',
+      category: 'Agentic Frameworks',
     },
-  ];
-
-  const traceability = [
     {
       name: 'LangFuse',
       logo: '/img/integrations/langfuse.png',
       link: '/docs/advanced/traceability',
+      category: 'Traceability & Observability',
     },
     {
       name: 'TraceLoop OpenLLMetry',
       logo: '/img/integrations/traceloop.png',
       link: '/docs/advanced/traceability',
+      category: 'Traceability & Observability',
     },
   ];
 
@@ -176,48 +179,26 @@ function IntegrationsSection() {
         </div>
 
         <div className={styles.integrationsContainer}>
-          <div className={styles.integrationsCategory}>
-            <h3 className={styles.integrationsCategoryTitle}>Agentic Frameworks</h3>
-            <div className={styles.integrationsGrid}>
-              {frameworks.map((framework, idx) => (
-                <Link
-                  key={idx}
-                  to={framework.link}
-                  className={styles.integrationCard}
-                  style={{ animationDelay: `${idx * 0.1}s` }}>
-                  <div className={styles.integrationLogoWrapper}>
-                    <img
-                      src={framework.logo}
-                      alt={framework.name}
-                      className={styles.integrationLogo}
-                    />
-                  </div>
-                  <h4 className={styles.integrationName}>{framework.name}</h4>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.integrationsCategory}>
-            <h3 className={styles.integrationsCategoryTitle}>Traceability & Observability</h3>
-            <div className={styles.integrationsGrid}>
-              {traceability.map((tool, idx) => (
-                <Link
-                  key={idx}
-                  to={tool.link}
-                  className={styles.integrationCard}
-                  style={{ animationDelay: `${(frameworks.length + idx) * 0.1}s` }}>
-                  <div className={styles.integrationLogoWrapper}>
-                    <img
-                      src={tool.logo}
-                      alt={tool.name}
-                      className={styles.integrationLogo}
-                    />
-                  </div>
-                  <h4 className={styles.integrationName}>{tool.name}</h4>
-                </Link>
-              ))}
-            </div>
+          <div className={styles.integrationsUnifiedGrid}>
+            {integrations.map((integration, idx) => (
+              <Link
+                key={idx}
+                to={integration.link}
+                className={styles.integrationCard}
+                style={{ animationDelay: `${idx * 0.1}s` }}>
+                <div className={styles.integrationLogoWrapper}>
+                  <img
+                    src={integration.logo}
+                    alt={integration.name}
+                    className={styles.integrationLogo}
+                  />
+                </div>
+                <h4 className={styles.integrationName}>{integration.name}</h4>
+                <span className={styles.integrationCategoryLabel}>
+                  {integration.category}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
       </div>
