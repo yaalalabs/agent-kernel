@@ -12,7 +12,7 @@ from ...core import AgentService, Config
 
 class AgentTelegramRequestHandler(RESTRequestHandler):
     """
-    API routers that expose endpoints to interact with Telegram Bot API using Agent Kernel.
+    API router that exposes endpoints to interact with Telegram Bot API using Agent Kernel.
 
     This handler uses Telegram Bot webhooks to receive messages and send responses.
 
