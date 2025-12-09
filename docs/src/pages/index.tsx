@@ -171,10 +171,10 @@ function IntegrationsSection() {
     <section className={styles.integrationsSection}>
       <div className="container">
         <div className={styles.integrationsHeader}>
-          <h2 className={styles.integrationsSectionTitle}>Production Runtime for Leading Agentic Frameworks</h2>
+          <h2 className={styles.integrationsSectionTitle}>Production Runtime with Enterprise Integrations</h2>
           <p className={styles.integrationsSectionSubtitle}>
             Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel.
-            A framework-agnostic runtime with enterprise-grade features.
+            A framework-agnostic runtime with enterprise-grade features and seamless observability integrations.
           </p>
         </div>
 
