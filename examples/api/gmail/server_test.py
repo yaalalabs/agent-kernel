@@ -48,7 +48,12 @@ async def http_client():
         return {"status": "ok"}
 
     @app.post("/gmail/webhook")
-    async def _gmail_webhook(payload: dict | None = None, request: Request | None = None):
+    async def _gmail_webhook(request: Request):
+        # Read and ignore payload for tests (keeps behavior simple)
+        try:
+            _ = await request.json()
+        except Exception:
+            pass
         return {"status": "ok"}
 
     # Create an in-process httpx AsyncClient bound to the FastAPI app
