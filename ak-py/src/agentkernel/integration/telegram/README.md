@@ -168,7 +168,6 @@ Telegram Bot API has rate limits:
 - **Messages to same chat**: 1 message per second
 - **Bulk messages**: 30 messages per second to different chats
 - **Group messages**: 20 messages per minute per group
-s
 ## References
 
 - [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
