@@ -1,0 +1,14 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and fill in your values
+
+product_alias = "ak-openai"
+env_alias     = "dev"
+module_name   = "agent"
+
+# Update these with your VPC and subnet IDs
+vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
+private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
+
+# OpenAI API key - alternatively set via environment variable:
+# export TF_VAR_openai_api_key=sk-...
+# openai_api_key = "sk-..."
