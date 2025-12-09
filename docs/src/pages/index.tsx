@@ -44,7 +44,7 @@ function HomepageHeader() {
             <Link
               className={`button button--secondary button--lg ${styles.featuresButton}`}
               to="/features">
-              Explore Features
+              Explore Features →
             </Link>
             <Link
               className="button button--secondary button--lg"
