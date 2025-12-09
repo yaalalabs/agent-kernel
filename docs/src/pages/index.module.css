@@ -608,22 +608,39 @@
 
 /* Navigation Section */
 .navigationSection {
-  padding: 4rem 0;
+  padding: 1rem 0;
+  margin: 1.5rem auto;
+  max-width: 1200px;
   position: relative;
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(10px);
+  border-radius: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.navigationSection:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 [data-theme='dark'] .navigationSection {
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(30, 41, 59, 0.6);
   backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(100, 116, 139, 0.15);
+}
+
+[data-theme='dark'] .navigationSection:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 }
 
 .sectionTitle {
   text-align: center;
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 3rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  margin-top: 0.5rem;
   color: #1a1a1a;
 }
 
@@ -633,19 +650,38 @@
 
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2rem;
-  margin-top: 2rem;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-top: 0.5rem;
+  padding: 0 1.5rem 1rem 1.5rem;
+}
+
+@media screen and (max-width: 1200px) {
+  .cardGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media screen and (max-width: 996px) {
+  .cardGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .card {
-  padding: 2rem;
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  border-top: 4px solid;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  border-top: 3px solid;
   position: relative;
   overflow: hidden;
   animation: fadeInUp 0.8s ease-out backwards;
@@ -655,6 +691,7 @@
 .card:nth-child(2) { animation-delay: 0.2s; }
 .card:nth-child(3) { animation-delay: 0.3s; }
 .card:nth-child(4) { animation-delay: 0.4s; }
+.card:nth-child(5) { animation-delay: 0.5s; }
 
 .card::after {
   content: '';
@@ -672,18 +709,18 @@
 }
 
 .card:hover {
-  transform: translateY(-10px) scale(1.02);
-  box-shadow: 0 15px 40px rgba(46, 133, 85, 0.2);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 8px rgba(46, 133, 85, 0.15);
 }
 
 [data-theme='dark'] .card {
-  background: rgba(30, 41, 59, 0.8);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme='dark'] .card:hover {
-  box-shadow: 0 15px 40px rgba(37, 194, 160, 0.3);
+  box-shadow: 0 4px 8px rgba(37, 194, 160, 0.2);
 }
 
 .card.blue {
@@ -698,13 +735,17 @@
   border-top-color: #8b5cf6;
 }
 
+.card.teal {
+  border-top-color: #14b8a6;
+}
+
 .card.orange {
   border-top-color: #f59e0b;
 }
 
 .cardIcon {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -713,7 +754,7 @@
 }
 
 .card:hover .cardIcon {
-  transform: scale(1.2) rotate(5deg);
+  transform: scale(1.1);
   color: var(--ifm-color-primary-dark);
 }
 
@@ -722,9 +763,9 @@
 }
 
 .cardTitle {
-  font-size: 1.5rem;
+  font-size: 1.1rem;
   font-weight: 600;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
   color: #1a1a1a;
 }
 
@@ -734,9 +775,10 @@
 
 .cardDescription {
   color: #666;
-  margin-bottom: 1.5rem;
-  line-height: 1.6;
-  min-height: 3.2em;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+  font-size: 0.85rem;
+  min-height: 2.8em;
 }
 
 [data-theme='dark'] .cardDescription {
@@ -748,13 +790,14 @@
   align-items: center;
   color: var(--ifm-color-primary);
   font-weight: 600;
+  font-size: 0.9rem;
   text-decoration: none;
   transition: all 0.2s ease;
 }
 
 .cardLink:hover {
   color: var(--ifm-color-primary-dark);
-  transform: translateX(4px);
+  transform: translateX(3px);
   text-decoration: none;
 }
 

@@ -61,6 +61,14 @@ function HomepageHeader() {
 function NavigationSection() {
   const navigationCards = [
     {
+      title: 'Integrations',
+      icon: <MdHandshake />,
+      description: 'Explore integrations to connect your AI agents with popular platforms.',
+      link: '#integrations',
+      linkText: 'View Integrations',
+      color: 'teal',
+    },
+    {
       title: 'Documentation',
       icon: <MdMenuBook />,
       description: 'Explore comprehensive guides, API references, and tutorials to get the most out of Agent Kernel.',
@@ -69,20 +77,20 @@ function NavigationSection() {
       color: 'blue',
     },
     {
-      title: 'Blog',
-      icon: <MdArticle />,
-      description: 'Stay updated with the latest news, release announcements, and technical articles from the team.',
-      link: '/blog',
-      linkText: 'Read Blog Posts',
-      color: 'green',
-    },
-    {
       title: 'Links',
       icon: <MdLink />,
       description: 'Connect with our community and explore related resources across different platforms.',
       link: '#community',
       linkText: 'Explore Links',
       color: 'purple',
+    },
+    {
+      title: 'Blog',
+      icon: <MdArticle />,
+      description: 'Stay updated with the latest news, release announcements, and technical articles from the team.',
+      link: '/blog',
+      linkText: 'Read Blog Posts',
+      color: 'green',
     },
     {
       title: 'Yaala Labs',
@@ -270,7 +278,7 @@ function MessagingIntegrationsSection() {
   ];
 
   return (
-    <section className={styles.messagingIntegrationsSection}>
+    <section id="integrations" className={styles.messagingIntegrationsSection}>
       <div className="container">
         <div className={styles.integrationsHeader}>
           <h2 className={styles.integrationsSectionTitle}>Messaging Platform Integrations</h2>
