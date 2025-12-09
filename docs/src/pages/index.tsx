@@ -134,12 +134,14 @@ function IntegrationsSection() {
       logo: '/img/integrations/openai.svg',
       link: '/docs/frameworks/openai',
       category: 'Agentic Frameworks',
+      invertLogo: true,
     },
     {
       name: 'LangGraph',
       logo: '/img/integrations/langgraph.png',
       link: '/docs/frameworks/langgraph',
       category: 'Agentic Frameworks',
+      invertLogo: true,
     },
     {
       name: 'CrewAI',
@@ -190,7 +192,7 @@ function IntegrationsSection() {
                   <img
                     src={integration.logo}
                     alt={integration.name}
-                    className={styles.integrationLogo}
+                    className={`${styles.integrationLogo} ${integration.invertLogo ? styles.invertLogoDark : ''}`}
                   />
                 </div>
                 <h4 className={styles.integrationName}>{integration.name}</h4>
