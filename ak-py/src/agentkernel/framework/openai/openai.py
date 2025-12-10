@@ -159,7 +159,7 @@ class OpenAIRunner(BaseRunner):
             return AgentReplyText(text="Sorry. No valid content found in the requests")
 
         # Use the structured message format if we have images or files, otherwise use simple prompt
-        if len(message_content) == 1 and message_content[0]["type"] == "text":
+        if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
             # Simple text-only case
             reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
         else:
