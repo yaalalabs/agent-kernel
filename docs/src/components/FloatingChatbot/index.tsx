@@ -21,6 +21,8 @@ const FloatingChatbot: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
+  const [showTooltip, setShowTooltip] = useState(true);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -28,6 +30,22 @@ const FloatingChatbot: React.FC = () => {
   useEffect(() => {
     setSessionId(`session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   }, []);
+
+  // Auto-hide tooltip after 10 seconds
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowTooltip(false);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Hide tooltip when chat opens for the first time (stays hidden)
+  useEffect(() => {
+    if (isOpen && !hasInteracted) {
+      setShowTooltip(false);
+      setHasInteracted(true);
+    }
+  }, [isOpen, hasInteracted]);
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -144,26 +162,54 @@ const FloatingChatbot: React.FC = () => {
     <>
       {/* Floating Chat Button */}
       {!isMaximized && (
-        <button
-          className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
-          onClick={toggleChat}
-          aria-label="Toggle AI Chat"
-        >
-        {isOpen ? (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        ) : (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            <circle cx="9" cy="10" r="1" fill="currentColor" />
-            <circle cx="12" cy="10" r="1" fill="currentColor" />
-            <circle cx="15" cy="10" r="1" fill="currentColor" />
-          </svg>
-        )}
-        <span className={styles.pulseRing}></span>
-        </button>
+        <div className={styles.chatButtonContainer}>
+          {/* Tooltip */}
+          {showTooltip && !isOpen && !hasInteracted && (
+            <div className={styles.tooltip}>
+              <div className={styles.tooltipContent}>
+                <strong>💬 Ask Agent Kernel AI!</strong>
+                <p>Get instant help with documentation, examples, and more</p>
+              </div>
+              <div className={styles.tooltipArrow}></div>
+            </div>
+          )}
+          
+          {/* Chat Button */}
+          <button
+            className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
+            onClick={toggleChat}
+            aria-label="Toggle AI Chat"
+            onMouseEnter={() => setShowTooltip(true)}
+          >
+            {isOpen ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            ) : (
+              <>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <circle cx="9" cy="14" r="1" fill="currentColor" />
+                  <circle cx="15" cy="14" r="1" fill="currentColor" />
+                  <path d="M9 17h6" />
+                  <rect x="2" y="12" width="2" height="4" rx="1" />
+                  <rect x="20" y="12" width="2" height="4" rx="1" />
+                </svg>
+              </>
+            )}
+            <span className={styles.pulseRing}></span>
+            <span className={styles.pulseRing2}></span>
+          </button>
+          
+          {/* Label Badge */}
+          {!isOpen && !hasInteracted && (
+            <div className={styles.chatLabel}>
+              <span>AI Assistant</span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Chat Window */}
