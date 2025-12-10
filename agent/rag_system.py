@@ -1,6 +1,9 @@
 """
 LlamaIndex RAG System for Agent Kernel Documentation and Examples
 """
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
+
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -160,6 +163,11 @@ class AgentKernelRAG:
                             "source_type": node.metadata.get("source_type", "unknown"),
                             "file_name": node.metadata.get("file_name", "unknown"),
                         })
+                        # Add appropriate URL based on source type
+                        if node.metadata.get("source_type") == "documentation":
+                            source_info["url"] = node.metadata.get("doc_url", "unknown")
+                        else:
+                            source_info["url"] = node.metadata.get("source_url", "unknown")
                         # Add an example project name if available
                         if "example_project" in node.metadata:
                             source_info["example_project"] = node.metadata["example_project"]

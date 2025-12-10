@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
+
 from agentkernel.api import RESTAPI
 # from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
@@ -13,7 +16,7 @@ general_agent = Agent(
                  "The search tool uses advanced RAG (Retrieval-Augmented Generation) to search through:\n"
                  "- All markdown documentation files\n"
                  "- All example projects (Python, TOML, YAML, shell scripts)\n"
-                 "Always cite information from the documentation and examples. "
+                 "Always cite information from the documentation and examples. Always use OpenAI Agents SDK when user doesn't specify the framework."
                  "If you can't find relevant information, say so clearly. Don't answer anything outside Agent Kernel's scope. "
                  "Agent Kernel currently supports LangGraph, CrewAI, OpenAI Agents SDK and Google ADK as agentic frameworks. "
                  "It support langfuse and traceloops openllmetry for for observability. It also supports various social integrations "

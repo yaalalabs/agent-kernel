@@ -68,6 +68,10 @@ class AgentKernelDataLoader:
                     content = f.read()
                 
                 relative_path = md_file.relative_to(self.docs_path)
+                # Generate documentation URL (remove .md extension)
+                doc_path = str(relative_path).replace('.md', '')
+                doc_url = f"https://kernel.yaala.ai/docs/{doc_path}"
+                
                 doc = Document(
                     text=content,
                     metadata={
@@ -75,6 +79,7 @@ class AgentKernelDataLoader:
                         "file_name": md_file.name,
                         "source_type": "documentation",
                         "full_path": str(md_file),
+                        "doc_url": doc_url,
                     }
                 )
                 documents.append(doc)
@@ -110,6 +115,9 @@ class AgentKernelDataLoader:
                 # Extract example project name (first directory in path)
                 project_name = relative_path.parts[0] if relative_path.parts else "unknown"
                 
+                # Generate GitHub URL for example files (code should link to GitHub develop branch)
+                github_url = f"https://github.com/yaalalabs/agent-kernel/blob/develop/examples/{relative_path}"
+                
                 doc = Document(
                     text=content,
                     metadata={
@@ -119,6 +127,7 @@ class AgentKernelDataLoader:
                         "example_project": project_name,
                         "source_type": "example",
                         "full_path": str(file_path),
+                        "source_url": github_url,
                     }
                 )
                 documents.append(doc)
