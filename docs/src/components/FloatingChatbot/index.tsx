@@ -23,6 +23,7 @@ const FloatingChatbot: React.FC = () => {
   const [sessionId, setSessionId] = useState('');
   const [showTooltip, setShowTooltip] = useState(true);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -155,7 +156,13 @@ const FloatingChatbot: React.FC = () => {
   };
 
   const toggleMaximize = () => {
+    setIsResizing(true);
     setIsMaximized(!isMaximized);
+    
+    // Reset resizing flag after transition completes (300ms transition in CSS)
+    setTimeout(() => {
+      setIsResizing(false);
+    }, 350);
   };
 
   return (
@@ -287,7 +294,8 @@ const FloatingChatbot: React.FC = () => {
             {messages.map((message) => (
               <MessageBubble 
                 key={message.id} 
-                message={message} 
+                message={message}
+                isResizing={isResizing}
                 onAnimationComplete={() => {
                   // Mark message as animated
                   setMessages((prev) => 
@@ -331,14 +339,41 @@ const FloatingChatbot: React.FC = () => {
 };
 
 // Message Bubble Component with typing animation
-const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => void }> = ({ message, onAnimationComplete }) => {
+const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => void; isResizing: boolean }> = ({ message, onAnimationComplete, isResizing }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // If resizing, immediately complete the animation
+    if (isResizing && isAnimating) {
+      if (animationRef.current) {
+        clearTimeout(animationRef.current);
+        animationRef.current = null;
+      }
+      setDisplayedText(message.text);
+      setIsAnimating(false);
+      if (onAnimationComplete) {
+        onAnimationComplete();
+      }
+      return;
+    }
+  }, [isResizing, isAnimating, message.text, onAnimationComplete]);
+
+  useEffect(() => {
+    // Clean up any existing animation timeout
+    return () => {
+      if (animationRef.current) {
+        clearTimeout(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Only animate if it's an agent message, not typing, and hasn't been animated yet
-    if (message.sender === 'agent' && !message.isTyping && !message.animated) {
+    if (message.sender === 'agent' && !message.isTyping && !message.animated && !isResizing) {
       setIsAnimating(true);
       setDisplayedText('');
       let index = 0;
@@ -347,13 +382,16 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
         if (index < message.text.length) {
           setDisplayedText(message.text.substring(0, index + 1));
           index++;
-          // Scroll into view during animation
-          messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          // Scroll into view during animation (but not when resizing)
+          if (!isResizing) {
+            messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
           
           if (index < message.text.length) {
-            setTimeout(typeNextCharacter, 20);
+            animationRef.current = setTimeout(typeNextCharacter, 20);
           } else {
             setIsAnimating(false);
+            animationRef.current = null;
             if (onAnimationComplete) {
               onAnimationComplete();
             }
@@ -366,13 +404,17 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
 
       return () => {
         setIsAnimating(false);
+        if (animationRef.current) {
+          clearTimeout(animationRef.current);
+          animationRef.current = null;
+        }
       };
     } else {
       // Show full text immediately if already animated or is user message
       setDisplayedText(message.text);
       setIsAnimating(false);
     }
-  }, [message, onAnimationComplete]);
+  }, [message, onAnimationComplete, isResizing]);
 
   if (message.isTyping) {
     return (
