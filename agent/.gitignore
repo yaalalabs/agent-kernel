@@ -9,3 +9,4 @@ dist.zip
 __pycache__
 .idea
 uv.lock
+rag_storage/

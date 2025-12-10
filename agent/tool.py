@@ -1,123 +1,75 @@
-import os
 from datetime import datetime
-from pathlib import Path
-from typing import List, Dict
+from typing import Dict
 
 from agents import function_tool
 
-
-def _load_documentation() -> Dict[str, str]:
-    """Load all markdown documentation files from docs/docs directory."""
-    docs_path = Path(__file__).parent.parent / "docs" / "docs"
-    
-    if not docs_path.exists():
-        return {"error": "Documentation directory not found"}
-    
-    docs_content = {}
-    
-    # Recursively find all .md files
-    for md_file in docs_path.rglob("*.md"):
-        try:
-            with open(md_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-                # Use relative path from docs/docs as key
-                relative_path = md_file.relative_to(docs_path)
-                docs_content[str(relative_path)] = content
-        except Exception as e:
-            print(f"Error reading {md_file}: {e}")
-            continue
-    
-    return docs_content
-
-
-def _search_docs(query: str, docs_content: Dict[str, str]) -> List[Dict[str, str]]:
-    """
-    Simple keyword-based search through documentation.
-    Returns relevant document sections.
-    """
-    query_lower = query.lower()
-    query_terms = query_lower.split()
-    
-    results = []
-    
-    for doc_path, content in docs_content.items():
-        # Calculate relevance score based on term occurrences
-        content_lower = content.lower()
-        score = sum(content_lower.count(term) for term in query_terms)
-        
-        if score > 0:
-            # Extract a relevant snippet (first occurrence context)
-            lines = content.split('\n')
-            relevant_lines = []
-            
-            for i, line in enumerate(lines):
-                line_lower = line.lower()
-                if any(term in line_lower for term in query_terms):
-                    # Include context: 2 lines before and 5 lines after
-                    start = max(0, i - 2)
-                    end = min(len(lines), i + 6)
-                    relevant_lines.extend(lines[start:end])
-                    if len(relevant_lines) > 100:  # Limit snippet size
-                        break
-            
-            snippet = '\n'.join(relevant_lines[:100])
-            
-            results.append({
-                "file": doc_path,
-                "score": score,
-                "snippet": snippet[:2000]  # Limit snippet to 2000 chars
-            })
-    
-    # Sort by relevance score
-    results.sort(key=lambda x: x["score"], reverse=True)
-    
-    # Return top 5 most relevant results
-    return results[:5]
+from rag_system import get_rag_instance
 
 
 @function_tool
 def search_agent_kernel_docs(query: str) -> Dict[str, object]:
     """
-    Search the Agent Kernel documentation for relevant information.
+    Search the Agent Kernel documentation and examples using advanced RAG (Retrieval-Augmented Generation).
+    
+    This tool uses LlamaIndex to search through:
+    - All markdown documentation files from docs/docs
+    - All example projects including Python files, TOML configs, YAML files, and shell scripts
     
     Use this tool to find information about Agent Kernel features, concepts,
-    deployment options, frameworks, integrations, and usage examples.
+    deployment options, frameworks, integrations, code examples, and usage patterns.
     
     :param query: The search query describing what you want to learn about Agent Kernel.
                   For example: "how to deploy agents", "session management", 
-                  "OpenAI integration", "REST API", etc.
-    :return: A dictionary containing relevant documentation snippets with file paths.
+                  "OpenAI integration", "REST API", "LangGraph example", etc.
+    :return: A dictionary containing the AI-generated response with relevant sources.
     """
-    print(f"start [{datetime.now().isoformat()}]"),
-    docs_content = _load_documentation()
-    
-    if "error" in docs_content:
-        return {
-            "error": docs_content["error"],
-            "message": "Could not load documentation files. Please ensure docs/docs directory exists."
-        }
-    
+
     if not query or len(query.strip()) < 2:
         return {
             "error": "Invalid query",
-            "message": "Please provide a meaningful search query.",
-            "available_docs": list(docs_content.keys())[:10]
+            "message": "Please provide a meaningful search query (at least 2 characters).",
         }
-    
-    results = _search_docs(query, docs_content)
-    
-    if not results:
+
+    try:
+        # Get RAG instance and query
+        rag = get_rag_instance()
+        result = rag.query(query)
+        return result
+
+    except Exception as e:
+        print(f"Error in RAG query: {e}")
         return {
-            "message": f"No documentation found for query: '{query}'",
-            "suggestion": "Try different keywords or browse available documentation files.",
-            "available_topics": ["installation", "quick-start", "deployment", "frameworks", 
-                                "core-concepts", "integrations", "testing"]
+            "error": str(e),
+            "message": "An error occurred while searching the documentation. Please try again.",
+            "query": query,
         }
-    print(f"end [{datetime.now().isoformat()}]"),
 
-    return {
-        "query": query,
-        "results_found": len(results),
-        "results": results
-    }
 
+# @function_tool
+# def rebuild_knowledge_index() -> Dict[str, str]:
+#     """
+#     Rebuild the RAG knowledge index from scratch.
+#
+#     Use this tool if you need to refresh the documentation index with updated content.
+#     This will reload all documentation and example files and rebuild the vector index.
+#
+#     :return: Status message about the rebuild operation.
+#     """
+#     print(f"Index Rebuild Start [{datetime.now().isoformat()}]")
+#
+#     try:
+#         rag = get_rag_instance(rebuild=True)
+#         print(f"Index Rebuild End [{datetime.now().isoformat()}]")
+#
+#         return {
+#             "status": "success",
+#             "message": "Knowledge index has been successfully rebuilt with the latest documentation and examples.",
+#             "timestamp": datetime.now().isoformat(),
+#         }
+#     except Exception as e:
+#         print(f"Error rebuilding index: {e}")
+#         return {
+#             "status": "error",
+#             "message": f"Failed to rebuild index: {str(e)}",
+#             "timestamp": datetime.now().isoformat(),
+#         }
