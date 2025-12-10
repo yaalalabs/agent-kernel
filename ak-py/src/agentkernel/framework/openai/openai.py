@@ -5,7 +5,15 @@ from typing import Any, List
 from agents import Agent, Runner
 from agents.memory.session import SessionABC
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import (
+    AgentReply,
+    AgentReplyText,
+    AgentRequest,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+)
 
 from ...core import Agent as BaseAgent
 from ...core import Module
@@ -92,29 +100,73 @@ class OpenAIRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
+        message_content = []
+        
         for req in requests:
             if isinstance(
                 req, AgentRequestAny
             ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
+            
             if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text if prompt else req.text
-            else:
-                return AgentReplyText(
-                    text="Sorry. Agent kernel OpenAI runner is unable to handle content other than text at the moment",
-                    prompt=prompt,
-                )
+                text = req.text
+                prompt = prompt + "\n" + text if prompt else text
+                message_content.append({"role": "user", "content": text})
+            
+            elif isinstance(req, AgentRequestImage):
+                # Handle image requests - OpenAI expects base64 or URL format
+                image_url = req.image_data
+                # If it's base64 and doesn't have the data URI prefix, add it
+                if not image_url.startswith(("http://", "https://", "data:")):
+                    mime_type = req.mime_type or "image/jpeg"
+                    image_url = f"data:{mime_type};base64,{image_url}"
+                
+                message_content.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "input_image",
+                        "detail": "auto",
+                        "image_url": image_url
+                    }]
+                })
+            
+            elif isinstance(req, AgentRequestFile):
+                # Handle file attachments - OpenAI expects base64 or URL format
+                file_url = req.file_data
+                # If it's base64 and doesn't have the data URI prefix, add it
+                if file_url.startswith(("http://", "https://", "data:")):
+                     message_content.append({
+                        "role": "user",
+                        "content": [{
+                            "type": "input_file",
+                            "file_url": file_url
+                        }]
+                    })
+                else:
+                    mime_type = req.mime_type or "image/jpeg"
+                    file_url = f"data:{mime_type};base64,{file_url}"
+                
+                    message_content.append({
+                        "role": "user",
+                        "content": [{
+                            "type": "input_file",
+                            "filename": req.name,
+                            "file_data": file_url
+                        }]
+                    })
 
-        if prompt.strip() == "":
-            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+        if not message_content:
+            return AgentReplyText(text="Sorry. No valid content found in the requests")
 
-        reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
-        if hasattr(reply, "raw"):
-            reply = str(reply.raw)
+        # Use the structured message format if we have images or files, otherwise use simple prompt
+        if len(message_content) == 1 and message_content[0]["type"] == "text":
+            # Simple text-only case
+            reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
         else:
-            reply = str(reply)
+            # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context      
+            reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
 
-        return AgentReplyText(text=reply, prompt=prompt)
+        return AgentReplyText(text=str(reply), prompt=prompt)
 
 
 class OpenAIAgent(BaseAgent):
