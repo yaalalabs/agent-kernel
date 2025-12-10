@@ -115,10 +115,13 @@ class OpenAIRunner(BaseRunner):
             
             elif isinstance(req, AgentRequestImage):
                 # Handle image requests - OpenAI expects base64 or URL format
+                if not req.image_data or not req.mime_type:
+                    return AgentReplyText(text="Sorry. malformed image input provide. mime_type or image_data missing.")
+                 
                 image_url = req.image_data
                 # If it's base64 and doesn't have the data URI prefix, add it
                 if not image_url.startswith(("http://", "https://", "data:")):
-                    mime_type = req.mime_type or "image/jpeg"
+                    mime_type = req.mime_type
                     image_url = f"data:{mime_type};base64,{image_url}"
                 
                 message_content.append({
@@ -132,9 +135,12 @@ class OpenAIRunner(BaseRunner):
             
             elif isinstance(req, AgentRequestFile):
                 # Handle file attachments - OpenAI expects base64 or URL format
+                if not req.file_data or not req.mime_type:
+                    return AgentReplyText(text="Sorry. malformed file input provide. mime_type or file_data missing.")
+                
                 file_url = req.file_data
-                # If it's base64 and doesn't have the data URI prefix, add it
-                if file_url.startswith(("http://", "https://", "data:")):
+                # If it's a remote URL, use it directly
+                if file_url.startswith(("http://", "https://")):
                      message_content.append({
                         "role": "user",
                         "content": [{
@@ -143,8 +149,10 @@ class OpenAIRunner(BaseRunner):
                         }]
                     })
                 else:
-                    mime_type = req.mime_type or "image/jpeg"
-                    file_url = f"data:{mime_type};base64,{file_url}"
+                    mime_type = req.mime_type
+                    # If it's base64 and doesn't have the data URI prefix, add it
+                    if not file_url.startswith(("data:")):
+                        file_url = f"data:{mime_type};base64,{file_url}"
                 
                     message_content.append({
                         "role": "user",

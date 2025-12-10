@@ -55,7 +55,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     def __init__(self):
         self._log = logging.getLogger("ak.api.agent")
 
-    class AttachmentData(BaseModel):
+    class FileData(BaseModel):
         """Represents a file attachment"""
 
         file_data: str  # base64 encoded string or URL
@@ -75,7 +75,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         prompt: str
         agent: Optional[str] = None
         session_id: Optional[str] = None
-        attachments: Optional[List["AgentRESTRequestHandler.AttachmentData"]] = None
+        files: Optional[List["AgentRESTRequestHandler.FileData"]] = None
         images: Optional[List["AgentRESTRequestHandler.ImageData"]] = None
 
     def get_router(self) -> APIRouter:
@@ -106,40 +106,41 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         """
         requests = []
         requests.append(AgentRequestText(text=req.prompt))
-
-        # Process attachments (documents, PDFs, CSVs, etc.)
-        if req.attachments:
-            for attachment in req.attachments:
-                self._log.debug(f"Adding file attachment: {attachment.name}")
-                requests.append(
-                    AgentRequestFile(
-                        file_data=attachment.file_data,
-                        name=attachment.name,
-                        mime_type=attachment.mime_type,
-                    )
-                )
-
-        # Process images (JPEG, PNG, etc.)
-        if req.images:
-            for image in req.images:
-                self._log.debug(f"Adding image: {image.name}")
-                requests.append(
-                    AgentRequestImage(
-                        image_data=image.image_data,
-                        name=image.name,
-                        mime_type=image.mime_type,
-                    )
-                )
-
-        # Pack additional properties into AgentRequestAny
-        known_fields = {"prompt", "agent", "session_id", "attachments", "images"}
-        for key, value in req.model_dump().items():
-            if key not in known_fields:
-                self._log.debug(f"Adding additional context: {key}={value}")
-                requests.append(AgentRequestAny(name=key, content=value))
-        service = AgentService()
-
+        service = None
         try:
+            # Process attachments (documents, PDFs, CSVs, etc.)
+            if req.files:
+                for file in req.files:
+                    self._log.debug(f"Adding file attachment: {file.name}")
+                    requests.append(
+                        AgentRequestFile(
+                            file_data=file.file_data,
+                            name=file.name,
+                            mime_type=file.mime_type,
+                        )
+                    )
+
+            # Process images (JPEG, PNG, etc.)
+            if req.images:
+                for image in req.images:
+                    self._log.debug(f"Adding image: {image.name}")
+                    requests.append(
+                        AgentRequestImage(
+                            image_data=image.image_data,
+                            name=image.name,
+                            mime_type=image.mime_type,
+                        )
+                    )
+
+            # Pack additional properties into AgentRequestAny
+            known_fields = {"prompt", "agent", "session_id", "attachments", "images"}
+            for key, value in req.model_dump().items():
+                if key not in known_fields:
+                    self._log.debug(f"Adding additional context: {key}={value}")
+                    requests.append(AgentRequestAny(name=key, content=value))
+            service = AgentService()
+
+            
             service.select(req.session_id, req.agent)
             if not service.agent:
                 raise ValueError("No agent available")
@@ -164,7 +165,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 status_code=HTTPStatus.BAD_REQUEST,
                 detail={
                     "error": str(e),
-                    "session_id": service.get_response_session_id(req.session_id),
+                    "session_id": service.get_response_session_id(req.session_id) if service is not None else req.session_id,
                 },
             )
         except Exception as e:
@@ -173,6 +174,6 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail={
                     "error": str(e),
-                    "session_id": service.get_response_session_id(None),
+                    "session_id": service.get_response_session_id(None)  if service is not None else req.session_id,
                 },
             )
