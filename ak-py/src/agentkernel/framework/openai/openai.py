@@ -107,17 +107,17 @@ class OpenAIRunner(BaseRunner):
                     req, AgentRequestAny
                 ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
-                
+
                 if isinstance(req, AgentRequestText):
                     text = req.text
                     prompt = prompt + "\n" + text if prompt else text
                     message_content.append({"role": "user", "content": text})
-                
+
                 elif isinstance(req, AgentRequestImage):
                     # Handle image requests - OpenAI expects base64 or URL format
                     if not req.image_data:
                         raise ValueError("no image input provided")
-                    
+
                     image_url = req.image_data
                     # If it's base64 and doesn't have the data URI prefix, add it
                     if not image_url.startswith(("http://", "https://", "data:")):
@@ -125,47 +125,38 @@ class OpenAIRunner(BaseRunner):
                             raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
                         mime_type = req.mime_type
                         image_url = f"data:{mime_type};base64,{image_url}"
-                    
-                    message_content.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "input_image",
-                            "detail": "auto",
-                            "image_url": image_url
-                        }]
-                    })
-                
+
+                    message_content.append(
+                        {"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]}
+                    )
+
                 elif isinstance(req, AgentRequestFile):
                     # Handle file attachments - OpenAI expects base64 or URL format
                     if not req.file_data:
                         raise ValueError("no file input provided")
-                    
+
                     file_url = req.file_data
                     # If it's a remote URL, use it directly
                     if file_url.startswith(("http://", "https://")):
-                        message_content.append({
-                            "role": "user",
-                            "content": [{
-                                "type": "input_file",
-                                "file_url": file_url
-                            }]
-                        })
+                        message_content.append(
+                            {"role": "user", "content": [{"type": "input_file", "file_url": file_url}]}
+                        )
                     else:
                         mime_type = req.mime_type
                         # If it's base64 and doesn't have the data URI prefix, add it
                         if not file_url.startswith(("data:")):
                             if not req.mime_type:
-                                raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
+                                raise ValueError(
+                                    "mime_type is missing for file input, either in the base64 or explicitly"
+                                )
                             file_url = f"data:{mime_type};base64,{file_url}"
-                    
-                        message_content.append({
-                            "role": "user",
-                            "content": [{
-                                "type": "input_file",
-                                "filename": req.name,
-                                "file_data": file_url
-                            }]
-                        })
+
+                        message_content.append(
+                            {
+                                "role": "user",
+                                "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
+                            }
+                        )
 
             if not message_content:
                 return AgentReplyText(text="Sorry. No valid content found in the requests")
@@ -175,12 +166,13 @@ class OpenAIRunner(BaseRunner):
                 # Simple text-only case
                 reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
             else:
-                # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context      
+                # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
                 reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
+
 
 class OpenAIAgent(BaseAgent):
     """

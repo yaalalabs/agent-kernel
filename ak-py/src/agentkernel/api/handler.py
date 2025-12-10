@@ -124,7 +124,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 for file in req.files:
                     self._log.debug(f"Adding file attachment: {file.name}")
                     if not file.file_data.startswith(("http://", "https://", "data:")) and not file.mime_type:
-                            raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
+                        raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestFile(
                             file_data=file.file_data,
@@ -138,7 +138,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 for image in req.images:
                     self._log.debug(f"Adding image: {image.name}")
                     if not image.image_data.startswith(("http://", "https://", "data:")) and not image.mime_type:
-                            raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
+                        raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestImage(
                             image_data=image.image_data,
@@ -155,7 +155,6 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                     requests.append(AgentRequestAny(name=key, content=value))
             service = AgentService()
 
-            
             service.select(req.session_id, req.agent)
             if not service.agent:
                 raise ValueError("No agent available")
@@ -180,7 +179,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 status_code=HTTPStatus.BAD_REQUEST,
                 detail={
                     "error": str(e),
-                    "session_id": service.get_response_session_id(req.session_id) if service is not None else req.session_id,
+                    "session_id": (
+                        service.get_response_session_id(req.session_id) if service is not None else req.session_id
+                    ),
                 },
             )
         except Exception as e:
@@ -189,7 +190,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail={
                     "error": str(e),
-                    "session_id": service.get_response_session_id(None)  if service is not None else req.session_id,
+                    "session_id": service.get_response_session_id(None) if service is not None else req.session_id,
                 },
             )
 
@@ -212,7 +213,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         requests = []
         requests.append(AgentRequestText(text=prompt))
         service = None
-        
+
         try:
             # Process file uploads
             if files:
@@ -222,10 +223,10 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                     content = await file.read()
                     # Encode to base64
                     file_data_base64 = base64.b64encode(content).decode("utf-8")
-                    
+
                     # Get mime type from the upload
                     mime_type = file.content_type
-                    
+
                     self._log.debug(f"Adding file attachment: {file.filename} (type: {mime_type})")
                     requests.append(
                         AgentRequestFile(
@@ -234,7 +235,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                             mime_type=mime_type,
                         )
                     )
-            
+
             # Process image uploads
             if images:
                 for image in images:
@@ -243,14 +244,14 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                     content = await image.read()
                     # Encode to base64
                     image_data_base64 = base64.b64encode(content).decode("utf-8")
-                    
+
                     # Get mime type from the upload
                     mime_type = image.content_type
-                    
+
                     # Validate it's an image mime type
                     if mime_type and not mime_type.startswith("image/"):
                         raise ValueError(f"Invalid image type: {mime_type} for file {image.filename}")
-                    
+
                     self._log.debug(f"Adding image: {image.filename} (type: {mime_type})")
                     requests.append(
                         AgentRequestImage(
@@ -259,16 +260,16 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                             mime_type=mime_type,
                         )
                     )
-            
+
             service = AgentService()
             service.select(session_id, agent)
-            
+
             if not service.agent:
                 raise ValueError("No agent available")
-            
+
             result = await service.run_multi(requests=requests)
             self._log.debug(f"Result: {result}")
-            
+
             return {
                 "result": (
                     str(result)
@@ -277,7 +278,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 ),
                 "session_id": service.get_response_session_id(session_id),
             }
-        
+
         except HTTPException:
             raise
         except ValueError as e:
