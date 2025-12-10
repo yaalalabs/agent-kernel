@@ -92,6 +92,13 @@ class _MessengerConfig(BaseModel):
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
 
 
+class _TelegramConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Telegram")
+    bot_token: str = Field(default="", description="Telegram bot token from BotFather")
+    webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
+    api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -113,6 +120,9 @@ class AKConfig(YamlBaseSettingsModified):
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     messenger: _MessengerConfig = Field(
         description="Facebook Messenger related configurations", default_factory=_MessengerConfig
+    )
+    telegram: _TelegramConfig = Field(
+        description="Telegram Bot related configurations", default_factory=_TelegramConfig
     )
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
