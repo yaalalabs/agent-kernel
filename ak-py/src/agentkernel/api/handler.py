@@ -112,11 +112,13 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if req.files:
                 for file in req.files:
                     self._log.debug(f"Adding file attachment: {file.name}")
+                    if not file.file_data.startswith(("http://", "https://", "data:")) and not file.mime_type:
+                            raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestFile(
                             file_data=file.file_data,
                             name=file.name,
-                            mime_type=file.mime_type,
+                            mime_type=file.mime_type if file.mime_type else None,
                         )
                     )
 
@@ -124,11 +126,13 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if req.images:
                 for image in req.images:
                     self._log.debug(f"Adding image: {image.name}")
+                    if not image.image_data.startswith(("http://", "https://", "data:")) and not image.mime_type:
+                            raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestImage(
                             image_data=image.image_data,
                             name=image.name,
-                            mime_type=image.mime_type,
+                            mime_type=image.mime_type if image.mime_type else None,
                         )
                     )
 
