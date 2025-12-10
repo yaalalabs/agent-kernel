@@ -1,10 +1,11 @@
+import base64
 import logging
 import traceback
 from abc import ABC, abstractmethod
 from http import HTTPStatus
-from typing import List, Literal, Optional, Union
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict
 
 from agentkernel.core.model import (
@@ -97,6 +98,16 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         async def run(body: AgentRESTRequestHandler.RunRequest):
             return await self.run(body)
 
+        @router.post("/run-multipart")
+        async def run_multipart(
+            prompt: str = Form(...),
+            agent: Optional[str] = Form(None),
+            session_id: Optional[str] = Form(None),
+            files: Optional[List[UploadFile]] = File(None),
+            images: Optional[List[UploadFile]] = File(None),
+        ):
+            return await self.run_multipart(prompt, agent, session_id, files, images)
+
         return router
 
     async def run(self, req: RunRequest):
@@ -179,5 +190,111 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 detail={
                     "error": str(e),
                     "session_id": service.get_response_session_id(None)  if service is not None else req.session_id,
+                },
+            )
+
+    async def run_multipart(
+        self,
+        prompt: str,
+        agent: Optional[str] = None,
+        session_id: Optional[str] = None,
+        files: Optional[List[UploadFile]] = None,
+        images: Optional[List[UploadFile]] = None,
+    ):
+        """
+        Async method to run the agent with multipart file uploads.
+        :param prompt: The text prompt for the agent.
+        :param agent: Optional agent name.
+        :param session_id: Optional session ID.
+        :param files: Optional list of uploaded files (documents, PDFs, CSVs, etc.).
+        :param images: Optional list of uploaded images (JPEG, PNG, etc.).
+        """
+        requests = []
+        requests.append(AgentRequestText(text=prompt))
+        service = None
+        
+        try:
+            # Process file uploads
+            if files:
+                for file in files:
+                    self._log.debug(f"Processing uploaded file: {file.filename}")
+                    # Read file content
+                    content = await file.read()
+                    # Encode to base64
+                    file_data_base64 = base64.b64encode(content).decode("utf-8")
+                    
+                    # Get mime type from the upload
+                    mime_type = file.content_type
+                    
+                    self._log.debug(f"Adding file attachment: {file.filename} (type: {mime_type})")
+                    requests.append(
+                        AgentRequestFile(
+                            file_data=file_data_base64,
+                            name=file.filename or "unknown",
+                            mime_type=mime_type,
+                        )
+                    )
+            
+            # Process image uploads
+            if images:
+                for image in images:
+                    self._log.debug(f"Processing uploaded image: {image.filename}")
+                    # Read image content
+                    content = await image.read()
+                    # Encode to base64
+                    image_data_base64 = base64.b64encode(content).decode("utf-8")
+                    
+                    # Get mime type from the upload
+                    mime_type = image.content_type
+                    
+                    # Validate it's an image mime type
+                    if mime_type and not mime_type.startswith("image/"):
+                        raise ValueError(f"Invalid image type: {mime_type} for file {image.filename}")
+                    
+                    self._log.debug(f"Adding image: {image.filename} (type: {mime_type})")
+                    requests.append(
+                        AgentRequestImage(
+                            image_data=image_data_base64,
+                            name=image.filename or "unknown",
+                            mime_type=mime_type,
+                        )
+                    )
+            
+            service = AgentService()
+            service.select(session_id, agent)
+            
+            if not service.agent:
+                raise ValueError("No agent available")
+            
+            result = await service.run_multi(requests=requests)
+            self._log.debug(f"Result: {result}")
+            
+            return {
+                "result": (
+                    str(result)
+                    if isinstance(result, (AgentReplyText, AgentReplyImage))
+                    else "Non textual result received"
+                ),
+                "session_id": service.get_response_session_id(session_id),
+            }
+        
+        except HTTPException:
+            raise
+        except ValueError as e:
+            self._log.error(f"POST /run-multipart error: {e}\n{traceback.format_exc()}")
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail={
+                    "error": str(e),
+                    "session_id": service.get_response_session_id(session_id) if service is not None else session_id,
+                },
+            )
+        except Exception as e:
+            self._log.error(f"POST /run-multipart error: {e}\n{traceback.format_exc()}")
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": str(e),
+                    "session_id": service.get_response_session_id(None) if service is not None else session_id,
                 },
             )

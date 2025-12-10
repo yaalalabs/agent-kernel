@@ -106,4 +106,52 @@ async def test_pdf_support(http_client):
     }
     response = await http_client.send("",body=body)
     Test.compare(response, "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.")
+
+@pytest.mark.asyncio
+async def test_image_multipart(http_client):
+    print("test_image_multipart")
+    
+    # Open and read the test image file
+    with open("test_image.jpeg", "rb") as f:
+        image_content = f.read()
+    
+    # Create multipart form data
+    files = {"images": ("test_image.jpeg", image_content, "image/jpeg")}
+    data = {
+        "prompt": "can you describe this image?",
+        "session_id": http_client.session_id,
+        "agent": "support"
+    }
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(f"{http_client.url}/run-multipart", data=data, files=files)
+        resp.raise_for_status()
+        result = resp.json()
+        response = result.get("result", "")
+    
+    Test.compare(response, "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.")
+
+@pytest.mark.asyncio
+async def test_pdf_multipart(http_client):
+    print("test_pdf_multipart")
+    
+    # Open and read the test PDF file
+    with open("test_pdf.pdf", "rb") as f:
+        pdf_content = f.read()
+    
+    # Create multipart form data
+    files = {"files": ("test_pdf.pdf", pdf_content, "application/pdf")}
+    data = {
+        "prompt": "what is the new deadline based on this file",
+        "session_id": "james",
+        "agent": "support"
+    }
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(f"{http_client.url}/run-multipart", data=data, files=files)
+        resp.raise_for_status()
+        result = resp.json()
+        response = result.get("result", "")
+    
+    Test.compare(response, "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.")
     
