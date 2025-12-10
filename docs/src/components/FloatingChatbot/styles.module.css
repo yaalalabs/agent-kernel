@@ -30,7 +30,8 @@
 }
 
 :global([data-theme='light']) .chatButton {
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  background: linear-gradient(135deg, #2e8555 0%, #1fa588 100%);
+  box-shadow: 0 8px 24px rgba(46, 133, 85, 0.4);
   color: white;
 }
 
@@ -116,6 +117,11 @@
   white-space: nowrap;
   position: relative;
   overflow: hidden;
+}
+
+:global([data-theme='light']) .chatLabel {
+  background: linear-gradient(135deg, #2e8555 0%, #1fa588 100%);
+  box-shadow: 0 4px 12px rgba(46, 133, 85, 0.4);
 }
 
 @keyframes slideInLabel {
@@ -225,6 +231,15 @@
   border-bottom: 8px solid transparent;
 }
 
+:global([data-theme='light']) .tooltip {
+  background: linear-gradient(135deg, #2e8555 0%, #1fa588 100%);
+  box-shadow: 0 8px 24px rgba(46, 133, 85, 0.4);
+}
+
+:global([data-theme='light']) .tooltipArrow {
+  border-left-color: #1fa588;
+}
+
 /* Chat Window */
 .chatWindow {
   position: fixed;
@@ -288,8 +303,8 @@
 }
 
 :global([data-theme='light']) .chatHeader {
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
-  border-bottom: 1px solid rgba(102, 126, 234, 0.15);
+  background: linear-gradient(135deg, rgba(46, 133, 85, 0.08) 0%, rgba(31, 165, 136, 0.08) 100%);
+  border-bottom: 1px solid rgba(46, 133, 85, 0.2);
 }
 
 .headerLeft {
@@ -553,8 +568,8 @@
 }
 
 :global([data-theme='light']) .userMessage .messageBubble {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+  background: linear-gradient(135deg, #2e8555 0%, #1fa588 100%);
+  box-shadow: 0 4px 12px rgba(46, 133, 85, 0.3);
 }
 
 .agentMessage .messageBubble {
@@ -566,9 +581,9 @@
 }
 
 :global([data-theme='light']) .agentMessage .messageBubble {
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(46, 133, 85, 0.06);
   color: #1e293b;
-  border: 1px solid rgba(102, 126, 234, 0.15);
+  border: 1px solid rgba(46, 133, 85, 0.2);
 }
 
 .messageText {
@@ -760,6 +775,10 @@
   animation-delay: 0.4s;
 }
 
+:global([data-theme='light']) .typingIndicator span {
+  background: #2e8555;
+}
+
 @keyframes typing {
   0%, 60%, 100% {
     transform: translateY(0);
@@ -784,7 +803,7 @@
 
 :global([data-theme='light']) .chatInputContainer {
   background: rgba(248, 249, 250, 0.95);
-  border-top: 1px solid rgba(102, 126, 234, 0.15);
+  border-top: 1px solid rgba(46, 133, 85, 0.2);
 }
 
 .chatInput {
@@ -812,13 +831,13 @@
 :global([data-theme='light']) .chatInput {
   background: #ffffff;
   color: #1a1a2e;
-  border: 1px solid rgba(102, 126, 234, 0.2);
+  border: 1px solid rgba(46, 133, 85, 0.25);
 }
 
 :global([data-theme='light']) .chatInput:focus {
   background: #ffffff;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08);
+  border-color: #2e8555;
+  box-shadow: 0 0 0 3px rgba(46, 133, 85, 0.1);
 }
 
 :global([data-theme='light']) .chatInput::placeholder {
@@ -857,6 +876,15 @@
 .sendButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+:global([data-theme='light']) .sendButton {
+  background: linear-gradient(135deg, #2e8555 0%, #1fa588 100%);
+  box-shadow: 0 4px 12px rgba(46, 133, 85, 0.3);
+}
+
+:global([data-theme='light']) .sendButton:hover:not(:disabled) {
+  box-shadow: 0 6px 16px rgba(46, 133, 85, 0.4);
 }
 
 /* Responsive Design */

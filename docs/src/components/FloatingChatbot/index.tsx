@@ -339,26 +339,34 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
   useEffect(() => {
     // Only animate if it's an agent message, not typing, and hasn't been animated yet
     if (message.sender === 'agent' && !message.isTyping && !message.animated) {
-      let index = 0;
-      setDisplayedText('');
       setIsAnimating(true);
+      setDisplayedText('');
+      let index = 0;
 
-      const interval = setInterval(() => {
+      const typeNextCharacter = () => {
         if (index < message.text.length) {
-          setDisplayedText((prev) => prev + message.text[index]);
+          setDisplayedText(message.text.substring(0, index + 1));
           index++;
           // Scroll into view during animation
           messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-          setIsAnimating(false);
-          clearInterval(interval);
-          if (onAnimationComplete) {
-            onAnimationComplete();
+          
+          if (index < message.text.length) {
+            setTimeout(typeNextCharacter, 20);
+          } else {
+            setIsAnimating(false);
+            if (onAnimationComplete) {
+              onAnimationComplete();
+            }
           }
         }
-      }, 20); // Typing speed
+      };
 
-      return () => clearInterval(interval);
+      // Start typing immediately
+      typeNextCharacter();
+
+      return () => {
+        setIsAnimating(false);
+      };
     } else {
       // Show full text immediately if already animated or is user message
       setDisplayedText(message.text);
