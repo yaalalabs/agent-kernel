@@ -21,8 +21,15 @@ locals {
     method         = "POST"
     overwrite_path = "/run"
   }
+  multipart_endpoint_path = "/${join("/", compact([local.api_base_segment, var.api_version, "${var.agent_endpoint}-multipart"]))}"
+  multipart_gateway_endpoint = {
+    path           = local.multipart_endpoint_path
+    method         = "POST"
+    overwrite_path = "/run-multipart"
+  }
   default_gateway_map = {
     "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
+    "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
   }
   user_gateway_map = {
     for ep in var.gateway_endpoints :
