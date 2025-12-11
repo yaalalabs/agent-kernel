@@ -7,6 +7,7 @@
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
   version = "0.2.7"
+  # source = "../../ak-deployment/ak-aws/containerized"
 
   # Basic ECS configuration
   product_alias        = var.product_alias
@@ -19,7 +20,14 @@ module "containered_agents" {
   private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
   product_display_name = "AK Assistant"
   ecs_container_port   = 8000
-  
+
+  enable_cors        = true
+  cors_allow_origins = ["http://localhost:3000", "https://kernel.yaala.ai"]
+  cors_allow_methods = ["POST", "OPTIONS"]
+  cors_allow_headers = ["content-type"]
+
+  throttling_rate_limit  = "50"
+  throttling_burst_limit = "50"
   # Environment variables passed to container
   environment_variables = {
     OPENAI_API_KEY = var.openai_api_key,
