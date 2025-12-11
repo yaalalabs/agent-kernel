@@ -137,7 +137,10 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if req.images:
                 for image in req.images:
                     self._log.debug(f"Adding image: {image.name}")
-                    if not image.image_data.startswith(("http://", "https://", "data:")) and not image.mime_type:
+                    if (
+                        not image.image_data.startswith(("http://", "https://", "data:", "s3://"))
+                        and not image.mime_type
+                    ):
                         raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestImage(
@@ -148,7 +151,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                     )
 
             # Pack additional properties into AgentRequestAny
-            known_fields = {"prompt", "agent", "session_id", "attachments", "images"}
+            known_fields = {"prompt", "agent", "session_id", "files", "images"}
             for key, value in req.model_dump().items():
                 if key not in known_fields:
                     self._log.debug(f"Adding additional context: {key}={value}")

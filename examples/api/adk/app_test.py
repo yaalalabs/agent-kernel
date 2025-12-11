@@ -1,6 +1,5 @@
 import asyncio
 import subprocess
-import sys
 import uuid
 
 import httpx
@@ -82,7 +81,7 @@ async def test_pdf_support(http_client):
     print("test_pdf_support")
     body = {
         "session_id": "james",
-        "prompt": "waht is the new deadline based on this file",
+        "prompt": "what is the new deadline based on this file",
         "files": [
             {
                 "name": "news",

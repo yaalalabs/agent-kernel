@@ -146,7 +146,9 @@ class GoogleADKRunner(BaseRunner):
 
                     # Google ADK expects inline_data with mime_type and raw data
                     raw_data = (
-                        base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64_data
+                        base64.b64decode(base64_data.split(",")[-1])
+                        if base64_data.startswith("data:")
+                        else base64.b64decode(base64_data)
                     )
                     parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
 
