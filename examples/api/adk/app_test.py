@@ -36,9 +36,7 @@ class APITestClient:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
-    proc = subprocess.Popen(
-        ["python3", "app.py"]
-    )
+    proc = subprocess.Popen(["python3", "app.py"])
     await asyncio.sleep(10)
     try:
         yield APITestClient(f"http://localhost:8000")
