@@ -240,7 +240,7 @@ function MessagingIntegrationsSection() {
       description: 'Build Telegram bots with agents',
       status: 'active',
       color: '#0088CC',
-      link: '/docs/integrations/telegram',
+      // link: '/docs/integrations/telegram', available in the next release
     },
   ];
 
