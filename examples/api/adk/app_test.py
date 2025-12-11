@@ -41,7 +41,7 @@ async def http_client():
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     try:
         yield APITestClient(f"http://localhost:8000")
     finally:
