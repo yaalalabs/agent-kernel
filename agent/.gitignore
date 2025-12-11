@@ -1,0 +1,12 @@
+.terraform
+requirements.txt
+dist
+dist.zip
+*.tfstate
+*.tfstate.backup
+.venv
+.pytest_cache
+__pycache__
+.idea
+uv.lock
+rag_storage/

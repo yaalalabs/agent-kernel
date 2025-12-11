@@ -234,6 +234,14 @@ function MessagingIntegrationsSection() {
       color: '#0084FF',
       link: '/docs/integrations/messenger',
     },
+    {
+      name: 'Telegram',
+      icon: <FaTelegram />,
+      description: 'Build Telegram bots with agents',
+      status: 'active',
+      color: '#0088CC',
+      // link: '/docs/integrations/telegram', available in the next release
+    },
   ];
 
   const comingSoonIntegrations = [
@@ -250,13 +258,6 @@ function MessagingIntegrationsSection() {
       description: 'Email conversation handling with Gmail',
       status: 'coming-soon',
       color: '#EA4335',
-    },
-    {
-      name: 'Telegram',
-      icon: <FaTelegram />,
-      description: 'Build Telegram bots with agents',
-      status: 'coming-soon',
-      color: '#0088CC',
     },
   ];
 

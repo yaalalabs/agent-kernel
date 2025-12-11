@@ -73,7 +73,7 @@ function OverviewSection() {
           </p>
         </div>
         <div className={styles.overviewGrid}>
-          <div className={styles.overviewCard}>
+          <Link to="/docs/frameworks/overview" className={styles.overviewCard}>
             <div className={styles.overviewIcon}>
               <MdSwapHoriz />
             </div>
@@ -83,8 +83,8 @@ function OverviewSection() {
               its execution framework capabilities. No vendor lock-in - seamlessly migrate between LangGraph, 
               OpenAI Agents SDK, Google ADK, CrewAI, and custom frameworks without rewriting your agent logic.
             </p>
-          </div>
-          <div className={styles.overviewCard}>
+          </Link>
+          <Link to="/docs/core-concepts/overview" className={styles.overviewCard}>
             <div className={styles.overviewIcon}>
               <MdRocket />
             </div>
@@ -94,8 +94,8 @@ function OverviewSection() {
               pluggable memory backends, comprehensive traceability with LangFuse and OpenLLMetry, and 
               multi-agent collaboration support. Deploy with confidence from day one.
             </p>
-          </div>
-          <div className={styles.overviewCard}>
+          </Link>
+          <Link to="/docs/deployment/overview" className={styles.overviewCard}>
             <div className={styles.overviewIcon}>
               <MdSpeed />
             </div>
@@ -105,8 +105,8 @@ function OverviewSection() {
               or on-premise deployments. One codebase, multiple deployment options. Switch deployment modes 
               without changing your agent code.
             </p>
-          </div>
-          <div className={styles.overviewCard}>
+          </Link>
+          <Link to="/docs/integrations/overview" className={styles.overviewCard}>
             <div className={styles.overviewIcon}>
               <MdIntegrationInstructions />
             </div>
@@ -115,7 +115,7 @@ function OverviewSection() {
               Built-in integrations for popular messaging platforms including Slack, WhatsApp, and Messenger. 
               Support for MCP Server and A2A Server protocols. Easy-to-build custom integrations with pluggable architecture.
             </p>
-          </div>
+          </Link>
         </div>
       </div>
     </section>
@@ -314,7 +314,11 @@ function MemorySection() {
         </div>
         <div className={styles.memoryGrid}>
           {memoryOptions.map((option, idx) => (
-            <div key={idx} className={styles.memoryCard} style={{ animationDelay: `${idx * 0.1}s` }}>
+            <Link 
+              key={idx} 
+              to="/docs/advanced/memory-management" 
+              className={styles.memoryCard} 
+              style={{ animationDelay: `${idx * 0.1}s` }}>
               <div className={styles.memoryIcon}>{option.icon}</div>
               <h3>{option.name}</h3>
               <p>{option.description}</p>
@@ -326,7 +330,7 @@ function MemorySection() {
                   ))}
                 </ul>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
         <div className={styles.sectionFooter}>
@@ -352,7 +356,7 @@ function TestingSection() {
           </p>
         </div>
         <div className={styles.testingContent}>
-          <div className={styles.testingFeature}>
+          <Link to="/docs/testing/overview" className={styles.testingFeature}>
             <div className={styles.testingIcon}>
               <MdTerminal />
             </div>
@@ -367,8 +371,8 @@ function TestingSection() {
               <li>Easy debugging</li>
               <li>Local execution</li>
             </ul>
-          </div>
-          <div className={styles.testingFeature}>
+          </Link>
+          <Link to="/docs/testing/overview" className={styles.testingFeature}>
             <div className={styles.testingIcon}>
               <MdBugReport />
             </div>
@@ -383,7 +387,7 @@ function TestingSection() {
               <li>Regression testing</li>
               <li>CI/CD integration</li>
             </ul>
-          </div>
+          </Link>
         </div>
         <div className={styles.sectionFooter}>
           <Link to="/docs/testing/overview" className={styles.sectionLink}>
@@ -409,7 +413,7 @@ function DeploymentSection() {
         </div>
         
         <div className={styles.deploymentOptions}>
-          <div className={styles.deploymentCard}>
+          <Link to="/docs/deployment/overview" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <MdTerminal className={styles.deploymentIcon} />
               <h3>Local Development</h3>
@@ -421,9 +425,9 @@ function DeploymentSection() {
               <li>Rapid iteration</li>
               <li>No cloud dependencies</li>
             </ul>
-          </div>
+          </Link>
 
-          <div className={styles.deploymentCard}>
+          <Link to="/docs/deployment/aws-serverless" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <FaAws className={styles.deploymentIcon} />
               <h3>AWS Serverless</h3>
@@ -435,12 +439,12 @@ function DeploymentSection() {
               <li>Pay-per-use pricing</li>
               <li>Zero infrastructure management</li>
             </ul>
-            <Link to="/docs/deployment/aws-serverless" className={styles.deploymentLink}>
+            <span className={styles.deploymentLink}>
               View Guide →
-            </Link>
-          </div>
+            </span>
+          </Link>
 
-          <div className={styles.deploymentCard}>
+          <Link to="/docs/deployment/aws-containerized" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <MdCloud className={styles.deploymentIcon} />
               <h3>AWS Containerized</h3>
@@ -452,12 +456,12 @@ function DeploymentSection() {
               <li>Predictable performance</li>
               <li>Resource optimization</li>
             </ul>
-            <Link to="/docs/deployment/aws-containerized" className={styles.deploymentLink}>
+            <span className={styles.deploymentLink}>
               View Guide →
-            </Link>
-          </div>
+            </span>
+          </Link>
 
-          <div className={styles.deploymentCard}>
+          <Link to="/docs/deployment/overview" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <FaDocker className={styles.deploymentIcon} />
               <h3>On-Premise / Docker</h3>
@@ -469,10 +473,7 @@ function DeploymentSection() {
               <li>REST API included</li>
               <li>Custom infrastructure</li>
             </ul>
-            <Link to="/docs/deployment/overview" className={styles.deploymentLink}>
-              View Guide →
-            </Link>
-          </div>
+          </Link>
         </div>
 
         <div className={styles.terraformSection}>
@@ -552,9 +553,9 @@ function MessagingSection() {
     { name: 'Slack', icon: <FaSlack />, status: 'Available' },
     { name: 'WhatsApp', icon: <FaWhatsapp />, status: 'Available' },
     { name: 'Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
+    { name: 'Telegram', icon: <FaTelegram />, status: 'Coming Soon' },
     { name: 'Instagram', icon: <FaInstagram />, status: 'Coming Soon' },
     { name: 'Gmail', icon: <SiGmail />, status: 'Coming Soon' },
-    { name: 'Telegram', icon: <FaTelegram />, status: 'Coming Soon' },
   ];
 
   return (
@@ -570,16 +571,37 @@ function MessagingSection() {
         </div>
         
         <div className={styles.messagingGrid}>
-          {platforms.map((platform, idx) => (
-            <div 
-              key={idx} 
-              className={`${styles.messagingCard} ${platform.status === 'Coming Soon' ? styles.comingSoon : ''}`}
-              style={{ animationDelay: `${idx * 0.1}s` }}>
-              <div className={styles.messagingIcon}>{platform.icon}</div>
-              <h3>{platform.name}</h3>
-              <span className={styles.messagingStatus}>{platform.status}</span>
-            </div>
-          ))}
+          {platforms.map((platform, idx) => {
+            const card = (
+              <>
+                <div className={styles.messagingIcon}>{platform.icon}</div>
+                <h3>{platform.name}</h3>
+                <span className={styles.messagingStatus}>{platform.status}</span>
+              </>
+            );
+            
+            if (platform.status === 'Coming Soon') {
+              return (
+                <div 
+                  key={idx} 
+                  className={`${styles.messagingCard} ${styles.comingSoon}`}
+                  style={{ animationDelay: `${idx * 0.1}s` }}>
+                  {card}
+                </div>
+              );
+            }
+            
+            const docLink = `/docs/integrations/${platform.name.toLowerCase()}`;
+            return (
+              <Link
+                key={idx}
+                to={docLink}
+                className={styles.messagingCard}
+                style={{ animationDelay: `${idx * 0.1}s` }}>
+                {card}
+              </Link>
+            );
+          })}
         </div>
         <div className={styles.sectionFooter}>
           <Link to="/docs/integrations/overview" className={styles.sectionLink}>

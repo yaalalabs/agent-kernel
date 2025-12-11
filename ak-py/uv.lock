@@ -102,6 +102,9 @@ redis = [
 slack = [
     { name = "slack-bolt" },
 ]
+telegram = [
+    { name = "httpx" },
+]
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -132,6 +135,7 @@ requires-dist = [
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
     { name = "langchain-community", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
@@ -160,7 +164,7 @@ requires-dist = [
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
 ]
-provides-extras = ["langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "redis", "openai", "adk", "api", "slack", "whatsapp", "messenger", "test", "a2a", "mcp"]
+provides-extras = ["langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "redis", "openai", "adk", "api", "slack", "whatsapp", "messenger", "telegram", "test", "a2a", "mcp"]
 
 [package.metadata.requires-dev]
 dev = [
