@@ -276,6 +276,17 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | `api_version` | API version for endpoint path | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name | `string` | `"chat"` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+| **API Gateway CORS** |
+| `enable_cors` | Enable CORS on the HTTP API | `bool` | `true` | no |
+| `cors_allow_origins` | CORS allowed origins | `list(string)` | `["*"]` | no |
+| `cors_allow_methods` | CORS allowed methods | `list(string)` | `["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]` | no |
+| `cors_allow_headers` | CORS allowed headers | `list(string)` | `["*"]` | no |
+| `cors_expose_headers` | CORS exposed headers | `list(string)` | `[]` | no |
+| `cors_max_age` | CORS max age in seconds | `number` | `600` | no |
+| `cors_allow_credentials` | Whether to allow credentials for CORS | `bool` | `false` | no |
+| **API Gateway Throttling** |
+| `throttling_rate_limit` | Steady-state RPS limit for default route (set `null` to disable) | `number` | `null` | no |
+| `throttling_burst_limit` | Burst token bucket size for default route (set `null` to disable) | `number` | `null` | no |
 | **VPC Configuration** |
 | `vpc_cidr` | CIDR block for new VPC (if not using existing) | `string` | `"10.0.0.0/16"` | no |
 | `public_subnet_cidrs` | Public subnet CIDRs | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |

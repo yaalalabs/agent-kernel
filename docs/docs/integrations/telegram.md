@@ -1,4 +1,4 @@
-# Telegram Integration
+# Telegram
 
 Deploy your Agent Kernel agents as Telegram bots that can respond to messages in real-time. This integration connects your AI agents directly to Telegram, enabling natural conversations with users through one of the world's most popular messaging platforms.
 
