@@ -338,12 +338,29 @@ const FloatingChatbot: React.FC = () => {
   );
 };
 
+// Word wrapper component for fade-in animation
+const AnimatedWord: React.FC<{ word: string; index: number }> = ({ word, index }) => {
+  return (
+    <span className={styles.animatedWord}>
+      {word}
+    </span>
+  );
+};
+
 // Message Bubble Component with typing animation
 const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => void; isResizing: boolean }> = ({ message, onAnimationComplete, isResizing }) => {
   const [displayedText, setDisplayedText] = useState('');
+  const [displayedWords, setDisplayedWords] = useState<string[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-scroll when displayed text changes during animation
+  useEffect(() => {
+    if (isAnimating && !isResizing && displayedText) {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [displayedText, isAnimating, isResizing]);
 
   useEffect(() => {
     // If resizing, immediately complete the animation
@@ -376,19 +393,25 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
     if (message.sender === 'agent' && !message.isTyping && !message.animated && !isResizing) {
       setIsAnimating(true);
       setDisplayedText('');
-      let index = 0;
+      setDisplayedWords([]);
+      
+      // Split text into words while preserving whitespace
+      const words = message.text.split(/(\s+)/);
+      let wordIndex = 0;
 
-      const typeNextCharacter = () => {
-        if (index < message.text.length) {
-          setDisplayedText(message.text.substring(0, index + 1));
-          index++;
-          // Scroll into view during animation (but not when resizing)
-          if (!isResizing) {
-            messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
+      const typeNextWord = () => {
+        if (wordIndex < words.length) {
+          // Build text progressively and update displayed words
+          const textSoFar = words.slice(0, wordIndex + 1).join('');
+          setDisplayedText(textSoFar);
+          setDisplayedWords(words.slice(0, wordIndex + 1));
+          wordIndex++;
 
-          if (index < message.text.length) {
-            animationRef.current = setTimeout(typeNextCharacter, 20);
+          if (wordIndex < words.length) {
+            // Adjust delay: shorter for whitespace, normal for words
+            const currentWord = words[wordIndex - 1];
+            const delay = currentWord.trim() === '' ? 0 : 100;
+            animationRef.current = setTimeout(typeNextWord, delay);
           } else {
             setIsAnimating(false);
             animationRef.current = null;
@@ -400,7 +423,7 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
       };
 
       // Start typing immediately
-      typeNextCharacter();
+      typeNextWord();
 
       return () => {
         setIsAnimating(false);
@@ -412,6 +435,7 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
     } else {
       // Show full text immediately if already animated or is user message
       setDisplayedText(message.text);
+      setDisplayedWords([]);
       setIsAnimating(false);
     }
   }, [message, onAnimationComplete, isResizing]);
@@ -471,6 +495,21 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
                     {children}
                   </ol>
                 ),
+                // Apply fade-in animation to text nodes during animation
+                text: ({ node, children, ...props }: any) => {
+                  if (isAnimating && displayedWords.length > 0) {
+                    const text = String(children);
+                    const words = text.split(/(\s+)/);
+                    return (
+                      <>
+                        {words.map((word, index) => (
+                          <AnimatedWord key={index} word={word} index={index} />
+                        ))}
+                      </>
+                    );
+                  }
+                  return <>{children}</>;
+                },
               }}
             >
               {displayedText}
