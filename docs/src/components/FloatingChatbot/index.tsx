@@ -29,7 +29,7 @@ const FloatingChatbot: React.FC = () => {
 
   // Generate session ID on mount
   useEffect(() => {
-    setSessionId(`session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    setSessionId(`session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
   }, []);
 
   // Auto-hide tooltip after 10 seconds
@@ -145,7 +145,7 @@ const FloatingChatbot: React.FC = () => {
 
   const handleReset = () => {
     setMessages([]);
-    setSessionId(`session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    setSessionId(`session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
   };
 
   const toggleChat = () => {

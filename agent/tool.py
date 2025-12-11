@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Dict
 
 from agents import function_tool
@@ -43,33 +42,3 @@ def search_agent_kernel_docs(query: str) -> Dict[str, object]:
             "message": "An error occurred while searching the documentation. Please try again.",
             "query": query,
         }
-
-
-# @function_tool
-# def rebuild_knowledge_index() -> Dict[str, str]:
-#     """
-#     Rebuild the RAG knowledge index from scratch.
-#
-#     Use this tool if you need to refresh the documentation index with updated content.
-#     This will reload all documentation and example files and rebuild the vector index.
-#
-#     :return: Status message about the rebuild operation.
-#     """
-#     print(f"Index Rebuild Start [{datetime.now().isoformat()}]")
-#
-#     try:
-#         rag = get_rag_instance(rebuild=True)
-#         print(f"Index Rebuild End [{datetime.now().isoformat()}]")
-#
-#         return {
-#             "status": "success",
-#             "message": "Knowledge index has been successfully rebuilt with the latest documentation and examples.",
-#             "timestamp": datetime.now().isoformat(),
-#         }
-#     except Exception as e:
-#         print(f"Error rebuilding index: {e}")
-#         return {
-#             "status": "error",
-#             "message": f"Failed to rebuild index: {str(e)}",
-#             "timestamp": datetime.now().isoformat(),
-#         }
