@@ -120,7 +120,7 @@ class OpenAIRunner(BaseRunner):
 
                     image_url = req.image_data
                     # If it's base64 and doesn't have the data URI prefix, add it
-                    if not image_url.startswith(("http://", "https://", "data:")):
+                    if not image_url.startswith(("http://", "https://", "s3://", "data:")):
                         if not req.mime_type:
                             raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
                         mime_type = req.mime_type
@@ -137,7 +137,7 @@ class OpenAIRunner(BaseRunner):
 
                     file_url = req.file_data
                     # If it's a remote URL, use it directly
-                    if file_url.startswith(("http://", "https://")):
+                    if file_url.startswith(("http://", "https://", "s3://")):
                         message_content.append(
                             {"role": "user", "content": [{"type": "input_file", "file_url": file_url}]}
                         )
