@@ -104,38 +104,38 @@ class GoogleADKRunner(BaseRunner):
         """
         prompt = ""
         parts = []
-        
+
         try:
             for req in requests:
                 if isinstance(
                     req, AgentRequestAny
                 ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
-                    
+
                 if isinstance(req, AgentRequestText):
                     text = req.text
                     prompt = prompt + "\n" + text if prompt else text
                     parts.append(types.Part(text=text))
 
                 if isinstance(req, (AgentRequestImage, AgentRequestFile)):
-                    base64_data = ""    
+                    base64_data = ""
                     if isinstance(req, AgentRequestImage):
-                    # Handle image requests - Google ADK expects inline_data format
+                        # Handle image requests - Google ADK expects inline_data format
                         if not req.image_data:
                             raise ValueError("no image input provided")
                         base64_data = req.image_data
-                        
+
                     elif isinstance(req, AgentRequestFile):
                         # Handle file attachments
                         if not req.file_data:
                             raise ValueError("no file input provided")
                         base64_data = req.file_data
-                    
+
                     # if its a URI directly use base64_data as is
                     if base64_data.startswith(("http://", "https://", "s3://")):
                         parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
                         continue
-                    
+
                     # If it's base64 and does have the data URI prefix
                     if base64_data.startswith(("data:")):
                         mime_type = base64_data.split(";")[0][5:]  # Extract mime type from data URI
@@ -143,11 +143,13 @@ class GoogleADKRunner(BaseRunner):
                         if not req.mime_type:
                             raise ValueError("mime_type is missing for image input")
                         mime_type = req.mime_type
-                        
+
                     # Google ADK expects inline_data with mime_type and raw data
-                    raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64_data
-                    parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))                   
-                    
+                    raw_data = (
+                        base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64_data
+                    )
+                    parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+
             if not parts:
                 return AgentReplyText(text="Sorry. No valid content found in the requests")
 

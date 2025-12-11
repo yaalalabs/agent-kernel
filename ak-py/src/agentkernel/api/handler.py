@@ -123,7 +123,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if req.files:
                 for file in req.files:
                     self._log.debug(f"Adding file attachment: {file.name}")
-                    if not file.file_data.startswith(("http://", "https://", "data:")) and not file.mime_type:
+                    if not file.file_data.startswith(("http://", "https://", "data:", "s3://")) and not file.mime_type:
                         raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestFile(

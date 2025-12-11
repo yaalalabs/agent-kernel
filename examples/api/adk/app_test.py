@@ -100,4 +100,3 @@ async def test_pdf_support(http_client):
         response,
         "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
     )
-

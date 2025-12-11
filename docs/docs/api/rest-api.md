@@ -112,9 +112,11 @@ Please study the [Hooks documentation](../integrations/hooks.md) for the use of 
 Agent Kernel supports sending images and files to agents in two ways: via JSON body with base64-encoded data, or as multipart form data for larger files. 
 
 :::info Current Limitation
-Currently, passing images and files only work with OpenAI SDK. Other implementations will be provided in future
+Currently, passing images and files only work with OpenAI SDK & Google ADK. Other implementations will be provided in future
 :::
 
+
+**NOTE:** Directly passing image is not recommended. Its is advised to save images in Agent accessible storage and pass the URI. This can be done directly from the client side or via hooks. i.e. PreExecution Hooks can intercept the requests, detect images/files and store and modify the request to contain the URIs
 
 ### Supported file types
 
