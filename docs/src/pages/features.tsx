@@ -553,7 +553,7 @@ function MessagingSection() {
     { name: 'Slack', icon: <FaSlack />, status: 'Available' },
     { name: 'WhatsApp', icon: <FaWhatsapp />, status: 'Available' },
     { name: 'Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
-    { name: 'Telegram', icon: <FaTelegram />, status: 'Available' },
+    { name: 'Telegram', icon: <FaTelegram />, status: 'Coming Soon' },
     { name: 'Instagram', icon: <FaInstagram />, status: 'Coming Soon' },
     { name: 'Gmail', icon: <SiGmail />, status: 'Coming Soon' },
   ];

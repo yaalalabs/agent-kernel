@@ -24,6 +24,7 @@ class AgentKernelDataLoader:
         
         self.examples_path = self.repo_path / "examples"
         self.docs_path = self.repo_path / "docs" / "docs"
+        self.ak_aws_path = self.repo_path / "ak-deployment" / "ak-aws"
         
     def _should_include_file(self, file_path: Path) -> bool:
         """
@@ -141,14 +142,68 @@ class AgentKernelDataLoader:
         print(f"Loaded {len(documents)} example files")
         return documents
     
+    def load_terraform_modules(self) -> List[Document]:
+        """Load variables.tf and README.md from each module under ak-deployment/ak-aws."""
+        documents: List[Document] = []
+        base_path = self.ak_aws_path
+        if not base_path.exists():
+            # Not all repos include this path; keep silent but informative.
+            print(f"Info: ak-aws path not found: {base_path}")
+            return documents
+        
+        # Iterate all immediate and nested module directories
+        for dir_path in base_path.rglob("*"):
+            if not dir_path.is_dir():
+                continue
+            # Candidates inside this directory
+            files_to_pick = [
+                dir_path / "variables.tf",
+                dir_path / "README.md",
+                dir_path / "readme.md",
+            ]
+            for file_path in files_to_pick:
+                if not file_path.exists() or not file_path.is_file():
+                    continue
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    relative_path = file_path.relative_to(base_path)
+                    # Module name is the first directory component under ak-aws
+                    module_name = relative_path.parts[0] if relative_path.parts else "unknown"
+                    github_url = (
+                        f"https://github.com/yaalalabs/agent-kernel/blob/develop/ak-deployment/ak-aws/{relative_path}"
+                    )
+                    doc = Document(
+                        text=content,
+                        metadata={
+                            "file_path": str(relative_path),
+                            "file_name": file_path.name,
+                            "file_type": file_path.suffix,
+                            "module": module_name,
+                            "source_type": "terraform-module",
+                            "full_path": str(file_path),
+                            "source_url": github_url,
+                        },
+                    )
+                    documents.append(doc)
+                except UnicodeDecodeError:
+                    # Skip non-text files
+                    continue
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+                    continue
+        print(f"Loaded {len(documents)} ak-aws module files")
+        return documents
+    
     def load_all_documents(self) -> List[Document]:
         """Load all documents from both docs and examples."""
         print("Loading Agent Kernel documentation and examples...")
         
         docs = self.load_markdown_docs()
         examples = self.load_example_files()
+        ak_aws = self.load_terraform_modules()
         
-        all_documents = docs + examples
+        all_documents = docs + examples + ak_aws
         print(f"Total documents loaded: {len(all_documents)}")
         
         return all_documents

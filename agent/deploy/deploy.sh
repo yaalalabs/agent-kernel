@@ -17,6 +17,10 @@ create_deployment_package() {
     cp Dockerfile ../dist/
 }
 
+cd ../
+./build_index.sh --rebuild
+cd -
+
 create_deployment_package $1
 
 terraform init
