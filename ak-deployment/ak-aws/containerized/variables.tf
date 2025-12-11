@@ -176,7 +176,7 @@ variable "cors_allow_origins" {
   default     = ["*"]
 }
 
-  variable "cors_allow_methods" {
+variable "cors_allow_methods" {
   type        = list(string)
   description = "CORS allowed methods"
   default     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
