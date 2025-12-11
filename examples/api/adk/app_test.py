@@ -37,9 +37,7 @@ class APITestClient:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
     proc = subprocess.Popen(
-        ["python3", "app.py"],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
+        ["python3", "app.py"]
     )
     await asyncio.sleep(10)
     try:
