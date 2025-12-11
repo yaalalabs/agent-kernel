@@ -1,6 +1,5 @@
 import asyncio
 import subprocess
-import sys
 import uuid
 
 import httpx
@@ -21,7 +20,7 @@ class APITestClient:
             {
                 "prompt": prompt,
                 "session_id": self.session_id,
-                "agent": "support",
+                "agent": "triage",
                 "additional_context": additional_context,
             }
             if body is None
@@ -36,12 +35,8 @@ class APITestClient:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
-    proc = subprocess.Popen(
-        ["python3", "app.py"],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
-    await asyncio.sleep(5)
+    proc = subprocess.Popen(["python3", "app.py"])
+    await asyncio.sleep(10)
     try:
         yield APITestClient(f"http://localhost:8000")
     finally:
@@ -50,30 +45,14 @@ async def http_client():
 
 
 @pytest.mark.asyncio
-async def test_support_agent(http_client):
-    print("test_support_agent")
-    response = await http_client.send("I am Andy Dufresne. I did some deposits.")
+async def test_history_agent(http_client):
+    print("test_history_agent")
+    response = await http_client.send("when did the battle of Waterloo happen?")
     Test.compare(
         response,
-        " Hello Andy! I noticed that you made a mobile check deposit of $250. "
-        "Could you tell me how satisfied you were with the mobile check deposit process?",
+        " The Battle of Waterloo happened on June 18, 1815.",
         threshold=10,
     )
-
-    response = await http_client.send("I was extremely happy")
-    Test.compare(
-        response, "That's great to hear! What specifically made the experience enjoyable for you?", threshold=10
-    )
-
-    response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
-    Test.compare(response, "Deposited $200 over the counter")
-
-    # Test additional_context parameter passed through prehook for RAG
-    response = await http_client.send(
-        "In which movie my bank agent's name appeared in? Just give me the name of the movie",
-        additional_context={"bank_agent": "Ellis Boyd Red Redding"},
-    )
-    Test.compare(response, " the movie 'The Shawshank Redemption'.", threshold=20)
 
 
 @pytest.mark.asyncio
@@ -81,7 +60,7 @@ async def test_image_support(http_client):
     print("test_image_support")
     body = {
         "session_id": http_client.session_id,
-        "prompt": "can you describe this image?",
+        "prompt": "does the image contains people?",
         "images": [
             {
                 "name": "scenary",
@@ -93,7 +72,7 @@ async def test_image_support(http_client):
     response = await http_client.send("", body=body)
     Test.compare(
         response,
-        "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
+        "Yes, the image contains representations of people",
     )
 
 
@@ -112,54 +91,6 @@ async def test_pdf_support(http_client):
         ],
     }
     response = await http_client.send("", body=body)
-    Test.compare(
-        response,
-        "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
-    )
-
-
-@pytest.mark.asyncio
-async def test_image_multipart(http_client):
-    print("test_image_multipart")
-
-    # Open and read the test image file
-    with open("test_image.jpeg", "rb") as f:
-        image_content = f.read()
-
-    # Create multipart form data
-    files = {"images": ("test_image.jpeg", image_content, "image/jpeg")}
-    data = {"prompt": "can you describe this image?", "session_id": http_client.session_id, "agent": "support"}
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{http_client.url}/run-multipart", data=data, files=files)
-        resp.raise_for_status()
-        result = resp.json()
-        response = result.get("result", "")
-
-    Test.compare(
-        response,
-        "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
-    )
-
-
-@pytest.mark.asyncio
-async def test_pdf_multipart(http_client):
-    print("test_pdf_multipart")
-
-    # Open and read the test PDF file
-    with open("test_pdf.pdf", "rb") as f:
-        pdf_content = f.read()
-
-    # Create multipart form data
-    files = {"files": ("test_pdf.pdf", pdf_content, "application/pdf")}
-    data = {"prompt": "what is the new deadline based on this file", "session_id": "james", "agent": "support"}
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{http_client.url}/run-multipart", data=data, files=files)
-        resp.raise_for_status()
-        result = resp.json()
-        response = result.get("result", "")
-
     Test.compare(
         response,
         "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any, List
 
@@ -8,7 +9,15 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.genai import types
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import (
+    AgentReply,
+    AgentReplyText,
+    AgentRequest,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+)
 
 from ...core import Agent as AKBaseAgent
 from ...core import Module
@@ -67,16 +76,16 @@ class GoogleADKRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, GoogleADKSession())
 
     @staticmethod
-    async def get_response(runner: Runner, user_id: str, session_id: str, prompt: str) -> str:
+    async def get_response(runner: Runner, user_id: str, session_id: str, parts: list[types.Part]) -> str:
         """
         Send a message to the agent and return the final response text asynchronously.
         :param runner: The Google ADK Runner to use for the agent.
         :param user_id: The user ID to use for the agent.
         :param session_id: The session ID to use for the agent.
-        :param prompt: The message text to send to the agent.
+        :param parts: The message parts to send to the agent.
         :return: The final response text from the agent.
         """
-        new_message = types.Content(role="user", parts=[types.Part(text=prompt)])
+        new_message = types.Content(role="user", parts=parts)
         response_text = None
         for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
             if event.is_final_response() and event.content and event.content.parts:
@@ -94,31 +103,69 @@ class GoogleADKRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        for req in requests:
-            if isinstance(
-                req, AgentRequestAny
-            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                continue
-            if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text if prompt else req.text
-            else:
-                return AgentReplyText(
-                    text="Sorry. Agent kernel ADK runner is unable to handle content other than text at the moment",
-                    prompt=prompt,
-                )
+        parts = []
 
-        if prompt.strip() == "":
-            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+        try:
+            for req in requests:
+                if isinstance(
+                    req, AgentRequestAny
+                ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                    continue
 
-        app_name = "AgentKernel"
-        user_id = "AgentKernel"
-        adk_session = self._session(session)
+                if isinstance(req, AgentRequestText):
+                    text = req.text
+                    prompt = prompt + "\n" + text if prompt else text
+                    parts.append(types.Part(text=text))
 
-        await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-        runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-        reply = await self.get_response(runner=runner, session_id=session.id, prompt=prompt, user_id=user_id)
+                if isinstance(req, (AgentRequestImage, AgentRequestFile)):
+                    base64_data = ""
+                    if isinstance(req, AgentRequestImage):
+                        # Handle image requests - Google ADK expects inline_data format
+                        if not req.image_data:
+                            raise ValueError("no image input provided")
+                        base64_data = req.image_data
 
-        return AgentReplyText(text=reply, prompt=prompt)
+                    elif isinstance(req, AgentRequestFile):
+                        # Handle file attachments
+                        if not req.file_data:
+                            raise ValueError("no file input provided")
+                        base64_data = req.file_data
+
+                    # if its a URI directly use base64_data as is
+                    if base64_data.startswith(("http://", "https://", "s3://")):
+                        parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
+                        continue
+
+                    # If it's base64 and does have the data URI prefix
+                    if base64_data.startswith(("data:")):
+                        mime_type = base64_data.split(";")[0][5:]  # Extract mime type from data URI
+                    else:
+                        if not req.mime_type:
+                            raise ValueError("mime_type is missing for image input")
+                        mime_type = req.mime_type
+
+                    # Google ADK expects inline_data with mime_type and raw data
+                    raw_data = (
+                        base64.b64decode(base64_data.split(",")[-1])
+                        if base64_data.startswith("data:")
+                        else base64.b64decode(base64_data)
+                    )
+                    parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+
+            if not parts:
+                return AgentReplyText(text="Sorry. No valid content found in the requests")
+
+            app_name = "AgentKernel"
+            user_id = "AgentKernel"
+            adk_session = self._session(session)
+
+            await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+            runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+            reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+
+            return AgentReplyText(text=reply, prompt=prompt)
+        except Exception as e:
+            return AgentReplyText(text=f"Error during agent execution: {str(e)}")
 
 
 class GoogleADKAgent(AKBaseAgent):
