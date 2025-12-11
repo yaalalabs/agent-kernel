@@ -1,7 +1,6 @@
 variable "region" {
   type        = string
-  description = "AWS Region"
-  default     = "ap-southeast-2"
+  description = "Region"
 }
 
 variable "product_alias" {
@@ -16,21 +15,11 @@ variable "env_alias" {
 
 variable "module_name" {
   type        = string
-  description = "Module name"
-}
-
-variable "vpc_id" {
-  type        = string
-  description = "VPC ID for deployment"
-}
-
-variable "private_subnet_ids" {
-  type        = list(string)
-  description = "List of private subnet IDs"
+  description = "module name"
 }
 
 variable "is_production" {
-  description = "Is production environment"
+  description = "Is production"
   type        = bool
   default     = false
 }
@@ -38,5 +27,4 @@ variable "is_production" {
 variable "openai_api_key" {
   description = "OpenAI API Key"
   type        = string
-  sensitive   = true
 }

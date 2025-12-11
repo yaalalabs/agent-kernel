@@ -12,7 +12,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../ak-py/dist
       uv pip install --force-reinstall --target=dist/data --find-links ../../ak-py/dist agentkernel[api,openai,redis] || true
     fi
-    cp -r app.py tool.py config.yaml dist/data
+    cp -r app.py rag_loader.py rag_system.py tool.py config.yaml rag_storage dist/data
     popd || exit 1
     cp Dockerfile ../dist/
 }

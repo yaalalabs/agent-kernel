@@ -29,6 +29,4 @@ general_agent = Agent(
 # Register the agent with Agent Kernel
 OpenAIModule([general_agent])
 
-if __name__ == "__main__":
-    RESTAPI.run()
-    # CLI.main()
+runner = RESTAPI.run

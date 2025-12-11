@@ -85,7 +85,7 @@ const FloatingChatbot: React.FC = () => {
     }]);
 
     try {
-      const response = await fetch('http://localhost:8000/run', {
+      const response = await fetch('https://4h9x2girbi.execute-api.ap-southeast-2.amazonaws.com/agents/api/v1/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -118,13 +118,13 @@ const FloatingChatbot: React.FC = () => {
       setMessages((prev) => [...prev, agentMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       // Remove typing indicator
       setMessages((prev) => prev.filter((msg) => msg.id !== typingId));
 
       const errorMessage: Message = {
         id: `error_${Date.now()}`,
-        text: 'Sorry, I encountered an error. Please make sure the agent server is running on localhost:8000.',
+        text: 'Sorry, I encountered an error. Please try again later.',
         sender: 'agent',
         timestamp: new Date(),
         animated: false, // Will be animated
@@ -158,7 +158,7 @@ const FloatingChatbot: React.FC = () => {
   const toggleMaximize = () => {
     setIsResizing(true);
     setIsMaximized(!isMaximized);
-    
+
     // Reset resizing flag after transition completes (300ms transition in CSS)
     setTimeout(() => {
       setIsResizing(false);
@@ -174,13 +174,13 @@ const FloatingChatbot: React.FC = () => {
           {showTooltip && !isOpen && !hasInteracted && (
             <div className={styles.tooltip}>
               <div className={styles.tooltipContent}>
-                <strong>💬 Ask Agent Kernel AI!</strong>
-                <p>Get instant help with documentation, examples, and more</p>
+                <strong>💬 Ask AI Assistant</strong>
+                <p>Get instant help with Agent Kernel documentation, examples, and more</p>
               </div>
               <div className={styles.tooltipArrow}></div>
             </div>
           )}
-          
+
           {/* Chat Button */}
           <button
             className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
@@ -209,7 +209,7 @@ const FloatingChatbot: React.FC = () => {
             <span className={styles.pulseRing}></span>
             <span className={styles.pulseRing2}></span>
           </button>
-          
+
           {/* Label Badge */}
           {!isOpen && !hasInteracted && (
             <div className={styles.chatLabel}>
@@ -287,19 +287,19 @@ const FloatingChatbot: React.FC = () => {
                 <div className={styles.welcomeIcon}>
                   <img src="/img/logo.svg" alt="Agent Kernel" className={styles.welcomeLogo} />
                 </div>
-                <h4>Welcome to Agent Kernel AI</h4>
+                <h4>Welcome to AI Assistant Powered by Agent Kernel</h4>
                 <p>Ask me anything about Agent Kernel, AI agents, or how to get started!</p>
               </div>
             )}
             {messages.map((message) => (
-              <MessageBubble 
-                key={message.id} 
+              <MessageBubble
+                key={message.id}
                 message={message}
                 isResizing={isResizing}
                 onAnimationComplete={() => {
                   // Mark message as animated
-                  setMessages((prev) => 
-                    prev.map((m) => 
+                  setMessages((prev) =>
+                    prev.map((m) =>
                       m.id === message.id ? { ...m, animated: true } : m
                     )
                   );
@@ -386,7 +386,7 @@ const MessageBubble: React.FC<{ message: Message; onAnimationComplete?: () => vo
           if (!isResizing) {
             messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
-          
+
           if (index < message.text.length) {
             animationRef.current = setTimeout(typeNextCharacter, 20);
           } else {
