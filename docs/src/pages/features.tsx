@@ -413,7 +413,7 @@ function DeploymentSection() {
         </div>
         
         <div className={styles.deploymentOptions}>
-          <Link to="/docs/testing/overview" className={styles.deploymentCard}>
+          <Link to="/docs/deployment/overview" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <MdTerminal className={styles.deploymentIcon} />
               <h3>Local Development</h3>
