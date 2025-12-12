@@ -1,6 +1,8 @@
 import logging
 from enum import StrEnum
 
+from agentkernel.core.session.base import SessionCache
+
 from .config import AKConfig
 from .session import SessionStore
 
@@ -75,17 +77,22 @@ class SessionStoreBuilder(Builder):
         :raises: Any exceptions raised by SessionStoreType.from_str(), AKConfig.get(),
             RedisDriver(), RedisSessionStore(), or InMemorySessionStore() initialization.
         """
-        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
+        cache: SessionCache = None
+        if hasattr(AKConfig.get().session, "cache") and AKConfig.get().session.cache is not None:
+            session_cache_size = AKConfig.get().session.cache
+            if session_cache_size > 0:
+                cache = SessionCache(capacity=session_cache_size)
 
+        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
             from .session.redis import RedisSessionStore
 
-            return RedisSessionStore()
+            return RedisSessionStore(cache=cache)
         elif session_store_type == SessionStoreType.DYNAMODB:
             from .session.dynamodb import DynamoDBSessionStore
 
-            return DynamoDBSessionStore()
+            return DynamoDBSessionStore(cache=cache)
         else:
             from .session.in_memory import InMemorySessionStore
 

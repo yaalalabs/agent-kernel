@@ -34,6 +34,7 @@ class _DynamoDBConfig(BaseModel):
 
 class _SessionStoreConfig(BaseModel):
     type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb)$")
+    cache: Optional[int] = Field(default=0, description="In-memory session cache size (0 disables)")
     redis: Optional[_RedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
 

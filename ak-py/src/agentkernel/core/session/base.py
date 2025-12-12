@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 
 from ..base import Session
 
@@ -43,3 +44,48 @@ class SessionStore(ABC):
         Clears all stored sessions.
         """
         pass
+
+
+class SessionCache(OrderedDict[str, Session]):
+    """
+    SessionCache is an in-memory cache for Session objects, with a maximum size limit.
+    When the cache exceeds the maximum size, the least recently used session is removed.
+    """
+
+    def __init__(self, capacity: int = 256):
+        """
+        Initialize the session with a specified capacity.
+        :param capacity (int, optional): The maximum number of items the session can hold (default is 256).
+        """
+        super().__init__()
+        self._capacity = capacity
+
+    def set(self, session: Session) -> None:
+        """
+        Store a session in the cache with the given key.
+
+        If the session already exists, it is replaced. Otherwise, if the cache
+        is at capacity, the least recently used session is removed before adding
+        the new session. In either case the session is marked as most recently used.
+
+        :param session (Session): The session object to store in the cache.
+        """
+        if session.id in self:
+            del self[session.id]
+        elif len(self) >= self._capacity:
+            self.popitem(last=False)
+        self.__setitem__(session.id, session)
+
+    def get(self, id: str) -> Session | None:
+        """
+        Retrieve a session by key and update its access order.
+
+        The retrieved session is marked as most recently used.
+
+        :param id (str): The unique identifier for the session to retrieve.
+        :return Session | None: The session object if found, None otherwise.
+        """
+        if id in self:
+            self.move_to_end(id)
+            return self[id]
+        return None

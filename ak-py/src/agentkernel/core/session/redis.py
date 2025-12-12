@@ -7,7 +7,7 @@ import redis
 
 from ..base import Session
 from ..config import AKConfig
-from .base import SessionStore
+from .base import SessionCache, SessionStore
 from .serde import BinarySerde
 
 
@@ -139,13 +139,16 @@ class RedisSessionStore(SessionStore):
     RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
     """
 
-    def __init__(self):
+    def __init__(self, cache: SessionCache = None):
         """
         Initializes a RedisSessionStore instance.
+
+        :param cache: An optional SessionCache instance for in-memory caching of sessions.
         """
         self._log = logging.getLogger("ak.core.session.redis")
         self._serde = BinarySerde()
         self._driver = RedisDriver()
+        self._cache = cache
 
     def load(self, session_id: str, strict: bool = False) -> Session:
         """
@@ -156,6 +159,11 @@ class RedisSessionStore(SessionStore):
         in storage.
         """
         self._log.debug(f"Loading redis session with ID {session_id}")
+        if self._cache:
+            session = self._cache.get(session_id)
+            if session:
+                self._log.debug(f"Session {session_id} found in cache")
+                return session
         key = self._driver.key(session_id)
         if self._driver.exists(key):
             session = Session(session_id)
@@ -183,13 +191,18 @@ class RedisSessionStore(SessionStore):
         self._driver.hset(key, "__init__", self._serde.dumps(True))
         if self._driver.ttl:
             self._driver.expire(key)
-        return Session(session_id)
+        session = Session(session_id)
+        if self._cache:
+            self._cache.set(session)
+        return session
 
     def clear(self) -> None:
         """
         Clears all stored sessions for this store's prefix.
         """
         self._driver.clear_prefix()
+        if self._cache:
+            self._cache.clear()
 
     def store(self, session: Session) -> None:
         """
@@ -203,3 +216,5 @@ class RedisSessionStore(SessionStore):
             self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))
         if self._driver.ttl:
             self._driver.expire(self._driver.key(session.id))
+        if self._cache:
+            self._cache.set(session)

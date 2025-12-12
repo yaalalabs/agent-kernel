@@ -1,4 +1,5 @@
 from agentkernel.core.base import Session
+from agentkernel.core.session.base import SessionCache
 
 
 def test_session_init():
@@ -61,3 +62,35 @@ def test_session_clear():
     assert session.get_volatile_cache().get("vkey1") is None
     assert len(session.get_non_volatile_cache().keys()) == 0
     assert session.get_non_volatile_cache().get("nvkey1") is None
+
+
+def test_session_cache_lru_on_set():
+    cache = SessionCache(capacity=2)
+    session1 = Session("session1")
+    session2 = Session("session2")
+    session3 = Session("session3")
+
+    cache.set(session1)
+    cache.set(session2)
+    cache.set(session3)  # This should evict session1
+
+    assert cache.get("session1") is None
+    assert cache.get("session2") == session2
+    assert cache.get("session3") == session3
+
+
+def test_session_cache_lru_on_get():
+    cache = SessionCache(capacity=2)
+    session1 = Session("session1")
+    session2 = Session("session2")
+    session3 = Session("session3")
+
+    cache.set(session1)
+    cache.set(session2)
+
+    assert cache.get("session1") == session1  # Access session1 to mark it as recently used
+    cache.set(session3)  # This should evict session2
+
+    assert cache.get("session1") == session1
+    assert cache.get("session2") is None
+    assert cache.get("session3") == session3
