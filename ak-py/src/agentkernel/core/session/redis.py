@@ -172,12 +172,17 @@ class RedisSessionStore(SessionStore):
                     continue
                 value = self._driver.hget(key, field)
                 session.set(field, self._serde.loads(value))
+            if self._cache:
+                self._cache.set(session)
             return session
         else:
             if strict:
                 raise KeyError(f"Session {session_id} not found")
             self._log.warning(f"Session {session_id} not found, creating new session")
-            return self.new(session_id)
+            session = self.new(session_id)
+            if self._cache:
+                self._cache.set(session)
+            return session
 
     def new(self, session_id: str) -> Session:
         """
