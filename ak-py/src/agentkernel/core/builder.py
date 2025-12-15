@@ -79,9 +79,7 @@ class SessionStoreBuilder(Builder):
         """
         cache: SessionCache = None
         if hasattr(AKConfig.get().session, "cache") and AKConfig.get().session.cache is not None:
-            session_cache_size = AKConfig.get().session.cache
-            if session_cache_size > 0:
-                cache = SessionCache(capacity=session_cache_size)
+            cache = SessionCache(capacity=AKConfig.get().session.cache.size)
 
         session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
         Builder._log.info(f"Building {session_store_type} session store")

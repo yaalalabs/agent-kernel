@@ -40,7 +40,6 @@ def test_runtime_instance_redis_when_config(monkeypatch):
     class FakeCfg:
         class session:
             type = "redis"
-            cache = 10
 
             class redis:
                 url = "redis://localhost:6379"
