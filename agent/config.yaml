@@ -1,0 +1,6 @@
+debug: false
+#session:
+#  type: redis
+#  redis:
+#    prefix: "ak:openai:agent:"
+#    url: "redis://localhost:6379"

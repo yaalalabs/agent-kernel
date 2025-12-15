@@ -52,6 +52,7 @@ Agent Kernel provides pre-built execution capabilities:
   - Slack
   - WhatsApp
   - Messenger
+  - Telegram
   - Instagram
 - **AWS Serverless Deployment** for scalable production
 - **AWS Containerized Deployment** for consistent loads
