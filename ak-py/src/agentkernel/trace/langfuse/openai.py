@@ -4,10 +4,9 @@ from typing import Any
 from langfuse import Langfuse
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
-from agentkernel.core.model import AgentReply, AgentRequest
-
 from ...core import Session
-from ...openai.openai import OpenAIRunner
+from ...core.model import AgentReply, AgentRequest
+from ...framework.openai.openai import OpenAIRunner
 
 
 class LangFuseOpenAIRunner(OpenAIRunner):

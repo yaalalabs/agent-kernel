@@ -1,10 +1,9 @@
 import logging
 from typing import Any
 
-from agentkernel.core.model import AgentReply, AgentRequest
-
 from ...core import Session
-from ...openai.openai import OpenAIRunner
+from ...core.model import AgentReply, AgentRequest
+from ...framework.openai.openai import OpenAIRunner
 from .openllmetry import TraceloopContext
 
 

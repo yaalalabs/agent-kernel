@@ -5,10 +5,9 @@ from langchain_core.messages import HumanMessage
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-
 from ...core import Session
-from ...langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
+from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...framework.langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
 
 
 class LangFuseLangGraph(LangGraphRunner):
