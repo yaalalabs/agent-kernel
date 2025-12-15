@@ -1,10 +1,10 @@
 import logging
 from typing import Any
 
-from .openllmetry import TraceloopContext
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.adk.adk import GoogleADKRunner
+from .openllmetry import TraceloopContext
 
 
 class OpenLLMetryADKRunner(GoogleADKRunner):

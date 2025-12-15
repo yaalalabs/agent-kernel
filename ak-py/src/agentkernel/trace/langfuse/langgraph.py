@@ -33,7 +33,7 @@ class LangFuseLangGraph(LangGraphRunner):
         prompt = ""
         for req in requests:
             if isinstance(
-                    req, AgentRequestAny
+                req, AgentRequestAny
             ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):

@@ -1,10 +1,10 @@
 import logging
 from typing import Any
 
-from .openllmetry import TraceloopContext
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.crewai.crewai import CrewAIRunner
+from .openllmetry import TraceloopContext
 
 
 class OpenLLMetryCrewAIRunner(CrewAIRunner):

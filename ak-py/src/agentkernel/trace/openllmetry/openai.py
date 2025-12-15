@@ -1,10 +1,10 @@
 import logging
 from typing import Any
 
-from .openllmetry import TraceloopContext
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.openai.openai import OpenAIRunner
+from .openllmetry import TraceloopContext
 
 
 class OpenLLMetryOpenAIRunner(OpenAIRunner):
