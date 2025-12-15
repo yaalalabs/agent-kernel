@@ -4,10 +4,9 @@ from typing import Any
 from langfuse import Langfuse
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
-from agentkernel.core.model import AgentReply, AgentRequest
-
-from ...adk.adk import GoogleADKRunner
+from ...framework.adk.adk import GoogleADKRunner
 from ...core import Session
+from ...core.model import AgentReply, AgentRequest
 
 
 class LangFuseADKRunner(GoogleADKRunner):

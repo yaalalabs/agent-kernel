@@ -5,10 +5,9 @@ from langfuse import Langfuse
 from openinference.instrumentation.crewai import CrewAIInstrumentor
 from openinference.instrumentation.litellm import LiteLLMInstrumentor
 
-from agentkernel.core.model import AgentReply, AgentRequest
-
 from ...core import Session
-from ...crewai.crewai import CrewAIRunner
+from ...core.model import AgentReply, AgentRequest
+from ...framework.crewai.crewai import CrewAIRunner
 
 
 class LangFuseCrewAIRunner(CrewAIRunner):
