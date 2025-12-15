@@ -98,7 +98,7 @@ class _InstagramConfig(BaseModel):
     access_token: str = Field(default="", description="Instagram Business access token")
     app_secret: str = Field(default="", description="Instagram app secret for signature verification")
     instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
-    api_version: str = Field(default="v24.0", description="Instagram Graph API version")
+    api_version: str = Field(default="v21.0", description="Instagram Graph API version")
 
 
 class _TelegramConfig(BaseModel):
