@@ -295,7 +295,6 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         }
 
         try:
-            self._log.debug(f"url: {url}, payload: {payload}, headers: {headers}")
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
