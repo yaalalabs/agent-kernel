@@ -69,6 +69,20 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 - AWS-native integration
 - Configurable TTL
 
+### Session Caching
+
+Sessions persisted with `redis` and `dynamodb` storages can also cache a limited number of sessions in memory. This provides a performance boost by not requiring the session data to be loaded from persisted storage on each agent invocation.
+
+This caching behavior can be enabled and the cache size be cond=figured as follows. By default session caching is disabled.
+
+```bash
+export AK_SESSION__CACHE__SIZE=256
+```
+
+The cache works using a least-recently-used (LRU) eviction policy.
+
+Note that when session caching is enabled, session data is never loaded from persistent storage while the session is in the cache. This means that agent invocations using the same session via different runtime instances (for example different lambda instances or container instances) can lead to undesirable behavior.
+
 ## Session Lifecycle
 
 ```mermaid
