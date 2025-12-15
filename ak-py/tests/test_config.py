@@ -121,7 +121,8 @@ def test_session_cache_default():
     cfg = AKConfig()
     assert cfg.session is not None
     assert cfg.session.cache is None
-    
+
+
 def test_session_cache_env(monkeypatch):
     monkeypatch.setenv("AK_SESSION__CACHE__SIZE", "500")
     cfg = AKConfig()

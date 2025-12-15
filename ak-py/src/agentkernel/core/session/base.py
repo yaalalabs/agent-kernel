@@ -52,7 +52,7 @@ class SessionCache(OrderedDict[str, Session]):
     SessionCache is an in-memory cache for Session objects, with a maximum size limit.
     When the cache exceeds the maximum size, the least recently used session is removed.
     """
-   
+
     def __init__(self, capacity: int = 256):
         """
         Initialize the session with a specified capacity.
@@ -79,7 +79,7 @@ class SessionCache(OrderedDict[str, Session]):
             elif len(self._cache) >= self._capacity:
                 self._cache.popitem(last=False)
             self._cache.__setitem__(session.id, session)
-        
+
     def get(self, id: str) -> Session | None:
         """
         Retrieve a session by key and update its access order.
