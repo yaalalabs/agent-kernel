@@ -294,7 +294,7 @@ Standard text messages are fully supported with automatic context management.
 Handle button clicks and quick reply selections. Postbacks are processed as text using the button title or payload.
 
 ### Reactions
-Message reactions are logged for with extensibility for custom handling.
+Message reactions are logged with extensibility for custom handling.
 
 ### Read Receipts
 Read receipts are automatically logged for debugging purposes.
