@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from threading import RLock
 
 from ..base import Session
 
@@ -51,13 +52,15 @@ class SessionCache(OrderedDict[str, Session]):
     SessionCache is an in-memory cache for Session objects, with a maximum size limit.
     When the cache exceeds the maximum size, the least recently used session is removed.
     """
-
+   
     def __init__(self, capacity: int = 256):
         """
         Initialize the session with a specified capacity.
         :param capacity (int, optional): The maximum number of items the session can hold (default is 256).
         """
         super().__init__()
+        self._lock: RLock = RLock()
+        self._cache: OrderedDict[str, Session] = OrderedDict()
         self._capacity = capacity
 
     def set(self, session: Session) -> None:
@@ -70,12 +73,13 @@ class SessionCache(OrderedDict[str, Session]):
 
         :param session (Session): The session object to store in the cache.
         """
-        if session.id in self:
-            del self[session.id]
-        elif len(self) >= self._capacity:
-            self.popitem(last=False)
-        self.__setitem__(session.id, session)
-
+        with self._lock:
+            if session.id in self._cache:
+                del self._cache[session.id]
+            elif len(self._cache) >= self._capacity:
+                self._cache.popitem(last=False)
+            self._cache.__setitem__(session.id, session)
+        
     def get(self, id: str) -> Session | None:
         """
         Retrieve a session by key and update its access order.
@@ -85,7 +89,8 @@ class SessionCache(OrderedDict[str, Session]):
         :param id (str): The unique identifier for the session to retrieve.
         :return Session | None: The session object if found, None otherwise.
         """
-        if id in self:
-            self.move_to_end(id)
-            return self[id]
-        return None
+        with self._lock:
+            if id in self._cache:
+                self._cache.move_to_end(id)
+                return self._cache[id]
+            return None
