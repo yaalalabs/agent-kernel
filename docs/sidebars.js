@@ -72,6 +72,7 @@ const sidebars = {
         'integrations/slack',
         'integrations/whatsapp',
         'integrations/messenger',
+        'integrations/instagram',
         'integrations/telegram',
         'integrations/hooks',
       ],

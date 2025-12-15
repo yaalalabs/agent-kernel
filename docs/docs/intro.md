@@ -120,13 +120,14 @@ flowchart LR
     B -- Local --> C["CLI Testing"]
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- Cloud --> E["AWS Serverless"] & F["AWS Containers"]
-    D -- Integration --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"]
+    D -- Integration --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Quick Example
