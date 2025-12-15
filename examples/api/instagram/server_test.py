@@ -49,5 +49,3 @@ async def test_instagram_agent(http_client):
 
     assert response == {"status": "ok"}
     # TODO: Write proper tests for Instagram webhook events with proper mocks
-
-
