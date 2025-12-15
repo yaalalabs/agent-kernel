@@ -14,6 +14,19 @@ locals {
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+
+  all_endpoints = merge(
+    {
+      default = {
+        path   = var.agent_endpoint
+        method = "POST"
+      }
+    },
+    {
+      for ep in var.gateway_endpoints :
+      ep.path => ep
+    }
+  )  
 }
 
 module "vpc" {

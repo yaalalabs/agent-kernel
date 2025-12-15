@@ -11,5 +11,5 @@ output "lambda_function_invoke_arn" {
 }
 
 output "agent_invoke_url" {
-  value = "${aws_api_gateway_stage.stage.invoke_url}${aws_api_gateway_resource.agent_endpoint.path}"
+  value = "${aws_api_gateway_stage.stage.invoke_url}${aws_api_gateway_resource.endpoint["default"].path}"
 }

@@ -152,5 +152,24 @@ variable "private_subnet_cidrs" {
   default = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
+variable "gateway_endpoints" {
+  description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+  type = list(object({
+    path = string        # e.g. "chat"
+    method = string        # e.g. "GET", "POST", "PUT", "DELETE", "ANY"
+  }))
+  default = []
+  validation {
+    condition = alltrue([
+      for ep in var.gateway_endpoints : (
+        length(trimspace(ep.path)) > 0 &&
+        length(trimspace(ep.method)) > 0 &&
+        contains(["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"], upper(ep.method))
+      )
+    ])
+    error_message = "Each gateway_endpoints object must have non-empty 'path' and 'method' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
+  }
+}
+
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
