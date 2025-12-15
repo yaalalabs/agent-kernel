@@ -1,0 +1,38 @@
+name: Test Trusted Fork PR
+
+# This workflow runs tests with secrets for fork PRs that have been reviewed and labeled as safe
+# It runs in the context of the base repository (pull_request_target) which has access to secrets
+# ⚠️  SECURITY: Only add the 'safe-to-test' label after thoroughly reviewing the PR code!
+
+on:
+  pull_request_target:
+    types: [labeled]
+
+jobs:
+  check-label:
+    # Only run if the label is 'safe-to-test' and it's a fork PR
+    if: github.event.label.name == 'safe-to-test' && github.event.pull_request.head.repo.fork == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log PR information
+        run: |
+          echo "✅ Running tests for trusted fork PR"
+          echo "PR: #${{ github.event.pull_request.number }}"
+          echo "Author: ${{ github.event.pull_request.user.login }}"
+          echo "Branch: ${{ github.event.pull_request.head.ref }}"
+          echo "SHA: ${{ github.event.pull_request.head.sha }}"
+
+  run-tests:
+    needs: [check-label]
+    uses: ./.github/workflows/test-reusable.yaml
+    with:
+      # Check out the PR's code
+      ref: ${{ github.event.pull_request.head.sha }}
+      # Run all tests including e2e (this workflow has access to secrets)
+      run_e2e_tests: true
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
