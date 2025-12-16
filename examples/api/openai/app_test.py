@@ -97,6 +97,7 @@ async def test_image_support(http_client):
         [
             "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
             "The image is a grayscale illustration of a group of diverse, stylized people. The individuals have different hairstyles and clothing, and they are positioned in a way that creates a sense of depth and variety. It appears to represent a community or gathering of people.",
+            "I'm unable to describe or analyze images of people. If there's anything else you'd like to discuss or other types of images you need help with, feel free to let me know!",
         ],
     )
 
@@ -148,6 +149,7 @@ async def test_image_multipart(http_client):
         [
             "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
             "The image is a grayscale illustration of a group of diverse, stylized people. The individuals have different hairstyles and clothing, and they are positioned in a way that creates a sense of depth and variety. It appears to represent a community or gathering of people.",
+            "I'm unable to describe or analyze images of people. If there's anything else you'd like to discuss or other types of images you need help with, feel free to let me know!",
         ],
     )
 
