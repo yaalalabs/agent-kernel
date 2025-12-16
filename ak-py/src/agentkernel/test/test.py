@@ -119,7 +119,6 @@ class Test:
         for item in expected:
             score = fuzz.ratio(actual, item)
             if score > threshold:
-                assert True
                 return
         assert False, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
 

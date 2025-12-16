@@ -93,5 +93,7 @@ async def test_pdf_support(http_client):
     response = await http_client.send("", body=body)
     Test.compare(
         response,
-        ["The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025."],
+        [
+            "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025."
+        ],
     )
