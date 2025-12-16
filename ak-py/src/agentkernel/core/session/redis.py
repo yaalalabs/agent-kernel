@@ -179,10 +179,7 @@ class RedisSessionStore(SessionStore):
             if strict:
                 raise KeyError(f"Session {session_id} not found")
             self._log.warning(f"Session {session_id} not found, creating new session")
-            session = self.new(session_id)
-            if self._cache:
-                self._cache.set(session)
-            return session
+            return self.new(session_id)
 
     def new(self, session_id: str) -> Session:
         """

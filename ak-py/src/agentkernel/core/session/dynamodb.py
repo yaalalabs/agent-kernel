@@ -214,10 +214,7 @@ class DynamoDBSessionStore(SessionStore):
             if strict:
                 raise KeyError(f"Session {session_id} not found")
             self._log.warning("Session %s not found, creating new session", session_id)
-            session = self.new(session_id)
-            if self._cache:
-                self._cache.set(session)
-            return session
+            return self.new(session_id)
 
         session = Session(session_id)
         for k in keys:
