@@ -107,10 +107,13 @@ class SessionStoreBuilder(Builder):
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
             from .session.redis import RedisSessionStore
+
             return RedisSessionStore(cache=SessionCacheBuilder.build())
         elif session_store_type == SessionStoreType.DYNAMODB:
             from .session.dynamodb import DynamoDBSessionStore
+
             return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
         else:
             from .session.in_memory import InMemorySessionStore
+
             return InMemorySessionStore()
