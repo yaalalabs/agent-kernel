@@ -102,14 +102,31 @@ class Test:
         return self.latest
 
     @staticmethod
-    def compare(actual: str, expected: str, threshold: int = 50):
-        score = fuzz.ratio(actual, expected)
-        assert score > threshold, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
+    def compare(actual: str, expected: list[str], threshold: int = 50):
+        """
+        Compare an actual string against a list of expected strings using fuzzy matching.
 
-    async def expect(self, expected: str):
+        Uses fuzzy string matching to determine if the actual string is similar enough
+        to any of the expected strings. The comparison passes if any expected string
+        has a similarity score above the specified threshold.
+
+        :param actual: The string to be compared.
+        :param expected: A list of acceptable strings to compare against.
+        :param threshold: The minimum similarity score (0-100) required for a match. Default is 50.
+        :raises AssertionError: If the actual string doesn't match any expected string above the threshold score.
+        :return: None - Returns implicitly when a match is found above the threshold.
+        """
+        for item in expected:
+            score = fuzz.ratio(actual, item)
+            if score > threshold:
+                assert True
+                return
+        assert False, f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}"
+
+    async def expect(self, expected: list[str]):
         """
         Asserts that the last response received from the CLI matches the expected message (fuzzy).
-        :param expected: The expected message.
+        :param expected: The expected message variants.
         """
         if self.latest is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")

@@ -29,7 +29,7 @@ async def a2a_client():
 @pytest.mark.asyncio
 async def test_call_api(a2a_client):
     response = await a2a_client.send("Who won the 1996 cricket world cup?")
-    Test.compare(response, "Sri Lanka won the 1996 cricket world cup.")
+    Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
 
     response = await a2a_client.send("Which countries hosted the tournament?")
-    Test.compare(response, "The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka.")
+    Test.compare(response, ["The 1996 Cricket World Cup was hosted by India, Pakistan, and Sri Lanka."])

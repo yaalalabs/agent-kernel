@@ -55,25 +55,24 @@ async def test_support_agent(http_client):
     response = await http_client.send("I am Andy Dufresne. I did some deposits.")
     Test.compare(
         response,
-        " Hello Andy! I noticed that you made a mobile check deposit of $250. "
-        "Could you tell me how satisfied you were with the mobile check deposit process?",
+        [" Hello Andy! I noticed that you made a mobile check deposit of $250. Could you tell me how satisfied you were with the mobile check deposit process?"],
         threshold=10,
     )
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response, "That's great to hear! What specifically made the experience enjoyable for you?", threshold=10
+        response, ["That's great to hear! What specifically made the experience enjoyable for you?"]    , threshold=10
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
-    Test.compare(response, "Deposited $200 over the counter")
+    Test.compare(response, ["Deposited $200 over the counter"])
 
     # Test additional_context parameter passed through prehook for RAG
     response = await http_client.send(
         "In which movie my bank agent's name appeared in? Just give me the name of the movie",
         additional_context={"bank_agent": "Ellis Boyd Red Redding"},
     )
-    Test.compare(response, " the movie 'The Shawshank Redemption'.", threshold=20)
+    Test.compare(response, ["the movie 'The Shawshank Redemption'."], threshold=20)
 
 
 @pytest.mark.asyncio
@@ -93,7 +92,7 @@ async def test_image_support(http_client):
     response = await http_client.send("", body=body)
     Test.compare(
         response,
-        "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
+        ["This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities."],
     )
 
 
@@ -114,7 +113,7 @@ async def test_pdf_support(http_client):
     response = await http_client.send("", body=body)
     Test.compare(
         response,
-        "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
+        ["The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025."],
     )
 
 
@@ -138,7 +137,7 @@ async def test_image_multipart(http_client):
 
     Test.compare(
         response,
-        "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
+        ["This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities."],
     )
 
 
@@ -162,5 +161,5 @@ async def test_pdf_multipart(http_client):
 
     Test.compare(
         response,
-        "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
+        ["The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025."],
     )
