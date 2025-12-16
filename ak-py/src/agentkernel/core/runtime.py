@@ -2,13 +2,11 @@ import importlib
 import logging
 from threading import RLock
 from types import ModuleType
-from typing import Any, Optional
+from typing import Optional
 
-from deprecated import deprecated
 from singleton_type import Singleton
 
 from agentkernel.core.util.key_value_cache import KeyValueCache
-
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .hooks import Posthook, Prehook
@@ -63,16 +61,6 @@ class Runtime:
         the runtime instance from the ModuleLoader, performing necessary cleanup.
         """
         ModuleLoader.detach(self)
-
-    @deprecated(version="0.2.4", reason="Use GlobalRuntime.instance() instead")
-    @staticmethod
-    def instance() -> "Runtime":
-        """
-        Get the global singleton instance of the Runtime.
-
-        :return: The global singleton instance of the Runtime class.
-        """
-        return GlobalRuntime.instance()
 
     def load(self, module: str) -> ModuleType:
         """
