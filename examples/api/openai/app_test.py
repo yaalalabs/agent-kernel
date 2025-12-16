@@ -95,7 +95,8 @@ async def test_image_support(http_client):
     Test.compare(
         response,
         [
-            "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities."
+            "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
+            "The image is a grayscale illustration of a group of diverse, stylized people. The individuals have different hairstyles and clothing, and they are positioned in a way that creates a sense of depth and variety. It appears to represent a community or gathering of people.",
         ],
     )
 
@@ -145,7 +146,8 @@ async def test_image_multipart(http_client):
     Test.compare(
         response,
         [
-            "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities."
+            "This image shows a group of illustrated people in grayscale. They are standing together and differ in hairstyle and facial features. It's a stylized representation without distinct identities.",
+            "The image is a grayscale illustration of a group of diverse, stylized people. The individuals have different hairstyles and clothing, and they are positioned in a way that creates a sense of depth and variety. It appears to represent a community or gathering of people.",
         ],
     )
 
