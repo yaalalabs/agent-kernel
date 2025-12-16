@@ -1,6 +1,8 @@
 import logging
 from enum import StrEnum
 
+from agentkernel.core.session.base import SessionCache
+
 from .config import AKConfig
 from .session import SessionStore
 
@@ -50,6 +52,32 @@ class SessionStoreType(StrEnum):
             return SessionStoreType.IN_MEMORY
 
 
+class SessionCacheBuilder(Builder):
+    """
+    Builder class for creating SessionCache instances based on configuration.
+
+    This class implements the Builder pattern to construct SessionCache instances
+    according to the session cache size specified in the application configuration.
+    """
+
+    @staticmethod
+    def build() -> SessionCache:
+        """
+        Build and return a SessionCache instance based on the configured cache size.
+
+        This static method reads the session cache size from the application configuration
+        and instantiates a SessionCache with that capacity.
+
+        :returns: An instance of SessionCache with the configured capacity or None if caching is not configured.
+        :raises: Any exceptions raised by AKConfig.get() or SessionCache() initialization.
+        """
+        capacity = 256
+        if hasattr(AKConfig.get().session, "cache") and AKConfig.get().session.cache is not None:
+            Builder._log.info(f"Building session cache with capacity {capacity}")
+            return SessionCache(capacity=AKConfig.get().session.cache.size)
+        return None
+
+
 class SessionStoreBuilder(Builder):
     """
     Builder class for creating SessionStore instances based on configuration.
@@ -76,16 +104,15 @@ class SessionStoreBuilder(Builder):
             RedisDriver(), RedisSessionStore(), or InMemorySessionStore() initialization.
         """
         session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
-
         Builder._log.info(f"Building {session_store_type} session store")
         if session_store_type == SessionStoreType.REDIS:
             from .session.redis import RedisSessionStore
 
-            return RedisSessionStore()
+            return RedisSessionStore(cache=SessionCacheBuilder.build())
         elif session_store_type == SessionStoreType.DYNAMODB:
             from .session.dynamodb import DynamoDBSessionStore
 
-            return DynamoDBSessionStore()
+            return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
         else:
             from .session.in_memory import InMemorySessionStore
 

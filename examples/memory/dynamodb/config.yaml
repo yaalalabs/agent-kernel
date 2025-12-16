@@ -1,5 +1,6 @@
 debug: true
 session:
   type: dynamodb
+  cache: 256
   dynamodb:
     table_name: "ak-oai-ddb-dev-examples-session_store"
