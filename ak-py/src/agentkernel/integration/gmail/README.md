@@ -38,13 +38,21 @@ The `AgentGmailHandler` class handles email conversations with agents via Gmail 
    - Add required scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`
    - Add test users if in testing mode
 
-### Required Environment Variables
+
+### Required Environment Variables (No credentials.json needed)
+
+Set the following environment variables with your Google Cloud OAuth2 credentials:
 
 ```bash
-export AK_GMAIL__CREDENTIALS_FILE="path/to/credentials.json"
-export AK_GMAIL__TOKEN_FILE="path/to/token.json"  # Will be created after first auth
+export AK_GMAIL__CLIENT_ID="your-google-client-id"
+export AK_GMAIL__CLIENT_SECRET="your-google-client-secret"
+# Optional: comma-separated list of redirect URIs (default: http://localhost)
+export AK_GMAIL__REDIRECT_URIS="http://localhost"
+export AK_GMAIL__TOKEN_FILE="path/to/token.pickle"  # Will be created after first auth
 export AK_GMAIL__POLL_INTERVAL="30"  # Seconds between checks, optional
 ```
+
+**Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 
 ### OAuth Flow
 
@@ -78,17 +86,18 @@ if __name__ == "__main__":
 
 ## Configuration Options
 
+
 ### config.yaml
 
 ```yaml
 gmail:
-  agent: "general"  # Name of the agent to handle emails
-  poll_interval: 30  # Seconds between polling for new emails
-  credentials_file: "credentials.json"  # Path to OAuth credentials
-  token_file: "token.json"  # Path to store OAuth token
+    agent: "general"  # Name of the agent to handle emails
+    poll_interval: 30  # Seconds between polling for new emails
+    # credentials_file: "credentials.json"  # No longer needed
+    token_file: "token.pickle"  # Path to store OAuth token
 ```
 
-It is strongly recommended not to keep secrets and keys in the config file. Set them as environment variables.
+**Do not keep secrets or keys in the config file. Set them as environment variables as shown above.**
 
 ## Features
 
@@ -123,7 +132,7 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 
 ### Testing Steps
 
-1. Configure `credentials.json` from Google Cloud Console
+1. Set environment variables for your Google Cloud OAuth2 credentials (see above)
 2. Start your server
 3. Complete OAuth flow in browser
 4. Send an email to the Gmail account
@@ -167,8 +176,9 @@ subject_filters = ["Support Request", "Help Needed"]
 
 ### Common Issues
 
+
 **OAuth flow fails:**
-- Ensure credentials.json is valid and in correct location
+- Ensure environment variables are set correctly (AK_GMAIL__CLIENT_ID, AK_GMAIL__CLIENT_SECRET, etc.)
 - Check OAuth consent screen is properly configured
 - Verify redirect URIs are set correctly
 

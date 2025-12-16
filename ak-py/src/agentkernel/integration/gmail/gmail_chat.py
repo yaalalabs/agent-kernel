@@ -43,13 +43,18 @@ class AgentGmailRequestHandler:
 
         # Load configuration
         self._gmail_agent = Config.get().gmail.agent if Config.get().gmail.agent != "" else None
-        self._credentials_file = Config.get().gmail.credentials_file
         self._token_file = Config.get().gmail.token_file or "token.pickle"
         self._poll_interval = Config.get().gmail.poll_interval or 30
         self._label_filter = Config.get().gmail.label_filter or "INBOX"
 
-        if not self._credentials_file:
-            self._log.error("Gmail credentials file is not configured. Please set credentials_file.")
+        # Read credentials from environment variables
+        self._client_id = os.environ.get("AK_GMAIL__CLIENT_ID")
+        self._client_secret = os.environ.get("AK_GMAIL__CLIENT_SECRET")
+        self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
+        if not (self._client_id and self._client_secret):
+            self._log.error(
+                "Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET."
+            )
             raise ValueError("Incomplete Gmail configuration.")
 
         self._service = None
@@ -78,8 +83,18 @@ class AgentGmailRequestHandler:
                 self._log.info("Refreshing expired credentials...")
                 creds.refresh(Request())
             else:
-                self._log.info("Starting OAuth2 flow...")
-                flow = InstalledAppFlow.from_client_secrets_file(self._credentials_file, self.SCOPES)
+                self._log.info("Starting OAuth2 flow with environment variables...")
+                # Build credentials dict as expected by InstalledAppFlow
+                client_config = {
+                    "installed": {
+                        "client_id": self._client_id,
+                        "client_secret": self._client_secret,
+                        "redirect_uris": self._redirect_uris,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                    }
+                }
+                flow = InstalledAppFlow.from_client_config(client_config, self.SCOPES)
                 creds = flow.run_local_server(port=0)
 
             # Save credentials for future use
@@ -182,8 +197,16 @@ class AgentGmailRequestHandler:
             self._log.info(f"Processing email from {sender}, subject: {subject}")
             self._log.debug(f"Email body: {body[:200]}...")
 
-            # Process through agent
-            response = await self._process_with_agent(sender, subject, body)
+            # Use thread_id as session_id for agent context (threaded conversations)
+            session_id = thread_id or sender
+
+            # Fetch thread history for context (all messages in the thread, sorted by internalDate)
+            thread_history = await self._get_thread_history(thread_id, message_id)
+
+            # Process through agent with full thread context
+            response = await self._process_with_agent(
+                sender, subject, body, session_id=session_id, thread_history=thread_history
+            )
 
             if response:
                 # Send reply
@@ -194,6 +217,34 @@ class AgentGmailRequestHandler:
 
         except Exception as e:
             self._log.error(f"Error processing email {message_id}: {e}\n{traceback.format_exc()}")
+
+    async def _get_thread_history(self, thread_id: Optional[str], current_message_id: str) -> str:
+        """
+        Fetch all previous messages in the same Gmail thread for context.
+        Returns a concatenated string of the thread history (excluding the current message).
+        """
+        if not thread_id:
+            return ""
+        try:
+            thread = self._service.users().threads().get(userId="me", id=thread_id, format="full").execute()
+            messages = thread.get("messages", [])
+            # Sort by internalDate (ascending)
+            messages = sorted(messages, key=lambda m: int(m.get("internalDate", "0")))
+            history = []
+            for msg in messages:
+                if msg["id"] == current_message_id:
+                    continue  # skip the current message (will be processed separately)
+                headers = msg["payload"]["headers"]
+                from_addr = self._get_header(headers, "From")
+                subject = self._get_header(headers, "Subject")
+                date = self._get_header(headers, "Date")
+                body = self._get_email_body(msg["payload"])
+                if body:
+                    history.append(f"From: {from_addr}\nDate: {date}\nSubject: {subject}\n\n{body}\n{'-'*40}")
+            return "\n".join(history)
+        except Exception as e:
+            self._log.warning(f"Error fetching thread history: {e}\n{traceback.format_exc()}")
+            return ""
 
     def _get_header(self, headers: list, name: str) -> Optional[str]:
         """
@@ -238,21 +289,35 @@ class AgentGmailRequestHandler:
 
         return body.strip()
 
-    async def _process_with_agent(self, sender: str, subject: str, body: str) -> Optional[str]:
+    async def _process_with_agent(
+        self,
+        sender: str,
+        subject: str,
+        body: str,
+        session_id: Optional[str] = None,
+        thread_history: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Process email through AI agent.
 
         :param sender: Email sender
         :param subject: Email subject
         :param body: Email body
+        :param session_id: Session ID for agent context (use threadId for threading)
+        :param thread_history: Full thread history for context
         :return: AI-generated response or None
         """
         service = AgentService()
-        session_id = sender  # Use sender email as session ID
+        session_id = session_id or sender
 
         try:
-            # Format email content for agent
-            email_content = f"From: {sender}\nSubject: {subject}\n\n{body}"
+            # Format email content for agent, including thread history if available
+            if thread_history:
+                email_content = (
+                    f"Thread history:\n{thread_history}\n\nNew message:\nFrom: {sender}\nSubject: {subject}\n\n{body}"
+                )
+            else:
+                email_content = f"From: {sender}\nSubject: {subject}\n\n{body}"
 
             # Select and run agent
             service.select(session_id=session_id, name=self._gmail_agent)
@@ -293,8 +358,12 @@ class AgentGmailRequestHandler:
             if not subject.lower().startswith("re:"):
                 subject = f"Re: {subject}"
 
+            # Only reply with the subject and the body, and append 'Best regards, <client name>'
+            client_name = os.environ.get("AK_CLIENT_NAME", "Agent Kernel")
+            reply_body = f"{body}\n\nBest regards,\n{client_name}"
+
             # Create message
-            message = MIMEText(body)
+            message = MIMEText(reply_body)
             message["to"] = to
             message["subject"] = subject
 

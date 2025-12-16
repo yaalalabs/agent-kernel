@@ -5,7 +5,7 @@ AI-powered Gmail bot that automatically reads and replies to emails using Agent 
 ## Prerequisites
 
 1. **Google Cloud Project** with Gmail API enabled
-2. **OAuth2 Credentials** (credentials.json)
+2. **OAuth2 Credentials** (client ID and secret from Google Cloud)
 3. **OpenAI API Key**
 
 ## Setup
@@ -24,33 +24,34 @@ AI-powered Gmail bot that automatically reads and replies to emails using Agent 
 1. Go to **APIs & Services** → **Credentials**
 2. Click **Create Credentials** → **OAuth client ID**
 3. If prompted, configure OAuth consent screen:
-   - User Type: **External** (for testing)
-   - App name: Your app name
-   - User support email: Your email
-   - Developer contact: Your email
-   - Scopes: Add `gmail.readonly`, `gmail.send`, `gmail.modify`
-   - Test users: Add your Gmail address
+    - User Type: **External** (for testing)
+    - App name: Your app name
+    - User support email: Your email
+    - Developer contact: Your email
+    - Scopes: Add `gmail.readonly`, `gmail.send`, `gmail.modify`
+    - Test users: Add your Gmail address
 4. Back to Create OAuth client ID:
-   - Application type: **Desktop app**
-   - Name: "Gmail Agent Kernel"
-   - Click **Create**
-5. Download the credentials JSON file
-6. Save it as `credentials.json` in this directory
+    - Application type: **Desktop app**
+    - Name: "Gmail Agent Kernel"
+    - Click **Create**
+5. Copy the `client_id` and `client_secret` from the credentials JSON file (no need to save the file)
 
-### 3. Configure Environment Variables
+
+### 3. Configure Environment Variables (No credentials.json needed)
 
 ```bash
-export AK_GMAIL__CREDENTIALS_FILE="credentials.json"
+export AK_GMAIL__CLIENT_ID="your-google-client-id"
+export AK_GMAIL__CLIENT_SECRET="your-google-client-secret"
+# Optional: comma-separated list of redirect URIs (default: http://localhost)
+export AK_GMAIL__REDIRECT_URIS="http://localhost"
 export AK_GMAIL__AGENT="general"
 export OPENAI_API_KEY="your_openai_api_key"
-```
-
-Optional configuration:
-```bash
 export AK_GMAIL__TOKEN_FILE="token.pickle"        # Where to save OAuth token (default: token.pickle)
 export AK_GMAIL__POLL_INTERVAL="30"               # Check emails every N seconds (default: 30)
 export AK_GMAIL__LABEL_FILTER="INBOX"             # Gmail label to monitor (default: INBOX)
 ```
+
+**Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 
 ## Build
 
@@ -104,7 +105,7 @@ Edit `config.yaml`:
 ```yaml
 gmail:
   agent: general                        # Agent to use for email processing
-  credentials_file: "credentials.json"  # OAuth2 credentials file path
+    # credentials_file: "credentials.json"  # No longer needed
   token_file: "token.pickle"            # Token storage location
   poll_interval: 30                     # Polling interval in seconds
   label_filter: "INBOX"                 # Gmail label to monitor
@@ -155,14 +156,14 @@ The handler currently supports one label. To monitor multiple, you can:
 
 ## Troubleshooting
 
-### "Credentials file not found"
-- Make sure `credentials.json` exists in the project directory
-- Check `AK_GMAIL__CREDENTIALS_FILE` environment variable
+### "Credentials not found"
+- Make sure you set `AK_GMAIL__CLIENT_ID` and `AK_GMAIL__CLIENT_SECRET` environment variables
 
 ### "OAuth2 flow failed"
 - Ensure you added your email as a test user in OAuth consent screen
 - Check if Gmail API is enabled in your Google Cloud project
 - Try deleting `token.pickle` and re-authenticating
+- Make sure your environment variables are set correctly (client ID, secret, etc.)
 
 ### "No agent available"
 - Check that `AK_GMAIL__AGENT` matches the agent name in `server.py`

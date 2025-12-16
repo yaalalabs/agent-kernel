@@ -28,7 +28,7 @@ The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are proc
 ### Prerequisites
 
 - Google Cloud Project with Gmail API enabled
-- OAuth2 credentials (`credentials.json`)
+- OAuth2 credentials (client ID and secret from Google Cloud)
 - OpenAI API key
 
 ### 1. Create Google Cloud Project & Enable Gmail API
@@ -41,23 +41,25 @@ The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are proc
 
 - Go to **APIs & Services > Credentials**
 - Create OAuth client ID (Desktop app)
-- Download `credentials.json` and place in your project directory
+- Copy the `client_id` and `client_secret` from the credentials JSON file (no need to save the file)
 - Add your Gmail address as a test user in the OAuth consent screen
 
-### 3. Configure Environment Variables
+
+### 3. Configure Environment Variables (No credentials.json needed)
 
 ```bash
-export AK_GMAIL__CREDENTIALS_FILE="credentials.json"
+export AK_GMAIL__CLIENT_ID="your-google-client-id"
+export AK_GMAIL__CLIENT_SECRET="your-google-client-secret"
+# Optional: comma-separated list of redirect URIs (default: http://localhost)
+export AK_GMAIL__REDIRECT_URIS="http://localhost"
 export AK_GMAIL__AGENT="general"
 export OPENAI_API_KEY="your_openai_api_key"
-```
-
-Optional:
-```bash
 export AK_GMAIL__TOKEN_FILE="token.pickle"
 export AK_GMAIL__POLL_INTERVAL="30"
 export AK_GMAIL__LABEL_FILTER="INBOX"
 ```
+
+**Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 
 ### 4. Configuration File
 
@@ -66,7 +68,7 @@ Edit `config.yaml`:
 ```yaml
 gmail:
   agent: general
-  credentials_file: "credentials.json"
+    # credentials_file: "credentials.json"  # No longer needed
   token_file: "token.pickle"
   poll_interval: 30
   label_filter: "INBOX"
@@ -138,14 +140,14 @@ def _get_attachments(self, payload: dict):
 
 ## Troubleshooting
 
-### "Credentials file not found"
-- Ensure `credentials.json` exists
-- Check `AK_GMAIL__CREDENTIALS_FILE` env var
+### "Credentials not found"
+- Make sure you set `AK_GMAIL__CLIENT_ID` and `AK_GMAIL__CLIENT_SECRET` environment variables
 
 ### "OAuth2 flow failed"
 - Add your email as test user in OAuth consent screen
 - Enable Gmail API in Google Cloud
 - Delete `token.pickle` and retry
+- Make sure your environment variables are set correctly (client ID, secret, etc.)
 
 ### "No agent available"
 - Check `AK_GMAIL__AGENT` matches agent name

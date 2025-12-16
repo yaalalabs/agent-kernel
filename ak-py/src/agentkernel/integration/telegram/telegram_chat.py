@@ -25,7 +25,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._bot_token = Config.get().telegram.bot_token
         self._webhook_secret = Config.get().telegram.webhook_secret
         self._api_version = Config.get().telegram.api_version or "bot"
-        self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}/"
+        self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
 
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
