@@ -13,9 +13,9 @@ async def test_cli_tester_prompt_update_and_expect():
     # Set the last response manually for expect()
     t.latest = "Hello World"
     # Should pass with a reasonable fuzzy threshold when expected is similar
-    await t.expect("Hello World!")
+    await t.expect(["Hello World!"])
 
     # Now raise a threshold too high to fail
     t.match_threshold = 95
     with pytest.raises(AssertionError):
-        await t.expect("Hi there")
+        await t.expect(["Hi there"])
