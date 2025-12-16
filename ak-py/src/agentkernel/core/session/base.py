@@ -47,7 +47,7 @@ class SessionStore(ABC):
         pass
 
 
-class SessionCache(OrderedDict[str, Session]):
+class SessionCache:
     """
     SessionCache is an in-memory cache for Session objects, with a maximum size limit.
     When the cache exceeds the maximum size, the least recently used session is removed.
@@ -55,13 +55,28 @@ class SessionCache(OrderedDict[str, Session]):
 
     def __init__(self, capacity: int = 256):
         """
-        Initialize the session with a specified capacity.
-        :param capacity (int, optional): The maximum number of items the session can hold (default is 256).
+        Initialize the session cache with a specified capacity.
+        :param capacity (int, optional): The maximum number of sessions the cache can hold (default is 256).
         """
         super().__init__()
         self._lock: RLock = RLock()
         self._cache: OrderedDict[str, Session] = OrderedDict()
         self._capacity = capacity
+
+    def capacity(self) -> int:
+        """
+        Get the maximum capacity of the session cache.
+        :return int: The maximum number of items the session can hold.
+        """
+        return self._capacity
+
+    def size(self) -> int:
+        """
+        Get the current size of the session cache.
+        :return int: The current number of items in the session cache.
+        """
+        with self._lock:
+            return len(self._cache)
 
     def set(self, session: Session) -> None:
         """
@@ -94,3 +109,10 @@ class SessionCache(OrderedDict[str, Session]):
                 self._cache.move_to_end(id)
                 return self._cache[id]
             return None
+
+    def clear(self) -> None:
+        """
+        Clear all sessions from the cache.
+        """
+        with self._lock:
+            self._cache.clear()

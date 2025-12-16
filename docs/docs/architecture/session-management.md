@@ -73,7 +73,7 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 
 Sessions persisted with `redis` and `dynamodb` storages can also cache a limited number of sessions in memory. This provides a performance boost by not requiring the session data to be loaded from persisted storage on each agent invocation.
 
-This caching behavior can be enabled and the cache size be cond=figured as follows. By default session caching is disabled.
+This caching behavior can be enabled and the cache size be configured as follows. By default session caching is disabled.
 
 ```bash
 export AK_SESSION__CACHE__SIZE=256
