@@ -22,6 +22,8 @@ The following built-in integrations are available.
 - **[Slack](./slack)** - Deploy agents as Slack bots that can respond to mentions and direct messages in Slack workspaces
 - **[WhatsApp](./whatsapp)** - Deploy agents as WhatsApp bots
 - **[Messenger](./messenger)** - Deploy agents as FB Messenger bots
+- **[Instagram](./instagram)** - Deploy agents as Instagram DM bots
+- **[Telegram](./telegram)** - Deploy agents as Telegram bots
 
 ```mermaid
 ---
@@ -30,12 +32,13 @@ config:
   elk: true
 ---
 flowchart LR
-    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"]
+    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"]
 
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ### Custom
@@ -50,12 +53,13 @@ config:
 ---
 flowchart LR
     
-    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & N["CustomHandler"]
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & N["CustomHandler"]
 
     style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#b5667b,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#484c7a,stroke:#fff,stroke-width:2px,color:#fff
+    style O fill:#3a9ecc,stroke:#fff,stroke-width:2px,color:#fff
     style N fill:#bd7e4a,stroke:#fff,stroke-width:2px,color:#fff
 ```
 

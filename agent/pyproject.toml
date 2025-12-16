@@ -1,0 +1,40 @@
+[project]
+name = "agent-kernel-knowledge"
+version = "0.1.0"
+description = "Agent Kernel Knowledge Agent"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[openai,api,redis,langfuse]>=0.2.7",
+    "llama-index>=0.11.0",
+    "llama-index-core>=0.11.0",
+    "llama-index-embeddings-openai>=0.2.0",
+    "llama-index-llms-openai>=0.2.0",
+    "llama-index-readers-file>=0.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.2.7",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

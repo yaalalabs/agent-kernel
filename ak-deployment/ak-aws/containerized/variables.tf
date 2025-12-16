@@ -64,9 +64,9 @@ variable "gateway_endpoints" {
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
-        length(trim(ep.path)) > 0 &&
-        length(trim(ep.method)) > 0 &&
-        length(trim(ep.overwrite_path)) > 0 &&
+        length(trimspace(ep.path)) > 0 &&
+        length(trimspace(ep.method)) > 0 &&
+        length(trimspace(ep.overwrite_path)) > 0 &&
         contains(["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"], upper(ep.method))
       )
     ])
@@ -161,6 +161,63 @@ variable "container_type" {
     condition = contains(["ecs", "eks"], lower(var.container_type))
     error_message = "Container type must be either 'ecs' or 'eks'."
   }
+}
+
+# CORS configuration for HTTP API (API Gateway v2)
+variable "enable_cors" {
+  type        = bool
+  description = "Enable CORS on the HTTP API"
+  default     = true
+}
+
+variable "cors_allow_origins" {
+  type        = list(string)
+  description = "CORS allowed origins"
+  default     = ["*"]
+}
+
+variable "cors_allow_methods" {
+  type        = list(string)
+  description = "CORS allowed methods"
+  default     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+}
+
+variable "cors_allow_headers" {
+  type        = list(string)
+  description = "CORS allowed headers"
+  default     = ["*"]
+}
+
+variable "cors_expose_headers" {
+  type        = list(string)
+  description = "CORS exposed headers"
+  default     = []
+}
+
+variable "cors_max_age" {
+  type        = number
+  description = "CORS max age in seconds"
+  default     = 600
+}
+
+variable "cors_allow_credentials" {
+  type        = bool
+  description = "Whether to allow credentials for CORS"
+  default     = false
+}
+
+# Stage throttling (default route settings)
+# Both values must be provided to enable throttling block.
+variable "throttling_rate_limit" {
+  type        = number
+  description = "Steady-state rate limit (requests per second) for default route. Set null to disable."
+  default     = null
+}
+
+variable "throttling_burst_limit" {
+  type        = number
+  description = "Burst limit (token bucket size) for default route. Set null to disable."
+  default     = null
 }
 
 data "aws_ecr_authorization_token" "token" {}

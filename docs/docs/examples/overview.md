@@ -20,6 +20,8 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
   - `multi/` - Multi-agent runtime with agents exposed as MCP tools
 - **`slack/`** - Slack integration example
 - **`whatsapp/`** - WhatsApp integration example
+- **`instagram/`** - Instagram integration example
+- **`telegram/`** - Telegram integration example
 
 ### 📁 CLI Examples (`/examples/cli`)
 

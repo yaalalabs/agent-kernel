@@ -1,0 +1,9 @@
+debug: false
+#session:
+#  type: redis
+#  redis:
+#    prefix: "ak:openai:agent:"
+#    url: "redis://localhost:6379"
+trace:
+  enabled: true
+  type: langfuse

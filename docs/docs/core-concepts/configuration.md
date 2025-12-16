@@ -132,10 +132,12 @@ export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (defa
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
 export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
+export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 
 # DynamoDB configuration
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 ```
 
 ### API Server

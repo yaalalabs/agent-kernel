@@ -3,10 +3,10 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
-import { 
-  MdMenuBook, 
-  MdArticle, 
-  MdLink, 
+import {
+  MdMenuBook,
+  MdArticle,
+  MdLink,
   MdBusiness,
   MdPower,
   MdRocket,
@@ -28,9 +28,9 @@ function HomepageHeader() {
     <header className={styles.heroBanner}>
       <div className="container">
         <div className={styles.heroContent}>
-          <img 
-            src="/img/logo.svg" 
-            alt="Agent Kernel Logo" 
+          <img
+            src="/img/logo.svg"
+            alt="Agent Kernel Logo"
             className={styles.heroLogo}
           />
           <h1 className={styles.heroTitle}>{siteConfig.title}</h1>
@@ -44,7 +44,7 @@ function HomepageHeader() {
             <Link
               className={`button button--secondary button--lg ${styles.featuresButton}`}
               to="/features">
-              Explore Features
+              Explore Features →
             </Link>
             <Link
               className="button button--secondary button--lg"
@@ -61,6 +61,14 @@ function HomepageHeader() {
 function NavigationSection() {
   const navigationCards = [
     {
+      title: 'Integrations',
+      icon: <MdHandshake />,
+      description: 'Explore integrations to connect your AI agents with popular platforms.',
+      link: '#integrations',
+      linkText: 'View Integrations',
+      color: 'teal',
+    },
+    {
       title: 'Documentation',
       icon: <MdMenuBook />,
       description: 'Explore comprehensive guides, API references, and tutorials to get the most out of Agent Kernel.',
@@ -69,20 +77,20 @@ function NavigationSection() {
       color: 'blue',
     },
     {
-      title: 'Blog',
-      icon: <MdArticle />,
-      description: 'Stay updated with the latest news, release announcements, and technical articles from the team.',
-      link: '/blog',
-      linkText: 'Read Blog Posts',
-      color: 'green',
-    },
-    {
       title: 'Links',
       icon: <MdLink />,
       description: 'Connect with our community and explore related resources across different platforms.',
       link: '#community',
       linkText: 'Explore Links',
       color: 'purple',
+    },
+    {
+      title: 'Blog',
+      icon: <MdArticle />,
+      description: 'Stay updated with the latest news, release announcements, and technical articles from the team.',
+      link: '/blog',
+      linkText: 'Read Blog Posts',
+      color: 'green',
     },
     {
       title: 'Yaala Labs',
@@ -120,39 +128,44 @@ function NavigationSection() {
 }
 
 function IntegrationsSection() {
-  const frameworks = [
+  const integrations = [
     {
       name: 'OpenAI Agents SDK',
       logo: '/img/integrations/openai.svg',
       link: '/docs/frameworks/openai',
+      category: 'Agentic Frameworks',
+      invertLogo: true,
     },
     {
       name: 'LangGraph',
       logo: '/img/integrations/langgraph.png',
       link: '/docs/frameworks/langgraph',
+      category: 'Agentic Frameworks',
+      invertLogo: true,
     },
     {
       name: 'CrewAI',
       logo: '/img/integrations/crewai.svg',
       link: '/docs/frameworks/crewai',
+      category: 'Agentic Frameworks',
     },
     {
       name: 'Google ADK',
       logo: '/img/integrations/adk.png',
       link: '/docs/frameworks/google-adk',
+      category: 'Agentic Frameworks',
     },
-  ];
-
-  const traceability = [
     {
       name: 'LangFuse',
       logo: '/img/integrations/langfuse.png',
       link: '/docs/advanced/traceability',
+      category: 'Traceability & Observability',
     },
     {
       name: 'TraceLoop OpenLLMetry',
       logo: '/img/integrations/traceloop.png',
       link: '/docs/advanced/traceability',
+      category: 'Traceability & Observability',
     },
   ];
 
@@ -160,56 +173,34 @@ function IntegrationsSection() {
     <section className={styles.integrationsSection}>
       <div className="container">
         <div className={styles.integrationsHeader}>
-          <h2 className={styles.integrationsSectionTitle}>Production Runtime for Leading Agentic Frameworks</h2>
+          <h2 className={styles.integrationsSectionTitle}>Production Runtime with Enterprise Integrations</h2>
           <p className={styles.integrationsSectionSubtitle}>
-            Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel. 
-            A framework-agnostic runtime with enterprise-grade features.
+            Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel.
+            A framework-agnostic runtime with enterprise-grade features and seamless observability integrations.
           </p>
         </div>
 
         <div className={styles.integrationsContainer}>
-          <div className={styles.integrationsCategory}>
-            <h3 className={styles.integrationsCategoryTitle}>Agentic Frameworks</h3>
-            <div className={styles.integrationsGrid}>
-              {frameworks.map((framework, idx) => (
-                <Link
-                  key={idx}
-                  to={framework.link}
-                  className={styles.integrationCard}
-                  style={{ animationDelay: `${idx * 0.1}s` }}>
-                  <div className={styles.integrationLogoWrapper}>
-                    <img 
-                      src={framework.logo} 
-                      alt={framework.name}
-                      className={styles.integrationLogo}
-                    />
-                  </div>
-                  <h4 className={styles.integrationName}>{framework.name}</h4>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.integrationsCategory}>
-            <h3 className={styles.integrationsCategoryTitle}>Traceability & Observability</h3>
-            <div className={styles.integrationsGrid}>
-              {traceability.map((tool, idx) => (
-                <Link
-                  key={idx}
-                  to={tool.link}
-                  className={styles.integrationCard}
-                  style={{ animationDelay: `${(frameworks.length + idx) * 0.1}s` }}>
-                  <div className={styles.integrationLogoWrapper}>
-                    <img 
-                      src={tool.logo} 
-                      alt={tool.name}
-                      className={styles.integrationLogo}
-                    />
-                  </div>
-                  <h4 className={styles.integrationName}>{tool.name}</h4>
-                </Link>
-              ))}
-            </div>
+          <div className={styles.integrationsUnifiedGrid}>
+            {integrations.map((integration, idx) => (
+              <Link
+                key={idx}
+                to={integration.link}
+                className={styles.integrationCard}
+                style={{ animationDelay: `${idx * 0.1}s` }}>
+                <div className={styles.integrationLogoWrapper}>
+                  <img
+                    src={integration.logo}
+                    alt={integration.name}
+                    className={`${styles.integrationLogo} ${integration.invertLogo ? styles.invertLogoDark : ''}`}
+                  />
+                </div>
+                <h4 className={styles.integrationName}>{integration.name}</h4>
+                <span className={styles.integrationCategoryLabel}>
+                  {integration.category}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
       </div>
@@ -243,16 +234,25 @@ function MessagingIntegrationsSection() {
       color: '#0084FF',
       link: '/docs/integrations/messenger',
     },
-  ];
-
-  const comingSoonIntegrations = [
     {
       name: 'Instagram',
       icon: <FaInstagram />,
-      description: 'Instagram messaging integration',
-      status: 'coming-soon',
+      description: 'Deploy agents for Instagram DMs',
+      status: 'active',
       color: '#E4405F',
+      link: '/docs/integrations/instagram',
     },
+    {
+      name: 'Telegram',
+      icon: <FaTelegram />,
+      description: 'Build Telegram bots with AI agents',
+      status: 'active',
+      color: '#0088CC',
+      link: '/docs/integrations/telegram',
+    },
+  ];
+
+  const comingSoonIntegrations = [
     {
       name: 'Gmail',
       icon: <SiGmail />,
@@ -260,22 +260,15 @@ function MessagingIntegrationsSection() {
       status: 'coming-soon',
       color: '#EA4335',
     },
-    {
-      name: 'Telegram',
-      icon: <FaTelegram />,
-      description: 'Build Telegram bots with agents',
-      status: 'coming-soon',
-      color: '#0088CC',
-    },
   ];
 
   return (
-    <section className={styles.messagingIntegrationsSection}>
+    <section id="integrations" className={styles.messagingIntegrationsSection}>
       <div className="container">
         <div className={styles.integrationsHeader}>
           <h2 className={styles.integrationsSectionTitle}>Messaging Platform Integrations</h2>
           <p className={styles.integrationsSectionSubtitle}>
-            Connect your AI agents to popular messaging platforms and reach your users where they are
+            Connect your AI agents to popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, and Telegram
           </p>
         </div>
 
@@ -287,7 +280,7 @@ function MessagingIntegrationsSection() {
                 key={`active-1-${idx}`}
                 to={platform.link}
                 className={styles.messagingIntegrationCard}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -301,7 +294,7 @@ function MessagingIntegrationsSection() {
               <div
                 key={`coming-1-${idx}`}
                 className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -317,7 +310,7 @@ function MessagingIntegrationsSection() {
                 key={`active-2-${idx}`}
                 to={platform.link}
                 className={styles.messagingIntegrationCard}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -331,7 +324,7 @@ function MessagingIntegrationsSection() {
               <div
                 key={`coming-2-${idx}`}
                 className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
-                <div 
+                <div
                   className={styles.messagingIntegrationIcon}
                   style={{ color: platform.color }}>
                   {platform.icon}
@@ -450,8 +443,8 @@ export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title="Agent Kernel - Agentic Framework Runtime for LangGraph, OpenAI, Google ADK & CrewAI"
-      description="Production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK (Gemini), and CrewAI with enterprise features. Framework-agnostic alternative to Semantic Kernel for AI agent deployment, orchestration, and monitoring.">
+      title={`${siteConfig.title} - ${siteConfig.tagline}`}
+      description="Production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI with enterprise features. Framework-agnostic alternative to Semantic Kernel for AI agent deployment, orchestration, and monitoring.">
       <div className={styles.animatedBackground}></div>
       <div className={styles.gridOverlay}></div>
       <div className={styles.particle}></div>

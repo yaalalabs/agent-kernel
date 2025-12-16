@@ -94,6 +94,16 @@ class AgentService:
         self._log.info(f"Starting new session: {session_id}")
         self._session = self._runtime.sessions().new(session_id)
 
+    def clear(self):
+        """
+        Clears the current session data.
+        """
+        if self._session:
+            self._log.info(f"Clearing session: {self._session.id}")
+            self._session.clear()
+        else:
+            self._log.warning("No session available to clear.")
+
     def load(self, session_id: str, name: str):
         """
         Loads an agent module by name.

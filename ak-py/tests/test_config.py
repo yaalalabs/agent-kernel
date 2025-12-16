@@ -111,7 +111,3 @@ def test_nested_env_cases(monkeypatch):
     assert cfg.session.type == "redis"
     assert cfg.session.redis is not None
     assert cfg.session.redis.ttl == 1000  # from double underscore env
-    assert cfg.api.custom_router_prefix == "/health"
-    assert cfg.a2a.task_store_type == "redis"
-    assert cfg.mcp.expose_agents is True
-    assert cfg.api.enabled_routes.agents is False

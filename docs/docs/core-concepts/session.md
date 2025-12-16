@@ -202,6 +202,21 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 export AK_SESSION__DYNAMODB__TTL=3600  # 1 hour (0 to disable)
 ```
 
+Redis and DynamoDB session storage also supports in-memory session caching for improved performance.
+This can be enabled as follows.
+
+```bash
+# Enable in-memory session caching with a cache size of 256 sessions
+export AK_SESSION__CACHE__SIZE=256
+```
+
+Sessions are evicted from the cache on a least-recently-used (LRU) policy.
+
+Note that session data are updated on storage after each invocation. When session caching is enabled,
+on subsequent agent invocations, if the session is still in memory it would not be loaded from storage.
+This gives a performance boost with the limitation that invocations targeting a specific session should
+always be invoked by the same runtime instance.
+
 ## Best Practices
 
 ### Unique Session IDs
@@ -264,6 +279,15 @@ keys = session.get_all_keys()
 for key in keys:
     value = session.get(key)
     print(f"{key}: {value}")
+```
+
+### Session Clearing
+
+Delete all session data while preserving the session id:
+
+```python
+# Clear session data but preserve session id
+session.clear()
 ```
 
 ## Summary
