@@ -95,6 +95,6 @@ async def test_pdf_support(http_client):
         response,
         [
             "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
-            "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**"
+            "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**",
         ],
     )
