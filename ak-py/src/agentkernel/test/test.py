@@ -134,6 +134,8 @@ class Test:
         :raises AssertionError: If the actual string doesn't match any expected string above the threshold score.
         :return: None - Returns implicitly when a match is found above the threshold.
         """
+        if not expected:
+            raise ValueError("Expected strings list cannot be empty for fuzzy comparison.")
         for item in expected:
             score = fuzz.ratio(actual, item)
             if score > threshold:
