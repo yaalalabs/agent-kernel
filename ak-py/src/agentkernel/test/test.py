@@ -14,8 +14,8 @@ from agentkernel.core.config import AKConfig
 
 
 class Mode(StrEnum):
-    FUZZY = ("fuzzy",)
-    JUDGE = ("judge",)
+    FUZZY = "fuzzy"
+    JUDGE = "judge"
     FALLBACK = "fallback"
 
 
