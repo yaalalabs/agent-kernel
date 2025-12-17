@@ -55,6 +55,8 @@ jobs:
           python scripts/test_update_terraform_versions.py
 
       - name: Build and test ak-py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         working-directory: ak-py
         run: |
           set -e
