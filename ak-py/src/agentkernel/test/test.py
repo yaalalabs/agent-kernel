@@ -189,23 +189,8 @@ class Test:
                 score = result["answer_similarity"][0]
                 if score >= threshold:
                     return
-            # If none met the threshold, fail with the best score for debugging.
-            # Recompute scores to report max
-            scores = []
-            for gt in expected:
-                data = Dataset.from_dict(
-                    {
-                        "question": [user_input],
-                        "answer": [actual],
-                        "ground_truth": [gt],
-                    }
-                )
-                result = evaluate(data, metrics=[answer_similarity], llm=llm, embeddings=embeddings)
-                scores.append(result["answer_similarity"][0])
-            best = max(scores) if scores else 0.0
             raise AssertionError(
                 f"Response didn't pass Ragas answer_similarity against any expected. "
-                f"Best Score: {best:.3f}, Threshold: {threshold:.3f}.\n"
                 f"Question: {user_input}\nAnswer: {actual}\nExpected: {expected}"
             )
         else:
@@ -229,7 +214,8 @@ class Test:
 
     @staticmethod
     def compare(
-        actual: str, expected: list[str] = None, user_input: str = "", threshold: int = 50, mode: Mode = Mode.FALLBACK
+            actual: str, expected: list[str] = None, user_input: str = "", threshold: int = 50,
+            mode: Mode = Mode.FALLBACK
     ):
         """
         Compare an actual string against a list of expected strings using the specified mode.
@@ -247,6 +233,10 @@ class Test:
         :raises AssertionError: If the actual string doesn't match any expected string.
         :return: None - Returns implicitly when a match is found.
         """
+        # Validate mode
+        if mode not in [Mode.FUZZY, Mode.JUDGE, Mode.FALLBACK]:
+            raise ValueError(f"Invalid mode: {mode}. Must be one of: {Mode.FUZZY}, {Mode.JUDGE}, {Mode.FALLBACK}")
+
         if mode == Mode.JUDGE:
             Test._judge_compare(user_input=user_input, actual=actual, expected=expected, threshold=threshold / 100)
         elif mode == Mode.FUZZY:

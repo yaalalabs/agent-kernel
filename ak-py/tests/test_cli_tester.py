@@ -12,7 +12,7 @@ async def test_cli_tester_prompt_update_and_expect():
     assert CliTest._get_prompt() == "(agent) >> "
 
     # Set the last response manually for expect()
-    t.latest = "Hello World"
+    t.last_agent_response = "Hello World"
     # Should pass with a reasonable fuzzy threshold when expected is similar
     await t.expect(["Hello World!"])
 
@@ -34,13 +34,14 @@ def test_compare_fuzzy_mode():
 
 def test_compare_judge_mode():
     """Test judge mode only uses LLM evaluation"""
-    # Note: This will make an actual LLM call via Ragas (answer_relevancy)
-    # Should pass: answer is relevant to the user input
+    # Note: This will make an actual LLM call via Ragas (answer_similarity)
+    # Should pass: answer is semantically similar to expected
     CliTest.compare(
         actual="Paris is the capital of France",
         expected=["The capital of France is Paris"],
         user_input="What is the capital of France?",
         mode=Mode.JUDGE,
+        threshold=50,  # 0.5 threshold for answer_similarity
     )
 
     # Should fail with completely unrelated responses
@@ -50,6 +51,7 @@ def test_compare_judge_mode():
             expected=["Goodbye forever"],
             user_input="What is the capital of France?",
             mode=Mode.JUDGE,
+            threshold=95,
         )
 
 
@@ -58,18 +60,24 @@ def test_compare_fallback_mode():
     # Should pass with fuzzy matching (no LLM call needed)
     CliTest.compare("Hello World", ["Hello World!"], threshold=50)
 
-    # Should pass with judge when fuzzy fails but answer is still relevant to the question
+    # Should pass with judge when fuzzy fails but answer is still semantically similar
     CliTest.compare(
-        actual="Paris is the capital",
+        actual="Paris is the capital of France",
         expected=["The capital of France is Paris"],
         user_input="What is the capital of France?",
-        threshold=95,
+        threshold=50,
         mode=Mode.FALLBACK,
     )
 
     # Should fail when both fuzzy and judge fail
     with pytest.raises(AssertionError, match="didn't pass fuzzy matching or Ragas evaluation"):
-        CliTest.compare("Hello", ["Goodbye completely"], threshold=95, mode=Mode.FALLBACK)
+        CliTest.compare(
+            "Hello",
+            ["Goodbye completely"],
+            user_input="What is the capital of France?",
+            threshold=95,
+            mode=Mode.FALLBACK,
+        )
 
 
 def test_compare_invalid_mode():
@@ -83,22 +91,24 @@ async def test_expect_with_different_modes():
     """Test that expect uses the mode specified during initialization"""
     # Test with fuzzy mode
     t_fuzzy = CliTest(path="dummy.py", match_threshold=50, mode=Mode.FUZZY)
-    t_fuzzy.latest = "Hello World"
+    t_fuzzy.last_agent_response = "Hello World"
     await t_fuzzy.expect(["Hello World!"])
 
     # Test with judge mode
-    t_judge = CliTest(path="dummy.py", mode=Mode.JUDGE)
-    t_judge.latest = "Paris is the capital of France"
-    # For Ragas judge we must supply user_input via compare(), but expect() uses stored latest only.
+    t_judge = CliTest(path="dummy.py", mode=Mode.JUDGE, match_threshold=50)
+    t_judge.last_agent_response = "Paris is the capital of France"
+    t_judge.last_user_input = "What is the capital of France?"
+    # For Ragas judge we must supply user_input via compare(), but expect() uses stored last_user_input.
     # We directly call compare() here to pass user_input.
     CliTest.compare(
-        actual=t_judge.latest,
+        actual=t_judge.last_agent_response,
         expected=["The capital of France is Paris"],
         user_input="What is the capital of France?",
         mode=Mode.JUDGE,
+        threshold=50,
     )
 
     # Test with fallback mode (default)
     t_fallback = CliTest(path="dummy.py")
-    t_fallback.latest = "Hello World"
+    t_fallback.last_agent_response = "Hello World"
     await t_fallback.expect(["Hello World!"])
