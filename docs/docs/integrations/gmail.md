@@ -19,9 +19,11 @@ The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are proc
 🔐 Secure OAuth2 authentication \
 💬 AI-powered email replies \
 ⚡ Real-time polling and automation \
-🔄 Session management per thread \
+🔄 Session & conversation management per thread \
 📊 Label and filter support \
-🎯 Customizable agent instructions
+🎯 Customizable agent instructions \
+✉️ Email threading with full context history \
+🎨 Custom email signatures and sign-off formats
 
 ## Quick Start
 
@@ -44,19 +46,26 @@ The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are proc
 - Copy the `client_id` and `client_secret` from the credentials JSON file (no need to save the file)
 - Add your Gmail address as a test user in the OAuth consent screen
 
-
-### 3. Configure Environment Variables (No credentials.json needed)
+### 3. Configure Environment Variables 
 
 ```bash
+# OAuth2 Credentials (REQUIRED)
 export AK_GMAIL__CLIENT_ID="your-google-client-id"
 export AK_GMAIL__CLIENT_SECRET="your-google-client-secret"
-# Optional: comma-separated list of redirect URIs (default: http://localhost)
-export AK_GMAIL__REDIRECT_URIS="http://localhost"
-export AK_GMAIL__AGENT="general"
+
+# OpenAI Configuration (REQUIRED)
 export OPENAI_API_KEY="your_openai_api_key"
-export AK_GMAIL__TOKEN_FILE="token.pickle"
-export AK_GMAIL__POLL_INTERVAL="30"
-export AK_GMAIL__LABEL_FILTER="INBOX"
+
+# Gmail Configuration (Optional)
+export AK_GMAIL__REDIRECT_URIS="http://localhost"  # Default: http://localhost
+export AK_GMAIL__AGENT="general"                   # Agent to handle emails
+export AK_GMAIL__TOKEN_FILE="token.pickle"        # OAuth token storage
+export AK_GMAIL__POLL_INTERVAL="30"               # Polling interval (seconds)
+export AK_GMAIL__LABEL_FILTER="INBOX"             # Gmail label to monitor
+
+# Email Signature Customization 
+export AK_CLIENT_NAME="Your Name"                 # Name for signatures
+export AK_GMAIL_SIGN_OFF="Best regards"           # Sign-off format
 ```
 
 **Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
@@ -80,20 +89,47 @@ gmail:
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agentkernel.gmail import AgentGmailRequestHandler
+import asyncio
 
 general_agent = OpenAIAgent(
     name="general",
-    instructions="""Your custom instructions here..."""
+    instructions="""You are an AI email assistant.
+1. Extract sender's name from the "From:" field
+2. Start response with "Hi [Name],"
+3. Address their questions professionally
+4. Keep it brief (2-3 paragraphs max)
+5. Do NOT include "Subject:" or signatures
+"""
 )
 
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
     handler = AgentGmailRequestHandler()
-    RESTAPI.run([handler])
+    handler.authenticate()
+    asyncio.run(handler.start_polling())
+```
+
+## Email Threading & Conversation Context
+
+Each Gmail thread maintains its own conversation session:
+
+- **Automatic Threading**: Replies maintain Gmail thread structure
+- **Context History**: Agent receives last 5 messages in thread for context
+- **Session Management**: Thread ID = conversation session ID
+- **Multiple Messages**: Thread can have multiple back-and-forth exchanges
+
+```
+Thread: "Product Question"
+User:  "How does feature X work?"
+       ↓ (Agent gets: no history)
+Bot:   "Feature X works by..."
+
+User:  "Can I customize it?"
+       ↓ (Agent gets: previous exchange)
+Bot:   "Yes! Here are customization options..."
 ```
 
 ## Advanced Usage
@@ -101,8 +137,38 @@ if __name__ == "__main__":
 ### Custom Email Query
 
 Edit `gmail_chat.py`:
+
 ```python
 query = "is:unread from:important@example.com"
+```
+
+### Email Filtering by Sender & Subject
+
+Configure filters via environment variables:
+
+```bash
+# Only process emails from specific senders (comma-separated)
+export AK_GMAIL__SENDER_FILTER="support@company.com,sales@company.com"
+
+# Only process emails with specific subject keywords (comma-separated)
+export AK_GMAIL__SUBJECT_FILTER="Support,Help,Urgent,Bug"
+
+# Use both filters (email must match both to be processed)
+export AK_GMAIL__SENDER_FILTER="support@company.com"
+export AK_GMAIL__SUBJECT_FILTER="Support Request"
+```
+
+### Custom Signature Format
+
+```bash
+export AK_CLIENT_NAME="Support Team"
+export AK_GMAIL_SIGN_OFF="Warm regards"
+
+# Results in:
+# Some response text...
+#
+# Warm regards,
+# Support Team
 ```
 
 ### Auto-Archive After Reply
@@ -140,24 +206,29 @@ def _get_attachments(self, payload: dict):
 
 ## Troubleshooting
 
-### "Credentials not found"
+### Credentials not found
+
 - Make sure you set `AK_GMAIL__CLIENT_ID` and `AK_GMAIL__CLIENT_SECRET` environment variables
 
-### "OAuth2 flow failed"
+### OAuth2 flow failed
+
 - Add your email as test user in OAuth consent screen
 - Enable Gmail API in Google Cloud
 - Delete `token.pickle` and retry
 - Make sure your environment variables are set correctly (client ID, secret, etc.)
 
-### "No agent available"
+### No agent available
+
 - Check `AK_GMAIL__AGENT` matches agent name
 - Verify OpenAI API key
 
-### "Access blocked: Authorization Error"
+### Access blocked: Authorization Error
+
 - App needs verification for external users
 - Add Gmail addresses as test users
 
-### "Rate limit exceeded"
+### Rate limit exceeded
+
 - Gmail API has quota limits
 - Increase `poll_interval`
 
@@ -166,23 +237,17 @@ def _get_attachments(self, payload: dict):
 - Gmail API: 250 queries/user/day (default)
 - Sending: 100 emails/day (test users)
 
-## Production Deployment
-
-✅ Use environment variables for secrets \
-✅ Never commit credentials/token files \
-✅ Monitor sent emails and API usage \
-✅ Use secure secret management
 
 ## Gmail vs Messenger/Telegram Comparison
 
-| Feature              | Gmail                | Messenger/Telegram        |
-|---------------------|----------------------|---------------------------|
-| Message Type        | Email (threaded)     | Chat/message              |
-| Auth                | OAuth2               | Token/secret              |
-| Real-time           | Polling (30s+)       | Webhook (instant)         |
-| Attachments         | Yes                  | Yes (basic)               |
-| App Review          | Not required         | Messenger: required       |
-| Quota               | 250 queries/day      | Higher                    |
+| Feature      | Gmail            | Messenger/Telegram  |
+| ------------ | ---------------- | ------------------- |
+| Message Type | Email (threaded) | Chat/message        |
+| Auth         | OAuth2           | Token/secret        |
+| Real-time    | Polling (30s+)   | Webhook (instant)   |
+| Attachments  | Yes              | Yes (basic)         |
+| App Review   | Not required     | Messenger: required |
+| Quota        | 250 queries/day  | Higher              |
 
 ## Example Projects
 
@@ -192,4 +257,3 @@ def _get_attachments(self, payload: dict):
 
 - [Gmail API Documentation](https://developers.google.com/gmail/api)
 - [OAuth2 for Desktop Apps](https://developers.google.com/identity/protocols/oauth2#installed)
-

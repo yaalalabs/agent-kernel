@@ -15,10 +15,13 @@ general_agent = OpenAIAgent(
 - Maintain a friendly and professional tone
 
 When replying to emails:
-1. Address the sender's questions or concerns
-2. Provide relevant information
-3. Keep it brief (2-3 paragraphs max)
-4. Sign off professionally
+1. Extract sender's name from the "From:" field 
+2. Start your response with "Hi [Name]," or "Hello [Name],"
+3. Address the sender's questions or concerns
+4. Provide relevant information
+5. Keep it brief (2-3 paragraphs max)
+6. Do NOT include "Subject:" in your response
+7. Do NOT add signature or closing (handler will add automatically)
 """,
 )
 
@@ -27,14 +30,13 @@ OpenAIModule([general_agent])
 
 
 async def main():
-    """Main function to run Gmail bot."""
+
     handler = AgentGmailRequestHandler()
 
     # Authenticate with Gmail
     handler.authenticate()
 
     print("Gmail bot started! Polling for new emails...")
-    print("Press Ctrl+C to stop")
 
     try:
         # Start polling loop

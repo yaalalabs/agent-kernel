@@ -57,9 +57,17 @@ class AgentGmailRequestHandler:
             )
             raise ValueError("Incomplete Gmail configuration.")
 
+        # Email filtering configuration (optional)
+        self._sender_filter = os.environ.get("AK_GMAIL__SENDER_FILTER")  # Comma-separated list of allowed senders
+        self._subject_filter = os.environ.get("AK_GMAIL__SUBJECT_FILTER")  # Comma-separated list of subject keywords
+
+        # Parse filters into lists
+        self._allowed_senders = [s.strip() for s in self._sender_filter.split(",")] if self._sender_filter else None
+        self._subject_keywords = [s.strip() for s in self._subject_filter.split(",")] if self._subject_filter else None
+
         self._service = None
         self._is_running = False
-        self._processed_emails = set()  # Track processed email IDs
+        self._processed_emails = set()  # Track processed email IDs (prevents processing same email twice)
 
     def authenticate(self):
         """
@@ -131,6 +139,44 @@ class AgentGmailRequestHandler:
         self._is_running = False
         self._log.info("Stopping email polling")
 
+    def _should_process_email(self, message_id: str) -> bool:
+        """
+        Check if email should be processed based on sender and subject filters.
+
+        :param message_id: Gmail message ID
+        :return: True if email passes filter, False otherwise
+        """
+        if not self._allowed_senders and not self._subject_keywords:
+            # No filters configured, process all emails
+            return True
+
+        try:
+            # Get message headers
+            message = self._service.users().messages().get(userId="me", id=message_id, format="full").execute()
+            headers = message["payload"]["headers"]
+            sender = self._get_header(headers, "From")
+            subject = self._get_header(headers, "Subject")
+
+            # Check sender filter
+            if self._allowed_senders:
+                sender_match = any(allowed in sender for allowed in self._allowed_senders)
+                if not sender_match:
+                    self._log.debug(f"Email from '{sender}' does not match allowed senders filter")
+                    return False
+
+            # Check subject filter
+            if self._subject_keywords:
+                subject_match = any(keyword.lower() in subject.lower() for keyword in self._subject_keywords)
+                if not subject_match:
+                    self._log.debug(f"Subject '{subject}' does not contain any keywords filter")
+                    return False
+
+            return True
+
+        except Exception as e:
+            self._log.warning(f"Error checking email filters: {e}")
+            return True  # Default to processing if error occurs
+
     async def _check_new_emails(self):
         """
         Check for new unread emails.
@@ -142,23 +188,32 @@ class AgentGmailRequestHandler:
         try:
             # Query for unread emails
             query = f"is:unread label:{self._label_filter}"
+            self._log.info(f"[POLLING] Checking for emails with query: {query}")  # Always log polling
             results = self._service.users().messages().list(userId="me", q=query, maxResults=10).execute()
 
             messages = results.get("messages", [])
 
             if not messages:
-                self._log.debug("No new unread emails")
+                self._log.info("[POLLING] No new unread emails found")  # Log when nothing found
                 return
 
-            self._log.info(f"Found {len(messages)} unread email(s)")
+            self._log.info(f"[POLLING] Found {len(messages)} unread email(s)")
 
             for msg in messages:
                 msg_id = msg["id"]
 
                 # Skip if already processed
                 if msg_id in self._processed_emails:
+                    self._log.debug(f"Email {msg_id} already processed, skipping")
                     continue
 
+                # Check if email passes filter criteria
+                if not self._should_process_email(msg_id):
+                    self._log.debug(f"Email {msg_id} filtered out by sender or subject filter")
+                    self._processed_emails.add(msg_id)  # Mark as processed anyway
+                    continue
+
+                self._log.info(f"[POLLING] Processing email {msg_id}")
                 # Process the email
                 await self._process_email(msg_id)
 
@@ -185,6 +240,9 @@ class AgentGmailRequestHandler:
             headers = message["payload"]["headers"]
             subject = self._get_header(headers, "Subject")
             sender = self._get_header(headers, "From")
+            message_id_header = self._get_header(
+                headers, "Message-ID"
+            )  # Extract Message-ID header for proper threading
             thread_id = message.get("threadId")
 
             # Extract email body
@@ -194,7 +252,9 @@ class AgentGmailRequestHandler:
                 self._log.warning(f"Email {message_id} has no body content")
                 return
 
-            self._log.info(f"Processing email from {sender}, subject: {subject}")
+            self._log.info(
+                f"[EMAIL] Processing email - from={sender}, subject={subject}, thread_id={thread_id}, message_id={message_id}"
+            )
             self._log.debug(f"Email body: {body[:200]}...")
 
             # Use thread_id as session_id for agent context (threaded conversations)
@@ -210,7 +270,8 @@ class AgentGmailRequestHandler:
 
             if response:
                 # Send reply
-                await self._send_reply(message_id, thread_id, sender, subject, response)
+                self._log.info(f"[SEND_REPLY] thread_id={thread_id}, message_id={message_id}, to={sender}")
+                await self._send_reply(message_id_header, thread_id, sender, subject, response)
 
                 # Mark as read
                 self._mark_as_read(message_id)
@@ -218,17 +279,21 @@ class AgentGmailRequestHandler:
         except Exception as e:
             self._log.error(f"Error processing email {message_id}: {e}\n{traceback.format_exc()}")
 
-    async def _get_thread_history(self, thread_id: Optional[str], current_message_id: str) -> str:
+    async def _get_thread_history(self, thread_id: Optional[str], current_message_id: str, max_history: int = 5) -> str:
         """
-        Fetch all previous messages in the same Gmail thread for context.
-        Returns a concatenated string of the thread history (excluding the current message).
+        Fetch recent messages in the same Gmail thread for context.
+        Returns a concatenated string of the thread history (last N messages, excluding current).
+
+        :param thread_id: Gmail thread ID
+        :param current_message_id: Current message ID (to skip)
+        :param max_history: Maximum number of previous messages to include (default: 5)
         """
         if not thread_id:
             return ""
         try:
             thread = self._service.users().threads().get(userId="me", id=thread_id, format="full").execute()
             messages = thread.get("messages", [])
-            # Sort by internalDate (ascending)
+            # Sort by internalDate (ascending, oldest first)
             messages = sorted(messages, key=lambda m: int(m.get("internalDate", "0")))
             history = []
             for msg in messages:
@@ -241,7 +306,15 @@ class AgentGmailRequestHandler:
                 body = self._get_email_body(msg["payload"])
                 if body:
                     history.append(f"From: {from_addr}\nDate: {date}\nSubject: {subject}\n\n{body}\n{'-'*40}")
-            return "\n".join(history)
+
+            # Keep only last max_history messages
+            recent_history = history[-max_history:] if len(history) > max_history else history
+            result = "\n".join(recent_history)
+
+            if result:
+                self._log.debug(f"Thread history ({len(recent_history)} messages):\n{result[:500]}...")
+
+            return result
         except Exception as e:
             self._log.warning(f"Error fetching thread history: {e}\n{traceback.format_exc()}")
             return ""
@@ -262,32 +335,47 @@ class AgentGmailRequestHandler:
     def _get_email_body(self, payload: dict) -> str:
         """
         Extract email body from payload.
+        Handles both single-part and multipart messages.
+        Prioritizes plain text, falls back to HTML, then returns empty if neither.
 
         :param payload: Email payload
         :return: Email body text
         """
         body = ""
 
+        # Handle multipart messages (most common)
         if "parts" in payload:
-            # Multipart message
             for part in payload["parts"]:
-                if part["mimeType"] == "text/plain":
-                    data = part["body"].get("data")
-                    if data:
-                        body = base64.urlsafe_b64decode(data).decode("utf-8")
-                        break
-                elif part["mimeType"] == "text/html" and not body:
-                    # Fallback to HTML if no plain text
-                    data = part["body"].get("data")
-                    if data:
-                        body = base64.urlsafe_b64decode(data).decode("utf-8")
-        else:
-            # Single part message
-            data = payload["body"].get("data")
-            if data:
-                body = base64.urlsafe_b64decode(data).decode("utf-8")
+                mime_type = part.get("mimeType", "")
 
-        return body.strip()
+                # Priority 1: Get plain text if available
+                if mime_type == "text/plain":
+                    data = part.get("body", {}).get("data", "")
+                    if data:
+                        try:
+                            body = base64.urlsafe_b64decode(data).decode("utf-8")
+                            return body  # Return immediately if we found plain text
+                        except Exception as e:
+                            self._log.warning(f"Error decoding plain text: {e}")
+
+                # Priority 2: Fall back to HTML if no plain text found yet
+                elif mime_type == "text/html" and not body:
+                    data = part.get("body", {}).get("data", "")
+                    if data:
+                        try:
+                            body = base64.urlsafe_b64decode(data).decode("utf-8")
+                        except Exception as e:
+                            self._log.warning(f"Error decoding HTML: {e}")
+        else:
+            # Handle single-part messages
+            data = payload.get("body", {}).get("data", "")
+            if data:
+                try:
+                    body = base64.urlsafe_b64decode(data).decode("utf-8")
+                except Exception as e:
+                    self._log.warning(f"Error decoding message body: {e}")
+
+        return body.strip() if body else ""
 
     async def _process_with_agent(
         self,
@@ -340,32 +428,37 @@ class AgentGmailRequestHandler:
             self._log.error(f"Error processing with agent: {e}\n{traceback.format_exc()}")
             return None
 
-    async def _send_reply(self, original_message_id: str, thread_id: str, to: str, subject: str, body: str):
+    async def _send_reply(self, original_message_id_header: str, thread_id: str, to: str, subject: str, body: str):
         """
         Send email reply.
         Skips in test mode (when self._service is None).
-        :param original_message_id: Original message ID
+        :param original_message_id_header: Original email's Message-ID header (for proper threading)
         :param thread_id: Thread ID for threading
         :param to: Recipient email
-        :param subject: Email subject (will add Re: if needed)
-        :param body: Email body
+        :param subject: Email subject
+        :param body: Email body from agent
         """
         if self._service is None:
             self._log.info("Test mode: Skipping send reply.")
             return
         try:
-            # Add "Re: " to subject if not already there
-            if not subject.lower().startswith("re:"):
-                subject = f"Re: {subject}"
+            # Clean up agent response: remove "Subject: ..." line if present
+            reply_body = body
 
-            # Only reply with the subject and the body, and append 'Best regards, <client name>'
-            client_name = os.environ.get("AK_CLIENT_NAME", "Agent Kernel")
-            reply_body = f"{body}\n\nBest regards,\n{client_name}"
+            # Add signature with configurable format and name
+            client_name = os.environ.get("AK_CLIENT_NAME")
+            sign_off = os.environ.get("AK_GMAIL_SIGN_OFF")  # Best regards, Sincerely, Kind regards, etc.
+
+            reply_body = f"{reply_body}\n\n{sign_off},\n{client_name}"
 
             # Create message
             message = MIMEText(reply_body)
             message["to"] = to
             message["subject"] = subject
+            # Add In-Reply-To header to properly link messages in Gmail thread
+            if original_message_id_header:
+                message["In-Reply-To"] = original_message_id_header
+                message["References"] = original_message_id_header
 
             # Encode message
             raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
@@ -373,9 +466,11 @@ class AgentGmailRequestHandler:
             # Send with thread ID to maintain conversation threading
             send_message = {"raw": raw_message, "threadId": thread_id}
 
+            self._log.info(f"[SEND_REPLY] Sending reply with threadId={thread_id}, to={to}, subject={subject}")
+
             result = self._service.users().messages().send(userId="me", body=send_message).execute()
 
-            self._log.info(f"Reply sent successfully (message ID: {result['id']})")
+            self._log.info(f"[SEND_REPLY] Reply sent successfully (message ID: {result['id']}, threadId: {thread_id})")
 
         except Exception as e:
             self._log.error(f"Error sending reply: {e}\n{traceback.format_exc()}")

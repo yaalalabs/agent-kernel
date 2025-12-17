@@ -23,33 +23,41 @@ The `AgentGmailHandler` class handles email conversations with agents via Gmail 
 ### Configuration Steps
 
 1. **Create a Google Cloud Project**
+
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
    - Create a new project
    - Enable the Gmail API
-
 2. **Configure OAuth2 Credentials**
+
    - Go to APIs & Services > Credentials
    - Create OAuth 2.0 Client ID (Desktop application type)
    - Download the credentials JSON file
    - Save as `credentials.json` in your project directory
-
 3. **Configure OAuth Consent Screen**
+
    - Set up the OAuth consent screen
    - Add required scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`
    - Add test users if in testing mode
-
 
 ### Required Environment Variables (No credentials.json needed)
 
 Set the following environment variables with your Google Cloud OAuth2 credentials:
 
 ```bash
+# OAuth2 Credentials (REQUIRED)
 export AK_GMAIL__CLIENT_ID="your-google-client-id"
 export AK_GMAIL__CLIENT_SECRET="your-google-client-secret"
-# Optional: comma-separated list of redirect URIs (default: http://localhost)
-export AK_GMAIL__REDIRECT_URIS="http://localhost"
-export AK_GMAIL__TOKEN_FILE="path/to/token.pickle"  # Will be created after first auth
-export AK_GMAIL__POLL_INTERVAL="30"  # Seconds between checks, optional
+
+# Optional Configuration
+export AK_GMAIL__REDIRECT_URIS="http://localhost"  # Default: http://localhost
+export AK_GMAIL__TOKEN_FILE="token.pickle"         # Default: token.pickle
+export AK_GMAIL__POLL_INTERVAL="30"                # Default: 30 seconds
+export AK_GMAIL__AGENT="general"                   # Agent name to handle emails
+export AK_GMAIL__LABEL_FILTER="INBOX"              # Gmail label to monitor
+
+# Email Signature Customization
+export AK_CLIENT_NAME="Your Name"                  # Name to sign replies with
+export AK_GMAIL_SIGN_OFF="Best regards"            # Sign-off format (e.g., "Sincerely", "Kind regards")
 ```
 
 **Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
@@ -57,6 +65,7 @@ export AK_GMAIL__POLL_INTERVAL="30"  # Seconds between checks, optional
 ### OAuth Flow
 
 On first run, the handler will:
+
 1. Open a browser for Google OAuth consent
 2. Request permissions to read/send emails
 3. Save the token for future use
@@ -86,7 +95,6 @@ if __name__ == "__main__":
 
 ## Configuration Options
 
-
 ### config.yaml
 
 ```yaml
@@ -105,8 +113,10 @@ gmail:
 
 - **Plain Text Emails**: Standard text email content
 - **HTML Emails**: HTML content is converted to plain text
-- **Email Threading**: Replies maintain conversation thread
+- **Email Threading**: Replies maintain conversation thread with full context
+- **Thread Support**: Each Gmail thread maintains a separate conversation session
 - **Attachments**: Basic attachment detection (content not processed)
+- **Custom Signatures**: Configurable email signatures with name and sign-off format
 
 ### Email Handling
 
@@ -139,6 +149,29 @@ gmail:
 5. Wait for poll interval
 6. Check response email
 
+## Email Threading & Conversation Context
+
+Each Gmail thread maintains its own conversation session:
+
+- Thread ID is used as the session ID
+- Full thread history (last 5 messages) is passed to the agent for context
+- Agent responds with full conversation awareness
+- Replies are threaded to maintain Gmail's conversation view
+
+### Example Thread Flow
+
+```
+Thread ID: 19b2b440cef8d49c
+
+Message 1 (User): "What is a Graph Neural Network?"
+  ↓ (processed by agent, context: no history)
+  → Reply: "A Graph Neural Network (GNN) is..."
+
+Message 2 (User): "Can you give an example?"
+  ↓ (processed by agent, context: previous message)
+  → Reply: "Sure! Here's an example of GNN usage..."
+```
+
 ## Advanced Usage
 
 ### Custom Email Handling
@@ -151,48 +184,62 @@ from agentkernel.gmail import AgentGmailHandler
 class CustomGmailHandler(AgentGmailHandler):
     async def _process_email(self, email: dict):
         subject = email.get("subject", "")
-        
+    
         # Custom logic here
         if "[AUTO-REPLY]" in subject:
             return  # Skip auto-replies
-        
+    
         # Call parent handler
         await super()._process_email(email)
 ```
 
 ### Filtering Emails
 
-You can customize which emails to process:
+The handler supports filtering emails by sender and/or subject keywords:
 
-```python
-# Only process emails from specific senders
-allowed_senders = ["user@example.com"]
+```bash
+# Only process emails from specific senders (comma-separated)
+export AK_GMAIL__SENDER_FILTER="user@example.com,support@company.com"
 
-# Only process emails with specific subjects
-subject_filters = ["Support Request", "Help Needed"]
+# Only process emails with specific subject keywords (comma-separated)
+export AK_GMAIL__SUBJECT_FILTER="Support,Help,Urgent"
+
+# Use both filters together (requires BOTH to match)
+export AK_GMAIL__SENDER_FILTER="support@company.com"
+export AK_GMAIL__SUBJECT_FILTER="Support Request,Bug Report"
 ```
+
+**How filtering works:**
+
+- If `AK_GMAIL__SENDER_FILTER` is set: Only emails from those senders are processed
+- If `AK_GMAIL__SUBJECT_FILTER` is set: Only emails with those keywords in subject are processed
+- If both are set: Email must match BOTH filters
+- If neither is set: All unread emails are processed (default behavior)
 
 ## Troubleshooting
 
 ### Common Issues
 
-
 **OAuth flow fails:**
+
 - Ensure environment variables are set correctly (AK_GMAIL__CLIENT_ID, AK_GMAIL__CLIENT_SECRET, etc.)
 - Check OAuth consent screen is properly configured
 - Verify redirect URIs are set correctly
 
 **Emails not being processed:**
+
 - Check polling is running (look for log messages)
 - Verify emails are unread
 - Ensure Gmail API is enabled in Google Cloud Console
 
 **Token errors:**
+
 - Delete token.json and re-authenticate
 - Check token hasn't been revoked
 - Verify OAuth scopes are correct
 
 **Replies not sending:**
+
 - Ensure `gmail.send` scope is authorized
 - Check for Gmail sending limits
 - Verify email format is correct
@@ -209,6 +256,7 @@ logging.basicConfig(level=logging.DEBUG)
 ## API Rate Limits
 
 Gmail API has rate limits:
+
 - **Daily Quota**: 1,000,000,000 quota units per day
 - **Per-User Rate Limit**: 250 quota units per user per second
 - **Sending Limit**: 500 emails per day (Gmail), 2000 for Workspace
@@ -217,4 +265,3 @@ Gmail API has rate limits:
 
 - [Gmail API Documentation](https://developers.google.com/gmail/api)
 - [Gmail API Quickstart](https://developers.google.com/gmail/api/quickstart/python)
-

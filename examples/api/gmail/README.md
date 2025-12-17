@@ -24,31 +24,42 @@ AI-powered Gmail bot that automatically reads and replies to emails using Agent 
 1. Go to **APIs & Services** → **Credentials**
 2. Click **Create Credentials** → **OAuth client ID**
 3. If prompted, configure OAuth consent screen:
-    - User Type: **External** (for testing)
-    - App name: Your app name
-    - User support email: Your email
-    - Developer contact: Your email
-    - Scopes: Add `gmail.readonly`, `gmail.send`, `gmail.modify`
-    - Test users: Add your Gmail address
+   - User Type: **External** (for testing)
+   - App name: Your app name
+   - User support email: Your email
+   - Developer contact: Your email
+   - Scopes: Add `gmail.readonly`, `gmail.send`, `gmail.modify`
+   - Test users: Add your Gmail address
 4. Back to Create OAuth client ID:
-    - Application type: **Desktop app**
-    - Name: "Gmail Agent Kernel"
-    - Click **Create**
+   - Application type: **Desktop app**
+   - Name: "Gmail Agent Kernel"
+   - Click **Create**
 5. Copy the `client_id` and `client_secret` from the credentials JSON file (no need to save the file)
-
 
 ### 3. Configure Environment Variables (No credentials.json needed)
 
 ```bash
+# OAuth2 Credentials (REQUIRED)
 export AK_GMAIL__CLIENT_ID="your-google-client-id"
 export AK_GMAIL__CLIENT_SECRET="your-google-client-secret"
-# Optional: comma-separated list of redirect URIs (default: http://localhost)
-export AK_GMAIL__REDIRECT_URIS="http://localhost"
-export AK_GMAIL__AGENT="general"
+
+# OpenAI Configuration (REQUIRED)
 export OPENAI_API_KEY="your_openai_api_key"
-export AK_GMAIL__TOKEN_FILE="token.pickle"        # Where to save OAuth token (default: token.pickle)
-export AK_GMAIL__POLL_INTERVAL="30"               # Check emails every N seconds (default: 30)
+
+# Gmail Configuration (Optional)
+export AK_GMAIL__REDIRECT_URIS="http://localhost"  # Default: http://localhost
+export AK_GMAIL__AGENT="general"                   # Agent to handle emails (default: general)
+export AK_GMAIL__TOKEN_FILE="token.pickle"        # OAuth token storage (default: token.pickle)
+export AK_GMAIL__POLL_INTERVAL="30"               # Polling interval in seconds (default: 30)
 export AK_GMAIL__LABEL_FILTER="INBOX"             # Gmail label to monitor (default: INBOX)
+
+# Email Signature Customization 
+export AK_CLIENT_NAME="Your Name"                 # Name for email signatures
+export AK_GMAIL_SIGN_OFF="Best regards"           # Sign-off format (e.g., "Sincerely", "Kind regards")
+
+# Email Filtering 
+export AK_GMAIL__SENDER_FILTER="user@example.com,support@company.com"  # Only from these senders
+export AK_GMAIL__SUBJECT_FILTER="Support,Help,Urgent"                   # Only with these keywords
 ```
 
 **Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
@@ -78,6 +89,7 @@ uv run server.py
 ### First Run - OAuth Authentication
 
 On first run, the bot will:
+
 1. Open your browser automatically
 2. Ask you to sign in to Google
 3. Request permissions for Gmail access
@@ -93,10 +105,33 @@ The bot will use the saved `token.pickle` and start polling immediately.
 
 1. **Polling Loop**: Bot checks for unread emails every 30 seconds (configurable)
 2. **Email Detection**: Finds unread emails in INBOX (or specified label)
-3. **AI Processing**: Sends email content to OpenAI agent
-4. **Reply Generation**: Agent generates appropriate response
-5. **Send Reply**: Sends AI response as email reply (maintains thread)
-6. **Mark Read**: Marks original email as read
+3. **Thread Context**: Fetches thread history (last 5 messages) for conversation context
+4. **AI Processing**: Sends email content + thread history to OpenAI agent
+5. **Reply Generation**: Agent generates response with full conversation awareness
+6. **Send Reply**: Sends AI response as email reply (maintains Gmail thread)
+7. **Signature**: Automatically adds configured signature (name + sign-off)
+8. **Mark Read**: Marks original email as read
+
+## Email Threading
+
+Each Gmail thread is treated as a separate conversation:
+
+- **Thread Isolation**: Different threads maintain independent agent sessions
+- **Context Awareness**: Agent sees full conversation history within a thread
+- **Proper Threading**: Replies use `In-Reply-To` and `References` headers for Gmail threading
+- **One Response Per Thread**: Each new user message in a thread gets one AI response
+
+### Example
+
+```
+Thread: "Question about pricing"
+├── User: "What's your pricing?"
+│   └── Agent: "We offer 3 tiers..." [includes signature]
+├── User: "What about discounts?"
+│   └── Agent: "Yes, we offer bulk discounts..." [includes signature]
+└── User: "Can I get a quote?"
+    └── Agent: "Sure, I'll prepare a quote..." [includes signature]
+```
 
 ## Configuration
 
@@ -124,8 +159,8 @@ general_agent = OpenAIAgent(
 
 ## Example Email Flow
 
-
 **Incoming Email:**
+
 ```
 From: user@example.com
 Subject: Question about pricing
@@ -133,6 +168,7 @@ Body: Hi, what are your pricing options?
 ```
 
 **AI Response:**
+
 ```
 Subject: Re: Question about pricing
 Body: Thank you for your inquiry! We offer several pricing tiers:
@@ -151,30 +187,36 @@ gmail:
 ### Monitor Multiple Labels
 
 The handler currently supports one label. To monitor multiple, you can:
+
 1. Create Gmail filter that applies a common label
 2. Or modify the code to query multiple labels
 
 ## Troubleshooting
 
-### "Credentials not found"
+### Credentials not found
+
 - Make sure you set `AK_GMAIL__CLIENT_ID` and `AK_GMAIL__CLIENT_SECRET` environment variables
 
-### "OAuth2 flow failed"
+### OAuth2 flow failed
+
 - Ensure you added your email as a test user in OAuth consent screen
 - Check if Gmail API is enabled in your Google Cloud project
 - Try deleting `token.pickle` and re-authenticating
 - Make sure your environment variables are set correctly (client ID, secret, etc.)
 
-### "No agent available"
+### No agent available
+
 - Check that `AK_GMAIL__AGENT` matches the agent name in `server.py`
 - Verify OpenAI API key is set: `echo $OPENAI_API_KEY`
 
-### "Access blocked: Authorization Error"
+### Access blocked: Authorization Error
+
 - Your app needs to be verified if using external users
 - For testing, add specific Gmail addresses as test users
 - Or set OAuth consent screen to Internal (if using Google Workspace)
 
-### "Rate limit exceeded"
+### Rate limit exceeded
+
 - Gmail API has quota limits
 - Increase `poll_interval` to reduce API calls
 - Check quota usage in Google Cloud Console
@@ -196,24 +238,6 @@ query = "is:unread subject:urgent"
 query = "is:unread label:inbox -from:noreply"
 ```
 
-### Process Attachments
-
-Modify `_get_email_body()` to also extract attachments:
-
-```python
-def _get_attachments(self, payload: dict):
-    attachments = []
-    if 'parts' in payload:
-        for part in payload['parts']:
-            if part.get('filename'):
-                attachments.append({
-                    'filename': part['filename'],
-                    'mimeType': part['mimeType'],
-                    'attachmentId': part['body'].get('attachmentId')
-                })
-    return attachments
-```
-
 ## Gmail API Scopes
 
 This integration uses:
@@ -227,4 +251,3 @@ This integration uses:
 - [Gmail API Documentation](https://developers.google.com/gmail/api)
 - [OAuth2 for Desktop Apps](https://developers.google.com/identity/protocols/oauth2#installed)
 - [Agent Kernel Documentation](https://github.com/yaalalabs/agent-kernel)
-
