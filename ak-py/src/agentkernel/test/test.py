@@ -38,7 +38,6 @@ class Test:
         self.last_agent_response = None
         self.last_user_input = ""
         self.match_threshold = match_threshold
-        self.mode: Mode = mode if mode is not None else AKConfig.get().test.mode
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -190,13 +189,13 @@ class Test:
                 if score >= threshold:
                     return
             raise AssertionError(
-                f"Response didn't pass Ragas answer_similarity against any expected. "
+                f"Response didn't pass judge answer_similarity against any expected. "
                 f"Question: {user_input}\nAnswer: {actual}\nExpected: {expected}"
             )
         else:
             # No expected answers provided: use answer_relevancy which requires a user question
             if not user_input:
-                raise AssertionError("user_input (question) is required for Ragas answer_relevancy metric")
+                raise AssertionError("user_input (question) is required for judge answer_relevancy metric")
             data = Dataset.from_dict(
                 {
                     "question": [user_input],
@@ -207,16 +206,13 @@ class Test:
             score = result["answer_relevancy"][0]
             if score < threshold:
                 raise AssertionError(
-                    f"Response didn't pass Ragas answer_relevancy. Score: {score:.3f}, Threshold: {threshold:.3f}.\n"
+                    f"Response didn't pass judge answer_relevancy. Score: {score:.3f}, Threshold: {threshold:.3f}.\n"
                     f"Question: {user_input}\nAnswer: {actual}"
                 )
             return
 
     @staticmethod
-    def compare(
-            actual: str, expected: list[str] = None, user_input: str = "", threshold: int = 50,
-            mode: Mode = Mode.FALLBACK
-    ):
+    def compare(actual: str, expected: list[str] = None, user_input: str = "", threshold: int = 50, mode: Mode = None):
         """
         Compare an actual string against a list of expected strings using the specified mode.
 
@@ -234,14 +230,22 @@ class Test:
         :return: None - Returns implicitly when a match is found.
         """
         # Validate mode
-        if mode not in [Mode.FUZZY, Mode.JUDGE, Mode.FALLBACK]:
+        if mode not in [Mode.FUZZY, Mode.JUDGE, Mode.FALLBACK, None]:
             raise ValueError(f"Invalid mode: {mode}. Must be one of: {Mode.FUZZY}, {Mode.JUDGE}, {Mode.FALLBACK}")
 
-        if mode == Mode.JUDGE:
+        # preference order: mode arg > config > fallback
+        if mode:
+            selected_mode = mode
+        else:
+            selected_mode = AKConfig.get().test.mode
+            if not selected_mode:
+                selected_mode = Mode.FALLBACK
+
+        if selected_mode == Mode.JUDGE:
             Test._judge_compare(user_input=user_input, actual=actual, expected=expected, threshold=threshold / 100)
-        elif mode == Mode.FUZZY:
+        elif selected_mode == Mode.FUZZY:
             Test._fuzzy_compare(actual=actual, expected=expected, threshold=threshold)
-        elif mode == Mode.FALLBACK:
+        elif selected_mode == Mode.FALLBACK:
             # Try fuzzy first, fallback to judge if fuzzy fails
             try:
                 Test._fuzzy_compare(actual=actual, expected=expected, threshold=threshold)
@@ -252,7 +256,7 @@ class Test:
                     )
                 except AssertionError:
                     raise AssertionError(
-                        f"Response didn't pass fuzzy matching or Ragas evaluation. Expected: {expected}, Received: {actual}"
+                        f"Response didn't pass fuzzy matching or judge evaluation. Expected: {expected}, Received: {actual}"
                     )
 
     async def expect(self, expected: list[str]):
@@ -268,7 +272,7 @@ class Test:
             expected=expected,
             user_input=self.last_user_input,
             threshold=self.match_threshold,
-            mode=self.mode,
+            mode=Mode(AKConfig.get().test.mode),
         )
 
     async def stop(self):

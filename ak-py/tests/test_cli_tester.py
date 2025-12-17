@@ -45,7 +45,7 @@ def test_compare_judge_mode():
     )
 
     # Should fail with completely unrelated responses
-    with pytest.raises(AssertionError, match="didn't pass Ragas"):
+    with pytest.raises(AssertionError, match="didn't pass judge"):
         CliTest.compare(
             actual="Hello",
             expected=["Goodbye forever"],
@@ -63,14 +63,14 @@ def test_compare_fallback_mode():
     # Should pass with judge when fuzzy fails but answer is still semantically similar
     CliTest.compare(
         actual="Paris is the capital of France",
-        expected=["The capital of France is Paris"],
+        expected=["Paris"],
         user_input="What is the capital of France?",
         threshold=50,
         mode=Mode.FALLBACK,
     )
 
     # Should fail when both fuzzy and judge fail
-    with pytest.raises(AssertionError, match="didn't pass fuzzy matching or Ragas evaluation"):
+    with pytest.raises(AssertionError, match="didn't pass fuzzy matching or judge evaluation"):
         CliTest.compare(
             "Hello",
             ["Goodbye completely"],
