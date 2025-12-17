@@ -25,7 +25,7 @@ class Test:
     _ragas_llm: Optional[Any] = None
     _ragas_embeddings: Optional[Any] = None
 
-    def __init__(self, path, match_threshold=50, mode: Mode = None):
+    def __init__(self, path, match_threshold=50):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
         :param path: Python file path as a string
