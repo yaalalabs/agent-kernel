@@ -90,7 +90,7 @@ def test_compare_invalid_mode():
 async def test_expect_with_different_modes():
     """Test that expect uses the mode specified during initialization"""
     # Test with fuzzy mode
-    t_fuzzy = CliTest(path="dummy.py", match_threshold=50, mode=Mode.FUZZY)
+    t_fuzzy = CliTest(path="dummy.py", match_threshold=50)
     t_fuzzy.last_agent_response = "Hello World"
     await t_fuzzy.expect(["Hello World!"])
 
