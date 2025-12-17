@@ -221,7 +221,7 @@ class Test:
 
         Supports three comparison modes:
         - 'FUZZY': Only fuzzy string matching
-        - 'JUDGE': Only LLM-based evaluation using Ragas (answer_relevancy)
+        - 'JUDGE': LLM-based evaluation using Ragas (answer_similarity when expected answers are provided, otherwise answer_relevancy)
         - 'FALLBACK': Try fuzzy first, fallback to LLM evaluation if fuzzy fails
 
         :param actual: The string to be compared.
