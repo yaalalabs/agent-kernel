@@ -113,6 +113,17 @@ class _TraceConfig(BaseModel):
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
 
 
+class _JudgeConfig(BaseModel):
+    model: str = Field(default="gpt-4o-mini", description="LLM Model name")
+    provider: str = Field(default="openai", description="LLM Provider name")
+    embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
+
+
+class _TestConfig(BaseModel):
+    mode: str = Field(default="fallback", pattern="^(fallback|judge|fuzzy)$")
+    judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -137,6 +148,7 @@ class AKConfig(YamlBaseSettingsModified):
         description="Telegram Bot related configurations", default_factory=_TelegramConfig
     )
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
+    test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod
