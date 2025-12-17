@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import io
 import logging
 import os
 import pickle
@@ -11,7 +12,13 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-from ...core import AgentService, Config
+from ...core import (
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+    AgentService,
+    Config,
+)
 
 
 class AgentGmailRequestHandler:
@@ -255,7 +262,11 @@ class AgentGmailRequestHandler:
             self._log.info(
                 f"[EMAIL] Processing email - from={sender}, subject={subject}, thread_id={thread_id}, message_id={message_id}"
             )
-            self._log.debug(f"Email body: {body[:200]}...")
+
+            # Extract attachments from email
+            attachments = self._extract_attachments(message_id, message["payload"])
+            if attachments:
+                self._log.info(f"[EMAIL] Found {len(attachments)} attachment(s)")
 
             # Use thread_id as session_id for agent context (threaded conversations)
             session_id = thread_id or sender
@@ -263,9 +274,9 @@ class AgentGmailRequestHandler:
             # Fetch thread history for context (all messages in the thread, sorted by internalDate)
             thread_history = await self._get_thread_history(thread_id, message_id)
 
-            # Process through agent with full thread context
+            # Process through agent with full thread context and attachments
             response = await self._process_with_agent(
-                sender, subject, body, session_id=session_id, thread_history=thread_history
+                sender, subject, body, session_id=session_id, thread_history=thread_history, attachments=attachments
             )
 
             if response:
@@ -310,10 +321,6 @@ class AgentGmailRequestHandler:
             # Keep only last max_history messages
             recent_history = history[-max_history:] if len(history) > max_history else history
             result = "\n".join(recent_history)
-
-            if result:
-                self._log.debug(f"Thread history ({len(recent_history)} messages):\n{result[:500]}...")
-
             return result
         except Exception as e:
             self._log.warning(f"Error fetching thread history: {e}\n{traceback.format_exc()}")
@@ -337,6 +344,7 @@ class AgentGmailRequestHandler:
         Extract email body from payload.
         Handles both single-part and multipart messages.
         Prioritizes plain text, falls back to HTML, then returns empty if neither.
+        Recursively searches nested multipart structures.
 
         :param payload: Email payload
         :return: Email body text
@@ -366,6 +374,12 @@ class AgentGmailRequestHandler:
                             body = base64.urlsafe_b64decode(data).decode("utf-8")
                         except Exception as e:
                             self._log.warning(f"Error decoding HTML: {e}")
+
+                # Priority 3: Recursively handle nested multipart structures
+                elif mime_type.startswith("multipart/") and not body:
+                    nested_body = self._get_email_body(part)
+                    if nested_body:
+                        return nested_body
         else:
             # Handle single-part messages
             data = payload.get("body", {}).get("data", "")
@@ -384,6 +398,7 @@ class AgentGmailRequestHandler:
         body: str,
         session_id: Optional[str] = None,
         thread_history: Optional[str] = None,
+        attachments: list = None,
     ) -> Optional[str]:
         """
         Process email through AI agent.
@@ -393,8 +408,12 @@ class AgentGmailRequestHandler:
         :param body: Email body
         :param session_id: Session ID for agent context (use threadId for threading)
         :param thread_history: Full thread history for context
+        :param attachments: List of AgentRequestImage or AgentRequestFile objects
         :return: AI-generated response or None
         """
+        if attachments is None:
+            attachments = []
+
         service = AgentService()
         session_id = session_id or sender
 
@@ -407,21 +426,37 @@ class AgentGmailRequestHandler:
             else:
                 email_content = f"From: {sender}\nSubject: {subject}\n\n{body}"
 
-            # Select and run agent
+            # Select agent
             service.select(session_id=session_id, name=self._gmail_agent)
             if not service.agent:
                 self._log.warning(f"No agent available for name: {self._gmail_agent}")
                 return None
 
-            # Run the agent
-            result = await service.run(email_content)
+            # Build request list: text first, then attachments
+            requests = [AgentRequestText(text=email_content)]
+            requests.extend(attachments)
 
+            # Log request summary
+            self._log.info(f"[AGENT_INPUT] Total requests: {len(requests)}")
+
+            # Run the agent with all requests
+            if len(requests) > 1:
+                # Multiple requests (text + attachments) - use run_multi
+                self._log.info(
+                    f"[AGENT_CALL] Running agent with {len(requests)} request(s) (text + {len(attachments)} attachment(s))"
+                )
+                result = await service.run_multi(requests)
+            else:
+                # Only text - use standard run
+                self._log.info(f"[AGENT_CALL] Running agent with text only")
+                result = await service.run(email_content)
+
+            # Extract response text
             if hasattr(result, "raw"):
                 response_text = str(result.raw)
             else:
                 response_text = str(result)
 
-            self._log.debug(f"Agent response: {response_text[:200]}...")
             return response_text
 
         except Exception as e:
@@ -475,6 +510,115 @@ class AgentGmailRequestHandler:
         except Exception as e:
             self._log.error(f"Error sending reply: {e}\n{traceback.format_exc()}")
 
+    def _extract_attachments(self, message_id: str, payload: dict) -> list:
+        """
+        Extract attachments from email message.
+
+        :param message_id: Gmail message ID
+        :param payload: Message payload containing parts
+        :return: List of AgentRequestImage or AgentRequestFile objects
+        """
+        attachments = []
+
+        if self._service is None:
+            self._log.info("Test mode: Skipping attachment extraction.")
+            return attachments
+
+        try:
+            # Check for parts (multipart message)
+            parts = payload.get("parts", [])
+
+            for part in parts:
+                # Skip inline/text parts
+                if part.get("filename") == "":
+                    continue
+
+                filename = part.get("filename", "unknown")
+                mime_type = part.get("mimeType", "application/octet-stream")
+
+                # Get attachment ID
+                part_id = part.get("partId")
+                if not part_id:
+                    continue
+
+                try:
+                    # Download attachment data
+                    attachment_data = (
+                        self._service.users()
+                        .messages()
+                        .attachments()
+                        .get(userId="me", messageId=message_id, id=part.get("body", {}).get("attachmentId"))
+                        .execute()
+                    )
+
+                    if "data" not in attachment_data:
+                        self._log.warning(f"No data in attachment: {filename}")
+                        continue
+
+                    # Gmail API returns URL-safe base64, but OpenAI expects standard base64
+                    urlsafe_data = attachment_data["data"]
+                    data = base64.b64encode(base64.urlsafe_b64decode(urlsafe_data)).decode("utf-8")
+
+                    # Validate MIME type is set
+                    if not mime_type or mime_type == "application/octet-stream":
+                        # Try to infer MIME type from filename extension
+                        if filename:
+                            ext = filename.lower().split(".")[-1]
+                            mime_map = {
+                                "pdf": "application/pdf",
+                                "doc": "application/msword",
+                                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                "xls": "application/vnd.ms-excel",
+                                "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                "jpg": "image/jpeg",
+                                "jpeg": "image/jpeg",
+                                "png": "image/png",
+                                "gif": "image/gif",
+                                "webp": "image/webp",
+                            }
+                            inferred_mime = mime_map.get(ext)
+                            if inferred_mime:
+                                self._log.info(
+                                    f"Inferred MIME type for {filename}: {inferred_mime} (from extension .{ext})"
+                                )
+                                mime_type = inferred_mime
+                            else:
+                                self._log.warning(f"Could not infer MIME type for extension .{ext}")
+
+                    # Create appropriate request based on MIME type
+                    # Use base64 string (AgentRequest* objects expect base64-encoded strings, not binary)
+                    if mime_type.startswith("image/"):
+                        request = AgentRequestImage(image_data=data, name=filename, mime_type=mime_type)
+                        attachments.append(request)
+                        self._log.debug(f"Extracted image attachment: {filename} ({mime_type})")
+
+                    elif mime_type in [
+                        "application/pdf",
+                        "application/msword",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "application/vnd.ms-excel",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ]:
+                        # Handle document attachments (PDF, Word, Excel)
+                        request = AgentRequestFile(file_data=data, name=filename, mime_type=mime_type)
+                        attachments.append(request)
+                        self._log.debug(f"Extracted file attachment: {filename} ({mime_type})")
+
+                    else:
+                        self._log.debug(f"Skipping unsupported attachment type: {mime_type}")
+
+                except Exception as e:
+                    self._log.warning(f"Error extracting attachment {filename}: {e}")
+                    continue
+
+            if attachments:
+                self._log.info(f"Extracted {len(attachments)} attachment(s) from message {message_id}")
+
+        except Exception as e:
+            self._log.warning(f"Error processing attachments: {e}")
+
+        return attachments
+
     def _mark_as_read(self, message_id: str):
         """
         Mark email as read.
@@ -488,8 +632,6 @@ class AgentGmailRequestHandler:
             self._service.users().messages().modify(
                 userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
             ).execute()
-
-            self._log.debug(f"Marked email {message_id} as read")
 
         except Exception as e:
             self._log.warning(f"Error marking email as read: {e}")

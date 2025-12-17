@@ -23,7 +23,7 @@ The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are proc
 📊 Label and filter support \
 🎯 Customizable agent instructions \
 ✉️ Email threading with full context history \
-🎨 Custom email signatures and sign-off formats
+🎨 Custom email signatures and sign-off formats \
 
 ## Quick Start
 
@@ -46,7 +46,7 @@ The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are proc
 - Copy the `client_id` and `client_secret` from the credentials JSON file (no need to save the file)
 - Add your Gmail address as a test user in the OAuth consent screen
 
-### 3. Configure Environment Variables 
+### 3. Configure Environment Variables
 
 ```bash
 # OAuth2 Credentials (REQUIRED)
@@ -77,7 +77,6 @@ Edit `config.yaml`:
 ```yaml
 gmail:
   agent: general
-    # credentials_file: "credentials.json"  # No longer needed
   token_file: "token.pickle"
   poll_interval: 30
   label_filter: "INBOX"
@@ -201,8 +200,37 @@ def _get_attachments(self, payload: dict):
 
 - Standard emails (text)
 - Email threads
-- Attachments (basic support)
 - Label-based filtering
+
+## Image & File Attachments
+
+The Gmail integration supports processing email attachments and passing them to your AI agent for analysis.
+
+### Supported File Types
+
+| Type                       | Extensions                     | MIME Types                                                          |
+| -------------------------- | ------------------------------ | ------------------------------------------------------------------- |
+| **Images**           | .jpg, .jpeg, .png, .gif, .webp | image/jpeg, image/png, image/gif, image/webp                        |
+| **Documents**        | .pdf                           | application/pdf                                                     |
+| **Microsoft Office** | .doc, .docx, .xls, .xlsx       | application/msword, application/vnd.openxmlformats-officedocument.* |
+
+### How It Works
+
+1. Attachments are automatically extracted from incoming emails
+2. MIME types are detected from email metadata or inferred from file extension
+3. Files are converted to standard base64 encoding
+4. Attachments are passed to the AI agent along with email content
+5. Agent analyzes images, reads documents, and responds accordingly
+
+### Example Prompts
+
+```
+User: "Please summarize this document" (with PDF attachment)
+Agent: "The document discusses... [summary based on PDF content]"
+
+User: "What's in this image?" (with image attachment)
+Agent: "The image shows... [description of image]"
+```
 
 ## Troubleshooting
 
@@ -236,7 +264,6 @@ def _get_attachments(self, payload: dict):
 
 - Gmail API: 250 queries/user/day (default)
 - Sending: 100 emails/day (test users)
-
 
 ## Gmail vs Messenger/Telegram Comparison
 

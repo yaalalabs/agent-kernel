@@ -32,14 +32,14 @@ The `AgentGmailHandler` class handles email conversations with agents via Gmail 
    - Go to APIs & Services > Credentials
    - Create OAuth 2.0 Client ID (Desktop application type)
    - Download the credentials JSON file
-   - Save as `credentials.json` in your project directory
+
 3. **Configure OAuth Consent Screen**
 
    - Set up the OAuth consent screen
    - Add required scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`
    - Add test users if in testing mode
 
-### Required Environment Variables (No credentials.json needed)
+### Required Environment Variables 
 
 Set the following environment variables with your Google Cloud OAuth2 credentials:
 
@@ -60,7 +60,6 @@ export AK_CLIENT_NAME="Your Name"                  # Name to sign replies with
 export AK_GMAIL_SIGN_OFF="Best regards"            # Sign-off format (e.g., "Sincerely", "Kind regards")
 ```
 
-**Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 
 ### OAuth Flow
 
@@ -101,7 +100,6 @@ if __name__ == "__main__":
 gmail:
     agent: "general"  # Name of the agent to handle emails
     poll_interval: 30  # Seconds between polling for new emails
-    # credentials_file: "credentials.json"  # No longer needed
     token_file: "token.pickle"  # Path to store OAuth token
 ```
 
@@ -115,8 +113,30 @@ gmail:
 - **HTML Emails**: HTML content is converted to plain text
 - **Email Threading**: Replies maintain conversation thread with full context
 - **Thread Support**: Each Gmail thread maintains a separate conversation session
-- **Attachments**: Basic attachment detection (content not processed)
+- **Image Attachments**: JPEG, PNG, GIF, WebP images are extracted and sent to agents
+- **File Attachments**: PDF, Word, Excel documents are extracted and sent to agents
 - **Custom Signatures**: Configurable email signatures with name and sign-off format
+
+### Supported Attachment Types
+
+**Images:**
+
+- JPEG (.jpg, .jpeg) - `image/jpeg`
+- PNG (.png) - `image/png`
+- GIF (.gif) - `image/gif`
+- WebP (.webp) - `image/webp`
+
+**Documents:**
+
+- PDF (.pdf) - `application/pdf`
+- Microsoft Word (.doc, .docx)
+- Microsoft Excel (.xls, .xlsx)
+
+Attachments are automatically:
+
+1. Downloaded from Gmail API
+2. Converted from URL-safe base64 to standard base64
+3. Passed to the AI agent as `AgentRequestImage` or `AgentRequestFile` objects
 
 ### Email Handling
 
@@ -184,11 +204,11 @@ from agentkernel.gmail import AgentGmailHandler
 class CustomGmailHandler(AgentGmailHandler):
     async def _process_email(self, email: dict):
         subject = email.get("subject", "")
-    
+  
         # Custom logic here
         if "[AUTO-REPLY]" in subject:
             return  # Skip auto-replies
-    
+  
         # Call parent handler
         await super()._process_email(email)
 ```

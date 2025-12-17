@@ -106,11 +106,44 @@ The bot will use the saved `token.pickle` and start polling immediately.
 1. **Polling Loop**: Bot checks for unread emails every 30 seconds (configurable)
 2. **Email Detection**: Finds unread emails in INBOX (or specified label)
 3. **Thread Context**: Fetches thread history (last 5 messages) for conversation context
-4. **AI Processing**: Sends email content + thread history to OpenAI agent
-5. **Reply Generation**: Agent generates response with full conversation awareness
-6. **Send Reply**: Sends AI response as email reply (maintains Gmail thread)
-7. **Signature**: Automatically adds configured signature (name + sign-off)
-8. **Mark Read**: Marks original email as read
+4. **Attachment Extraction**: Extracts images and files from email attachments
+5. **AI Processing**: Sends email content + thread history + attachments to OpenAI agent
+6. **Reply Generation**: Agent generates response with full conversation awareness
+7. **Send Reply**: Sends AI response as email reply (maintains Gmail thread)
+8. **Signature**: Automatically adds configured signature (name + sign-off)
+9. **Mark Read**: Marks original email as read
+
+## Image & File Attachments
+
+The Gmail integration supports processing email attachments and passing them to your AI agent for analysis.
+
+### Supported File Types
+
+**Images:**
+
+- JPEG (.jpg, .jpeg)
+- PNG (.png)
+- GIF (.gif)
+- WebP (.webp)
+
+**Documents:**
+
+- PDF (.pdf)
+- Microsoft Word (.doc, .docx)
+- Microsoft Excel (.xls, .xlsx)
+
+### How Attachments Work
+
+1. Attachments are automatically extracted from incoming emails
+2. MIME types are detected (or inferred from file extension)
+3. Files are converted to base64 and passed to the AI agent
+4. Agent can analyze images, read documents, and answer questions about attachments
+
+### Example Use Cases
+
+- "Please summarize this PDF" (with PDF attachment)
+- "What's in this image?" (with image attachment)
+- "Extract the data from this spreadsheet" (with Excel attachment)
 
 ## Email Threading
 
@@ -140,7 +173,6 @@ Edit `config.yaml`:
 ```yaml
 gmail:
   agent: general                        # Agent to use for email processing
-    # credentials_file: "credentials.json"  # No longer needed
   token_file: "token.pickle"            # Token storage location
   poll_interval: 30                     # Polling interval in seconds
   label_filter: "INBOX"                 # Gmail label to monitor
