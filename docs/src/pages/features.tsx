@@ -118,7 +118,7 @@ function OverviewSection() {
             </div>
             <h3>Versatile Integrations</h3>
             <p>
-              Built-in integrations for popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, and Telegram. 
+              Built-in integrations for popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail. 
               Support for MCP Server and A2A Server protocols. Easy-to-build custom integrations with pluggable architecture.
             </p>
           </Link>
@@ -644,7 +644,7 @@ function MessagingSection() {
     { name: 'Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
     { name: 'Telegram', icon: <FaTelegram />, status: 'Available' },
     { name: 'Instagram', icon: <FaInstagram />, status: 'Available' },
-    { name: 'Gmail', icon: <SiGmail />, status: 'Coming Soon' },
+    { name: 'Gmail', icon: <SiGmail />, status: 'Available' },
   ];
 
   return (
@@ -655,7 +655,7 @@ function MessagingSection() {
           <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Connect your AI agents to popular messaging platforms and reach your users where they are. 
-            Built-in integrations for Slack, WhatsApp, Messenger, Instagram, and Telegram.
+            Built-in integrations for Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail.
           </p>
         </div>
         
