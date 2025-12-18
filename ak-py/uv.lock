@@ -79,6 +79,9 @@ gmail = [
     { name = "google-auth-httplib2" },
     { name = "google-auth-oauthlib" },
 ]
+instagram = [
+    { name = "httpx" },
+]
 langfuse = [
     { name = "langfuse" },
     { name = "nest-asyncio" },
@@ -149,6 +152,7 @@ requires-dist = [
     { name = "google-auth-httplib2", marker = "extra == 'gmail'", specifier = ">=0.2.0" },
     { name = "google-auth-oauthlib", marker = "extra == 'gmail'", specifier = ">=1.0.0" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
+    { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
@@ -182,7 +186,7 @@ requires-dist = [
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
 ]
-provides-extras = ["langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "redis", "openai", "adk", "api", "slack", "whatsapp", "messenger", "telegram", "gmail", "test", "a2a", "mcp"]
+provides-extras = ["langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "redis", "openai", "adk", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp"]
 
 [package.metadata.requires-dev]
 dev = [
