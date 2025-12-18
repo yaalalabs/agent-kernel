@@ -41,6 +41,7 @@ api:
   host: 0.0.0.0
   port: 8000
   custom_router_prefix: /custom
+  max_file_size: 2097152  # Maximum file size in bytes (default: 2 MB)
   enabled_routes:
     agents: true
 
@@ -127,6 +128,7 @@ Alternatively, use `config.json`:
     "host": "0.0.0.0",
     "port": 8000,
     "custom_router_prefix": "/custom",
+    "max_file_size": 2097152,
     "enabled_routes": {
       "agents": true
     }
@@ -237,6 +239,7 @@ export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a ca
 # API server configuration
 export AK_API__HOST=0.0.0.0  # default: 0.0.0.0
 export AK_API__PORT=8000  # default: 8000
+export AK_API__MAX_FILE_SIZE=2097152  # Maximum file size in bytes (default: 2097152 = 2 MB)
 
 # API route configuration
 export AK_API__ENABLED_ROUTES__AGENTS=true  # Enable agent routes (default: true)
@@ -369,6 +372,7 @@ api:
   host: "0.0.0.0"              # API server host
   port: 8000                    # API server port
   custom_router_prefix: "/custom" # API path prefix for custom routes
+  max_file_size: 2097152        # Maximum file size in bytes (default: 2 MB)
   enabled_routes:               # Route configuration
     agents: true                # Enable agent interaction routes
 

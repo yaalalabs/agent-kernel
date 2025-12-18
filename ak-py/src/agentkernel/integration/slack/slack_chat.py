@@ -28,6 +28,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         self._slack_agent_acknowledgement = (
             Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         )
+        self._max_file_size = Config.get().api.max_file_size
         self._bot_id = None
 
         # Initialize the Slack app
@@ -86,16 +87,30 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         try:
             # Check for audio/video files and reject them
             rejected_files = []
+            oversized_files = []
             for file in files:
                 mime_type = file.get("mimetype", "")
+                file_name = file.get("name", "file")
+                file_size = file.get("size", 0)
+
                 if mime_type.startswith(("audio/", "video/")):
-                    rejected_files.append(file.get("name", "file"))
+                    rejected_files.append(file_name)
+                elif file_size > self._max_file_size:
+                    oversized_files.append(f"{file_name} ({file_size / (1024 * 1024):.2f} MB)")
 
             if rejected_files:
                 await say(
                     channel=channel,
                     thread_ts=thread_ts,
                     text=f"Sorry <@{user}>, I cannot process audio and video files. Rejected: {', '.join(rejected_files)}",
+                )
+                return
+
+            if oversized_files:
+                await say(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=f"Sorry <@{user}>, the following files exceed the maximum size of {self._max_file_size / (1024 * 1024):.2f} MB: {', '.join(oversized_files)}",
                 )
                 return
 
@@ -117,8 +132,18 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 requests.append(AgentRequestText(text=question))
 
             # Process files and images
+            failed_files = []
             if files:
-                await self._process_files(files, requests)
+                failed_files = await self._process_files(files, requests)
+
+            # If any files failed to download, notify user and do not invoke agent
+            if failed_files:
+                await say(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text=f"Sorry <@{user}>, I could not download the following files: {', '.join(failed_files)}. Please try again.",
+                )
+                return
 
             # Use run_multi if we have multiple requests, otherwise run
             if len(requests) >= 1:
@@ -191,12 +216,16 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
         return blocks
 
-    async def _process_files(self, files: list, requests: list):
+    async def _process_files(self, files: list, requests: list) -> list[str]:
         """
         Process files from Slack message and add them to requests list.
+        Files are validated for size limits before download.
         :param files: List of file objects from Slack message.
         :param requests: List to append AgentRequestFile or AgentRequestImage objects.
+        :return: List of file names/URLs that failed to download.
         """
+        failed_files = []
+
         for file in files:
             try:
                 file_name = file.get("name", "unknown")
@@ -205,6 +234,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
                 if not url_private:
                     self._log.warning(f"No URL found for file: {file_name}")
+                    failed_files.append(file_name)
                     continue
 
                 self._log.debug(f"Downloading file: {file_name} (type: {mime_type}) from {url_private}")
@@ -213,7 +243,8 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 file_content = await self._download_slack_file(url_private)
 
                 if file_content is None:
-                    self._log.warning(f"Failed to download file: {file_name}")
+                    self._log.warning(f"Failed to download file: {file_name} from {url_private}")
+                    failed_files.append(f"{file_name} ({url_private})")
                     continue
 
                 # Base64 encode the content
@@ -240,7 +271,11 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                     )
 
             except Exception as e:
-                self._log.error(f"Error processing file {file.get('name', 'unknown')}: {e}\n{traceback.format_exc()}")
+                file_name = file.get("name", "unknown")
+                self._log.error(f"Error processing file {file_name}: {e}\n{traceback.format_exc()}")
+                failed_files.append(file_name)
+
+        return failed_files
 
     async def _download_slack_file(self, url: str) -> bytes | None:
         """

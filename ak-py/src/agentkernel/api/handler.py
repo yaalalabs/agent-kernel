@@ -17,7 +17,7 @@ from agentkernel.core.model import (
     AgentRequestText,
 )
 
-from ..core import AgentService, GlobalRuntime
+from ..core import AgentService, Config, GlobalRuntime
 
 
 class RESTRequestHandler(ABC):
@@ -55,6 +55,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
     def __init__(self):
         self._log = logging.getLogger("ak.api.agent")
+        self._max_file_size = Config.get().api.max_file_size
 
     class FileData(BaseModel):
         """Represents a file attachment"""
@@ -224,6 +225,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                     self._log.debug(f"Processing uploaded file: {file.filename}")
                     # Read file content
                     content = await file.read()
+
+                    # Validate file size
+                    file_size = len(content)
+                    if file_size > self._max_file_size:
+                        raise ValueError(
+                            f"File {file.filename} exceeds maximum size of {self._max_file_size / (1024 * 1024):.2f} MB "
+                            f"(size: {file_size / (1024 * 1024):.2f} MB)"
+                        )
+
                     # Encode to base64
                     file_data_base64 = base64.b64encode(content).decode("utf-8")
 
@@ -245,6 +255,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                     self._log.debug(f"Processing uploaded image: {image.filename}")
                     # Read image content
                     content = await image.read()
+
+                    # Validate image size
+                    image_size = len(content)
+                    if image_size > self._max_file_size:
+                        raise ValueError(
+                            f"Image {image.filename} exceeds maximum size of {self._max_file_size / (1024 * 1024):.2f} MB "
+                            f"(size: {image_size / (1024 * 1024):.2f} MB)"
+                        )
+
                     # Encode to base64
                     image_data_base64 = base64.b64encode(content).decode("utf-8")
 
