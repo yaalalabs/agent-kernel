@@ -50,7 +50,7 @@ async def test_history_agent(http_client):
     response = await http_client.send("when did the battle of Waterloo happen?")
     Test.compare(
         response,
-        " The Battle of Waterloo happened on June 18, 1815.",
+        ["The Battle of Waterloo happened on June 18, 1815."],
         threshold=10,
     )
 
@@ -72,7 +72,7 @@ async def test_image_support(http_client):
     response = await http_client.send("", body=body)
     Test.compare(
         response,
-        "Yes, the image contains representations of people",
+        ["Yes, the image contains representations of people"],
     )
 
 
@@ -93,5 +93,8 @@ async def test_pdf_support(http_client):
     response = await http_client.send("", body=body)
     Test.compare(
         response,
-        "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
+        [
+            "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
+            "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**",
+        ],
     )

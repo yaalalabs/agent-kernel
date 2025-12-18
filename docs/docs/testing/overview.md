@@ -77,15 +77,94 @@ Best for:
 
 ## Testing Framework Features
 
-### Fuzzy Matching
-The Test class uses fuzzy string matching with configurable thresholds:
+### Test Comparison Modes
+
+Agent Kernel supports three comparison modes for validating agent responses:
+
+#### Fuzzy Mode
+Uses fuzzy string matching (via RapidFuzz) with configurable thresholds:
 
 ```python
-# Default threshold is 50%
-test = Test("demo.py", match_threshold=80)
+from agentkernel.test import Test, Mode
 
-# Static comparison with custom threshold
-Test.compare(actual_response, expected_response, threshold=70)
+# Use fuzzy mode only
+test = Test("demo.py", match_threshold=80)
+await test.send("Who won the 1996 cricket world cup?")
+
+# expected is a list - test passes if ANY match exceeds threshold
+Test.compare(
+    actual=test.last_agent_response,
+    expected=["Sri Lanka won", "Sri Lanka won the 1996 cricket world cup"],
+    threshold=80,
+    mode=Mode.FUZZY
+)
+```
+
+**Note:** The `expected` parameter is a list. The test passes if the actual response matches **any** of the expected values above the threshold.
+
+#### Judge Mode
+Uses LLM-based evaluation (via Ragas) for semantic similarity:
+
+```python
+# Use judge mode only - expected is a list
+Test.compare(
+    actual=test.last_agent_response,
+    expected=[
+        "Sri Lanka won the 1996 cricket world cup",
+        "Sri Lanka was the winner of the 1996 world cup",
+        "The 1996 cricket world cup was won by Sri Lanka"
+    ],
+    user_input="Who won the 1996 cricket world cup?",
+    threshold=50,  # Threshold is percentage converted to 0.0-1.0 scale
+    mode=Mode.JUDGE
+)
+```
+
+**Note:** The `expected` parameter is a list. The test passes if the actual response has semantic similarity above the threshold with **any** of the expected answers.
+
+When expected answers are provided, uses `answer_similarity` metric. When no expected answers are provided, uses `answer_relevancy` metric to check if the answer is relevant to the question.
+
+#### Fallback Mode (Default)
+Tries fuzzy matching first, falls back to judge evaluation if fuzzy fails:
+
+```python
+# Default fallback mode - multiple expected answers
+Test.compare(
+    actual=test.last_agent_response,
+    expected=[
+        "Sri Lanka",
+        "Sri Lanka won the 1996 cricket world cup",
+        "The winner was Sri Lanka"
+    ],
+    user_input="Who won the 1996 cricket world cup?",
+    threshold=50,
+    mode=Mode.FALLBACK  # or None to use config default
+)
+```
+
+**Note:** The `expected` parameter is a list of acceptable responses. The test passes if **any** expected value matches (fuzzy or judge evaluation).
+
+### Configuring Test Mode
+
+Set the default test mode via configuration:
+
+```yaml
+# config.yaml
+test:
+  mode: fallback  # Options: fuzzy, judge, fallback
+  judge:
+    model: gpt-4o-mini
+    provider: openai
+    embedding_model: text-embedding-3-small
+```
+
+Or via environment variables:
+
+```bash
+export AK_TEST__MODE=judge
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini
+export AK_TEST__JUDGE__PROVIDER=openai
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 ### Session Management

@@ -29,12 +29,130 @@ async def test_client():
 @pytest.mark.order(1)
 async def test_first_question(test_client):
     await test_client.send("Who won the 1996 cricket world cup?")
-    await test_client.expect("Sri Lanka won the 1996 cricket world cup.")
+    await test_client.expect(["Sri Lanka won the 1996 cricket world cup."])
 
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
     await test_client.send("Which country hosted the tournament?")
-    await test_client.expect("Co-hosted by India, Pakistan and Sri Lanka.")
+    await test_client.expect(["Co-hosted by India, Pakistan and Sri Lanka."])
+```
+
+## Test Comparison Modes
+
+Agent Kernel supports three comparison modes for validating responses:
+
+### Fuzzy Mode
+
+Uses fuzzy string matching with configurable thresholds:
+
+```python
+from agentkernel.test import Test, Mode
+
+@pytest.mark.order(1)
+async def test_fuzzy_matching(test_client):
+    await test_client.send("Who won the 1996 cricket world cup?")
+    # Use fuzzy mode with 80% threshold
+    # expected is a list - test passes if ANY match exceeds threshold
+    Test.compare(
+        actual=test_client.last_agent_response,
+        expected=[
+            "Sri Lanka won the 1996 cricket world cup",
+            "Sri Lanka won the 1996 world cup",
+            "The 1996 cricket world cup was won by Sri Lanka"
+        ],
+        threshold=80,
+        mode=Mode.FUZZY
+    )
+```
+
+**Note:** The `expected` parameter accepts a list of acceptable responses. The test passes if the actual response matches **any** of the expected values above the threshold.
+
+### Judge Mode
+
+Uses LLM-based evaluation (Ragas) for semantic similarity:
+
+```python
+@pytest.mark.order(2)
+async def test_judge_evaluation(test_client):
+    await test_client.send("Who won the 1996 cricket world cup?")
+    # Use judge mode for semantic evaluation
+    # expected is a list - test passes if ANY has sufficient semantic similarity
+    Test.compare(
+        actual=test_client.last_agent_response,
+        expected=[
+            "Sri Lanka won the 1996 cricket world cup",
+            "Sri Lanka was the winner of the 1996 world cup",
+            "The 1996 cricket world cup was won by Sri Lanka"
+        ],
+        user_input="Who won the 1996 cricket world cup?",
+        threshold=50,  # Converted to 0.5 on 0.0-1.0 scale
+        mode=Mode.JUDGE
+    )
+```
+
+**Judge Mode Metrics:**
+- With expected answers: Uses `answer_similarity` metric against each expected answer. Passes if **any** exceeds threshold.
+- Without expected answers: Uses `answer_relevancy` metric (requires `user_input`)
+
+**Note:** When multiple expected answers are provided, the judge evaluates similarity against each one and passes if **any** score meets the threshold.
+
+### Fallback Mode (Default)
+
+Tries fuzzy matching first, falls back to judge evaluation:
+
+```python
+@pytest.mark.order(3)
+async def test_fallback_mode(test_client):
+    await test_client.send("Who won the 1996 cricket world cup?")
+    # Fallback mode (default) - multiple expected answers
+    Test.compare(
+        actual=test_client.last_agent_response,
+        expected=[
+            "Sri Lanka",
+            "Sri Lanka won the 1996 cricket world cup",
+            "The winner was Sri Lanka"
+        ],
+        user_input="Who won the 1996 cricket world cup?",
+        threshold=50,
+        mode=Mode.FALLBACK  # or None to use config default
+    )
+```
+
+**Note:** With multiple expected answers, fuzzy mode tries each one and passes if **any** match exceeds the threshold. If all fuzzy matches fail, judge mode evaluates against each expected answer.
+
+### Configuring Test Mode
+
+Set the default mode via configuration:
+
+```yaml
+# config.yaml
+test:
+  mode: fallback  # Options: fuzzy, judge, fallback
+  judge:
+    model: gpt-4o-mini
+    provider: openai
+    embedding_model: text-embedding-3-small
+```
+
+Or environment variables:
+
+```bash
+export AK_TEST__MODE=judge
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini
+export AK_TEST__JUDGE__PROVIDER=openai
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+```
+
+### Using expect() with Mode
+
+The `expect()` method uses the configured mode:
+
+```python
+@pytest.mark.order(1)
+async def test_with_expect(test_client):
+    await test_client.send("Who won the 1996 cricket world cup?")
+    # Uses mode from AKConfig.get().test.mode
+    await test_client.expect(["Sri Lanka won the 1996 cricket world cup."])
 ```
 
 ## Required Dependencies
@@ -107,7 +225,7 @@ import subprocess
 import sys
 import pytest
 import pytest_asyncio
-from agentkernel.test import Test
+from agentkernel.test import Test, Mode
 
 @pytest_asyncio.fixture(scope="session")
 async def api_server():
@@ -129,7 +247,12 @@ async def api_server():
 async def test_api_endpoint(api_server):
     # Test API responses using the Test.compare method
     response = await make_api_call(api_server, "Who won the 1996 cricket world cup?")
-    Test.compare(response, "Sri Lanka won the 1996 cricket world cup.")
+    Test.compare(
+        actual=response,
+        expected=["Sri Lanka won the 1996 cricket world cup"],
+        user_input="Who won the 1996 cricket world cup?",
+        mode=Mode.JUDGE  # Use judge mode for API testing
+    )
 ```
 
 ## Container Testing
@@ -216,6 +339,29 @@ jobs:
 
 ## Test Configuration
 
+### Test Mode Configuration
+
+Configure the default test comparison mode:
+
+```yaml
+# config.yaml
+test:
+  mode: fallback  # Options: fuzzy, judge, fallback (default: fallback)
+  judge:
+    model: gpt-4o-mini  # LLM model for judge mode
+    provider: openai  # LLM provider
+    embedding_model: text-embedding-3-small  # Embedding model
+```
+
+Or via environment variables:
+
+```bash
+export AK_TEST__MODE=judge
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini
+export AK_TEST__JUDGE__PROVIDER=openai
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+```
+
 ### Custom Match Thresholds
 
 Configure fuzzy matching for different test scenarios:
@@ -252,19 +398,28 @@ def setup_test_env():
 - Implement proper setup and teardown
 
 ### Assertions
-- Use appropriate fuzzy matching thresholds
+- Use `Mode.FUZZY` for exact string matching requirements
+- Use `Mode.JUDGE` for semantic similarity validation
+- Use `Mode.FALLBACK` (default) for robust validation
 - Test both positive and negative cases
 - Include edge cases and error conditions
+
+### Test Mode Selection
+- **Fuzzy Mode**: Best for deterministic outputs, exact formatting requirements
+- **Judge Mode**: Best for AI-generated content, paraphrased responses
+- **Fallback Mode**: Best for general use, provides flexibility
 
 ### Performance
 - Use session-scoped fixtures for expensive setup
 - Consider parallel test execution for independent tests
 - Mock external dependencies when possible
+- Note: Judge mode requires LLM calls, which may slow tests
 
 ### Maintenance
 - Keep tests updated with agent changes
 - Use version control for test scenarios
 - Document test requirements and expectations
+- Configure judge model/provider based on your needs
 
 ## Troubleshooting
 
@@ -278,7 +433,14 @@ def setup_test_env():
 **Fuzzy matching failures:**
 - Adjust match threshold based on response variability
 - Check for extra whitespace or formatting
-- Consider using Test.compare() for debugging
+- Consider using `Mode.JUDGE` for AI-generated content
+- Use Test.compare() for debugging
+
+**Judge mode failures:**
+- Ensure LLM API keys are configured (e.g., OPENAI_API_KEY)
+- Check judge configuration (model, provider, embedding_model)
+- Verify threshold is appropriate (0-100 range, converted to 0.0-1.0)
+- Ensure `user_input` is provided when using answer_relevancy
 
 **Process cleanup issues:**
 - Always use try-finally blocks
