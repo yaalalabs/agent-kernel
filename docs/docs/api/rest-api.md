@@ -118,7 +118,7 @@ Currently, passing images and files only work with OpenAI SDK & Google ADK. Othe
 
 **NOTE:** Directly passing image is not recommended. It is advised to save images in Agent accessible storage and pass the URI. This can be done directly from the client side or via hooks. i.e. PreExecution Hooks can intercept the requests, detect images/files and store and modify the request to contain the URIs.
 
-To prevent large files getting passed to LLMs there is 'max_file_size' in REST API configuration which limits the attached file size.
+To prevent large files from being passed to LLMs, there is a `max_file_size` option in the REST API configuration which limits the attached file size.
 
 
 
