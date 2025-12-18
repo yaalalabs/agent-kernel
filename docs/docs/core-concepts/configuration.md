@@ -53,6 +53,49 @@ mcp:
   url: http://localhost:8000/mcp
   agents:
     - "*"  # Expose all agents as MCP tools
+
+# Testing configuration
+test:
+  mode: fallback  # Options: fuzzy, judge, fallback
+  judge:
+    model: gpt-4o-mini
+    provider: openai
+    embedding_model: text-embedding-3-small
+
+# Messaging platform integrations
+slack:
+  agent: ""  # Default agent for Slack
+  agent_acknowledgement: ""  # Acknowledgement message
+
+whatsapp:
+  agent: ""  # Default agent for WhatsApp
+  agent_acknowledgement: ""  # Acknowledgement message
+  verify_token: ""  # Webhook verify token
+  access_token: ""  # Business API access token
+  app_secret: ""  # App secret for signature verification
+  phone_number_id: ""  # Business phone number ID
+  api_version: "v24.0"  # API version
+
+messenger:
+  agent: ""  # Default agent for Facebook Messenger
+  verify_token: ""  # Webhook verify token
+  access_token: ""  # Page access token
+  app_secret: ""  # App secret for signature verification
+  api_version: "v24.0"  # Graph API version
+
+instagram:
+  agent: ""  # Default agent for Instagram
+  verify_token: ""  # Webhook verify token
+  access_token: ""  # Business access token
+  app_secret: ""  # App secret for signature verification
+  instagram_account_id: ""  # Business Account ID (IGSID)
+  api_version: "v21.0"  # Graph API version
+
+telegram:
+  agent: ""  # Default agent for Telegram
+  bot_token: ""  # Bot token from BotFather
+  webhook_secret: ""  # Optional webhook security token
+  api_version: "bot"  # Bot API version prefix
 ```
 
 ### JSON Configuration
@@ -93,6 +136,48 @@ Alternatively, use `config.json`:
     "expose_agents": true,
     "url": "http://localhost:8000/mcp",
     "agents": ["*"]
+  },
+  "test": {
+    "mode": "fallback",
+    "judge": {
+      "model": "gpt-4o-mini",
+      "provider": "openai",
+      "embedding_model": "text-embedding-3-small"
+    }
+  },
+  "slack": {
+    "agent": "",
+    "agent_acknowledgement": ""
+  },
+  "whatsapp": {
+    "agent": "",
+    "agent_acknowledgement": "",
+    "verify_token": "",
+    "access_token": "",
+    "app_secret": "",
+    "phone_number_id": "",
+    "api_version": "v24.0"
+  },
+  "messenger": {
+    "agent": "",
+    "verify_token": "",
+    "access_token": "",
+    "app_secret": "",
+    "api_version": "v24.0"
+  },
+  "instagram": {
+    "agent": "",
+    "verify_token": "",
+    "access_token": "",
+    "app_secret": "",
+    "instagram_account_id": "",
+    "api_version": "v21.0"
+  },
+  "telegram": {
+    "agent": "",
+    "bot_token": "",
+    "webhook_secret": "",
+    "api_version": "bot"
   }
 }
 ```
@@ -171,6 +256,69 @@ export AK_MCP__URL=http://localhost:8000/mcp  # default: http://localhost:8000/m
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 ```
 
+### Test Configuration
+
+```bash
+# Test comparison mode
+export AK_TEST__MODE=fallback  # Options: 'fuzzy', 'judge', 'fallback' (default: 'fallback')
+
+# Judge configuration (for LLM-based evaluation)
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__JUDGE__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
+```
+
+### Messaging Platform Integrations
+
+#### Slack
+
+```bash
+export AK_SLACK__AGENT=my-agent  # Default agent for Slack interactions
+export AK_SLACK__AGENT_ACKNOWLEDGEMENT="Processing your request..."  # Acknowledgement message
+```
+
+#### WhatsApp
+
+```bash
+export AK_WHATSAPP__AGENT=my-agent  # Default agent for WhatsApp interactions
+export AK_WHATSAPP__AGENT_ACKNOWLEDGEMENT="Processing..."  # Acknowledgement message
+export AK_WHATSAPP__VERIFY_TOKEN=your-verify-token  # Webhook verify token
+export AK_WHATSAPP__ACCESS_TOKEN=your-access-token  # Business API access token
+export AK_WHATSAPP__APP_SECRET=your-app-secret  # App secret for signature verification
+export AK_WHATSAPP__PHONE_NUMBER_ID=your-phone-id  # Business phone number ID
+export AK_WHATSAPP__API_VERSION=v24.0  # API version (default: v24.0)
+```
+
+#### Facebook Messenger
+
+```bash
+export AK_MESSENGER__AGENT=my-agent  # Default agent for Messenger interactions
+export AK_MESSENGER__VERIFY_TOKEN=your-verify-token  # Webhook verify token
+export AK_MESSENGER__ACCESS_TOKEN=your-access-token  # Page access token
+export AK_MESSENGER__APP_SECRET=your-app-secret  # App secret for signature verification
+export AK_MESSENGER__API_VERSION=v24.0  # Graph API version (default: v24.0)
+```
+
+#### Instagram
+
+```bash
+export AK_INSTAGRAM__AGENT=my-agent  # Default agent for Instagram interactions
+export AK_INSTAGRAM__VERIFY_TOKEN=your-verify-token  # Webhook verify token
+export AK_INSTAGRAM__ACCESS_TOKEN=your-access-token  # Business access token
+export AK_INSTAGRAM__APP_SECRET=your-app-secret  # App secret for signature verification
+export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID=your-ig-account-id  # Business Account ID (IGSID)
+export AK_INSTAGRAM__API_VERSION=v21.0  # Graph API version (default: v21.0)
+```
+
+#### Telegram
+
+```bash
+export AK_TELEGRAM__AGENT=my-agent  # Default agent for Telegram interactions
+export AK_TELEGRAM__BOT_TOKEN=your-bot-token  # Bot token from BotFather
+export AK_TELEGRAM__WEBHOOK_SECRET=your-webhook-secret  # Optional webhook security token
+export AK_TELEGRAM__API_VERSION=bot  # Bot API version prefix (default: bot)
+```
+
 ### Trace / Observability
 
 ```bash
@@ -233,6 +381,49 @@ mcp:
   url: "http://localhost:8000/mcp"  # MCP endpoint URL
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
+
+# Test configuration
+test:
+  mode: "fallback"              # Test comparison mode: 'fuzzy', 'judge', or 'fallback'
+  judge:                        # Judge mode configuration
+    model: "gpt-4o-mini"        # LLM model for judge evaluation
+    provider: "openai"          # LLM provider
+    embedding_model: "text-embedding-3-small"  # Embedding model for similarity
+
+# Messaging platform integrations
+slack:
+  agent: ""                     # Default agent for Slack interactions
+  agent_acknowledgement: ""     # Acknowledgement message when message received
+
+whatsapp:
+  agent: ""                     # Default agent for WhatsApp interactions
+  agent_acknowledgement: ""     # Acknowledgement message when message received
+  verify_token: ""              # WhatsApp webhook verify token
+  access_token: ""              # WhatsApp Business API access token
+  app_secret: ""                # WhatsApp app secret for signature verification
+  phone_number_id: ""           # WhatsApp Business phone number ID
+  api_version: "v24.0"          # WhatsApp API version
+
+messenger:
+  agent: ""                     # Default agent for Facebook Messenger interactions
+  verify_token: ""              # Facebook Messenger webhook verify token
+  access_token: ""              # Facebook Page access token
+  app_secret: ""                # Facebook app secret for signature verification
+  api_version: "v24.0"          # Facebook Graph API version
+
+instagram:
+  agent: ""                     # Default agent for Instagram interactions
+  verify_token: ""              # Instagram webhook verify token
+  access_token: ""              # Instagram Business access token
+  app_secret: ""                # Instagram app secret for signature verification
+  instagram_account_id: ""      # Instagram Business Account ID (IGSID)
+  api_version: "v21.0"          # Instagram Graph API version
+
+telegram:
+  agent: ""                     # Default agent for Telegram interactions
+  bot_token: ""                 # Telegram bot token from BotFather
+  webhook_secret: ""            # Optional secret token for webhook security
+  api_version: "bot"            # Telegram Bot API version prefix
 
 # Trace / Observability
 trace:

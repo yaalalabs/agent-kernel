@@ -19,11 +19,11 @@ async def test_client():
 async def test_first_question(test_client):
     await test_client.send("!select physics")
     await test_client.send("Who discovered energy emission from black holes?")
-    await test_client.expect("Stephen Hawking")
+    await test_client.expect(["Stephen Hawking"])
 
     await test_client.send("!select geography")
     await test_client.send("What is the prehistoric single continent of which all current continents broke off from?")
-    await test_client.expect("Pangea")
+    await test_client.expect(["Pangea"])
 
     await test_client.send("!select triage")
-    await test_client.expect("No agent found with name 'triage'")
+    await test_client.expect(["No agent found with name 'triage'"])
