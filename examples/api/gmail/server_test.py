@@ -50,14 +50,12 @@ async def http_client():
 
 @pytest.mark.asyncio
 async def test_gmail_health(http_client):
-    print("test_gmail_health")
     response = await http_client.send("/health", method="get")
     assert response == {"status": "ok"}
 
 
 @pytest.mark.asyncio
 async def test_gmail_webhook(http_client):
-    print("test_gmail_webhook")
     # Simulate a Gmail webhook event (structure may vary based on your implementation)
     gmail_event = {
         "email_id": "test_email_id_123",
