@@ -39,6 +39,12 @@ function FeaturesHero() {
     <header className={styles.featuresHero}>
       <div className="container">
         <div className={styles.heroContent}>
+          <div className={styles.announcement}>
+            🎯 <strong>New:</strong> Execution Hooks & Smart Memory Management — 
+            <Link to="/blog/hooks-and-smart-memory" style={{marginLeft: '8px', textDecoration: 'underline'}}>
+              Read the announcement →
+            </Link>
+          </div>
           <h1 className={styles.heroTitle}>Why Agent Kernel Changes the Game</h1>
           <p className={styles.heroSubtitle}>
             Agent Kernel isn’t just a runtime; it’s your acceleration engine.
@@ -148,15 +154,15 @@ function CoreFeaturesSection() {
     {
       icon: <MdMemory />,
       title: 'Context & Memory',
-      description: 'Efficient memory management with support for in-memory, Redis, and DynamoDB backends.',
-      highlights: ['Multiple memory stores', 'Context preservation', 'Custom adapters'],
+      description: 'Smart memory management with volatile (request-scoped) and non-volatile (session-persistent) caching. Supports multiple backends: in-memory, Redis, and DynamoDB.',
+      highlights: ['Volatile cache for RAG context', 'Non-volatile cache for user preferences', 'Multiple backend support', 'Clean prompts, lower costs'],
       link: '/docs/advanced/memory-management'
     },
     {
       icon: <MdSettings />,
       title: 'Execution Hooks',
-      description: 'Customize agent behavior with pre and post-execution hooks for guardrails, RAG, and response moderation.',
-      highlights: ['Pre-execution hooks', 'Post-execution hooks', 'Context injection'],
+      description: 'Powerful pre and post-execution hooks for surgical control over agent behavior. Implement guard rails, RAG context injection, response moderation, and custom logic.',
+      highlights: ['Pre-hooks: guard rails, RAG, auth', 'Post-hooks: disclaimers, moderation', 'Hook chaining & composition', 'Framework-agnostic'],
       link: '/docs/integrations/hooks'
     },
     {
@@ -277,27 +283,27 @@ function MemorySection() {
   const memoryOptions = [
     {
       icon: <MdMemory />,
-      name: 'In-Memory',
-      description: 'Fast, ephemeral storage for development and testing',
-      useCases: ['Local development', 'Testing', 'Prototyping']
-    },
-    {
-      icon: <SiRedis />,
-      name: 'Redis',
-      description: 'High-performance distributed memory for production workloads',
-      useCases: ['Production systems', 'Shared state', 'High throughput']
-    },
-    {
-      icon: <SiAmazondynamodb />,
-      name: 'DynamoDB',
-      description: 'Serverless, scalable NoSQL database for AWS deployments',
-      useCases: ['Serverless apps', 'AWS environments', 'Global scale']
+      name: 'Volatile Cache',
+      description: 'Request-scoped temporary storage that auto-clears after execution. Perfect for RAG context, file content, and intermediate data without cluttering prompts.',
+      useCases: ['RAG search results', 'Document content from uploads', 'Temporary calculations', 'Request-scoped feature flags']
     },
     {
       icon: <MdStorage />,
-      name: 'Custom Adapters',
-      description: 'Build your own memory backend for specific requirements',
-      useCases: ['Enterprise systems', 'Custom databases', 'Special needs']
+      name: 'Non-Volatile Cache',
+      description: 'Session-persistent storage that survives across multiple requests. Ideal for user preferences, metadata, and configurations.',
+      useCases: ['User preferences', 'Session metadata', 'Extracted information', 'Persistent configurations']
+    },
+    {
+      icon: <SiRedis />,
+      name: 'Redis Backend',
+      description: 'High-performance distributed memory backend for production workloads with persistent state across instances.',
+      useCases: ['Production deployments', 'Multi-process apps', 'Distributed systems', 'Session persistence']
+    },
+    {
+      icon: <SiAmazondynamodb />,
+      name: 'DynamoDB Backend',
+      description: 'Serverless, auto-scaling NoSQL backend for AWS deployments with configurable TTL and pay-per-use pricing.',
+      useCases: ['AWS Lambda deployments', 'Auto-scaling apps', 'Serverless architectures', 'AWS-native infrastructure']
     },
   ];
 
@@ -306,10 +312,10 @@ function MemorySection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>04</span>
-          <h2 className={styles.sectionTitle}>Memory Management</h2>
+          <h2 className={styles.sectionTitle}>Smart Memory Management</h2>
           <p className={styles.sectionSubtitle}>
-            Pluggable memory architecture with flexible backends for every use case. 
-            Choose the right storage solution for your development, testing, and production needs.
+            Two types of intelligent caching with identical APIs but different lifecycles. Volatile cache for request-scoped data, 
+            non-volatile for session persistence. Multiple backends (in-memory, Redis, DynamoDB) swap with just environment variables.
           </p>
         </div>
         <div className={styles.memoryGrid}>
