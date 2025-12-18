@@ -69,14 +69,15 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 
 ### Enterprise-Ready Features
 
-- **Session Management**: Built-in conversational state tracking
+- **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
-  - In-memory
-  - Redis
-  - DynamoDB
-  - Mem0 [coming soon]
+  - In-memory (development)
+  - Redis (production)
+  - DynamoDB (serverless)
   - **Volatile Cache**: Request-scoped temporary storage for RAG context, file content, and intermediate data
   - **Non-Volatile Cache**: Session-persistent storage for user preferences, metadata, and configurations
+  
+  [Learn more about session management →](/docs/core-concepts/session) | [Advanced memory features →](/docs/architecture/memory-management)
 - **Execution Hooks**: Powerful pre and post-execution hooks for ultimate control
   - **Pre-execution hooks**: Guard rails, RAG context injection, input validation, authentication
   - **Post-execution hooks**: Response moderation, disclaimers, output filtering, analytics
@@ -142,7 +143,7 @@ Two types of cache with identical APIs but different lifecycles:
 
 **Multiple backends** - swap between in-memory, Redis, or DynamoDB with just environment variables.
 
-[Read the memory guide →](/docs/advanced/memory-management)
+[Read the advanced memory guide →](/docs/architecture/memory-management)
 
 ### Multi-Framework Support
 
@@ -227,9 +228,10 @@ Ready to get started? Here's what to do next:
 2. [**Quick Start Guide**](/docs/quick-start) - Build your first agent
 3. [**Core Concepts**](/docs/core-concepts/overview) - Understand the architecture
 4. [**Execution Hooks**](/docs/integrations/hooks) - Add guard rails, RAG, and response control
-5. [**Memory Management**](/docs/advanced/memory-management) - Configure caching and persistence
-6. [**Framework Integration**](/docs/frameworks/overview) - Choose your framework
-7. [**Deployment Guide**](/docs/deployment/overview) - Deploy to production
+5. [**Session Management**](/docs/core-concepts/session) - Session configuration and storage
+6. [**Memory Management**](/docs/architecture/memory-management) - Advanced caching and persistence
+7. [**Framework Integration**](/docs/frameworks/overview) - Choose your framework
+8. [**Deployment Guide**](/docs/deployment/overview) - Deploy to production
 
 ## Community & Support
 

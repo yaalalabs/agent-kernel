@@ -6,6 +6,12 @@ sidebar_position: 7
 
 Configure Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
 
+:::tip
+For detailed information about session and memory management configuration, see:
+- [Session Management](/docs/core-concepts/session) - Session configuration and storage backends
+- [Memory Management](/docs/architecture/memory-management) - Advanced memory features and caching
+:::
+
 ## Configuration File
 
 Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.

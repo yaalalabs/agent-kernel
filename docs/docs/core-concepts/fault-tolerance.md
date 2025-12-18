@@ -106,7 +106,11 @@ Limited fault tolerance suitable for development:
 
 ## Session State Resilience
 
-Conversation state is critical for agent continuity. Agent Kernel supports multiple backends:
+Conversation state is critical for agent continuity. Agent Kernel supports multiple storage backends with different resilience profiles.
+
+:::tip
+For detailed information about session storage backends and configuration, see the [Session Management](/docs/core-concepts/session) documentation.
+:::
 
 ### Redis (High Availability)
 ```bash
@@ -124,6 +128,8 @@ export AK_SESSION__REDIS__URL=redis://cluster-endpoint:6379
 - Use Redis Cluster or Sentinel mode
 - Enable persistence (AOF + RDB)
 - Configure appropriate replica count
+
+[Learn more about Redis session configuration →](/docs/core-concepts/session#redis-storage)
 
 ### DynamoDB (Serverless)
 ```bash
@@ -143,8 +149,12 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=sessions
 - Configure appropriate RCU/WCU or use on-demand
 - Set TTL for automatic cleanup
 
+[Learn more about DynamoDB session configuration →](/docs/core-concepts/session#dynamodb-storage)
+
 ### In-Memory (Development Only)
 Not recommended for production - state lost on restart.
+
+[See all session storage options →](/docs/core-concepts/session#storage-backends)
 
 ## Health Checks
 
@@ -250,8 +260,8 @@ Choose the deployment mode that best matches your availability requirements, bud
 
 ## Learn More
 
+- [Session Management](./session) - Detailed session configuration and storage backends
 - [Deployment Overview](../deployment/overview) - Compare deployment modes
 - [AWS Containerized](../deployment/aws-containerized) - ECS fault tolerance details
 - [AWS Serverless](../deployment/aws-serverless) - Lambda resilience features
-- [Session Management](./session) - State persistence options
 - [Architecture](../architecture/overview) - System design patterns

@@ -172,17 +172,22 @@ docker stop container-id
 
 ## Session Storage
 
-For containerized deployments, use Redis or DynamoDB for session persistence:
+For containerized deployments, use Redis or DynamoDB for session persistence.
 
-### ElastiCache Redis (Traditional Approach)
+:::tip
+For detailed session storage configuration and best practices, see the [Session Management](/docs/core-concepts/session#storage-backends) documentation.
+:::
+
+### ElastiCache Redis (Recommended for Performance)
 
 ```bash
 export AK_SESSION__TYPE=redis
 export AK_SESSION__REDIS__URL=redis://elasticache-endpoint:6379
+export AK_SESSION__CACHE__SIZE=256  # Enable in-memory caching
 ```
 
 **Benefits:**
-- High performance
+- High performance (sub-millisecond latency)
 - Low latency
 - In-memory speed
 - Shared cache across tasks
@@ -192,12 +197,28 @@ export AK_SESSION__REDIS__URL=redis://elasticache-endpoint:6379
 - High throughput requirements
 - Already using Redis infrastructure
 
+[See Redis configuration details →](/docs/core-concepts/session#redis-storage)
+
 ### DynamoDB (Serverless Option)
 
 ```bash
 export AK_SESSION__TYPE=dynamodb
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
-export AK_SESSION__DYNAMODB__TTL=3600  # 1 hour
+export AK_SESSION__DYNAMODB__TTL=604800  # 7 days
+```
+
+**Benefits:**
+- Serverless, fully managed
+- No infrastructure management
+- Auto-scaling
+- Multi-AZ by default
+
+**Use when:**
+- Simplicity and low operational overhead preferred
+- Variable workload patterns
+- AWS-native infrastructure
+
+[See DynamoDB configuration details →](/docs/core-concepts/session#dynamodb-storage)
 ```
 
 **Benefits:**

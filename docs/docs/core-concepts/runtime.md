@@ -97,6 +97,8 @@ session = runtime.get_session("user-123")
 # Session is automatically persisted based on configuration
 ```
 
+**Note**: For detailed information about session management, storage backends, and configuration, see the [Session Management](/docs/core-concepts/session) documentation.
+
 ## Configuration
 
 The Runtime provides access to global configuration:
@@ -249,7 +251,7 @@ runtime = Runtime.get()
 
 ## Next Steps
 
+- [Session Management](./session) - Detailed session configuration and lifecycle
 - [Deployment Overview](../deployment/overview)
 - [REST API](../api/rest-api)
 - [Configuration](./configuration)
-- [Advanced Features](../advanced/memory-management)
