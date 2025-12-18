@@ -74,6 +74,7 @@ const sidebars = {
         'integrations/messenger',
         'integrations/instagram',
         'integrations/telegram',
+        'integrations/gmail',
         'integrations/hooks',
       ],
     },
