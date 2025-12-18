@@ -41,7 +41,7 @@ api:
   host: 0.0.0.0
   port: 8000
   custom_router_prefix: /custom
-  max_file_size: 2097152  # Maximum file size in bytes (default: 2 MB)
+  max_file_size: 2097152  # Maximum file size in bytes (default: 2 MB) that can be sent as attachments
   enabled_routes:
     agents: true
 

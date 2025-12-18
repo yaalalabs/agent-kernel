@@ -43,6 +43,8 @@ Currently, passed images and files are not added to the chat history. So all que
 Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/api/rest-api.md) on how to handle this properly without exhausting the token limits.
 :::
 
+**Note**: To prevent large files getting passed to LLMs there is 'max_file_size' in REST API configuration which limits the attached file size.
+
 ## Simple Slack integration code
 
 ```
