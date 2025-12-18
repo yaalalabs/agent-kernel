@@ -207,7 +207,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                     self._log.warning(f"No URL found for file: {file_name}")
                     continue
 
-                self._log.debug(f">>>>>>  Downloading file: {file_name} (type: {mime_type}) from {url_private}")
+                self._log.debug(f"Downloading file: {file_name} (type: {mime_type}) from {url_private}")
 
                 # Download file content from Slack
                 file_content = await self._download_slack_file(url_private)
