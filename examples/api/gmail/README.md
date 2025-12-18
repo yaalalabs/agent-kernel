@@ -257,7 +257,7 @@ The handler currently supports one label. To monitor multiple, you can:
 
 ### Custom Email Query
 
-Modify the query in `gmail_chat.py`:
+The agent uses a Gmail search query string to filter which messages it processes. Here are some example queries you can use when configuring or extending the agent:
 
 ```python
 # Example: Only emails from specific sender
