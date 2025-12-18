@@ -480,11 +480,21 @@ class AgentGmailRequestHandler:
             # Clean up agent response: remove "Subject: ..." line if present
             reply_body = body
 
-            # Add signature with configurable format and name
+            # Add signature with configurable format and name (if configured)
             client_name = os.environ.get("AK_CLIENT_NAME")
             sign_off = os.environ.get("AK_GMAIL_SIGN_OFF")  # Best regards, Sincerely, Kind regards, etc.
 
-            reply_body = f"{reply_body}\n\n{sign_off},\n{client_name}"
+            signature_lines = []
+            if sign_off:
+                # Preserve existing comma placement when both sign-off and name are present
+                if client_name:
+                    signature_lines.append(f"{sign_off},")
+                else:
+                    signature_lines.append(sign_off)
+            if client_name:
+                signature_lines.append(client_name)
+            if signature_lines:
+                reply_body = f"{reply_body}\n\n" + "\n".join(signature_lines)
 
             # Create message
             message = MIMEText(reply_body)
