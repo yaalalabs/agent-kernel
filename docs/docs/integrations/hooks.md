@@ -2,6 +2,15 @@
 
 Execution hooks provide powerful extension points to customize and enhance agent behavior at runtime. Agent Kernel supports **pre-execution hooks** and **post-execution hooks** that allow you to modify prompts, inject context, validate inputs, and transform responses.
 
+:::tip Session & Memory Access
+Hooks have full access to the session object and auxiliary memory (volatile and non-volatile caches). This enables:
+- Accessing and modifying session state
+- Storing temporary data in volatile cache (RAG context, files)
+- Persisting preferences in non-volatile cache (user settings, metadata)
+
+[Learn about session management →](/docs/core-concepts/session) | [Learn about memory management →](/docs/architecture/memory-management)
+:::
+
 ## Overview
 
 Hooks enable you to:

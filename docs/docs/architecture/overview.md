@@ -126,5 +126,5 @@ sequenceDiagram
 ## Next Steps
 
 - [Execution Flow](./execution-flow)
-- [Session Management](./session-management)
-- [Memory Management](./memory-management)
+- [Session Management](/docs/core-concepts/session) - Detailed session configuration
+- [Memory Management](./memory-management) - Advanced memory features

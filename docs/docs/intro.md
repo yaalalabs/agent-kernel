@@ -7,6 +7,10 @@ slug: /
 
 Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for building and deploying AI agents.
 
+:::tip What's New
+🎯 **Execution Hooks & Smart Memory** - Take complete control of your agents with pre/post-execution hooks and intelligent caching. [Read the announcement →](/blog/hooks-and-smart-memory)
+:::
+
 ## What is Agent Kernel?
 
 Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffolding to build, test and deploy your agents, your mcp tools and A2A quickly in many deployment configurations. The unified execution environment provides the session and memory management seamlessly. 
@@ -65,12 +69,20 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 
 ### Enterprise-Ready Features
 
-- **Session Management**: Built-in conversational state tracking
-- **Memory Management**: Pluggable memory 
-  - In-memory
-  - Redis
-  - DynamoDB
-  - Mem0 [coming soon]
+- **Session Management**: Built-in conversational state tracking across multiple backends
+- **Memory Management**: Pluggable memory with smart caching
+  - In-memory (development)
+  - Redis (production)
+  - DynamoDB (serverless)
+  - **Volatile Cache**: Request-scoped temporary storage for RAG context, file content, and intermediate data
+  - **Non-Volatile Cache**: Session-persistent storage for user preferences, metadata, and configurations
+  
+  [Learn more about session management →](/docs/core-concepts/session) | [Advanced memory features →](/docs/architecture/memory-management)
+- **Execution Hooks**: Powerful pre and post-execution hooks for ultimate control
+  - **Pre-execution hooks**: Guard rails, RAG context injection, input validation, authentication
+  - **Post-execution hooks**: Response moderation, disclaimers, output filtering, analytics
+  - **Hook chaining**: Compose multiple hooks in sequence for complex behaviors
+  - **Early termination**: Pre-hooks can halt execution and return custom responses
 - **Fault Tolerance**: Production-grade resilience
   - Multi-AZ deployments for high availability
   - Automatic failure recovery and retry mechanisms
@@ -97,6 +109,41 @@ All framework adapters expose the same core abstractions:
 - **Session**: Shared conversational state
 - **Module**: Container for registering agents
 - **Runtime**: Global orchestrator
+
+### Execution Hooks
+
+Powerful **pre-execution** and **post-execution** hooks give you surgical control over agent behavior:
+
+- **Pre-hooks**: Intercept prompts before agents see them
+  - 🛡️ Guard rails and content filtering
+  - 🧠 RAG context injection from knowledge bases
+  - 🔍 Input validation and authentication
+  - 📊 Request logging and analytics
+- **Post-hooks**: Transform responses after generation
+  - ⚖️ Add disclaimers and compliance messages
+  - 🔒 Output moderation and filtering
+  - 📈 Response analytics and monitoring
+
+**Works with any framework** - same hook code across OpenAI, CrewAI, LangGraph, and ADK.
+
+[Learn more in our blog post →](/blog/hooks-and-smart-memory)
+
+### Smart Memory Management
+
+Two types of cache with identical APIs but different lifecycles:
+
+- **Volatile Cache**: Request-scoped temporary storage
+  - Perfect for RAG context, file content, intermediate calculations
+  - Auto-clears after request completion
+  - Keeps prompts clean and reduces token usage
+- **Non-Volatile Cache**: Session-persistent storage
+  - Store user preferences, metadata, configurations
+  - Persists across multiple requests
+  - Share data between hooks and tools
+
+**Multiple backends** - swap between in-memory, Redis, or DynamoDB with just environment variables.
+
+[Read the advanced memory guide →](/docs/architecture/memory-management)
 
 ### Multi-Framework Support
 
@@ -180,8 +227,11 @@ Ready to get started? Here's what to do next:
 1. [**Install Agent Kernel**](/docs/installation) - Get up and running in minutes
 2. [**Quick Start Guide**](/docs/quick-start) - Build your first agent
 3. [**Core Concepts**](/docs/core-concepts/overview) - Understand the architecture
-4. [**Framework Integration**](/docs/frameworks/overview) - Choose your framework
-5. [**Deployment Guide**](/docs/deployment/overview) - Deploy to production
+4. [**Execution Hooks**](/docs/integrations/hooks) - Add guard rails, RAG, and response control
+5. [**Session Management**](/docs/core-concepts/session) - Session configuration and storage
+6. [**Memory Management**](/docs/architecture/memory-management) - Advanced caching and persistence
+7. [**Framework Integration**](/docs/frameworks/overview) - Choose your framework
+8. [**Deployment Guide**](/docs/deployment/overview) - Deploy to production
 
 ## Community & Support
 

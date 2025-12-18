@@ -38,7 +38,6 @@ const sidebars = {
       items: [
         'architecture/overview',
         'architecture/execution-flow',
-        'architecture/session-management',
         'architecture/memory-management',
       ],
     },
@@ -99,7 +98,6 @@ const sidebars = {
       type: 'category',
       label: 'Advanced Features',
       items: [
-        'advanced/memory-management',
         'advanced/traceability',
         'advanced/multi-agent',
       ],

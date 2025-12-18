@@ -198,6 +198,10 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 **DynamoDB Fault Tolerance:**
 - **Multi-AZ replication** - Data replicated across 3 AZs automatically
 - **Point-in-time recovery (PITR)** - Restore to any second in last 35 days
+
+:::tip
+For detailed DynamoDB session configuration and best practices, see the [Session Management](/docs/core-concepts/session#dynamodb-storage) documentation.
+:::
 - **Continuous backups** - Automatic and continuous
 - **99.999% availability SLA** - Five nines uptime
 - **Global tables** (optional) - Multi-region replication

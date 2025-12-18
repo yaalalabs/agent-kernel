@@ -312,7 +312,8 @@ Or explore specific use cases:
 
 - [Framework Integration](../frameworks/overview) - Framework-specific details
 - [Deployment](../deployment/overview) - Production deployment options
-- [Advanced Features](../advanced/memory-management) - Memory, RBAC, and more
+- [Session Management](./session) - Session configuration and lifecycle
+- [Memory Management](../architecture/memory-management) - Advanced memory features and caching
 
 ---
 
