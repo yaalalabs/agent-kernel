@@ -67,7 +67,7 @@ class _MCPConfig(BaseModel):
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
-    
+
 class _SlackConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
     agent_acknowledgement: str = Field(
