@@ -58,6 +58,7 @@ Agent Kernel provides pre-built execution capabilities:
   - Messenger
   - Telegram
   - Instagram
+  - Gmail
 - **AWS Serverless Deployment** for scalable production
 - **AWS Containerized Deployment** for consistent loads
 - **MCP Server** for Model Context Protocol tool publishing
@@ -167,7 +168,7 @@ flowchart LR
     B -- Local --> C["CLI Testing"]
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- Cloud --> E["AWS Serverless"] & F["AWS Containers"]
-    D -- Integration --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"]
+    D -- Integration --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff

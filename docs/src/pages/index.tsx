@@ -250,17 +250,17 @@ function MessagingIntegrationsSection() {
       color: '#0088CC',
       link: '/docs/integrations/telegram',
     },
-  ];
-
-  const comingSoonIntegrations = [
     {
       name: 'Gmail',
       icon: <SiGmail />,
       description: 'Email conversation handling with Gmail',
-      status: 'coming-soon',
+      status: 'active',
       color: '#EA4335',
+      link: '/docs/integrations/gmail',
     },
   ];
+
+  const comingSoonIntegrations = [];
 
   return (
     <section id="integrations" className={styles.messagingIntegrationsSection}>
@@ -268,7 +268,7 @@ function MessagingIntegrationsSection() {
         <div className={styles.integrationsHeader}>
           <h2 className={styles.integrationsSectionTitle}>Messaging Platform Integrations</h2>
           <p className={styles.integrationsSectionSubtitle}>
-            Connect your AI agents to popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, and Telegram
+            Connect your AI agents to popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail
           </p>
         </div>
 
