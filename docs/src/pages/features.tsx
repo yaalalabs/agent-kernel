@@ -156,7 +156,7 @@ function CoreFeaturesSection() {
       title: 'Context & Memory',
       description: 'Smart memory management with volatile (request-scoped) and non-volatile (session-persistent) caching. Supports multiple backends: in-memory, Redis, and DynamoDB.',
       highlights: ['Volatile cache for RAG context', 'Non-volatile cache for user preferences', 'Multiple backend support', 'Clean prompts, lower costs'],
-      link: '/docs/advanced/memory-management'
+      link: '/docs/architecture/memory-management'
     },
     {
       icon: <MdSettings />,
@@ -322,7 +322,7 @@ function MemorySection() {
           {memoryOptions.map((option, idx) => (
             <Link 
               key={idx} 
-              to="/docs/advanced/memory-management" 
+              to="/docs/architecture/memory-management" 
               className={styles.memoryCard} 
               style={{ animationDelay: `${idx * 0.1}s` }}>
               <div className={styles.memoryIcon}>{option.icon}</div>
@@ -350,6 +350,30 @@ function MemorySection() {
 }
 
 function TestingSection() {
+  const comparisonModes = [
+    {
+      icon: <MdSpeed />,
+      name: 'Fuzzy Mode',
+      description: 'Fast string matching with configurable thresholds using RapidFuzz',
+      features: ['Configurable threshold (0-100)', 'Multiple expected answers support', 'Deterministic results', 'Ideal for exact outputs'],
+      link: '/docs/testing/cli-testing#fuzzy-mode'
+    },
+    {
+      icon: <MdBugReport />,
+      name: 'Judge Mode',
+      description: 'LLM-based semantic evaluation using Ragas for AI-generated content',
+      features: ['Answer similarity metric', 'Answer relevancy check', 'Handles paraphrasing', 'Best for AI responses'],
+      link: '/docs/testing/cli-testing#judge-mode'
+    },
+    {
+      icon: <MdTimer />,
+      name: 'Fallback Mode',
+      description: 'Tries fuzzy first, then falls back to judge evaluation (default)',
+      features: ['Best of both worlds', 'Automatic fallback', 'Robust validation', 'Production-ready'],
+      link: '/docs/testing/cli-testing#fallback-mode-default'
+    },
+  ];
+
   return (
     <section className={styles.section}>
       <div className="container">
@@ -357,47 +381,106 @@ function TestingSection() {
           <span className={styles.sectionNumber}>05</span>
           <h2 className={styles.sectionTitle}>Testing & Development</h2>
           <p className={styles.sectionSubtitle}>
-            Built-in agent test framework for local development. Focus on domain-specific agent development 
-            while Agent Kernel takes care of testing, deployment, and execution.
+            Comprehensive testing framework with CLI and automated testing, multiple comparison modes, 
+            and seamless pytest integration. Test your agents thoroughly before deployment.
           </p>
         </div>
+
+        {/* Main Testing Approaches */}
         <div className={styles.testingContent}>
-          <Link to="/docs/testing/overview" className={styles.testingFeature}>
+          <Link to="/docs/testing/cli-testing" className={styles.testingFeature}>
             <div className={styles.testingIcon}>
               <MdTerminal />
             </div>
             <h3>CLI-Based Testing</h3>
             <p>
               Interactive command-line interface for real-time agent testing and debugging. 
-              Test your agents in a controlled environment before deployment.
+              Test your agents in a controlled environment with the Test class for programmatic interaction.
             </p>
             <ul className={styles.testingList}>
               <li>Interactive chat sessions</li>
               <li>Real-time feedback</li>
-              <li>Easy debugging</li>
-              <li>Local execution</li>
+              <li>Persistent CLI sessions</li>
+              <li>Multi-agent support</li>
+              <li>ANSI escape sequence cleanup</li>
             </ul>
+            <span className={styles.featureLink}>Learn more →</span>
           </Link>
-          <Link to="/docs/testing/overview" className={styles.testingFeature}>
+          
+          <Link to="/docs/testing/automated-testing" className={styles.testingFeature}>
             <div className={styles.testingIcon}>
-              <MdBugReport />
+              <MdCode />
             </div>
             <h3>Automated Test Framework</h3>
             <p>
-              Execute predefined test scenarios to validate agent behavior consistently. 
-              Build comprehensive test suites for your agentic systems.
+              Build comprehensive test suites with pytest integration. Execute predefined scenarios 
+              to validate agent behavior consistently across deployments.
             </p>
             <ul className={styles.testingList}>
-              <li>Scenario-based testing</li>
-              <li>Automated validation</li>
-              <li>Regression testing</li>
-              <li>CI/CD integration</li>
+              <li>pytest integration</li>
+              <li>Session-scoped fixtures</li>
+              <li>Ordered test execution</li>
+              <li>CI/CD ready</li>
+              <li>Container testing support</li>
             </ul>
+            <span className={styles.featureLink}>Learn more →</span>
           </Link>
         </div>
+
+        {/* Comparison Modes Section */}
+        <div className={styles.comparisonModesSection}>
+          <h3 className={styles.subsectionTitle}>Three Powerful Comparison Modes</h3>
+          <p className={styles.subsectionDescription}>
+            Choose the right validation strategy for your use case. All modes support multiple expected answers 
+            and configurable thresholds.
+          </p>
+          <div className={styles.comparisonModesGrid}>
+            {comparisonModes.map((mode, idx) => (
+              <Link 
+                key={idx} 
+                to={mode.link} 
+                className={styles.comparisonModeCard}
+                style={{ animationDelay: `${idx * 0.1}s` }}>
+                <div className={styles.modeIcon}>{mode.icon}</div>
+                <h4>{mode.name}</h4>
+                <p>{mode.description}</p>
+                <ul className={styles.modeFeatures}>
+                  {mode.features.map((feature, i) => (
+                    <li key={i}>{feature}</li>
+                  ))}
+                </ul>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Key Features Grid */}
+        <div className={styles.testingFeaturesGrid}>
+          <div className={styles.testingFeatureBox}>
+            <MdSettings className={styles.featureBoxIcon} />
+            <h4>Configurable Modes</h4>
+            <p>Set default mode via config.yaml or environment variables</p>
+          </div>
+          <div className={styles.testingFeatureBox}>
+            <MdGroup className={styles.featureBoxIcon} />
+            <h4>Multi-Agent Support</h4>
+            <p>Test different agents within the same CLI application</p>
+          </div>
+          <div className={styles.testingFeatureBox}>
+            <MdApi className={styles.featureBoxIcon} />
+            <h4>API Testing</h4>
+            <p>Test REST API endpoints alongside CLI agents</p>
+          </div>
+          <div className={styles.testingFeatureBox}>
+            <FaDocker className={styles.featureBoxIcon} />
+            <h4>Container Testing</h4>
+            <p>Validate containerized deployments before production</p>
+          </div>
+        </div>
+
         <div className={styles.sectionFooter}>
           <Link to="/docs/testing/overview" className={styles.sectionLink}>
-            View Testing Documentation →
+            View Complete Testing Documentation →
           </Link>
         </div>
       </div>
