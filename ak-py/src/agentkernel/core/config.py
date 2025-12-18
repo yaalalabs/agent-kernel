@@ -13,6 +13,10 @@ def _get_ak_version() -> str:
         return "0.1.0"
 
 
+class _SessionCacheConfig(BaseModel):
+    size: int = Field(default=256, description="Maximum number of sessions to cache in memory")
+
+
 class _RedisConfig(BaseModel):
     url: str = Field(
         default="redis://localhost:6379",
@@ -34,6 +38,7 @@ class _DynamoDBConfig(BaseModel):
 
 class _SessionStoreConfig(BaseModel):
     type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb)$")
+    cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
 
@@ -62,7 +67,7 @@ class _MCPConfig(BaseModel):
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
 
-
+    
 class _SlackConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
     agent_acknowledgement: str = Field(
