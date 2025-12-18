@@ -1,4 +1,4 @@
-sgmail:
+gmail:
   agent: general
   poll_interval: 30                     # Check for emails every 30 seconds
   label_filter: "INBOX"                 # Monitor INBOX label
