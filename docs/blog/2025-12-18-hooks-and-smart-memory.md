@@ -372,7 +372,7 @@ Your hook enriches the prompt before the agent sees it. Magic! ✨
 
 **Documentation:**
 - 📚 [Execution Hooks Guide](/docs/integrations/hooks) - Complete reference with examples
-- 🧠 [Memory Management](/docs/advanced/memory-management) - Cache backends and configuration
+- 🧠 [Memory Management](/docs/architecture/memory-management) - Cache backends and configuration
 - 🏗️ [Core Concepts](/docs/core-concepts/overview) - Understanding Agent Kernel architecture
 
 ## Why This Matters
