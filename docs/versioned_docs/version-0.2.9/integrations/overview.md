@@ -24,6 +24,7 @@ The following built-in integrations are available.
 - **[Messenger](./messenger)** - Deploy agents as FB Messenger bots
 - **[Instagram](./instagram)** - Deploy agents as Instagram DM bots
 - **[Telegram](./telegram)** - Deploy agents as Telegram bots
+- **[Gmail](./gmail)** - Deploy agents as Gmail bots that automatically read and reply to emails
 
 ```mermaid
 ---
@@ -32,7 +33,7 @@ config:
   elk: true
 ---
 flowchart LR
-    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"]
+    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"]
 
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
@@ -53,7 +54,7 @@ config:
 ---
 flowchart LR
     
-    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & N["CustomHandler"]
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailHandler"] & N["CustomHandler"]
 
     style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
