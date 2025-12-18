@@ -115,7 +115,6 @@ class _TelegramConfig(BaseModel):
 
 class _GmailConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Gmail")
-    credentials_file: str = Field(default="", description="Path to Google OAuth2 credentials JSON file")
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
     poll_interval: int = Field(default=30, description="Email polling interval in seconds")
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
