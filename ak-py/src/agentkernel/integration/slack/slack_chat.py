@@ -102,7 +102,10 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 await say(
                     channel=channel,
                     thread_ts=thread_ts,
-                    text=f"Sorry <@{user}>, I cannot process audio and video files. Rejected: {', '.join(rejected_files)}",
+                    text=(
+                        "I can only process text messages, images, and document files. "
+                        f"The following audio/video files were rejected: {', '.join(rejected_files)}"
+                    ),
                 )
                 return
 
@@ -145,8 +148,8 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 )
                 return
 
-            # Use run_multi if we have multiple requests, otherwise run
-            if len(requests) >= 1:
+            # Use run_multi
+            if len(requests) > 0:
                 result = await service.run_multi(requests=requests)
             else:
                 await say(channel=channel, thread_ts=thread_ts, text="Please provide a message or attachment.")
