@@ -135,11 +135,7 @@ Bot:   "Yes! Here are customization options..."
 
 ### Custom Email Query
 
-Edit `gmail_chat.py`:
-
-```python
-query = "is:unread from:important@example.com"
-```
+The Gmail handler uses a default query (for example, to fetch unread messages). To customize which emails are processed (such as only unread messages from specific senders), configure the handler via your application’s settings or by extending the `AgentGmailHandler` in your own code to use a custom Gmail search query (e.g., `is:unread from:important@example.com`). Refer to the Agent Kernel Gmail integration documentation for the supported configuration options.
 
 ### Email Filtering by Sender & Subject
 
