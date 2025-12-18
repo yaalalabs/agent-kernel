@@ -173,7 +173,6 @@ Edit `config.yaml`:
 ```yaml
 gmail:
   agent: general                        # Agent to use for email processing
-  token_file: "token.pickle"            # Token storage location
   poll_interval: 30                     # Polling interval in seconds
   label_filter: "INBOX"                 # Gmail label to monitor
 ```

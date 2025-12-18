@@ -74,7 +74,7 @@ On first run, the handler will:
 ```python
 from agents import Agent as OpenAIAgent
 from agentkernel.openai import OpenAIModule
-from agentkernel.gmail import AgentGmailHandler
+from agentkernel.gmail import AgentGmailRequestHandler
 import asyncio
 
 # Create your agent
@@ -88,8 +88,18 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentGmailHandler()
-    asyncio.run(handler.start_polling())
+    handler = AgentGmailRequestHandler()
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            asyncio.run(handler.start_polling())
+        else:
+            loop.run_until_complete(handler.start_polling())
+
+    except RuntimeError:
+        asyncio.run(handler.start_polling())
 ```
 
 ## Configuration Options
@@ -100,10 +110,7 @@ if __name__ == "__main__":
 gmail:
     agent: "general"  # Name of the agent to handle emails
     poll_interval: 30  # Seconds between polling for new emails
-    token_file: "token.pickle"  # Path to store OAuth token
 ```
-
-**Do not keep secrets or keys in the config file. Set them as environment variables as shown above.**
 
 ## Features
 
@@ -199,9 +206,9 @@ Message 2 (User): "Can you give an example?"
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.gmail import AgentGmailHandler
+from agentkernel.gmail import AgentGmailRequestHandler
 
-class CustomGmailHandler(AgentGmailHandler):
+class CustomGmailHandler(AgentGmailRequestHandler):
     async def _process_email(self, email: dict):
         subject = email.get("subject", "")
   
