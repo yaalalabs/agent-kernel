@@ -46,13 +46,13 @@ async def main():
     # Authenticate with Gmail
     handler.authenticate()
 
-    print("Gmail bot started! Polling for new emails...")
+    logging.info("Gmail bot started! Polling for new emails...")
 
     try:
         # Start polling loop
         await handler.start_polling()
     except KeyboardInterrupt:
-        print("\nStopping Gmail bot...")
+        logging.info("Stopping Gmail bot...")
         handler.stop_polling()
 
 
