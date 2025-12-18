@@ -92,6 +92,15 @@ class _MessengerConfig(BaseModel):
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
 
 
+class _InstagramConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Instagram interactions")
+    verify_token: str = Field(default="", description="Instagram webhook verify token")
+    access_token: str = Field(default="", description="Instagram Business access token")
+    app_secret: str = Field(default="", description="Instagram app secret for signature verification")
+    instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
+    api_version: str = Field(default="v21.0", description="Instagram Graph API version")
+
+
 class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
@@ -140,7 +149,9 @@ class AKConfig(YamlBaseSettingsModified):
     messenger: _MessengerConfig = Field(
         description="Facebook Messenger related configurations", default_factory=_MessengerConfig
     )
-
+    instagram: _InstagramConfig = Field(
+        description="Instagram Business API related configurations", default_factory=_InstagramConfig
+    )
     telegram: _TelegramConfig = Field(
         description="Telegram Bot related configurations", default_factory=_TelegramConfig
     )
