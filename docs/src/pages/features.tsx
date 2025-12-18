@@ -340,7 +340,7 @@ function MemorySection() {
           ))}
         </div>
         <div className={styles.sectionFooter}>
-          <Link to="/docs/advanced/memory-management" className={styles.sectionLink}>
+          <Link to="/docs/architecture/memory-management" className={styles.sectionLink}>
             View Memory Management Documentation →
           </Link>
         </div>
