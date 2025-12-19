@@ -109,8 +109,11 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 ## Testing
 
 ### Local Development
+The AgentWhatsAppRequestHandler listens on /whatsapp/webhook, hence you need to setup the webhook URL as **https://<your-domain-or-ip>:<port>/whatsapp/webhook**
 
-For local testing, use a tunneling service to expose your local server:
+During URL registration, WhatsApp sends a challenge to the URL before enabling. The AgentWhatsAppRequestHandler handles this, hence you don't need any separate code to activate.
+
+You can use https://pinggy.io/ or similar for local testing (e.g. ssh -p 443 -R0:localhost:8000 a.pinggy.io). [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
 
 **Using ngrok:**
 ```bash
@@ -122,7 +125,15 @@ ngrok http 8000
 ssh -p443 -R0:localhost:8000 a.pinggy.io
 ```
 
-Update your WhatsApp webhook URL with the tunnel URL.
+A detailed example is provided in the examples section.
+
+:::info Current Limitation
+Currently, passed images and files are not added to the chat history. So all questions have to be asked with the caption sent along with the attachments. Follow up questions, which require re-analysis of the file/image cannot be answered by the LLM.
+
+Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/api/rest-api.md) on how to handle this properly without exhausting the token limits.
+:::
+
+**Note**: To prevent large files from being passed to LLMs, there is 'max_file_size' in REST API configuration which limits the attached file size.
 
 ### Testing Steps
 
