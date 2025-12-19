@@ -109,7 +109,7 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 ## Testing
 
 ### Local Development
-The AgentWhatsAppRequestHandler listens on /whatsapp/webhook, hence you need to setup the webhook URL as **https://<your-domain-or-ip>:<port>/whatsapp/webhook**
+The AgentWhatsAppRequestHandler listens on /whatsapp/webhook, hence you need to setup the webhook URL as `https://<your-domain-or-ip>:<port>/whatsapp/webhook`
 
 During URL registration, WhatsApp sends a challenge to the URL before enabling. The AgentWhatsAppRequestHandler handles this, hence you don't need any separate code to activate.
 
@@ -133,7 +133,7 @@ Currently, passed images and files are not added to the chat history. So all que
 Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/api/rest-api.md) on how to handle this properly without exhausting the token limits.
 :::
 
-**Note**: To prevent large files from being passed to LLMs, there is 'max_file_size' in REST API configuration which limits the attached file size.
+**Note**: To prevent large files from being passed to LLMs, use the `max_file_size` option in the REST API configuration (see the REST API configuration details in the document linked above), which limits the attached file size.
 
 ### Testing Steps
 
