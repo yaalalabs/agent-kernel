@@ -502,6 +502,17 @@ Configure integrations with messaging platforms.
 - **Bot Token**, **Webhook Secret**, **API Version**
   - **Environment Variables**: `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET`, `AK_TELEGRAM__API_VERSION`
 
+##### Gmail
+
+- **Agent**
+  - **Field**: `gmail.agent`
+  - **Default**: `"general"`
+  - **Description**: Default agent for Gmail interactions
+  - **Environment Variable**: `AK_GMAIL__AGENT`
+
+- **Client ID**, **Client Secret**, **Token File**, **Poll Interval**, **Label Filter**
+  - **Environment Variables**: `AK_GMAIL__CLIENT_ID`, `AK_GMAIL__CLIENT_SECRET`, `AK_GMAIL__TOKEN_FILE`, `AK_GMAIL__POLL_INTERVAL`, `AK_GMAIL__LABEL_FILTER`
+
 ### Configuration Examples
 
 #### Environment Variables
@@ -536,6 +547,9 @@ export AK_WHATSAPP__AGENT=my-agent
 export AK_MESSENGER__AGENT=my-agent
 export AK_INSTAGRAM__AGENT=my-agent
 export AK_TELEGRAM__AGENT=my-agent
+export AK_GMAIL__AGENT=my-agent
+export AK_GMAIL__CLIENT_ID=your-google-client-id
+export AK_GMAIL__CLIENT_SECRET=your-google-client-secret
 ```
 
 #### .env File
@@ -608,6 +622,10 @@ instagram:
   agent: my-agent
 telegram:
   agent: my-agent
+gmail:
+  agent: my-agent
+  poll_interval: 30
+  label_filter: "INBOX"
 ```
 
 #### config.json
@@ -670,6 +688,11 @@ telegram:
   },
   "telegram": {
     "agent": "my-agent"
+  },
+  "gmail": {
+    "agent": "my-agent",
+    "poll_interval": 30,
+    "label_filter": "INBOX"
   }
 }
 ```

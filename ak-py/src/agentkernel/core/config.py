@@ -113,6 +113,13 @@ class _TelegramConfig(BaseModel):
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
 
 
+class _GmailConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Gmail")
+    token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
+    poll_interval: int = Field(default=30, description="Email polling interval in seconds")
+    label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -152,6 +159,8 @@ class AKConfig(YamlBaseSettingsModified):
     telegram: _TelegramConfig = Field(
         description="Telegram Bot related configurations", default_factory=_TelegramConfig
     )
+    gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
+
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
