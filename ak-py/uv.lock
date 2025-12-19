@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -109,6 +109,7 @@ redis = [
     { name = "redis" },
 ]
 slack = [
+    { name = "httpx" },
     { name = "slack-bolt" },
 ]
 telegram = [
@@ -154,6 +155,7 @@ requires-dist = [
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'slack'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=0.3.27" },
