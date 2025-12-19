@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import logging
@@ -7,7 +8,13 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config
+from ...core import (
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+    AgentService,
+    Config,
+)
 
 
 class AgentMessengerRequestHandler(RESTRequestHandler):
@@ -144,18 +151,22 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
         message = messaging_event.get("message", {})
         message_id = message.get("mid")
         message_text = message.get("text")
+        attachments = message.get("attachments", [])
 
         if not sender_id or not message_id:
             self._log.warning("Message missing required fields (sender/mid)")
             return
 
-        # Skip messages with attachments that don't have text
-        if not message_text:
-            self._log.warning("Message has no text content")
+        # Allow message if it has text OR attachments
+        if not message_text and not attachments:
+            self._log.warning("Message has no text or attachments")
             return
 
-        self._log.debug(f"Processing message {message_id} from {sender_id}: {message_text}")
-        await self._process_agent_message(sender_id, message_text)
+        if message_text:
+            self._log.debug(f"Processing message {message_id} from {sender_id}: {message_text}")
+        if attachments:
+            self._log.debug(f"Processing message {message_id} from {sender_id} with {len(attachments)} attachment(s)")
+        await self._process_agent_message(sender_id, message_text or "", attachments)
 
     async def _handle_postback(self, messaging_event: dict):
         """
@@ -184,7 +195,10 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
         self._log.debug(f"Processing postback from {sender_id}: {message_text}")
         await self._process_agent_message(sender_id, message_text)
 
-    async def _process_agent_message(self, sender_id: str, message_text: str):
+    async def _process_agent_message(self, sender_id: str, message_text: str, attachments: list = None):
+        if attachments is None:
+            attachments = []
+
         service = AgentService()
         session_id = sender_id  # Use sender_id as session_id to maintain conversation context
         try:
@@ -202,8 +216,66 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
                 await self._send_typing_indicator(sender_id, False)
                 return
 
-            # Run the agent
-            result = await service.run(message_text)
+            # Extract and download attachments
+            processed_attachments = await self._extract_attachments(attachments)
+
+            # Get session to store/retrieve attachment history
+            session = service.session
+
+            # Store current attachment metadata in session
+            if processed_attachments:
+                self._store_attachment_metadata(session, processed_attachments)
+
+            # Build request list: start with text only if it's not empty
+            requests = []
+            if message_text.strip():  # Only add text if it's not empty
+                requests.append(AgentRequestText(text=message_text))
+            requests.extend(processed_attachments)
+
+            # Add conversation context if available
+            conversation_context = self._get_conversation_context(session)
+            if conversation_context:
+                requests.insert(0, AgentRequestText(text=conversation_context))
+                self._log.info(f"[AGENT_CONTEXT] Added conversation history to context")
+
+            # Add previous attachments to the request if available
+            previous_attachments = self._get_previous_attachments(session, processed_attachments)
+            self._log.info(f"[DEBUG] previous_attachments returned: {len(previous_attachments)} items")
+            if previous_attachments:
+                for att in previous_attachments:
+                    self._log.info(
+                        f"[DEBUG] Previous attachment: name={getattr(att, 'name', '?')}, has_data={bool(getattr(att, 'image_data' if 'Image' in type(att).__name__ else 'file_data', None))}"
+                    )
+                requests.extend(previous_attachments)
+                self._log.info(f"[AGENT_CONTEXT] Added {len(previous_attachments)} previous attachment(s) to context")
+            else:
+                self._log.info(f"[DEBUG] No previous attachments to add")
+
+            # Log request summary
+            self._log.info(
+                f"[AGENT_INPUT] Total requests: {len(requests)} (text + {len(processed_attachments)} attachment(s) + context)"
+            )
+
+            # Store user message in conversation history for context (before agent runs)
+            if message_text.strip():
+                self._store_user_message(session, message_text)
+            elif processed_attachments:
+                # Even if no text, store that user sent attachment(s) for context
+                attachment_names = [getattr(att, "name", "file") for att in processed_attachments]
+                self._store_user_message(session, f"[sent image/file: {', '.join(attachment_names)}]")
+
+            # Run the agent - always use run_multi if there are requests
+            if len(requests) > 0:
+                self._log.info(
+                    f"[AGENT_CALL] Running agent with {len(requests)} request(s) (text + {len(processed_attachments)} attachment(s))"
+                )
+                result = await service.run_multi(requests)
+            else:
+                # No requests at all - nothing to process
+                self._log.warning("No text or attachments to process")
+                await self._send_message(sender_id, "Please send a message or attachment.")
+                await self._send_typing_indicator(sender_id, False)
+                return
 
             if hasattr(result, "raw"):
                 response_text = str(result.raw)
@@ -211,6 +283,9 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
                 response_text = str(result)
 
             self._log.debug(f"Agent response: {response_text}")
+
+            # Store agent response in session for context
+            self._store_agent_response(session, response_text)
 
             # Turn off typing indicator and send the response
             await self._send_typing_indicator(sender_id, False)
@@ -302,3 +377,331 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
                 self._log.debug(f"Message marked as seen: {recipient_id}")
         except Exception as e:
             self._log.warning(f"Failed to mark message as seen: {e}")
+
+    async def _extract_attachments(self, attachments: list) -> list:
+        """
+        Extract and download attachments from Messenger message.
+        Messenger format: [{"type": "image", "payload": {"url": "..."}}]
+
+        :param attachments: List of attachment objects from Messenger webhook
+        :return: List of AgentRequestImage or AgentRequestFile objects
+        """
+        processed_attachments = []
+
+        if not attachments:
+            return processed_attachments
+
+        try:
+            async with httpx.AsyncClient() as client:
+                for attachment in attachments:
+                    attachment_type = attachment.get("type", "")
+                    payload = attachment.get("payload", {})
+                    url = payload.get("url")
+
+                    if not url:
+                        self._log.warning("Attachment missing URL")
+                        continue
+
+                    try:
+                        # Download attachment
+                        response = await client.get(url)
+                        response.raise_for_status()
+
+                        # Get MIME type from Content-Type header
+                        mime_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
+
+                        # Convert to base64
+                        file_data = base64.b64encode(response.content).decode("utf-8")
+
+                        # Extract filename from URL or use default
+                        filename = url.split("/")[-1].split("?")[0] or f"attachment_{len(processed_attachments)}"
+
+                        # Create appropriate request object
+                        if attachment_type == "image" or mime_type.startswith("image/"):
+                            request = AgentRequestImage(image_data=file_data, name=filename, mime_type=mime_type)
+                            processed_attachments.append(request)
+                            self._log.debug(f"Extracted image: {filename} ({mime_type})")
+
+                        elif attachment_type == "file" or mime_type in [
+                            "application/pdf",
+                            "application/msword",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            "application/vnd.ms-excel",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        ]:
+                            request = AgentRequestFile(file_data=file_data, name=filename, mime_type=mime_type)
+                            processed_attachments.append(request)
+                            self._log.debug(f"Extracted file: {filename} ({mime_type})")
+
+                        else:
+                            self._log.debug(f"Skipping unsupported attachment type: {mime_type}")
+
+                    except Exception as e:
+                        self._log.warning(f"Error downloading attachment from {url}: {e}")
+                        continue
+
+        except Exception as e:
+            self._log.warning(f"Error processing attachments: {e}\n{traceback.format_exc()}")
+
+        if processed_attachments:
+            self._log.info(f"Extracted {len(processed_attachments)} attachment(s)")
+
+        return processed_attachments
+
+    def _store_attachment_metadata(self, session, processed_attachments: list):
+        """
+        Store attachment data and metadata in session for future reference.
+        Stores the actual base64-encoded data so images/files can be re-used.
+
+        :param session: Agent session object
+        :param processed_attachments: List of AgentRequestImage or AgentRequestFile objects
+        """
+        try:
+            import json
+            from datetime import datetime
+
+            # Get existing attachment history
+            history = session.get_data(key="attachment_history")
+            if not history:
+                history = []
+            else:
+                # Parse if it's a JSON string
+                if isinstance(history, str):
+                    history = json.loads(history)
+
+            # Add new attachments with full data
+            for attachment in processed_attachments:
+                # Extract base64 data based on type
+                if hasattr(attachment, "image_data"):
+                    file_data = attachment.image_data
+                elif hasattr(attachment, "file_data"):
+                    file_data = attachment.file_data
+                else:
+                    file_data = None
+
+                attachment_info = {
+                    "name": getattr(attachment, "name", "unknown"),
+                    "mime_type": getattr(attachment, "mime_type", "unknown"),
+                    "type": type(attachment).__name__,  # AgentRequestImage or AgentRequestFile
+                    "data": file_data,  # Store the actual base64 data
+                    "timestamp": datetime.now().isoformat(),
+                }
+                history.append(attachment_info)
+                self._log.debug(
+                    f"Stored attachment in session: {attachment_info['name']} ({attachment_info['mime_type']})"
+                )
+
+            # Keep only last 10 attachments to avoid session bloat (full data takes more space)
+            if len(history) > 10:
+                history = history[-10:]
+
+            # Store back to session
+            session.set_data(key="attachment_history", data=json.dumps(history))
+            self._log.info(
+                f"[DEBUG] Stored {len(processed_attachments)} attachment(s) in session. Total history: {len(history)}"
+            )
+            self._log.info(f"[DEBUG] Attachment history keys: {[h['name'] for h in history]}")
+
+        except Exception as e:
+            self._log.warning(f"Error storing attachment data: {e}")
+
+    def _get_previous_attachments(self, session, current_attachments: list) -> list:
+        """
+        Retrieve previous attachments from session and recreate request objects.
+        Only returns attachments NOT in the current message (to avoid duplicates).
+
+        :param session: Agent session object
+        :param current_attachments: List of current attachments (to skip duplicates)
+        :return: List of AgentRequestImage or AgentRequestFile objects from history
+        """
+        try:
+            import json
+
+            history = session.get_data(key="attachment_history")
+            self._log.info(
+                f"[DEBUG] Retrieved history from session: {type(history)}, length: {len(history) if history else 0}"
+            )
+
+            if not history:
+                self._log.info(f"[DEBUG] History is empty or None")
+                return []
+
+            # Parse if it's a JSON string
+            if isinstance(history, str):
+                history = json.loads(history)
+                self._log.info(f"[DEBUG] Parsed JSON history, items: {len(history)}")
+
+            if not history:
+                return []
+
+            # Get names of current attachments to skip duplicates
+            current_names = {getattr(att, "name", "") for att in current_attachments}
+            self._log.info(f"[DEBUG] Current attachment names: {current_names}")
+
+            # Recreate request objects from history (excluding current)
+            previous_attachments = []
+            for attachment_info in history:
+                att_name = attachment_info.get("name", "unknown")
+                self._log.info(
+                    f"[DEBUG] Checking history item: {att_name}, in current_names? {att_name in current_names}"
+                )
+
+                # Skip if it's in the current message
+                if att_name in current_names:
+                    self._log.info(f"[DEBUG] Skipping {att_name} (duplicate)")
+                    continue
+
+                attachment_type = attachment_info.get("type", "AgentRequestFile")
+                mime_type = attachment_info.get("mime_type", "unknown")
+                file_data = attachment_info.get("data")
+                name = attachment_info.get("name", "unknown")
+
+                if not file_data:
+                    self._log.warning(f"[DEBUG] No file_data for {name}")
+                    continue
+
+                # Recreate the appropriate request object
+                try:
+                    if attachment_type == "AgentRequestImage":
+                        request = AgentRequestImage(image_data=file_data, name=name, mime_type=mime_type)
+                        previous_attachments.append(request)
+                        self._log.info(f"[DEBUG] Recreated image: {name} ({len(file_data)} bytes)")
+                    elif attachment_type == "AgentRequestFile":
+                        request = AgentRequestFile(file_data=file_data, name=name, mime_type=mime_type)
+                        previous_attachments.append(request)
+                        self._log.info(f"[DEBUG] Recreated file: {name} ({len(file_data)} bytes)")
+                    else:
+                        self._log.warning(f"[DEBUG] Unknown attachment type: {attachment_type}")
+                except Exception as e:
+                    self._log.warning(f"Error recreating attachment {name}: {e}")
+                    continue
+
+            self._log.info(f"[DEBUG] Total previous attachments recreated: {len(previous_attachments)}")
+            return previous_attachments
+
+        except Exception as e:
+            self._log.warning(f"Error retrieving previous attachments: {e}\n{traceback.format_exc()}")
+            return []
+
+    def _store_agent_response(self, session, response_text: str):
+        """
+        Store agent response in session for conversation context.
+        Helps agent understand what it already said in previous turns.
+
+        :param session: Agent session object
+        :param response_text: Agent's response text
+        """
+        try:
+            import json
+            from datetime import datetime
+
+            # Get existing conversation history
+            history = session.get_data(key="conversation_history")
+            if not history:
+                history = []
+            else:
+                # Parse if it's a JSON string
+                if isinstance(history, str):
+                    history = json.loads(history)
+
+            # Add agent response
+            history.append(
+                {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
+            # Keep only last 20 exchanges to avoid session bloat
+            if len(history) > 20:
+                history = history[-20:]
+
+            # Store back to session
+            session.set_data(key="conversation_history", data=json.dumps(history))
+            self._log.info(f"[DEBUG] Stored agent response in conversation history. Total: {len(history)}")
+
+        except Exception as e:
+            self._log.warning(f"Error storing agent response: {e}")
+
+    def _store_user_message(self, session, message_text: str):
+        """
+        Store user message in session for conversation context.
+        Helps agent understand the full conversation flow and context.
+
+        :param session: Agent session object
+        :param message_text: User's message text
+        """
+        try:
+            import json
+            from datetime import datetime
+
+            # Get existing conversation history
+            history = session.get_data(key="conversation_history")
+            if not history:
+                history = []
+            else:
+                # Parse if it's a JSON string
+                if isinstance(history, str):
+                    history = json.loads(history)
+
+            # Add user message
+            history.append(
+                {
+                    "role": "user",
+                    "content": message_text,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
+            # Keep only last 20 exchanges to avoid session bloat
+            if len(history) > 20:
+                history = history[-20:]
+
+            # Store back to session
+            session.set_data(key="conversation_history", data=json.dumps(history))
+            self._log.info(f"[DEBUG] Stored user message in conversation history. Total: {len(history)}")
+
+        except Exception as e:
+            self._log.warning(f"Error storing user message: {e}")
+
+    def _get_conversation_context(self, session) -> str:
+        """
+        Retrieve conversation history and format as context for agent.
+        Helps agent understand what was already discussed.
+
+        :param session: Agent session object
+        :return: Formatted conversation context string
+        """
+        try:
+            import json
+
+            history = session.get_data(key="conversation_history")
+            if not history:
+                return ""
+
+            # Parse if it's a JSON string
+            if isinstance(history, str):
+                history = json.loads(history)
+
+            if not history:
+                return ""
+
+            # Format as readable context
+            context_lines = ["[Previous conversation context:"]
+            for item in history[-10:]:  # Last 10 messages to cover multi-turn conversations
+                role = item.get("role", "unknown")
+                content = item.get("content", "")
+                # Truncate long responses to 200 chars
+                if len(content) > 200:
+                    content = content[:200] + "..."
+                context_lines.append(f"  {role}: {content}")
+            context_lines.append("]")
+
+            result = "\n".join(context_lines)
+            self._log.info(f"[DEBUG] Retrieved conversation context ({len(history)} items)")
+            return result
+
+        except Exception as e:
+            self._log.warning(f"Error retrieving conversation context: {e}")
+            return ""
