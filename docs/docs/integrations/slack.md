@@ -6,18 +6,25 @@ The Slack integration allows you to deploy Agent Kernel agents as Slack bots tha
 
 The `AgentSlackRequestHandler` class handles simple conversations with agents of your choice in API deployments. The integration provides the following workflow:
 
-1. **Message Reception**: When a message is received from Slack addressed to the bot, it first acknowledges with a configurable message and processing emoji
+1. **Message Reception**: When a message is received from Slack addressed to the bot, it will first acknowledge with a message ("agent_acknowledgement") and processing emoji, if it's defined in the config
 2. **Question Processing**: The question is extracted and passed to your chosen agent
-3. **Response Update**: Once the agent response is ready, the previously posted acknowledgment message is modified
-4. **Thread Response**: The final response is posted to the conversation thread
+3. **Response Update**: Once the agent response is ready, the previously posted message is modified
+4. **Thread Response**: The response is posted to the thread
 
 ## Features
 
 - **Real-time Responses**: Immediate acknowledgment with processing indicators
 - **Thread Support**: Responses are posted in organized conversation threads
-- **Flexible Agent Routing**: Route different types of questions to specialized agents
-- **Emoji Indicators**: Visual feedback during processing
+- **File and Image Support**: Process text messages, images, and document files
+- **File Size Validation**: Automatic validation and rejection of oversized files
+- **Media Type Filtering**: Rejects audio/video files that cannot be processed
 - **Webhook Challenge Handling**: Automatic handling of Slack's URL verification process
+
+:::info Current Limitation
+Currently, passed images and files are not added to the chat history. So all questions have to be asked with the message sent along with the attachments. Follow up questions, which require re-analysis of the file/image cannot be answered by the LLM.
+
+Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/api/rest-api.md) on how to handle this properly without exhausting the token limits.
+:::
 
 ## Slack App Setup
 
@@ -37,17 +44,13 @@ Enable the following event subscriptions in your Slack app:
 
 ### 3. Configure OAuth Scopes
 
-The following OAuth scopes are required for the bot to function properly:
+When you subscribe to events, some OAuth scopes are automatically added. In addition to that, these minimum scopes need to be added for the bot to function. These can be set up in "OAuth & Permissions":
 
 **Bot Token Scopes:**
 - `chat:write` - Post messages as the bot
 - `im:write` - Write direct messages
-- `channels:read` - Read channel information
-- `groups:read` - Read private channel information
-- `im:read` - Read direct message history
-- `mpim:read` - Read multi-party direct messages
-
-Additional scopes may be automatically added when you subscribe to events.
+- `files:read` - Read uploaded files
+- `app_mentions:read` - Read app mentions
 
 ### 4. Install App to Workspace
 
@@ -118,16 +121,17 @@ if __name__ == "__main__":
 ## Configuration Options
 
 ### Custom Acknowledgment Messages and Agent
-You can configure which Agent will answer the Slack integration in a multi agent mode.
-You can customize the acknowledgment message and processing emoji through configuration:
 
-```python
-# Custom configuration in config.yaml
+You can configure which agent will handle Slack messages and customize the acknowledgment message:
+
+```yaml
+# Configuration in config.yaml
 slack:
-  agent_acknowledgement: "🤖 Processing your request..."
-  agent: "general"
+  agent: "general"  # Name of the agent to handle messages
+  agent_acknowledgement: "🤖 Processing your request..."  # Optional
 ```
 
+**Note**: It's strongly recommended to set credentials as environment variables rather than in config files.
 
 ## Custom Request Handler
 
