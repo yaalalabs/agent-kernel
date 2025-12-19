@@ -354,7 +354,7 @@ Test it:
 ```bash
 curl -X POST http://localhost:8000/run \
   -H "Content-Type: application/json" \
-  -d '{"agent": "general", "message": "Hello!"}'
+  -d '{"agent": "general", "prompt": "Hello!"}'
 ```
 
 ### Deploy to AWS Lambda
