@@ -104,6 +104,12 @@ variable "agent_endpoint" {
   default     = "chat"
 }
 
+variable "api_base_path" {
+  type        = string
+  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
+  default     = "api"
+}
+
 variable "tags" {
   type = map(string)
   description = "Resource tags"
@@ -155,19 +161,21 @@ variable "private_subnet_cidrs" {
 variable "gateway_endpoints" {
   description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
   type = list(object({
-    path = string        # e.g. "chat"
-    method = string        # e.g. "GET", "POST", "PUT", "DELETE", "ANY"
+    path   = string   # e.g. "/app/check", "/health", "/app/status/test"
+    method = string   # GET, POST, PUT, DELETE, ANY
   }))
   default = []
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
         length(trimspace(ep.path)) > 0 &&
-        length(trimspace(ep.method)) > 0 &&
-        contains(["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"], upper(ep.method))
+        contains(
+          ["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"],
+          upper(ep.method)
+        )
       )
     ])
-    error_message = "Each gateway_endpoints object must have non-empty 'path' and 'method' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
+    error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
   }
 }
 

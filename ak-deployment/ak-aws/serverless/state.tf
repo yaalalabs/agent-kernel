@@ -15,18 +15,47 @@ locals {
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
 
-  all_endpoints = merge(
+  chat_endpoint = [
     {
-      default = {
-        path   = var.agent_endpoint
-        method = "POST"
-      }
-    },
-    {
-      for ep in var.gateway_endpoints :
-      ep.path => ep
+      path   = var.agent_endpoint
+      method = "POST"
     }
-  )  
+  ]
+  complete_gateway_endpoints = concat(
+    local.chat_endpoint,
+    var.gateway_endpoints
+  )
+  normalized_endpoints = [
+    for ep in local.complete_gateway_endpoints : {
+      parts  = split("/", trim(ep.path, "/"))
+      method = ep.method
+    }
+  ]
+  converted_endpoints = [
+      for ep in local.normalized_endpoints : {
+        mainpath  = ep.parts[0]
+        subpath   = length(ep.parts) > 1 ? ep.parts[1] : ""
+        childpath = length(ep.parts) > 2 ? ep.parts[2] : ""
+        method    = ep.method
+      }
+  ]
+  all_endpoints = { 
+    for ep in local.converted_endpoints: 
+      "${ep.mainpath}/${ep.subpath != "" ? ep.subpath : "_root"}/${ep.childpath != "" ? ep.childpath : "_root"}/${ep.method}" => ep
+  } 
+  mainpaths = { 
+    for _, v in local.all_endpoints : v.mainpath => v... 
+  }
+  sub_resources = {
+    for _, v in local.all_endpoints :
+    "${v.mainpath}/${v.subpath}" => v...
+    if v.subpath != ""
+  }
+  child_resources = {
+      for _, v in local.all_endpoints :
+      "${v.mainpath}/${v.subpath}/${v.childpath}" => v...
+      if v.subpath != "" && v.childpath != ""
+  } 
 }
 
 module "vpc" {

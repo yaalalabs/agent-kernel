@@ -7,7 +7,7 @@ A comprehensive Terraform module for deploying serverless applications on AWS, c
 This module provides a complete serverless deployment solution:
 
 - ⚡ **AWS Lambda**: Configurable functions with multiple deployment options
-- 🌐 **API Gateway**: REST API with structured endpoint routing
+- 🌐 **API Gateway**: REST API with Three-Level Resource Creation and Routing
 - 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
@@ -52,9 +52,21 @@ module "python_api" {
     LOG_LEVEL   = "info"
   }
   
+    # API Gateway
   api_version    = "v1"
-  agent_endpoint = "process"
-  
+  api_base_path  = "api"
+  agent_endpoint = "chat"
+  gateway_endpoints = [
+      {
+         path           = "app/test",
+         method         = "GET",
+      },
+      {
+         path           = "data",
+         method         = "POST",
+      }
+  ] 
+
   tags = {
     Environment = "production"
     Service     = "api"
@@ -255,6 +267,7 @@ module "serverless_api_dynamodb" {
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
+| `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
 

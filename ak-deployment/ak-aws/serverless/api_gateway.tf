@@ -8,7 +8,7 @@ resource "aws_api_gateway_rest_api" "rest_api" {
 resource "aws_api_gateway_resource" "api" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   parent_id   = aws_api_gateway_rest_api.rest_api.root_resource_id
-  path_part   = "api"
+  path_part   = var.api_base_path
 }
 
 resource "aws_api_gateway_resource" "version" {
@@ -17,17 +17,41 @@ resource "aws_api_gateway_resource" "version" {
   path_part   = var.api_version
 }
 
-resource "aws_api_gateway_resource" "endpoint" {
-  for_each   = local.all_endpoints
+resource "aws_api_gateway_resource" "main" {
+  for_each = local.mainpaths
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   parent_id   = aws_api_gateway_resource.version.id
-  path_part   = each.value.path
+  path_part   = each.key
+}
+
+resource "aws_api_gateway_resource" "sub" {
+  for_each    = local.sub_resources
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  parent_id   = aws_api_gateway_resource.main[each.value[0].mainpath].id
+  path_part   = each.value[0].subpath
+}
+
+resource "aws_api_gateway_resource" "child" {
+  for_each = local.child_resources
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  parent_id   = aws_api_gateway_resource.sub["${each.value[0].mainpath}/${each.value[0].subpath}"].id
+  path_part = each.value[0].childpath
 }
 
 resource "aws_api_gateway_method" "endpoint" {
-  for_each     = local.all_endpoints
-  rest_api_id  = aws_api_gateway_rest_api.rest_api.id
-  resource_id  = aws_api_gateway_resource.endpoint[each.key].id
+  for_each = local.all_endpoints
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  resource_id = (
+    each.value.childpath != "" ?
+      aws_api_gateway_resource.child[
+        "${each.value.mainpath}/${each.value.subpath}/${each.value.childpath}"
+      ].id :
+    each.value.subpath != "" ?
+      aws_api_gateway_resource.sub[
+        "${each.value.mainpath}/${each.value.subpath}"
+      ].id :
+      aws_api_gateway_resource.main[each.value.mainpath].id
+  )
   http_method  = each.value.method
   authorization = "NONE"
 }
@@ -35,7 +59,17 @@ resource "aws_api_gateway_method" "endpoint" {
 resource "aws_api_gateway_integration" "endpoint" {
   for_each                = local.all_endpoints
   rest_api_id             = aws_api_gateway_rest_api.rest_api.id
-  resource_id             = aws_api_gateway_resource.endpoint[each.key].id
+  resource_id = (
+    each.value.childpath != "" ?
+      aws_api_gateway_resource.child[
+        "${each.value.mainpath}/${each.value.subpath}/${each.value.childpath}"
+      ].id :
+    each.value.subpath != "" ?
+      aws_api_gateway_resource.sub[
+        "${each.value.mainpath}/${each.value.subpath}"
+      ].id :
+      aws_api_gateway_resource.main[each.value.mainpath].id
+  )
   http_method             = aws_api_gateway_method.endpoint[each.key].http_method
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
@@ -43,20 +77,19 @@ resource "aws_api_gateway_integration" "endpoint" {
 }
 
 resource "aws_lambda_permission" "endpoint" {
-  for_each = local.all_endpoints
-
-  statement_id  = "AllowAPIGatewayInvoke-${each.key}"
   action        = "lambda:InvokeFunction"
   function_name = module.lambda_deployment.lambda_function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*/api/${var.api_version}/${each.value.path}"
+  source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*"
 }
 
 resource "aws_api_gateway_deployment" "deployment" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   triggers = {
     redeployment = sha1(jsonencode([
-      values(aws_api_gateway_resource.endpoint)[*].id,
+      values(aws_api_gateway_resource.main)[*].id,
+      values(aws_api_gateway_resource.sub)[*].id,
+      values(aws_api_gateway_resource.child)[*].id,
       values(aws_api_gateway_method.endpoint)[*].id,
       values(aws_api_gateway_integration.endpoint)[*].id
     ]))
@@ -123,9 +156,6 @@ resource "aws_api_gateway_stage" "stage" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   stage_name    = "agents"
-  lifecycle {
-    ignore_changes = [deployment_id]
-  }
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn
     format = jsonencode({
