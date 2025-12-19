@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import logging
@@ -9,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
+from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentWhatsAppRequestHandler(RESTRequestHandler):
@@ -35,6 +37,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._phone_number_id = Config.get().whatsapp.phone_number_id
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
+        self._max_file_size = Config.get().api.max_file_size
         if not all([self._access_token, self._phone_number_id, self._verify_token]):
             self._log.error(
                 "WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token."
@@ -159,6 +162,9 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
 
         self._log.debug(f"Processing message {message_id} from {from_number} of type {message_type}")
 
+        # Build list of requests to send to agent
+        requests = []
+
         # Extract message text based on type
         text = None
         if message_type == "text":
@@ -170,16 +176,110 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                 text = interactive.get("button_reply", {}).get("title")
             elif interactive.get("type") == "list_reply":
                 text = interactive.get("list_reply", {}).get("title")
-        elif message_type in ["image", "video", "audio", "document"]:
-            # For media messages, we can add support later
-            text = f"[{message_type.upper()} received]"
-            self._log.info(f"Media message received: {message_type}")
+        elif message_type == "image":
+            # Handle image messages
+            image_info = message.get("image", {})
+            caption = image_info.get("caption", "")
+            text = caption if caption else "[Image received]"
+
+            # Download and process the image
+            media_id = image_info.get("id")
+            if media_id:
+                # Get media info to check file size
+                media_size, media_mime_type = await self._get_media_info(media_id)
+                if media_size is None:
+                    await self._send_message(
+                        from_number, "Sorry, I could not retrieve the image information. Please try again.", message_id
+                    )
+                    return
+
+                # Check file size
+                if media_size > self._max_file_size:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, the image file size ({media_size / (1024 * 1024):.2f} MB) exceeds the maximum allowed size of {self._max_file_size / (1024 * 1024):.2f} MB.",
+                        message_id,
+                    )
+                    return
+
+                # Download the media
+                image_data = await self._download_media(media_id)
+                if image_data is None:
+                    await self._send_message(
+                        from_number, "Sorry, I could not download the image. Please try again.", message_id
+                    )
+                    return
+
+                requests.append(
+                    AgentRequestImage(
+                        image_data=image_data,
+                        name=f"whatsapp_image_{message_id}",
+                        mime_type=media_mime_type or image_info.get("mime_type", "image/jpeg"),
+                    )
+                )
+                self._log.info(f"Image downloaded and added to request")
+
+        elif message_type == "document":
+            # Handle document messages
+            document_info = message.get("document", {})
+            caption = document_info.get("caption", "")
+            filename = document_info.get("filename", "document")
+            text = caption if caption else f"[Document received: {filename}]"
+
+            # Download and process the document
+            media_id = document_info.get("id")
+            if media_id:
+                # Get media info to check file size
+                media_size, media_mime_type = await self._get_media_info(media_id)
+                if media_size is None:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, I could not retrieve the document '{filename}' information. Please try again.",
+                        message_id,
+                    )
+                    return
+
+                # Check file size
+                if media_size > self._max_file_size:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, the document '{filename}' size ({media_size / (1024 * 1024):.2f} MB) exceeds the maximum allowed size of {self._max_file_size / (1024 * 1024):.2f} MB.",
+                        message_id,
+                    )
+                    return
+
+                # Download the media
+                file_data = await self._download_media(media_id)
+                if file_data is None:
+                    await self._send_message(
+                        from_number,
+                        f"Sorry, I could not download the document '{filename}'. Please try again.",
+                        message_id,
+                    )
+                    return
+
+                requests.append(
+                    AgentRequestFile(
+                        file_data=file_data,
+                        name=filename,
+                        mime_type=media_mime_type or document_info.get("mime_type"),
+                    )
+                )
+                self._log.info(f"Document '{filename}' downloaded and added to request")
+
+        elif message_type in ["video", "audio"]:
+            # cannot handle these types yet
+            await self._send_message(from_number, "Sorry, audio and video messages are not supported yet.", message_id)
+            return
 
         if not text:
             self._log.warning(f"Unsupported message type: {message_type}")
             return
 
-        # Use message_id as session_id to maintain conversation context
+        # Add text as the first request
+        requests.insert(0, AgentRequestText(text=text))
+
+        # Use from_number as session_id to maintain conversation context
         session_id = from_number
 
         service = AgentService()
@@ -196,13 +296,10 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                 )
                 return
 
-            # Run the agent
-            result = await service.run(text)
+            # Run the agent with all requests (text + media)
+            result = await service.run_multi(requests=requests)
 
-            if hasattr(result, "raw"):
-                response_text = str(result.raw)
-            else:
-                response_text = str(result)
+            response_text = str(result)
 
             self._log.debug(f"Agent response: {response_text}")
 
@@ -257,6 +354,80 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                 except Exception as e:
                     self._log.error(f"Error sending message: {e}")
                     raise
+
+    async def _get_media_info(self, media_id: str) -> tuple[Optional[int], Optional[str]]:
+        """
+        Get media file information from WhatsApp (size and mime type).
+
+        :param media_id: WhatsApp media ID
+        :return: Tuple of (file_size_in_bytes, mime_type) or (None, None) if failed
+        """
+        try:
+            url = f"{self._base_url}/{media_id}"
+            headers = {"Authorization": f"Bearer {self._access_token}"}
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                media_info = response.json()
+
+                file_size = media_info.get("file_size")
+                mime_type = media_info.get("mime_type")
+
+                if file_size is None:
+                    self._log.error(f"No file size found for media ID {media_id}")
+                    return None, None
+
+                return int(file_size), mime_type
+
+        except httpx.HTTPStatusError as e:
+            self._log.error(f"HTTP error getting media info {media_id}: {e.response.text}")
+            return None, None
+        except Exception as e:
+            self._log.error(f"Error getting media info {media_id}: {e}\n{traceback.format_exc()}")
+            return None, None
+
+    async def _download_media(self, media_id: str) -> Optional[str]:
+        """
+        Download media file from WhatsApp and return as base64 encoded string.
+
+        :param media_id: WhatsApp media ID
+        :return: Base64 encoded media data or None if download fails
+        """
+        try:
+            # Step 1: Get media URL
+            url = f"{self._base_url}/{media_id}"
+            headers = {"Authorization": f"Bearer {self._access_token}"}
+
+            async with httpx.AsyncClient() as client:
+                # Get media metadata
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                media_info = response.json()
+
+                media_url = media_info.get("url")
+                if not media_url:
+                    self._log.error(f"No URL found for media ID {media_id}")
+                    return None
+
+                # Step 2: Download the actual media file
+                self._log.debug(f"Downloading media from {media_url}")
+                media_response = await client.get(media_url, headers=headers)
+                media_response.raise_for_status()
+
+                # Step 3: Encode to base64
+                media_bytes = media_response.content
+                base64_encoded = base64.b64encode(media_bytes).decode("utf-8")
+
+                self._log.debug(f"Media downloaded successfully, size: {len(media_bytes)} bytes")
+                return base64_encoded
+
+        except httpx.HTTPStatusError as e:
+            self._log.error(f"HTTP error downloading media {media_id}: {e.response.text}")
+            return None
+        except Exception as e:
+            self._log.error(f"Error downloading media {media_id}: {e}\n{traceback.format_exc()}")
+            return None
 
     async def _mark_message_as_read(self, message_id: str):
         """

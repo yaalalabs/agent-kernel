@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -17,7 +17,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.8"
+version = "0.2.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -26,9 +26,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/a6/d66db718618407134f940efb2fd34a671f954e78b71dcb6b30d921a8a66c/agentkernel-0.2.8.tar.gz", hash = "sha256:95ae8ddcf8d54873ccdabfd954e10e8f9e8c4bc9909012b50f4a7fde7343fd58", size = 63156, upload-time = "2025-12-15T12:57:26.924Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/a4/c3b7b1663131bd275b99bb91d77d66983f598c9e0b686f57558ab9b6e1e2/agentkernel-0.2.9.tar.gz", hash = "sha256:976ccc343039f35ab4661e97f42f935ec88627ba1763980c68f983523ef09fdc", size = 76953, upload-time = "2025-12-18T12:28:27.293Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/ec/8c80fad86c53eff87d5fc57716383771f188c404973fa9fa7a3c4a53e8cd/agentkernel-0.2.8-py3-none-any.whl", hash = "sha256:d02ea540cd929123715a67d51fcd96f9736197076bc840cedaee362f9c62b324", size = 106090, upload-time = "2025-12-15T12:57:25.635Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/6b/ea9652f7d83c29fdff8322bcb4a0ac8fa6c55214f9e0334a947a86ac2d95/agentkernel-0.2.9-py3-none-any.whl", hash = "sha256:307d6299baf7f9f579ab100492ddc2a66facbb8fc3b2960937b007f40bb66efa", size = 121841, upload-time = "2025-12-18T12:28:26.002Z" },
 ]
 
 [package.optional-dependencies]
@@ -188,7 +188,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["adk", "redis"], specifier = ">=0.2.8" }]
+requires-dist = [{ name = "agentkernel", extras = ["adk", "redis"], specifier = ">=0.2.9" }]
 
 [package.metadata.requires-dev]
 dev = [
