@@ -19,10 +19,10 @@ async def test_client():
 async def test_first_question(test_client):
     await test_client.send("!select general")
     await test_client.send("Who won the 1996 cricket world cup?")
-    await test_client.expect("Sri Lanka won the 1996 Cricket World Cup.")
+    await test_client.expect(["Sri Lanka won the 1996 Cricket World Cup."])
 
 
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
     await test_client.send("Which country hosted the tournament?")
-    await test_client.expect("Co-hosted by India, Pakistan and Sri Lanka.")
+    await test_client.expect(["Co-hosted by India, Pakistan and Sri Lanka."])

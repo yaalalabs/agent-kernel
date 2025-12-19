@@ -1,10 +1,9 @@
 import logging
 from typing import Any
 
-from agentkernel.core.model import AgentReply, AgentRequest
-
 from ...core import Session
-from ...langgraph.langgraph import LangGraphRunner
+from ...core.model import AgentReply, AgentRequest
+from ...framework.langgraph.langgraph import LangGraphRunner
 from .openllmetry import TraceloopContext
 
 

@@ -397,6 +397,122 @@ trace:
   type: openllmetry
 ```
 
+#### Test Configuration
+
+Configure test comparison modes for automated testing.
+
+- **Mode**
+  - **Field**: `test.mode`
+  - **Options**: `fuzzy`, `judge`, `fallback`
+  - **Default**: `fallback`
+  - **Description**: Test comparison mode
+  - **Environment Variable**: `AK_TEST__MODE`
+
+- **Judge Model**
+  - **Field**: `test.judge.model`
+  - **Default**: `gpt-4o-mini`
+  - **Description**: LLM model for judge evaluation
+  - **Environment Variable**: `AK_TEST__JUDGE__MODEL`
+
+- **Judge Provider**
+  - **Field**: `test.judge.provider`
+  - **Default**: `openai`
+  - **Description**: LLM provider for judge evaluation
+  - **Environment Variable**: `AK_TEST__JUDGE__PROVIDER`
+
+- **Judge Embedding Model**
+  - **Field**: `test.judge.embedding_model`
+  - **Default**: `text-embedding-3-small`
+  - **Description**: Embedding model for similarity evaluation
+  - **Environment Variable**: `AK_TEST__JUDGE__EMBEDDING_MODEL`
+
+**Test Modes:**
+- `fuzzy`: Uses fuzzy string matching (RapidFuzz)
+- `judge`: Uses LLM-based evaluation (Ragas) for semantic similarity
+- `fallback`: Tries fuzzy first, falls back to judge if fuzzy fails
+
+```yaml
+test:
+  mode: fallback
+  judge:
+    model: gpt-4o-mini
+    provider: openai
+    embedding_model: text-embedding-3-small
+```
+
+#### Messaging Platform Integrations
+
+Configure integrations with messaging platforms.
+
+##### Slack
+
+- **Agent**
+  - **Field**: `slack.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for Slack interactions
+  - **Environment Variable**: `AK_SLACK__AGENT`
+
+- **Agent Acknowledgement**
+  - **Field**: `slack.agent_acknowledgement`
+  - **Default**: `""`
+  - **Description**: Acknowledgement message when Slack message is received
+  - **Environment Variable**: `AK_SLACK__AGENT_ACKNOWLEDGEMENT`
+
+##### WhatsApp
+
+- **Agent**
+  - **Field**: `whatsapp.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for WhatsApp interactions
+  - **Environment Variable**: `AK_WHATSAPP__AGENT`
+
+- **Verify Token**, **Access Token**, **App Secret**, **Phone Number ID**, **API Version**
+  - **Environment Variables**: `AK_WHATSAPP__VERIFY_TOKEN`, `AK_WHATSAPP__ACCESS_TOKEN`, `AK_WHATSAPP__APP_SECRET`, `AK_WHATSAPP__PHONE_NUMBER_ID`, `AK_WHATSAPP__API_VERSION`
+
+##### Facebook Messenger
+
+- **Agent**
+  - **Field**: `messenger.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for Facebook Messenger interactions
+  - **Environment Variable**: `AK_MESSENGER__AGENT`
+
+- **Verify Token**, **Access Token**, **App Secret**, **API Version**
+  - **Environment Variables**: `AK_MESSENGER__VERIFY_TOKEN`, `AK_MESSENGER__ACCESS_TOKEN`, `AK_MESSENGER__APP_SECRET`, `AK_MESSENGER__API_VERSION`
+
+##### Instagram
+
+- **Agent**
+  - **Field**: `instagram.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for Instagram interactions
+  - **Environment Variable**: `AK_INSTAGRAM__AGENT`
+
+- **Instagram Account ID**, **Verify Token**, **Access Token**, **App Secret**, **API Version**
+  - **Environment Variables**: `AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID`, `AK_INSTAGRAM__VERIFY_TOKEN`, `AK_INSTAGRAM__ACCESS_TOKEN`, `AK_INSTAGRAM__APP_SECRET`, `AK_INSTAGRAM__API_VERSION`
+
+##### Telegram
+
+- **Agent**
+  - **Field**: `telegram.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for Telegram interactions
+  - **Environment Variable**: `AK_TELEGRAM__AGENT`
+
+- **Bot Token**, **Webhook Secret**, **API Version**
+  - **Environment Variables**: `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET`, `AK_TELEGRAM__API_VERSION`
+
+##### Gmail
+
+- **Agent**
+  - **Field**: `gmail.agent`
+  - **Default**: `"general"`
+  - **Description**: Default agent for Gmail interactions
+  - **Environment Variable**: `AK_GMAIL__AGENT`
+
+- **Client ID**, **Client Secret**, **Token File**, **Poll Interval**, **Label Filter**
+  - **Environment Variables**: `AK_GMAIL__CLIENT_ID`, `AK_GMAIL__CLIENT_SECRET`, `AK_GMAIL__TOKEN_FILE`, `AK_GMAIL__POLL_INTERVAL`, `AK_GMAIL__LABEL_FILTER`
+
 ### Configuration Examples
 
 #### Environment Variables
@@ -421,6 +537,19 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry
 # export LANGFUSE_HOST=https://cloud.langfuse.com
 # For OpenLLMetry:
 # export TRACELOOP_API_KEY=your-api-key
+export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini
+export AK_TEST__JUDGE__PROVIDER=openai
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+# Messaging platforms (optional)
+export AK_SLACK__AGENT=my-agent
+export AK_WHATSAPP__AGENT=my-agent
+export AK_MESSENGER__AGENT=my-agent
+export AK_INSTAGRAM__AGENT=my-agent
+export AK_TELEGRAM__AGENT=my-agent
+export AK_GMAIL__AGENT=my-agent
+export AK_GMAIL__CLIENT_ID=your-google-client-id
+export AK_GMAIL__CLIENT_SECRET=your-google-client-secret
 ```
 
 #### .env File
@@ -475,6 +604,28 @@ mcp:
 trace:
   enabled: true
   type: langfuse
+test:
+  mode: fallback
+  judge:
+    model: gpt-4o-mini
+    provider: openai
+    embedding_model: text-embedding-3-small
+slack:
+  agent: my-agent
+  agent_acknowledgement: "Processing your request..."
+whatsapp:
+  agent: my-agent
+  agent_acknowledgement: "Processing..."
+messenger:
+  agent: my-agent
+instagram:
+  agent: my-agent
+telegram:
+  agent: my-agent
+gmail:
+  agent: my-agent
+  poll_interval: 30
+  label_filter: "INBOX"
 ```
 
 #### config.json
@@ -512,6 +663,36 @@ trace:
   "trace": {
     "enabled": true,
     "type": "langfuse"
+  },
+  "test": {
+    "mode": "fallback",
+    "judge": {
+      "model": "gpt-4o-mini",
+      "provider": "openai",
+      "embedding_model": "text-embedding-3-small"
+    }
+  },
+  "slack": {
+    "agent": "my-agent",
+    "agent_acknowledgement": "Processing your request..."
+  },
+  "whatsapp": {
+    "agent": "my-agent",
+    "agent_acknowledgement": "Processing..."
+  },
+  "messenger": {
+    "agent": "my-agent"
+  },
+  "instagram": {
+    "agent": "my-agent"
+  },
+  "telegram": {
+    "agent": "my-agent"
+  },
+  "gmail": {
+    "agent": "my-agent",
+    "poll_interval": 30,
+    "label_filter": "INBOX"
   }
 }
 ```

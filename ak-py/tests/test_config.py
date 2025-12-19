@@ -115,3 +115,17 @@ def test_nested_env_cases(monkeypatch):
     assert cfg.a2a.task_store_type == "redis"
     assert cfg.mcp.expose_agents is True
     assert cfg.api.enabled_routes.agents is False
+
+
+def test_session_cache_default():
+    cfg = AKConfig()
+    assert cfg.session is not None
+    assert cfg.session.cache is None
+
+
+def test_session_cache_env(monkeypatch):
+    monkeypatch.setenv("AK_SESSION__CACHE__SIZE", "500")
+    cfg = AKConfig()
+    assert cfg.session is not None
+    assert cfg.session.cache is not None
+    assert cfg.session.cache.size == 500

@@ -39,6 +39,12 @@ function FeaturesHero() {
     <header className={styles.featuresHero}>
       <div className="container">
         <div className={styles.heroContent}>
+          <div className={styles.announcement}>
+            🎯 <strong>New:</strong> Execution Hooks & Smart Memory Management — 
+            <Link to="/blog/hooks-and-smart-memory" style={{marginLeft: '8px', textDecoration: 'underline'}}>
+              Read the announcement →
+            </Link>
+          </div>
           <h1 className={styles.heroTitle}>Why Agent Kernel Changes the Game</h1>
           <p className={styles.heroSubtitle}>
             Agent Kernel isn’t just a runtime; it’s your acceleration engine.
@@ -112,7 +118,7 @@ function OverviewSection() {
             </div>
             <h3>Versatile Integrations</h3>
             <p>
-              Built-in integrations for popular messaging platforms including Slack, WhatsApp, and Messenger. 
+              Built-in integrations for popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail. 
               Support for MCP Server and A2A Server protocols. Easy-to-build custom integrations with pluggable architecture.
             </p>
           </Link>
@@ -148,15 +154,15 @@ function CoreFeaturesSection() {
     {
       icon: <MdMemory />,
       title: 'Context & Memory',
-      description: 'Efficient memory management with support for in-memory, Redis, and DynamoDB backends.',
-      highlights: ['Multiple memory stores', 'Context preservation', 'Custom adapters'],
-      link: '/docs/advanced/memory-management'
+      description: 'Smart memory management with volatile (request-scoped) and non-volatile (session-persistent) caching. Supports multiple backends: in-memory, Redis, and DynamoDB.',
+      highlights: ['Volatile cache for RAG context', 'Non-volatile cache for user preferences', 'Multiple backend support', 'Clean prompts, lower costs'],
+      link: '/docs/architecture/memory-management'
     },
     {
       icon: <MdSettings />,
       title: 'Execution Hooks',
-      description: 'Customize agent behavior with pre and post-execution hooks for guardrails, RAG, and response moderation.',
-      highlights: ['Pre-execution hooks', 'Post-execution hooks', 'Context injection'],
+      description: 'Powerful pre and post-execution hooks for surgical control over agent behavior. Implement guard rails, RAG context injection, response moderation, and custom logic.',
+      highlights: ['Pre-hooks: guard rails, RAG, auth', 'Post-hooks: disclaimers, moderation', 'Hook chaining & composition', 'Framework-agnostic'],
       link: '/docs/integrations/hooks'
     },
     {
@@ -277,27 +283,27 @@ function MemorySection() {
   const memoryOptions = [
     {
       icon: <MdMemory />,
-      name: 'In-Memory',
-      description: 'Fast, ephemeral storage for development and testing',
-      useCases: ['Local development', 'Testing', 'Prototyping']
-    },
-    {
-      icon: <SiRedis />,
-      name: 'Redis',
-      description: 'High-performance distributed memory for production workloads',
-      useCases: ['Production systems', 'Shared state', 'High throughput']
-    },
-    {
-      icon: <SiAmazondynamodb />,
-      name: 'DynamoDB',
-      description: 'Serverless, scalable NoSQL database for AWS deployments',
-      useCases: ['Serverless apps', 'AWS environments', 'Global scale']
+      name: 'Volatile Cache',
+      description: 'Request-scoped temporary storage that auto-clears after execution. Perfect for RAG context, file content, and intermediate data without cluttering prompts.',
+      useCases: ['RAG search results', 'Document content from uploads', 'Temporary calculations', 'Request-scoped feature flags']
     },
     {
       icon: <MdStorage />,
-      name: 'Custom Adapters',
-      description: 'Build your own memory backend for specific requirements',
-      useCases: ['Enterprise systems', 'Custom databases', 'Special needs']
+      name: 'Non-Volatile Cache',
+      description: 'Session-persistent storage that survives across multiple requests. Ideal for user preferences, metadata, and configurations.',
+      useCases: ['User preferences', 'Session metadata', 'Extracted information', 'Persistent configurations']
+    },
+    {
+      icon: <SiRedis />,
+      name: 'Redis Backend',
+      description: 'High-performance distributed memory backend for production workloads with persistent state across instances.',
+      useCases: ['Production deployments', 'Multi-process apps', 'Distributed systems', 'Session persistence']
+    },
+    {
+      icon: <SiAmazondynamodb />,
+      name: 'DynamoDB Backend',
+      description: 'Serverless, auto-scaling NoSQL backend for AWS deployments with configurable TTL and pay-per-use pricing.',
+      useCases: ['AWS Lambda deployments', 'Auto-scaling apps', 'Serverless architectures', 'AWS-native infrastructure']
     },
   ];
 
@@ -306,17 +312,17 @@ function MemorySection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>04</span>
-          <h2 className={styles.sectionTitle}>Memory Management</h2>
+          <h2 className={styles.sectionTitle}>Smart Memory Management</h2>
           <p className={styles.sectionSubtitle}>
-            Pluggable memory architecture with flexible backends for every use case. 
-            Choose the right storage solution for your development, testing, and production needs.
+            Two types of intelligent caching with identical APIs but different lifecycles. Volatile cache for request-scoped data, 
+            non-volatile for session persistence. Multiple backends (in-memory, Redis, DynamoDB) swap with just environment variables.
           </p>
         </div>
         <div className={styles.memoryGrid}>
           {memoryOptions.map((option, idx) => (
             <Link 
               key={idx} 
-              to="/docs/advanced/memory-management" 
+              to="/docs/architecture/memory-management" 
               className={styles.memoryCard} 
               style={{ animationDelay: `${idx * 0.1}s` }}>
               <div className={styles.memoryIcon}>{option.icon}</div>
@@ -334,7 +340,7 @@ function MemorySection() {
           ))}
         </div>
         <div className={styles.sectionFooter}>
-          <Link to="/docs/advanced/memory-management" className={styles.sectionLink}>
+          <Link to="/docs/architecture/memory-management" className={styles.sectionLink}>
             View Memory Management Documentation →
           </Link>
         </div>
@@ -344,6 +350,30 @@ function MemorySection() {
 }
 
 function TestingSection() {
+  const comparisonModes = [
+    {
+      icon: <MdSpeed />,
+      name: 'Fuzzy Mode',
+      description: 'Fast string matching with configurable thresholds using RapidFuzz',
+      features: ['Configurable threshold (0-100)', 'Multiple expected answers support', 'Deterministic results', 'Ideal for exact outputs'],
+      link: '/docs/testing/cli-testing#fuzzy-mode'
+    },
+    {
+      icon: <MdBugReport />,
+      name: 'Judge Mode',
+      description: 'LLM-based semantic evaluation using Ragas for AI-generated content',
+      features: ['Answer similarity metric', 'Answer relevancy check', 'Handles paraphrasing', 'Best for AI responses'],
+      link: '/docs/testing/cli-testing#judge-mode'
+    },
+    {
+      icon: <MdTimer />,
+      name: 'Fallback Mode',
+      description: 'Tries fuzzy first, then falls back to judge evaluation (default)',
+      features: ['Best of both worlds', 'Automatic fallback', 'Robust validation', 'Production-ready'],
+      link: '/docs/testing/cli-testing#fallback-mode-default'
+    },
+  ];
+
   return (
     <section className={styles.section}>
       <div className="container">
@@ -351,47 +381,106 @@ function TestingSection() {
           <span className={styles.sectionNumber}>05</span>
           <h2 className={styles.sectionTitle}>Testing & Development</h2>
           <p className={styles.sectionSubtitle}>
-            Built-in agent test framework for local development. Focus on domain-specific agent development 
-            while Agent Kernel takes care of testing, deployment, and execution.
+            Comprehensive testing framework with CLI and automated testing, multiple comparison modes, 
+            and seamless pytest integration. Test your agents thoroughly before deployment.
           </p>
         </div>
+
+        {/* Main Testing Approaches */}
         <div className={styles.testingContent}>
-          <Link to="/docs/testing/overview" className={styles.testingFeature}>
+          <Link to="/docs/testing/cli-testing" className={styles.testingFeature}>
             <div className={styles.testingIcon}>
               <MdTerminal />
             </div>
             <h3>CLI-Based Testing</h3>
             <p>
               Interactive command-line interface for real-time agent testing and debugging. 
-              Test your agents in a controlled environment before deployment.
+              Test your agents in a controlled environment with the Test class for programmatic interaction.
             </p>
             <ul className={styles.testingList}>
               <li>Interactive chat sessions</li>
               <li>Real-time feedback</li>
-              <li>Easy debugging</li>
-              <li>Local execution</li>
+              <li>Persistent CLI sessions</li>
+              <li>Multi-agent support</li>
+              <li>ANSI escape sequence cleanup</li>
             </ul>
+            <span className={styles.featureLink}>Learn more →</span>
           </Link>
-          <Link to="/docs/testing/overview" className={styles.testingFeature}>
+          
+          <Link to="/docs/testing/automated-testing" className={styles.testingFeature}>
             <div className={styles.testingIcon}>
-              <MdBugReport />
+              <MdCode />
             </div>
             <h3>Automated Test Framework</h3>
             <p>
-              Execute predefined test scenarios to validate agent behavior consistently. 
-              Build comprehensive test suites for your agentic systems.
+              Build comprehensive test suites with pytest integration. Execute predefined scenarios 
+              to validate agent behavior consistently across deployments.
             </p>
             <ul className={styles.testingList}>
-              <li>Scenario-based testing</li>
-              <li>Automated validation</li>
-              <li>Regression testing</li>
-              <li>CI/CD integration</li>
+              <li>pytest integration</li>
+              <li>Session-scoped fixtures</li>
+              <li>Ordered test execution</li>
+              <li>CI/CD ready</li>
+              <li>Container testing support</li>
             </ul>
+            <span className={styles.featureLink}>Learn more →</span>
           </Link>
         </div>
+
+        {/* Comparison Modes Section */}
+        <div className={styles.comparisonModesSection}>
+          <h3 className={styles.subsectionTitle}>Three Powerful Comparison Modes</h3>
+          <p className={styles.subsectionDescription}>
+            Choose the right validation strategy for your use case. All modes support multiple expected answers 
+            and configurable thresholds.
+          </p>
+          <div className={styles.comparisonModesGrid}>
+            {comparisonModes.map((mode, idx) => (
+              <Link 
+                key={idx} 
+                to={mode.link} 
+                className={styles.comparisonModeCard}
+                style={{ animationDelay: `${idx * 0.1}s` }}>
+                <div className={styles.modeIcon}>{mode.icon}</div>
+                <h4>{mode.name}</h4>
+                <p>{mode.description}</p>
+                <ul className={styles.modeFeatures}>
+                  {mode.features.map((feature, i) => (
+                    <li key={i}>{feature}</li>
+                  ))}
+                </ul>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Key Features Grid */}
+        <div className={styles.testingFeaturesGrid}>
+          <div className={styles.testingFeatureBox}>
+            <MdSettings className={styles.featureBoxIcon} />
+            <h4>Configurable Modes</h4>
+            <p>Set default mode via config.yaml or environment variables</p>
+          </div>
+          <div className={styles.testingFeatureBox}>
+            <MdGroup className={styles.featureBoxIcon} />
+            <h4>Multi-Agent Support</h4>
+            <p>Test different agents within the same CLI application</p>
+          </div>
+          <div className={styles.testingFeatureBox}>
+            <MdApi className={styles.featureBoxIcon} />
+            <h4>API Testing</h4>
+            <p>Test REST API endpoints alongside CLI agents</p>
+          </div>
+          <div className={styles.testingFeatureBox}>
+            <FaDocker className={styles.featureBoxIcon} />
+            <h4>Container Testing</h4>
+            <p>Validate containerized deployments before production</p>
+          </div>
+        </div>
+
         <div className={styles.sectionFooter}>
           <Link to="/docs/testing/overview" className={styles.sectionLink}>
-            View Testing Documentation →
+            View Complete Testing Documentation →
           </Link>
         </div>
       </div>
@@ -553,9 +642,9 @@ function MessagingSection() {
     { name: 'Slack', icon: <FaSlack />, status: 'Available' },
     { name: 'WhatsApp', icon: <FaWhatsapp />, status: 'Available' },
     { name: 'Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
-    { name: 'Telegram', icon: <FaTelegram />, status: 'Coming Soon' },
-    { name: 'Instagram', icon: <FaInstagram />, status: 'Coming Soon' },
-    { name: 'Gmail', icon: <SiGmail />, status: 'Coming Soon' },
+    { name: 'Telegram', icon: <FaTelegram />, status: 'Available' },
+    { name: 'Instagram', icon: <FaInstagram />, status: 'Available' },
+    { name: 'Gmail', icon: <SiGmail />, status: 'Available' },
   ];
 
   return (
@@ -566,7 +655,7 @@ function MessagingSection() {
           <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Connect your AI agents to popular messaging platforms and reach your users where they are. 
-            Built-in integrations for Slack, WhatsApp, and Messenger, with more coming soon.
+            Built-in integrations for Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail.
           </p>
         </div>
         

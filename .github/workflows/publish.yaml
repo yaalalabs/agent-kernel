@@ -100,6 +100,8 @@ jobs:
         working-directory: ak-py
         run: |
           uv run pytest -s
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

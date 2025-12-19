@@ -13,6 +13,10 @@ def _get_ak_version() -> str:
         return "0.1.0"
 
 
+class _SessionCacheConfig(BaseModel):
+    size: int = Field(default=256, description="Maximum number of sessions to cache in memory")
+
+
 class _RedisConfig(BaseModel):
     url: str = Field(
         default="redis://localhost:6379",
@@ -34,6 +38,7 @@ class _DynamoDBConfig(BaseModel):
 
 class _SessionStoreConfig(BaseModel):
     type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb)$")
+    cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
 
@@ -92,6 +97,15 @@ class _MessengerConfig(BaseModel):
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
 
 
+class _InstagramConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Instagram interactions")
+    verify_token: str = Field(default="", description="Instagram webhook verify token")
+    access_token: str = Field(default="", description="Instagram Business access token")
+    app_secret: str = Field(default="", description="Instagram app secret for signature verification")
+    instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
+    api_version: str = Field(default="v21.0", description="Instagram Graph API version")
+
+
 class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
@@ -99,9 +113,27 @@ class _TelegramConfig(BaseModel):
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
 
 
+class _GmailConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Gmail")
+    token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
+    poll_interval: int = Field(default=30, description="Email polling interval in seconds")
+    label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
+
+
+class _JudgeConfig(BaseModel):
+    model: str = Field(default="gpt-4o-mini", description="LLM Model name")
+    provider: str = Field(default="openai", description="LLM Provider name")
+    embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
+
+
+class _TestConfig(BaseModel):
+    mode: str = Field(default="fallback", pattern="^(fallback|judge|fuzzy)$")
+    judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
 
 
 class AKConfig(YamlBaseSettingsModified):
@@ -121,10 +153,16 @@ class AKConfig(YamlBaseSettingsModified):
     messenger: _MessengerConfig = Field(
         description="Facebook Messenger related configurations", default_factory=_MessengerConfig
     )
+    instagram: _InstagramConfig = Field(
+        description="Instagram Business API related configurations", default_factory=_InstagramConfig
+    )
     telegram: _TelegramConfig = Field(
         description="Telegram Bot related configurations", default_factory=_TelegramConfig
     )
+    gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
+
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
+    test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

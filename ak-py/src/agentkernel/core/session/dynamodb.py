@@ -8,7 +8,7 @@ from boto3.dynamodb.types import Binary
 
 from ..base import Session
 from ..config import AKConfig
-from .base import SessionStore
+from .base import SessionCache, SessionStore
 from .serde import BinarySerde
 
 
@@ -178,16 +178,19 @@ class DynamoDBSessionStore(SessionStore):
       - value: binary attribute (serialized using BinarySerde)
     """
 
-    def __init__(self):
+    def __init__(self, cache: SessionCache = None):
         """
         Initialize the DynamoDB-backed SessionStore.
 
         Prepares the serializer and a DynamoDB driver that encapsulates access
         to the configured table.
+
+        :param cache: An optional SessionCache instance for in-memory caching of sessions.
         """
         self._log = logging.getLogger("ak.core.session.dynamodb")
         self._serde = BinarySerde()
         self._driver = DynamoDBDriver()
+        self._cache = cache
 
     def load(self, session_id: str, strict: bool = False) -> Session:
         """
@@ -200,7 +203,12 @@ class DynamoDBSessionStore(SessionStore):
         :param strict: If True, raises a KeyError if the session is not found.
         :return: The populated Session, or a new Session if not found and strict is False.
         """
-        self._log.debug("Loading dynamodb session with ID %s", session_id)
+        self._log.debug(f"Loading dynamodb session with ID {session_id}")
+        if self._cache:
+            session = self._cache.get(session_id)
+            if session:
+                self._log.debug(f"Session {session_id} found in cache")
+                return session
         keys = self._driver.query_keys(session_id)
         if not keys:
             if strict:
@@ -214,6 +222,8 @@ class DynamoDBSessionStore(SessionStore):
             if payload is None:
                 continue
             session.set(k, self._serde.loads(payload))
+        if self._cache:
+            self._cache.set(session)
         return session
 
     def new(self, session_id: str) -> Session:
@@ -224,7 +234,10 @@ class DynamoDBSessionStore(SessionStore):
         :return: A new Session instance for the provided identifier.
         """
         self._log.debug("Creating new session with ID %s", session_id)
-        return Session(session_id)
+        session = Session(session_id)
+        if self._cache:
+            self._cache.set(session)
+        return session
 
     def store(self, session: Session) -> None:
         """
@@ -237,6 +250,8 @@ class DynamoDBSessionStore(SessionStore):
             value = session.get(key)
             payload = self._serde.dumps(value)
             self._driver.put(session.id, key, payload)
+        if self._cache:
+            self._cache.set(session)
 
     def clear(self) -> None:
         """
@@ -245,3 +260,5 @@ class DynamoDBSessionStore(SessionStore):
         This is a destructive operation intended for development/testing only.
         """
         self._driver.scan_and_clear_all()
+        if self._cache:
+            self._cache.clear()

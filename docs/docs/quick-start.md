@@ -407,18 +407,27 @@ terraform apply
 
 ### Configure Memory
 
-Add Redis-backed memory for persistent sessions:
+Use in-memory storage (default):
 
 ```bash
-export AK_SESSION_STORAGE=redis
-export AK_REDIS_URL=redis://localhost:6379
+export AK_SESSION__TYPE=in_memory
 ```
 
-Or use in-memory storage (default):
+Or add Redis-backed memory for persistent sessions:
 
 ```bash
-export AK_SESSION_STORAGE=in_memory
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
 ```
+
+Or add DynamoDB-backed memory for persisted sessions:
+
+```bash
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+```
+
+See [session configuration](./core-concepts/configuration.md#session-storage) for more details.
 
 ## Common Patterns
 
