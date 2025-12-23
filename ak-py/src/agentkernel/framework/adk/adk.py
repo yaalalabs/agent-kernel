@@ -20,7 +20,7 @@ from agentkernel.core.model import (
 )
 
 from ...core import Agent as AKBaseAgent
-from ...core import Module
+from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
@@ -233,3 +233,23 @@ class GoogleADKModule(Module):
         :param agents: List of agents to load.
         """
         super().load(agents)
+
+    def pre_hook(self, agent: BaseAgent, hooks: list[PreHook]) -> "GoogleADKModule":
+        """
+        Attaches pre-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of pre-execution hooks to attach.
+        :return: GoogleADKModule instance.
+        """
+        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        return self
+
+    def post_hook(self, agent: BaseAgent, hooks: list[PostHook]) -> "GoogleADKModule":
+        """
+        Attaches post-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of post-execution hooks to attach.
+        :return: GoogleADKModule instance.
+        """
+        super().get_agent(agent.name).attach_post_hooks(hooks)
+        return self

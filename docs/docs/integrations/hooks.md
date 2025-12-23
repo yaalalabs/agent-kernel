@@ -54,7 +54,7 @@ Hooks currently execute only for the **initial user prompt** to the first agent.
 
 ## Hook Types
 
-### Pre-Execution Hooks (Prehook)
+### Pre-Execution Hooks (PreHook)
 
 Pre-execution hooks run **before** an agent processes a prompt. They can:
 - Modify the prompt
@@ -76,7 +76,7 @@ These will be passed to PreHooks and will be ignored by the LLM agents
 A complete example is provided [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
 :::
 
-### Post-Execution Hooks (Posthook)
+### Post-Execution Hooks (PostHook)
 
 Post-execution hooks run **after** an agent generates a response. They can:
 - Modify the agent's reply
@@ -95,13 +95,13 @@ Post-execution hooks run **after** an agent generates a response. They can:
 
 ### Pre-Execution Hook
 
-Create a class that inherits from `Prehook` and implements the required methods:
+Create a class that inherits from `PreHook` and implements the required methods:
 
 ```python
-from agentkernel import Prehook, Agent, Session
+from agentkernel import PreHook, Agent, Session
 from agentkernel.core.model import AgentRequest, AgentReply, AgentRequestText, AgentReplyText
 
-class MyPrehook(Prehook):
+class MyPreHook(PreHook):
     async def on_run(
         self, 
         session: Session, 
@@ -123,18 +123,18 @@ class MyPrehook(Prehook):
     
     def name(self) -> str:
         """Return the hook name for logging/debugging."""
-        return "MyPrehook"
+        return "MyPreHook"
 ```
 
 ### Post-Execution Hook
 
-Create a class that inherits from `Posthook`:
+Create a class that inherits from `PostHook`:
 
 ```python
-from agentkernel import Posthook, Agent, Session
+from agentkernel import PostHook, Agent, Session
 from agentkernel.core.model import AgentRequest, AgentReply, AgentReplyText
 
-class MyPosthook(Posthook):
+class MyPostHook(PostHook):
     async def on_run(
         self,
         session: Session,
@@ -158,7 +158,7 @@ class MyPosthook(Posthook):
     
     def name(self) -> str:
         """Return the hook name for logging/debugging."""
-        return "MyPosthook"
+        return "MyPostHook"
 ```
 
 ## Registering Hooks
@@ -218,10 +218,10 @@ runtime.register_pre_hooks("agent_name", new_order)
 Validate input and block inappropriate content:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReplyText
 
-class GuardRailHook(Prehook):
+class GuardRailHook(PreHook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "malware"]
     
     async def on_run(self, session, agent, requests):
@@ -254,10 +254,10 @@ class GuardRailHook(Prehook):
 Enrich prompts with relevant context from a knowledge base:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     def __init__(self, knowledge_base):
         self.knowledge_base = knowledge_base
     
@@ -293,10 +293,10 @@ Please answer the question using the provided context."""
 Apply safety filters to agent responses:
 
 ```python
-from agentkernel import Posthook
+from agentkernel import PostHook
 from agentkernel.core.model import AgentReplyText
 
-class ModerationHook(Posthook):
+class ModerationHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         # Extract text from reply
         if isinstance(agent_reply, AgentReplyText):
@@ -326,10 +326,10 @@ class ModerationHook(Posthook):
 Append legal or compliance disclaimers to responses:
 
 ```python
-from agentkernel import Posthook
+from agentkernel import PostHook
 from agentkernel.core.model import AgentReplyText
 
-class DisclaimerHook(Posthook):
+class DisclaimerHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         disclaimer = (
             "\n\n---\n"
@@ -352,11 +352,11 @@ class DisclaimerHook(Posthook):
 Track user interactions and agent performance:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 from datetime import datetime
 
-class AnalyticsHook(Prehook):
+class AnalyticsHook(PreHook):
     def __init__(self, logger):
         self.logger = logger
     
@@ -424,10 +424,10 @@ runtime.register_pre_hooks("agent", [
 Hooks should not crash - handle errors and return sensible defaults:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class RobustRAGHook(Prehook):
+class RobustRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
@@ -456,11 +456,11 @@ class RobustRAGHook(Prehook):
 Hooks execute on every request - keep them fast:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 from functools import lru_cache
 
-class OptimizedRAGHook(Prehook):
+class OptimizedRAGHook(PreHook):
     def __init__(self, vector_store):
         self.vector_store = vector_store
         self.cache = {}  # Simple cache (consider LRU in production)
@@ -492,10 +492,10 @@ class OptimizedRAGHook(Prehook):
 Allow hooks to be customized without code changes:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText, AgentReplyText
 
-class ConfigurableGuardRailHook(Prehook):
+class ConfigurableGuardRailHook(PreHook):
     def __init__(self, blocked_keywords=None, max_length=5000):
         self.blocked_keywords = blocked_keywords or []
         self.max_length = max_length
@@ -526,10 +526,10 @@ class ConfigurableGuardRailHook(Prehook):
 Hook methods are async, allowing you to perform I/O operations efficiently:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class AsyncRAGHook(Prehook):
+class AsyncRAGHook(PreHook):
     def __init__(self, vector_store, embeddings_api):
         self.vector_store = vector_store
         self.embeddings_api = embeddings_api
@@ -571,13 +571,13 @@ Here's a full example combining multiple hooks:
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agentkernel import GlobalRuntime
-from agentkernel import Prehook, Posthook
+from agentkernel import PreHook, PostHook
 from agents import Agent
 
 # Define hooks
 from agentkernel.core.model import AgentRequestText, AgentReplyText
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
@@ -599,7 +599,7 @@ class RAGHook(Prehook):
     def name(self):
         return "RAGHook"
 
-class GuardRailHook(Prehook):
+class GuardRailHook(PreHook):
     BLOCKED = ["hack", "illegal", "malware"]
     
     async def on_run(self, session, agent, requests):
@@ -617,7 +617,7 @@ class GuardRailHook(Prehook):
     def name(self):
         return "GuardRailHook"
 
-class DisclaimerHook(Posthook):   
+class DisclaimerHook(PostHook):   
     async def on_run(self, session, requests, agent, agent_reply):
         if isinstance(agent_reply, AgentReplyText):
             return AgentReplyText(text=agent_reply.text + "\n\n*Disclaimer: AI-generated content.*")
@@ -719,12 +719,12 @@ async def test_chaining():
 
 ## API Reference
 
-### Prehook Interface
+### PreHook Interface
 
 ```python
 from agentkernel.core.model import AgentRequest, AgentReply
 
-class Prehook(ABC):
+class PreHook(ABC):
     @abstractmethod
     async def on_run(
         self, session: Session, agent: Agent, requests: list[AgentRequest]
@@ -759,12 +759,12 @@ class Prehook(ABC):
         raise NotImplementedError
 ```
 
-### Posthook Interface
+### PostHook Interface
 
 ```python
 from agentkernel.core.model import AgentRequest, AgentReply
 
-class Posthook(ABC):
+class PostHook(ABC):
     @abstractmethod
     async def on_run(
         self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
@@ -807,24 +807,24 @@ class Posthook(ABC):
 # Register pre-execution hooks
 runtime.register_pre_hooks(
     agent_name: str,
-    hooks: list[Prehook]
+    hooks: list[PreHook]
 ) -> None
 
 # Register post-execution hooks
 runtime.register_post_hooks(
     agent_name: str,
-    hooks: list[Posthook]
+    hooks: list[PostHook]
 ) -> None
 
 # Get registered pre-execution hooks
 runtime.get_pre_hooks(
     agent_name: str
-) -> list[Prehook]
+) -> list[PreHook]
 
 # Get registered post-execution hooks
 runtime.get_post_hooks(
     agent_name: str
-) -> list[Posthook]
+) -> list[PostHook]
 ```
 
 ## Troubleshooting
@@ -915,7 +915,7 @@ runtime.register_pre_hooks("agent", [GuardRailHook(), RAGHook()])
 - Async logging operations
 
 ```python
-class AsyncRAGHook(Prehook):
+class AsyncRAGHook(PreHook):
     async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Can now use async operations
         context = await self.vector_db.search(prompt)

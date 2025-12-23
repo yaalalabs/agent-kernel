@@ -36,7 +36,7 @@ These run **before** your agent sees the user's prompt. Perfect for:
 **🛡️ Guard Rails** - Block inappropriate content before it reaches your agent:
 
 ```python
-class GuardRailHook(Prehook):
+class GuardRailHook(PreHook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "exploit"]
     
     async def on_run(self, session, agent, requests):
@@ -54,7 +54,7 @@ class GuardRailHook(Prehook):
 **🧠 RAG Context Injection** - Enrich prompts with knowledge from your databases:
 
 ```python
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         prompt = requests[0].text
         
@@ -92,7 +92,7 @@ curl -X POST http://localhost:8000/run \
 In your pre-hook, access these custom fields:
 
 ```python
-class CustomDataHook(Prehook):
+class CustomDataHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Find custom data in requests
         user_id = None
@@ -123,7 +123,7 @@ These run **after** your agent generates a response. Ideal for:
 **⚖️ Adding Disclaimers** - Compliance made automatic:
 
 ```python
-class DisclaimerHook(Posthook):
+class DisclaimerHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         disclaimer = "\n\n*This is AI-generated. Verify important decisions.*"
         agent_reply.text += disclaimer
@@ -314,10 +314,10 @@ pip install agentkernel
 ### 2. Create a Hook
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel import AgentRequestText
 
-class SimpleRAGHook(Prehook):
+class SimpleRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Add context from your knowledge base
         context = get_relevant_context(requests[0].text)

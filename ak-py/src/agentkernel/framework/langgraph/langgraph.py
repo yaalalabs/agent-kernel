@@ -18,6 +18,7 @@ from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, Age
 
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
+from ...core import PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Session as BaseSession
 from ...core.config import AKConfig
@@ -328,9 +329,30 @@ class LangGraphModule(BaseModule):
     def _wrap(self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]) -> BaseAgent:
         return LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
 
-    def load(self, agents: list[CompiledStateGraph]):
+    def load(self, agents: list[CompiledStateGraph]) -> "LangGraphModule":
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
         """
         super().load(agents)
+        return self
+
+    def pre_hook(self, agent: CompiledStateGraph, hooks: list[PreHook]) -> "LangGraphModule":
+        """
+        Attaches pre-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of pre-execution hooks to attach.
+        :return: LangGraphModule instance.
+        """
+        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        return self
+
+    def post_hook(self, agent: CompiledStateGraph, hooks: list[PostHook]) -> "LangGraphModule":
+        """
+        Attaches post-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of post-execution hooks to attach.
+        :return: LangGraphModule instance.
+        """
+        super().get_agent(agent.name).attach_post_hooks(hooks)
+        return self

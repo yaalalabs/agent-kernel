@@ -8,7 +8,7 @@ from crewai.memory.storage.interface import Storage
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 
 from ...core import Agent as BaseAgent
-from ...core import Module, Runner, Session
+from ...core import Module, PostHook, PreHook, Runner, Session
 from ...core.config import AKConfig
 from ...trace import Trace
 
@@ -208,9 +208,30 @@ class CrewAIModule(Module):
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         return CrewAIAgent(agent.role, self.runner, agent, agents)
 
-    def load(self, agents: list[Agent]):
+    def load(self, agents: list[Agent]) -> "CrewAIModule":
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
         """
         super().load(agents)
+        return self
+
+    def pre_hook(self, agent: Agent, hooks: list[PreHook]) -> "CrewAIModule":
+        """
+        Attaches pre-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of pre-execution hooks to attach.
+        :return: CrewAIModule instance.
+        """
+        super().get_agent(agent.role).attach_pre_hooks(hooks)
+        return self
+
+    def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "CrewAIModule":
+        """
+        Attaches post-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of post-execution hooks to attach.
+        :return: CrewAIModule instance.
+        """
+        super().get_agent(agent.role).attach_post_hooks(hooks)
+        return self

@@ -1,5 +1,5 @@
 from agentkernel import Agent as AKAgent
-from agentkernel import GlobalRuntime, Prehook, Session
+from agentkernel import GlobalRuntime, PreHook, Session
 from agentkernel.api import RESTAPI
 from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestText
 from agentkernel.openai import OpenAIModule
@@ -48,7 +48,7 @@ OpenAIModule([triage_agent, general_agent, customer_support_agent])
 
 
 # Optionally Using additional context passed in a pre-hook to be used in a RAG
-class RAGPreHook(Prehook):
+class RAGPreHook(PreHook):
     async def on_run(
         self, session: Session, agent: AKAgent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:

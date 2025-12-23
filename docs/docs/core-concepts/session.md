@@ -317,9 +317,9 @@ session = Session(id=session_id)
 [Execution hooks](/docs/integrations/hooks) have full access to session state:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Access session data
         user_prefs = session.get("user_preferences")
