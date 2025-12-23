@@ -147,7 +147,7 @@ hooks/
 ├── app.py           # Main application with agent and hook registration
 ├── hooks.py         # GuardRailHook, RAGHook, and DisclaimerHook implementations
 ├── app_test.py      # Automated test suite
-├── example_usage.py # Usage example script
+├── demonstration.py # Demonstration script
 ├── pyproject.toml   # Project dependencies
 ├── build.sh         # Build script
 └── README.md        # This file
