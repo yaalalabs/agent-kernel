@@ -14,6 +14,7 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
+
 from ... import PostHook, PreHook
 from ...core import Agent as BaseAgent
 from ...core import Module
@@ -104,7 +105,7 @@ class OpenAIRunner(BaseRunner):
         try:
             for req in requests:
                 if isinstance(
-                        req, AgentRequestAny
+                    req, AgentRequestAny
                 ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
 

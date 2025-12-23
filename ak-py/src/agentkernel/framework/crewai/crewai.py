@@ -6,6 +6,7 @@ from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Session
 from ...core.config import AKConfig
@@ -101,7 +102,7 @@ class CrewAIRunner(Runner):
         prompt = ""
         for req in requests:
             if isinstance(
-                    req, AgentRequestAny
+                req, AgentRequestAny
             ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):

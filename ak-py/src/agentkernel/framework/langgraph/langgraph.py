@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from agentkernel.core.base import Session
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import PostHook, PreHook
@@ -58,12 +59,12 @@ class CheckPointer(BaseCheckpointSaver):
         )
 
     def list(
-            self,
-            config: Optional[dict] = None,
-            *,
-            filter: Optional[dict[str, Any]] = None,
-            before: Optional[dict] = None,
-            limit: Optional[int] = None,
+        self,
+        config: Optional[dict] = None,
+        *,
+        filter: Optional[dict[str, Any]] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
     ) -> Iterator[CheckpointTuple]:
         result = []
         if config:
@@ -85,11 +86,11 @@ class CheckPointer(BaseCheckpointSaver):
         return iter(result)
 
     def put(
-            self,
-            config: dict,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: dict,
+        self,
+        config: dict,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: dict,
     ) -> dict:
         thread_id = config.get("configurable", {}).get("thread_id")
         checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
@@ -109,11 +110,11 @@ class CheckPointer(BaseCheckpointSaver):
         return config
 
     def put_writes(
-            self,
-            config: dict,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = "",
+        self,
+        config: dict,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         thread_id = config.get("configurable", {}).get("thread_id")
         checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
@@ -139,31 +140,31 @@ class CheckPointer(BaseCheckpointSaver):
         return self.get_tuple(config)
 
     async def alist(
-            self,
-            config: Optional[dict] = None,
-            *,
-            filter: Optional[dict[str, Any]] = None,
-            before: Optional[dict] = None,
-            limit: Optional[int] = None,
+        self,
+        config: Optional[dict] = None,
+        *,
+        filter: Optional[dict[str, Any]] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
     ) -> AsyncIterator[CheckpointTuple]:
         for item in self.list(config, filter=filter, before=before, limit=limit):
             yield item
 
     async def aput(
-            self,
-            config: dict,
-            checkpoint: Checkpoint,
-            metadata: CheckpointMetadata,
-            new_versions: dict,
+        self,
+        config: dict,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: dict,
     ) -> dict:
         return self.put(config, checkpoint, metadata, new_versions)
 
     async def aput_writes(
-            self,
-            config: dict,
-            writes: Sequence[tuple[str, Any]],
-            task_id: str,
-            task_path: str = "",
+        self,
+        config: dict,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
     ) -> None:
         self.put_writes(config, writes, task_id, task_path)
 
@@ -281,7 +282,7 @@ class LangGraphRunner(BaseRunner):
         prompt = ""
         for req in requests:
             if isinstance(
-                    req, AgentRequestAny
+                req, AgentRequestAny
             ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):

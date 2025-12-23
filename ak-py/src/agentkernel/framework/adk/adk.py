@@ -18,6 +18,7 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
+
 from ...core import Agent as AKBaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
@@ -107,7 +108,7 @@ class GoogleADKRunner(BaseRunner):
         try:
             for req in requests:
                 if isinstance(
-                        req, AgentRequestAny
+                    req, AgentRequestAny
                 ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
 
