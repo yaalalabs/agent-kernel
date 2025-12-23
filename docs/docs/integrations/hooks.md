@@ -163,53 +163,38 @@ class MyPostHook(PostHook):
 
 ## Registering Hooks
 
-Hooks are registered per agent using the runtime instance:
+Hooks are registered per agent using the Module's fluent API:
 
 ```python
-from agentkernel.core import GlobalRuntime
+from agentkernel.openai import OpenAIModule
+from agents import Agent
 
-# Get the runtime instance
-runtime = GlobalRuntime.instance()
+# Create your agent
+agent = Agent(name="assistant", instructions="...")
 
-# Register pre-execution hooks (executed in order)
-runtime.register_pre_hooks("agent_name", [
+# Register agent and hooks using method chaining
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),
     GuardRailHook(),
-])
-
-# Register post-execution hooks (executed in order)
-runtime.register_post_hooks("agent_name", [
+]).post_hook(agent, [
     ModerationHook(),
     DisclaimerHook(),
 ])
 ```
+
+The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.).
 
 ### Hook Execution Order
 
 Hooks execute in the order they are registered:
 
 ```python
-runtime.register_pre_hooks("assistant", [Hook1(), Hook2(), Hook3()])
+OpenAIModule([agent]).pre_hook(agent, [Hook1(), Hook2(), Hook3()])
 ```
 
 **Execution flow:** `Hook1 → Hook2 → Hook3 → Agent`
 
 Each hook receives the prompt **modified by the previous hook**, creating a processing chain.
-
-### Modifying Hook Order
-
-To change the execution order, provide a new list:
-
-```python
-# Get existing hooks
-existing_hooks = runtime.get_pre_hooks("agent_name")
-
-# Rearrange or filter
-new_order = [existing_hooks[2], existing_hooks[0]]
-
-# Re-register with new order
-runtime.register_pre_hooks("agent_name", new_order)
-```
 
 ## Common Patterns
 
@@ -389,14 +374,14 @@ Each hook should have a single, well-defined responsibility:
 
 ```python
 # ✅ Good: Focused hooks
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),          # Only does context injection
     GuardRailHook(),    # Only does validation
     LoggingHook(),      # Only does logging
 ])
 
 # ❌ Bad: Monolithic hook doing everything
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     DoEverythingHook(),  # RAG + validation + logging
 ])
 ```
@@ -407,13 +392,13 @@ Place hooks in logical order based on dependencies:
 
 ```python
 # ✅ Correct order: Enrich first, then validate
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),         # Add context first
     GuardRailHook(),   # Then validate enriched prompt
 ])
 
 # ❌ Wrong order: Validation happens before enrichment
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     GuardRailHook(),   # Validates before context added
     RAGHook(),         # Context added after validation
 ])
@@ -632,20 +617,11 @@ assistant = Agent(
     instructions="You are a helpful AI assistant."
 )
 
-# Register agent
-OpenAIModule([assistant])
-
-# Get runtime and register hooks
-runtime = GlobalRuntime.instance()
-
-# Pre-hooks: RAG first, then guard rail
-runtime.register_pre_hooks("assistant", [
+# Register agent with hooks using method chaining
+OpenAIModule([assistant]).pre_hook(assistant, [
     RAGHook(),
     GuardRailHook(),
-])
-
-# Post-hooks: Add disclaimer
-runtime.register_post_hooks("assistant", [
+]).post_hook(assistant, [
     DisclaimerHook(),
 ])
 
@@ -801,30 +777,23 @@ class PostHook(ABC):
         raise NotImplementedError
 ```
 
-### Runtime Hook Methods
+### Module Hook Methods
 
 ```python
-# Register pre-execution hooks
-runtime.register_pre_hooks(
-    agent_name: str,
+# Register pre-execution hooks (returns Module for chaining)
+module.pre_hook(
+    agent: Agent,
     hooks: list[PreHook]
-) -> None
+) -> Module
 
-# Register post-execution hooks
-runtime.register_post_hooks(
-    agent_name: str,
+# Register post-execution hooks (returns Module for chaining)
+module.post_hook(
+    agent: Agent,
     hooks: list[PostHook]
-) -> None
+) -> Module
 
-# Get registered pre-execution hooks
-runtime.get_pre_hooks(
-    agent_name: str
-) -> list[PreHook]
-
-# Get registered post-execution hooks
-runtime.get_post_hooks(
-    agent_name: str
-) -> list[PostHook]
+# Method chaining example
+OpenAIModule([agent]).pre_hook(agent, [...]).post_hook(agent, [...])
 ```
 
 ## Troubleshooting
@@ -834,9 +803,9 @@ runtime.get_post_hooks(
 **Problem:** Hook is registered but not being called.
 
 **Solutions:**
-1. Verify agent name matches exactly: `runtime.register_pre_hooks("exact_agent_name", [...])`
-2. Check that agent is registered before hooks: `runtime.agents()["agent_name"]`
-3. Ensure you're using the correct runtime instance: `GlobalRuntime.instance()`
+1. Ensure you're passing the correct agent object to the hook method: `module.pre_hook(agent, [...])`
+2. Verify the agent is included in the Module initialization: `OpenAIModule([agent])`
+3. Check that hooks are registered on the same Module instance that's being used
 
 ### Hook Halts All Execution
 
@@ -882,10 +851,10 @@ async def on_run(self, session, agent, requests):
 
 ```python
 # This order: RAG → GuardRail
-runtime.register_pre_hooks("agent", [RAGHook(), GuardRailHook()])
+OpenAIModule([agent]).pre_hook(agent, [RAGHook(), GuardRailHook()])
 
 # This order: GuardRail → RAG (different!)
-runtime.register_pre_hooks("agent", [GuardRailHook(), RAGHook()])
+OpenAIModule([agent]).pre_hook(agent, [GuardRailHook(), RAGHook()])
 ```
 
 ## Related Documentation

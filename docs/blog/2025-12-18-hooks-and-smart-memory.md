@@ -139,16 +139,17 @@ class DisclaimerHook(PostHook):
 Multiple hooks execute in sequence, each building on the last:
 
 ```python
-runtime = GlobalRuntime.instance()
+from agentkernel.openai import OpenAIModule
+from agents import Agent
 
-# Pre-hooks execute in order: RAG → Guard Rails
-runtime.register_pre_hooks("assistant", [
+# Create agent
+agent = Agent(name="assistant", instructions="You are a helpful assistant.")
+
+# Register hooks in order using method chaining
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),        # Add context first
     GuardRailHook(),  # Then validate everything
-])
-
-# Post-hooks add finishing touches
-runtime.register_post_hooks("assistant", [
+]).post_hook(agent, [
     ModerationHook(),   # Filter sensitive content
     DisclaimerHook(),   # Add legal disclaimer
 ])
@@ -249,8 +250,8 @@ def query_knowledge_base(query: str) -> str:
         return search_in_context(query, context)
     return "No information found."
 
-# Register the hook
-runtime.register_pre_hooks("senior_assistant", [RAGHook()])
+# Register the hook with the Module
+OpenAIModule([senior_assistant]).pre_hook(senior_assistant, [RAGHook()])
 ```
 
 The `RAGHook` searches your knowledge base and populates the cache. The tool accesses it transparently. The prompt stays clean.
@@ -269,14 +270,13 @@ Same hook code. Same cache API. Different frameworks. One unified experience.
 ```python
 # Works with OpenAI
 from agentkernel.openai import OpenAIModule
-OpenAIModule([my_openai_agent])
+OpenAIModule([my_openai_agent]).pre_hook(my_openai_agent, [RAGHook()])
 
 # Works with CrewAI
 from agentkernel.crewai import CrewAIModule
-CrewAIModule([my_crew_agent])
+CrewAIModule([my_crew_agent]).pre_hook(my_crew_agent, [RAGHook()])
 
 # Same hooks and cache for both!
-runtime.register_pre_hooks("agent_name", [RAGHook()])
 cache = session.get_volatile_cache()
 ```
 
@@ -340,9 +340,8 @@ agent = Agent(
     instructions="You are a helpful assistant.",
 )
 
-OpenAIModule([agent])
-runtime = GlobalRuntime.instance()
-runtime.register_pre_hooks("assistant", [SimpleRAGHook()])
+# Register agent and hooks using method chaining
+OpenAIModule([agent]).pre_hook(agent, [SimpleRAGHook()])
 
 # Use CLI, REST API, or deploy to AWS
 from agentkernel.api import RESTAPI
