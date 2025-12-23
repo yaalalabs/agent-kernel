@@ -169,6 +169,14 @@ class OpenAIRunner(BaseRunner):
                 # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
                 reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
 
+                # Manually save the multimodal conversation to session for future reference
+                if session:
+                    openai_session = session.get("openai") or session.set("openai", OpenAISession())
+                    # Add user message
+                    await openai_session.add_items([{"role": "user", "content": prompt}])
+                    # Add assistant response
+                    await openai_session.add_items([{"role": "assistant", "content": reply}])
+
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")

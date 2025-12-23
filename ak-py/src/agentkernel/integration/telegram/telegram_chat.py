@@ -1,4 +1,6 @@
+import base64
 import logging
+import mimetypes
 import traceback
 
 import httpx
@@ -6,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
+from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentTelegramRequestHandler(RESTRequestHandler):
@@ -95,25 +98,29 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         chat_id = message.get("chat", {}).get("id")
         message_id = message.get("message_id")
 
-        text = message.get("text")
-
-        # Handle different message types
-        if not text:
-
-            self._log.warning("Message has no text content")
-            return
+        # Get text from either 'text' field (regular messages) or 'caption' field (media with captions)
+        text = (message.get("text") or message.get("caption") or "").strip()
 
         if not chat_id or not message_id:
             self._log.warning("Message missing required fields (chat_id/message_id)")
             return
 
-        self._log.debug(f"Processing message {message_id} from chat {chat_id}: {text}")
+        # Check if message has text, files, or images
+        has_text = bool(text)
+        has_files = "document" in message
+        has_images = "photo" in message
 
-        # Check if it's a bot command
-        if text.startswith("/"):
+        if not has_text and not has_files and not has_images:
+            self._log.warning("Message has no text, files, or images")
+            return
+
+        self._log.debug(f"Processing message {message_id} from chat {chat_id}")
+
+        # Check if it's a bot command (only if it has text)
+        if has_text and text.startswith("/"):
             await self._handle_command(chat_id, text)
         else:
-            await self._process_agent_message(chat_id, text)
+            await self._process_agent_message(chat_id, text if has_text else "", message)
 
     async def _handle_edited_message(self, message: dict):
         """
@@ -167,12 +174,13 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             # Unknown command - process as regular message
             await self._process_agent_message(chat_id, command)
 
-    async def _process_agent_message(self, chat_id: int, message_text: str):
+    async def _process_agent_message(self, chat_id: int, message_text: str, message: dict | None = None):
         """
         Process message through agent.
 
         :param chat_id: Chat ID
         :param message_text: Message text
+        :param message: Full message dict from Telegram (for accessing files/images)
         """
         service = AgentService()
         session_id = str(chat_id)  # Use chat_id as session_id
@@ -188,8 +196,27 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                 await self._send_message(chat_id, "Sorry, no agent is available to handle your request.")
                 return
 
-            # Run the agent
-            result = await service.run(message_text)
+            # Build requests list with text and files/images
+            requests = []
+
+            # Add text if present
+            if message_text:
+                requests.append(AgentRequestText(text=message_text))
+
+            # Process files and images if message object is provided
+            if message:
+                failed_files = await self._process_files(message, requests)
+                if failed_files:
+                    self._log.warning(f"Failed to process files: {failed_files}")
+
+            # If no content at all, nothing to process
+            if not requests:
+                self._log.warning("No valid content found in message")
+                await self._send_message(chat_id, "Sorry, your message appears to be empty.")
+                return
+
+            # Run the agent with all requests (text + files/images)
+            result = await service.run_multi(requests=requests)
 
             if hasattr(result, "raw"):
                 response_text = str(result.raw)
@@ -297,3 +324,146 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                 self._log.debug(f"Callback query answered: {callback_query_id}")
         except Exception as e:
             self._log.warning(f"Failed to answer callback query: {e}")
+
+    async def _get_file_info(self, file_id: str):
+        """
+        Get file information from Telegram API.
+
+        :param file_id: File ID from Telegram
+        :return: File info dict with file_path
+        """
+        url = f"{self._base_url}/getFile"
+        payload = {"file_id": file_id}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                result = response.json()
+                if result.get("ok"):
+                    return result.get("result")
+                else:
+                    self._log.error(f"Failed to get file info: {result}")
+                    return None
+        except Exception as e:
+            self._log.error(f"Error getting file info: {e}")
+            return None
+
+    async def _download_telegram_file(self, file_path: str) -> bytes | None:
+        """
+        Download file content from Telegram server.
+
+        :param file_path: File path from getFile API
+        :return: File content as bytes
+        """
+        url = f"https://api.telegram.org/file/bot{self._bot_token}/{file_path}"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.content
+        except Exception as e:
+            self._log.error(f"Error downloading file from Telegram: {e}")
+            return None
+
+    async def _process_files(self, message: dict, requests: list) -> list[str]:
+        """
+        Process files and images in a Telegram message.
+
+        :param message: Message object from Telegram
+        :param requests: List to append AgentRequestFile/AgentRequestImage objects
+        :return: List of failed file names
+        """
+        failed_files = []
+
+        # Process photos (images)
+        if "photo" in message:
+            photos = message.get("photo", [])
+            if photos:
+                # Get the largest photo
+                largest_photo = photos[-1]
+                file_id = largest_photo.get("file_id")
+
+                try:
+                    self._log.debug(f"Processing photo: {file_id}")
+
+                    # Get file info
+                    file_info = await self._get_file_info(file_id)
+                    if not file_info:
+                        self._log.warning("Failed to get photo file info")
+                        failed_files.append("photo")
+                        return failed_files
+
+                    file_path = file_info.get("file_path")
+                    file_size = file_info.get("file_size", 0)
+
+                    # Download file
+                    file_content = await self._download_telegram_file(file_path)
+                    if file_content is None:
+                        self._log.warning(f"Failed to download photo")
+                        failed_files.append("photo")
+                        return failed_files
+
+                    # Base64 encode
+                    image_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                    # Add as image request
+                    requests.append(
+                        AgentRequestImage(
+                            image_data=image_data_base64,
+                            name="photo.jpg",
+                            mime_type="image/jpeg",
+                        )
+                    )
+                    self._log.debug(f"Added photo to request (size: {file_size} bytes)")
+
+                except Exception as e:
+                    self._log.error(f"Error processing photo: {e}\n{traceback.format_exc()}")
+                    failed_files.append("photo")
+
+        # Process documents (files)
+        if "document" in message:
+            document = message.get("document", {})
+            file_id = document.get("file_id")
+            file_name = document.get("file_name", "document")
+            mime_type = document.get("mime_type", "application/octet-stream")
+
+            try:
+                self._log.debug(f"Processing document: {file_id} ({file_name})")
+
+                # Get file info
+                file_info = await self._get_file_info(file_id)
+                if not file_info:
+                    self._log.warning(f"Failed to get file info for {file_name}")
+                    failed_files.append(file_name)
+                    return failed_files
+
+                file_path = file_info.get("file_path")
+                file_size = file_info.get("file_size", 0)
+
+                # Download file
+                file_content = await self._download_telegram_file(file_path)
+                if file_content is None:
+                    self._log.warning(f"Failed to download file: {file_name}")
+                    failed_files.append(file_name)
+                    return failed_files
+
+                # Base64 encode
+                file_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                # Add as file request
+                requests.append(
+                    AgentRequestFile(
+                        file_data=file_data_base64,
+                        name=file_name,
+                        mime_type=mime_type,
+                    )
+                )
+                self._log.debug(f"Added file to request: {file_name} (size: {file_size} bytes)")
+
+            except Exception as e:
+                self._log.error(f"Error processing document: {e}\n{traceback.format_exc()}")
+                failed_files.append(file_name)
+
+        return failed_files
