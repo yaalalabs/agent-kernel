@@ -99,13 +99,13 @@ The Telegram integration **fully supports** sending images and documents to agen
 2. **Documents**: Files are downloaded, base64-encoded, and sent to the agent as `AgentRequestFile`
 3. **Combined**: A message can include both text and files/images which are all processed together
 
-**Status:** ✅ **FULLY IMPLEMENTED AND WORKING**
+**Status:** 
 
-- ✅ File/image detection and download infrastructure
-- ✅ Base64 encoding of files/images
-- ✅ Multi-modal requests forwarding (`service.run_multi()`)
-- ✅ Session memory for follow-up questions with context
-- ✅ Works with **OpenAI SDK** and **Google ADK** agents
+-  File/image detection and download infrastructure
+- Base64 encoding of files/images
+- Multi-modal requests forwarding (`service.run_multi()`)
+- Session memory for follow-up questions with context
+- Works with **OpenAI SDK** and **Google ADK** agents
 
 **Supported file types:**
 
@@ -114,7 +114,7 @@ The Telegram integration **fully supports** sending images and documents to agen
 
 **Limitations:**
 
-- Maximum file size: ~20MB (Telegram API limit, may vary by file type)
+- Maximum file size: ~2MB 
 - Processing time: Large files may take 30-60 seconds to download and analyze
 - Session context: Cleared on server restart (can be persisted with external storage)
 - Model requirements: Agent must support multimodal (OpenAI GPT-4o, Google ADK, etc.)
