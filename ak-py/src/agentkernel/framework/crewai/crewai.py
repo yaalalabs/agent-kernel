@@ -6,7 +6,6 @@ from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Session
 from ...core.config import AKConfig
@@ -102,7 +101,7 @@ class CrewAIRunner(Runner):
         prompt = ""
         for req in requests:
             if isinstance(
-                req, AgentRequestAny
+                    req, AgentRequestAny
             ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):
@@ -206,12 +205,19 @@ class CrewAIModule(Module):
         self.load(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+        """
+        Wraps the provided agent in a CrewAIAgent instance.
+        :param agent: Agent to wrap.
+        :param agents: List of agents in the module.
+        :return: CrewAIAgent instance.
+        """
         return CrewAIAgent(agent.role, self.runner, agent, agents)
 
     def load(self, agents: list[Agent]) -> "CrewAIModule":
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
+        :return: CrewAIModule instance.
         """
         super().load(agents)
         return self

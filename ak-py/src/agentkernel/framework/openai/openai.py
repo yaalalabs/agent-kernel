@@ -14,7 +14,6 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-
 from ... import PostHook, PreHook
 from ...core import Agent as BaseAgent
 from ...core import Module
@@ -105,7 +104,7 @@ class OpenAIRunner(BaseRunner):
         try:
             for req in requests:
                 if isinstance(
-                    req, AgentRequestAny
+                        req, AgentRequestAny
                 ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
 
@@ -248,6 +247,7 @@ class OpenAIModule(Module):
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
+        :return: OpenAIModule instance.
         """
         super().load(agents)
         return self

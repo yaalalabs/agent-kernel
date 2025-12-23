@@ -18,7 +18,6 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-
 from ...core import Agent as AKBaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
@@ -108,7 +107,7 @@ class GoogleADKRunner(BaseRunner):
         try:
             for req in requests:
                 if isinstance(
-                    req, AgentRequestAny
+                        req, AgentRequestAny
                 ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
 
@@ -225,14 +224,22 @@ class GoogleADKModule(Module):
         self.load(agents)
 
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
+        """
+        Wraps the provided agent in a GoogleADKAgent instance.
+        :param agent: Agent to wrap.
+        :param agents: List of agents in the module.
+        :return: GoogleADKAgent instance.
+        """
         return GoogleADKAgent(agent.name, self.runner, agent)
 
-    def load(self, agents: list[BaseAgent]):
+    def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
+        :return: GoogleADKModule instance.
         """
         super().load(agents)
+        return self
 
     def pre_hook(self, agent: BaseAgent, hooks: list[PreHook]) -> "GoogleADKModule":
         """
