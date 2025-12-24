@@ -38,6 +38,7 @@ class Runtime:
         self._log = logging.getLogger("ak.runtime")
         self._agents = {}
         self._sessions = sessions
+
     def __enter__(self) -> "Runtime":
         """
         Enter the Runtime context manager and attach the Runtime to the ModuleLoader.
