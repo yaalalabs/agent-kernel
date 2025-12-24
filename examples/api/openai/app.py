@@ -83,7 +83,7 @@ class RAGPreHook(PreHook):
         return "bank_agent_prehook"
 
 
-# Initialized OpenAI module with the triage agent and a RAG pre-hook
+# Initialize OpenAI module and attach RAG pre-hook to customer support agent
 OpenAIModule([triage_agent, general_agent, customer_support_agent]).pre_hook(customer_support_agent, [RAGPreHook()])
 
 if __name__ == "__main__":
