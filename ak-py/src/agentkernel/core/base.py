@@ -232,16 +232,24 @@ class Agent(ABC):
     def attach_pre_hooks(self, hooks: list[PreHook]):
         """
         Attaches pre-execution hooks to the agent.
+        Duplicate hook objects are ignored to prevent multiple registrations
+        of the same hook.
         :param hooks: List of pre-execution hooks to attach.
         """
-        self._pre_hooks.extend(hooks)
+        for hook in hooks:
+            if hook not in self._pre_hooks:
+                self._pre_hooks.append(hook)
 
     def attach_post_hooks(self, hooks: list[PostHook]):
         """
         Attaches post-execution hooks to the agent.
+        Duplicate hook objects are ignored to prevent multiple registrations
+        of the same hook.
         :param hooks: List of post-execution hooks to attach.
         """
-        self._post_hooks.extend(hooks)
+        for hook in hooks:
+            if hook not in self._post_hooks:
+                self._post_hooks.append(hook)
 
     @staticmethod
     def _generate_a2a_card(agent_name: str, description: str, skills: List):
