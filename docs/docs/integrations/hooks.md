@@ -555,7 +555,6 @@ Here's a full example combining multiple hooks:
 ```python
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel import GlobalRuntime
 from agentkernel import PreHook, PostHook
 from agents import Agent
 
