@@ -38,9 +38,6 @@ class Runtime:
         self._log = logging.getLogger("ak.runtime")
         self._agents = {}
         self._sessions = sessions
-        self._pre_hooks: dict[str, list[PreHook]] = {}
-        self._post_hooks: dict[str, list[PostHook]] = {}
-
     def __enter__(self) -> "Runtime":
         """
         Enter the Runtime context manager and attach the Runtime to the ModuleLoader.
