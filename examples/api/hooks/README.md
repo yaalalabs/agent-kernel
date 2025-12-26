@@ -147,7 +147,7 @@ hooks/
 ├── app.py           # Main application with agent and hook registration
 ├── hooks.py         # GuardRailHook, RAGHook, and DisclaimerHook implementations
 ├── app_test.py      # Automated test suite
-├── example_usage.py # Usage example script
+├── demonstration.py # Demonstration script
 ├── pyproject.toml   # Project dependencies
 ├── build.sh         # Build script
 └── README.md        # This file
@@ -173,29 +173,29 @@ Hooks that run **after** the agent generates a response:
 
 #### Pre-hook Interface
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 
-class MyPrehook(Prehook):
+class MyPreHook(PreHook):
     async def on_run(
       self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
         return requests # modify as required or send AgentReply to stop execution
     
     def name(self):
-        return "MyPrehook"
+        return "MyPreHook"
 ```
 
 #### Post-hook Interface
 ```python
-from agentkernel import Posthook
+from agentkernel import PostHook
 
-class MyPosthook(Posthook):
+class MyPostHook(PostHook):
     async def on_run(
         self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
       return agent_reply # modify as required
 
     def name(self):
-      return "MyPosthook"
+      return "MyPostHook"
 ```
 
 **Note:** Hook methods are async, allowing you to perform asynchronous operations like database queries, API calls, or vector searches.

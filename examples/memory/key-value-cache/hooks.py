@@ -8,11 +8,11 @@ Pre-execution hooks:
 
 from typing import Any
 
-from agentkernel import Agent, Prehook, Session, KeyValueCache
+from agentkernel import Agent, PreHook, Session, KeyValueCache
 from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestText
 
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     """
     Simulated RAG (Retrieval-Augmented Generation) hook.
 

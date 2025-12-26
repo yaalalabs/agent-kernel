@@ -11,11 +11,11 @@ Post-execution hooks:
 
 from typing import Any
 
-from agentkernel import Agent, Posthook, Prehook, Session
+from agentkernel import Agent, PostHook, PreHook, Session
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 
 
-class GuardRailHook(Prehook):
+class GuardRailHook(PreHook):
     """
     Guard rail hook that validates user input before execution.
 
@@ -76,7 +76,7 @@ class GuardRailHook(Prehook):
         return "GuardRailHook"
 
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     """
     Simulated RAG (Retrieval-Augmented Generation) hook.
 
@@ -156,7 +156,7 @@ If the context is relevant, incorporate it into your answer. If not, answer base
         return "RAGHook"
 
 
-class DisclaimerHook(Posthook):
+class DisclaimerHook(PostHook):
     """
     Post-execution hook that adds a disclaimer to agent responses.
 

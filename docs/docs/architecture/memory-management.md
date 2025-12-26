@@ -165,10 +165,10 @@ You can access auxiliary memory in two ways:
 When you have direct access to the session:
 
 ```python
-from agentkernel import Prehook, Session
+from agentkernel import PreHook, Session
 from agentkernel.core.memory import KeyValueCache
 
-class MyHook(Prehook):
+class MyHook(PreHook):
     async def on_run(self, session: Session, agent, requests):
         # Get caches from session
         v_cache: KeyValueCache = session.get_volatile_cache()
@@ -244,10 +244,10 @@ This example demonstrates:
 Use volatile cache to inject retrieved context without bloating prompts:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     def __init__(self, knowledge_base):
         self.knowledge_base = knowledge_base
     
@@ -289,9 +289,9 @@ Use the context from the knowledge base to answer."""
 Store user settings persistently across requests:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 
-class UserPreferencesHook(Prehook):
+class UserPreferencesHook(PreHook):
     async def on_run(self, session, agent, requests):
         nv_cache = session.get_non_volatile_cache()
         
@@ -318,7 +318,7 @@ Share intermediate results between hooks and tools:
 
 ```python
 # In pre-hook: Process and cache data
-class DataPreprocessorHook(Prehook):
+class DataPreprocessorHook(PreHook):
     async def on_run(self, session, agent, requests):
         v_cache = session.get_volatile_cache()
         
@@ -348,7 +348,7 @@ def my_analysis_tool():
 Track session metadata without affecting LLM context:
 
 ```python
-class AnalyticsHook(Prehook):
+class AnalyticsHook(PreHook):
     async def on_run(self, session, agent, requests):
         nv_cache = session.get_non_volatile_cache()
         
@@ -494,7 +494,7 @@ export AK_SESSION__CACHE__SIZE=256
 
 **Track cache usage in logs**:
 ```python
-class DebugHook(Prehook):
+class DebugHook(PreHook):
     async def on_run(self, session, agent, requests):
         v_cache = session.get_volatile_cache()
         nv_cache = session.get_non_volatile_cache()

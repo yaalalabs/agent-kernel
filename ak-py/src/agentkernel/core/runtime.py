@@ -10,7 +10,6 @@ from agentkernel.core.util.key_value_cache import KeyValueCache
 
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
-from .hooks import Posthook, Prehook
 from .model import (
     AgentReply,
     AgentReplyImage,
@@ -33,13 +32,11 @@ class Runtime:
         """
         Initialize the Runtime.
 
-        :param sessions: The session store instance used to manage agent sessions.
+        :param sessions: The session store instance is used to manage agent sessions.
         """
         self._log = logging.getLogger("ak.runtime")
         self._agents = {}
         self._sessions = sessions
-        self._pre_hooks: dict[str, list[Prehook]] = {}
-        self._post_hooks: dict[str, list[Posthook]] = {}
 
     def __enter__(self) -> "Runtime":
         """
@@ -103,36 +100,36 @@ class Runtime:
 
     async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the specified agent with the multi modal requests.
+        Runs the specified agent with the multi-modal requests.
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.
-        :param requests: The multi-modal inputs provided to the agent.  It will be submitted to the agent as a single request
+        :param requests: The multi-modal inputs are provided to the agent.  It will be submitted to the agent as a single request
                         AgentRequestText objects will be concatenated into a single text prompt.
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
         :return: The result of the agent's execution.
         """
         self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
 
-        prehooks = self._pre_hooks.get(agent.name, [])
-        for hook in prehooks:
+        pre_hooks = agent.pre_hooks
+        for hook in pre_hooks:
             reply = await hook.on_run(session, agent, requests)
             if isinstance(reply, (AgentReplyText, AgentReplyImage)):
                 self._log.debug(
-                    f"Prehook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
+                    f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
                 )
                 return reply
 
-            # Validation to ensure correct type is returned from the hooks. This is important to avoid runtime errors.
+            # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
             if isinstance(reply, list):
                 for item in reply:
                     if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
                         raise TypeError(
-                            f"Prehook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
+                            f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
                         )
             else:
                 raise TypeError(
-                    f"Prehook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}"
+                    f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}"
                 )
             requests = reply
 
@@ -140,14 +137,14 @@ class Runtime:
 
         reply = await agent.runner.run(agent, session, requests)
 
-        posthooks = self._post_hooks.get(agent.name, [])
-        for hook in posthooks:
+        post_hooks = agent.post_hooks
+        for hook in post_hooks:
             reply = await hook.on_run(session, requests, agent, reply)
             if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
                 raise TypeError(
-                    f"Posthook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
+                    f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
                 )
-            self._log.debug(f"Posthook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
+            self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
 
     def sessions(self) -> SessionStore:
@@ -173,8 +170,8 @@ class Runtime:
     def get_non_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
         """
         Retrieves the non-volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the non volatile cache for. If not provided, the current context is used to find the session
-        :return: The non volatile key-value cache.
+        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current context is used to find the session
+        :return: The non-volatile key-value cache.
         """
         if session_id is None:
             session_id = Session.get_current_session_id()
@@ -182,42 +179,6 @@ class Runtime:
         if session_id is None or session_id == "":
             raise Exception("No current session context available to retrieve non-volatile cache.")
         return self._sessions.load(session_id).get_non_volatile_cache()
-
-    def register_pre_hooks(self, agent_name: str, hooks: list[Prehook]) -> None:
-        """
-        Registers pre-execution hooks for a specific agent. The pre-hooks will be executed in the provided order unless execution is interrupted by a hook.
-        Note: if hook changes the prompt, the modified prompt will be sent to the next hook for processing.
-              if you want to remove a hook or modify the processing order, always return a new list. hint. use get_pre_hooks to get the existing list.
-        :param agent_name: The name of the agent.
-        :param hooks: A list of pre-execution hooks to register.
-        """
-        self._pre_hooks[agent_name] = hooks
-
-    def register_post_hooks(self, agent_name: str, hooks: list[Posthook]) -> None:
-        """
-        Registers post-execution hooks for a specific agent. The post-hooks will be executed in the provided order.
-        Note: if hook changes the reply, the modified reply will be sent to the next hook for processing.
-              if you want to remove a hook or modify the processing order, always return a new list. hint. use get_post_hooks to get the existing list.
-        :param agent_name: The name of the agent.
-        :param hooks: A list of post-execution hooks to register.
-        """
-        self._post_hooks[agent_name] = hooks
-
-    def get_pre_hooks(self, agent_name: str) -> list[Prehook]:
-        """
-        Retrieves the registered pre-execution hooks for a specific agent.
-        :param agent_name: The name of the agent.
-        :return: A list of pre-execution hooks registered for the agent, or an empty list if none are registered.
-        """
-        return self._pre_hooks.get(agent_name, [])
-
-    def get_post_hooks(self, agent_name: str) -> list[Posthook]:
-        """
-        Retrieves the registered post-execution hooks for a specific agent.
-        :param agent_name: The name of the agent.
-        :return: A list of post-execution hooks registered for the agent, or an empty list if none are registered.
-        """
-        return self._post_hooks.get(agent_name, [])
 
 
 class GlobalRuntime(Runtime, metaclass=Singleton):

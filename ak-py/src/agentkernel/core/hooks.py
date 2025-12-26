@@ -1,20 +1,25 @@
-from abc import ABC, abstractmethod
+from __future__ import annotations
 
-from .base import Agent, Session
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .base import Agent, Session
+
 from .model import AgentReply, AgentRequest
 
 """
-Prehook and Posthook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
+PreHook and PostHook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
 These hooks allow for modification of prompts before execution and replies after execution, enabling functionalities such as context injection, validation, moderation, logging, and analytics. 
 
 Currently, they will get only called for the initial execution of an agent when a user prompt is provided. It's unable to hook into agent-to-agent calls within a workflow. This will be a future enhancement.
 """
 
 
-class Prehook(ABC):
+class PreHook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest]
+        self, session: "Session", agent: "Agent", requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
@@ -42,10 +47,10 @@ class Prehook(ABC):
         raise NotImplementedError
 
 
-class Posthook(ABC):
+class PostHook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: "Session", requests: list[AgentRequest], agent: "Agent", agent_reply: AgentReply
     ) -> AgentReply:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:

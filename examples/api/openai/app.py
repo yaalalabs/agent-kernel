@@ -1,5 +1,5 @@
 from agentkernel import Agent as AKAgent
-from agentkernel import GlobalRuntime, Prehook, Session
+from agentkernel import PreHook, Session
 from agentkernel.api import RESTAPI
 from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestText
 from agentkernel.openai import OpenAIModule
@@ -42,13 +42,12 @@ async def run(req: dict):
 
 
 RESTAPI.add(router=router)
-# End of optional code block for REST API mode
 
-OpenAIModule([triage_agent, general_agent, customer_support_agent])
+# End of optional code block for REST API mode
 
 
 # Optionally Using additional context passed in a pre-hook to be used in a RAG
-class RAGPreHook(Prehook):
+class RAGPreHook(PreHook):
     async def on_run(
         self, session: Session, agent: AKAgent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
@@ -84,8 +83,8 @@ class RAGPreHook(Prehook):
         return "bank_agent_prehook"
 
 
-GlobalRuntime.instance().register_pre_hooks("support", [RAGPreHook()])
-# End of optional RAG code block
+# Initialize OpenAI module and attach RAG pre-hook to customer support agent
+OpenAIModule([triage_agent, general_agent, customer_support_agent]).pre_hook(customer_support_agent, [RAGPreHook()])
 
 if __name__ == "__main__":
     RESTAPI.run()

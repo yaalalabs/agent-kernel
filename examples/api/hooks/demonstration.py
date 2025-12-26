@@ -1,7 +1,7 @@
 """
-Direct usage example demonstrating how to use hooks with Agent Kernel.
+Demonstrates how to use hooks with Agent Kernel.
 
-NOTE: Direct execution via run time is not recommended. This example is for demonstration purposes only.
+NOTE: Direct execution via runtime is not recommended. This example is for demonstration purposes only.
 
 This script shows the minimal setup required to use hooks without the REST API,
 useful for understanding the core concepts and for CLI-based applications.
@@ -27,11 +27,10 @@ async def main():
     )
 
     # Register the agent
-    OpenAIModule([qa_agent])
+    OpenAIModule([qa_agent]).pre_hook(qa_agent, [RAGHook(), GuardRailHook()])
 
     # Get runtime and register hooks
     runtime = GlobalRuntime.instance()
-    runtime.register_pre_hooks("qa_assistant", [RAGHook(), GuardRailHook()])
 
     # Get agent and create session
     agent = runtime.agents()["qa_assistant"]
@@ -65,7 +64,7 @@ async def main():
     result3 = await runtime.run(agent, session, [AgentRequestText(text=prompt3)])
     print(f"Assistant: {result3}\n")
 
-    # Test 4: RAG with hooks topic
+    # Test 4: RAG with the hooks topic
     print("\n[Test 4] RAG Context for Hooks")
     print("-" * 80)
     prompt4 = "Tell me about hooks"
