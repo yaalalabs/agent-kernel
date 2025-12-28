@@ -24,6 +24,7 @@ from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
+from ...core.multimodal import MultimodalModuleMixin
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -204,9 +205,12 @@ class GoogleADKAgent(AKBaseAgent):
         pass
 
 
-class GoogleADKModule(Module):
+class GoogleADKModule(MultimodalModuleMixin, Module):
     """
     GoogleADKModule class provides a module for Google ADK-based agents.
+    
+    When multimodal_memory is enabled (default), this module automatically registers
+    hooks to provide ChatGPT-like conversation memory for images and files.
     """
 
     def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None):
@@ -223,6 +227,9 @@ class GoogleADKModule(Module):
         else:
             self.runner = GoogleADKRunner()
         self.load(agents)
+        
+        # Auto-register multimodal memory hooks (from MultimodalModuleMixin)
+        self._register_multimodal_hooks(agents)
 
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
         return GoogleADKAgent(agent.name, self.runner, agent)

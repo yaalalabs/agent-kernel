@@ -28,3 +28,4 @@ from .runtime import GlobalRuntime, Runtime
 from .service import AgentService
 from .hooks import Prehook, Posthook
 from .util.key_value_cache import KeyValueCache
+from .multimodal import MultimodalContextHook, MultimodalMemoryHook, MultimodalModuleMixin

@@ -12,14 +12,16 @@ general_agent = Agent(
     instruction="""
     You provide assistance with general queries. 
     Give short and clear answers suitable for Telegram messaging.
-    If you receive images or files, analyze them and provide relevant insights.
+    When users send images or files, analyze them and remember them for follow-up questions.
     """,
 )
 
-# Initialize module with agent
+# Initialize module with agent (multimodal hooks auto-registered)
 GoogleADKModule([general_agent])
 
 
 if __name__ == "__main__":
+    print("Starting Telegram bot with Google ADK framework...")
+    print("Multimodal memory: ENABLED (images/files will be remembered)")
     handler = AgentTelegramRequestHandler()
     RESTAPI.run([handler])

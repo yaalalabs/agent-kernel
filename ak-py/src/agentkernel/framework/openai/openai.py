@@ -20,6 +20,7 @@ from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
+from ...core.multimodal import MultimodalModuleMixin
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -169,14 +170,6 @@ class OpenAIRunner(BaseRunner):
                 # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
                 reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
 
-                # Manually save the multimodal conversation to session for future reference
-                if session:
-                    openai_session = session.get("openai") or session.set("openai", OpenAISession())
-                    # Add user message
-                    await openai_session.add_items([{"role": "user", "content": prompt}])
-                    # Add assistant response
-                    await openai_session.add_items([{"role": "assistant", "content": reply}])
-
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
@@ -222,9 +215,15 @@ class OpenAIAgent(BaseAgent):
         return self._generate_a2a_card(agent_name=self.name, description=self.agent.instructions, skills=skills)
 
 
-class OpenAIModule(Module):
+class OpenAIModule(MultimodalModuleMixin, Module):
     """
     OpenAIModule class provides a module for OpenAI Agents SDK based agents.
+    
+    When multimodal memory is enabled (default), this module automatically registers
+    hooks to provide conversation memory for images and files:
+    - MultimodalContextHook (pre-hook): Injects previous attachments into follow-up requests
+    - MultimodalMemoryHook (post-hook): Saves new attachments to session cache
+
     """
 
     def __init__(self, agents: list[Agent], runner: OpenAIRunner = None):
@@ -241,6 +240,9 @@ class OpenAIModule(Module):
         else:
             self.runner = OpenAIRunner()
         self.load(agents)
+        
+        # Auto-register multimodal memory hooks (from MultimodalModuleMixin)
+        self._register_multimodal_hooks(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         return OpenAIAgent(agent.name, self.runner, agent)

@@ -121,6 +121,23 @@ class _GmailConfig(BaseModel):
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
 
 
+class _MultimodalConfig(BaseModel):
+    """Configuration for multimodal memory."""
+    enabled: bool = Field(
+        default=True,
+        description="Enable multimodal memory. When enabled, images and files are persisted "
+        "in session cache and automatically injected into follow-up requests."
+    )
+    max_attachments: int = Field(
+        default=5,
+        description="Maximum number of recent attachments to keep in context for follow-up questions"
+    )
+    attachment_ttl: int = Field(
+        default=604800,
+        description="Time-to-live for attachments in seconds (default: 604800 = 1 week, matches session TTL)"
+    )
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -161,6 +178,9 @@ class AKConfig(YamlBaseSettingsModified):
         description="Telegram Bot related configurations", default_factory=_TelegramConfig
     )
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
+    multimodal: _MultimodalConfig = Field(
+        description="Multimodal memory related configurations", default_factory=_MultimodalConfig
+    )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
