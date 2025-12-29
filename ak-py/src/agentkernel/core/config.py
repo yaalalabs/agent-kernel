@@ -123,18 +123,18 @@ class _GmailConfig(BaseModel):
 
 class _MultimodalConfig(BaseModel):
     """Configuration for multimodal memory."""
+
     enabled: bool = Field(
         default=True,
         description="Enable multimodal memory. When enabled, images and files are persisted "
-        "in session cache and automatically injected into follow-up requests."
+        "in session cache and automatically injected into follow-up requests.",
     )
     max_attachments: int = Field(
-        default=5,
-        description="Maximum number of recent attachments to keep in context for follow-up questions"
+        default=5, description="Maximum number of recent attachments to keep in context for follow-up questions"
     )
     attachment_ttl: int = Field(
         default=604800,
-        description="Time-to-live for attachments in seconds (default: 604800 = 1 week, matches session TTL)"
+        description="Time-to-live for attachments in seconds (default: 604800 = 1 week, matches session TTL)",
     )
 
 

@@ -218,7 +218,7 @@ class OpenAIAgent(BaseAgent):
 class OpenAIModule(MultimodalModuleMixin, Module):
     """
     OpenAIModule class provides a module for OpenAI Agents SDK based agents.
-    
+
     When multimodal memory is enabled (default), this module automatically registers
     hooks to provide conversation memory for images and files:
     - MultimodalContextHook (pre-hook): Injects previous attachments into follow-up requests
@@ -240,7 +240,7 @@ class OpenAIModule(MultimodalModuleMixin, Module):
         else:
             self.runner = OpenAIRunner()
         self.load(agents)
-        
+
         # Auto-register multimodal memory hooks (from MultimodalModuleMixin)
         self._register_multimodal_hooks(agents)
 

@@ -208,7 +208,7 @@ class GoogleADKAgent(AKBaseAgent):
 class GoogleADKModule(MultimodalModuleMixin, Module):
     """
     GoogleADKModule class provides a module for Google ADK-based agents.
-    
+
     When multimodal_memory is enabled (default), this module automatically registers
     hooks to provide ChatGPT-like conversation memory for images and files.
     """
@@ -227,7 +227,7 @@ class GoogleADKModule(MultimodalModuleMixin, Module):
         else:
             self.runner = GoogleADKRunner()
         self.load(agents)
-        
+
         # Auto-register multimodal memory hooks (from MultimodalModuleMixin)
         self._register_multimodal_hooks(agents)
 
