@@ -30,7 +30,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from .hooks import Posthook, Prehook
+from .hooks import PostHook, PreHook
 from .model import AgentRequestFile, AgentRequestImage
 
 if TYPE_CHECKING:
@@ -44,7 +44,7 @@ DEFAULT_MAX_ATTACHMENTS = 5
 DEFAULT_ATTACHMENT_TTL = 604800
 
 
-class MultimodalContextHook(Prehook):
+class MultimodalContextHook(PreHook):
     """
     Pre-hook that loads previous images/files from non-volatile cache and injects
 
@@ -146,7 +146,7 @@ class MultimodalContextHook(Prehook):
         return "MultimodalContextHook"
 
 
-class MultimodalMemoryHook(Posthook):
+class MultimodalMemoryHook(PostHook):
     """
     Post-hook that stores images and files in non-volatile cache after agent processes them.
 
@@ -281,15 +281,16 @@ class MultimodalModuleMixin:
         context_hook = MultimodalContextHook(max_attachments=config.max_attachments, ttl_seconds=config.attachment_ttl)
         memory_hook = MultimodalMemoryHook(max_attachments=config.max_attachments)
 
-        # Register hooks for each agent
+        # Register hooks for each agent by attaching to the wrapped agent
         for agent in agents:
-            # Get agent name - handle different agent object types
-            agent_name = getattr(agent, "name", None) or str(agent)
-
-            # Get existing hooks and append
-            existing_pre_hooks = runtime.get_pre_hooks(agent_name)
-            existing_post_hooks = runtime.get_post_hooks(agent_name)
-
-            # Add our hooks
-            runtime.register_pre_hooks(agent_name, existing_pre_hooks + [context_hook])
-            runtime.register_post_hooks(agent_name, existing_post_hooks + [memory_hook])
+            # Get agent name from raw agent (different frameworks use different attributes)
+            agent_name = getattr(agent, 'name', None) or getattr(agent, 'role', None)
+            if not agent_name:
+                continue
+            
+            # Get wrapped agent from module
+            wrapped_agent = self.get_agent(agent_name)
+            if wrapped_agent:
+                # Attach hooks to wrapped agent (which has the methods)
+                wrapped_agent.attach_pre_hooks([context_hook])
+                wrapped_agent.attach_post_hooks([memory_hook])
