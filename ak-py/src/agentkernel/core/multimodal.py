@@ -284,10 +284,10 @@ class MultimodalModuleMixin:
         # Register hooks for each agent by attaching to the wrapped agent
         for agent in agents:
             # Get agent name from raw agent (different frameworks use different attributes)
-            agent_name = getattr(agent, 'name', None) or getattr(agent, 'role', None)
+            agent_name = getattr(agent, "name", None) or getattr(agent, "role", None)
             if not agent_name:
                 continue
-            
+
             # Get wrapped agent from module
             wrapped_agent = self.get_agent(agent_name)
             if wrapped_agent:
