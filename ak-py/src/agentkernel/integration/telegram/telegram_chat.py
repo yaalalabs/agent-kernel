@@ -30,7 +30,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._api_version = Config.get().telegram.api_version or "bot"
         self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
         self._http_timeout = 30.0  # Timeout for file downloads and API calls
-        self._max_file_size = 20 * 1024 * 1024  # 20MB - Telegram's max file size
+        self._max_file_size = 2 * 1024 * 1024  # 2MB
 
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
@@ -392,47 +392,44 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
 
                     # Get file info
                     file_info = await self._get_file_info(file_id)
-                    if not file_info:
+                    if file_info:
+                        file_path = file_info.get("file_path")
+                        file_size = file_info.get("file_size", 0)
+
+                        # Validate file size before download
+                        if not file_size or file_size <= self._max_file_size:
+                            # Download file
+                            file_content = await self._download_telegram_file(file_path)
+                            if file_content is not None:
+                                # Base64 encode
+                                image_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                                # Detect actual MIME type from file path
+                                photo_name = file_path.rsplit("/", 1)[-1] if file_path else "photo"
+                                guessed_mime_type, _ = mimetypes.guess_type(file_path or "")
+                                photo_mime_type = guessed_mime_type or "image/jpeg"
+
+                                # Add as image request
+                                requests.append(
+                                    AgentRequestImage(
+                                        image_data=image_data_base64,
+                                        name=photo_name,
+                                        mime_type=photo_mime_type,
+                                    )
+                                )
+                                self._log.debug(f"Added photo to request (size: {file_size} bytes)")
+                            else:
+                                self._log.warning(f"Failed to download photo")
+                                failed_files.append("photo")
+                        else:
+                            self._log.warning(
+                                f"Photo is too large to process "
+                                f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
+                            )
+                            failed_files.append("photo")
+                    else:
                         self._log.warning("Failed to get photo file info")
                         failed_files.append("photo")
-                        continue
-
-                    file_path = file_info.get("file_path")
-                    file_size = file_info.get("file_size", 0)
-
-                    # Validate file size before download
-                    if file_size and file_size > self._max_file_size:
-                        self._log.warning(
-                            f"Photo is too large to process "
-                            f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
-                        )
-                        failed_files.append("photo")
-                        continue
-
-                    # Download file
-                    file_content = await self._download_telegram_file(file_path)
-                    if file_content is None:
-                        self._log.warning(f"Failed to download photo")
-                        failed_files.append("photo")
-                        continue
-
-                    # Base64 encode
-                    image_data_base64 = base64.b64encode(file_content).decode("utf-8")
-
-                    # Detect actual MIME type from file path
-                    photo_name = file_path.rsplit("/", 1)[-1] if file_path else "photo"
-                    guessed_mime_type, _ = mimetypes.guess_type(file_path or "")
-                    photo_mime_type = guessed_mime_type or "image/jpeg"
-
-                    # Add as image request
-                    requests.append(
-                        AgentRequestImage(
-                            image_data=image_data_base64,
-                            name=photo_name,
-                            mime_type=photo_mime_type,
-                        )
-                    )
-                    self._log.debug(f"Added photo to request (size: {file_size} bytes)")
 
                 except Exception as e:
                     self._log.error(f"Error processing photo: {e}\n{traceback.format_exc()}")
@@ -450,42 +447,39 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
 
                 # Get file info
                 file_info = await self._get_file_info(file_id)
-                if not file_info:
+                if file_info:
+                    file_path = file_info.get("file_path")
+                    file_size = file_info.get("file_size", 0)
+
+                    # Validate file size before download
+                    if not file_size or file_size <= self._max_file_size:
+                        # Download file
+                        file_content = await self._download_telegram_file(file_path)
+                        if file_content is not None:
+                            # Base64 encode
+                            file_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                            # Add as file request
+                            requests.append(
+                                AgentRequestFile(
+                                    file_data=file_data_base64,
+                                    name=file_name,
+                                    mime_type=mime_type,
+                                )
+                            )
+                            self._log.debug(f"Added file to request: {file_name} (size: {file_size} bytes)")
+                        else:
+                            self._log.warning(f"Failed to download file: {file_name}")
+                            failed_files.append(file_name)
+                    else:
+                        self._log.warning(
+                            f"File '{file_name}' is too large to process "
+                            f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
+                        )
+                        failed_files.append(file_name)
+                else:
                     self._log.warning(f"Failed to get file info for {file_name}")
                     failed_files.append(file_name)
-                    continue
-
-                file_path = file_info.get("file_path")
-                file_size = file_info.get("file_size", 0)
-
-                # Validate file size before download
-                if file_size and file_size > self._max_file_size:
-                    self._log.warning(
-                        f"File '{file_name}' is too large to process "
-                        f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
-                    )
-                    failed_files.append(file_name)
-                    continue
-
-                # Download file
-                file_content = await self._download_telegram_file(file_path)
-                if file_content is None:
-                    self._log.warning(f"Failed to download file: {file_name}")
-                    failed_files.append(file_name)
-                    continue
-
-                # Base64 encode
-                file_data_base64 = base64.b64encode(file_content).decode("utf-8")
-
-                # Add as file request
-                requests.append(
-                    AgentRequestFile(
-                        file_data=file_data_base64,
-                        name=file_name,
-                        mime_type=mime_type,
-                    )
-                )
-                self._log.debug(f"Added file to request: {file_name} (size: {file_size} bytes)")
 
             except Exception as e:
                 self._log.error(f"Error processing document: {e}\n{traceback.format_exc()}")
