@@ -3,7 +3,8 @@ from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent, function_tool
 
-from hooks import  RAGHook
+from hooks import RAGHook
+
 
 @function_tool
 def query_private_knowledge_base(query: str) -> str:
@@ -18,7 +19,7 @@ def query_private_knowledge_base(query: str) -> str:
     print(f"***************** query_private_knowledge_base: Retrieved context from volatile cache: {rag_context}")
     if rag_context:
         kb.extend(rag_context)
-    
+
     for item in kb:
         if isinstance(item, dict):
             for topic, context in item.items():
@@ -26,6 +27,7 @@ def query_private_knowledge_base(query: str) -> str:
                 if topic in query:
                     return context
     return "No relevant information found in the knowledge base."
+
 
 # Create a simple question-answering agent
 senior_agent = Agent(
@@ -45,14 +47,9 @@ junior_agent = Agent(
     ),
     tools=[query_private_knowledge_base],
 )
-# Register the agent with the OpenAI module
-OpenAIModule([senior_agent, junior_agent])
 
-# Get the runtime instance and register hooks
-runtime = GlobalRuntime.instance()
-
-# Register pre-execution hooks for senior agent: RAG hook to inject context. Junior agent has no extra RAG support
-runtime.register_pre_hooks("senior_assistant", [RAGHook()])
+# Register the agent with the OpenAI module attaching RAG pre-hook
+OpenAIModule([senior_agent, junior_agent]).pre_hook(senior_agent, [RAGHook()])
 
 if __name__ == "__main__":
     RESTAPI.run()

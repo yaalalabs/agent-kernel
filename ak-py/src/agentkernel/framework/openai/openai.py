@@ -15,6 +15,7 @@ from agentkernel.core.model import (
     AgentRequestText,
 )
 
+from ... import PostHook, PreHook
 from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
@@ -245,11 +246,39 @@ class OpenAIModule(MultimodalModuleMixin, Module):
         self._register_multimodal_hooks(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+        """
+        Wraps the provided agent in an OpenAIAgent instance.
+        :param agent: Agent to wrap.
+        :param agents: List of agents in the module.
+        :return: OpenAIAgent instance.
+        """
         return OpenAIAgent(agent.name, self.runner, agent)
 
-    def load(self, agents: list[Agent]):
+    def load(self, agents: list[Agent]) -> OpenAIModule:
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
+        :return: OpenAIModule instance.
         """
         super().load(agents)
+        return self
+
+    def pre_hook(self, agent: Agent, hooks: list[PreHook]) -> "OpenAIModule":
+        """
+        Attaches pre-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of pre-execution hooks to attach.
+        :return: OpenAIModule instance.
+        """
+        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        return self
+
+    def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "OpenAIModule":
+        """
+        Attaches post-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of post-execution hooks to attach.
+        :return: OpenAIModule instance.
+        """
+        super().get_agent(agent.name).attach_post_hooks(hooks)
+        return self

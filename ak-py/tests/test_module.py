@@ -1,6 +1,6 @@
-from typing import List
+from typing import Any, List
 
-from agentkernel import Agent, Runner
+from agentkernel import Agent, PostHook, PreHook, Runner
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.module import Module
@@ -42,6 +42,12 @@ class KernelWrappedAgent(Agent):
 
 
 class SimpleModule(Module):
+
+    def pre_hook(self, agent: Any, hooks: list[PreHook]) -> "Module":
+        pass
+
+    def post_hook(self, agent: Any, hooks: list[PostHook]) -> "Module":
+        pass
 
     def __init__(self, agents: list[FrameworkAgent]):
         super().__init__()

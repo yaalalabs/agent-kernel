@@ -125,8 +125,7 @@ class AgentService:
 
         :param prompt: Prompt to send to the agent.
         """
-        requests = []
-        requests.append(AgentRequestText(text=prompt))
+        requests = [AgentRequestText(text=prompt)]
 
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):

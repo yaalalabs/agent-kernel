@@ -3,6 +3,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, List
 
+from ..core.hooks import PostHook, PreHook
 from .config import AKConfig
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
@@ -197,6 +198,8 @@ class Agent(ABC):
         """
         self._name = name
         self._runner = runner
+        self._pre_hooks = []
+        self._post_hooks = []
 
     @property
     def name(self) -> str:
@@ -211,6 +214,42 @@ class Agent(ABC):
         Returns the runner associated with the agent.
         """
         return self._runner
+
+    @property
+    def pre_hooks(self) -> list[PreHook]:
+        """
+        Returns the list of pre-execution hooks registered for the agent.
+        """
+        return self._pre_hooks
+
+    @property
+    def post_hooks(self) -> list[PostHook]:
+        """
+        Returns the list of post-execution hooks registered for the agent.
+        """
+        return self._post_hooks
+
+    def attach_pre_hooks(self, hooks: list[PreHook]):
+        """
+        Attaches pre-execution hooks to the agent.
+        Duplicate hook objects are ignored to prevent multiple registrations
+        of the same hook.
+        :param hooks: List of pre-execution hooks to attach.
+        """
+        for hook in hooks:
+            if hook not in self._pre_hooks:
+                self._pre_hooks.append(hook)
+
+    def attach_post_hooks(self, hooks: list[PostHook]):
+        """
+        Attaches post-execution hooks to the agent.
+        Duplicate hook objects are ignored to prevent multiple registrations
+        of the same hook.
+        :param hooks: List of post-execution hooks to attach.
+        """
+        for hook in hooks:
+            if hook not in self._post_hooks:
+                self._post_hooks.append(hook)
 
     @staticmethod
     def _generate_a2a_card(agent_name: str, description: str, skills: List):

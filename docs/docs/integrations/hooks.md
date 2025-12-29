@@ -54,7 +54,7 @@ Hooks currently execute only for the **initial user prompt** to the first agent.
 
 ## Hook Types
 
-### Pre-Execution Hooks (Prehook)
+### Pre-Execution Hooks (PreHook)
 
 Pre-execution hooks run **before** an agent processes a prompt. They can:
 - Modify the prompt
@@ -76,7 +76,7 @@ These will be passed to PreHooks and will be ignored by the LLM agents
 A complete example is provided [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
 :::
 
-### Post-Execution Hooks (Posthook)
+### Post-Execution Hooks (PostHook)
 
 Post-execution hooks run **after** an agent generates a response. They can:
 - Modify the agent's reply
@@ -95,13 +95,13 @@ Post-execution hooks run **after** an agent generates a response. They can:
 
 ### Pre-Execution Hook
 
-Create a class that inherits from `Prehook` and implements the required methods:
+Create a class that inherits from `PreHook` and implements the required methods:
 
 ```python
-from agentkernel import Prehook, Agent, Session
+from agentkernel import PreHook, Agent, Session
 from agentkernel.core.model import AgentRequest, AgentReply, AgentRequestText, AgentReplyText
 
-class MyPrehook(Prehook):
+class MyPreHook(PreHook):
     async def on_run(
         self, 
         session: Session, 
@@ -123,18 +123,18 @@ class MyPrehook(Prehook):
     
     def name(self) -> str:
         """Return the hook name for logging/debugging."""
-        return "MyPrehook"
+        return "MyPreHook"
 ```
 
 ### Post-Execution Hook
 
-Create a class that inherits from `Posthook`:
+Create a class that inherits from `PostHook`:
 
 ```python
-from agentkernel import Posthook, Agent, Session
+from agentkernel import PostHook, Agent, Session
 from agentkernel.core.model import AgentRequest, AgentReply, AgentReplyText
 
-class MyPosthook(Posthook):
+class MyPostHook(PostHook):
     async def on_run(
         self,
         session: Session,
@@ -158,58 +158,43 @@ class MyPosthook(Posthook):
     
     def name(self) -> str:
         """Return the hook name for logging/debugging."""
-        return "MyPosthook"
+        return "MyPostHook"
 ```
 
 ## Registering Hooks
 
-Hooks are registered per agent using the runtime instance:
+Hooks are registered per agent using the Module's fluent API:
 
 ```python
-from agentkernel.core import GlobalRuntime
+from agentkernel.openai import OpenAIModule
+from agents import Agent
 
-# Get the runtime instance
-runtime = GlobalRuntime.instance()
+# Create your agent
+agent = Agent(name="assistant", instructions="...")
 
-# Register pre-execution hooks (executed in order)
-runtime.register_pre_hooks("agent_name", [
+# Register agent and hooks using method chaining
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),
     GuardRailHook(),
-])
-
-# Register post-execution hooks (executed in order)
-runtime.register_post_hooks("agent_name", [
+]).post_hook(agent, [
     ModerationHook(),
     DisclaimerHook(),
 ])
 ```
+
+The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.).
 
 ### Hook Execution Order
 
 Hooks execute in the order they are registered:
 
 ```python
-runtime.register_pre_hooks("assistant", [Hook1(), Hook2(), Hook3()])
+OpenAIModule([agent]).pre_hook(agent, [Hook1(), Hook2(), Hook3()])
 ```
 
 **Execution flow:** `Hook1 → Hook2 → Hook3 → Agent`
 
 Each hook receives the prompt **modified by the previous hook**, creating a processing chain.
-
-### Modifying Hook Order
-
-To change the execution order, provide a new list:
-
-```python
-# Get existing hooks
-existing_hooks = runtime.get_pre_hooks("agent_name")
-
-# Rearrange or filter
-new_order = [existing_hooks[2], existing_hooks[0]]
-
-# Re-register with new order
-runtime.register_pre_hooks("agent_name", new_order)
-```
 
 ## Common Patterns
 
@@ -218,10 +203,10 @@ runtime.register_pre_hooks("agent_name", new_order)
 Validate input and block inappropriate content:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequest, AgentRequestText, AgentReplyText
 
-class GuardRailHook(Prehook):
+class GuardRailHook(PreHook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "malware"]
     
     async def on_run(self, session, agent, requests):
@@ -254,10 +239,10 @@ class GuardRailHook(Prehook):
 Enrich prompts with relevant context from a knowledge base:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     def __init__(self, knowledge_base):
         self.knowledge_base = knowledge_base
     
@@ -293,10 +278,10 @@ Please answer the question using the provided context."""
 Apply safety filters to agent responses:
 
 ```python
-from agentkernel import Posthook
+from agentkernel import PostHook
 from agentkernel.core.model import AgentReplyText
 
-class ModerationHook(Posthook):
+class ModerationHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         # Extract text from reply
         if isinstance(agent_reply, AgentReplyText):
@@ -326,10 +311,10 @@ class ModerationHook(Posthook):
 Append legal or compliance disclaimers to responses:
 
 ```python
-from agentkernel import Posthook
+from agentkernel import PostHook
 from agentkernel.core.model import AgentReplyText
 
-class DisclaimerHook(Posthook):
+class DisclaimerHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         disclaimer = (
             "\n\n---\n"
@@ -352,11 +337,11 @@ class DisclaimerHook(Posthook):
 Track user interactions and agent performance:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 from datetime import datetime
 
-class AnalyticsHook(Prehook):
+class AnalyticsHook(PreHook):
     def __init__(self, logger):
         self.logger = logger
     
@@ -389,14 +374,14 @@ Each hook should have a single, well-defined responsibility:
 
 ```python
 # ✅ Good: Focused hooks
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),          # Only does context injection
     GuardRailHook(),    # Only does validation
     LoggingHook(),      # Only does logging
 ])
 
 # ❌ Bad: Monolithic hook doing everything
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     DoEverythingHook(),  # RAG + validation + logging
 ])
 ```
@@ -407,13 +392,13 @@ Place hooks in logical order based on dependencies:
 
 ```python
 # ✅ Correct order: Enrich first, then validate
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     RAGHook(),         # Add context first
     GuardRailHook(),   # Then validate enriched prompt
 ])
 
 # ❌ Wrong order: Validation happens before enrichment
-runtime.register_pre_hooks("agent", [
+OpenAIModule([agent]).pre_hook(agent, [
     GuardRailHook(),   # Validates before context added
     RAGHook(),         # Context added after validation
 ])
@@ -424,10 +409,10 @@ runtime.register_pre_hooks("agent", [
 Hooks should not crash - handle errors and return sensible defaults:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class RobustRAGHook(Prehook):
+class RobustRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
@@ -456,11 +441,11 @@ class RobustRAGHook(Prehook):
 Hooks execute on every request - keep them fast:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 from functools import lru_cache
 
-class OptimizedRAGHook(Prehook):
+class OptimizedRAGHook(PreHook):
     def __init__(self, vector_store):
         self.vector_store = vector_store
         self.cache = {}  # Simple cache (consider LRU in production)
@@ -492,10 +477,10 @@ class OptimizedRAGHook(Prehook):
 Allow hooks to be customized without code changes:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText, AgentReplyText
 
-class ConfigurableGuardRailHook(Prehook):
+class ConfigurableGuardRailHook(PreHook):
     def __init__(self, blocked_keywords=None, max_length=5000):
         self.blocked_keywords = blocked_keywords or []
         self.max_length = max_length
@@ -526,10 +511,10 @@ class ConfigurableGuardRailHook(Prehook):
 Hook methods are async, allowing you to perform I/O operations efficiently:
 
 ```python
-from agentkernel import Prehook
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 
-class AsyncRAGHook(Prehook):
+class AsyncRAGHook(PreHook):
     def __init__(self, vector_store, embeddings_api):
         self.vector_store = vector_store
         self.embeddings_api = embeddings_api
@@ -570,14 +555,13 @@ Here's a full example combining multiple hooks:
 ```python
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agentkernel import GlobalRuntime
-from agentkernel import Prehook, Posthook
+from agentkernel import PreHook, PostHook
 from agents import Agent
 
 # Define hooks
 from agentkernel.core.model import AgentRequestText, AgentReplyText
 
-class RAGHook(Prehook):
+class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
@@ -599,7 +583,7 @@ class RAGHook(Prehook):
     def name(self):
         return "RAGHook"
 
-class GuardRailHook(Prehook):
+class GuardRailHook(PreHook):
     BLOCKED = ["hack", "illegal", "malware"]
     
     async def on_run(self, session, agent, requests):
@@ -617,7 +601,7 @@ class GuardRailHook(Prehook):
     def name(self):
         return "GuardRailHook"
 
-class DisclaimerHook(Posthook):   
+class DisclaimerHook(PostHook):   
     async def on_run(self, session, requests, agent, agent_reply):
         if isinstance(agent_reply, AgentReplyText):
             return AgentReplyText(text=agent_reply.text + "\n\n*Disclaimer: AI-generated content.*")
@@ -632,20 +616,11 @@ assistant = Agent(
     instructions="You are a helpful AI assistant."
 )
 
-# Register agent
-OpenAIModule([assistant])
-
-# Get runtime and register hooks
-runtime = GlobalRuntime.instance()
-
-# Pre-hooks: RAG first, then guard rail
-runtime.register_pre_hooks("assistant", [
+# Register agent with hooks using method chaining
+OpenAIModule([assistant]).pre_hook(assistant, [
     RAGHook(),
     GuardRailHook(),
-])
-
-# Post-hooks: Add disclaimer
-runtime.register_post_hooks("assistant", [
+]).post_hook(assistant, [
     DisclaimerHook(),
 ])
 
@@ -719,12 +694,12 @@ async def test_chaining():
 
 ## API Reference
 
-### Prehook Interface
+### PreHook Interface
 
 ```python
 from agentkernel.core.model import AgentRequest, AgentReply
 
-class Prehook(ABC):
+class PreHook(ABC):
     @abstractmethod
     async def on_run(
         self, session: Session, agent: Agent, requests: list[AgentRequest]
@@ -759,12 +734,12 @@ class Prehook(ABC):
         raise NotImplementedError
 ```
 
-### Posthook Interface
+### PostHook Interface
 
 ```python
 from agentkernel.core.model import AgentRequest, AgentReply
 
-class Posthook(ABC):
+class PostHook(ABC):
     @abstractmethod
     async def on_run(
         self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
@@ -801,30 +776,23 @@ class Posthook(ABC):
         raise NotImplementedError
 ```
 
-### Runtime Hook Methods
+### Module Hook Methods
 
 ```python
-# Register pre-execution hooks
-runtime.register_pre_hooks(
-    agent_name: str,
-    hooks: list[Prehook]
-) -> None
+# Register pre-execution hooks (returns Module for chaining)
+module.pre_hook(
+    agent: Agent,
+    hooks: list[PreHook]
+) -> Module
 
-# Register post-execution hooks
-runtime.register_post_hooks(
-    agent_name: str,
-    hooks: list[Posthook]
-) -> None
+# Register post-execution hooks (returns Module for chaining)
+module.post_hook(
+    agent: Agent,
+    hooks: list[PostHook]
+) -> Module
 
-# Get registered pre-execution hooks
-runtime.get_pre_hooks(
-    agent_name: str
-) -> list[Prehook]
-
-# Get registered post-execution hooks
-runtime.get_post_hooks(
-    agent_name: str
-) -> list[Posthook]
+# Method chaining example
+OpenAIModule([agent]).pre_hook(agent, [...]).post_hook(agent, [...])
 ```
 
 ## Troubleshooting
@@ -834,9 +802,9 @@ runtime.get_post_hooks(
 **Problem:** Hook is registered but not being called.
 
 **Solutions:**
-1. Verify agent name matches exactly: `runtime.register_pre_hooks("exact_agent_name", [...])`
-2. Check that agent is registered before hooks: `runtime.agents()["agent_name"]`
-3. Ensure you're using the correct runtime instance: `GlobalRuntime.instance()`
+1. Ensure you're passing the correct agent object to the hook method: `module.pre_hook(agent, [...])`
+2. Verify the agent is included in the Module initialization: `OpenAIModule([agent])`
+3. Check that hooks are registered on the same Module instance that's being used
 
 ### Hook Halts All Execution
 
@@ -882,10 +850,10 @@ async def on_run(self, session, agent, requests):
 
 ```python
 # This order: RAG → GuardRail
-runtime.register_pre_hooks("agent", [RAGHook(), GuardRailHook()])
+OpenAIModule([agent]).pre_hook(agent, [RAGHook(), GuardRailHook()])
 
 # This order: GuardRail → RAG (different!)
-runtime.register_pre_hooks("agent", [GuardRailHook(), RAGHook()])
+OpenAIModule([agent]).pre_hook(agent, [GuardRailHook(), RAGHook()])
 ```
 
 ## Related Documentation
@@ -915,7 +883,7 @@ runtime.register_pre_hooks("agent", [GuardRailHook(), RAGHook()])
 - Async logging operations
 
 ```python
-class AsyncRAGHook(Prehook):
+class AsyncRAGHook(PreHook):
     async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Can now use async operations
         context = await self.vector_db.search(prompt)

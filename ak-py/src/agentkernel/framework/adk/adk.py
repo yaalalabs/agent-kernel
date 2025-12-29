@@ -20,7 +20,7 @@ from agentkernel.core.model import (
 )
 
 from ...core import Agent as AKBaseAgent
-from ...core import Module
+from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
@@ -232,11 +232,39 @@ class GoogleADKModule(MultimodalModuleMixin, Module):
         self._register_multimodal_hooks(agents)
 
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
+        """
+        Wraps the provided agent in a GoogleADKAgent instance.
+        :param agent: Agent to wrap.
+        :param agents: List of agents in the module.
+        :return: GoogleADKAgent instance.
+        """
         return GoogleADKAgent(agent.name, self.runner, agent)
 
-    def load(self, agents: list[BaseAgent]):
+    def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.
+        :return: GoogleADKModule instance.
         """
         super().load(agents)
+        return self
+
+    def pre_hook(self, agent: BaseAgent, hooks: list[PreHook]) -> "GoogleADKModule":
+        """
+        Attaches pre-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of pre-execution hooks to attach.
+        :return: GoogleADKModule instance.
+        """
+        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        return self
+
+    def post_hook(self, agent: BaseAgent, hooks: list[PostHook]) -> "GoogleADKModule":
+        """
+        Attaches post-execution hooks to the agent.
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of post-execution hooks to attach.
+        :return: GoogleADKModule instance.
+        """
+        super().get_agent(agent.name).attach_post_hooks(hooks)
+        return self
