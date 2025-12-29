@@ -1,5 +1,6 @@
 import base64
 import logging
+import mimetypes
 import traceback
 
 import httpx
@@ -28,6 +29,8 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._webhook_secret = Config.get().telegram.webhook_secret
         self._api_version = Config.get().telegram.api_version or "bot"
         self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
+        self._http_timeout = 30.0  # Timeout for file downloads and API calls
+        self._max_file_size = 20 * 1024 * 1024  # 20MB - Telegram's max file size
 
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
@@ -246,7 +249,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         max_length = 4096
         messages = [text[i : i + max_length] for i in range(0, len(text), max_length)]
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=self._http_timeout) as client:
             for i, message_text in enumerate(messages):
                 payload = {
                     "chat_id": chat_id,
@@ -290,7 +293,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._http_timeout) as client:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
                 self._log.debug(f"Chat action '{action}' sent to {chat_id}")
@@ -317,7 +320,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             payload["show_alert"] = show_alert
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._http_timeout) as client:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
                 self._log.debug(f"Callback query answered: {callback_query_id}")
@@ -335,7 +338,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         payload = {"file_id": file_id}
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._http_timeout) as client:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
                 result = response.json()
@@ -358,7 +361,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         url = f"https://api.telegram.org/file/bot{self._bot_token}/{file_path}"
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=self._http_timeout) as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 return response.content
@@ -392,27 +395,41 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                     if not file_info:
                         self._log.warning("Failed to get photo file info")
                         failed_files.append("photo")
-                        return failed_files
+                        continue
 
                     file_path = file_info.get("file_path")
                     file_size = file_info.get("file_size", 0)
+
+                    # Validate file size before download
+                    if file_size and file_size > self._max_file_size:
+                        self._log.warning(
+                            f"Photo is too large to process "
+                            f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
+                        )
+                        failed_files.append("photo")
+                        continue
 
                     # Download file
                     file_content = await self._download_telegram_file(file_path)
                     if file_content is None:
                         self._log.warning(f"Failed to download photo")
                         failed_files.append("photo")
-                        return failed_files
+                        continue
 
                     # Base64 encode
                     image_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                    # Detect actual MIME type from file path
+                    photo_name = file_path.rsplit("/", 1)[-1] if file_path else "photo"
+                    guessed_mime_type, _ = mimetypes.guess_type(file_path or "")
+                    photo_mime_type = guessed_mime_type or "image/jpeg"
 
                     # Add as image request
                     requests.append(
                         AgentRequestImage(
                             image_data=image_data_base64,
-                            name="photo.jpg",
-                            mime_type="image/jpeg",
+                            name=photo_name,
+                            mime_type=photo_mime_type,
                         )
                     )
                     self._log.debug(f"Added photo to request (size: {file_size} bytes)")
@@ -436,17 +453,26 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                 if not file_info:
                     self._log.warning(f"Failed to get file info for {file_name}")
                     failed_files.append(file_name)
-                    return failed_files
+                    continue
 
                 file_path = file_info.get("file_path")
                 file_size = file_info.get("file_size", 0)
+
+                # Validate file size before download
+                if file_size and file_size > self._max_file_size:
+                    self._log.warning(
+                        f"File '{file_name}' is too large to process "
+                        f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
+                    )
+                    failed_files.append(file_name)
+                    continue
 
                 # Download file
                 file_content = await self._download_telegram_file(file_path)
                 if file_content is None:
                     self._log.warning(f"Failed to download file: {file_name}")
                     failed_files.append(file_name)
-                    return failed_files
+                    continue
 
                 # Base64 encode
                 file_data_base64 = base64.b64encode(file_content).decode("utf-8")
