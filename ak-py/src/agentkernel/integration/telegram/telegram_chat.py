@@ -1,6 +1,5 @@
 import base64
 import logging
-import mimetypes
 import traceback
 
 import httpx
