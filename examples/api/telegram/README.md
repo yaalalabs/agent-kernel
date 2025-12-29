@@ -33,6 +33,17 @@ export AK_TELEGRAM__WEBHOOK_SECRET="your_secure_random_string"
 export OPENAI_API_KEY="your_openai_api_key"
 ```
 
+### Multimodal Configuration
+
+For image and document support, configure these environment variables:
+
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: true)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
+export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
+```
+
+
 ### 3. Create Configuration File
 
 Create `config.yaml`:
