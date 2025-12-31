@@ -8,13 +8,13 @@ This example demonstrates the use of **volatile cache** and **non-volatile cache
 Session-scoped cache that stores data only for the current request execution:
 - Data is cleared after the request completes
 - Use for temporary context within a single execution
-- Accessed via: `session.get_volatile_cache() or GlobalRuntime.instance().get_volatile_cache()`
+- Accessed via: `session.get_volatile_cache() or AuxiliaryCache.get_volatile_cache()`
 
 ### Non-Volatile Cache
 Persistent cache that stores data throughout the session lifecycle:
 - Data persists across multiple requests
 - Use for extracted information from user inputs (e.g., file attachments, user preferences)
-- Accessed via: `session.get_non_volatile_cache() or GlobalRuntime.instance().get_non_volatile_cache()`
+- Accessed via: `session.get_non_volatile_cache() or AuxiliaryCache.get_non_volatile_cache()`
 
 **Usage is identical for both cache types** - the only difference is data lifetime.
 
@@ -44,7 +44,7 @@ cache.set("rag_context", relevant_contexts)
 
 **Agent Tool** (`app.py`):
 ```python
-cache = GlobalRuntime.instance().get_volatile_cache()
+cache = AuxiliaryCache.get_volatile_cache()
 rag_context = cache.get("rag_context")
 ```
 

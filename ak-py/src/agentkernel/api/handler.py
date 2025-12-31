@@ -17,7 +17,8 @@ from agentkernel.core.model import (
     AgentRequestText,
 )
 
-from ..core import AgentService, Config, GlobalRuntime
+from ..core import AgentService, Config
+from ..core.runtime import ModuleLoader
 
 
 class RESTRequestHandler(ABC):
@@ -37,7 +38,7 @@ class RESTRequestHandler(ABC):
 
         @router.get("/agents")
         def list_agents():
-            return {"agents": list(GlobalRuntime.instance().agents().keys())}
+            return {"agents": list(ModuleLoader.runtime().agents().keys())}
 
         """
         pass
@@ -93,7 +94,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         @router.get("/agents")
         def list_agents():
-            return {"agents": list(GlobalRuntime.instance().agents().keys())}
+            return {"agents": list(ModuleLoader.runtime().agents().keys())}
 
         @router.post("/run")
         async def run(body: AgentRESTRequestHandler.RunRequest):

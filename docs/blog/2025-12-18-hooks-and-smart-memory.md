@@ -331,7 +331,6 @@ class SimpleRAGHook(PreHook):
 ### 3. Register and Run
 
 ```python
-from agentkernel import GlobalRuntime
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
