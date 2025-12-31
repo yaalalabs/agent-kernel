@@ -173,7 +173,7 @@ cache = session.get_volatile_cache()
 cache.set("rag_context", retrieved_documents)
 
 # In a tool - retrieve the context
-cache = GlobalRuntime.instance().get_volatile_cache()
+cache = AuxiliaryCache.get_volatile_cache()
 docs = cache.get("rag_context")
 return query_documents(docs, question)
 ```
@@ -243,7 +243,7 @@ Check out our [key-value-cache example](https://github.com/yaalalabs/agent-kerne
 # Senior assistant with RAG hook
 @function_tool
 def query_knowledge_base(query: str) -> str:
-    cache = GlobalRuntime.instance().get_volatile_cache()
+    cache = AuxiliaryCache.get_volatile_cache()
     context = cache.get("rag_context")  # Retrieved by pre-hook
     
     if context:
