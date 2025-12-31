@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import logging
 from threading import RLock
@@ -6,8 +8,7 @@ from typing import Optional
 
 from singleton_type import Singleton
 
-from agentkernel.core.util.key_value_cache import KeyValueCache
-
+from ..core.util.key_value_cache import KeyValueCache
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .model import (
@@ -154,32 +155,6 @@ class Runtime:
         """
         return self._sessions
 
-    def get_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
-        """
-        Retrieves the volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the volatile cache for. If not provided, the current context is used to find the session
-        :return: The volatile key-value cache.
-        """
-        if session_id is None:
-            session_id = Session.get_current_session_id()
-
-        if session_id is None or session_id == "":
-            raise Exception("No current session context available to retrieve volatile cache.")
-        return self._sessions.load(session_id).get_volatile_cache()
-
-    def get_non_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
-        """
-        Retrieves the non-volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current context is used to find the session
-        :return: The non-volatile key-value cache.
-        """
-        if session_id is None:
-            session_id = Session.get_current_session_id()
-
-        if session_id is None or session_id == "":
-            raise Exception("No current session context available to retrieve non-volatile cache.")
-        return self._sessions.load(session_id).get_non_volatile_cache()
-
 
 class GlobalRuntime(Runtime, metaclass=Singleton):
     """
@@ -267,3 +242,39 @@ class ModuleLoader:
         """
         with ModuleLoader._lock, runtime:
             return importlib.import_module(module)
+
+
+class AuxiliaryCache:
+    """
+    AuxiliaryCache provides access to volatile and non-volatile key-value caches associated with
+    the current or a provided session.
+    """
+
+    @staticmethod
+    def get_volatile_cache(session_id: str | None = None) -> KeyValueCache:
+        """
+        Retrieves the volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the volatile cache for. If not provided, the current context is used to find the session
+        :return: The volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+
+        if session_id is None or session_id == "":
+            raise Exception("No current session context available to retrieve volatile cache.")
+
+        return ModuleLoader.runtime().sessions().load(session_id).get_volatile_cache()
+
+    @staticmethod
+    def get_non_volatile_cache(session_id: str | None = None) -> KeyValueCache:
+        """
+        Retrieves the non-volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current context is used to find the session
+        :return: The non-volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+
+        if session_id is None or session_id == "":
+            raise Exception("No current session context available to retrieve non-volatile cache.")
+        return ModuleLoader.runtime().sessions().load(session_id).get_non_volatile_cache()

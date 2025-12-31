@@ -86,7 +86,7 @@ class SessionCache:
         is at capacity, the least recently used session is removed before adding
         the new session. In either case the session is marked as most recently used.
 
-        :param session (Session): The session object to store in the cache.
+        :param session: The session object to be stored in the cache.
         """
         with self._lock:
             if session.id in self._cache:
