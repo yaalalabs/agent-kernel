@@ -220,5 +220,11 @@ variable "throttling_burst_limit" {
   default     = null
 }
 
+variable "enable_mcp_server" {
+  type        = bool
+  description = "Enable MCP server and expose MCP API endpoint"
+  default     = false
+}
+
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
