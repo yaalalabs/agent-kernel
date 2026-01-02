@@ -44,11 +44,13 @@ The Runtime uses a singleton pattern - there's only one instance:
 from agentkernel.core import Runtime
 
 # Always returns the same instance
-runtime1 = Runtime.get()
-runtime2 = Runtime.get()
+runtime1 = Runtime.current()
+runtime2 = Runtime.current()
 
 assert runtime1 is runtime2  # True
 ```
+
+Alternatively you can use it as the context manager for advanced use cases (see below)
 
 ## Accessing Agents
 
@@ -57,15 +59,15 @@ assert runtime1 is runtime2  # True
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
-agent = runtime.get_agent("assistant")
+runtime = Runtime.current()
+agent = runtime.agents().get("assistant")
 ```
 
 ### Get All Agents
 
 ```python
-runtime = Runtime.get()
-all_agents = runtime.get_all_agents()
+runtime = Runtime.current()
+all_agents = runtime.agents()
 
 for name, agent in all_agents.items():
     print(f"Agent: {name}")
@@ -74,25 +76,27 @@ for name, agent in all_agents.items():
 ### Check Agent Existence
 
 ```python
-runtime = Runtime.get()
+runtime = Runtime.current()
 
-if runtime.has_agent("assistant"):
-    agent = runtime.get_agent("assistant")
+if "assistant" in runtime.agents():
+    agent = runtime.agents()["assistant"]
 else:
     print("Agent not found")
 ```
 
 ## Session Management
 
-The Runtime manages sessions through a SessionManager:
+The Runtime manages sessions through a SessionStore:
 
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
+runtime = Runtime.current()
 
-# Get or create session
-session = runtime.get_session("user-123")
+# Get existing session or create new one
+session = runtime.sessions().get("user-123")
+if session is None:
+    session = runtime.sessions().new("user-123")
 
 # Session is automatically persisted based on configuration
 ```
@@ -101,19 +105,15 @@ session = runtime.get_session("user-123")
 
 ## Configuration
 
-The Runtime provides access to global configuration:
+Configuration is accessed through the AKConfig singleton:
 
 ```python
-from agentkernel.core import Runtime, AKConfig
+from agentkernel.core.config import AKConfig
 
-runtime = Runtime.get()
-config = runtime.config
-
-# Or access directly
 config = AKConfig.get()
 
 print(config.log_level)
-print(config.session_storage)
+print(config.session.type)  # 'in_memory', 'redis', or 'dynamodb'
 ```
 
 ## Execution Modes
@@ -176,6 +176,53 @@ sequenceDiagram
 
 ## Advanced Usage
 
+### Custom Runtime Context
+
+For advanced use cases, you can create a custom runtime instance with specific configuration and use it as a context manager:
+
+```python
+from agentkernel.core import Runtime
+from agentkernel.core.builder import SessionStoreBuilder
+
+# Create a custom runtime instance
+custom_runtime = Runtime(SessionStoreBuilder.build())
+
+# Use it within a context
+with custom_runtime:
+    # Within this context, Runtime.current() returns custom_runtime
+    agent = MyAgent("custom-agent")
+    custom_runtime.register(agent)
+    session = custom_runtime.sessions().new("session-1")
+    
+    # Execute agent with this runtime
+    from agentkernel.core.model import AgentRequestText
+    requests = [AgentRequestText(text="Hello")]
+    result = await custom_runtime.run(agent, session, requests)
+```
+
+### Accessing the Current Runtime
+
+The `Runtime.current()` static method returns the currently active runtime instance. If called within a runtime context manager, it returns that specific runtime; otherwise, it returns the global singleton:
+
+```python
+from agentkernel.core import Runtime
+from agentkernel.core.runtime import GlobalRuntime
+
+# Outside any context, returns GlobalRuntime
+current = Runtime.current()
+assert current == GlobalRuntime.instance()
+
+# Inside a context, returns that runtime
+with custom_runtime:
+    current = Runtime.current()
+    assert current == custom_runtime
+```
+
+This pattern is particularly useful when:
+- Writing framework integrations that need access to the active runtime
+- Building utilities that work with whichever runtime is currently active
+- Testing with isolated runtime instances
+
 ### Custom Agent Registration
 
 Manually register agents (advanced):
@@ -183,10 +230,10 @@ Manually register agents (advanced):
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
+runtime = Runtime.current()
 
 # Manually register an agent
-runtime.register_agent(custom_agent)
+runtime.register(custom_agent)
 ```
 
 ## Integration Points
@@ -216,14 +263,14 @@ runtime.register_agent(custom_agent)
 
 ### Single Runtime Instance
 
-Always use `Runtime.get()`:
+Always use `Runtime.current()` for generic usecases:
 
 ```python
 # Correct
-runtime = Runtime.get()
+runtime = Runtime.current()
 
-# Don't try to instantiate
-# runtime = Runtime()  # Won't work
+# Don't instantiate directly unless you have a specific need
+# runtime = Runtime(sessions)  # Only for advanced use cases
 ```
 
 ### Configuration Before Execution
@@ -237,7 +284,7 @@ os.environ["AK_REDIS_URL"] = "redis://localhost:6379"
 
 # Now import and use
 from agentkernel.core import Runtime
-runtime = Runtime.get()
+runtime = Runtime.current()
 ```
 
 ## Summary
@@ -247,7 +294,9 @@ runtime = Runtime.get()
 - Manages sessions
 - Provides centralized configuration
 - Supports multiple execution modes
-- Singleton pattern - use `Runtime.get()`
+- Use `Runtime.current()` to access the active runtime instance
+- Can be used as a context manager for isolated runtime contexts
+- Thread-safe runtime state management with internal locking
 
 ## Next Steps
 

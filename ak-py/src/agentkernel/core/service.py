@@ -3,7 +3,6 @@ import uuid
 
 from ..core import Agent, AgentRequest, Runtime, Session
 from ..core.model import AgentReply, AgentReplyText, AgentRequestText
-from .runtime import ModuleLoader
 
 
 class AgentService:
@@ -16,7 +15,7 @@ class AgentService:
         self._log = logging.getLogger("ak.core.service.agentservice")
         self._agent = None
         self._session = None
-        self._runtime = ModuleLoader.runtime()
+        self._runtime = Runtime.current()
 
     @property
     def runtime(self) -> Runtime:

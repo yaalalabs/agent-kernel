@@ -29,6 +29,9 @@ class Runtime:
     Runtime class provides the environment for hosting and running agents.
     """
 
+    _current: Optional[Runtime] = None
+    _lock: RLock = RLock()
+
     def __init__(self, sessions: SessionStore):
         """
         Initialize the Runtime.
@@ -39,36 +42,55 @@ class Runtime:
         self._agents = {}
         self._sessions = sessions
 
+    @staticmethod
+    def current() -> Runtime:
+        """
+        Return the currently active Runtime instance. By default this is the
+        global singleton Runtime instance.
+
+        :return: The currently active runtime instance.
+        """
+        return Runtime._current or GlobalRuntime.instance()
+
     def __enter__(self) -> "Runtime":
         """
-        Enter the Runtime context manager and attach the Runtime to the ModuleLoader.
+        Enter the Runtime context manager and set as the current Runtime.
 
-        This method is called when entering a 'with' statement block. It attaches
-        the ModuleLoader to this runtime instance, making it the active runtime
-        context for module loading operations.
+        This method is called when entering a 'with' statement block. It sets
+        this runtime instance as the active runtime context.
 
         :return: The runtime instance itself, allowing it to be used as a context manager in with statements.
         """
-        ModuleLoader.attach(self)
+        with Runtime._lock:
+            if Runtime._current is not None and Runtime._current != self:
+                raise Exception("A different runtime is already active")
+            Runtime._current = self
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """
-        Exit the Runtime context manager and detach from the ModuleLoader.
+        Exit the Runtime context manager and clear the current Runtime.
 
-        This method is called when exiting a 'with' statement block. It detaches
-        the runtime instance from the ModuleLoader, performing necessary cleanup.
+        This method is called when exiting a 'with' statement block. It clears
+        the runtime instance from being the active runtime, performing necessary cleanup.
         """
-        ModuleLoader.detach(self)
+        with Runtime._lock:
+            if Runtime._current is not None and Runtime._current != self:
+                raise Exception("A different runtime is currently active")
+            Runtime._current = None
 
     def load(self, module: str) -> ModuleType:
         """
         Loads an agent module dynamically.
         :param module: Name of the module to load.
         :return: The loaded module.
+
+        :raises ModuleNotFoundError: If the specified module cannot be found.
+        :raises ImportError: If there's an error during the module import process.
         """
         self._log.debug(f"Loading module '{module}'")
-        return ModuleLoader.load(self, module)
+        with self:
+            return importlib.import_module(module)
 
     def agents(self) -> dict[str, Agent]:
         """
@@ -179,71 +201,6 @@ class GlobalRuntime(Runtime, metaclass=Singleton):
         return GlobalRuntime()
 
 
-class ModuleLoader:
-    """
-    ModuleLoader is responsible for loading agent modules dynamically.
-    """
-
-    _runtime: Optional[Runtime] = None
-    _lock: RLock = RLock()
-
-    @staticmethod
-    def runtime() -> Runtime:
-        """
-        Return the Runtime instance set to load the module. By default this is the
-        global singleton Runtime instance.
-        """
-        return ModuleLoader._runtime or GlobalRuntime.instance()
-
-    @staticmethod
-    def attach(runtime: Runtime):
-        """
-        Attach a Runtime instance to the ModuleLoader.
-
-        This method sets the Runtime instance that will be used by the ModuleLoader for
-        loading and managing modules. It ensures thread-safety using a lock and validates
-        that only one Runtime can be attached at a time.
-
-        :param runtime: The Runtime instance to attach to the ModuleLoader.
-        :raises Exception: If a different runtime instance is already attached to the ModuleLoader.
-        """
-        with ModuleLoader._lock:
-            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
-                raise Exception("A different runtime is already attached")
-            ModuleLoader._runtime = runtime
-
-    @staticmethod
-    def detach(runtime: Runtime):
-        """
-        Detach a Runtime instance from the ModuleLoader.
-
-        This method removes the Runtime association from the ModuleLoader in a thread-safe manner.
-        It validates that the runtime being detached matches the currently attached runtime before
-        proceeding with the detachment.
-
-        :param runtime: The runtime instance to detach from the ModuleLoader.
-        :raises Exception: If a different runtime is currently attached than the one being detached.
-        """
-        with ModuleLoader._lock:
-            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
-                raise Exception("A different runtime is already attached")
-            ModuleLoader._runtime = None
-
-    @staticmethod
-    def load(runtime: Runtime, module: str) -> ModuleType:
-        """
-        Load a module within the context of a given runtime.
-        :param runtime: The runtime environment to be associated with the module loading process.
-        :param module: The name of the module to import (e.g., 'os.path' or 'mypackage.mymodule').
-        :return: The imported module object.
-
-        :raises ModuleNotFoundError: If the specified module cannot be found.
-        :raises ImportError: If there's an error during the module import process.
-        """
-        with ModuleLoader._lock, runtime:
-            return importlib.import_module(module)
-
-
 class AuxiliaryCache:
     """
     AuxiliaryCache provides access to volatile and non-volatile key-value caches associated with
@@ -263,7 +220,7 @@ class AuxiliaryCache:
         if session_id is None or session_id == "":
             raise Exception("No current session context available to retrieve volatile cache.")
 
-        return ModuleLoader.runtime().sessions().load(session_id).get_volatile_cache()
+        return Runtime.current().sessions().load(session_id).get_volatile_cache()
 
     @staticmethod
     def get_non_volatile_cache(session_id: str | None = None) -> KeyValueCache:
@@ -277,4 +234,4 @@ class AuxiliaryCache:
 
         if session_id is None or session_id == "":
             raise Exception("No current session context available to retrieve non-volatile cache.")
-        return ModuleLoader.runtime().sessions().load(session_id).get_non_volatile_cache()
+        return Runtime.current().sessions().load(session_id).get_non_volatile_cache()

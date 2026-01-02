@@ -3,7 +3,7 @@ from typing import Any, List
 
 from ..core.hooks import PostHook, PreHook
 from .base import Agent
-from .runtime import ModuleLoader
+from .runtime import Runtime
 
 
 class Module(ABC):
@@ -33,7 +33,7 @@ class Module(ABC):
         Unloads and deregisters all agents in the module
         """
         for agent in self._agents:
-            ModuleLoader.runtime().deregister(agent)
+            Runtime.current().deregister(agent)
         self._agents.clear()
 
     def get_agent(self, name: str) -> Agent | None:
@@ -67,7 +67,7 @@ class Module(ABC):
         for agent in agents:
             try:
                 wrapped = self._wrap(agent, agents)
-                ModuleLoader.runtime().register(wrapped)
+                Runtime.current().register(wrapped)
                 registered.append(wrapped)
             except Exception:
                 self._agents = registered

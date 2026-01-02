@@ -11,7 +11,7 @@ from a2a.utils.errors import ServerError
 
 from ...core import Agent, AgentService
 from ...core.config import AKConfig
-from ...core.runtime import ModuleLoader
+from ...core.runtime import Runtime
 
 
 class A2A:
@@ -70,7 +70,7 @@ class A2A:
             return
         if not AKConfig.get().a2a.enabled:
             return
-        agents: dict[str, Agent] = ModuleLoader.runtime().agents()
+        agents: dict[str, Agent] = Runtime.current().agents()
         for name, agent in agents.items():
             whitelisted = AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
             if not whitelisted:

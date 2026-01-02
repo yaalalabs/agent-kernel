@@ -10,7 +10,7 @@ useful for understanding the core concepts and for CLI-based applications.
 import asyncio
 
 from agentkernel.core.model import AgentRequestText
-from agentkernel.core.runtime import GlobalRuntime
+from agentkernel.core.runtime import Runtime
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
@@ -30,7 +30,7 @@ async def main():
     OpenAIModule([qa_agent]).pre_hook(qa_agent, [RAGHook(), GuardRailHook()])
 
     # Get runtime and register hooks
-    runtime = GlobalRuntime.instance()
+    runtime = Runtime.current()
 
     # Get agent and create session
     agent = runtime.agents()["qa_assistant"]

@@ -54,7 +54,7 @@ def test_runtime_instance_redis_when_config(monkeypatch):
     assert type(runtime.sessions()) is RedisSessionStore
 
 
-def test_runtime_instance_invalid_fallsback(monkeypatch):
+def test_runtime_instance_invalid_fallback(monkeypatch):
     class FakeCfg:
         class session:
             type = "not-a-real-type"
@@ -86,3 +86,60 @@ async def test_runtime_run_calls_runner(monkeypatch):
 
     out = await runtime.run(agent, session, [AgentRequestText(text="ping")])
     assert out.text == "ok:ping"
+
+
+@pytest.mark.asyncio
+async def test_runtime_current_default(monkeypatch):
+    """
+    Test that Runtime.current() returns GlobalRuntime by default
+    """
+
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    from agentkernel.core.runtime import GlobalRuntime
+
+    current_runtime = Runtime.current()
+    assert current_runtime is not None
+    assert isinstance(current_runtime, Runtime)
+    # Should return GlobalRuntime singleton
+    assert current_runtime == GlobalRuntime.instance()
+
+
+@pytest.mark.asyncio
+async def test_runtime_current_context_manager(monkeypatch):
+    """
+    Test that Runtime.current() returns the active runtime in a context manager
+    """
+
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    runtime = Runtime(SessionStoreBuilder.build())
+    agent = DummyAgent("agent")
+
+    # Before context, should get GlobalRuntime
+    from agentkernel.core.runtime import GlobalRuntime
+
+    before_runtime = Runtime.current()
+    assert before_runtime == GlobalRuntime.instance()
+
+    # Inside context, should get the specific runtime
+    with runtime:
+        current_runtime = Runtime.current()
+        assert current_runtime is runtime
+        assert current_runtime != GlobalRuntime.instance()
+
+        # Register an agent and verify it works
+        runtime.register(agent)
+        assert "agent" in runtime.agents()
+
+    # After context, should return to GlobalRuntime
+    after_runtime = Runtime.current()
+    assert after_runtime == GlobalRuntime.instance()
