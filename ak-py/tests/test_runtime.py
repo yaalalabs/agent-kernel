@@ -150,6 +150,7 @@ async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
     """
     Test AuxiliaryCache.get_volatile_cache with explicit session_id
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -175,6 +176,7 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
     """
     Test AuxiliaryCache.get_non_volatile_cache with explicit session_id
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -200,6 +202,7 @@ async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatc
     """
     Test that AuxiliaryCache.get_volatile_cache raises exception when no session context is available
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -218,6 +221,7 @@ async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkey
     """
     Test that AuxiliaryCache.get_non_volatile_cache raises exception when no session context is available
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -236,14 +240,15 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
     """
     Test AuxiliaryCache.get_volatile_cache using context variable
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
     from agentkernel.core.base import current_session
+    from agentkernel.core.runtime import AuxiliaryCache
 
     runtime = Runtime(SessionStoreBuilder.build())
     session = runtime.sessions().new("test-session-3")
@@ -258,10 +263,10 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
 
             # Set value via AuxiliaryCache
             v_cache.set("context_key", "context_value")
-            
+
             # Verify the value is accessible
             assert v_cache.get("context_key") == "context_value"
-            
+
             # Verify it's the same cache by checking the session's cache also has it
             assert session.get_volatile_cache().get("context_key") == "context_value"
     finally:
@@ -273,14 +278,15 @@ async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
     """
     Test AuxiliaryCache.get_non_volatile_cache using context variable
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
     from agentkernel.core.base import current_session
+    from agentkernel.core.runtime import AuxiliaryCache
 
     runtime = Runtime(SessionStoreBuilder.build())
     session = runtime.sessions().new("test-session-4")
@@ -295,10 +301,10 @@ async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
 
             # Set value via AuxiliaryCache
             nv_cache.set("nv_context_key", "nv_context_value")
-            
+
             # Verify the value is accessible
             assert nv_cache.get("nv_context_key") == "nv_context_value"
-            
+
             # Verify it's the same cache by checking the session's cache also has it
             assert session.get_non_volatile_cache().get("nv_context_key") == "nv_context_value"
     finally:
@@ -310,6 +316,7 @@ async def test_auxiliary_cache_volatile_isolation_between_sessions(monkeypatch):
     """
     Test that volatile caches are isolated between different sessions
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -340,6 +347,7 @@ async def test_auxiliary_cache_non_volatile_isolation_between_sessions(monkeypat
     """
     Test that non-volatile caches are isolated between different sessions
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -370,6 +378,7 @@ async def test_auxiliary_cache_volatile_and_non_volatile_are_separate(monkeypatc
     """
     Test that volatile and non-volatile caches are separate within same session
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -399,6 +408,7 @@ async def test_auxiliary_cache_operations_on_volatile_cache(monkeypatch):
     """
     Test various operations on volatile cache through AuxiliaryCache
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -444,6 +454,7 @@ async def test_auxiliary_cache_operations_on_non_volatile_cache(monkeypatch):
     """
     Test various operations on non-volatile cache through AuxiliaryCache
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -489,6 +500,7 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
     """
     Test AuxiliaryCache with various complex data types
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
@@ -513,14 +525,7 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
     assert v_cache.get("list_key") == test_list
 
     # Test with nested structures
-    nested_data = {
-        "level1": {
-            "level2": {
-                "items": [1, 2, 3],
-                "metadata": {"count": 3}
-            }
-        }
-    }
+    nested_data = {"level1": {"level2": {"items": [1, 2, 3], "metadata": {"count": 3}}}}
     v_cache.set("nested_key", nested_data)
     assert v_cache.get("nested_key") == nested_data
 
@@ -530,6 +535,7 @@ async def test_auxiliary_cache_empty_session_id_raises(monkeypatch):
     """
     Test that empty string session_id raises exception
     """
+
     class FakeCfg:
         class session:
             type = "in_memory"
