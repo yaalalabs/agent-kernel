@@ -1,4 +1,4 @@
-from agentkernel import GlobalRuntime, KeyValueCache
+from agentkernel import KeyValueCache, AuxiliaryCache
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent, function_tool
@@ -14,7 +14,7 @@ def query_private_knowledge_base(query: str) -> str:
     """
     # knowledge base
     kb = []
-    cache: KeyValueCache = GlobalRuntime.instance().get_volatile_cache()
+    cache: KeyValueCache = AuxiliaryCache.get_volatile_cache()
     rag_context = cache.get("rag_context")
     print(f"***************** query_private_knowledge_base: Retrieved context from volatile cache: {rag_context}")
     if rag_context:

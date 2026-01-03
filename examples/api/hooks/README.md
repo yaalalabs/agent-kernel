@@ -45,19 +45,19 @@ This order ensures that:
 
 ### Pre-Execution Hooks
 ```python
-from agentkernel import GlobalRuntime
+from agentkernel import AuxiliaryCache
 
-# Get runtime instance
-runtime = GlobalRuntime.instance()
+# Create module
+module = OpenAIModule([qa_assistant_agent])
 
 # Register pre-execution hooks in order: RAG first, then GuardRail
-runtime.register_pre_hooks("qa_assistant", [RAGHook(), GuardRailHook()])
+module.pre_hook(qa_assistant_agent, [RAGHook(), GuardRailHook()])
 ```
 
 ### Post-Execution Hooks
 ```python
 # Register post-execution hooks to add disclaimer
-runtime.register_post_hooks("qa_assistant", [DisclaimerHook()])
+module.post_hook(qa_assistant_agent, [DisclaimerHook()])
 ```
 
 ## Running the Example
