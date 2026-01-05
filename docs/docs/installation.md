@@ -10,7 +10,8 @@ Get started with Agent Kernel in just a few minutes.
 
 Before installing Agent Kernel, ensure you have:
 
-- **Python 3.12 or higher** installed on your system
+- **Python 3.12 - 3.13.11** installed on your system
+  - ⚠️ Python 3.14 and later support to be available soon
 - **pip** or **uv** package manager
 - (Optional) **Virtual environment** tool like `venv` or `conda`
 
