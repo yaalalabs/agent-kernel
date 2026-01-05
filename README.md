@@ -8,7 +8,7 @@
 
 Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly migrate from different AI agent frameworks without modifying the underlying agent logic.
 
-**Requirements:** Python 3.12 - 3.13.11
+**Requirements:** Python 3.12 - 3.13.x
 
 AK offers a variety of execution options. This flexibility allows developers to deploy their agents across a range of environments, including local environments, cloud platforms, and on-premise enterprise systems. Cloud deployments can be configured as standalone solutions or integrated seamlessly into existing application infrastructures.
 

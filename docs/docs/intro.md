@@ -15,7 +15,7 @@ Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for buildi
 
 Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffolding to build, test and deploy your agents, your mcp tools and A2A quickly in many deployment configurations. The unified execution environment provides the session and memory management seamlessly.
 
-**Supported Python Versions:** 3.12 - 3.13.11 
+**Supported Python Versions:** 3.12 - 3.13.x 
 
 Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
 
