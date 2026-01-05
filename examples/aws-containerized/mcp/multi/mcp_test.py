@@ -17,7 +17,7 @@ async def mcp_client():
         stderr=sys.stderr,
     )
     await asyncio.sleep(10)
-    client = MCPHttpClient(server_url="http://127.0.0.1:8000/mcp")
+    client = MCPHttpClient(server_url="https://426o2htx06.execute-api.us-east-1.amazonaws.com/agents/api/v1/mcp")
     await client.init()
     try:
         yield client

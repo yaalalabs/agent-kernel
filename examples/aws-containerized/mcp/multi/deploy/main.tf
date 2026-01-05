@@ -15,7 +15,7 @@ module "containered_agents" {
   product_display_name = "MCP Containered Example"
   ecs_container_port   = 8000
   create_redis_cluster = true
-  # enable_mcp_server = true       # endpoint = /<api_base_path>/<api_version>/mcp
+  enable_mcp_server = true       # endpoint = /<api_base_path>/<api_version>/mcp
 
   # Environment variables passed to container
   environment_variables = {
