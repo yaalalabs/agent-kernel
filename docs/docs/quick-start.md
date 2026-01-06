@@ -6,6 +6,10 @@ sidebar_position: 3
 
 Build and run your first AI agent with Agent Kernel in under 5 minutes!
 
+:::info Requirements
+**Python Version:** 3.12 - 3.13.x (Python 3.14+ support to be available soon)
+:::
+
 ## Choose Your Framework
 
 Agent Kernel supports multiple frameworks. Pick the one you're most comfortable with:

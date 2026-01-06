@@ -1,10 +1,8 @@
 import logging
 import uuid
-from typing import Any
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequestText
-
-from ..core import Agent, AgentRequest, GlobalRuntime, Runtime, Session
+from ..core import Agent, AgentRequest, Runtime, Session
+from ..core.model import AgentReply, AgentReplyText, AgentRequestText
 
 
 class AgentService:
@@ -17,7 +15,7 @@ class AgentService:
         self._log = logging.getLogger("ak.core.service.agentservice")
         self._agent = None
         self._session = None
-        self._runtime = GlobalRuntime.instance()
+        self._runtime = Runtime.current()
 
     @property
     def runtime(self) -> Runtime:
