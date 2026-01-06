@@ -262,7 +262,7 @@ function MessagingIntegrationsSection() {
   ];
 
   const comingSoonIntegrations = [
-      {
+    {
       name: 'Teams',
       icon: <BsMicrosoftTeams />,
       description: 'Build AI Agents for Microsoft Teams',
