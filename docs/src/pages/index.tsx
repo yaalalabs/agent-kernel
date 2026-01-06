@@ -18,7 +18,7 @@ import {
   MdConstruction,
   MdHealthAndSafety
 } from 'react-icons/md';
-import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram} from 'react-icons/fa';
+import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
 import { BsMicrosoftTeams } from 'react-icons/bs';
 import { SiTerraform, SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
