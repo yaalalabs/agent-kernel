@@ -267,7 +267,7 @@ function MessagingIntegrationsSection() {
       icon: <BsMicrosoftTeams />,
       description: 'Build AI Agents for Microsoft Teams',
       status: 'active',
-      color: '#EA4335',
+      color: '#6264A7',
       // link: '/docs/integrations/teams',
     },
   ];
