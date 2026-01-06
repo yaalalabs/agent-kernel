@@ -18,7 +18,8 @@ import {
   MdConstruction,
   MdHealthAndSafety
 } from 'react-icons/md';
-import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
+import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram} from 'react-icons/fa';
+import { BsMicrosoftTeams } from 'react-icons/bs';
 import { SiTerraform, SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 
@@ -260,7 +261,16 @@ function MessagingIntegrationsSection() {
     },
   ];
 
-  const comingSoonIntegrations = [];
+  const comingSoonIntegrations = [
+      {
+      name: 'Teams',
+      icon: <BsMicrosoftTeams />,
+      description: 'Build AI Agents for Microsoft Teams',
+      status: 'active',
+      color: '#EA4335',
+      // link: '/docs/integrations/teams',
+    },
+  ];
 
   return (
     <section id="integrations" className={styles.messagingIntegrationsSection}>
@@ -287,7 +297,6 @@ function MessagingIntegrationsSection() {
                 </div>
                 <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
                 <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
-                <span className={styles.integrationStatusBadge}>Available</span>
               </Link>
             ))}
             {comingSoonIntegrations.map((platform, idx) => (
@@ -317,7 +326,6 @@ function MessagingIntegrationsSection() {
                 </div>
                 <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
                 <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
-                <span className={styles.integrationStatusBadge}>Available</span>
               </Link>
             ))}
             {comingSoonIntegrations.map((platform, idx) => (
