@@ -9,6 +9,7 @@ from typing import Optional
 from singleton_type import Singleton
 
 from ..core.util.key_value_cache import KeyValueCache
+from ..guardrail.guardrail import InputGuardrail, OutputGuardrail
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .model import (
@@ -31,6 +32,8 @@ class Runtime:
 
     _current: Optional[Runtime] = None
     _lock: RLock = RLock()
+    _system_pre_hooks: list = [InputGuardrail()]
+    _system_post_hooks: list = [OutputGuardrail()]
 
     def __init__(self, sessions: SessionStore):
         """
@@ -134,7 +137,7 @@ class Runtime:
         """
         self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
 
-        pre_hooks = agent.pre_hooks
+        pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
         for hook in pre_hooks:
             reply = await hook.on_run(session, agent, requests)
             if isinstance(reply, (AgentReplyText, AgentReplyImage)):
@@ -160,7 +163,7 @@ class Runtime:
 
         reply = await agent.runner.run(agent, session, requests)
 
-        post_hooks = agent.post_hooks
+        post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
         for hook in post_hooks:
             reply = await hook.on_run(session, requests, agent, reply)
             if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
