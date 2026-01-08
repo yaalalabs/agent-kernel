@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import abstractmethod, ABC
 from pathlib import Path
@@ -20,7 +21,7 @@ class BaseOpenAIGuardrail(ABC):
     """
 
     def __init__(self):
-        self._guardrails_client = None
+        self._guardrails_client: GuardrailsOpenAI | None = None
         self._initialize_guardrails()
 
     @abstractmethod
@@ -110,7 +111,9 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
             # Validate input using guardrails
             try:
                 # Check input against configured guardrails
-                self._guardrails_client.chat.completions.create(
+                # Run the synchronous guardrails client in executor to avoid blocking event loop
+                await asyncio.to_thread(
+                    self._guardrails_client.chat.completions.create,
                     model="gpt-4o-mini",  # Model for guardrail checks
                     messages=[{"role": "user", "content": input_text}],
                     max_tokens=1,  # We only need to check, not generate
@@ -123,7 +126,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
                 # Guardrail was triggered - return error response
                 log.warning(f"Input guardrail triggered: {e}")
                 return AgentReplyText(
-                    text=f"Sorry, I cannot process this request. Guardrail triggered: {str(e)}",
+                    text="I apologize, but I'm unable to process this request as it may violate content safety guidelines. Please rephrase your question or try a different topic.",
                     prompt=input_text,
                 )
 
@@ -132,7 +135,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
             log.error(f"openai-guardrails not available but guardrails are enabled: {e}")
             input_text = self._extract_text_from_requests(requests)
             return AgentReplyText(
-                text="Sorry, I cannot process this request. Guardrail validation failed: Required package not installed.",
+                text="I apologize, but I'm unable to process your request at this time due to a configuration issue. Please contact support if this problem persists.",
                 prompt=input_text,
             )
         except Exception as e:
@@ -140,7 +143,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
             log.error(f"Error during input guardrail validation: {e}")
             input_text = self._extract_text_from_requests(requests)
             return AgentReplyText(
-                text=f"Sorry, I cannot process this request. Guardrail validation failed: {str(e)}",
+                text="I apologize, but I'm unable to process your request at this time. Please try again or contact support if this issue continues.",
                 prompt=input_text,
             )
 
@@ -203,7 +206,9 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
             # Validate output using guardrails
             try:
                 # Check output against configured guardrails
-                response = self._guardrails_client.chat.completions.create(
+                # Run the synchronous guardrails client in executor to avoid blocking event loop
+                await asyncio.to_thread(
+                    self._guardrails_client.chat.completions.create,
                     model="gpt-4o-mini",  # Model for guardrail checks
                     messages=[
                         {"role": "user", "content": agent_reply.prompt if hasattr(agent_reply, "prompt") else ""},
@@ -219,7 +224,7 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
                 # Guardrail was triggered - return safe response
                 log.warning(f"Output guardrail triggered: {e}")
                 if isinstance(agent_reply, AgentReplyText):
-                    agent_reply.text = f"Sorry, I cannot provide this response. Guardrail triggered: {str(e)}"
+                    agent_reply.text = "I apologize, but I'm unable to provide this response as it may not meet content safety guidelines. Please try rephrasing your question."
                 return agent_reply
 
         except ImportError:
