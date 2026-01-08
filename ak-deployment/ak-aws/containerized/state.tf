@@ -39,7 +39,15 @@ locals {
       : "${upper(try(ep["method"], "ANY"))} /${join("/", compact([local.api_base_segment, var.api_version, trim(try(ep["path"], ""), "/")]))}"
     ) => ep
   }
-  gateway_endpoints_map = merge(local.default_gateway_map, local.user_gateway_map)
+  mcp_endpoint_path = "/${join("/", compact([ local.api_base_segment, var.api_version, "mcp" ]))}"
+  mcp_gateway_map = var.enable_mcp_server ? {
+    "ANY ${local.mcp_endpoint_path}" = {
+      path           = "mcp"
+      method         = "ANY"
+      overwrite_path = "/mcp/"
+    }
+  } : {}
+  gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
 }
 
 module "vpc" {

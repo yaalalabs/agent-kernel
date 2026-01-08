@@ -275,6 +275,7 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | `environment_variables` | Environment variables for container | `map(string)` | `{}` | no |
 | `api_version` | API version for endpoint path | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name | `string` | `"chat"` | no |
+| `enable_mcp_server` | Enable MCP server and expose MCP API endpoint | `bool` | `false` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
 | **API Gateway CORS** |
 | `enable_cors` | Enable CORS on the HTTP API | `bool` | `true` | no |

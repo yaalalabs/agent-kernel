@@ -1,0 +1,14 @@
+mcp:
+  enabled: true
+  port: 8000
+  expose_agents: true
+  agents: ['*']
+
+debug: true
+session:
+  type: redis
+  redis:
+    prefix: "ak:mcp-ecs:example:"
+    url: "redis://ak-adk-contd-dev-examples-redis.dirnvi.0001.use1.cache.amazonaws.com:6379"
+
+    
