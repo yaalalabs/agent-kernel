@@ -155,8 +155,9 @@ class _GuardrailConfig(BaseModel):
     input: _InputGuardrailConfig = Field(
         description="Input Guardrail configuration", default_factory=_InputGuardrailConfig
     )
-    output: _OutputGuardrailConfig = Field(description="Output Guardrail configuration",
-                                           default_factory=_OutputGuardrailConfig)
+    output: _OutputGuardrailConfig = Field(
+        description="Output Guardrail configuration", default_factory=_OutputGuardrailConfig
+    )
 
 
 class AKConfig(YamlBaseSettingsModified):

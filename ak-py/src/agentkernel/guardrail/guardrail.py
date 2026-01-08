@@ -8,7 +8,7 @@ from ..core.model import AgentReply, AgentRequest
 
 class InputGuardrail(PreHook):
     async def on_run(
-            self, session: Session, agent: Agent, requests: list[AgentRequest]
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         return requests
 
@@ -18,7 +18,7 @@ class InputGuardrail(PreHook):
 
 class OutputGuardrail(PostHook):
     async def on_run(
-            self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
         return agent_reply
 

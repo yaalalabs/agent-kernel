@@ -1,13 +1,14 @@
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 from agentkernel.core.base import Agent, Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.guardrail.guardrail import (
     InputGuardrail,
-    OutputGuardrail,
     InputGuardrailFactory,
+    OutputGuardrail,
     OutputGuardrailFactory,
 )
 from agentkernel.guardrail.openai import OpenAIInputGuardrail, OpenAIOutputGuardrail
@@ -63,9 +64,7 @@ class TestOutputGuardrail:
     """Tests for OutputGuardrail class."""
 
     @pytest.mark.asyncio
-    async def test_on_run_returns_reply(
-        self, mock_session, mock_agent, sample_requests, sample_reply
-    ):
+    async def test_on_run_returns_reply(self, mock_session, mock_agent, sample_requests, sample_reply):
         """Test that OutputGuardrail.on_run returns the reply unchanged."""
         guardrail = OutputGuardrail()
         result = await guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)
@@ -181,9 +180,7 @@ class TestOpenAIOutputGuardrail:
     """Tests for OpenAIOutputGuardrail class."""
 
     @pytest.mark.asyncio
-    async def test_on_run_returns_reply(
-        self, mock_session, mock_agent, sample_requests, sample_reply
-    ):
+    async def test_on_run_returns_reply(self, mock_session, mock_agent, sample_requests, sample_reply):
         """Test that OpenAIOutputGuardrail.on_run returns the reply unchanged."""
         guardrail = OpenAIOutputGuardrail()
         result = await guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)

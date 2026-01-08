@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 from guardrails import GuardrailsOpenAI, GuardrailTripwireTriggered
 
-from .guardrail import InputGuardrail, OutputGuardrail
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
-from ..core.model import AgentReply, AgentRequest, AgentReplyText, AgentRequestText
+from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from .guardrail import InputGuardrail, OutputGuardrail
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
         return "\n".join(text_parts)
 
     async def on_run(
-            self, session: Session, agent: Agent, requests: list[AgentRequest]
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
         Validate input requests using OpenAI guardrails.
@@ -181,17 +181,17 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
         return ""
 
     async def on_run(
-            self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
         """
         Validate output responses using OpenAI guardrails.
-        
-        :param session: Session object containing interaction state 
+
+        :param session: Session object containing interaction state
         :param requests: List of agent requests being processed
         :param agent: Agent instance that generated the reply
         :param agent_reply: Agent reply to validate
         :return: Original reply if validation passes or guardrails are not configured,
-                or modified reply with an error message if guardrail is triggered 
+                or modified reply with an error message if guardrail is triggered
         :rtype: AgentReply
         """
         if not self._guardrails_client:
@@ -212,7 +212,7 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
                     model=AKConfig.get().guardrail.output.model,  # Model for guardrail checks
                     messages=[
                         {"role": "user", "content": agent_reply.prompt if hasattr(agent_reply, "prompt") else ""},
-                        {"role": "assistant", "content": output_text}
+                        {"role": "assistant", "content": output_text},
                     ],
                     max_tokens=1,  # We only need to check, not generate
                 )
