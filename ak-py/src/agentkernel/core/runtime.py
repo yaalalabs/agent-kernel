@@ -8,8 +8,6 @@ from typing import Optional
 
 from singleton_type import Singleton
 
-from ..core.util.key_value_cache import KeyValueCache
-from ..guardrail.guardrail import InputGuardrail, OutputGuardrail
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .model import (
@@ -23,6 +21,8 @@ from .model import (
     AgentRequestText,
 )
 from .session import SessionStore
+from ..core.util.key_value_cache import KeyValueCache
+from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 
 
 class Runtime:
@@ -32,8 +32,8 @@ class Runtime:
 
     _current: Optional[Runtime] = None
     _lock: RLock = RLock()
-    _system_pre_hooks: list = [InputGuardrail()]
-    _system_post_hooks: list = [OutputGuardrail()]
+    _system_pre_hooks: list = [InputGuardrailFactory.get()]
+    _system_post_hooks: list = [OutputGuardrailFactory.get()]
 
     def __init__(self, sessions: SessionStore):
         """

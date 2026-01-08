@@ -137,6 +137,24 @@ class _TestConfig(BaseModel):
     judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
 
 
+class _InputGuardrailConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable Guardrail")
+    type: str = Field(default="openai", pattern="^(openai|bedrock)$")
+
+
+class _OutputGuardrailConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable Guardrail")
+    type: str = Field(default="openai", pattern="^(openai|bedrock)$")
+
+
+class _GuardrailConfig(BaseModel):
+    input: _InputGuardrailConfig = Field(
+        description="Input Guardrail configuration", default_factory=_InputGuardrailConfig
+    )
+    output: _OutputGuardrailConfig = Field(description="Output Guardrail configuration",
+                                           default_factory=_OutputGuardrailConfig)
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -164,6 +182,9 @@ class AKConfig(YamlBaseSettingsModified):
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
+    guardrail: _GuardrailConfig = Field(
+        description="Guardrail related configurations", default_factory=_GuardrailConfig
+    )
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod
