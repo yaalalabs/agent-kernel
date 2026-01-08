@@ -39,9 +39,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         self._max_file_size = Config.get().api.max_file_size
         if not all([self._access_token, self._phone_number_id, self._verify_token]):
-            self._log.error(
-                "WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token."
-            )
+            self._log.error("WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token.")
             raise ValueError("Incomplete WhatsApp configuration.")
 
     def get_router(self) -> APIRouter:
@@ -188,9 +186,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                 # Get media info to check file size
                 media_size, media_mime_type = await self._get_media_info(media_id)
                 if media_size is None:
-                    await self._send_message(
-                        from_number, "Sorry, I could not retrieve the image information. Please try again.", message_id
-                    )
+                    await self._send_message(from_number, "Sorry, I could not retrieve the image information. Please try again.", message_id)
                     return
 
                 # Check file size
@@ -205,9 +201,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
                 # Download the media
                 image_data = await self._download_media(media_id)
                 if image_data is None:
-                    await self._send_message(
-                        from_number, "Sorry, I could not download the image. Please try again.", message_id
-                    )
+                    await self._send_message(from_number, "Sorry, I could not download the image. Please try again.", message_id)
                     return
 
                 requests.append(
@@ -291,9 +285,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
             # Select and run agent
             service.select(session_id=session_id, name=self._whatsapp_agent)
             if not service.agent:
-                await self._send_message(
-                    from_number, "Sorry, no agent is available to handle your request.", message_id
-                )
+                await self._send_message(from_number, "Sorry, no agent is available to handle your request.", message_id)
                 return
 
             # Run the agent with all requests (text + media)

@@ -141,9 +141,7 @@ class Runtime:
         for hook in pre_hooks:
             reply = await hook.on_run(session, agent, requests)
             if isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                self._log.debug(
-                    f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}"
-                )
+                self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
                 return reply
 
             # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
@@ -154,9 +152,7 @@ class Runtime:
                             f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
                         )
             else:
-                raise TypeError(
-                    f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}"
-                )
+                raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
             requests = reply
 
         self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
@@ -167,9 +163,7 @@ class Runtime:
         for hook in post_hooks:
             reply = await hook.on_run(session, requests, agent, reply)
             if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                raise TypeError(
-                    f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}"
-                )
+                raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
             self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
         return reply
 

@@ -51,9 +51,7 @@ class GoogleADKSession:
 
     async def create_session(self, app_name: str, user_id: str, session_id: str) -> Any:
         if self._session is None:
-            self._session = await self._session_service.create_session(
-                app_name=app_name, user_id=user_id, session_id=session_id
-            )
+            self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
         return self._session
 
 
@@ -107,9 +105,7 @@ class GoogleADKRunner(BaseRunner):
 
         try:
             for req in requests:
-                if isinstance(
-                    req, AgentRequestAny
-                ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
 
                 if isinstance(req, AgentRequestText):
@@ -145,11 +141,7 @@ class GoogleADKRunner(BaseRunner):
                         mime_type = req.mime_type
 
                     # Google ADK expects inline_data with mime_type and raw data
-                    raw_data = (
-                        base64.b64decode(base64_data.split(",")[-1])
-                        if base64_data.startswith("data:")
-                        else base64.b64decode(base64_data)
-                    )
+                    raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
                     parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
 
             if not parts:

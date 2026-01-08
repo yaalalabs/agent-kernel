@@ -85,9 +85,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
                 text_parts.append(str(req.text))
         return "\n".join(text_parts)
 
-    async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest]
-    ) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """
         Validate input requests using OpenAI guardrails.
 
@@ -180,9 +178,7 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
             return str(agent_reply.text)
         return ""
 
-    async def on_run(
-        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
-    ) -> AgentReply:
+    async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         """
         Validate output responses using OpenAI guardrails.
 

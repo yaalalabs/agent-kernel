@@ -117,7 +117,7 @@ package = true
 
 [tool.isort]
 profile = "black"
-line_length = 120
+line_length = 150
 
 [tool.mypy]
 python_version = "3.12"
@@ -127,7 +127,7 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
 [tool.black]
-line-length = 120
+line-length = 150
 target-version = ["py312"]
 
 [tool.pytest.ini_options]

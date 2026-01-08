@@ -155,9 +155,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._log.debug(f"Processing command: {command}")
 
         if command == "/start":
-            await self._send_message(
-                chat_id, "👋 Hello! I'm an AI assistant powered by Agent Kernel. How can I help you today?"
-            )
+            await self._send_message(chat_id, "👋 Hello! I'm an AI assistant powered by Agent Kernel. How can I help you today?")
         elif command == "/help":
             await self._send_message(
                 chat_id,

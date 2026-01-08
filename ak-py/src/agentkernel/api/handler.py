@@ -140,10 +140,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if req.images:
                 for image in req.images:
                     self._log.debug(f"Adding image: {image.name}")
-                    if (
-                        not image.image_data.startswith(("http://", "https://", "data:", "s3://"))
-                        and not image.mime_type
-                    ):
+                    if not image.image_data.startswith(("http://", "https://", "data:", "s3://")) and not image.mime_type:
                         raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
                     requests.append(
                         AgentRequestImage(
@@ -170,9 +167,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
             return {
                 "result": (
-                    str(result)
-                    if isinstance(result, (AgentReplyText, AgentReplyImage))
-                    else "Non textual result received"
+                    str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
                 ),  # sending image is not supported at the moment
                 "session_id": service.get_response_session_id(req.session_id),
             }
@@ -185,9 +180,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 status_code=HTTPStatus.BAD_REQUEST,
                 detail={
                     "error": str(e),
-                    "session_id": (
-                        service.get_response_session_id(req.session_id) if service is not None else req.session_id
-                    ),
+                    "session_id": (service.get_response_session_id(req.session_id) if service is not None else req.session_id),
                 },
             )
         except Exception as e:
@@ -295,11 +288,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             self._log.debug(f"Result: {result}")
 
             return {
-                "result": (
-                    str(result)
-                    if isinstance(result, (AgentReplyText, AgentReplyImage))
-                    else "Non textual result received"
-                ),
+                "result": (str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"),
                 "session_id": service.get_response_session_id(session_id),
             }
 

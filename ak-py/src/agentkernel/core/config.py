@@ -152,12 +152,8 @@ class _OutputGuardrailConfig(BaseModel):
 
 
 class _GuardrailConfig(BaseModel):
-    input: _InputGuardrailConfig = Field(
-        description="Input Guardrail configuration", default_factory=_InputGuardrailConfig
-    )
-    output: _OutputGuardrailConfig = Field(
-        description="Output Guardrail configuration", default_factory=_OutputGuardrailConfig
-    )
+    input: _InputGuardrailConfig = Field(description="Input Guardrail configuration", default_factory=_InputGuardrailConfig)
+    output: _OutputGuardrailConfig = Field(description="Output Guardrail configuration", default_factory=_OutputGuardrailConfig)
 
 
 class AKConfig(YamlBaseSettingsModified):
@@ -174,22 +170,14 @@ class AKConfig(YamlBaseSettingsModified):
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
-    messenger: _MessengerConfig = Field(
-        description="Facebook Messenger related configurations", default_factory=_MessengerConfig
-    )
-    instagram: _InstagramConfig = Field(
-        description="Instagram Business API related configurations", default_factory=_InstagramConfig
-    )
-    telegram: _TelegramConfig = Field(
-        description="Telegram Bot related configurations", default_factory=_TelegramConfig
-    )
+    messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
+    instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
+    telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
-    guardrail: _GuardrailConfig = Field(
-        description="Guardrail related configurations", default_factory=_GuardrailConfig
-    )
+    guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

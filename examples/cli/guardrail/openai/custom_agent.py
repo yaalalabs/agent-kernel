@@ -3,8 +3,6 @@ from typing import Annotated, Any, Callable, List, Sequence, TypedDict
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_openai import ChatOpenAI
-
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -16,13 +14,13 @@ class AgentState(TypedDict):
 
 class CustomAgent:
     def __init__(
-        self,
-        name: str,
-        description: str,
-        model: ChatOpenAI,
-        system_prompt: str,
-        tool_functions: List[Callable[..., Any]] = [],
-        verbose: bool = False,
+            self,
+            name: str,
+            description: str,
+            model: ChatOpenAI,
+            system_prompt: str,
+            tool_functions: List[Callable[..., Any]] = [],
+            verbose: bool = False,
     ):
         self.name = name
         self.description = description

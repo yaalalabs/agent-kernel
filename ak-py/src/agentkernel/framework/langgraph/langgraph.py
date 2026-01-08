@@ -281,9 +281,7 @@ class LangGraphRunner(BaseRunner):
         """
         prompt = ""
         for req in requests:
-            if isinstance(
-                req, AgentRequestAny
-            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):
                 prompt = prompt + "\n" + req.text if prompt else req.text

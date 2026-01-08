@@ -103,6 +103,19 @@ telegram:
   bot_token: ""  # Bot token from BotFather
   webhook_secret: ""  # Optional webhook security token
   api_version: "bot"  # Bot API version prefix
+
+# Guardrails configuration
+guardrail:
+  input:
+    enabled: false  # Enable input guardrails
+    type: openai  # Guardrail provider: openai or bedrock (bedrock coming soon)
+    model: gpt-4o-mini  # LLM model for guardrail validation
+    config_path: ""  # Path to guardrail configuration JSON file
+  output:
+    enabled: false  # Enable output guardrails
+    type: openai  # Guardrail provider: openai or bedrock (bedrock coming soon)
+    model: gpt-4o-mini  # LLM model for guardrail validation
+    config_path: ""  # Path to guardrail configuration JSON file
 ```
 
 ### JSON Configuration
@@ -186,6 +199,20 @@ Alternatively, use `config.json`:
     "bot_token": "",
     "webhook_secret": "",
     "api_version": "bot"
+  },
+  "guardrail": {
+    "input": {
+      "enabled": false,
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "config_path": ""
+    },
+    "output": {
+      "enabled": false,
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "config_path": ""
+    }
   }
 }
 ```
@@ -345,6 +372,22 @@ export TRACELOOP_API_KEY=your-api-key  # Your Traceloop API key
 export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base URL (for self-hosted)
 ```
 
+### Guardrails Configuration
+
+```bash
+# Enable input guardrails
+export AK_GUARDRAIL__INPUT__ENABLED=true  # default: false
+export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock' (bedrock coming soon, default: openai)
+export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path to guardrail config file
+
+# Enable output guardrails
+export AK_GUARDRAIL__OUTPUT__ENABLED=true  # default: false
+export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock' (bedrock coming soon, default: openai)
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path to guardrail config file
+```
+
 
 
 ## Configuration Schema
@@ -439,6 +482,19 @@ telegram:
 trace:
   enabled: false                # Enable tracing
   type: "langfuse"              # Trace provider: 'langfuse' or 'openllmetry'
+
+# Guardrails configuration
+guardrail:
+  input:                        # Input guardrail configuration
+    enabled: false              # Enable input guardrails
+    type: "openai"              # Guardrail provider: 'openai' or 'bedrock' (bedrock coming soon)
+    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    config_path: ""             # Path to guardrail configuration JSON file
+  output:                       # Output guardrail configuration
+    enabled: false              # Enable output guardrails
+    type: "openai"              # Guardrail provider: 'openai' or 'bedrock' (bedrock coming soon)
+    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    config_path: ""             # Path to guardrail configuration JSON file
 ```
 
 ## Configuration Precedence

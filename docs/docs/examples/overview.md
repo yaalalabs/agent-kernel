@@ -28,7 +28,10 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 Command-line interface examples for local development and testing:
 
 - **`adk/`** - Google ADK (Agent Development Kit) agents with CLI interaction
+- **`a2a/`** - Agent-to-Agent (A2A) communication examples
 - **`crewai/`** - CrewAI framework integration examples
+- **`guardrail/`** - Content safety and compliance validation examples
+  - `openai/` - OpenAI Guardrails integration with LangGraph agents
 - **`langgraph/`** - LangGraph framework integration examples
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples
