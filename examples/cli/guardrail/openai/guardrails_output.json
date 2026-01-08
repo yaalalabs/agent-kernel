@@ -25,8 +25,6 @@
             "IP_ADDRESS",
             "LOCATION",
             "MEDICAL_LICENSE",
-            "NRP",
-            "PERSON",
             "PHONE_NUMBER",
             "URL"
           ],
@@ -42,7 +40,7 @@
         "config": {
           "confidence_threshold": 0.7,
           "model": "gpt-4.1-mini",
-          "system_prompt_details": "You are a customer support assistant. Raise the guardrail if questions aren’t focused on customer inquiries, product support, and service-related questions.",
+          "system_prompt_details": "You are a general knowledge assistant. You can answer cricket related questions. Raise the guardrail if questions aren’t focused on cricket.",
           "include_reasoning": false
         }
       },

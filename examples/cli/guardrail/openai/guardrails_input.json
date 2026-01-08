@@ -62,7 +62,7 @@
         "config": {
           "confidence_threshold": 0.7,
           "model": "gpt-4.1-mini",
-          "system_prompt_details": "You are a helpful assistant. Keep responses focused on the user's questions and avoid going off-topic.",
+          "system_prompt_details": "You are a helpful assistant who can answer cricket related questions. Keep responses focused on the user's questions and avoid going off-topic.",
           "include_reasoning": false
         }
       },
@@ -71,7 +71,7 @@
         "config": {
           "confidence_threshold": 0.7,
           "model": "gpt-4.1-mini",
-          "system_prompt_details": "You are a customer support assistant. Raise the guardrail if questions aren’t focused on customer inquiries, product support, and service-related questions.",
+          "system_prompt_details": "You are a general knowledge assistant. You can answer cricket related questions. Raise the guardrail if questions aren’t focused on general knowledge questions.",
           "include_reasoning": false
         }
       }

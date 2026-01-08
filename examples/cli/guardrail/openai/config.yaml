@@ -2,6 +2,7 @@ guardrail:
   input:
     enabled: true
     type: openai
+    model: gpt-4o-mini
     config_path: guardrails_input.json
   output:
     enabled: true
