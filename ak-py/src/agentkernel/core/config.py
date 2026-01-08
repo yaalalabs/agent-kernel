@@ -140,11 +140,13 @@ class _TestConfig(BaseModel):
 class _InputGuardrailConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
+    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file")
 
 
 class _OutputGuardrailConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
+    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file")
 
 
 class _GuardrailConfig(BaseModel):

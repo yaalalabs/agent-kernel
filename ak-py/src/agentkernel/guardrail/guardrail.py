@@ -46,7 +46,7 @@ class OutputGuardrailFactory:
     @staticmethod
     def get() -> PostHook:
         if AKConfig.get().guardrail.output.enabled:
-            if AKConfig.get().guardrail.input.type == "openai":
+            if AKConfig.get().guardrail.output.type == "openai":
                 from .openai import OpenAIOutputGuardrail
 
                 return OpenAIOutputGuardrail()

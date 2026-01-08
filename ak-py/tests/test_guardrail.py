@@ -136,7 +136,7 @@ class TestOutputGuardrailFactory:
         with patch.object(AKConfig, "get") as mock_get:
             mock_config = Mock()
             mock_config.guardrail.output.enabled = True
-            mock_config.guardrail.input.type = "openai"  # Note: bug in original code uses input.type
+            mock_config.guardrail.output.type = "openai"
             mock_get.return_value = mock_config
 
             guardrail = OutputGuardrailFactory.get()

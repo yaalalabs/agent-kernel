@@ -51,6 +51,7 @@ redis = [
 openai = [
     "openai-agents>=0.6.3",
     "openinference-instrumentation-openai-agents>=1.4.0",
+    "openai-guardrails>=0.2.1",
 ]
 adk = [
     "google-adk>=1.14.1",

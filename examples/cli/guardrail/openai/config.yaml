@@ -1,0 +1,9 @@
+guardrail:
+  input:
+    enabled: true
+    type: openai
+    config_path: guardrails_input.json
+  output:
+    enabled: true
+    type: openai
+    config_path: guardrails_output.json

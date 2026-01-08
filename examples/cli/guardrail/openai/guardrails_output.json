@@ -1,0 +1,81 @@
+{
+  "input": {
+    "pipelines": [
+      {
+        "type": "Moderation",
+        "enabled": true,
+        "action": "block",
+        "thresholds": {
+          "harassment": 0.7,
+          "harassment/threatening": 0.7,
+          "hate": 0.7,
+          "hate/threatening": 0.7,
+          "self-harm": 0.7,
+          "self-harm/intent": 0.7,
+          "self-harm/instructions": 0.7,
+          "sexual": 0.7,
+          "sexual/minors": 0.7,
+          "violence": 0.7,
+          "violence/graphic": 0.7
+        }
+      },
+      {
+        "type": "Contains PII",
+        "enabled": true,
+        "action": "block",
+        "entities": [
+          "EMAIL_ADDRESS",
+          "PHONE_NUMBER",
+          "CREDIT_CARD",
+          "US_SSN",
+          "US_PASSPORT",
+          "IBAN_CODE"
+        ]
+      },
+      {
+        "type": "Jailbreak",
+        "enabled": true,
+        "action": "block"
+      },
+      {
+        "type": "Off Topic Prompts",
+        "enabled": false,
+        "action": "block",
+        "scope": "You are a customer support assistant for an e-commerce platform."
+      }
+    ]
+  },
+  "output": {
+    "pipelines": [
+      {
+        "type": "Moderation",
+        "enabled": true,
+        "action": "block",
+        "thresholds": {
+          "harassment": 0.7,
+          "harassment/threatening": 0.7,
+          "hate": 0.7,
+          "hate/threatening": 0.7,
+          "self-harm": 0.7,
+          "self-harm/intent": 0.7,
+          "self-harm/instructions": 0.7,
+          "sexual": 0.7,
+          "sexual/minors": 0.7,
+          "violence": 0.7,
+          "violence/graphic": 0.7
+        }
+      },
+      {
+        "type": "NSFW Text",
+        "enabled": true,
+        "action": "block"
+      },
+      {
+        "type": "Hallucination Detection",
+        "enabled": false,
+        "action": "block",
+        "vector_store_id": "vs_xxxxxxxxxxxxx"
+      }
+    ]
+  }
+}
