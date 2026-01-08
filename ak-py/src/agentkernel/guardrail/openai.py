@@ -114,7 +114,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
                 # Run the synchronous guardrails client in executor to avoid blocking event loop
                 await asyncio.to_thread(
                     self._guardrails_client.chat.completions.create,
-                    model="gpt-4o-mini",  # Model for guardrail checks
+                    model=AKConfig.get().guardrail.input.model,
                     messages=[{"role": "user", "content": input_text}],
                     max_tokens=1,  # We only need to check, not generate
                 )
@@ -209,7 +209,7 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
                 # Run the synchronous guardrails client in executor to avoid blocking event loop
                 await asyncio.to_thread(
                     self._guardrails_client.chat.completions.create,
-                    model="gpt-4o-mini",  # Model for guardrail checks
+                    model=AKConfig.get().guardrail.output.model,  # Model for guardrail checks
                     messages=[
                         {"role": "user", "content": agent_reply.prompt if hasattr(agent_reply, "prompt") else ""},
                         {"role": "assistant", "content": output_text}

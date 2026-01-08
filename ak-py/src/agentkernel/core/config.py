@@ -141,12 +141,14 @@ class _InputGuardrailConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
     config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file")
+    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail")
 
 
 class _OutputGuardrailConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
     config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file")
+    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail")
 
 
 class _GuardrailConfig(BaseModel):
