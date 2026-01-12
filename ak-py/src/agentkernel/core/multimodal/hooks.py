@@ -12,7 +12,7 @@ is handled in runtime.py.
 import logging
 from typing import TYPE_CHECKING
 
-from .attachment import (
+from .storage import (
     AttachmentMetadata,
     extract_description_from_response,
     format_attachment_list_for_prompt,
@@ -20,9 +20,9 @@ from .attachment import (
     save_attachment,
     update_attachment_description,
 )
-from .config import AKConfig
-from .hooks import PostHook, PreHook
-from .model import (
+from ..config import AKConfig
+from ..hooks import PostHook, PreHook
+from ..model import (
     AgentReply,
     AgentReplyText,
     AgentRequest,
@@ -32,7 +32,7 @@ from .model import (
 )
 
 if TYPE_CHECKING:
-    from .base import Agent, Session
+    from ..base import Agent, Session
 
 
 class MultimodalPreHook(PreHook):
@@ -61,8 +61,8 @@ class MultimodalPreHook(PreHook):
         :param requests: List of current agent requests
         :return: Modified requests with attachment list prepended
         """
-        config = AKConfig.get().multimodal
-        if not config.enabled:
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if not config or not config.enabled:
             return requests
 
         if not session:
@@ -124,8 +124,8 @@ class MultimodalPostHook(PostHook):
         :param agent_reply: The LLM response
         :return: The agent_reply unchanged
         """
-        config = AKConfig.get().multimodal
-        if not config.enabled:
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if not config or not config.enabled:
             return agent_reply
 
         if not session:

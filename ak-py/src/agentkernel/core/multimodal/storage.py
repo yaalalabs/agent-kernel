@@ -29,9 +29,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from .base import Session
+    from ..base import Session
 
-_log = logging.getLogger("ak.core.attachment")
+_log = logging.getLogger("ak.core.multimodal.storage")
 
 
 # Constants

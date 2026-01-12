@@ -9,7 +9,7 @@ from typing import Optional
 from singleton_type import Singleton
 
 from ..core.util.key_value_cache import KeyValueCache
-from .attachment import (
+from .multimodal import (
     get_attachment_data,
     get_attachment_list,
     parse_requested_attachment_ids,
@@ -162,7 +162,7 @@ class Runtime:
                 )
             requests = reply
 
-        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")  # COMMENTED: shows base64
+        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")  
 
         reply = await agent.runner.run(agent, session, requests)
 
