@@ -1,6 +1,7 @@
 from agentkernel.aws import Lambda
 from agentkernel.openai import OpenAIModule
 from agents import Agent
+import json
 
 math_agent = Agent(
     name="math",
@@ -22,5 +23,17 @@ triage_agent = Agent(
 )
 
 OpenAIModule([triage_agent, math_agent, history_agent])
+
+
+@Lambda.register("/app", method="GET")
+def custom_app_handler(event, context):
+    return {"recievedEventPayload": dict(event), "response": "Hello! from AK"}
+
+@Lambda.register("/app_info", method="POST")
+def custom_app_info_handler(event, context):
+    payload = json.loads(event.get("body") or "{}")
+    return {"recievedEventPayload": dict(event), "request": payload, "response": "Hello! from AK"}
+
+Lambda.override_base_paths(api_base_path="api-ninja")
 
 handler = Lambda.handler

@@ -1,8 +1,9 @@
+from __future__ import annotations
 import asyncio
 import json
 import logging
 import traceback
-from typing import Any, Dict
+from typing import Any, Dict, Callable, Optional, Tuple
 
 from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 
@@ -14,21 +15,88 @@ logging.basicConfig(
     force=True,
 )
 
-
-class Lambda:
+class LambdaRouter:
     """
-    Lambda class provides an AWS Lambda interface for interacting with agents.
-    Includes a handler method for AWS Lambda function integration.
+    A router for AWS Lambda events coming from API Gateway (REST API v1).
+
+    - Register handlers per (method, path).
+    - Path can be provided in multiple forms and will be normalized.
+    - If no handler match is found, the router returns None and caller can fallback.
     """
 
-    _log = logging.getLogger("ak.aws.lambda")
+    def __init__(self, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
+        self._log = logging.getLogger("ak.aws.lambda.router")
+        self._api_base_path = api_base_path
+        self._api_version = api_version
+        self._agent_endpoint = agent_endpoint
+        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {
+            f"{self._get_base_path()}/{self._agent_endpoint}": {
+                "POST": self._handle_agent_chat
+            }
+        }
 
-    @classmethod
-    def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """
-        AWS Lambda handler function to process incoming requests.
-        """
-        cls._log.info("Agent Kernel Agent Lambda Handler started")
+    def _get_base_path(self) -> str:
+        return f"/{self._api_base_path}/{self._api_version}"
+
+    def override_base_paths(self, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
+        old_base_path = self._get_base_path()
+        self._api_base_path = api_base_path
+        self._api_version = api_version
+        self._agent_endpoint = agent_endpoint
+        new_base_path = self._get_base_path()
+        old_to_new_path_mapping = {old_path: old_path.replace(old_base_path, new_base_path) for old_path in self._routes}
+        self._log.info(f"Old to New path mapping: {old_to_new_path_mapping}")
+        for old_path, new_path in old_to_new_path_mapping.items():
+            self._routes[new_path] = self._routes.pop(old_path)
+        self._log.info(f"Base paths updated from '{old_base_path}' to '{new_base_path}': {self._routes}")
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        '''Add leading '/' if not present and remove trailing '/' if present'''
+        if not path:
+            return "/"
+        if not path.startswith("/"):
+            path = "/" + path
+        if len(path) > 1 and path.endswith("/"):
+            path = path[:-1]
+        return path
+
+    @staticmethod
+    def _normalize_method(method: Optional[str]) -> str: 
+        return (method or "GET").upper()
+
+    def register(self, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
+        """Decorator to register a handler for a given path and method."""
+        norm_path = self._normalize_path(path)
+        if not norm_path.startswith(self._get_base_path()):
+            norm_path = self._get_base_path() + norm_path
+        norm_method = self._normalize_method(method)
+
+        def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
+            self._log.info(f"Registering route {norm_method} {norm_path} -> {func.__name__}")
+            
+            methods = self._routes.setdefault(norm_path, {})
+            if norm_method in methods:
+                self._log.warning(f"Route {norm_method} {norm_path} already exists. Skipping.")
+                return func
+            methods[norm_method] = func
+            return func
+        return _decorator
+
+    def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+        method = self._normalize_method(event.get("httpMethod"))
+        event_path = event.get("resource") or "/"
+        print(event_path)
+        handler = self._routes.get(event_path).get(method)
+        if handler:
+            self._log.debug(f"Dispatching {method} {event_path}")
+            result = handler(event, context)
+            self._log.debug(f"Wrapping Lambda function result: {result}")
+            return Lambda._wrap_response(result)
+        return None
+
+    def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        """Existing default behavior for agent chat invocation."""
         service = AgentService()
         try:
             body = json.loads(event.get("body", "{}"))
@@ -48,7 +116,7 @@ class Lambda:
             for key, value in body.items():
                 if key in ["prompt", "agent", "session_id"]:
                     continue
-                cls._log.info(f"Adding additional context: {key}={value}")
+                self._log.info(f"Adding additional context: {key}={value}")
                 requests.append(AgentRequestAny(name=key, content=value))
 
             service.select(session_id, agent)
@@ -63,7 +131,7 @@ class Lambda:
                     result = loop.run_until_complete(service.run_multi(requests=requests))
             except RuntimeError:
                 result = asyncio.run(service.run_multi(requests=requests))
-            cls._log.debug(f"Result: {result}")
+            self._log.debug(f"Result: {result}")
 
             return {
                 "statusCode": 200,
@@ -80,7 +148,7 @@ class Lambda:
             }
 
         except ValueError as ve:
-            cls._log.error(f"ValueError processing request: {ve}\n{traceback.format_exc()}")
+            self._log.error(f"ValueError processing request: {ve}\n{traceback.format_exc()}")
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -91,7 +159,7 @@ class Lambda:
                 ),
             }
         except Exception as e:
-            cls._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
+            self._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
             return {
                 "statusCode": 500,
                 "body": json.dumps(
@@ -101,3 +169,66 @@ class Lambda:
                     }
                 ),
             }
+    
+
+class Lambda:
+    """
+    Lambda class provides an AWS Lambda interface for interacting with agents.
+    Includes a handler method for AWS Lambda function integration.
+    """
+
+    _log = logging.getLogger("ak.aws.lambda")
+    _router = LambdaRouter()
+
+    @classmethod
+    def register(cls, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
+        """Expose router registration to applications: @Lambda.register('/app', 'GET')"""
+        return cls._router.register(path, method)
+
+    @classmethod
+    def override_base_paths(cls, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
+        """
+        Override the base paths for the router.
+        """
+        cls._router.override_base_paths(api_base_path, api_version, agent_endpoint)
+
+    @staticmethod
+    def _wrap_response(result: Any) -> Dict[str, Any]:
+        """
+        Normalize various handler return types into API Gateway compatible responses.
+        Supported:
+        - dict -> 200 with JSON body
+        - (statusCode, dict|str) -> exact status and body
+        - str -> 200 with text body
+        - already-formed {statusCode, body} -> passthrough
+        """
+        if isinstance(result, dict) and "statusCode" in result and "body" in result:
+            return result  # already well-formed
+        if isinstance(result, tuple) and len(result) == 2:
+            status, body = result
+            if isinstance(body, (dict, list)):
+                return {"statusCode": int(status), "body": json.dumps(body)}
+            return {"statusCode": int(status), "body": str(body)}
+        if isinstance(result, (dict, list)):
+            return {"statusCode": 200, "body": json.dumps(result)}
+        return {"statusCode": 200, "body": str(result)}
+
+    @classmethod
+    def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        """
+        AWS Lambda handler function to process incoming requests.
+        """
+        cls._log.info("Agent Kernel Agent Lambda Handler started")
+        cls._log.info(f"Registered Routes: {cls._router._routes}")
+        # Attempting to dispatch to custom routes
+        try:
+            dispatched = cls._router.dispatch(event, context)
+            if dispatched is not None:
+                return dispatched
+        except Exception:
+            # Exception in custom route handler/Lmabda function raise 500
+            cls._log.exception("Custom route handler failed")
+            return {"statusCode": 500, "body": json.dumps({"error": "Custom handler error"})}
+
+        # Path not found raise 404
+        return {"statusCode": 404, "body": json.dumps({"error": "No route found"})}
