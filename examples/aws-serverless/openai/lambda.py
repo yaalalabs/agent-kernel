@@ -34,6 +34,6 @@ def custom_app_info_handler(event, context):
     payload = json.loads(event.get("body") or "{}")
     return {"recievedEventPayload": dict(event), "request": payload, "response": "Hello! from AK"}
 
-Lambda.override_base_paths(api_base_path="api-ninja")
+Lambda.override_base_paths(api_base_path="api-new")
 
 handler = Lambda.handler
