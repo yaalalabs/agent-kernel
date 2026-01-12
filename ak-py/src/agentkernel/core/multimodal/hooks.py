@@ -12,14 +12,6 @@ is handled in runtime.py.
 import logging
 from typing import TYPE_CHECKING
 
-from .storage import (
-    AttachmentMetadata,
-    extract_description_from_response,
-    format_attachment_list_for_prompt,
-    get_attachment_list,
-    save_attachment,
-    update_attachment_description,
-)
 from ..config import AKConfig
 from ..hooks import PostHook, PreHook
 from ..model import (
@@ -29,6 +21,14 @@ from ..model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+)
+from .storage import (
+    AttachmentMetadata,
+    extract_description_from_response,
+    format_attachment_list_for_prompt,
+    get_attachment_list,
+    save_attachment,
+    update_attachment_description,
 )
 
 if TYPE_CHECKING:

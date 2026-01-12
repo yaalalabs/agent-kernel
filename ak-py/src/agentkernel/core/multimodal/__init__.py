@@ -6,6 +6,7 @@ This module provides:
 - Pre/Post hooks for the 2-step LLM attachment memory flow
 """
 
+from .hooks import MultimodalPostHook, MultimodalPreHook
 from .storage import (
     AttachmentData,
     AttachmentMetadata,
@@ -17,7 +18,6 @@ from .storage import (
     save_attachment,
     update_attachment_description,
 )
-from .hooks import MultimodalPostHook, MultimodalPreHook
 
 __all__ = [
     # Storage

@@ -9,11 +9,6 @@ from typing import Optional
 from singleton_type import Singleton
 
 from ..core.util.key_value_cache import KeyValueCache
-from .multimodal import (
-    get_attachment_data,
-    get_attachment_list,
-    parse_requested_attachment_ids,
-)
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .config import AKConfig
@@ -26,6 +21,11 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+)
+from .multimodal import (
+    get_attachment_data,
+    get_attachment_list,
+    parse_requested_attachment_ids,
 )
 from .session import SessionStore
 
@@ -162,7 +162,7 @@ class Runtime:
                 )
             requests = reply
 
-        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")  
+        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
         reply = await agent.runner.run(agent, session, requests)
 
