@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.9"
+version = "0.2.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/75/a4/c3b7b1663131bd275b99bb91d77d66983f598c9e0b686f57558ab9b6e1e2/agentkernel-0.2.9.tar.gz", hash = "sha256:976ccc343039f35ab4661e97f42f935ec88627ba1763980c68f983523ef09fdc", size = 76953, upload-time = "2025-12-18T12:28:27.293Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e9/51/7901fe4557e20322030c2f96cfa8470662a723897ff3efc359a94f38f6c5/agentkernel-0.2.10.tar.gz", hash = "sha256:1e900ded7ec2f7d0ead6c16f7c3094f5d8ba8b4fec75b46aab12a444108200fc", size = 81369, upload-time = "2026-01-03T07:47:24.129Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e6/6b/ea9652f7d83c29fdff8322bcb4a0ac8fa6c55214f9e0334a947a86ac2d95/agentkernel-0.2.9-py3-none-any.whl", hash = "sha256:307d6299baf7f9f579ab100492ddc2a66facbb8fc3b2960937b007f40bb66efa", size = 121841, upload-time = "2025-12-18T12:28:26.002Z" },
+    { url = "https://files.pythonhosted.org/packages/99/e6/d9026f60d387a7f342487b42a3b825a73c887d8c3831e849a0a0b23a246a/agentkernel-0.2.10-py3-none-any.whl", hash = "sha256:7e23abf73a6d38b8199aa1def9069feed94ca41fc6aba1bb781f620298f05f95", size = 126016, upload-time = "2026-01-03T07:47:22.223Z" },
 ]
 
 [package.optional-dependencies]
@@ -34,6 +34,7 @@ openai = [
     { name = "openinference-instrumentation-openai-agents" },
 ]
 slack = [
+    { name = "httpx" },
     { name = "slack-bolt" },
 ]
 test = [
@@ -207,13 +208,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["api", "openai", "slack"], specifier = ">=0.2.9" },
+    { name = "agentkernel", extras = ["api", "openai", "slack"], specifier = ">=0.2.10" },
     { name = "aiohttp", specifier = ">=3.13.2" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.9" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.10" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

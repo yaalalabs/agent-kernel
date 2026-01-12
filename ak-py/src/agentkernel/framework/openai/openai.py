@@ -21,7 +21,7 @@ from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
-from ...core.multimodal import MultimodalModuleMixin
+from ...core.multimodal import MultimodalPostHook, MultimodalPreHook
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -216,15 +216,9 @@ class OpenAIAgent(BaseAgent):
         return self._generate_a2a_card(agent_name=self.name, description=self.agent.instructions, skills=skills)
 
 
-class OpenAIModule(MultimodalModuleMixin, Module):
+class OpenAIModule(Module):
     """
     OpenAIModule class provides a module for OpenAI Agents SDK based agents.
-
-    When multimodal memory is enabled (default), this module automatically registers
-    hooks to provide conversation memory for images and files:
-    - MultimodalContextHook (pre-hook): Injects previous attachments into follow-up requests
-    - MultimodalMemoryHook (post-hook): Saves new attachments to session cache
-
     """
 
     def __init__(self, agents: list[Agent], runner: OpenAIRunner = None):
@@ -242,8 +236,21 @@ class OpenAIModule(MultimodalModuleMixin, Module):
             self.runner = OpenAIRunner()
         self.load(agents)
 
-        # Auto-register multimodal memory hooks (from MultimodalModuleMixin)
-        self._register_multimodal_hooks(agents)
+        # Auto-register multimodal memory hooks if enabled
+        if AKConfig.get().multimodal.enabled:
+            self._register_multimodal_hooks(agents)
+
+    def _register_multimodal_hooks(self, agents: list[Agent]):
+        """
+        Register multimodal hooks for all agents.
+        """
+        pre_hook = MultimodalPreHook()
+        post_hook = MultimodalPostHook()
+        for agent in agents:
+            wrapped = self.get_agent(agent.name)
+            if wrapped:
+                wrapped.attach_pre_hooks([pre_hook])
+                wrapped.attach_post_hooks([post_hook])
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         """

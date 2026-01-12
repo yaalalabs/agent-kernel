@@ -24,8 +24,16 @@ from .model import (
 )
 from .config import AKConfig as Config
 from .module import Module
-from .runtime import GlobalRuntime, Runtime
+from .runtime import Runtime, AuxiliaryCache
 from .service import AgentService
 from .hooks import PreHook, PostHook
 from .util.key_value_cache import KeyValueCache
-from .multimodal import MultimodalContextHook, MultimodalMemoryHook, MultimodalModuleMixin
+from .multimodal import MultimodalPreHook, MultimodalPostHook
+from .attachment import (
+    save_attachment,
+    get_attachment_list,
+    get_attachment_data,
+    update_attachment_description,
+    AttachmentMetadata,
+    AttachmentData,
+)

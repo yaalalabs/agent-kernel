@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import logging
 from threading import RLock
@@ -6,10 +8,15 @@ from typing import Optional
 
 from singleton_type import Singleton
 
-from agentkernel.core.util.key_value_cache import KeyValueCache
-
+from ..core.util.key_value_cache import KeyValueCache
+from .attachment import (
+    get_attachment_data,
+    get_attachment_list,
+    parse_requested_attachment_ids,
+)
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
+from .config import AKConfig
 from .model import (
     AgentReply,
     AgentReplyImage,
@@ -28,6 +35,9 @@ class Runtime:
     Runtime class provides the environment for hosting and running agents.
     """
 
+    _current: Optional[Runtime] = None
+    _lock: RLock = RLock()
+
     def __init__(self, sessions: SessionStore):
         """
         Initialize the Runtime.
@@ -38,36 +48,55 @@ class Runtime:
         self._agents = {}
         self._sessions = sessions
 
+    @staticmethod
+    def current() -> Runtime:
+        """
+        Return the currently active Runtime instance. By default this is the
+        global singleton Runtime instance.
+
+        :return: The currently active runtime instance.
+        """
+        return Runtime._current or GlobalRuntime.instance()
+
     def __enter__(self) -> "Runtime":
         """
-        Enter the Runtime context manager and attach the Runtime to the ModuleLoader.
+        Enter the Runtime context manager and set as the current Runtime.
 
-        This method is called when entering a 'with' statement block. It attaches
-        the ModuleLoader to this runtime instance, making it the active runtime
-        context for module loading operations.
+        This method is called when entering a 'with' statement block. It sets
+        this runtime instance as the active runtime context.
 
         :return: The runtime instance itself, allowing it to be used as a context manager in with statements.
         """
-        ModuleLoader.attach(self)
+        with Runtime._lock:
+            if Runtime._current is not None and Runtime._current != self:
+                raise Exception("A different runtime is already active")
+            Runtime._current = self
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """
-        Exit the Runtime context manager and detach from the ModuleLoader.
+        Exit the Runtime context manager and clear the current Runtime.
 
-        This method is called when exiting a 'with' statement block. It detaches
-        the runtime instance from the ModuleLoader, performing necessary cleanup.
+        This method is called when exiting a 'with' statement block. It clears
+        the runtime instance from being the active runtime, performing necessary cleanup.
         """
-        ModuleLoader.detach(self)
+        with Runtime._lock:
+            if Runtime._current is not None and Runtime._current != self:
+                raise Exception("A different runtime is currently active")
+            Runtime._current = None
 
     def load(self, module: str) -> ModuleType:
         """
         Loads an agent module dynamically.
         :param module: Name of the module to load.
         :return: The loaded module.
+
+        :raises ModuleNotFoundError: If the specified module cannot be found.
+        :raises ImportError: If there's an error during the module import process.
         """
         self._log.debug(f"Loading module '{module}'")
-        return ModuleLoader.load(self, module)
+        with self:
+            return importlib.import_module(module)
 
     def agents(self) -> dict[str, Agent]:
         """
@@ -133,9 +162,57 @@ class Runtime:
                 )
             requests = reply
 
-        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
+        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")  # COMMENTED: shows base64
 
         reply = await agent.runner.run(agent, session, requests)
+
+        # 2-step LLM logic: Check if LLM requested previous attachments
+        config = AKConfig.get().multimodal
+        if config.enabled and session:
+            reply_text = getattr(reply, "text", "")
+            available_attachments = get_attachment_list(session)
+            available_ids = [att.id for att in available_attachments]
+
+            requested_ids = parse_requested_attachment_ids(reply_text, available_ids)
+            if requested_ids:
+                self._log.info(f"LLM requested attachments: {requested_ids}. Running second LLM call.")
+
+                # Load requested attachment data
+                attachments = get_attachment_data(session, requested_ids)
+
+                # Build new requests with attachment data
+                attachment_requests = []
+                for att in attachments:
+                    if att.type == "image":
+                        img_req = AgentRequestImage(
+                            image_data=att.data,
+                            name=att.name,
+                            mime_type=att.mime_type,
+                        )
+                        img_req._from_previous = True
+                        attachment_requests.append(img_req)
+                    else:
+                        file_req = AgentRequestFile(
+                            file_data=att.data,
+                            name=att.name,
+                            mime_type=att.mime_type,
+                        )
+                        file_req._from_previous = True
+                        attachment_requests.append(file_req)
+
+                # Add context about loaded attachments
+                context = AgentRequestText(
+                    text="[PREVIOUS ATTACHMENTS NOW LOADED]\nThe previous attachments you requested are included below. Please answer the user's question based on these attachments."
+                )
+                context._injected = True
+
+                # Filter out the previous attachment list injection and add loaded ones
+                filtered_requests = [r for r in requests if not getattr(r, "_injected", False)]
+                new_requests = [context] + attachment_requests + filtered_requests
+
+                # Second LLM call with actual attachment data
+                reply = await agent.runner.run(agent, session, new_requests)
+                self._log.info("Second LLM call completed with attachment data")
 
         post_hooks = agent.post_hooks
         for hook in post_hooks:
@@ -153,32 +230,6 @@ class Runtime:
         :return: The session storage.
         """
         return self._sessions
-
-    def get_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
-        """
-        Retrieves the volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the volatile cache for. If not provided, the current context is used to find the session
-        :return: The volatile key-value cache.
-        """
-        if session_id is None:
-            session_id = Session.get_current_session_id()
-
-        if session_id is None or session_id == "":
-            raise Exception("No current session context available to retrieve volatile cache.")
-        return self._sessions.load(session_id).get_volatile_cache()
-
-    def get_non_volatile_cache(self, session_id: str | None = None) -> KeyValueCache:
-        """
-        Retrieves the non-volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current context is used to find the session
-        :return: The non-volatile key-value cache.
-        """
-        if session_id is None:
-            session_id = Session.get_current_session_id()
-
-        if session_id is None or session_id == "":
-            raise Exception("No current session context available to retrieve non-volatile cache.")
-        return self._sessions.load(session_id).get_non_volatile_cache()
 
 
 class GlobalRuntime(Runtime, metaclass=Singleton):
@@ -204,66 +255,37 @@ class GlobalRuntime(Runtime, metaclass=Singleton):
         return GlobalRuntime()
 
 
-class ModuleLoader:
+class AuxiliaryCache:
     """
-    ModuleLoader is responsible for loading agent modules dynamically.
+    AuxiliaryCache provides access to volatile and non-volatile key-value caches associated with
+    the current or a provided session.
     """
 
-    _runtime: Optional[Runtime] = None
-    _lock: RLock = RLock()
+    @staticmethod
+    def get_volatile_cache(session_id: str | None = None) -> KeyValueCache:
+        """
+        Retrieves the volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the volatile cache for. If not provided, the current context is used to find the session
+        :return: The volatile key-value cache.
+        """
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+
+        if session_id is None or session_id == "":
+            raise Exception("No current session context available to retrieve volatile cache.")
+
+        return Runtime.current().sessions().load(session_id).get_volatile_cache()
 
     @staticmethod
-    def runtime() -> Runtime:
+    def get_non_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
-        Return the Runtime instance set to load the module. By default this is the
-        global singleton Runtime instance.
+        Retrieves the non-volatile key-value cache associated with the provided session.
+        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current context is used to find the session
+        :return: The non-volatile key-value cache.
         """
-        return ModuleLoader._runtime or GlobalRuntime.instance()
+        if session_id is None:
+            session_id = Session.get_current_session_id()
 
-    @staticmethod
-    def attach(runtime: Runtime):
-        """
-        Attach a Runtime instance to the ModuleLoader.
-
-        This method sets the Runtime instance that will be used by the ModuleLoader for
-        loading and managing modules. It ensures thread-safety using a lock and validates
-        that only one Runtime can be attached at a time.
-
-        :param runtime: The Runtime instance to attach to the ModuleLoader.
-        :raises Exception: If a different runtime instance is already attached to the ModuleLoader.
-        """
-        with ModuleLoader._lock:
-            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
-                raise Exception("A different runtime is already attached")
-            ModuleLoader._runtime = runtime
-
-    @staticmethod
-    def detach(runtime: Runtime):
-        """
-        Detach a Runtime instance from the ModuleLoader.
-
-        This method removes the Runtime association from the ModuleLoader in a thread-safe manner.
-        It validates that the runtime being detached matches the currently attached runtime before
-        proceeding with the detachment.
-
-        :param runtime: The runtime instance to detach from the ModuleLoader.
-        :raises Exception: If a different runtime is currently attached than the one being detached.
-        """
-        with ModuleLoader._lock:
-            if ModuleLoader._runtime is not None and ModuleLoader._runtime != runtime:
-                raise Exception("A different runtime is already attached")
-            ModuleLoader._runtime = None
-
-    @staticmethod
-    def load(runtime: Runtime, module: str) -> ModuleType:
-        """
-        Load a module within the context of a given runtime.
-        :param runtime: The runtime environment to be associated with the module loading process.
-        :param module: The name of the module to import (e.g., 'os.path' or 'mypackage.mymodule').
-        :return: The imported module object.
-
-        :raises ModuleNotFoundError: If the specified module cannot be found.
-        :raises ImportError: If there's an error during the module import process.
-        """
-        with ModuleLoader._lock, runtime:
-            return importlib.import_module(module)
+        if session_id is None or session_id == "":
+            raise Exception("No current session context available to retrieve non-volatile cache.")
+        return Runtime.current().sessions().load(session_id).get_non_volatile_cache()

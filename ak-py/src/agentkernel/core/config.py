@@ -122,20 +122,14 @@ class _GmailConfig(BaseModel):
 
 
 class _MultimodalConfig(BaseModel):
-    """Configuration for multimodal memory."""
+    """Configuration for multimodal attachment memory."""
 
     enabled: bool = Field(
         default=True,
-        description="Enable multimodal memory. When enabled, images and files are persisted "
-        "in session cache and automatically injected into follow-up requests.",
+        description="Enable multimodal memory for images and files.",
     )
-    max_attachments: int = Field(
-        default=5, description="Maximum number of recent attachments to keep in context for follow-up questions"
-    )
-    attachment_ttl: int = Field(
-        default=604800,
-        description="Time-to-live for attachments in seconds (default: 604800 = 1 week, matches session TTL)",
-    )
+    max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
+    description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
 
 
 class _TraceConfig(BaseModel):
@@ -179,7 +173,7 @@ class AKConfig(YamlBaseSettingsModified):
     )
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
     multimodal: _MultimodalConfig = Field(
-        description="Multimodal memory related configurations", default_factory=_MultimodalConfig
+        description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)

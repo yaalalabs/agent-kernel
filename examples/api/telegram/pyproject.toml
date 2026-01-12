@@ -5,12 +5,12 @@ description = "Telegram Bot integration example using Agent Kernel"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,telegram]>=0.2.9",
+    "agentkernel[api,openai,telegram]>=0.2.10",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.9",
+    "agentkernel[test]>=0.2.10",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",

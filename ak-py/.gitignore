@@ -5,3 +5,4 @@ dist
 htmlcov
 report.html
 assets
+.python-version

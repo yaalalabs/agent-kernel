@@ -41,7 +41,7 @@ Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-
 ### 3. Deploy
 
 ```bash
-terraform init && terraform deploy
+terraform init && terraform apply
 ```
 
 ## Lambda Handler

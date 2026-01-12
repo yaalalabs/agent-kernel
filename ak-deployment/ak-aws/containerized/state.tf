@@ -39,12 +39,20 @@ locals {
       : "${upper(try(ep["method"], "ANY"))} /${join("/", compact([local.api_base_segment, var.api_version, trim(try(ep["path"], ""), "/")]))}"
     ) => ep
   }
-  gateway_endpoints_map = merge(local.default_gateway_map, local.user_gateway_map)
+  mcp_endpoint_path = "/${join("/", compact([ local.api_base_segment, var.api_version, "mcp" ]))}"
+  mcp_gateway_map = var.enable_mcp_server ? {
+    "ANY ${local.mcp_endpoint_path}" = {
+      path           = "mcp"
+      method         = "ANY"
+      overwrite_path = "/mcp/"
+    }
+  } : {}
+  gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
 }
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.2.9"
+  version              = "0.2.10"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -56,7 +64,7 @@ module "vpc" {
 
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.2.9"
+  version       = "0.2.10"
   count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -69,7 +77,7 @@ module "redis" {
 module "docker_image" {
   count         = 1
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.2.9"
+  version       = "0.2.10"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -78,7 +86,7 @@ module "docker_image" {
 
 module dynamodb_memory {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.2.9"
+  version = "0.2.10"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
