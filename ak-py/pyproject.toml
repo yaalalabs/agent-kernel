@@ -34,10 +34,10 @@ crewai = [
     "openinference-instrumentation-litellm>=0.1.28",
 ]
 langgraph = [
-    "langgraph~=0.6.2",
-    "langchain~=0.3.27",
-    "langchain_community~=0.3.27",
-    "litellm~=1.74.3"
+    "langgraph~=1.0.5",
+    "langchain~=1.2.3",
+    "langchain_community~=0.4.1",
+    "litellm~=1.74.9"
 ]
 cli = [
 
@@ -49,7 +49,7 @@ redis = [
     "redis>=7.1.0",
 ]
 openai = [
-    "openai-agents>=0.6.3",
+    "openai-agents>=0.6.5",
     "openinference-instrumentation-openai-agents>=1.4.0",
     "openai-guardrails>=0.2.1",
 ]
