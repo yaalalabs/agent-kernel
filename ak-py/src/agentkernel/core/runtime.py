@@ -167,8 +167,8 @@ class Runtime:
         reply = await agent.runner.run(agent, session, requests)
 
         # 2-step LLM logic: Check if LLM requested previous attachments
-        config = AKConfig.get().multimodal
-        if config.enabled and session:
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled and session:
             reply_text = getattr(reply, "text", "")
             available_attachments = get_attachment_list(session)
             available_ids = [att.id for att in available_attachments]
