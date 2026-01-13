@@ -191,7 +191,7 @@ function CoreFeaturesSection() {
       title: 'Content Safety & Guardrails',
       description: 'Built-in guardrails for content safety and compliance with support for OpenAI and AWS Bedrock guardrail providers.',
       highlights: ['Input/output validation', 'PII detection & redaction', 'Content moderation', 'Jailbreak protection'],
-      link: '/docs/advanced/guardrails'
+      // link: '/docs/advanced/guardrails' // Link temporarily disabled pending guardrails docs
     },
   ];
 
@@ -683,7 +683,8 @@ function GuardrailsSection() {
                 <p>Enterprise-grade content filtering with 30+ PII types and contextual grounding</p>
               </div>
             </div>
-            <Link to="/docs/advanced/guardrails" className={styles.learnMoreLink}>
+            {/* <Link to="/docs/advanced/guardrails" className={styles.learnMoreLink}> Temporarily removed until doc site is updated and available */}
+            <Link className={styles.learnMoreLink}>
               Learn more about guardrails →
             </Link>
           </div>
@@ -723,6 +724,17 @@ function MessagingSection() {
                 <h3>{platform.name}</h3>
               </>
             );
+            
+            if (platform.status === 'Coming Soon') {
+              return (
+                <div 
+                  key={idx} 
+                  className={`${styles.messagingCard} ${styles.comingSoon}`}
+                  style={{ animationDelay: `${idx * 0.1}s` }}>
+                  {card}
+                </div>
+              );
+            }
             
             const docLink = `/docs/integrations/${platform.name.toLowerCase()}`;
             return (

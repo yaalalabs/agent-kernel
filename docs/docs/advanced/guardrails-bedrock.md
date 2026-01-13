@@ -363,9 +363,9 @@ AWS Bedrock Guardrails pricing (as of 2026):
 - [AWS Bedrock Guardrails Documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html)
 - [AWS Bedrock API Reference](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_Operations_Amazon_Bedrock.html)
 - [Boto3 Bedrock Documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/bedrock-runtime.html)
-- [OpenAI Guardrails](/docs/advanced/guardrails-openai) - Alternative provider
-- [Guardrails Overview](/docs/advanced/guardrails)
-- [Configuration Guide](/docs/core-concepts/configuration)
+- [OpenAI Guardrails](./guardrails-openai) - Alternative provider
+- [Guardrails Overview](./guardrails)
+- [Configuration Guide](../core-concepts/configuration)
 - [Working Example](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail/bedrock)
 
 ## Support

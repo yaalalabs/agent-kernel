@@ -696,8 +696,8 @@ guardrail:
 
 - [OpenAI Guardrails Documentation](https://guardrails.openai.com/)
 - [OpenAI Guardrails PyPI Package](https://pypi.org/project/openai-guardrails/)
-- [Configuration Guide](/docs/core-concepts/configuration)
-- [Guardrails Overview](/docs/advanced/guardrails)
+- [Configuration Guide](../core-concepts/configuration)
+- [Guardrails Overview](./guardrails)
 
 ## Examples
 

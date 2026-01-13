@@ -24,8 +24,8 @@ Guardrails act as protective layers that validate content before and after agent
 
 | Provider | Status | Documentation |
 |----------|--------|---------------|
-| **OpenAI Guardrails** | ✅ Available Now | [OpenAI Guardrails →](/docs/advanced/guardrails-openai) |
-| **AWS Bedrock Guardrails** | ✅ Available Now | [Bedrock Guardrails →](/docs/advanced/guardrails-bedrock) |
+| **OpenAI Guardrails** | ✅ Available Now | [OpenAI Guardrails →](./guardrails-openai) |
+| **AWS Bedrock Guardrails** | ✅ Available Now | [Bedrock Guardrails →](./guardrails-bedrock) |
 
 ## How Guardrails Work
 
@@ -80,14 +80,14 @@ Guardrails provide defense in depth:
 pip install agentkernel[openai]
 ```
 
-See the [OpenAI Guardrails Guide](/docs/advanced/guardrails-openai) for setup instructions.
+See the [OpenAI Guardrails Guide](./guardrails-openai) for setup instructions.
 
 **AWS Bedrock Guardrails**:
 ```bash
 pip install agentkernel[aws]
 ```
 
-See the [Bedrock Guardrails Guide](/docs/advanced/guardrails-bedrock) for setup instructions.
+See the [Bedrock Guardrails Guide](./guardrails-bedrock) for setup instructions.
 
 ### 2. Configure Agent Kernel
 
@@ -300,7 +300,7 @@ guardrail:
 
 ### Get Started with OpenAI Guardrails
 
-👉 **[OpenAI Guardrails Guide](/docs/advanced/guardrails-openai)**
+👉 **[OpenAI Guardrails Guide](./guardrails-openai)**
 
 - Complete setup instructions
 - Configuration examples
@@ -309,7 +309,7 @@ guardrail:
 
 ### Learn About Bedrock Guardrails
 
-👉 **[Bedrock Guardrails Guide](/docs/advanced/guardrails-bedrock)**
+👉 **[Bedrock Guardrails Guide](./guardrails-bedrock)**
 
 - Complete setup instructions
 - Configuration examples
@@ -318,8 +318,8 @@ guardrail:
 
 ## Related Resources
 
-- **[Configuration Guide](/docs/core-concepts/configuration)** - Complete config reference
-- **[Hooks Documentation](/docs/integrations/hooks)** - Custom validation logic
+- **[Configuration Guide](../core-concepts/configuration)** - Complete config reference
+- **[Hooks Documentation](../integrations/hooks)** - Custom validation logic
 - **[Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail)** - Working code examples
 
 ## Support
