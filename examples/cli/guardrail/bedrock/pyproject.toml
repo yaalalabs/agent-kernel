@@ -1,7 +1,7 @@
 [project]
-name = "guardrail-openai"
+name = "guardrail-bedrock"
 version = "0.1.0"
-description = "Demo of LangGraph based agents running in Agent Kernel with OpenAI guardrails enabled"
+description = "Demo of LangGraph based agents running in Agent Kernel with AWS Bedrock Guardrails enabled"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

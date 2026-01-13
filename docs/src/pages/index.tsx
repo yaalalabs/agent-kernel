@@ -168,6 +168,20 @@ function IntegrationsSection() {
       link: '/docs/advanced/traceability',
       category: 'Traceability & Observability',
     },
+    {
+      name: 'OpenAI Guardrails',
+      logo: '/img/integrations/openai.svg',
+      link: '/docs/advanced/guardrails-openai',
+      category: 'Content Safety & Compliance',
+      invertLogo: true,
+    },
+    {
+      name: 'AWS Bedrock Guardrails',
+      logo: '/img/integrations/aws-bedrock.svg',
+      link: '/docs/advanced/guardrails-bedrock',
+      category: 'Content Safety & Compliance',
+      invertLogo: true,
+    },
   ];
 
   return (

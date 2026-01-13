@@ -186,6 +186,13 @@ function CoreFeaturesSection() {
       highlights: ['MCP integration', 'A2A messaging', 'Cross-agent coordination'],
       link: '/docs/api/mcp-server'
     },
+    {
+      icon: <MdSecurity />,
+      title: 'Content Safety & Guardrails',
+      description: 'Built-in guardrails for content safety and compliance with support for OpenAI and AWS Bedrock guardrail providers.',
+      highlights: ['Input/output validation', 'PII detection & redaction', 'Content moderation', 'Jailbreak protection'],
+      link: '/docs/advanced/guardrails'
+    },
   ];
 
   return (
@@ -637,21 +644,70 @@ function ObservabilitySection() {
   );
 }
 
+function GuardrailsSection() {
+  return (
+    <section className={styles.section}>
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionNumber}>08</span>
+          <h2 className={styles.sectionTitle}>Content Safety & Compliance</h2>
+          <p className={styles.sectionSubtitle}>
+            Protect users and ensure compliance with built-in guardrails
+          </p>
+        </div>
+        
+        <div className={styles.observabilityContent}>
+          <div className={styles.observabilityFeature}>
+            <MdSecurity className={styles.observabilityIcon} />
+            <h3>Multi-Layer Protection</h3>
+            <p>Validate content before and after agent processing to ensure safety and compliance.</p>
+            <ul>
+              <li>Input validation before agent processing</li>
+              <li>Output validation before user delivery</li>
+              <li>PII detection and redaction</li>
+              <li>Content moderation and filtering</li>
+              <li>Jailbreak and prompt attack detection</li>
+              <li>Topic and keyword-based blocking</li>
+            </ul>
+          </div>
+
+          <div className={styles.observabilityIntegrations}>
+            <h3>Supported Guardrail Providers</h3>
+            <div className={styles.integrationCards}>
+              <div className={styles.integrationCard}>
+                <h4>OpenAI Guardrails</h4>
+                <p>Flexible LLM-based content validation with custom rules and policies</p>
+              </div>
+              <div className={styles.integrationCard}>
+                <h4>AWS Bedrock Guardrails</h4>
+                <p>Enterprise-grade content filtering with 30+ PII types and contextual grounding</p>
+              </div>
+            </div>
+            <Link to="/docs/advanced/guardrails" className={styles.learnMoreLink}>
+              Learn more about guardrails →
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MessagingSection() {
   const platforms = [
-    { name: 'Slack', icon: <FaSlack />, status: 'Available' },
-    { name: 'WhatsApp', icon: <FaWhatsapp />, status: 'Available' },
-    { name: 'Messenger', icon: <FaFacebookMessenger />, status: 'Available' },
-    { name: 'Telegram', icon: <FaTelegram />, status: 'Available' },
-    { name: 'Instagram', icon: <FaInstagram />, status: 'Available' },
-    { name: 'Gmail', icon: <SiGmail />, status: 'Available' },
+    { name: 'Slack', icon: <FaSlack /> },
+    { name: 'WhatsApp', icon: <FaWhatsapp /> },
+    { name: 'Messenger', icon: <FaFacebookMessenger /> },
+    { name: 'Telegram', icon: <FaTelegram /> },
+    { name: 'Instagram', icon: <FaInstagram /> },
+    { name: 'Gmail', icon: <SiGmail /> },
   ];
 
   return (
     <section className={styles.section}>
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>08</span>
+          <span className={styles.sectionNumber}>10</span>
           <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Connect your AI agents to popular messaging platforms and reach your users where they are. 
@@ -665,20 +721,8 @@ function MessagingSection() {
               <>
                 <div className={styles.messagingIcon}>{platform.icon}</div>
                 <h3>{platform.name}</h3>
-                <span className={styles.messagingStatus}>{platform.status}</span>
               </>
             );
-            
-            if (platform.status === 'Coming Soon') {
-              return (
-                <div 
-                  key={idx} 
-                  className={`${styles.messagingCard} ${styles.comingSoon}`}
-                  style={{ animationDelay: `${idx * 0.1}s` }}>
-                  {card}
-                </div>
-              );
-            }
             
             const docLink = `/docs/integrations/${platform.name.toLowerCase()}`;
             return (
@@ -762,6 +806,7 @@ export default function Features() {
         <TestingSection />
         <DeploymentSection />
         <ObservabilitySection />
+        <GuardrailsSection />
         <MessagingSection />
         <CTASection />
       </main>
