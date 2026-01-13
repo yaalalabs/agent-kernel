@@ -437,9 +437,9 @@ Your agents now have enterprise-grade content safety:
 
 We've created comprehensive guides to get you started:
 
-- **[Guardrails Overview](/docs/next/advanced/guardrails)** - Architecture and concepts
-- **[OpenAI Guardrails Guide](/docs/next/advanced/guardrails-openai)** - Complete setup and configuration
-- **[AWS Bedrock Guide](/docs/next/advanced/guardrails-bedrock)** - IAM setup, policies, and best practices
+- **[Guardrails Overview](/docs/advanced/guardrails)** - Architecture and concepts
+- **[OpenAI Guardrails Guide](/docs/advanced/guardrails-openai)** - Complete setup and configuration
+- **[AWS Bedrock Guide](/docs/advanced/guardrails-bedrock)** - IAM setup, policies, and best practices
 - **[Working Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail)** - Copy-paste ready code
 
 ## Join the Community
@@ -470,7 +470,7 @@ As AI agents become more powerful and widespread, content safety isn't optional 
 
 Deploy your agents with confidence, knowing they're protected by best-in-class content safety guardrails.
 
-Ready to build safer AI? [Get started with guardrails today →](/docs/next/advanced/guardrails)
+Ready to build safer AI? [Get started with guardrails today →](/docs/advanced/guardrails)
 
 ---
 
