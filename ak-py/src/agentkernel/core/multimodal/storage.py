@@ -192,40 +192,6 @@ def get_attachment_data(session: "Session", attachment_ids: list[str]) -> list[A
     return result
 
 
-def update_attachment_description(
-    session: "Session",
-    attachment_id: str,
-    description: str,
-    max_length: int = DEFAULT_DESCRIPTION_MAX_LENGTH,
-) -> bool:
-    """
-    Update the description for an attachment.
-
-    :param session: The session containing the attachment
-    :param attachment_id: ID of the attachment to update
-    :param description: New description text
-    :param max_length: Maximum length for description
-    :return: True if updated, False if attachment not found
-    """
-    if not session:
-        return False
-
-    nv_cache = session.get_non_volatile_cache()
-    attachment = nv_cache.get(f"{ATTACHMENT_KEY_PREFIX}{attachment_id}")
-
-    if not attachment:
-        return False
-
-    # Truncate description if too long
-    if len(description) > max_length:
-        description = description[:max_length].rsplit(" ", 1)[0] + "..."
-
-    attachment["description"] = description
-    nv_cache.set(f"{ATTACHMENT_KEY_PREFIX}{attachment_id}", attachment)
-    _log.debug(f"Updated description for attachment {attachment_id}")
-    return True
-
-
 def format_attachment_list_for_prompt(attachments: list[AttachmentMetadata]) -> str:
     """
     Format attachment list as text for LLM prompt.

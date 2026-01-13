@@ -16,7 +16,6 @@ from .storage import (
     get_attachment_list,
     parse_requested_attachment_ids,
     save_attachment,
-    update_attachment_description,
 )
 
 __all__ = [
@@ -26,7 +25,6 @@ __all__ = [
     "save_attachment",
     "get_attachment_list",
     "get_attachment_data",
-    "update_attachment_description",
     "format_attachment_list_for_prompt",
     "parse_requested_attachment_ids",
     "extract_description_from_response",

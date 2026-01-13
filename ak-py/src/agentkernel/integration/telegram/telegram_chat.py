@@ -30,7 +30,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._api_version = Config.get().telegram.api_version or "bot"
         self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
         self._http_timeout = 30.0  # Timeout for file downloads and API calls
-        self._max_file_size = 2 * 1024 * 1024  # 2MB
+        self._max_file_size = Config.get().api.max_file_size
 
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
@@ -396,8 +396,8 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                         file_path = file_info.get("file_path")
                         file_size = file_info.get("file_size", 0)
 
-                        # Validate file size before download
-                        if not file_size or file_size <= self._max_file_size:
+                        # Validate file size before download (require valid size)
+                        if file_size and file_size <= self._max_file_size:
                             # Download file
                             file_content = await self._download_telegram_file(file_path)
                             if file_content is not None:
@@ -451,8 +451,8 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                     file_path = file_info.get("file_path")
                     file_size = file_info.get("file_size", 0)
 
-                    # Validate file size before download
-                    if not file_size or file_size <= self._max_file_size:
+                    # Validate file size before download (require valid size)
+                    if file_size and file_size <= self._max_file_size:
                         # Download file
                         file_content = await self._download_telegram_file(file_path)
                         if file_content is not None:

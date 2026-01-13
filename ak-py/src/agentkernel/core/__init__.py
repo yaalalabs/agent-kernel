@@ -34,7 +34,6 @@ from .multimodal import (
     save_attachment,
     get_attachment_list,
     get_attachment_data,
-    update_attachment_description,
     AttachmentMetadata,
     AttachmentData,
 )

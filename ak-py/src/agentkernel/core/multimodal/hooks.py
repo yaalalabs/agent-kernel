@@ -16,19 +16,16 @@ from ..config import AKConfig
 from ..hooks import PostHook, PreHook
 from ..model import (
     AgentReply,
-    AgentReplyText,
     AgentRequest,
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
 )
 from .storage import (
-    AttachmentMetadata,
     extract_description_from_response,
     format_attachment_list_for_prompt,
     get_attachment_list,
     save_attachment,
-    update_attachment_description,
 )
 
 if TYPE_CHECKING:

@@ -244,13 +244,11 @@ class OpenAIModule(Module):
         """
         Register multimodal hooks for all agents.
         """
-        pre_hook = MultimodalPreHook()
-        post_hook = MultimodalPostHook()
         for agent in agents:
             wrapped = self.get_agent(agent.name)
             if wrapped:
-                wrapped.attach_pre_hooks([pre_hook])
-                wrapped.attach_post_hooks([post_hook])
+                wrapped.attach_pre_hooks([MultimodalPreHook()])
+                wrapped.attach_post_hooks([MultimodalPostHook()])
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         """
