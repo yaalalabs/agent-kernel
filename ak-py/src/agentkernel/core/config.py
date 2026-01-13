@@ -137,23 +137,18 @@ class _TestConfig(BaseModel):
     judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
 
 
-class _InputGuardrailConfig(BaseModel):
+class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
-    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file")
-    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail")
-
-
-class _OutputGuardrailConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Enable Guardrail")
-    type: str = Field(default="openai", pattern="^(openai|bedrock)$")
-    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file")
-    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail")
+    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
+    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
+    id: Optional[str] = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")
+    version: Optional[str] = Field(default="DRAFT", description="AWS Bedrock guardrail version (Bedrock only)")
 
 
 class _GuardrailConfig(BaseModel):
-    input: _InputGuardrailConfig = Field(description="Input Guardrail configuration", default_factory=_InputGuardrailConfig)
-    output: _OutputGuardrailConfig = Field(description="Output Guardrail configuration", default_factory=_OutputGuardrailConfig)
+    input: _GuardrailParamConfig = Field(description="Input Guardrail configuration", default_factory=_GuardrailParamConfig)
+    output: _GuardrailParamConfig = Field(description="Output Guardrail configuration", default_factory=_GuardrailParamConfig)
 
 
 class AKConfig(YamlBaseSettingsModified):

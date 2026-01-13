@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
-from ..core.model import AgentReply, AgentRequest
+from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 
 
 class InputGuardrail(PreHook):
@@ -31,6 +31,10 @@ class InputGuardrailFactory:
                 from .openai import OpenAIInputGuardrail
 
                 return OpenAIInputGuardrail()
+            elif AKConfig.get().guardrail.input.type == "bedrock":
+                from .bedrock import BedrockInputGuardrail
+
+                return BedrockInputGuardrail()
             else:
                 raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.input.type}")
         else:
@@ -46,7 +50,43 @@ class OutputGuardrailFactory:
                 from .openai import OpenAIOutputGuardrail
 
                 return OpenAIOutputGuardrail()
+            elif AKConfig.get().guardrail.output.type == "bedrock":
+                from .bedrock import BedrockOutputGuardrail
+
+                return BedrockOutputGuardrail()
             else:
                 raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.output.type}")
         else:
             return OutputGuardrail()
+
+
+class BaseGuardrailUtil:
+    """
+    Utility class providing common text extraction utilities for guardrails.
+    """
+
+    @staticmethod
+    def _extract_text_from_requests(requests: list[AgentRequest]) -> str:
+        """
+        Extract text content from agent requests.
+        :param requests: List of agent requests
+        """
+        text_parts = []
+        for req in requests:
+            if isinstance(req, AgentRequestText):
+                text_parts.append(req.text)
+            elif hasattr(req, "text"):
+                text_parts.append(str(req.text))
+        return "\n".join(text_parts)
+
+    @staticmethod
+    def _extract_text_from_reply(agent_reply: AgentReply) -> str:
+        """
+        Extract text content from agent reply.
+        :param agent_reply: Agent reply
+        """
+        if isinstance(agent_reply, AgentReplyText):
+            return agent_reply.text
+        elif hasattr(agent_reply, "text"):
+            return str(agent_reply.text)
+        return ""

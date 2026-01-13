@@ -9,8 +9,8 @@ from guardrails import GuardrailsOpenAI, GuardrailTripwireTriggered
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
-from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
-from .guardrail import InputGuardrail, OutputGuardrail
+from ..core.model import AgentReply, AgentReplyText, AgentRequest
+from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class BaseOpenAIGuardrail(ABC):
             log.error(f"Failed to initialize OpenAI guardrails: {e}")
 
 
-class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
+class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrail):
     """
     OpenAI Input Guardrail using the openai-guardrails library.
     Validates input requests before they are sent to the agent.
@@ -73,17 +73,6 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
     def _get_guardrail_type(self) -> str:
         """Get the guardrail type name for logging."""
         return "Input"
-
-    @staticmethod
-    def _extract_text_from_requests(requests: list[AgentRequest]) -> str:
-        """Extract text content from agent requests."""
-        text_parts = []
-        for req in requests:
-            if isinstance(req, AgentRequestText):
-                text_parts.append(req.text)
-            elif hasattr(req, "text"):
-                text_parts.append(str(req.text))
-        return "\n".join(text_parts)
 
     async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """
@@ -149,7 +138,7 @@ class OpenAIInputGuardrail(BaseOpenAIGuardrail, InputGuardrail):
         return "OpenAIInputGuardrail"
 
 
-class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
+class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardrail):
     """
     OpenAI Output Guardrail using the openai-guardrails library.
     Validates agent responses before they are returned to the user.
@@ -166,17 +155,6 @@ class OpenAIOutputGuardrail(BaseOpenAIGuardrail, OutputGuardrail):
         Get the guardrail type name for logging.
         """
         return "Output"
-
-    @staticmethod
-    def _extract_text_from_reply(agent_reply: AgentReply) -> str:
-        """
-        Extract text content from agent reply.
-        """
-        if isinstance(agent_reply, AgentReplyText):
-            return agent_reply.text
-        elif hasattr(agent_reply, "text"):
-            return str(agent_reply.text)
-        return ""
 
     async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         """
