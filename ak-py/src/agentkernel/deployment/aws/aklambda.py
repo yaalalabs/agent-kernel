@@ -70,9 +70,7 @@ class Lambda:
                 "body": json.dumps(
                     {
                         "result": (
-                            str(result)
-                            if isinstance(result, (AgentReplyText, AgentReplyImage))
-                            else "Non textual result received"
+                            str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
                         ),  # sending image is not supported at the moment
                         "session_id": service.get_response_session_id(session_id),
                     }

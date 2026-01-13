@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "pre_flight": {
+    "version": 1,
+    "guardrails": [
+      {
+        "name": "Contains PII",
+        "config": {
+          "entities": [
+            "CREDIT_CARD",
+            "CVV",
+            "CRYPTO",
+            "DATE_TIME",
+            "EMAIL_ADDRESS",
+            "IBAN_CODE",
+            "BIC_SWIFT",
+            "IP_ADDRESS",
+            "LOCATION",
+            "MEDICAL_LICENSE",
+            "NRP",
+            "PERSON",
+            "PHONE_NUMBER",
+            "URL"
+          ]
+        }
+      },
+      {
+        "name": "Moderation",
+        "config": {
+          "categories": [
+            "sexual",
+            "sexual/minors",
+            "hate",
+            "hate/threatening",
+            "harassment",
+            "harassment/threatening",
+            "self-harm",
+            "self-harm/intent",
+            "self-harm/instructions",
+            "violence",
+            "violence/graphic",
+            "illicit",
+            "illicit/violent"
+          ]
+        }
+      }
+    ]
+  },
+  "input": {
+    "version": 1,
+    "guardrails": [
+      {
+        "name": "Jailbreak",
+        "config": {
+          "confidence_threshold": 0.7,
+          "model": "gpt-4.1-mini",
+          "include_reasoning": false
+        }
+      },
+      {
+        "name": "Off Topic Prompts",
+        "config": {
+          "confidence_threshold": 0.7,
+          "model": "gpt-4.1-mini",
+          "system_prompt_details": "You are a helpful assistant who can answer cricket related questions. Keep responses focused on the user's questions and avoid going off-topic.",
+          "include_reasoning": false
+        }
+      },
+      {
+        "name": "Custom Prompt Check",
+        "config": {
+          "confidence_threshold": 0.7,
+          "model": "gpt-4.1-mini",
+          "system_prompt_details": "You are a general knowledge assistant. You can answer cricket related questions. Raise the guardrail if questions aren’t focused on general knowledge questions.",
+          "include_reasoning": false
+        }
+      }
+    ]
+  },
+  "output": {
+    "version": 1,
+    "guardrails": []
+  }
+}

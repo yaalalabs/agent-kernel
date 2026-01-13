@@ -46,9 +46,7 @@ class A2A:
                 raise ValueError("RequestContext must have a message")
             try:
                 response = await self._execute_agent(context.context_id, context.get_user_input())
-                await event_queue.enqueue_event(
-                    new_agent_text_message(str(response), context.context_id, context.task_id)
-                )
+                await event_queue.enqueue_event(new_agent_text_message(str(response), context.context_id, context.task_id))
             except Exception as e:
                 error = "Sorry, Agent Kernel encountered an error while processing your request"
                 self.log.error(traceback.format_exc())

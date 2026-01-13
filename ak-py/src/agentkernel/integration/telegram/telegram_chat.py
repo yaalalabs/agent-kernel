@@ -164,9 +164,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._log.debug(f"Processing command: {command}")
 
         if command == "/start":
-            await self._send_message(
-                chat_id, "👋 Hello! I'm an AI assistant powered by Agent Kernel. How can I help you today?"
-            )
+            await self._send_message(chat_id, "👋 Hello! I'm an AI assistant powered by Agent Kernel. How can I help you today?")
         elif command == "/help":
             await self._send_message(
                 chat_id,
@@ -422,10 +420,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                                 self._log.warning(f"Failed to download photo")
                                 failed_files.append("photo")
                         else:
-                            self._log.warning(
-                                f"Photo is too large to process "
-                                f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
-                            )
+                            self._log.warning(f"Photo is too large to process " f"({file_size} bytes > {self._max_file_size} bytes). Skipping.")
                             failed_files.append("photo")
                     else:
                         self._log.warning("Failed to get photo file info")
@@ -473,8 +468,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                             failed_files.append(file_name)
                     else:
                         self._log.warning(
-                            f"File '{file_name}' is too large to process "
-                            f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
+                            f"File '{file_name}' is too large to process " f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
                         )
                         failed_files.append(file_name)
                 else:

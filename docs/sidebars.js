@@ -101,6 +101,15 @@ const sidebars = {
       items: [
         'advanced/traceability',
         'advanced/multi-agent',
+        {
+          type: 'category',
+          label: 'Guardrails',
+          items: [
+            'advanced/guardrails',
+            'advanced/guardrails-openai',
+            'advanced/guardrails-bedrock',
+          ],
+        },
       ],
     },
     {

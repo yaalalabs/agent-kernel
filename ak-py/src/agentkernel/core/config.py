@@ -148,6 +148,20 @@ class _TestConfig(BaseModel):
     judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
 
 
+class _GuardrailParamConfig(BaseModel):
+    enabled: bool = Field(default=False, description="Enable Guardrail")
+    type: str = Field(default="openai", pattern="^(openai|bedrock)$")
+    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
+    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
+    id: Optional[str] = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")
+    version: Optional[str] = Field(default="DRAFT", description="AWS Bedrock guardrail version (Bedrock only)")
+
+
+class _GuardrailConfig(BaseModel):
+    input: _GuardrailParamConfig = Field(description="Input Guardrail configuration", default_factory=_GuardrailParamConfig)
+    output: _GuardrailParamConfig = Field(description="Output Guardrail configuration", default_factory=_GuardrailParamConfig)
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -162,22 +176,15 @@ class AKConfig(YamlBaseSettingsModified):
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
-    messenger: _MessengerConfig = Field(
-        description="Facebook Messenger related configurations", default_factory=_MessengerConfig
-    )
-    instagram: _InstagramConfig = Field(
-        description="Instagram Business API related configurations", default_factory=_InstagramConfig
-    )
-    telegram: _TelegramConfig = Field(
-        description="Telegram Bot related configurations", default_factory=_TelegramConfig
-    )
+    messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
+    instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
+    telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
-    multimodal: _MultimodalConfig = Field(
-        description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig
-    )
+    multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
+    guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

@@ -50,9 +50,7 @@ class CrewAISession(Storage):
         :return: List of items matching the query.
         """
         self._log.debug(f"search: {query}, {limit}, {score_threshold}")
-        return list(
-            map(lambda item: {"context": item["value"]}, self._items[:limit])
-        )  # CrewAI expects a list of dicts with a "context" key
+        return list(map(lambda item: {"context": item["value"]}, self._items[:limit]))  # CrewAI expects a list of dicts with a "context" key
 
     def reset(self) -> None:
         """
@@ -101,9 +99,7 @@ class CrewAIRunner(Runner):
         """
         prompt = ""
         for req in requests:
-            if isinstance(
-                req, AgentRequestAny
-            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):
                 prompt = prompt + "\n" + req.text if prompt else req.text
