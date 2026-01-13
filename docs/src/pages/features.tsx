@@ -40,8 +40,8 @@ function FeaturesHero() {
       <div className="container">
         <div className={styles.heroContent}>
           <div className={styles.announcement}>
-            🎯 <strong>New:</strong> Execution Hooks & Smart Memory Management — 
-            <Link to="/blog/hooks-and-smart-memory" style={{marginLeft: '8px', textDecoration: 'underline'}}>
+            🛡️ <strong>New:</strong> Guardrails for Content Safety — OpenAI & AWS Bedrock Integration — 
+            <Link to="/blog/guardrails-content-safety" style={{marginLeft: '8px', textDecoration: 'underline'}}>
               Read the announcement →
             </Link>
           </div>
