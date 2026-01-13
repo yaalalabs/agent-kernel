@@ -8,6 +8,8 @@ slug: /
 Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for building and deploying AI agents.
 
 :::tip What's New
+🛡️ **Guardrails for Content Safety** - Protect your AI agents with OpenAI Guardrails and AWS Bedrock integration. Input/output validation, PII detection, and compliance-ready content filtering. [Read the announcement →](/blog/guardrails-content-safety)
+
 🎯 **Execution Hooks & Smart Memory** - Take complete control of your agents with pre/post-execution hooks and intelligent caching. [Read the announcement →](/blog/hooks-and-smart-memory)
 :::
 

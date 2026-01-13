@@ -1,0 +1,12 @@
+guardrail:
+  input:
+    enabled: true
+    type: bedrock
+    id: pjgl2y7hpryn
+    version: "1"
+
+  output:
+    enabled: true
+    type: bedrock
+    id: pjgl2y7hpryn
+    version: "1"

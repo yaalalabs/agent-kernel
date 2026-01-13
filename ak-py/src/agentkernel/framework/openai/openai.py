@@ -104,9 +104,7 @@ class OpenAIRunner(BaseRunner):
         message_content = []
         try:
             for req in requests:
-                if isinstance(
-                    req, AgentRequestAny
-                ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
 
                 if isinstance(req, AgentRequestText):
@@ -127,9 +125,7 @@ class OpenAIRunner(BaseRunner):
                         mime_type = req.mime_type
                         image_url = f"data:{mime_type};base64,{image_url}"
 
-                    message_content.append(
-                        {"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]}
-                    )
+                    message_content.append({"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]})
 
                 elif isinstance(req, AgentRequestFile):
                     # Handle file attachments - OpenAI expects base64 or URL format
@@ -139,17 +135,13 @@ class OpenAIRunner(BaseRunner):
                     file_url = req.file_data
                     # If it's a remote URL, use it directly
                     if file_url.startswith(("http://", "https://", "s3://")):
-                        message_content.append(
-                            {"role": "user", "content": [{"type": "input_file", "file_url": file_url}]}
-                        )
+                        message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
                     else:
                         mime_type = req.mime_type
                         # If it's base64 and doesn't have the data URI prefix, add it
                         if not file_url.startswith(("data:")):
                             if not req.mime_type:
-                                raise ValueError(
-                                    "mime_type is missing for file input, either in the base64 or explicitly"
-                                )
+                                raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
                             file_url = f"data:{mime_type};base64,{file_url}"
 
                         message_content.append(

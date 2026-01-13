@@ -171,13 +171,13 @@ class Runner(ABC):
     @abstractmethod
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the agent with the provided multi modal inputs.
+        Runs the agent with the provided multi-modal inputs.
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
         """
-        pass
+        raise NotImplementedError
 
 
 class Agent(ABC):

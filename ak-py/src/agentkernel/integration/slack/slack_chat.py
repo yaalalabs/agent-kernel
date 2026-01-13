@@ -25,9 +25,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
     def __init__(self):
         self._log = logging.getLogger("ak.api.slack")
         self._slack_agent = Config.get().slack.agent if Config.get().slack.agent != "" else None
-        self._slack_agent_acknowledgement = (
-            Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
-        )
+        self._slack_agent_acknowledgement = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         self._max_file_size = Config.get().api.max_file_size
         self._bot_id = None
 
@@ -155,9 +153,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 await say(channel=channel, thread_ts=thread_ts, text="Please provide a message or attachment.")
                 return
 
-            response_text = (
-                str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
-            )
+            response_text = str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
 
             # This will update the initial message to remove the loading text emoji
             if response_for_first_bot_message is not None:
@@ -192,9 +188,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         :param reply: The reply text.
         :return: The prepared reply text.
         """
-        response_chunks = [
-            reply[i : i + 3000] for i in range(0, len(reply), 3000)
-        ]  # Current max chunk size in slack is 3000 characters
+        response_chunks = [reply[i : i + 3000] for i in range(0, len(reply), 3000)]  # Current max chunk size in slack is 3000 characters
 
         blocks = []
         for i in range(len(response_chunks)):
