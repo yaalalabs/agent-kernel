@@ -454,21 +454,33 @@ Configure input and output guardrails to validate agent requests and responses f
   - **Type**
     - **Field**: `guardrail.input.type`
     - **Default**: `openai`
-    - **Options**: `openai`, `bedrock` (bedrock support coming soon)
+    - **Options**: `openai`, `bedrock`
     - **Description**: Guardrail provider type
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__TYPE`
 
   - **Config Path**
     - **Field**: `guardrail.input.config_path`
     - **Default**: `None`
-    - **Description**: Path to guardrail configuration JSON file
+    - **Description**: Path to guardrail configuration JSON file (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__CONFIG_PATH`
 
   - **Model**
     - **Field**: `guardrail.input.model`
     - **Default**: `gpt-4o-mini`
-    - **Description**: LLM model to use for guardrail validation
+    - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__MODEL`
+
+  - **ID**
+    - **Field**: `guardrail.input.id`
+    - **Default**: `None`
+    - **Description**: AWS Bedrock guardrail ID (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__ID`
+
+  - **Version**
+    - **Field**: `guardrail.input.version`
+    - **Default**: `DRAFT`
+    - **Description**: AWS Bedrock guardrail version (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__VERSION`
 
 - **Output Guardrails**
   - **Enabled**
@@ -480,34 +492,57 @@ Configure input and output guardrails to validate agent requests and responses f
   - **Type**
     - **Field**: `guardrail.output.type`
     - **Default**: `openai`
-    - **Options**: `openai`, `bedrock` (bedrock support coming soon)
+    - **Options**: `openai`, `bedrock`
     - **Description**: Guardrail provider type
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__TYPE`
 
   - **Config Path**
     - **Field**: `guardrail.output.config_path`
     - **Default**: `None`
-    - **Description**: Path to guardrail configuration JSON file
+    - **Description**: Path to guardrail configuration JSON file (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__CONFIG_PATH`
 
   - **Model**
     - **Field**: `guardrail.output.model`
     - **Default**: `gpt-4o-mini`
-    - **Description**: LLM model to use for guardrail validation
+    - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__MODEL`
+
+  - **ID**
+    - **Field**: `guardrail.output.id`
+    - **Default**: `None`
+    - **Description**: AWS Bedrock guardrail ID (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__ID`
+
+  - **Version**
+    - **Field**: `guardrail.output.version`
+    - **Default**: `DRAFT`
+    - **Description**: AWS Bedrock guardrail version (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__VERSION`
 
 **Guardrail Setup:**
 
 To use OpenAI guardrails, install the openai-guardrails package:
 
 ```bash
-pip install openai-guardrails
+pip install agentkernel[openai]
 ```
 
-Create guardrail configuration files following the [OpenAI Guardrails format](https://guardrails.openai.com/).
+To use AWS Bedrock guardrails, install the AWS package:
+
+```bash
+pip install agentkernel[aws]
+```
+
+Create guardrail configuration:
+
+**For OpenAI:** Create configuration files following the [OpenAI Guardrails format](https://guardrails.openai.com/).
+
+**For Bedrock:** Create a guardrail in AWS Bedrock and note the guardrail ID and version.
 
 Configure guardrails in your configuration:
 
+**OpenAI Example:**
 ```yaml
 guardrail:
   input:
@@ -522,7 +557,20 @@ guardrail:
     config_path: /path/to/guardrails_output.json
 ```
 
-**Note:** Bedrock guardrails support is planned for future releases.
+**Bedrock Example:**
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"  # or "DRAFT"
+  output:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"
+```
 
 #### Messaging Platform Integrations
 

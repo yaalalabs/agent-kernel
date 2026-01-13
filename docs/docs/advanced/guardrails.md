@@ -25,7 +25,7 @@ Guardrails act as protective layers that validate content before and after agent
 | Provider | Status | Documentation |
 |----------|--------|---------------|
 | **OpenAI Guardrails** | ✅ Available Now | [OpenAI Guardrails →](/docs/advanced/guardrails-openai) |
-| **AWS Bedrock Guardrails** | 🔜 Coming Soon | [Bedrock Guardrails →](/docs/advanced/guardrails-bedrock) |
+| **AWS Bedrock Guardrails** | ✅ Available Now | [Bedrock Guardrails →](/docs/advanced/guardrails-bedrock) |
 
 ## How Guardrails Work
 
@@ -75,33 +75,52 @@ Guardrails provide defense in depth:
 
 ### 1. Choose Your Provider
 
-**OpenAI Guardrails** (Available Now):
+**OpenAI Guardrails**:
 ```bash
-pip install openai-guardrails
+pip install agentkernel[openai]
 ```
 
 See the [OpenAI Guardrails Guide](/docs/advanced/guardrails-openai) for setup instructions.
 
-**AWS Bedrock Guardrails** (Coming Soon):
+**AWS Bedrock Guardrails**:
+```bash
+pip install agentkernel[aws]
+```
 
-See the [Bedrock Guardrails Guide](/docs/advanced/guardrails-bedrock) for planned features.
+See the [Bedrock Guardrails Guide](/docs/advanced/guardrails-bedrock) for setup instructions.
 
 ### 2. Configure Agent Kernel
 
 Add guardrail configuration to `config.yaml`:
 
+**OpenAI Guardrails:**
 ```yaml
 guardrail:
   input:
     enabled: true
-    type: openai  # or 'bedrock' (coming soon)
+    type: openai
     model: gpt-4o-mini
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
-    type: openai  # or 'bedrock' (coming soon)
+    type: openai
     model: gpt-4o-mini
     config_path: /path/to/guardrails_output.json
+```
+
+**AWS Bedrock Guardrails:**
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"  # or "DRAFT"
+  output:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"
 ```
 
 ### 3. Test Your Guardrails
@@ -268,12 +287,12 @@ guardrail:
 ## Provider Comparison
 
 | Feature | OpenAI | Bedrock |
-|---------|--------|---------|
-| **Status** | ✅ Available | 🔜 Coming Soon |
+|---------|--------|---------|------|
+| **Status** | ✅ Available | ✅ Available |
 | **Setup** | Easy | Medium |
-| **PII Types** | 15+ | 30+ (planned) |
-| **Topic Control** | Custom prompts | Native support (planned) |
-| **Contextual Grounding** | ❌ | ✅ (planned) |
+| **PII Types** | 15+ | 30+ |
+| **Topic Control** | Custom prompts | Native support |
+| **Contextual Grounding** | ❌ | ✅ |
 | **Deployment** | Any cloud/on-prem | AWS only |
 | **Cost Model** | Per API call | Per text unit |
 
@@ -292,10 +311,10 @@ guardrail:
 
 👉 **[Bedrock Guardrails Guide](/docs/advanced/guardrails-bedrock)**
 
-- Planned features
-- Expected configuration
-- Use cases
-- Stay updated on release
+- Complete setup instructions
+- Configuration examples
+- AWS IAM permissions
+- Best practices
 
 ## Related Resources
 
