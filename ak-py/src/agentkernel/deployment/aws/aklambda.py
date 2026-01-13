@@ -37,18 +37,43 @@ class LambdaRouter:
 
     def _get_base_path(self) -> str:
         return f"/{self._api_base_path}/{self._api_version}"
+    
+    def _get_agent_endpoint_path(self) -> str:
+        return f"{self._get_base_path()}/{self._agent_endpoint}"
 
-    def override_base_paths(self, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
+    def override_base_paths(self, api_base_path: str = "api", api_version: str = "v1", agent_endpoint: str = "chat",) -> None:
+        self._log.info(f"Agent Endpoint: '{agent_endpoint}'")
+
         old_base_path = self._get_base_path()
+        old_agent_endpoint = self._get_agent_endpoint_path()
+
         self._api_base_path = api_base_path
         self._api_version = api_version
         self._agent_endpoint = agent_endpoint
+
         new_base_path = self._get_base_path()
-        old_to_new_path_mapping = {old_path: old_path.replace(old_base_path, new_base_path) for old_path in self._routes}
-        self._log.info(f"Old to New path mapping: {old_to_new_path_mapping}")
-        for old_path, new_path in old_to_new_path_mapping.items():
-            self._routes[new_path] = self._routes.pop(old_path)
+        new_agent_endpoint = self._get_agent_endpoint_path()
+
+        self._log.info(f"Old base path: '{old_base_path}', New base path: '{new_base_path}'")
+
+        new_routes = {}
+
+        for old_path, methods in self._routes.items():
+            if old_path == old_agent_endpoint:
+                new_path = new_agent_endpoint
+            elif old_path.startswith(old_base_path):
+                new_path = old_path.replace(old_base_path, new_base_path, 1)
+            else:
+                self._log.warning(f"Path '{old_path}' does not start with '{old_base_path}'. Skipping.")
+                new_path = old_path
+
+            self._log.info(f"'{old_path}' -> '{new_path}'")
+            new_routes[new_path] = methods
+
+        self._routes = new_routes
+
         self._log.info(f"Base paths updated from '{old_base_path}' to '{new_base_path}': {self._routes}")
+
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -86,14 +111,18 @@ class LambdaRouter:
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         method = self._normalize_method(event.get("httpMethod"))
         event_path = event.get("resource") or "/"
-        print(event_path)
-        handler = self._routes.get(event_path).get(method)
-        if handler:
-            self._log.debug(f"Dispatching {method} {event_path}")
-            result = handler(event, context)
-            self._log.debug(f"Wrapping Lambda function result: {result}")
-            return Lambda._wrap_response(result)
-        return None
+        self._log.info(f"Event path: {event_path}, Method: {method}")
+        methods = self._routes.get(event_path)
+        if not methods:
+            self._log.warning(f"No registered route found for API Gateway path -> '{event_path}'")
+            raise ValueError(f"No registered route found for API Gateway path -> '{event_path}'")
+        handler = methods.get(method)
+        if not handler:
+            self._log.warning(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
+            raise ValueError(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
+        result = handler(event, context)
+        self._log.debug(f"Wrapping Lambda function result: {result}")
+        return Lambda._wrap_response(result)
 
     def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """Existing default behavior for agent chat invocation."""
@@ -225,10 +254,7 @@ class Lambda:
             dispatched = cls._router.dispatch(event, context)
             if dispatched is not None:
                 return dispatched
-        except Exception:
+        except Exception as e:
             # Exception in custom route handler/Lmabda function raise 500
-            cls._log.exception("Custom route handler failed")
-            return {"statusCode": 500, "body": json.dumps({"error": "Custom handler error"})}
-
-        # Path not found raise 404
-        return {"statusCode": 404, "body": json.dumps({"error": "No route found"})}
+            cls._log.exception(f"Custom route handler failed: {e}")
+            return {"statusCode": 500, "body": json.dumps({"error": f"Custom handler error: {e}"})}
