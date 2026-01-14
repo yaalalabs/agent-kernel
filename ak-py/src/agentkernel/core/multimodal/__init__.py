@@ -15,8 +15,8 @@ from .storage import (
     save_attachment,
 )
 from .tools import (
-    describe_image_briefly,
-    get_image,
+    describe_attachment_briefly,
+    get_attachments,
 )
 
 __all__ = [
@@ -30,6 +30,6 @@ __all__ = [
     "MultimodalPreHookFactory",
     "NoOpPreHook",
     # Tools
-    "describe_image_briefly",
-    "get_image",  # function_tool decorated - use in agent's tools=[]
+    "describe_attachment_briefly",
+    "get_attachments",  # function_tool decorated - use in agent's tools=[]
 ]

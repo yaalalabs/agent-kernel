@@ -86,7 +86,7 @@ def save_attachment(
         raise ValueError("Session is required to save attachment")
 
     nv_cache = session.get_non_volatile_cache()
-    attachment_id = str(uuid.uuid4())[:8]  # Short ID for easier reference
+    attachment_id = str(uuid.uuid4())[:8]  
     timestamp = time.time()
 
     # Save attachment data

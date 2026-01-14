@@ -24,17 +24,17 @@ _log = logging.getLogger("ak.multimodal.tools")
 
 
 @function_tool
-def get_image(image_ids: list[str]) -> list[dict]:
+def get_attachments(attachment_ids: list[str]) -> list[dict]:
     """
-    Get actual image/file data for the specified attachment IDs.
+    Get actual file/image data for the specified attachment IDs.
     
-    Use this when you need to analyze images in detail to answer the user's question.
-    You must provide image IDs from the available attachments list.
+    Use this when you need to analyze files or images in detail.
+    You must provide attachment IDs from the available list.
     
-    :param image_ids: List of attachment IDs to retrieve (e.g., ['abc123', 'def456'])
+    :param attachment_ids: List of attachment IDs to retrieve (e.g., ['abc123', 'def456'])
     :return: List of attachment data dictionaries with id, type, data (base64), mime_type
     """
-    if not image_ids:
+    if not attachment_ids:
         return []
     
     try:
@@ -43,8 +43,8 @@ def get_image(image_ids: list[str]) -> list[dict]:
         nv_cache = AuxiliaryCache.get_non_volatile_cache()
         
         result = []
-        for img_id in image_ids:
-            attachment = nv_cache.get(f"{ATTACHMENT_KEY_PREFIX}{img_id}")
+        for att_id in attachment_ids:
+            attachment = nv_cache.get(f"{ATTACHMENT_KEY_PREFIX}{att_id}")
             if attachment:
                 result.append({
                     "id": attachment["id"],
@@ -53,9 +53,9 @@ def get_image(image_ids: list[str]) -> list[dict]:
                     "mime_type": attachment["mime_type"],
                     "data": attachment["data"],  # Base64 encoded
                 })
-                _log.debug(f"Retrieved attachment: {img_id}")
+                _log.debug(f"Retrieved attachment: {att_id}")
             else:
-                _log.warning(f"Attachment not found: {img_id}")
+                _log.warning(f"Attachment not found: {att_id}")
         
         return result
         
@@ -64,63 +64,67 @@ def get_image(image_ids: list[str]) -> list[dict]:
         return [{"error": str(e)}]
 
 
-async def describe_image_briefly(
-    image_data: str,
-    mime_type: str,
-    llm_client=None,
-    model: str = "gpt-4o-mini",
+async def describe_attachment_briefly(
+    data: str,
+    mime_type: str = "image/jpeg",
 ) -> str:
     """
-    Get a brief description of an image using a vision LLM.
+    Get a brief description of the attachment using a vision LLM.
     
-    Called by PreHook to generate descriptions for new images.
+    Called by PreHook to generate descriptions for new attachments.
     
-    :param image_data: Base64 encoded image data
-    :param mime_type: MIME type of the image
-    :param llm_client: Optional OpenAI client
-    :param model: Vision-capable model to use
-    :return: Brief description of the image
+    :param data: Base64 encoded attachment data
+    :param mime_type: MIME type of the attachment
+    :return: Brief description of the attachment
     """
-    if not image_data:
-        return "No image data"
-    
-    if llm_client is None:
-        try:
-            from openai import OpenAI
-            llm_client = OpenAI()
-        except Exception as e:
-            _log.error(f"Failed to create OpenAI client: {e}")
-            return "Image (could not generate description)"
-    
+    if not data:
+        return "No data"
+        
     try:
-        messages = [
-            {
-                "role": "user",
-                "content": [
+        # Lazy import to avoid circular dependencies
+        from openai import AsyncOpenAI
+        import os
+        from ..config import AKConfig
+        
+        # Try to get API key from config or env
+        api_key = os.getenv("OPENAI_API_KEY")
+        config = AKConfig.get()
+        if hasattr(config, "openai") and config.openai.api_key:
+            api_key = config.openai.api_key
+            
+        if not api_key:
+            return "Attachment (Description unavailable: Missing API Key)"
+            
+        client = AsyncOpenAI(api_key=api_key)
+
+        if mime_type.startswith("image/"):
+            # Use Vision model for images
+            response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
                     {
-                        "type": "text",
-                        "text": "Describe this image in one short sentence (max 20 words). Be specific."
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{image_data}"
-                        }
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Describe this image in one short sentence (max 20 words). Be specific."},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{data}"
+                                },
+                            },
+                        ],
                     }
-                ]
-            }
-        ]
-        
-        response = llm_client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=50,
-        )
-        
-        description = response.choices[0].message.content.strip()
-        _log.debug(f"Generated image description: {description}")
-        return description
-        
+                ],
+                max_tokens=50,
+            )
+            description = response.choices[0].message.content.strip()
+            _log.debug(f"Generated attachment description: {description}")
+            return description
+        else:
+            # For non-images (PDFs, docs), we can't easily "see" them via Vision API directly
+            # without conversion. Return generic description for now.
+            return f"File ({mime_type})"
+
     except Exception as e:
-        _log.error(f"Error describing image: {e}")
-        return "Image (error generating description)"
+        _log.error(f"Error describing attachment: {e}")
+        return "Attachment (description failed)"

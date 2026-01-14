@@ -20,7 +20,7 @@ from ..model import (
     AgentRequestText,
 )
 from .storage import save_attachment
-from .tools import describe_image_briefly
+from .tools import describe_attachment_briefly
 
 if TYPE_CHECKING:
     from ..base import Agent, Session
@@ -80,14 +80,14 @@ class MultimodalPreHook(PreHook):
         if not current_descriptions:
             return requests
 
-        # Build description text for current images only
+        # Build description text for current attachments only
         desc_text = "[Current Images/Files]\n"
-        for img_id, desc in current_descriptions:
-            desc_text += f"- {img_id}: {desc}\n"
+        for att_id, desc in current_descriptions:
+            desc_text += f"- {att_id}: {desc}\n"
         
         desc_text += (
-            "\nIf you need to examine any image in detail, "
-            "use the get_image tool with the image ID."
+            "\nIf you need to examine any file or image in detail, "
+            "use the get_attachments tool with the attachment ID."
         )
 
         # Merge Strategy:
@@ -120,8 +120,8 @@ class MultimodalPreHook(PreHook):
         self, session: "Session", requests: list[AgentRequest], config
     ) -> list[tuple[str, str]]:
         """
-        Process current images/files: generate descriptions and save to storage.
-        Returns list of (image_id, description) tuples.
+        Process current attachments: generate descriptions and save to storage.
+        Returns list of (attachment_id, description) tuples.
         """
         descriptions = []
         
@@ -133,8 +133,8 @@ class MultimodalPreHook(PreHook):
             if isinstance(req, AgentRequestImage):
                 if req.image_data:
                     # Call LLM to get brief description
-                    description = await describe_image_briefly(
-                        image_data=req.image_data,
+                    description = await describe_attachment_briefly(
+                        data=req.image_data,
                         mime_type=req.mime_type or "image/jpeg",
                     )
                     
@@ -157,13 +157,15 @@ class MultimodalPreHook(PreHook):
             elif isinstance(req, AgentRequestFile):
                 if req.file_data:
                     # For files, use filename as description
-                    description = f"File: {req.name}"
-                    
+                    description = await describe_attachment_briefly(
+                        data=req.file_data,
+                        mime_type=req.mime_type or "application/octet-stream",
+                    )
                     attachment_id = save_attachment(
                         session=session,
                         data=req.file_data,
                         attachment_type="file",
-                        name=req.name,
+                        name=getattr(req, "name", "file"),
                         mime_type=req.mime_type or "application/octet-stream",
                         description=description,
                         max_attachments=config.max_attachments,
