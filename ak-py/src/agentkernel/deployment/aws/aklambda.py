@@ -115,7 +115,7 @@ class LambdaRouter:
 
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         method = self._normalize_method(event.get("httpMethod"))
-        event_path = event.get("resource") or "/"
+        event_path = event.get("path") or event.get("resource") or "/"
         self._log.info(f"Event path: {event_path}, Method: {method}")
         methods = self._routes.get(event_path)
         if not methods:
