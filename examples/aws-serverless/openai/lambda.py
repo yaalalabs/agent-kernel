@@ -28,6 +28,7 @@ OpenAIModule([triage_agent, math_agent, history_agent])
 # To override the default base paths, make sure to override these paths in the terraform file as well
 # Lambda.override_base_paths(api_base_path="api-new", api_version="v2", agent_endpoint="chat-new")
 
+
 # Definining a custom handler function for a custom path
 @Lambda.register("/app", method="GET")
 def custom_app_handler(event, context):
