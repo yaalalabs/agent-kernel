@@ -1,21 +1,22 @@
 """
-Multimodal memory module for Agent Kernel.
+Multimodal module for Agent Kernel.
 
 This module provides:
 - Storage functions for saving/retrieving attachments
-- Pre/Post hooks for the 2-step LLM attachment memory flow
+- PreHook for processing current images and injecting descriptions
+- Tools for LLM to access image data (framework-agnostic)
 """
 
-from .hooks import MultimodalPostHook, MultimodalPreHook
+from .hooks import MultimodalPreHook, MultimodalPreHookFactory, NoOpPreHook
 from .storage import (
     AttachmentData,
     AttachmentMetadata,
-    extract_description_from_response,
-    format_attachment_list_for_prompt,
     get_attachment_data,
-    get_attachment_list,
-    parse_requested_attachment_ids,
     save_attachment,
+)
+from .tools import (
+    describe_image_briefly,
+    get_image,
 )
 
 __all__ = [
@@ -23,12 +24,12 @@ __all__ = [
     "AttachmentData",
     "AttachmentMetadata",
     "save_attachment",
-    "get_attachment_list",
     "get_attachment_data",
-    "format_attachment_list_for_prompt",
-    "parse_requested_attachment_ids",
-    "extract_description_from_response",
     # Hooks
     "MultimodalPreHook",
-    "MultimodalPostHook",
+    "MultimodalPreHookFactory",
+    "NoOpPreHook",
+    # Tools
+    "describe_image_briefly",
+    "get_image",  # function_tool decorated - use in agent's tools=[]
 ]

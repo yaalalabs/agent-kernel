@@ -24,7 +24,6 @@ from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
-from ...core.multimodal import MultimodalPostHook, MultimodalPreHook
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -216,22 +215,6 @@ class GoogleADKModule(Module):
         else:
             self.runner = GoogleADKRunner()
         self.load(agents)
-
-        # Auto-register multimodal memory hooks if enabled
-        if AKConfig.get().multimodal.enabled:
-            self._register_multimodal_hooks(agents)
-
-    def _register_multimodal_hooks(self, agents: list[BaseAgent]):
-        """
-        Register multimodal hooks for all agents.
-        """
-        pre_hook = MultimodalPreHook()
-        post_hook = MultimodalPostHook()
-        for agent in agents:
-            wrapped = self.get_agent(agent.name)
-            if wrapped:
-                wrapped.attach_pre_hooks([pre_hook])
-                wrapped.attach_post_hooks([post_hook])
 
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
         """

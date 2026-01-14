@@ -52,7 +52,7 @@ class _APIConfig(BaseModel):
     port: int = Field(default=8000, description="API port")
     enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
     custom_router_prefix: str = Field(default="/custom", description="Custom router prefix")
-    max_file_size: int = Field(default=2097152, description="Maximum file size in bytes (default: 2 MB)")
+    max_file_size: int = Field(default=20971520, description="Maximum file size in bytes (default: 20 MB)")
 
 
 class _A2AConfig(BaseModel):

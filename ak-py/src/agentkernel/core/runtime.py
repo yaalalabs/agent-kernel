@@ -23,11 +23,7 @@ from .model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from .multimodal import (
-    get_attachment_data,
-    get_attachment_list,
-    parse_requested_attachment_ids,
-)
+from .multimodal import MultimodalPreHookFactory
 from .session import SessionStore
 
 
@@ -38,7 +34,7 @@ class Runtime:
 
     _current: Optional[Runtime] = None
     _lock: RLock = RLock()
-    _system_pre_hooks: list = [InputGuardrailFactory.get()]
+    _system_pre_hooks: list = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]
     _system_post_hooks: list = [OutputGuardrailFactory.get()]
 
     def __init__(self, sessions: SessionStore):
@@ -165,53 +161,6 @@ class Runtime:
 
         reply = await agent.runner.run(agent, session, requests)
 
-        # 2-step LLM logic: Check if LLM requested previous attachments
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled and session:
-            reply_text = getattr(reply, "text", "")
-            available_attachments = get_attachment_list(session)
-            available_ids = [att.id for att in available_attachments]
-
-            requested_ids = parse_requested_attachment_ids(reply_text, available_ids)
-            if requested_ids:
-                self._log.info(f"LLM requested attachments: {requested_ids}. Running second LLM call.")
-
-                # Load requested attachment data
-                attachments = get_attachment_data(session, requested_ids)
-
-                # Build new requests with attachment data
-                attachment_requests = []
-                for att in attachments:
-                    if att.type == "image":
-                        img_req = AgentRequestImage(
-                            image_data=att.data,
-                            name=att.name,
-                            mime_type=att.mime_type,
-                        )
-                        img_req._from_previous = True
-                        attachment_requests.append(img_req)
-                    else:
-                        file_req = AgentRequestFile(
-                            file_data=att.data,
-                            name=att.name,
-                            mime_type=att.mime_type,
-                        )
-                        file_req._from_previous = True
-                        attachment_requests.append(file_req)
-
-                # Add context about loaded attachments
-                context = AgentRequestText(
-                    text="[PREVIOUS ATTACHMENTS NOW LOADED]\nThe previous attachments you requested are included below. Please answer the user's question based on these attachments."
-                )
-                context._injected = True
-
-                # Filter out the previous attachment list injection and add loaded ones
-                filtered_requests = [r for r in requests if not getattr(r, "_injected", False)]
-                new_requests = [context] + attachment_requests + filtered_requests
-
-                # Second LLM call with actual attachment data
-                reply = await agent.runner.run(agent, session, new_requests)
-                self._log.info("Second LLM call completed with attachment data")
 
         post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
         for hook in post_hooks:

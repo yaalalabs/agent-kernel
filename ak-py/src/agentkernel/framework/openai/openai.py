@@ -21,7 +21,6 @@ from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
-from ...core.multimodal import MultimodalPostHook, MultimodalPreHook
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -160,8 +159,8 @@ class OpenAIRunner(BaseRunner):
                 # Simple text-only case
                 reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
             else:
-                # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
-                reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
+                # Multimodal case or multiple text messages. Session is safe to use now that PreHook filters raw images.
+                reply = (await Runner.run(agent.agent, message_content, session=self._session(session))).final_output
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
@@ -227,21 +226,6 @@ class OpenAIModule(Module):
         else:
             self.runner = OpenAIRunner()
         self.load(agents)
-
-        # Auto-register multimodal memory hooks if enabled
-        if AKConfig.get().multimodal.enabled:
-            self._register_multimodal_hooks(agents)
-
-    def _register_multimodal_hooks(self, agents: list[Agent]):
-        """
-        Register multimodal hooks for all agents.
-        """
-        for agent in agents:
-            wrapped = self.get_agent(agent.name)
-            if wrapped:
-                wrapped.attach_pre_hooks([MultimodalPreHook()])
-                wrapped.attach_post_hooks([MultimodalPostHook()])
-
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         """
         Wraps the provided agent in an OpenAIAgent instance.

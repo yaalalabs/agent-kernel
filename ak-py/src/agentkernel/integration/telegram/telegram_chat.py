@@ -4,7 +4,7 @@ import mimetypes
 import traceback
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
@@ -47,31 +47,29 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             return {"status": "ok"}
 
         @router.post("/telegram/webhook")
-        async def handle_webhook(request: Request):
+        async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
             """
             Handle incoming Telegram webhook updates.
             """
-            return await self._handle_webhook(request)
+            # Read body first to avoid stream consumption issues in background
+            body = await request.json()
+            background_tasks.add_task(self._process_webhook_body, body, request.headers)
+            return {"ok": True}
 
         return router
 
-    async def _handle_webhook(self, request: Request):
+    async def _process_webhook_body(self, body: dict, headers: dict):
         """
-        Handle incoming Telegram updates.
-
-        :param request: FastAPI Request object
-        :return: Success response
+        Process the webhook body in background.
         """
         # Verify request signature if webhook secret is configured
         if self._webhook_secret:
-            secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            secret_token = headers.get("X-Telegram-Bot-Api-Secret-Token", "")
             if secret_token != self._webhook_secret:
                 self._log.warning("Invalid webhook secret token")
-                raise HTTPException(status_code=403, detail="Invalid secret token")
+                return # Can't raise HTTP exception here as response is sent
 
-        # Process the webhook payload
         try:
-            body = await request.json()
             self._log.debug(f"Received Telegram update: {body}")
 
             # Handle different update types
@@ -89,7 +87,9 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
 
-        return {"ok": True}
+    async def _handle_webhook(self, request: Request):
+        # Deprecated/Removed in favor of split logic
+        pass
 
     async def _handle_message(self, message: dict):
         """
