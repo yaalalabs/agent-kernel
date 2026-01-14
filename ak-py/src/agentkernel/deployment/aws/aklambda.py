@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import traceback
-from typing import Any, Dict, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 
@@ -14,6 +15,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     force=True,
 )
+
 
 class LambdaRouter:
     """
@@ -30,18 +32,21 @@ class LambdaRouter:
         self._api_version = api_version
         self._agent_endpoint = agent_endpoint
         self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {
-            f"{self._get_base_path()}/{self._agent_endpoint}": {
-                "POST": self._handle_agent_chat
-            }
+            f"{self._get_base_path()}/{self._agent_endpoint}": {"POST": self._handle_agent_chat}
         }
 
     def _get_base_path(self) -> str:
         return f"/{self._api_base_path}/{self._api_version}"
-    
+
     def _get_agent_endpoint_path(self) -> str:
         return f"{self._get_base_path()}/{self._agent_endpoint}"
 
-    def override_base_paths(self, api_base_path: str = "api", api_version: str = "v1", agent_endpoint: str = "chat",) -> None:
+    def override_base_paths(
+        self,
+        api_base_path: str = "api",
+        api_version: str = "v1",
+        agent_endpoint: str = "chat",
+    ) -> None:
         self._log.info(f"Agent Endpoint: '{agent_endpoint}'")
 
         old_base_path = self._get_base_path()
@@ -74,10 +79,9 @@ class LambdaRouter:
 
         self._log.info(f"Base paths updated from '{old_base_path}' to '{new_base_path}': {self._routes}")
 
-
     @staticmethod
     def _normalize_path(path: str) -> str:
-        '''Add leading '/' if not present and remove trailing '/' if present'''
+        """Add leading '/' if not present and remove trailing '/' if present"""
         if not path:
             return "/"
         if not path.startswith("/"):
@@ -87,7 +91,7 @@ class LambdaRouter:
         return path
 
     @staticmethod
-    def _normalize_method(method: Optional[str]) -> str: 
+    def _normalize_method(method: Optional[str]) -> str:
         return (method or "GET").upper()
 
     def register(self, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
@@ -99,13 +103,14 @@ class LambdaRouter:
 
         def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
             self._log.info(f"Registering route {norm_method} {norm_path} -> {func.__name__}")
-            
+
             methods = self._routes.setdefault(norm_path, {})
             if norm_method in methods:
                 self._log.warning(f"Route {norm_method} {norm_path} already exists. Skipping.")
                 return func
             methods[norm_method] = func
             return func
+
         return _decorator
 
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
@@ -198,7 +203,7 @@ class LambdaRouter:
                     }
                 ),
             }
-    
+
 
 class Lambda:
     """
