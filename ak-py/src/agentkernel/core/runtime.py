@@ -161,7 +161,6 @@ class Runtime:
 
         reply = await agent.runner.run(agent, session, requests)
 
-
         post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
         for hook in post_hooks:
             reply = await hook.on_run(session, requests, agent, reply)

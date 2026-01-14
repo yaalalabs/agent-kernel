@@ -4,7 +4,7 @@ import mimetypes
 import traceback
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
@@ -67,7 +67,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             secret_token = headers.get("X-Telegram-Bot-Api-Secret-Token", "")
             if secret_token != self._webhook_secret:
                 self._log.warning("Invalid webhook secret token")
-                return # Can't raise HTTP exception here as response is sent
+                return  # Can't raise HTTP exception here as response is sent
 
         try:
             self._log.debug(f"Received Telegram update: {body}")

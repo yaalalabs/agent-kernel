@@ -29,9 +29,7 @@ if TYPE_CHECKING:
 class NoOpPreHook(PreHook):
     """No-op pre-hook when multimodal is disabled."""
 
-    async def on_run(
-        self, session: "Session", agent: "Agent", requests: list[AgentRequest]
-    ) -> list[AgentRequest]:
+    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest]:
         return requests
 
     def name(self) -> str:
@@ -47,16 +45,14 @@ class MultimodalPreHook(PreHook):
     2. Calls LLM to generate brief descriptions
     3. Saves images to storage (session/DynamoDB/Redis based on config)
     4. Injects ONLY current image descriptions into request
-    
+
     Note: Conversation memory handles history - no need to inject previous images.
     """
 
     def __init__(self):
         self._log = logging.getLogger("ak.hooks.multimodal_pre")
 
-    async def on_run(
-        self, session: "Session", agent: "Agent", requests: list[AgentRequest]
-    ) -> list[AgentRequest]:
+    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest]:
         """
         Process current images and inject descriptions.
 
@@ -73,9 +69,7 @@ class MultimodalPreHook(PreHook):
             return requests
 
         # Process ONLY current images: describe and save them
-        current_descriptions = await self._process_current_attachments(
-            session, requests, config
-        )
+        current_descriptions = await self._process_current_attachments(session, requests, config)
 
         if not current_descriptions:
             return requests
@@ -84,26 +78,23 @@ class MultimodalPreHook(PreHook):
         desc_text = "[Current Images/Files]\n"
         for att_id, desc in current_descriptions:
             desc_text += f"- {att_id}: {desc}\n"
-        
-        desc_text += (
-            "\nIf you need to examine any file or image in detail, "
-            "use the get_attachments tool with the attachment ID."
-        )
+
+        desc_text += "\nIf you need to examine any file or image in detail, " "use the get_attachments tool with the attachment ID."
 
         # Merge Strategy:
         # Combine description with user text to ensure OpenAI runner sees a single text request.
         # This is critical because OpenAIRunner disables conversation history for multi-part messages.
-        
+
         final_requests = []
         user_text_req = None
-        
+
         for req in requests:
             if isinstance(req, AgentRequestText):
                 user_text_req = req
             elif not isinstance(req, (AgentRequestImage, AgentRequestFile)):
                 # Keep other request types (like AgentRequestAny)
                 final_requests.append(req)
-        
+
         if user_text_req:
             # Merge description with user text
             merged_text = f"{desc_text}\n{user_text_req.text}"
@@ -113,18 +104,16 @@ class MultimodalPreHook(PreHook):
         else:
             # No user text (just image), so description becomes the text
             final_requests.append(context_request)
-            
+
         return final_requests
 
-    async def _process_current_attachments(
-        self, session: "Session", requests: list[AgentRequest], config
-    ) -> list[tuple[str, str]]:
+    async def _process_current_attachments(self, session: "Session", requests: list[AgentRequest], config) -> list[tuple[str, str]]:
         """
         Process current attachments: generate descriptions and save to storage.
         Returns list of (attachment_id, description) tuples.
         """
         descriptions = []
-        
+
         for req in requests:
             # Skip injected context requests
             if getattr(req, "_injected", False):
@@ -137,7 +126,7 @@ class MultimodalPreHook(PreHook):
                         data=req.image_data,
                         mime_type=req.mime_type or "image/jpeg",
                     )
-                    
+
                     # Save image to storage
                     attachment_id = save_attachment(
                         session=session,
@@ -148,11 +137,9 @@ class MultimodalPreHook(PreHook):
                         description=description,
                         max_attachments=config.max_attachments,
                     )
-                    
+
                     descriptions.append((attachment_id, description))
-                    self._log.info(
-                        f"Saved image {attachment_id}: {description[:50]}..."
-                    )
+                    self._log.info(f"Saved image {attachment_id}: {description[:50]}...")
 
             elif isinstance(req, AgentRequestFile):
                 if req.file_data:
@@ -170,7 +157,7 @@ class MultimodalPreHook(PreHook):
                         description=description,
                         max_attachments=config.max_attachments,
                     )
-                    
+
                     descriptions.append((attachment_id, description))
                     self._log.info(f"Saved file {attachment_id}: {req.name}")
 

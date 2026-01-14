@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 
 from agents import function_tool
 
-
 from .storage import ATTACHMENT_KEY_PREFIX
 
 if TYPE_CHECKING:
@@ -27,38 +26,41 @@ _log = logging.getLogger("ak.multimodal.tools")
 def get_attachments(attachment_ids: list[str]) -> list[dict]:
     """
     Get actual file/image data for the specified attachment IDs.
-    
+
     Use this when you need to analyze files or images in detail.
     You must provide attachment IDs from the available list.
-    
+
     :param attachment_ids: List of attachment IDs to retrieve (e.g., ['abc123', 'def456'])
     :return: List of attachment data dictionaries with id, type, data (base64), mime_type
     """
     if not attachment_ids:
         return []
-    
+
     try:
         from ..runtime import AuxiliaryCache
+
         # Use AuxiliaryCache to access session's non-volatile cache
         nv_cache = AuxiliaryCache.get_non_volatile_cache()
-        
+
         result = []
         for att_id in attachment_ids:
             attachment = nv_cache.get(f"{ATTACHMENT_KEY_PREFIX}{att_id}")
             if attachment:
-                result.append({
-                    "id": attachment["id"],
-                    "type": attachment["type"],
-                    "name": attachment["name"],
-                    "mime_type": attachment["mime_type"],
-                    "data": attachment["data"],  # Base64 encoded
-                })
+                result.append(
+                    {
+                        "id": attachment["id"],
+                        "type": attachment["type"],
+                        "name": attachment["name"],
+                        "mime_type": attachment["mime_type"],
+                        "data": attachment["data"],  # Base64 encoded
+                    }
+                )
                 _log.debug(f"Retrieved attachment: {att_id}")
             else:
                 _log.warning(f"Attachment not found: {att_id}")
-        
+
         return result
-        
+
     except Exception as e:
         _log.error(f"Error retrieving images: {e}")
         return [{"error": str(e)}]
@@ -70,31 +72,33 @@ async def describe_attachment_briefly(
 ) -> str:
     """
     Get a brief description of the attachment using a vision LLM.
-    
+
     Called by PreHook to generate descriptions for new attachments.
-    
+
     :param data: Base64 encoded attachment data
     :param mime_type: MIME type of the attachment
     :return: Brief description of the attachment
     """
     if not data:
         return "No data"
-        
+
     try:
         # Lazy import to avoid circular dependencies
-        from openai import AsyncOpenAI
         import os
+
+        from openai import AsyncOpenAI
+
         from ..config import AKConfig
-        
+
         # Try to get API key from config or env
         api_key = os.getenv("OPENAI_API_KEY")
         config = AKConfig.get()
         if hasattr(config, "openai") and config.openai.api_key:
             api_key = config.openai.api_key
-            
+
         if not api_key:
             return "Attachment (Description unavailable: Missing API Key)"
-            
+
         client = AsyncOpenAI(api_key=api_key)
 
         if mime_type.startswith("image/"):
@@ -108,9 +112,7 @@ async def describe_attachment_briefly(
                             {"type": "text", "text": "Describe this image in one short sentence (max 20 words). Be specific."},
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mime_type};base64,{data}"
-                                },
+                                "image_url": {"url": f"data:{mime_type};base64,{data}"},
                             },
                         ],
                     }

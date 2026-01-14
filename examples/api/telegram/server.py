@@ -1,10 +1,10 @@
-from agents import Agent as OpenAIAgent
+import logging
 
 from agentkernel.api import RESTAPI
-from agentkernel.openai import OpenAIModule
 from agentkernel.core.multimodal import get_attachments
+from agentkernel.openai import OpenAIModule
 from agentkernel.telegram import AgentTelegramRequestHandler
-import logging
+from agents import Agent as OpenAIAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

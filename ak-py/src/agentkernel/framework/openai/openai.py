@@ -226,6 +226,7 @@ class OpenAIModule(Module):
         else:
             self.runner = OpenAIRunner()
         self.load(agents)
+
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
         """
         Wraps the provided agent in an OpenAIAgent instance.
