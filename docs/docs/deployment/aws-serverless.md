@@ -76,6 +76,26 @@ Body:
 }
 ```
 
+### Custom endpoints (multiple handlers)
+
+You can attach additional API Gateway routes to the same Lambda by registering handlers per path and method:
+
+```python
+import json
+from agentkernel.aws import Lambda
+
+@Lambda.register("/app", method="GET")
+def custom_app_handler(event, context):
+    return {"response": "Hello! from AK 'app'"}
+
+@Lambda.register("/app_info", method="POST")
+def custom_app_info_handler(event, context):
+    payload = json.loads(event.get("body") or "{}")
+    return {"request": payload, "response": "Hello! from AK 'app_info'"}
+```
+
+Tip: If you override base paths in code, update them in Terraform as well.
+
 ## Cost Optimization
 
 ### Lambda Configuration
