@@ -440,6 +440,138 @@ test:
     embedding_model: text-embedding-3-small
 ```
 
+#### Guardrails Configuration
+
+Configure input and output guardrails to validate agent requests and responses for safety and compliance.
+
+- **Input Guardrails**
+  - **Enabled**
+    - **Field**: `guardrail.input.enabled`
+    - **Default**: `false`
+    - **Description**: Enable input validation guardrails
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__ENABLED`
+
+  - **Type**
+    - **Field**: `guardrail.input.type`
+    - **Default**: `openai`
+    - **Options**: `openai`, `bedrock`
+    - **Description**: Guardrail provider type
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__TYPE`
+
+  - **Config Path**
+    - **Field**: `guardrail.input.config_path`
+    - **Default**: `None`
+    - **Description**: Path to guardrail configuration JSON file (OpenAI only)
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__CONFIG_PATH`
+
+  - **Model**
+    - **Field**: `guardrail.input.model`
+    - **Default**: `gpt-4o-mini`
+    - **Description**: LLM model to use for guardrail validation (OpenAI only)
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__MODEL`
+
+  - **ID**
+    - **Field**: `guardrail.input.id`
+    - **Default**: `None`
+    - **Description**: AWS Bedrock guardrail ID (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__ID`
+
+  - **Version**
+    - **Field**: `guardrail.input.version`
+    - **Default**: `DRAFT`
+    - **Description**: AWS Bedrock guardrail version (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__INPUT__VERSION`
+
+- **Output Guardrails**
+  - **Enabled**
+    - **Field**: `guardrail.output.enabled`
+    - **Default**: `false`
+    - **Description**: Enable output validation guardrails
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__ENABLED`
+
+  - **Type**
+    - **Field**: `guardrail.output.type`
+    - **Default**: `openai`
+    - **Options**: `openai`, `bedrock`
+    - **Description**: Guardrail provider type
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__TYPE`
+
+  - **Config Path**
+    - **Field**: `guardrail.output.config_path`
+    - **Default**: `None`
+    - **Description**: Path to guardrail configuration JSON file (OpenAI only)
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__CONFIG_PATH`
+
+  - **Model**
+    - **Field**: `guardrail.output.model`
+    - **Default**: `gpt-4o-mini`
+    - **Description**: LLM model to use for guardrail validation (OpenAI only)
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__MODEL`
+
+  - **ID**
+    - **Field**: `guardrail.output.id`
+    - **Default**: `None`
+    - **Description**: AWS Bedrock guardrail ID (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__ID`
+
+  - **Version**
+    - **Field**: `guardrail.output.version`
+    - **Default**: `DRAFT`
+    - **Description**: AWS Bedrock guardrail version (Bedrock only)
+    - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__VERSION`
+
+**Guardrail Setup:**
+
+To use OpenAI guardrails, install the openai-guardrails package:
+
+```bash
+pip install agentkernel[openai]
+```
+
+To use AWS Bedrock guardrails, install the AWS package:
+
+```bash
+pip install agentkernel[aws]
+```
+
+Create guardrail configuration:
+
+**For OpenAI:** Create configuration files following the [OpenAI Guardrails format](https://guardrails.openai.com/).
+
+**For Bedrock:** Create a guardrail in AWS Bedrock and note the guardrail ID and version.
+
+Configure guardrails in your configuration:
+
+**OpenAI Example:**
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: openai
+    model: gpt-4o-mini
+    config_path: /path/to/guardrails_input.json
+  output:
+    enabled: true
+    type: openai
+    model: gpt-4o-mini
+    config_path: /path/to/guardrails_output.json
+```
+
+**Bedrock Example:**
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"  # or "DRAFT"
+  output:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"
+```
+
 #### Messaging Platform Integrations
 
 Configure integrations with messaging platforms.
@@ -541,6 +673,15 @@ export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
 export AK_TEST__JUDGE__MODEL=gpt-4o-mini
 export AK_TEST__JUDGE__PROVIDER=openai
 export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+# Guardrails configuration
+export AK_GUARDRAIL__INPUT__ENABLED=false
+export AK_GUARDRAIL__INPUT__TYPE=openai
+export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json
+export AK_GUARDRAIL__OUTPUT__ENABLED=false
+export AK_GUARDRAIL__OUTPUT__TYPE=openai
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 # Messaging platforms (optional)
 export AK_SLACK__AGENT=my-agent
 export AK_WHATSAPP__AGENT=my-agent
@@ -610,6 +751,17 @@ test:
     model: gpt-4o-mini
     provider: openai
     embedding_model: text-embedding-3-small
+guardrail:
+  input:
+    enabled: false
+    type: openai
+    model: gpt-4o-mini
+    config_path: /path/to/guardrails_input.json
+  output:
+    enabled: false
+    type: openai
+    model: gpt-4o-mini
+    config_path: /path/to/guardrails_output.json
 slack:
   agent: my-agent
   agent_acknowledgement: "Processing your request..."
@@ -670,6 +822,20 @@ gmail:
       "model": "gpt-4o-mini",
       "provider": "openai",
       "embedding_model": "text-embedding-3-small"
+    }
+  },
+  "guardrail": {
+    "input": {
+      "enabled": false,
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "config_path": "/path/to/guardrails_input.json"
+    },
+    "output": {
+      "enabled": false,
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "config_path": "/path/to/guardrails_output.json"
     }
   },
   "slack": {

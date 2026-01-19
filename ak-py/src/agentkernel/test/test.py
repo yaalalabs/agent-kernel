@@ -169,9 +169,7 @@ class Test:
             from ragas.llms import LiteLLMStructuredLLM
 
             judge_config = AKConfig.get().test.judge
-            Test._ragas_llm = LiteLLMStructuredLLM(
-                client=completion, model=judge_config.model, provider=judge_config.provider
-            )
+            Test._ragas_llm = LiteLLMStructuredLLM(client=completion, model=judge_config.model, provider=judge_config.provider)
             Test._ragas_embeddings = LiteLLMEmbeddings(model=judge_config.embedding_model)
 
         llm = Test._ragas_llm
@@ -254,13 +252,9 @@ class Test:
                 Test._fuzzy_compare(actual=actual, expected=expected, threshold=threshold)
             except AssertionError:
                 try:
-                    Test._judge_compare(
-                        user_input=user_input, actual=actual, expected=expected, threshold=threshold / 100
-                    )
+                    Test._judge_compare(user_input=user_input, actual=actual, expected=expected, threshold=threshold / 100)
                 except AssertionError:
-                    raise AssertionError(
-                        f"Response didn't pass fuzzy matching or judge evaluation. Expected: {expected}, Received: {actual}"
-                    )
+                    raise AssertionError(f"Response didn't pass fuzzy matching or judge evaluation. Expected: {expected}, Received: {actual}")
 
     async def expect(self, expected: list[str]):
         """

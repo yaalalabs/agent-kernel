@@ -58,9 +58,7 @@ class AgentGmailRequestHandler:
         self._client_secret = os.environ.get("AK_GMAIL__CLIENT_SECRET")
         self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
         if not (self._client_id and self._client_secret):
-            self._log.error(
-                "Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET."
-            )
+            self._log.error("Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET.")
             raise ValueError("Incomplete Gmail configuration.")
 
         # Email filtering configuration (optional)
@@ -246,9 +244,7 @@ class AgentGmailRequestHandler:
             headers = message["payload"]["headers"]
             subject = self._get_header(headers, "Subject")
             sender = self._get_header(headers, "From")
-            message_id_header = self._get_header(
-                headers, "Message-ID"
-            )  # Extract Message-ID header for proper threading
+            message_id_header = self._get_header(headers, "Message-ID")  # Extract Message-ID header for proper threading
             thread_id = message.get("threadId")
 
             # Extract email body
@@ -258,9 +254,7 @@ class AgentGmailRequestHandler:
                 self._log.warning(f"Email {message_id} has no body content")
                 return
 
-            self._log.info(
-                f"[EMAIL] Processing email - from={sender}, subject={subject}, thread_id={thread_id}, message_id={message_id}"
-            )
+            self._log.info(f"[EMAIL] Processing email - from={sender}, subject={subject}, thread_id={thread_id}, message_id={message_id}")
 
             # Extract attachments from email
             attachments = self._extract_attachments(message_id, message["payload"])
@@ -419,9 +413,7 @@ class AgentGmailRequestHandler:
         try:
             # Format email content for agent, including thread history if available
             if thread_history:
-                email_content = (
-                    f"Thread history:\n{thread_history}\n\nNew message:\nFrom: {sender}\nSubject: {subject}\n\n{body}"
-                )
+                email_content = f"Thread history:\n{thread_history}\n\nNew message:\nFrom: {sender}\nSubject: {subject}\n\n{body}"
             else:
                 email_content = f"From: {sender}\nSubject: {subject}\n\n{body}"
 
@@ -441,9 +433,7 @@ class AgentGmailRequestHandler:
             # Run the agent with all requests
             if len(requests) > 1:
                 # Multiple requests (text + attachments) - use run_multi
-                self._log.info(
-                    f"[AGENT_CALL] Running agent with {len(requests)} request(s) (text + {len(attachments)} attachment(s))"
-                )
+                self._log.info(f"[AGENT_CALL] Running agent with {len(requests)} request(s) (text + {len(attachments)} attachment(s))")
                 result = await service.run_multi(requests)
             else:
                 # Only text - use standard run
@@ -587,9 +577,7 @@ class AgentGmailRequestHandler:
                             }
                             inferred_mime = mime_map.get(ext)
                             if inferred_mime:
-                                self._log.info(
-                                    f"Inferred MIME type for {filename}: {inferred_mime} (from extension .{ext})"
-                                )
+                                self._log.info(f"Inferred MIME type for {filename}: {inferred_mime} (from extension .{ext})")
                                 mime_type = inferred_mime
                             else:
                                 self._log.warning(f"Could not infer MIME type for extension .{ext}")
@@ -638,9 +626,7 @@ class AgentGmailRequestHandler:
             self._log.info("Test mode: Skipping mark as read.")
             return
         try:
-            self._service.users().messages().modify(
-                userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
-            ).execute()
+            self._service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
 
         except Exception as e:
             self._log.warning(f"Error marking email as read: {e}")

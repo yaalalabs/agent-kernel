@@ -18,9 +18,7 @@ Currently, they will get only called for the initial execution of an agent when 
 
 class PreHook(ABC):
     @abstractmethod
-    async def on_run(
-        self, session: "Session", agent: "Agent", requests: list[AgentRequest]
-    ) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -49,9 +47,7 @@ class PreHook(ABC):
 
 class PostHook(ABC):
     @abstractmethod
-    async def on_run(
-        self, session: "Session", requests: list[AgentRequest], agent: "Agent", agent_reply: AgentReply
-    ) -> AgentReply:
+    async def on_run(self, session: "Session", requests: list[AgentRequest], agent: "Agent", agent_reply: AgentReply) -> AgentReply:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails
