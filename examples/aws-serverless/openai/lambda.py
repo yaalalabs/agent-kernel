@@ -25,8 +25,6 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
-# To override the default base paths, set values in config.yaml under 'api_serverless.base_paths'.
-
 # Definining a custom handler function for a custom path
 @Lambda.register("/app", method="GET")
 def custom_app_handler(event, context):
