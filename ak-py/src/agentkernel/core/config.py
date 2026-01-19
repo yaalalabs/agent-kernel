@@ -148,6 +148,8 @@ class _ApiServerlessConfig(BaseModel):
         description="Serverless API base path overrides",
         default_factory=_ApiServerlessBasePaths,
     )
+
+
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
@@ -183,10 +185,7 @@ class AKConfig(YamlBaseSettingsModified):
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
-    api_serverless: _ApiServerlessConfig = Field(
-        description="Serverless API related configurations",
-        default_factory=_ApiServerlessConfig
-    )
+    api_serverless: _ApiServerlessConfig = Field(description="Serverless API related configurations", default_factory=_ApiServerlessConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 

@@ -25,6 +25,7 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
+
 # Definining a custom handler function for a custom path
 @Lambda.register("/app", method="GET")
 def custom_app_handler(event, context):

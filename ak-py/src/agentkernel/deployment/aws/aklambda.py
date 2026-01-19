@@ -6,8 +6,8 @@ import logging
 import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 from agentkernel.core.config import AKConfig
+from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 
 from ...core import AgentService
 
@@ -38,9 +38,19 @@ class LambdaRouter:
         self._config_base_paths = AKConfig.get().api_serverless.base_paths
         self._log.info(f"AKConfig API Serverless paths: {self._config_base_paths}")
         # Only override if different from current
-        if (self._config_base_paths.api_base_path != self._api_base_path or self._config_base_paths.api_version != self._api_version or self._config_base_paths.agent_endpoint != self._agent_endpoint):
-            self.override_base_paths(api_base_path=self._config_base_paths.api_base_path, api_version=self._config_base_paths.api_version, agent_endpoint=self._config_base_paths.agent_endpoint)
-            self._log.info(f"Applied serverless base path overrides from config: base='{self._config_base_paths.api_base_path}', version='{self._config_base_paths.api_version}', endpoint='{self._config_base_paths.agent_endpoint}'")
+        if (
+            self._config_base_paths.api_base_path != self._api_base_path
+            or self._config_base_paths.api_version != self._api_version
+            or self._config_base_paths.agent_endpoint != self._agent_endpoint
+        ):
+            self.override_base_paths(
+                api_base_path=self._config_base_paths.api_base_path,
+                api_version=self._config_base_paths.api_version,
+                agent_endpoint=self._config_base_paths.agent_endpoint,
+            )
+            self._log.info(
+                f"Applied serverless base path overrides from config: base='{self._config_base_paths.api_base_path}', version='{self._config_base_paths.api_version}', endpoint='{self._config_base_paths.agent_endpoint}'"
+            )
 
     def _get_base_path(self) -> str:
         return f"/{self._api_base_path}/{self._api_version}"
