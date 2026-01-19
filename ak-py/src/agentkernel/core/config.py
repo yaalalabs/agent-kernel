@@ -137,6 +137,19 @@ class _TestConfig(BaseModel):
     judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
 
 
+class _ApiServerlessBasePaths(BaseModel):
+    api_base_path: str = Field(default="api", description="Base API path prefix (e.g., 'api')")
+    api_version: str = Field(default="v1", description="API version path segment (e.g., 'v1')")
+    agent_endpoint: str = Field(default="chat", description="Agent endpoint path segment (e.g., 'chat')")
+
+
+class _ApiServerlessConfig(BaseModel):
+    base_paths: _ApiServerlessBasePaths = Field(
+        description="Serverless API base path overrides",
+        default_factory=_ApiServerlessBasePaths,
+    )
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -164,6 +177,10 @@ class AKConfig(YamlBaseSettingsModified):
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
+    api_serverless: _ApiServerlessConfig = Field(
+        description="Serverless API related configurations",
+        default_factory=_ApiServerlessConfig
+    )
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

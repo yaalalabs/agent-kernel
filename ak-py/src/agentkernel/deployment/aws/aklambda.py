@@ -7,6 +7,7 @@ import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.config import AKConfig
 
 from ...core import AgentService
 
@@ -34,6 +35,12 @@ class LambdaRouter:
         self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {
             f"{self._get_base_path()}/{self._agent_endpoint}": {"POST": self._handle_agent_chat}
         }
+        self._config_base_paths = AKConfig.get().api_serverless.base_paths
+        self._log.info(f"AKConfig API Serverless paths: {self._config_base_paths}")
+        # Only override if different from current
+        if (self._config_base_paths.api_base_path != self._api_base_path or self._config_base_paths.api_version != self._api_version or self._config_base_paths.agent_endpoint != self._agent_endpoint):
+            self.override_base_paths(api_base_path=self._config_base_paths.api_base_path, api_version=self._config_base_paths.api_version, agent_endpoint=self._config_base_paths.agent_endpoint)
+            self._log.info(f"Applied serverless base path overrides from config: base='{self._config_base_paths.api_base_path}', version='{self._config_base_paths.api_version}', endpoint='{self._config_base_paths.agent_endpoint}'")
 
     def _get_base_path(self) -> str:
         return f"/{self._api_base_path}/{self._api_version}"
@@ -218,13 +225,6 @@ class Lambda:
     def register(cls, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
         """Expose router registration to applications: @Lambda.register('/app', 'GET')"""
         return cls._router.register(path, method)
-
-    @classmethod
-    def override_base_paths(cls, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
-        """
-        Override the base paths for the router.
-        """
-        cls._router.override_base_paths(api_base_path, api_version, agent_endpoint)
 
     @staticmethod
     def _wrap_response(result: Any) -> Dict[str, Any]:
