@@ -36,7 +36,29 @@ resource "azurerm_subnet" "private" {
   resource_group_name  = data.azurerm_resource_group.current_group.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.private_subnet_cidrs[count.index]]
+
+  # Service endpoints ONLY for non-Flex subnets
+  service_endpoints = count.index == 1 ? [] : [
+    "Microsoft.Storage"
+  ]
+
+  # Delegation ONLY for Flex subnet (index 1)
+  dynamic "delegation" {
+    for_each = count.index == 1 ? [1] : []
+
+    content {
+      name = "flex-function-delegation"
+
+      service_delegation {
+        name = "Microsoft.App/environments"
+        actions = [
+          "Microsoft.Network/virtualNetworks/subnets/action"
+        ]
+      }
+    }
+  }
 }
+
 
 # Create Public IP for NAT Gateway
 resource "azurerm_public_ip" "nat" {

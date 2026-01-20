@@ -41,9 +41,3 @@ variable "is_production" {
   type        = bool
   description = "Whether this is a production environment"
 }
-
-variable "function_principal_id" {
-  type        = string
-  default     = null
-  description = "Principal ID of Azure Function for storage access (optional)"
-}

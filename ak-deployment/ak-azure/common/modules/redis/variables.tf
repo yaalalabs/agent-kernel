@@ -32,7 +32,7 @@ variable "vnet_name" {
 variable "vnet_resource_group_name" {
   type        = string
   description = "VNet resource group name (if different from current RG)"
-  default     = ""
+  default     = null
 }
 
 variable "subnet_name" {
@@ -44,7 +44,7 @@ variable "subnet_name" {
 variable "sku_name" {
   type        = string
   description = "Redis SKU name (Basic, Standard, or Premium)"
-  default     = "Standard"
+  default     = "Premium"
   
   validation {
     condition     = contains(["Basic", "Standard", "Premium"], var.sku_name)
@@ -55,7 +55,7 @@ variable "sku_name" {
 variable "node_family" {
   type        = string
   description = "Redis family (C for Basic/Standard, P for Premium)"
-  default     = "C"
+  default     = "P"
   
   validation {
     condition     = contains(["C", "P"], var.node_family)

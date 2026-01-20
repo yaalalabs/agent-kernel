@@ -17,3 +17,8 @@ output "source_storage_blob_endpoint" {
   value       = azurerm_storage_account.source_storage.primary_blob_endpoint
   description = "Primary blob endpoint URL"
 }
+
+output "azure_source_storage_id" {
+  value = azurerm_storage_account.source_storage.id
+  description = "Azure Storage Account ID"
+}

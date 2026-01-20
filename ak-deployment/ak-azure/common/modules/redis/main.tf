@@ -7,7 +7,7 @@ data "azurerm_client_config" "current" {}
 # Get the VNet for private endpoint
 data "azurerm_virtual_network" "vnet" {
   name                = var.vnet_name
-  resource_group_name = var.vnet_resource_group_name != "" ? var.vnet_resource_group_name : data.azurerm_resource_group.current_group.name
+  resource_group_name = var.vnet_resource_group_name != null ? var.vnet_resource_group_name : data.azurerm_resource_group.current_group.name
 }
 
 data "azurerm_subnet" "redis_subnet" {
@@ -36,6 +36,11 @@ resource "azurerm_redis_cache" "redis" {
   }
 
   tags = var.tags
+
+  lifecycle {
+    
+    ignore_changes = [ location, subnet_id ]
+  }
 }
 
 # Private Endpoint for Redis(need this when we are not binding the redis to a subnet)
@@ -69,17 +74,10 @@ resource "azurerm_private_dns_zone_virtual_network_link" "redis" {
   resource_group_name   = data.azurerm_resource_group.current_group.name
   private_dns_zone_name = azurerm_private_dns_zone.redis.name
   virtual_network_id    = data.azurerm_virtual_network.vnet.id
-
-  tags = var.tags
+  tags                  = var.tags
+  lifecycle {
+    ignore_changes = [ 
+      virtual_network_id
+     ]
+  }
 }
-
-# # DNS A Record for Private Endpoint (enable this when we are not binding the redis to a subnet)
-# resource "azurerm_private_dns_a_record" "redis" {
-#   name                = azurerm_redis_cache.redis.name
-#   zone_name           = azurerm_private_dns_zone.redis.name
-#   resource_group_name = data.azurerm_resource_group.current_group.name
-#   ttl                 = 300
-#   records             = [azurerm_private_endpoint.redis.private_service_connection[0].private_ip_address]
-
-#   tags = var.tags
-# }

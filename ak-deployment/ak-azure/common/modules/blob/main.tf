@@ -66,11 +66,3 @@ resource "azurerm_storage_account_customer_managed_key" "source_storage_cmk" {
   key_vault_uri      = local.key_vault_uri
   key_name           = split("/", var.s3_kms_key_id)[4]
 }
-
-# Role assignment for Azure Functions
-resource "azurerm_role_assignment" "function_storage_reader" {
-  count                = var.function_principal_id != null ? 1 : 0
-  scope                = azurerm_storage_account.source_storage.id
-  role_definition_name = "Storage Blob Data Reader"
-  principal_id         = var.function_principal_id
-}

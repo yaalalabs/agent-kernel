@@ -18,6 +18,11 @@ output "private_subnet_ids" {
   value       = azurerm_subnet.private[*].id
 }
 
+output "private_subnet_name" {
+  description = "Name of the private subnet"
+  value       = azurerm_subnet.private[0].name
+}
+
 output "nat_gateway_id" {
   description = "ID of the NAT Gateway"
   value       = azurerm_nat_gateway.nat.id
