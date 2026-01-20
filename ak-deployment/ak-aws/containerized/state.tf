@@ -15,13 +15,14 @@ locals {
   container_name            = "${local.prefix}-app"
 
   api_base_segment = try(trim(var.api_base_path, "/"), "")
-  default_endpoint_path = "/${join("/", compact([local.api_base_segment, var.api_version, var.agent_endpoint]))}"
+  api_base_segment_with_version = "/${join("/", compact([local.api_base_segment, var.api_version]))}"
+  default_endpoint_path = "/${join("/", compact([local.api_base_segment_with_version, var.agent_endpoint]))}"
   default_gateway_endpoint = {
     path           = local.default_endpoint_path
     method         = "POST"
     overwrite_path = "/run"
   }
-  multipart_endpoint_path = "/${join("/", compact([local.api_base_segment, var.api_version, "${var.agent_endpoint}-multipart"]))}"
+  multipart_endpoint_path = "/${join("/", compact([local.api_base_segment_with_version, "${var.agent_endpoint}-multipart"]))}"
   multipart_gateway_endpoint = {
     path           = local.multipart_endpoint_path
     method         = "POST"
@@ -36,10 +37,10 @@ locals {
     (
       lower(try(ep["method"], "")) == "$default"
       ? "$default"
-      : "${upper(try(ep["method"], "ANY"))} /${join("/", compact([local.api_base_segment, var.api_version, trim(try(ep["path"], ""), "/")]))}"
+      : "${upper(try(ep["method"], "ANY"))} /${join("/", compact([local.api_base_segment_with_version, trim(try(ep["path"], ""), "/")]))}"
     ) => ep
   }
-  mcp_endpoint_path = "/${join("/", compact([ local.api_base_segment, var.api_version, "mcp" ]))}"
+  mcp_endpoint_path = "/${join("/", compact([local.api_base_segment_with_version, "mcp"]))}"
   mcp_gateway_map = var.enable_mcp_server ? {
     "ANY ${local.mcp_endpoint_path}" = {
       path           = "mcp"
