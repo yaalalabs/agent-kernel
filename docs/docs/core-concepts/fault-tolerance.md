@@ -51,7 +51,7 @@ ECS deployments provide the most comprehensive fault tolerance features with ext
 ```hcl
 # Example Terraform configuration
 ecs_desired_count = 3              # Number of tasks to maintain
-ecs_health_check_path = "/health"
+ecs_health_check_endpoint = "/health"
 ```
 
 #### Service Auto-Scaling (Available soon)

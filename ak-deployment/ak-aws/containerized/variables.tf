@@ -147,7 +147,7 @@ variable "ecs_container_port" {
   default     = 8000
 }
 
-variable "ecs_health_check_path" {
+variable "ecs_health_check_endpoint" {
   type        = string
   description = "Health check path for ALB target group"
   default     = "/health"
