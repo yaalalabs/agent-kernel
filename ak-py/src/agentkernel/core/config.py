@@ -46,21 +46,12 @@ class _SessionStoreConfig(BaseModel):
 class _RoutesConfig(BaseModel):
     agents: bool = Field(default=True, description="Agent interaction routes")
 
-
-class _ApiPathConfig(BaseModel):
-    base_path: str = Field(default="api", description="Base API path prefix (e.g., 'api')")
-    version: str = Field(default="v1", description="API version path segment (e.g., 'v1')")
-    agent_endpoint: str = Field(default="chat", description="Agent endpoint path segment (e.g., 'chat')")
-
-
 class _APIConfig(BaseModel):
     host: str = Field(default="0.0.0.0", description="API host")
     port: int = Field(default=8000, description="API port")
     enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
     custom_router_prefix: str = Field(default="/custom", description="Custom router prefix")
     max_file_size: int = Field(default=2097152, description="Maximum file size in bytes (default: 2 MB)")
-    path: _ApiPathConfig = Field(description="API path configuration", default_factory=_ApiPathConfig)
-
 
 class _A2AConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable A2A")
