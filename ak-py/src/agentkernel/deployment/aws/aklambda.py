@@ -29,72 +29,11 @@ class LambdaRouter:
 
     def __init__(self, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
         self._log = logging.getLogger("ak.aws.lambda.router")
-        self._api_base_path = api_base_path
-        self._api_version = api_version
-        self._agent_endpoint = agent_endpoint
+        self._default_agent_registered_path = "default_agent_registered_path"
+        self._default_agent_registered_method = "POST"
         self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {
-            f"{self._get_base_path()}/{self._agent_endpoint}": {"POST": self._handle_agent_chat}
+            self._default_agent_registered_path: {self._default_agent_registered_method: self._handle_agent_chat}
         }
-        self._config_base_paths = AKConfig.get().api_serverless.base_paths
-        self._log.info(f"AKConfig API Serverless paths: {self._config_base_paths}")
-        # Only override if different from current
-        if (
-            self._config_base_paths.api_base_path != self._api_base_path
-            or self._config_base_paths.api_version != self._api_version
-            or self._config_base_paths.agent_endpoint != self._agent_endpoint
-        ):
-            self.override_base_paths(
-                api_base_path=self._config_base_paths.api_base_path,
-                api_version=self._config_base_paths.api_version,
-                agent_endpoint=self._config_base_paths.agent_endpoint,
-            )
-            self._log.info(
-                f"Applied serverless base path overrides from config: base='{self._config_base_paths.api_base_path}', version='{self._config_base_paths.api_version}', endpoint='{self._config_base_paths.agent_endpoint}'"
-            )
-
-    def _get_base_path(self) -> str:
-        return f"/{self._api_base_path}/{self._api_version}"
-
-    def _get_agent_endpoint_path(self) -> str:
-        return f"{self._get_base_path()}/{self._agent_endpoint}"
-
-    def override_base_paths(
-        self,
-        api_base_path: str = "api",
-        api_version: str = "v1",
-        agent_endpoint: str = "chat",
-    ) -> None:
-        self._log.info(f"Agent Endpoint: '{agent_endpoint}'")
-
-        old_base_path = self._get_base_path()
-        old_agent_endpoint = self._get_agent_endpoint_path()
-
-        self._api_base_path = api_base_path
-        self._api_version = api_version
-        self._agent_endpoint = agent_endpoint
-
-        new_base_path = self._get_base_path()
-        new_agent_endpoint = self._get_agent_endpoint_path()
-
-        self._log.info(f"Old base path: '{old_base_path}', New base path: '{new_base_path}'")
-
-        new_routes = {}
-
-        for old_path, methods in self._routes.items():
-            if old_path == old_agent_endpoint:
-                new_path = new_agent_endpoint
-            elif old_path.startswith(old_base_path):
-                new_path = old_path.replace(old_base_path, new_base_path, 1)
-            else:
-                self._log.warning(f"Path '{old_path}' does not start with '{old_base_path}'. Skipping.")
-                new_path = old_path
-
-            self._log.info(f"'{old_path}' -> '{new_path}'")
-            new_routes[new_path] = methods
-
-        self._routes = new_routes
-
-        self._log.info(f"Base paths updated from '{old_base_path}' to '{new_base_path}': {self._routes}")
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -114,8 +53,6 @@ class LambdaRouter:
     def register(self, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
         """Decorator to register a handler for a given path and method."""
         norm_path = self._normalize_path(path)
-        if not norm_path.startswith(self._get_base_path()):
-            norm_path = self._get_base_path() + norm_path
         norm_method = self._normalize_method(method)
 
         def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
@@ -129,17 +66,35 @@ class LambdaRouter:
             return func
 
         return _decorator
+    
+    def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Optional[str]:
+        """Get the base path from stage variables"""
+        stage_vars = event.get("stageVariables", {})
+        api_base_path = stage_vars.get('api_base_path')
+        api_version = stage_vars.get('api_version')
+        agent_endpoint = stage_vars.get('agent_endpoint')
+        base_path = f"/{api_base_path}/{api_version}"
+        if api_base_path and api_version and agent_endpoint:
+            return base_path, f"{base_path}/{agent_endpoint}"
+        return None, None
 
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         method = self._normalize_method(event.get("httpMethod"))
         event_path = event.get("path") or event.get("resource") or "/"
         self._log.info(f"Event path: {event_path}, Method: {method}")
-        methods = self._routes.get(event_path)
-        if not methods:
-            self._log.warning(f"No registered route found for API Gateway path -> '{event_path}'")
-            raise ValueError(f"No registered route found for API Gateway path -> '{event_path}'")
+
+        stage_var_base_path, stage_var_agent_endpoint = self._get_base_paths_from_stage_vars(event)
+        converted_event_path = event_path
+        if stage_var_base_path and stage_var_agent_endpoint:
+            if stage_var_agent_endpoint == event_path and method == self._default_agent_registered_method:
+                converted_event_path = self._default_agent_registered_path
+            else:
+                converted_event_path = event_path.replace(stage_var_base_path, "")
+
+        self._log.info(f"Converted event path: {converted_event_path}")
+        methods = self._routes.get(converted_event_path, {})
         handler = methods.get(method)
-        if not handler:
+        if not methods or not handler:
             self._log.warning(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
             raise ValueError(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
         result = handler(event, context)
