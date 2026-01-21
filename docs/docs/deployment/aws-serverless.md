@@ -94,7 +94,7 @@ def custom_app_info_handler(event, context):
     return {"request": payload, "response": "Hello! from AK 'app_info'"}
 ```
 
-> **NOTE: If you want to override base paths you have to define them in the `main.tf` file.**
+> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that `/chat` path is reserved for the chat endpoint, therefore it cannot be overridden.**
 
 ## Cost Optimization
 
