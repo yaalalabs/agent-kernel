@@ -47,12 +47,19 @@ class _RoutesConfig(BaseModel):
     agents: bool = Field(default=True, description="Agent interaction routes")
 
 
+class _ApiPathConfig(BaseModel):
+    base_path: str = Field(default="api", description="Base API path prefix (e.g., 'api')")
+    version: str = Field(default="v1", description="API version path segment (e.g., 'v1')")
+    agent_endpoint: str = Field(default="chat", description="Agent endpoint path segment (e.g., 'chat')")
+
+
 class _APIConfig(BaseModel):
     host: str = Field(default="0.0.0.0", description="API host")
     port: int = Field(default=8000, description="API port")
     enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
     custom_router_prefix: str = Field(default="/custom", description="Custom router prefix")
     max_file_size: int = Field(default=2097152, description="Maximum file size in bytes (default: 2 MB)")
+    path: _ApiPathConfig = Field(description="API path configuration", default_factory=_ApiPathConfig)
 
 
 class _A2AConfig(BaseModel):
@@ -137,19 +144,6 @@ class _TestConfig(BaseModel):
     judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
 
 
-class _ApiServerlessBasePaths(BaseModel):
-    api_base_path: str = Field(default="api", description="Base API path prefix (e.g., 'api')")
-    api_version: str = Field(default="v1", description="API version path segment (e.g., 'v1')")
-    agent_endpoint: str = Field(default="chat", description="Agent endpoint path segment (e.g., 'chat')")
-
-
-class _ApiServerlessConfig(BaseModel):
-    base_paths: _ApiServerlessBasePaths = Field(
-        description="Serverless API base path overrides",
-        default_factory=_ApiServerlessBasePaths,
-    )
-
-
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock)$")
@@ -185,7 +179,6 @@ class AKConfig(YamlBaseSettingsModified):
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
-    api_serverless: _ApiServerlessConfig = Field(description="Serverless API related configurations", default_factory=_ApiServerlessConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
