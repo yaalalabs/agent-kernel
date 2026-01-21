@@ -97,11 +97,11 @@ def custom_app_info_handler(event, context):
 If you want to override base paths you have to define it in the `config.yaml` file like shown below, **(NOTE: Make sure to update these base paths in Terraform as well)**.
 
 ```yaml
-api_serverless:
-  base_paths:
-    api_base_path: "api-new"
-    api_version: "v2"
-    agent_endpoint: "chat-new"
+api:
+    path:
+        base_path: "api-new"
+        version: "v2"
+        agent_endpoint: "chat-new"
 ```
 
 
