@@ -10,7 +10,8 @@ module "serverless_agents" {
   function_name        = "openai-agents"
   handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist.zip"
+  package_path         = "../dist"
+  package_type         = "Image"
   memory_size          = 256
   create_redis_cluster = true
   product_display_name = "AK OpenAI Serverless Example"
