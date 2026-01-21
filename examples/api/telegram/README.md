@@ -283,7 +283,8 @@ class CustomTelegramHandler(AgentTelegramRequestHandler):
 support_agent = OpenAIAgent(
     name="support",
     handoff_description="Customer support agent",
-    instructions="Provide helpful customer support. Be concise for Telegram."
+    instructions="Provide helpful customer support. Be concise for Telegram.",
+    tools=[get_attachments],
 )
 
 sales_agent = OpenAIAgent(

@@ -50,6 +50,7 @@ Telegram doesn't require webhook verification like Meta platforms. The webhook U
 ## Simple Telegram Integration Code
 
 ```python
+from agentkernel.core.multimodal import get_attachments
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
@@ -60,6 +61,7 @@ general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers",
+    tools=[get_attachments],
 )
 
 # Initialize module with agent
