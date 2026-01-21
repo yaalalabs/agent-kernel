@@ -94,16 +94,7 @@ def custom_app_info_handler(event, context):
     return {"request": payload, "response": "Hello! from AK 'app_info'"}
 ```
 
-If you want to override base paths you have to define it in the `config.yaml` file like shown below, **(NOTE: Make sure to update these base paths in Terraform as well)**.
-
-```yaml
-api_serverless:
-  base_paths:
-    api_base_path: "api-new"
-    api_version: "v2"
-    agent_endpoint: "chat-new"
-```
-
+> **NOTE: If you want to override base paths you have to define them in the `main.tf` file.**
 
 ## Cost Optimization
 
