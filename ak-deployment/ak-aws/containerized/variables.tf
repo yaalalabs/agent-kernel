@@ -58,7 +58,7 @@ variable "gateway_endpoints" {
   type = list(object({
     path = string        # e.g. "chat"
     method = string        # e.g. "GET", "POST", "PUT", "DELETE", "ANY"
-    overwrite_path = string # backend path override for ALB target, e.g. "/run"
+    overwrite_path = string # backend path override for ALB target, e.g. "/api/v1/chat"
   }))
   default = []
   validation {

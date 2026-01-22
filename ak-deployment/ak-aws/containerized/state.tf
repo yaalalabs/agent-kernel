@@ -20,13 +20,13 @@ locals {
   default_gateway_endpoint = {
     path           = local.default_endpoint_path
     method         = "POST"
-    overwrite_path = "/run"
+    overwrite_path = "/api/v1/chat"
   }
   multipart_endpoint_path = "/${join("/", compact([local.api_base_segment_with_version, "${var.agent_endpoint}-multipart"]))}"
   multipart_gateway_endpoint = {
     path           = local.multipart_endpoint_path
     method         = "POST"
-    overwrite_path = "/run-multipart"
+    overwrite_path = "/api/v1/chat-multipart"
   }
   default_gateway_map = {
     "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint

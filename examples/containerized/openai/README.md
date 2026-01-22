@@ -14,7 +14,7 @@ Install local dependencies in development mode using:
 Run this demo using the following.
 
     docker run -e  OPENAI_API_KEY=<openai_api_key> -p 8000:8000 yaalalabs/ak-openai-demo:latest
-    # This will start a server on port 8000. REST Endpoints are available at http://localhost:8000/run
+    # This will start a server on port 8000. REST Endpoints are available at http://localhost:8000/api/v1/chat
 
 Sample request:
 

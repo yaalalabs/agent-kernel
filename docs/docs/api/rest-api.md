@@ -23,7 +23,7 @@ python my_agent.py
 
 ## Endpoints
 
-### POST /run
+### POST /api/v1/chat
 
 Execute an agent with a message.
 
@@ -196,9 +196,9 @@ For smaller files and images, you can include them directly in the JSON request 
 
 ### Option 2: Multipart Form Data
 
-For larger files, use the `/run-multipart` endpoint with `multipart/form-data`. This approach is more efficient for files larger than a few MB and avoids base64 encoding overhead.
+For larger files, use the `/api/v1/chat-multipart` endpoint with `multipart/form-data`. This approach is more efficient for files larger than a few MB and avoids base64 encoding overhead.
 
-**Endpoint:** `POST /run-multipart`
+**Endpoint:** `POST /api/v1/chat-multipart`
 
 **Request parameters:**
 - `prompt` (required): Text prompt for the agent
@@ -210,7 +210,7 @@ For larger files, use the `/run-multipart` endpoint with `multipart/form-data`. 
 **Example using curl:**
 
 ```bash
-curl -X POST http://localhost:8000/run-multipart \
+curl -X POST http://localhost:8000/api/v1/chat-multipart \
   -F "prompt=What is the deadline in this document?" \
   -F "agent=assistant" \
   -F "session_id=user-123" \
@@ -235,7 +235,7 @@ with open("document.pdf", "rb") as pdf_file, open("photo.jpg", "rb") as image_fi
     }
     
     response = requests.post(
-        "http://localhost:8000/run-multipart",
+        "http://localhost:8000/api/v1/chat-multipart",
         data=data,
         files=files
     )

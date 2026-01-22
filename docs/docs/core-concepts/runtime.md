@@ -256,7 +256,7 @@ runtime.register(custom_agent)
 
 ```python
 # GET /agents - list all agents
-# POST /run - execute agent
+# POST /api/v1/chat - execute agent
 ```
 
 ## Best Practices

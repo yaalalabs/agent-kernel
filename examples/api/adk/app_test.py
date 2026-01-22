@@ -15,7 +15,7 @@ class APITestClient:
         self.url = url
         self.session_id = str(uuid.uuid4())
 
-    async def send(self, prompt, endpoint: str = "/run", additional_context=None, body=None):
+    async def send(self, prompt, endpoint: str = "/api/v1/chat", additional_context=None, body=None):
         payload = (
             {
                 "prompt": prompt,
