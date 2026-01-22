@@ -66,13 +66,13 @@ class LambdaRouter:
             return func
 
         return _decorator
-    
+
     def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Optional[str]:
         """Get the base path from stage variables"""
         stage_vars = event.get("stageVariables", {})
-        api_base_path = stage_vars.get('api_base_path')
-        api_version = stage_vars.get('api_version')
-        agent_endpoint = stage_vars.get('agent_endpoint')
+        api_base_path = stage_vars.get("api_base_path")
+        api_version = stage_vars.get("api_version")
+        agent_endpoint = stage_vars.get("agent_endpoint")
         base_path = f"/{api_base_path}/{api_version}"
         if api_base_path and api_version and agent_endpoint:
             return base_path, f"{base_path}/{agent_endpoint}"
