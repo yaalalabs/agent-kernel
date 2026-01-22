@@ -46,7 +46,7 @@ Execute an agent with a message.
 }
 ```
 
-### GET /agents
+### GET /api/v1/agents
 
 List all available agents.
 

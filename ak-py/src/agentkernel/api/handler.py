@@ -28,7 +28,7 @@ class RESTRequestHandler(ABC):
         Returns the APIRouter instance which has configured routes
         E.g.:
         - GET /health: Health check
-        - GET /agents: List available agents
+        - GET /api/v1/agents: List available agents
 
         router = APIRouter()
 
@@ -36,7 +36,7 @@ class RESTRequestHandler(ABC):
         def health():
             return {"status": "ok"}
 
-        @router.get("/agents")
+        @router.get("/api/v1/agents")
         def list_agents():
             from ..core.runtime import Runtime
             return {"agents": list(Runtime.current().agents().keys())}
@@ -50,7 +50,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
     - GET /health: Health check
-    - GET /agents: List available agents
+    - GET /api/v1/agents: List available agents
     - POST /api/v1/chat: Run an agent with a prompt
       Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
     """
@@ -93,7 +93,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         def health():
             return {"status": "ok"}
 
-        @router.get("/agents")
+        @router.get("/api/v1/agents")
         def list_agents():
             return {"agents": list(Runtime.current().agents().keys())}
 

@@ -255,7 +255,7 @@ runtime.register(custom_agent)
 ### REST API Integration
 
 ```python
-# GET /agents - list all agents
+# GET /api/v1/agents - list all agents
 # POST /api/v1/chat - execute agent
 ```
 
