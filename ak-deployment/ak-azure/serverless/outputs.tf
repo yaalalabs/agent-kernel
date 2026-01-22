@@ -1,27 +1,3 @@
-# output "function_app_url" {
-#   value = azurerm_linux_function_app.function.default_hostname
-# }
-
-# output "function_app_id" {
-#   value = azurerm_linux_function_app.function.id
-# }
-
-# output "function_app_name" {
-#   value = azurerm_linux_function_app.function.name
-# }
-
-# output "api_management_gateway_url" {
-#   value = azurerm_api_management.apim.gateway_url
-# }
-
-# output "api_management_id" {
-#   value = azurerm_api_management.apim.id
-# }
-
-# output "api_url" {
-#   value = var.api_base_path != null && var.api_base_path != "" ? "${azurerm_api_management.apim.gateway_url}/${var.api_base_path}/${var.api_version}" : "${azurerm_api_management.apim.gateway_url}/${var.api_version}"
-# }
-
 output "function_app_url" {
   description = "Function App default hostname"
   value       = azurerm_function_app_flex_consumption.function.default_hostname
@@ -71,4 +47,8 @@ output "application_insights_connection_string" {
 output "function_identity_principal_id" {
   description = "Function App managed identity principal ID"
   value       = azurerm_function_app_flex_consumption.function.identity[0].principal_id
+}
+
+output "redis_private_ip" {
+  value = module.redis[0].redis_private_ip
 }

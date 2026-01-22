@@ -21,14 +21,17 @@ data "azurerm_subnet" "function_subnet" {
 locals {
   vnet_name               = var.vnet_id != null ? data.azurerm_virtual_network.vnet[0].name : module.vnet[0].vnet_name
   subnet_name             = var.vnet_id != null ? data.azurerm_subnet.subnets[0].name : module.vnet[0].private_subnet_name
+  function_subnet_name    = var.vnet_id != null ? data.azurerm_subnet.function_subnet[0].name : module.vnet[0].function_subnet_name
   vnet_id                 = var.vnet_id != null ? data.azurerm_virtual_network.vnet[0].id : module.vnet[0].vnet_id
   vnet_cidr               = var.vnet_id != null ? data.azurerm_virtual_network.vnet[0].address_space[0] : var.vnet_cidr
   subnet_ids              = var.vnet_id != null ? data.azurerm_subnet.subnets[0].id : module.vnet[0].private_subnet_ids[0]
   function_subnet_id      = var.vnet_id != null ? data.azurerm_subnet.function_subnet[0].id : module.vnet[0].private_subnet_ids[1]
   redis_url               = var.create_redis_cluster == true ? module.redis[0].url : null
+  redis_password          = var.create_redis_cluster == true ? module.redis[0].primary_access_key : null
   cosmosdb_table_name     = var.create_cosmosdb_cluster == true ? module.cosmos[0].table_name : null
   cosmosdb_table_endpoint = var.create_cosmosdb_cluster == true ? module.cosmos[0].table_endpoint : null
   cosmosdb_primary_key    = var.create_cosmosdb_cluster == true ? module.cosmos[0].primary_key : null
+  redis_private_ip        = var.create_redis_cluster == true ? module.redis[0].redis_private_ip : null
 }
 
 module "vnet" {
@@ -54,13 +57,16 @@ module "redis" {
   resource_group_name      = var.resource_group_name
   tags                     = var.tags
   subnet_name              = local.subnet_name
+  function_subnet          = local.function_subnet_name
   sku_name                 = var.sku_name_redis
   vnet_name                = local.vnet_name
   node_family              = var.redis_node_family
   depends_on               = [module.vnet]
+  is_production            = var.is_production
 }
 
 module "storage" {
+  count                = var.create_custom_storage_account == true ? 1 : 0
   source               = "../common/modules/blob"
   product_alias        = var.product_alias
   env_alias            = var.env_alias

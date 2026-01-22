@@ -10,25 +10,25 @@ locals {
 
 # Use existing VNet if provided
 data "azurerm_virtual_network" "existing" {
-  count = var.vnet_id != null ? 1 : 0
-  name  = var.vnet_name
+  count               = var.vnet_id != null ? 1 : 0
+  name                = var.vnet_name
   resource_group_name = var.vnet_resource_group_name
 }
 
 data "azurerm_subnet" "private" {
-  count = var.vnet_id != null ? length(var.private_subnet_cidrs) : 0
-  name  = "private-subnet-${count.index}"
+  count                = var.vnet_id != null ? length(var.private_subnet_cidrs) : 0
+  name                 = "private-subnet-${count.index}"
   virtual_network_name = var.vnet_name
   resource_group_name  = var.vnet_resource_group_name
 }
 
 # Storage Account for Function App
 resource "azurerm_storage_account" "function_storage" {
-  name                     = "${var.product_alias}${var.env_alias}hurisa"
-  resource_group_name      = data.azurerm_resource_group.rg.name
-  location                 = var.region
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
+  name                          = "${var.product_alias}${var.env_alias}${var.module_name}${substr(data.azurerm_client_config.current.subscription_id,0,4)}deployment"
+  resource_group_name           = data.azurerm_resource_group.rg.name
+  location                      = var.region
+  account_tier                  = "Standard"
+  account_replication_type      = "LRS"
   public_network_access_enabled = true
 
   network_rules {
@@ -38,7 +38,6 @@ resource "azurerm_storage_account" "function_storage" {
   tags = var.tags
 }
 
-# Storage Container for Flex Consumption deployment
 resource "azurerm_storage_container" "function_deployment" {
   name                  = "${lower(local.function_app_name)}-deployment"
   storage_account_id    = azurerm_storage_account.function_storage.id
@@ -57,7 +56,7 @@ resource "azurerm_storage_blob" "function_package" {
 # Give the function app's system identity permission to read the deployment container
 resource "azurerm_role_assignment" "func_storage_blob_contributor" {
   scope                = azurerm_storage_account.function_storage.id
-  role_definition_name = "Storage Blob Data Contributor"  # Allows read + write + delete on blobs/containers
+  role_definition_name = "Storage Blob Data Contributor" # Allows read + write + delete on blobs/containers
   principal_id         = azurerm_function_app_flex_consumption.function.identity[0].principal_id
 
   depends_on = [azurerm_function_app_flex_consumption.function]
@@ -91,7 +90,7 @@ resource "azurerm_function_app_flex_consumption" "function" {
   # Storage configuration for Flex (use identity auth)
   storage_container_type      = "blobContainer"
   storage_container_endpoint  = "${azurerm_storage_account.function_storage.primary_blob_endpoint}${azurerm_storage_container.function_deployment.name}"
-  storage_authentication_type = "SystemAssignedIdentity"  # Preferred over connection string
+  storage_authentication_type = "SystemAssignedIdentity" # Preferred over connection string
 
   # Runtime configuration
   runtime_name    = var.module_type == "python" ? "python" : "node"
@@ -115,17 +114,22 @@ resource "azurerm_function_app_flex_consumption" "function" {
     var.environment_variables,
     {
       "AzureWebJobsFeatureFlags"              = "EnableWorkerIndexing"
+      # "AzureWebJobsDashboard"                 = azurerm_storage_account.function_storage.primary_connection_string
+      "AzureWebJobsStorage"                   = azurerm_storage_account.function_storage.primary_connection_string
+      "CONTAINER_NAME"                        = "azure-webjobs-secrets"
       "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.function_insights.connection_string
       "WEBSITE_VNET_ROUTE_ALL"                = "1"
       "WEBSITE_DNS_SERVER"                    = "168.63.129.16"
     },
     local.redis_url != null ? {
       "AK_SESSION_REDIS_URL" = local.redis_url
+      "AK_SESSION_REDIS_PASSWORD" = local.redis_password
+      "AK_SESSION_REDIS_PRIVATE_IP" = local.redis_private_ip #on Redis reach through private endpoint, use the direct IP
     } : {},
     local.cosmosdb_table_name != null ? {
-      "AK_SESSION_COSMOSDB_TABLE_NAME"    = local.cosmosdb_table_name
+      "AK_SESSION_COSMOSDB_TABLE_NAME"     = local.cosmosdb_table_name
       "AK_SESSION_COSMOSDB_TABLE_ENDPOINT" = local.cosmosdb_table_endpoint
-      "AK_SESSION_COSMOSDB_PRIMARY_KEY"   = local.cosmosdb_primary_key
+      "AK_SESSION_COSMOSDB_PRIMARY_KEY"    = local.cosmosdb_primary_key
     } : {}
   )
 

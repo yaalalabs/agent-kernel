@@ -44,7 +44,7 @@ variable "subnet_name" {
 variable "sku_name" {
   type        = string
   description = "Redis SKU name (Basic, Standard, or Premium)"
-  default     = "Premium"
+  default     = "Basic"
   
   validation {
     condition     = contains(["Basic", "Standard", "Premium"], var.sku_name)
@@ -78,4 +78,15 @@ variable "port" {
   type        = number
   description = "Redis port "
   default     = 6379
+}
+
+variable "function_subnet" {
+  type        = string
+  description = "Subnet name for private endpoint"
+}
+
+variable "is_production" {
+  type = bool
+  description = "Is production?"
+  default = false
 }

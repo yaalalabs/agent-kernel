@@ -67,12 +67,6 @@ variable "function_description" {
   default     = ""
 }
 
-variable "sku_name" {
-  description = "App Service Plan SKU (Y1 for Consumption, P1v2, P2v2, P3v2 for Premium)"
-  type        = string
-  default     = "Y1"
-}
-
 variable "api_version" {
   type        = string
   description = "API version"
@@ -158,23 +152,24 @@ variable "cosmosdb_key_vault_key_id" {
 }
 
 variable "gateway_endpoints" {
-  description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+  description = "List of REST API endpoints to expose with their target functions"
   type = list(object({
-    path   = string # e.g. "/app/check", "/health", "/app/status/test"
-    method = string # GET, POST, PUT, DELETE, ANY
+    function_name = string # e.g. "ak-api", "health-service"
+    path          = string # e.g. "/check", "/health", "/chat
+    method        = string # GET, POST, PUT, DELETE, PATCH, ANY
   }))
-  default = []
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
         length(trimspace(ep.path)) > 0 &&
+        length(trimspace(ep.function_name)) > 0 &&
         contains(
           ["GET", "POST", "PUT", "DELETE", "PATCH", "ANY"],
           upper(ep.method)
         )
       )
     ])
-    error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY"
+    error_message = "Each gateway_endpoints entry must have: a non-empty 'function_name', a non-empty 'path', and a valid HTTP method (GET, POST, PUT, DELETE, PATCH, ANY)"
   }
 }
 
@@ -187,13 +182,12 @@ variable "publisher_name" {
 variable "publisher_email" {
   type        = string
   description = "API Management publisher email"
-  default     = "admin@example.com"
 }
 
 variable "apim_sku_name" {
   type        = string
   description = "API Management SKU (Developer, Basic, Standard, Premium, Consumption)"
-  default     = "Developer_1"
+  default     = "Consumption_0"
   validation {
     condition     = can(regex("^(Developer|Basic|Standard|Premium|Consumption)_\\d+$", var.apim_sku_name))
     error_message = "APIM SKU must be in format: Developer_1, Consumption_0, etc."
@@ -233,7 +227,7 @@ variable "vnet_cidr" {
 variable "sku_name_redis" {
   type        = string
   description = "Redis SKU name (Basic, Standard, or Premium)"
-  default     = "Premium" // for subnet binding we need a premium tier
+  default     = "Basic" // for subnet binding we need a premium tier
 
   validation {
     condition     = contains(["Basic", "Standard", "Premium"], var.sku_name_redis)
@@ -289,4 +283,10 @@ variable "public_subnet_cidrs" {
   type = list(string)
   description = "CIDR blocks for the public subnets"
   default = ["10.0.1.0/24", "10.0.2.0/24"]
+}
+
+variable "create_custom_storage_account" {
+  type        = bool
+  description = "Create a custom storage account to store custom data"
+  default     = false
 }
