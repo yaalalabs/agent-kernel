@@ -1,7 +1,8 @@
 import logging
 
+from .auth import AuthTokenValidator, ValidationContext
 import uvicorn
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
@@ -23,6 +24,7 @@ class RESTAPI:
 
     _log = logging.getLogger("ak.api.http")
     _custom_routers = []
+    _auth_token_validators = []
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -31,7 +33,7 @@ class RESTAPI:
         :param routers: List of routers to include in the app.
         :param lifespan: Optional lifespan handler.
         """
-        app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan)
+        app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan, dependencies=cls._auth_token_validators if cls._auth_token_validators else None)
 
         app.add_middleware(
             CORSMiddleware,
@@ -94,3 +96,23 @@ class RESTAPI:
         for router in cls._custom_routers:
             app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix)
         uvicorn.run(app=app, host=host, port=port, reload=False)
+
+    @classmethod
+    def add_token_validators(cls, auth_token_validators: list):
+        """Adds AuthTokenValidators to the REST API.
+        :param auth_token_validators: List of auth token validators to add."""
+        def get_auth_function(token_validator: AuthTokenValidator):
+            def verify_token(request: Request):
+                auth_token = request.headers.get("authorization")
+                cls._log.debug(f"Validating token: '{auth_token}'")
+                if auth_token is None:
+                    raise HTTPException(status_code=401, detail="Missing authorization header")
+                auth_token = auth_token.replace("Bearer ", "").strip()
+                result = token_validator.validate(token=auth_token, context=ValidationContext(path=str(request.url), http_method=request.method, headers=dict(request.headers)))
+                if not result.is_valid:
+                    raise HTTPException(status_code=401, detail=result.error or "Unauthorized")
+                return result
+            return verify_token
+        for token_validator in auth_token_validators:
+            cls._auth_token_validators.append(Depends(get_auth_function(token_validator)))
+
