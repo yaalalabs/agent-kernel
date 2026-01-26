@@ -290,3 +290,8 @@ variable "create_custom_storage_account" {
   description = "Create a custom storage account to store custom data"
   default     = false
 }
+
+variable "openai_api_key" {
+  description = "OpenAI API Key"
+  type        = string
+}

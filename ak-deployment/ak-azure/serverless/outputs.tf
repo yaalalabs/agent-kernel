@@ -50,5 +50,5 @@ output "function_identity_principal_id" {
 }
 
 output "redis_private_ip" {
-  value = module.redis[0].redis_private_ip
+  value = var.create_redis_cluster? module.redis[0].redis_private_ip : ""
 }

@@ -13,5 +13,5 @@ output "primary_access_key" {
 }
 
 output "redis_private_ip" {
-  value = local.use_subnet_redis == 1 ? azurerm_private_endpoint.redis[0].private_service_connection[0].private_ip_address : ""
+  value = local.use_subnet_redis ?  "" : azurerm_private_endpoint.redis[0].private_service_connection[0].private_ip_address
 }
