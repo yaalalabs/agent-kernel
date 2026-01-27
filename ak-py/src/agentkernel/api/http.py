@@ -1,6 +1,6 @@
 import logging
 
-from .auth import AuthTokenValidator, ValidationContext
+from .auth import AuthValidator, ValidationContext
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -98,10 +98,10 @@ class RESTAPI:
         uvicorn.run(app=app, host=host, port=port, reload=False)
 
     @classmethod
-    def add_token_validators(cls, auth_token_validators: list):
+    def add_auth_handlers(cls, auth_token_validators: list[AuthValidator]):
         """Adds AuthTokenValidators to the REST API.
         :param auth_token_validators: List of auth token validators to add."""
-        def get_auth_function(token_validator: AuthTokenValidator):
+        def get_auth_function(token_validator: AuthValidator):
             def verify_token(request: Request):
                 auth_token = request.headers.get("authorization")
                 cls._log.debug(f"Validating token: '{auth_token}'")

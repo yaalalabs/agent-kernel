@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
-from .token_validator import AuthTokenValidator, ValidationContext
+from ...api.auth.handler import AuthValidator, ValidationContext
 
 class Headers(BaseModel):
     Authorization: str
@@ -17,7 +17,7 @@ class APIGatewayRequestAuthorizerEvent(BaseModel):
 
 
 class APIGatewayAuthorizer:
-    def __init__(self, validator: AuthTokenValidator):
+    def __init__(self, validator: AuthValidator):
         self.validator = validator
 
     def handle(self, event: dict) -> dict:

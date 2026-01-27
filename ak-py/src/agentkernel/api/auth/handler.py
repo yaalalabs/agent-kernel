@@ -20,7 +20,7 @@ class ValidationResult(BaseModel):
     error: Optional[str] = None
 
 
-class AuthTokenValidator(ABC):
+class AuthValidator(ABC):
     """Base class for token validation.
     The validate() method must be implemented by subclasses, 
     There are some basic built-in cryptographic validation helpers which can be used if needed."""
