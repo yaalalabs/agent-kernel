@@ -98,13 +98,17 @@ class LambdaRouter:
         event_path = event.get("path") or event.get("resource") or "/"
         self._log.info(f"Event path: {event_path}, Method: {method}")
 
+        converted_event_path = self._default_agent_registered_path
         stage_var_base_path, stage_var_agent_endpoint = self._get_base_paths_from_stage_vars(event)
-        converted_event_path = event_path
         if stage_var_base_path and stage_var_agent_endpoint:
-            if stage_var_agent_endpoint == event_path and method == self._default_agent_registered_method:
-                converted_event_path = self._default_agent_registered_path
-            else:
-                converted_event_path = event_path.replace(stage_var_base_path, "")
+            converted_event_path = (
+                self._default_agent_registered_path 
+                if event_path == stage_var_agent_endpoint and method == self._default_agent_registered_method
+                else event_path.replace(stage_var_base_path, "")
+            )
+        else:
+            self._log.warning("Stage variables not provided; using default agent handler")
+            method = self._default_agent_registered_method
 
         self._log.info(f"Converted event path: {converted_event_path}")
         methods = self._routes.get(converted_event_path, {})
