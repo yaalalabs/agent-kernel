@@ -94,7 +94,7 @@ def custom_app_info_handler(event, context):
     return {"request": payload, "response": "Hello! from AK 'app_info'"}
 ```
 
-> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be reserved for the chat endpoint, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
+> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
 
 ## Cost Optimization
 
