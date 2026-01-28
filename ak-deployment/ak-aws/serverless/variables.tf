@@ -179,11 +179,6 @@ variable "gateway_endpoints" {
   }
 }
 
-variable "authorizer_handler_path" {
-  description = "Lambda authorizer handler path"
-  type        = string
-}
-
 variable "authorizer_function_name" {
   description = "Authorizer Lambda function name"
   type        = string
