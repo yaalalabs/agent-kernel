@@ -52,11 +52,9 @@ class LambdaRouter:
     def register(self, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a handler for a given HTTP path and method.
-        Args:
-            path: URL path for the route
-            method: HTTP method (defaults to "GET")
-        Returns:
-            Decorator function that registers the handler and returns it unchanged.
+        :param path: URL path for the route
+        :param method: HTTP method (defaults to "GET")
+        :return: Decorator function that registers the handler and returns it unchanged.
         """
         norm_path = self._normalize_path(path)
         norm_method = self._normalize_method(method)
@@ -76,10 +74,8 @@ class LambdaRouter:
     def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         """
         Get the base path from stage variables.
-        Args:
-            event: API Gateway event dictionary containing stage variables
-        Returns:
-            Tuple of (base_path, agent_endpoint) or (None, None) if not found
+        :param event: API Gateway event dictionary containing stage variables
+        :return: Tuple of (base_path, agent_endpoint) or (None, None) if not found
         """
         stage_vars = event.get("stageVariables", {})
         api_base_path = stage_vars.get("api_base_path")
@@ -93,13 +89,10 @@ class LambdaRouter:
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
         Dispatch incoming API Gateway event to the appropriate registered handler.
-        Args:
-            event: API Gateway event dictionary containing request information
-            context: AWS Lambda context object
-        Returns:
-            Formatted API Gateway response dictionary or None if no route matches
-        Raises:
-            ValueError: If no registered route matches the request
+        :param event: API Gateway event dictionary containing request information
+        :param context: AWS Lambda context object
+        :return: Formatted API Gateway response dictionary or None if no route matches
+        :raises ValueError: If no registered route matches the request
         """
         method = self._normalize_method(event.get("httpMethod"))
         event_path = event.get("path") or event.get("resource") or "/"
@@ -126,11 +119,9 @@ class LambdaRouter:
     def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Handle agent chat invocation with default behavior.
-        Args:
-            event: API Gateway event dictionary containing request body
-            context: AWS Lambda context object
-        Returns:
-            API Gateway response dictionary with status code and body
+        :param event: API Gateway event dictionary containing request body
+        :param context: AWS Lambda context object
+        :return: API Gateway response dictionary with status code and body
         """
         service = AgentService()
         try:
@@ -217,11 +208,9 @@ class Lambda:
     def register(cls, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
         """
         Class method decorator that delegates route registration to the internal LambdaRouter.
-        Args:
-            path: URL path for the route (normalized with leading slash, no trailing slash)
-            method: HTTP method (defaults to "GET", case-insensitive)
-        Returns:
-            Decorator function that registers the handler and returns it unchanged.
+        :param path: URL path for the route (normalized with leading slash, no trailing slash)
+        :param method: HTTP method (defaults to "GET", case-insensitive)
+        :return: Decorator function that registers the handler and returns it unchanged.
         """
         return cls._router.register(path, method)
 
@@ -229,10 +218,8 @@ class Lambda:
     def _wrap_response(result: Any) -> Dict[str, Any]:
         """
         Normalize various handler return types into API Gateway compatible responses.
-        Args:
-            result: Handler return value (dict, tuple, str, or list)
-        Returns:
-            API Gateway compatible response dictionary with statusCode and body
+        :param result: Handler return value (dict, tuple, str, or list)
+        :return: API Gateway compatible response dictionary with statusCode and body
         """
         if isinstance(result, dict) and "statusCode" in result and "body" in result:
             return result  # already well-formed
@@ -249,11 +236,9 @@ class Lambda:
     def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         AWS Lambda handler function to process incoming requests.
-        Args:
-            event: API Gateway event dictionary containing request information
-            context: AWS Lambda context object
-        Returns:
-            API Gateway response dictionary with status code and body
+        :param event: API Gateway event dictionary containing request information
+        :param context: AWS Lambda context object
+        :return: API Gateway response dictionary with status code and body
         """
         cls._log.info("Agent Kernel Agent Lambda Handler started")
         cls._log.info(f"Registered Routes: {cls._router._routes}")
