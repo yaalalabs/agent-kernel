@@ -12,7 +12,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,redis] || true
     fi
-    cp -r lambda.py custom_agent.py config.yaml dist/data
+    cp -r lambda.py config.yaml dist/data
     popd || exit 1
     cp Dockerfile ../dist/
 }

@@ -6,7 +6,6 @@ import logging
 import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 
 from ...core import AgentService
@@ -27,14 +26,7 @@ class LambdaRouter:
     - If no handler match is found, the router returns None and caller can fallback.
     """
 
-    def __init__(self, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
-        """
-        Initialize the LambdaRouter with default configuration.
-        Args:
-            api_base_path: Base path for API routes (default: "api")
-            api_version: API version (default: "v1")
-            agent_endpoint: Agent chat endpoint (default: "chat")
-        """
+    def __init__(self):
         self._log = logging.getLogger("ak.aws.lambda.router")
         self._default_agent_registered_path = "default_agent_registered_path"
         self._default_agent_registered_method = "POST"
@@ -81,7 +73,7 @@ class LambdaRouter:
 
         return _decorator
 
-    def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Optional[str]:
+    def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         """
         Get the base path from stage variables.
         Args:
@@ -271,6 +263,6 @@ class Lambda:
             if dispatched is not None:
                 return dispatched
         except Exception as e:
-            # Exception in custom route handler/Lmabda function raise 500
+            # Exception in custom route handler/Lambda function raise 500
             cls._log.exception(f"Custom route handler failed: {e}")
             return {"statusCode": 500, "body": json.dumps({"error": f"Custom handler error: {e}"})}
