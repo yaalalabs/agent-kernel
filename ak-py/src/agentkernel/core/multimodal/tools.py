@@ -2,27 +2,19 @@
 Multimodal tools for LLM to access images/files.
 
 This module provides:
-1. describe_image_briefly() - PreHook uses this to get short descriptions
-2. get_image - Function-decorated tool that LLM can call
+1. describe_attachment_briefly() - PreHook uses this to get short descriptions
+2. get_attachments - Function-decorated tool that LLM can call
 
-The get_image tool uses AuxiliaryCache to access session data,
+The get_attachments tool uses AuxiliaryCache to access session data,
 making it framework-agnostic (works with OpenAI SDK, ADK, etc.)
 """
 
 import logging
 from typing import TYPE_CHECKING
 
-from agents import function_tool
-
-from .storage import ATTACHMENT_KEY_PREFIX
-
-if TYPE_CHECKING:
-    from ..base import Session
-
-_log = logging.getLogger("ak.multimodal.tools")
+_log = logging.getLogger(__name__)
 
 
-@function_tool
 def get_attachments(attachment_ids: list[str]) -> list[dict]:
     """
     Get actual file/image data for the specified attachment IDs.
@@ -38,26 +30,26 @@ def get_attachments(attachment_ids: list[str]) -> list[dict]:
 
     try:
         from ..runtime import AuxiliaryCache
+        from .storage import get_attachment_data
 
         # Use AuxiliaryCache to access session's non-volatile cache
         nv_cache = AuxiliaryCache.get_non_volatile_cache()
 
+        # Call storage facade with direct cache (session is None in this context)
+        attachments = get_attachment_data(session=None, cache=nv_cache, attachment_ids=attachment_ids)
+
         result = []
-        for att_id in attachment_ids:
-            attachment = nv_cache.get(f"{ATTACHMENT_KEY_PREFIX}{att_id}")
-            if attachment:
-                result.append(
-                    {
-                        "id": attachment["id"],
-                        "type": attachment["type"],
-                        "name": attachment["name"],
-                        "mime_type": attachment["mime_type"],
-                        "data": attachment["data"],  # Base64 encoded
-                    }
-                )
-                _log.debug(f"Retrieved attachment: {att_id}")
-            else:
-                _log.warning(f"Attachment not found: {att_id}")
+        for att in attachments:
+            result.append(
+                {
+                    "id": att.id,
+                    "type": att.type,
+                    "name": att.name,
+                    "mime_type": att.mime_type,
+                    "data": att.data,  # Base64 encoded
+                }
+            )
+            _log.debug(f"Retrieved attachment: {att.id}")
 
         return result
 
@@ -71,7 +63,7 @@ async def describe_attachment_briefly(
     mime_type: str = "image/jpeg",
 ) -> str:
     """
-    Get a brief description of the attachment using a vision LLM.
+    Get a brief description of the attachment using a vision LLM via LiteLLM.
 
     Called by PreHook to generate descriptions for new attachments.
 
@@ -83,10 +75,10 @@ async def describe_attachment_briefly(
         return "No data"
 
     try:
-        # Lazy import to avoid circular dependencies
+
         import os
 
-        from openai import AsyncOpenAI
+        import litellm
 
         from ..config import AKConfig
 
@@ -99,12 +91,11 @@ async def describe_attachment_briefly(
         if not api_key:
             return "Attachment (Description unavailable: Missing API Key)"
 
-        client = AsyncOpenAI(api_key=api_key)
-
         if mime_type.startswith("image/"):
-            # Use Vision model for images
-            response = await client.chat.completions.create(
+            # Use Vision model for images via LiteLLM
+            response = await litellm.acompletion(
                 model="gpt-4o",
+                api_key=api_key,
                 messages=[
                     {
                         "role": "user",
@@ -123,10 +114,12 @@ async def describe_attachment_briefly(
             _log.debug(f"Generated attachment description: {description}")
             return description
         else:
-            # For non-images (PDFs, docs), we can't easily "see" them via Vision API directly
-            # without conversion. Return generic description for now.
-            return f"File ({mime_type})"
+            # For non-images (PDFs, docs), return directive description to force tool usage
+            return f"File ({mime_type}) - Content not currently visible. Use get_attachments to analyze."
 
+    except ImportError:
+        _log.error("LiteLLM not installed. Cannot describe attachment.")
+        return "Attachment (LiteLLM missing)"
     except Exception as e:
         _log.error(f"Error describing attachment: {e}")
         return "Attachment (description failed)"

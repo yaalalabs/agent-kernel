@@ -159,8 +159,8 @@ class OpenAIRunner(BaseRunner):
                 # Simple text-only case
                 reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
             else:
-                # Multimodal case or multiple text messages. Session is safe to use now that PreHook filters raw images.
-                reply = (await Runner.run(agent.agent, message_content, session=self._session(session))).final_output
+                # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
+                reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
@@ -180,7 +180,9 @@ class OpenAIAgent(BaseAgent):
         :param agent: The OpenAI agent instance.
         """
         super().__init__(name, runner)
-        self._agent = agent
+        self._agent: Agent = agent
+        self.override_system_prompt()
+        self._attach_system_tools()
 
     @property
     def agent(self) -> Agent:
@@ -188,6 +190,12 @@ class OpenAIAgent(BaseAgent):
         Returns the OpenAI agent instance.
         """
         return self._agent
+
+    def get_wrapped(self):
+        """
+        Returns the underlying agent object (OpenAI Agent).
+        """
+        return self.agent
 
     def get_description(self):
         """
@@ -205,6 +213,37 @@ class OpenAIAgent(BaseAgent):
         for tool in self.agent.tools:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
         return self._generate_a2a_card(agent_name=self.name, description=self.agent.instructions, skills=skills)
+
+    def override_system_prompt(self) -> None:
+        """
+        Overrides the system prompt of the agent via Session injection.
+        This ensures the override is isolated to the current session/request
+        and doesn't mutate the global Agent instance.
+        """
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled:
+            self._agent.instructions = self._agent.instructions + "\n" + BaseAgent.get_system_prompt_suffix()
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Attaches a tool to the agent.
+        :param tool: The tool to attach.
+        """
+        if tool not in self.agent.tools:
+            self.agent.tools.append(tool)
+
+    def _attach_system_tools(self):
+        """
+        Attaches system level tools based on configuration.
+        """
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled:
+            from agents import function_tool
+
+            from ...core.multimodal import get_attachments
+
+            get_attachments_tool = function_tool(get_attachments)
+            self.attach_tool(get_attachments_tool)
 
 
 class OpenAIModule(Module):

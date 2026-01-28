@@ -287,3 +287,39 @@ class Agent(ABC):
         Returns the description of the agent.
         """
         pass
+
+    @abstractmethod
+    def get_wrapped(self):
+        """
+        Returns the underlying agent object.
+        """
+        pass
+
+    @abstractmethod
+    def override_system_prompt(self, session: "Session", prompt: str) -> None:
+        """
+        Overrides the system prompt of the agent via Session injection.
+        """
+        pass
+
+    @abstractmethod
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Attaches a tool to the agent.
+        :param tool: The tool to attach.
+        """
+        pass
+
+    @staticmethod
+    def get_system_prompt_suffix() -> str:
+        """
+        Returns the system prompt suffix to be appended to the agent's system prompt.
+        :return: The system prompt suffix.
+        """
+        tool_instruction = (
+            "User has attached files/images. Their IDs and descriptions are listed in the user's message. "
+            "If the user asks about them (e.g. 'explain', 'summarize'), "
+            "YOU MUST use the get_attachments tool to retrieve their content immediately. "
+            "Do not ask for clarification if you haven't read the file yet."
+        )
+        return tool_instruction

@@ -74,38 +74,31 @@ class MultimodalPreHook(PreHook):
         if not current_descriptions:
             return requests
 
-        # Build description text for current attachments only
-        desc_text = "[Current Images/Files]\n"
+        # Dynamic Context
+        desc_text = "\n\n[Attached Images/Files:]\n"
         for att_id, desc in current_descriptions:
             desc_text += f"- {att_id}: {desc}\n"
 
-        desc_text += "\nIf you need to examine any file or image in detail, " "use the get_attachments tool with the attachment ID."
-
-        # Merge Strategy:
-        # Combine description with user text to ensure OpenAI runner sees a single text request.
-        # This is critical because OpenAIRunner disables conversation history for multi-part messages.
-
-        final_requests = []
+        # Filter: Remove raw images/files from request types, but keep text
+        filtered_requests_temp = []
         user_text_req = None
 
         for req in requests:
             if isinstance(req, AgentRequestText):
                 user_text_req = req
             elif not isinstance(req, (AgentRequestImage, AgentRequestFile)):
-                # Keep other request types (like AgentRequestAny)
-                final_requests.append(req)
+                filtered_requests_temp.append(req)
 
         if user_text_req:
             # Merge description with user text
-            merged_text = f"{desc_text}\n{user_text_req.text}"
+            merged_text = f"{user_text_req.text}{desc_text}"
             new_text_req = AgentRequestText(text=merged_text)
-            # Preserve injected flag if needed, usually False for user text
-            final_requests.append(new_text_req)
+            filtered_requests_temp.append(new_text_req)
         else:
-            # No user text (just image), so description becomes the text
-            final_requests.append(context_request)
+            # No user text (just image), so description becomes the text query
+            filtered_requests_temp.append(AgentRequestText(text=desc_text.strip()))
 
-        return final_requests
+        return filtered_requests_temp
 
     async def _process_current_attachments(self, session: "Session", requests: list[AgentRequest], config) -> list[tuple[str, str]]:
         """
@@ -143,7 +136,7 @@ class MultimodalPreHook(PreHook):
 
             elif isinstance(req, AgentRequestFile):
                 if req.file_data:
-                    # For files, use filename as description
+                    # For files, call helper (returns generic desc or analysis)
                     description = await describe_attachment_briefly(
                         data=req.file_data,
                         mime_type=req.mime_type or "application/octet-stream",
@@ -159,7 +152,7 @@ class MultimodalPreHook(PreHook):
                     )
 
                     descriptions.append((attachment_id, description))
-                    self._log.info(f"Saved file {attachment_id}: {req.name}")
+                    self._log.info(f"Saved file {attachment_id}: {getattr(req, 'name', 'file')}")
 
         return descriptions
 

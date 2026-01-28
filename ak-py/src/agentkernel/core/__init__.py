@@ -32,6 +32,5 @@ from .multimodal import (
     MultimodalPreHook,
     save_attachment,
     get_attachment_data,
-    AttachmentMetadata,
     AttachmentData,
 )

@@ -10,7 +10,8 @@ This module provides:
 from .hooks import MultimodalPreHook, MultimodalPreHookFactory, NoOpPreHook
 from .storage import (
     AttachmentData,
-    AttachmentMetadata,
+    AttachmentStorageDriver,
+    CacheStorageDriver,
     get_attachment_data,
     save_attachment,
 )
@@ -18,18 +19,3 @@ from .tools import (
     describe_attachment_briefly,
     get_attachments,
 )
-
-__all__ = [
-    # Storage
-    "AttachmentData",
-    "AttachmentMetadata",
-    "save_attachment",
-    "get_attachment_data",
-    # Hooks
-    "MultimodalPreHook",
-    "MultimodalPreHookFactory",
-    "NoOpPreHook",
-    # Tools
-    "describe_attachment_briefly",
-    "get_attachments",  # function_tool decorated - use in agent's tools=[]
-]
