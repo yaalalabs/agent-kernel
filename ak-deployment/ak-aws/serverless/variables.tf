@@ -179,5 +179,44 @@ variable "gateway_endpoints" {
   }
 }
 
+variable "authorizer_handler_path" {
+  description = "Lambda authorizer handler path"
+  type        = string
+}
+
+variable "authorizer_function_name" {
+  description = "Authorizer Lambda function name"
+  type        = string
+}
+
+variable "authorizer_function_description" {
+  description = "Authorizer Lambda function description"
+  type        = string
+  default     = "API Gateway Lambda Authorizer"
+}
+
+variable "authorizer_handler_path" {
+  description = "Lambda authorizer handler path"
+  type        = string
+}
+
+variable "authorizer_package_path" {
+  description = "Authorizer Lambda package path"
+  type        = string
+}
+
+variable "authorizer_environment_variables" {
+  description = "Authorizer Lambda environment variables"
+  type        = map(string)
+  default     = {}
+}
+
+variable "authorizer_result_ttl_in_seconds" {
+  description = "Authorizer result TTL in seconds"
+  type        = number
+  default     = 150
+}
+
+
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}

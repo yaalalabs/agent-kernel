@@ -167,3 +167,52 @@ module "lambda_deployment" {
   kms_key_arn                = local.lambda_kms_key_arn != null ? local.lambda_kms_key_arn : null
   cloudwatch_logs_kms_key_id = local.cloudwatch_kms_key_arn != null ? local.cloudwatch_kms_key_arn : null
 }
+
+
+# Authorizer Lambda
+resource "aws_iam_role" "authorizer_lambda_role" {
+  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-authorizer-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = "sts:AssumeRole"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "authorizer_basic_execution" {
+  role       = aws_iam_role.authorizer_lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+module "authorizer_lambda" {
+  source  = "terraform-aws-modules/lambda/aws"
+  version = "8.0.1"
+
+  function_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-authorizer"
+  description   = "API Gateway Authorizer Lambda"
+  handler       = var.authorizer_handler_path
+  runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
+  create_role = false
+  lambda_role = aws_iam_role.authorizer_lambda_role.arn
+
+  image_uri              = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
+  local_existing_package = var.package_type == "LocalZip" ? var.authorizer_package_path : null
+  create_package         = false
+  package_type           = var.package_type == "Image" ? "Image" : "Zip"
+
+  use_existing_cloudwatch_log_group = false
+  cloudwatch_logs_retention_in_days = 90
+  attach_cloudwatch_logs_policy     = true
+
+  timeout     = var.timeout
+  memory_size = var.memory_size
+
+  environment_variables = var.authorizer_environment_variables
+
+}

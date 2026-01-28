@@ -175,3 +175,25 @@ resource "aws_api_gateway_stage" "stage" {
 
   depends_on = [aws_api_gateway_account.api_gateway]
 }
+
+resource "aws_lambda_permission" "allow_apigw_authorizer" {
+  statement_id  = "AllowAPIGatewayInvokeAuthorizer"
+  action        = "lambda:InvokeFunction"
+  function_name = module.authorizer_lambda.lambda_function_name
+  principal     = "apigateway.amazonaws.com"
+
+  # REST API
+  source_arn = "${aws_api_gateway_rest_api.execution_arn}/*/*"
+}
+
+resource "aws_api_gateway_authorizer" "lambda_authorizer" {
+  name                   = "${var.product_alias}-${var.env_alias}-authorizer"
+  rest_api_id            = aws_api_gateway_rest_api.id
+  authorizer_uri         = module.authorizer_lambda.lambda_function_invoke_arn
+  authorizer_credentials = null
+
+  type = "REQUEST"
+
+  authorizer_result_ttl_in_seconds = var.authorizer_result_ttl_in_seconds
+}
+
