@@ -104,7 +104,7 @@ class LambdaRouter:
             converted_event_path = (
                 self._default_agent_registered_path
                 if event_path == stage_var_agent_endpoint and method == self._default_agent_registered_method
-                else event_path.replace(stage_var_base_path, "")
+                else event_path.removeprefix(stage_var_base_path)
             )
         else:
             self._log.warning("Stage variables not provided; using default agent handler")
@@ -248,9 +248,7 @@ class Lambda:
         cls._log.info(f"Registered Routes: {cls._router._routes}")
         # Attempting to dispatch to custom routes
         try:
-            dispatched = cls._router.dispatch(event, context)
-            if dispatched is not None:
-                return dispatched
+            return cls._router.dispatch(event, context)
         except Exception as e:
             # Exception in custom route handler/Lambda function raise 500
             cls._log.exception(f"Custom route handler failed: {e}")
