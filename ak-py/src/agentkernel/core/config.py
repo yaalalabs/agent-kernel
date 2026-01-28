@@ -35,13 +35,24 @@ class _DynamoDBConfig(BaseModel):
         description="DynamoDB item TTL in seconds (0 disables). Used to compute UNIX epoch 'expiry_time' attribute written per item.",
     )
 
+class _CosmosDBConfig(BaseModel):
+    connection_string: str = Field(
+        description="Cosmos DB connection string. Can be found in Azure Portal under Keys section"
+    )
+    table_name: str = Field(
+        description="Cosmos DB table name for session storage. Table uses PartitionKey (session_id) and RowKey (key)"
+    )
+    ttl: int = Field(
+        default=604800,
+        description="Session TTL in seconds (0 disables). Used for manual TTL management in Cosmos DB Table API.",
+    )
 
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb)$")
+    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb|cosmosdb)$")
     cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
-
+    cosmosdb: Optional[_CosmosDBConfig] = None
 
 class _RoutesConfig(BaseModel):
     agents: bool = Field(default=True, description="Agent interaction routes")

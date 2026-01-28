@@ -41,3 +41,8 @@ output "secondary_readonly_key" {
   value       = azurerm_cosmosdb_account.account.secondary_readonly_key
   sensitive   = true
 }
+
+output "full_connection_string" {
+  description = "Cosmos DB Table API connection string"
+  value = "DefaultEndpointsProtocol=https;AccountName=${azurerm_cosmosdb_account.account.name};AccountKey=${azurerm_cosmosdb_account.account.primary_key};TableEndpoint=https://${azurerm_cosmosdb_account.account.name}.table.cosmos.azure.com:443/;"
+}

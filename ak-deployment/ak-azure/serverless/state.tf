@@ -31,6 +31,7 @@ locals {
   cosmosdb_table_name     = var.create_cosmosdb_cluster == true ? module.cosmos[0].table_name : null
   cosmosdb_table_endpoint = var.create_cosmosdb_cluster == true ? module.cosmos[0].table_endpoint : null
   cosmosdb_primary_key    = var.create_cosmosdb_cluster == true ? module.cosmos[0].primary_key : null
+  cosmosdb_connection_string = var.create_cosmosdb_cluster == true ? module.cosmos[0].full_connection_string : null
   full_redis_url          = var.create_redis_cluster == true ? module.redis[0].full_redis_url : null
 }
 
@@ -84,7 +85,7 @@ module "cosmos" {
   env_alias                      = var.env_alias
   module_name                    = var.module_name
   tags                           = var.tags
-  table_name                     = var.cosmosdb_table_name
+  table_name                     = "session_store"
   resource_group_name            = var.resource_group_name
   consistency_level              = var.cosmosdb_consistency_level
   public_network_access_enabled  = var.cosmosdb_public_network_access_enabled

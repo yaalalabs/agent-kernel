@@ -7,13 +7,6 @@ import azure.functions as func
 from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 from ...core import AgentService
 
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-#     force=True,
-# )
-
-
 class AzureFunctions:
     """
     AzureFunctions class provides an Azure Functions interface for interacting with agents.

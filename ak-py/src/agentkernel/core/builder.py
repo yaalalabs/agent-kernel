@@ -25,11 +25,14 @@ class SessionStoreType(StrEnum):
     Attributes:
         IN_MEMORY: Store sessions in local memory (non-persistent).
         REDIS: Store sessions using Redis as the backend (persistent/distributed).
+        DYNAMODB: Store sessions using AWS DynamoDB as the backend (persistent/distributed).
+        COSMOSDB: Store sessions using Azure Cosmos DB Table API as the backend (persistent/distributed).
     """
 
     IN_MEMORY = "IN_MEMORY"
     REDIS = "REDIS"
     DYNAMODB = "DYNAMODB"
+    COSMOSDB = "COSMOSDB"  # Add this line
 
     @classmethod
     def from_str(cls, type_str: str) -> "SessionStoreType":
@@ -94,26 +97,31 @@ class SessionStoreBuilder(Builder):
 
         This static method reads the session store type from the application configuration
         and instantiates the appropriate SessionStore implementation. Currently supports
-        Redis-backed, DynamoDB-backed, and in-memory session stores.
+        Redis-backed, DynamoDB-backed, Cosmos DB-backed, and in-memory session stores.
 
         :returns: An instance of RedisSessionStore (if configured type is REDIS),
             DynamoDBSessionStore (if configured type is DYNAMODB),
+            CosmosDBSessionStore (if configured type is COSMOSDB),
             or InMemorySessionStore (for all other types).
 
         :raises: Any exceptions raised by SessionStoreType.from_str(), AKConfig.get(),
-            RedisDriver(), RedisSessionStore(), or InMemorySessionStore() initialization.
+            or the respective SessionStore initialization.
         """
         session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
         Builder._log.info(f"Building {session_store_type} session store")
+        
         if session_store_type == SessionStoreType.REDIS:
             from .session.redis import RedisSessionStore
-
             return RedisSessionStore(cache=SessionCacheBuilder.build())
+        
         elif session_store_type == SessionStoreType.DYNAMODB:
             from .session.dynamodb import DynamoDBSessionStore
-
             return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
+        
+        elif session_store_type == SessionStoreType.COSMOSDB:
+            from .session.cosmosdb import CosmosDBSessionStore
+            return CosmosDBSessionStore(cache=SessionCacheBuilder.build())
+        
         else:
             from .session.in_memory import InMemorySessionStore
-
             return InMemorySessionStore()

@@ -128,6 +128,9 @@ resource "azurerm_function_app_flex_consumption" "function" {
       "AK_SESSION_COSMOSDB_TABLE_NAME"     = local.cosmosdb_table_name
       "AK_SESSION_COSMOSDB_TABLE_ENDPOINT" = local.cosmosdb_table_endpoint
       "AK_SESSION_COSMOSDB_PRIMARY_KEY"    = local.cosmosdb_primary_key
+      "AK_SESSION_COSMOSDB_CONNECTION_STRING" = local.cosmosdb_connection_string
+      "AK_SESSION__COSMOSDB__TABLE_NAME" = local.cosmosdb_table_name
+      "AK_SESSION__COSMOSDB__CONNECTION_STRING" = local.cosmosdb_connection_string
     } : {}
   )
 
