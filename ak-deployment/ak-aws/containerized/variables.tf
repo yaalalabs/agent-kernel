@@ -54,11 +54,11 @@ variable "api_base_path" {
 }
 
 variable "gateway_endpoints" {
-  description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+  description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
   type = list(object({
-    path = string        # e.g. "chat"
-    method = string        # e.g. "GET", "POST", "PUT", "DELETE", "ANY"
-    overwrite_path = string # backend path override for ALB target, e.g. "/api/v1/chat"
+    path = string        # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
+    method = string        # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
+    overwrite_path = string # The backend path that the ALB forwards requests to (e.g., "/api/v1/chat", "/internal/webhook"). This allows mapping external paths to different internal service endpoints.
   }))
   default = []
   validation {

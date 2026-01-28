@@ -28,6 +28,13 @@ class LambdaRouter:
     """
 
     def __init__(self, api_base_path="api", api_version="v1", agent_endpoint="chat") -> None:
+        """
+        Initialize the LambdaRouter with default configuration.
+        Args:
+            api_base_path: Base path for API routes (default: "api")
+            api_version: API version (default: "v1")
+            agent_endpoint: Agent chat endpoint (default: "chat")
+        """
         self._log = logging.getLogger("ak.aws.lambda.router")
         self._default_agent_registered_path = "default_agent_registered_path"
         self._default_agent_registered_method = "POST"
@@ -51,7 +58,14 @@ class LambdaRouter:
         return (method or "GET").upper()
 
     def register(self, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
-        """Decorator to register a handler for a given path and method."""
+        """
+        Factory function that creates a decorator to register a handler for a given HTTP path and method.
+        Args:
+            path: URL path for the route
+            method: HTTP method (defaults to "GET")
+        Returns:
+            Decorator function that registers the handler and returns it unchanged.
+        """
         norm_path = self._normalize_path(path)
         norm_method = self._normalize_method(method)
 
@@ -68,7 +82,13 @@ class LambdaRouter:
         return _decorator
 
     def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Optional[str]:
-        """Get the base path from stage variables"""
+        """
+        Get the base path from stage variables.
+        Args:
+            event: API Gateway event dictionary containing stage variables
+        Returns:
+            Tuple of (base_path, agent_endpoint) or (None, None) if not found
+        """
         stage_vars = event.get("stageVariables", {})
         api_base_path = stage_vars.get("api_base_path")
         api_version = stage_vars.get("api_version")
@@ -79,6 +99,16 @@ class LambdaRouter:
         return None, None
 
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Dispatch incoming API Gateway event to the appropriate registered handler.
+        Args:
+            event: API Gateway event dictionary containing request information
+            context: AWS Lambda context object
+        Returns:
+            Formatted API Gateway response dictionary or None if no route matches
+        Raises:
+            ValueError: If no registered route matches the request
+        """
         method = self._normalize_method(event.get("httpMethod"))
         event_path = event.get("path") or event.get("resource") or "/"
         self._log.info(f"Event path: {event_path}, Method: {method}")
@@ -102,7 +132,14 @@ class LambdaRouter:
         return Lambda._wrap_response(result)
 
     def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """Existing default behavior for agent chat invocation."""
+        """
+        Handle agent chat invocation with default behavior.
+        Args:
+            event: API Gateway event dictionary containing request body
+            context: AWS Lambda context object
+        Returns:
+            API Gateway response dictionary with status code and body
+        """
         service = AgentService()
         try:
             body = json.loads(event.get("body", "{}"))
@@ -186,18 +223,24 @@ class Lambda:
 
     @classmethod
     def register(cls, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
-        """Expose router registration to applications: @Lambda.register('/app', 'GET')"""
+        """
+        Class method decorator that delegates route registration to the internal LambdaRouter.
+        Args:
+            path: URL path for the route (normalized with leading slash, no trailing slash)
+            method: HTTP method (defaults to "GET", case-insensitive)
+        Returns:
+            Decorator function that registers the handler and returns it unchanged.
+        """
         return cls._router.register(path, method)
 
     @staticmethod
     def _wrap_response(result: Any) -> Dict[str, Any]:
         """
         Normalize various handler return types into API Gateway compatible responses.
-        Supported:
-        - dict -> 200 with JSON body
-        - (statusCode, dict|str) -> exact status and body
-        - str -> 200 with text body
-        - already-formed {statusCode, body} -> passthrough
+        Args:
+            result: Handler return value (dict, tuple, str, or list)
+        Returns:
+            API Gateway compatible response dictionary with statusCode and body
         """
         if isinstance(result, dict) and "statusCode" in result and "body" in result:
             return result  # already well-formed
@@ -214,6 +257,11 @@ class Lambda:
     def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         AWS Lambda handler function to process incoming requests.
+        Args:
+            event: API Gateway event dictionary containing request information
+            context: AWS Lambda context object
+        Returns:
+            API Gateway response dictionary with status code and body
         """
         cls._log.info("Agent Kernel Agent Lambda Handler started")
         cls._log.info(f"Registered Routes: {cls._router._routes}")
