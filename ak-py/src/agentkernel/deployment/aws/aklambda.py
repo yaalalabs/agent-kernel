@@ -102,7 +102,7 @@ class LambdaRouter:
         stage_var_base_path, stage_var_agent_endpoint = self._get_base_paths_from_stage_vars(event)
         if stage_var_base_path and stage_var_agent_endpoint:
             converted_event_path = (
-                self._default_agent_registered_path 
+                self._default_agent_registered_path
                 if event_path == stage_var_agent_endpoint and method == self._default_agent_registered_method
                 else event_path.replace(stage_var_base_path, "")
             )
