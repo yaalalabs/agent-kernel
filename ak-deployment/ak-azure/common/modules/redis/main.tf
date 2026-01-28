@@ -31,7 +31,7 @@ resource "azurerm_network_security_rule" "allow_redis_from_function" {
   source_address_prefix       = data.azurerm_subnet.function_subnet.address_prefix
   source_port_range           = "*"
   destination_address_prefix  = "*"
-  destination_port_range      = "6379"
+  destination_port_range      = "*"
   resource_group_name         = data.azurerm_resource_group.current_group.name
   network_security_group_name = azurerm_network_security_group.redis_nsg.name
 }
@@ -41,35 +41,23 @@ resource "azurerm_subnet_network_security_group_association" "redis_subnet_nsg_a
   network_security_group_id = azurerm_network_security_group.redis_nsg.id
 }
 
-locals {
-  use_subnet_redis = var.sku_name == "Premium" && var.is_production
-}
+resource "azurerm_managed_redis" "redis" {
+  name                      = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-enterprise"
+  location                  = data.azurerm_resource_group.current_group.location
+  resource_group_name       = data.azurerm_resource_group.current_group.name
+  sku_name                  = var.is_production ? "Balanced_B5" : "Balanced_B0"
+  high_availability_enabled = false
+  public_network_access     = "Disabled"
 
-resource "azurerm_redis_cache" "redis" {
-
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis"
-  location            = data.azurerm_resource_group.current_group.location
-  resource_group_name = data.azurerm_resource_group.current_group.name
-
-  subnet_id = local.use_subnet_redis ? data.azurerm_subnet.redis_subnet.id : null
-
-  capacity = var.node_capacity
-  family   = var.node_family
-  sku_name = var.sku_name
-
-  public_network_access_enabled = false
-
-  non_ssl_port_enabled = true
-
-  redis_configuration {
-    authentication_enabled = true
+  default_database {
+    client_protocol = "Encrypted"
+    clustering_policy = "NoCluster"
+    access_keys_authentication_enabled = true
   }
-
+  identity {
+    type = "SystemAssigned"
+  }
   tags = var.tags
-
-  lifecycle {
-    ignore_changes = [location]
-  }
 }
 
 resource "azurerm_network_security_group" "redis_nsg" {
@@ -83,7 +71,6 @@ resource "azurerm_network_security_group" "redis_nsg" {
 
 # Private Endpoint for Redis(need this when we are not binding the redis to a subnet)
 resource "azurerm_private_endpoint" "redis" {
-  count               = local.use_subnet_redis ? 0 : 1
   name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-pe"
   location            = data.azurerm_resource_group.current_group.location
   resource_group_name = data.azurerm_resource_group.current_group.name
@@ -91,19 +78,22 @@ resource "azurerm_private_endpoint" "redis" {
 
   private_service_connection {
     name                           = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-psc"
-    private_connection_resource_id = azurerm_redis_cache.redis.id
-    subresource_names              = ["redisCache"]
+    private_connection_resource_id = azurerm_managed_redis.redis.id
+    subresource_names              = ["redisEnterprise"]
     is_manual_connection           = false
   }
-
+  private_dns_zone_group {
+    name = "redis-private-dns-zone-group"
+    private_dns_zone_ids = [azurerm_private_dns_zone.redis.id]
+  }
+  depends_on = [ azurerm_managed_redis.redis ]
   tags = var.tags
 }
 
 # Private DNS Zone for Redis
 resource "azurerm_private_dns_zone" "redis" {
-  name                = "privatelink.redis.cache.windows.net"
+  name = "privatelink.redis.azure.net"
   resource_group_name = data.azurerm_resource_group.current_group.name
-
   tags = var.tags
 }
 

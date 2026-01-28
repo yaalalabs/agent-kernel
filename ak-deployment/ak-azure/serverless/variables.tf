@@ -184,16 +184,6 @@ variable "publisher_email" {
   description = "API Management publisher email"
 }
 
-variable "apim_sku_name" {
-  type        = string
-  description = "API Management SKU (Developer, Basic, Standard, Premium, Consumption)"
-  default     = "Consumption_0"
-  validation {
-    condition     = can(regex("^(Developer|Basic|Standard|Premium|Consumption)_\\d+$", var.apim_sku_name))
-    error_message = "APIM SKU must be in format: Developer_1, Consumption_0, etc."
-  }
-}
-
 variable "vnet_id" {
   type        = string
   description = "VNet ID"
@@ -233,19 +223,6 @@ variable "sku_name_redis" {
     condition     = contains(["Basic", "Standard", "Premium"], var.sku_name_redis)
     error_message = "SKU must be Basic, Standard, or Premium"
   }
-
-}
-
-variable "redis_node_family" {
-  type        = string
-  description = "Redis family (C for Basic/Standard, P for Premium)"
-  default     = "P"
-  
-  validation {
-    condition     = contains(["C", "P"], var.redis_node_family)
-    error_message = "Family must be C (Basic/Standard) or P (Premium)"
-  }
-  
 }
 
 variable "azure_encryption_key_id" {
@@ -289,9 +266,4 @@ variable "create_custom_storage_account" {
   type        = bool
   description = "Create a custom storage account to store custom data"
   default     = false
-}
-
-variable "openai_api_key" {
-  description = "OpenAI API Key"
-  type        = string
 }

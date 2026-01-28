@@ -27,11 +27,11 @@ locals {
   subnet_ids              = var.vnet_id != null ? data.azurerm_subnet.subnets[0].id : module.vnet[0].private_subnet_ids[0]
   function_subnet_id      = var.vnet_id != null ? data.azurerm_subnet.function_subnet[0].id : module.vnet[0].private_subnet_ids[1]
   redis_url               = var.create_redis_cluster == true ? module.redis[0].url : null
-  redis_password          = var.create_redis_cluster == true ? module.redis[0].primary_access_key : null
+  redis_password          = var.create_redis_cluster == true ? module.redis[0].primary_key : null
   cosmosdb_table_name     = var.create_cosmosdb_cluster == true ? module.cosmos[0].table_name : null
   cosmosdb_table_endpoint = var.create_cosmosdb_cluster == true ? module.cosmos[0].table_endpoint : null
   cosmosdb_primary_key    = var.create_cosmosdb_cluster == true ? module.cosmos[0].primary_key : null
-  redis_private_ip        = var.create_redis_cluster == true ? module.redis[0].redis_private_ip : null
+  full_redis_url          = var.create_redis_cluster == true ? module.redis[0].full_redis_url : null
 }
 
 module "vnet" {
@@ -58,26 +58,24 @@ module "redis" {
   tags                     = var.tags
   subnet_name              = local.subnet_name
   function_subnet          = local.function_subnet_name
-  sku_name                 = var.sku_name_redis
   vnet_name                = local.vnet_name
-  node_family              = var.redis_node_family
   depends_on               = [module.vnet]
   is_production            = var.is_production
 }
 
-module "storage" {
-  count                = var.create_custom_storage_account == true ? 1 : 0
-  source               = "../common/modules/blob"
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  product_display_name = var.module_name
-  resource_group_name  = var.resource_group_name
-  region               = var.region
-  s3_bucket_tags       = var.tags
-  is_production        = var.is_production
-  s3_kms_key_id        = var.azure_encryption_key_id
-  depends_on           = [module.vnet]
-}
+# module "storage" {
+#   count                = var.create_custom_storage_account == true ? 1 : 0
+#   source               = "../common/modules/blob"
+#   product_alias        = var.product_alias
+#   env_alias            = var.env_alias
+#   product_display_name = var.module_name
+#   resource_group_name  = var.resource_group_name
+#   region               = var.region
+#   s3_bucket_tags       = var.tags
+#   is_production        = var.is_production
+#   s3_kms_key_id        = var.azure_encryption_key_id
+#   depends_on           = [module.vnet]
+# }
 
 module "cosmos" {
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
@@ -96,12 +94,12 @@ module "cosmos" {
 }
 
 
-module "docker_image" {
-  enabled             = var.package_type == "Image" ? true : false
-  source              = "../common/modules/acr"
-  env_alias           = var.env_alias
-  module_name         = var.module_name
-  product_alias       = var.product_alias
-  source_path         = var.package_path
-  resource_group_name = var.resource_group_name
-}
+# module "docker_image" {
+#   enabled             = var.package_type == "Image" ? true : false
+#   source              = "../common/modules/acr"
+#   env_alias           = var.env_alias
+#   module_name         = var.module_name
+#   product_alias       = var.product_alias
+#   source_path         = var.package_path
+#   resource_group_name = var.resource_group_name
+# }

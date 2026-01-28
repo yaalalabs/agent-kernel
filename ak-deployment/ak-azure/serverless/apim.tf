@@ -5,7 +5,7 @@ resource "azurerm_api_management" "apim" {
   resource_group_name = data.azurerm_resource_group.rg.name
   publisher_name      = var.publisher_name
   publisher_email     = var.publisher_email
-  sku_name            = var.apim_sku_name
+  sku_name            = var.is_production ? "Basic_1" : "Consumption_0"
 
   identity {
     type = "SystemAssigned"
@@ -41,7 +41,10 @@ resource "azurerm_api_management_api_version_set" "version_set" {
   api_management_name = azurerm_api_management.apim.name
   display_name        = "API Versions"
   versioning_scheme   = "Segment"
+
+  depends_on = [azurerm_api_management_api.rest_api]
 }
+
 
 # Local variables for processing endpoints
 locals {

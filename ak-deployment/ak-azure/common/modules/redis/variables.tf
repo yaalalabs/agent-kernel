@@ -40,46 +40,6 @@ variable "subnet_name" {
   description = "Subnet name for private endpoint"
 }
 
-# Azure Redis SKU mapping
-variable "sku_name" {
-  type        = string
-  description = "Redis SKU name (Basic, Standard, or Premium)"
-  default     = "Basic"
-  
-  validation {
-    condition     = contains(["Basic", "Standard", "Premium"], var.sku_name)
-    error_message = "SKU must be Basic, Standard, or Premium"
-  }
-}
-
-variable "node_family" {
-  type        = string
-  description = "Redis family (C for Basic/Standard, P for Premium)"
-  default     = "P"
-  
-  validation {
-    condition     = contains(["C", "P"], var.node_family)
-    error_message = "Family must be C (Basic/Standard) or P (Premium)"
-  }
-}
-
-variable "node_capacity" {
-  type        = number
-  description = "Redis capacity (0-6 for C family, 1-5 for P family)"
-  default     = 1
-  
-  validation {
-    condition     = var.node_capacity >= 0 && var.node_capacity <= 6
-    error_message = "Capacity must be between 0 and 6"
-  }
-}
-
-variable "port" {
-  type        = number
-  description = "Redis port "
-  default     = 6379
-}
-
 variable "function_subnet" {
   type        = string
   description = "Subnet name for private endpoint"

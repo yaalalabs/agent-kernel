@@ -24,7 +24,7 @@ data "azurerm_subnet" "private" {
 
 # Storage Account for Function App
 resource "azurerm_storage_account" "function_storage" {
-  name                          = "${var.product_alias}${var.env_alias}${var.module_name}${substr(data.azurerm_client_config.current.subscription_id,0,4)}deployment"
+  name                          = "${var.product_alias}${var.env_alias}${var.module_name}${substr(data.azurerm_client_config.current.subscription_id, 0, 4)}deployment"
   resource_group_name           = data.azurerm_resource_group.rg.name
   location                      = var.region
   account_tier                  = "Standard"
@@ -94,7 +94,7 @@ resource "azurerm_function_app_flex_consumption" "function" {
 
   # Runtime configuration
   runtime_name    = var.module_type == "python" ? "python" : "node"
-  runtime_version = var.module_type == "python" ? "3.11" : "22"
+  runtime_version = var.module_type == "python" ? "3.12" : "22"
 
   # Scaling
   maximum_instance_count = var.is_production ? 100 : 50
@@ -109,12 +109,11 @@ resource "azurerm_function_app_flex_consumption" "function" {
     }
   }
 
-  # App Settings (removed WEBSITE_RUN_FROM_PACKAGE)
+  # App Settings
   app_settings = merge(
     var.environment_variables,
     {
       "AzureWebJobsFeatureFlags"              = "EnableWorkerIndexing"
-      # "AzureWebJobsDashboard"                 = azurerm_storage_account.function_storage.primary_connection_string
       "AzureWebJobsStorage"                   = azurerm_storage_account.function_storage.primary_connection_string
       "CONTAINER_NAME"                        = "azure-webjobs-secrets"
       "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.function_insights.connection_string
@@ -122,9 +121,8 @@ resource "azurerm_function_app_flex_consumption" "function" {
       "WEBSITE_DNS_SERVER"                    = "168.63.129.16"
     },
     local.redis_url != null ? {
-      "AK_SESSION_REDIS_URL" = local.redis_url
-      "AK_SESSION_REDIS_PASSWORD" = local.redis_password
-      "AK_SESSION_REDIS_PRIVATE_IP" = local.redis_private_ip #on Redis reach through private endpoint, use the direct IP
+      "AK_SESSION__REDIS__URL"        = local.full_redis_url
+      # "AK_FULL_REDIS_URL" = local.full_redis_url #on Redis reach through private endpoint, use the direct IP
     } : {},
     local.cosmosdb_table_name != null ? {
       "AK_SESSION_COSMOSDB_TABLE_NAME"     = local.cosmosdb_table_name
@@ -157,10 +155,73 @@ resource "null_resource" "deploy_function_code" {
 
   provisioner "local-exec" {
     command = <<EOT
+      set -e
+      
+      echo "Waiting for Function App to be in 'Running' state..."
+      TIMEOUT=300
+      ELAPSED=0
+      INTERVAL=10
+      
+      while [ $ELAPSED -lt $TIMEOUT ]; do
+        STATE=$(az functionapp show \
+          --resource-group ${data.azurerm_resource_group.rg.name} \
+          --name ${local.function_app_name} \
+          --query "properties.state" \
+          -o tsv 2>/dev/null || echo "")
+        
+        echo "Current state: $STATE"
+        
+        if [ "$STATE" = "Running" ]; then
+          echo "Function App is running!"
+          break
+        fi
+        
+        sleep $INTERVAL
+        ELAPSED=$((ELAPSED + INTERVAL))
+      done
+      
+      if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "Timeout waiting for Function App to be running"
+        exit 1
+      fi
+      
+      echo "Deploying function code..."
       az functionapp deployment source config-zip \
         --resource-group ${data.azurerm_resource_group.rg.name} \
         --name ${local.function_app_name} \
         --src ${var.package_path}
+      
+      echo "Waiting for deployment to complete and host keys to be available..."
+      TIMEOUT=300
+      ELAPSED=0
+      INTERVAL=10
+      
+      while [ $ELAPSED -lt $TIMEOUT ]; do
+        # Try to get the master key - if successful, host keys are ready
+        MASTER_KEY=$(az functionapp keys list \
+          --resource-group ${data.azurerm_resource_group.rg.name} \
+          --name ${local.function_app_name} \
+          --query "masterKey" \
+          -o tsv 2>/dev/null || echo "")
+        
+        if [ -n "$MASTER_KEY" ] && [ "$MASTER_KEY" != "null" ] && [ "$MASTER_KEY" != "" ]; then
+          echo "Host keys are available! Master key retrieved successfully."
+          break
+        fi
+        
+        echo "Host keys not ready yet (attempt $((ELAPSED/INTERVAL + 1))), waiting..."
+        sleep $INTERVAL
+        ELAPSED=$((ELAPSED + INTERVAL))
+      done
+      
+      if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "WARNING: Timeout waiting for host keys to be created"
+        echo "This might be due to VNet integration or storage account access issues"
+        echo "Try restarting the function app or checking storage account connectivity"
+        exit 1
+      fi
+      
+      echo "Deployment completed successfully!"
     EOT
   }
 
