@@ -1,6 +1,12 @@
 # Integration Test Configuration
 # This file defines which tests run on nightly vs weekly schedules and their execution order
 
+# Deployment base infrastructure - always deployed but not part of test matrix
+deployment_base:
+  - type: aws-serverless
+    path: examples/aws-serverless/openai
+    deploy_dir: deploy
+
 nightly:
   # Tests that run daily
   # For AWS projects, only deploy.sh and pytest are executed (no terraform destroy)

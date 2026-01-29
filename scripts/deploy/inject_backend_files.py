@@ -29,8 +29,15 @@ def get_aws_projects(config: Dict) -> Set[tuple]:
     """
     aws_projects = set()
     
-    # Always include aws-serverless/openai (supporting infrastructure)
-    aws_projects.add(('examples/aws-serverless/openai', 'deploy', 'aws-serverless'))
+    # Include deployment base infrastructure
+    if 'deployment_base' in config:
+        for project in config['deployment_base']:
+            test_type = project.get('type', '')
+            if test_type in ['aws-serverless', 'aws-containerized']:
+                path = project.get('path', '')
+                deploy_dir = project.get('deploy_dir', 'deploy')
+                if path:
+                    aws_projects.add((path, deploy_dir, test_type))
     
     # Process both nightly and weekly test configs
     for schedule in ['nightly', 'weekly']:

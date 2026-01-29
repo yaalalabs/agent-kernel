@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
-      aws-tests: ${{ steps.set-matrix.outputs['aws-tests'] }}
+      deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -136,7 +136,7 @@ jobs:
           retention-days: 30
 
   redeploy-openai:
-    needs: [run-tests]
+    needs: [setup, run-tests]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -170,28 +170,28 @@ jobs:
         with:
           terraform_version: 1.9.5
 
-      - name: Destroy, Deploy, and Test aws-serverless/openai
+      - name: Destroy, Deploy, and Test ${{ fromJson(needs.setup.outputs.deployment-base).path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
         run: |
           # Destroy
           python .github/scripts/run_single_test.py \
-            --type aws-serverless \
-            --path examples/aws-serverless/openai \
-            --deploy-dir deploy \
+            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
+            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
             --action destroy
           
           # Deploy
           python .github/scripts/run_single_test.py \
-            --type aws-serverless \
-            --path examples/aws-serverless/openai \
-            --deploy-dir deploy \
+            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
+            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
             --action deploy
           
           # Test
           python .github/scripts/run_single_test.py \
-            --type aws-serverless \
-            --path examples/aws-serverless/openai \
-            --deploy-dir deploy \
+            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
+            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
             --action test

@@ -10,10 +10,10 @@ import json
 import sys
 
 
-def generate_nightly_matrix(config_path: str) -> dict:
+def generate_nightly_matrix(config_path: str) -> tuple[dict, dict]:
     """
     Generate test matrix for nightly workflow.
-    Excludes aws-serverless/openai as it runs first separately.
+    Returns the test matrix and deployment_base info.
     """
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -22,9 +22,6 @@ def generate_nightly_matrix(config_path: str) -> dict:
     matrix_tests = []
     
     for idx, test in enumerate(tests):
-        # Skip aws-serverless/openai as it runs first separately
-        if test['path'] == 'examples/aws-serverless/openai':
-            continue
         matrix_tests.append({
             'id': idx,
             'type': test['type'],
@@ -32,20 +29,29 @@ def generate_nightly_matrix(config_path: str) -> dict:
             'deploy_dir': test.get('deploy_dir', 'deploy')
         })
     
-    return {'include': matrix_tests}
+    # Get deployment base (supporting infrastructure)
+    deployment_base = None
+    if 'deployment_base' in config and config['deployment_base']:
+        base = config['deployment_base'][0]  # Assume single base deployment
+        deployment_base = {
+            'type': base['type'],
+            'path': base['path'],
+            'deploy_dir': base.get('deploy_dir', 'deploy')
+        }
+    
+    return {'include': matrix_tests}, deployment_base
 
 
-def generate_weekly_matrices(config_path: str) -> tuple[dict, list]:
+def generate_weekly_matrices(config_path: str) -> tuple[dict, dict]:
     """
     Generate test matrices for weekly workflow.
-    Returns both the full test matrix and AWS-only tests for destruction phase.
+    Returns the test matrix and deployment_base info.
     """
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
     tests = config['weekly']['tests']
     matrix_tests = []
-    aws_tests = []
     
     for idx, test in enumerate(tests):
         matrix_tests.append({
@@ -54,16 +60,18 @@ def generate_weekly_matrices(config_path: str) -> tuple[dict, list]:
             'path': test['path'],
             'deploy_dir': test.get('deploy_dir', 'deploy')
         })
-        
-        # Collect AWS tests for destruction phase
-        if test['type'] in ['aws-containerized', 'aws-serverless']:
-            aws_tests.append({
-                'type': test['type'],
-                'path': test['path'],
-                'deploy_dir': test.get('deploy_dir', 'deploy')
-            })
     
-    return {'include': matrix_tests}, aws_tests
+    # Get deployment base (supporting infrastructure)
+    deployment_base = None
+    if 'deployment_base' in config and config['deployment_base']:
+        base = config['deployment_base'][0]  # Assume single base deployment
+        deployment_base = {
+            'type': base['type'],
+            'path': base['path'],
+            'deploy_dir': base.get('deploy_dir', 'deploy')
+        }
+    
+    return {'include': matrix_tests}, deployment_base
 
 
 def main():
@@ -90,22 +98,29 @@ def main():
     
     try:
         if args.tier == 'nightly':
-            matrix = generate_nightly_matrix(args.config)
+            matrix, deployment_base = generate_nightly_matrix(args.config)
             if args.format == 'github':
                 print(f"matrix={json.dumps(matrix)}")
+                if deployment_base:
+                    print(f"deployment-base={json.dumps(deployment_base)}")
             else:
                 print(json.dumps(matrix, indent=2))
+                if deployment_base:
+                    print("\nDeployment Base:")
+                    print(json.dumps(deployment_base, indent=2))
         
         elif args.tier == 'weekly':
-            matrix, aws_tests = generate_weekly_matrices(args.config)
+            matrix, deployment_base = generate_weekly_matrices(args.config)
             if args.format == 'github':
                 print(f"matrix={json.dumps(matrix)}")
-                print(f"aws-tests={json.dumps(aws_tests)}")
+                if deployment_base:
+                    print(f"deployment-base={json.dumps(deployment_base)}")
             else:
                 print("Test Matrix:")
                 print(json.dumps(matrix, indent=2))
-                print("\nAWS Tests:")
-                print(json.dumps(aws_tests, indent=2))
+                if deployment_base:
+                    print("\nDeployment Base:")
+                    print(json.dumps(deployment_base, indent=2))
     
     except Exception as e:
         print(f"Error generating matrices: {e}", file=sys.stderr)

@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
