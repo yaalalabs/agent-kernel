@@ -1,5 +1,8 @@
 name: Nightly Integration Tests
 
+permissions:
+  contents: read
+
 on:
   # Nightly build - runs daily at 2 AM UTC
   # schedule:
