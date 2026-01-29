@@ -1,5 +1,8 @@
 name: Weekly Integration Tests
 
+permissions:
+  contents: read
+
 on:
   # Weekly build - runs every Sunday at 3 AM UTC
   # schedule:
