@@ -118,9 +118,14 @@ def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
 def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
+    deploy_script = deploy_path / 'deploy.sh'
     
-    if not (deploy_path / 'deploy.sh').exists():
-        print(f"⚠️  Skipping {path} - no deploy directory found")
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
+    
+    if not deploy_script.exists():
+        print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
         return True
     
     # Initialize terraform if needed
