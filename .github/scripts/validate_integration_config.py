@@ -44,15 +44,18 @@ def validate_config(config_path: str = '.github/integration-test-config.yaml'):
     all_valid = True
     for tier in required_tiers:
         print(f"\n🔍 Validating {tier} tier...")
+        tier_valid = True  # Track validity for this tier only
         
         if 'tests' not in config[tier]:
             print(f"  ❌ Missing 'tests' key in {tier}")
+            tier_valid = False
             all_valid = False
             continue
         
         tests = config[tier]['tests']
         if not isinstance(tests, list):
             print(f"  ❌ 'tests' must be a list in {tier}")
+            tier_valid = False
             all_valid = False
             continue
         
@@ -64,18 +67,18 @@ def validate_config(config_path: str = '.github/integration-test-config.yaml'):
         for idx, test in enumerate(tests, 1):
             if not isinstance(test, dict):
                 print(f"  ❌ Test {idx} is not a dictionary")
-                all_valid = False
+                tier_valid = False
                 continue
             
             # Check required fields
             if 'type' not in test:
                 print(f"  ❌ Test {idx} missing 'type' field")
-                all_valid = False
+                tier_valid = False
                 continue
             
             if 'path' not in test:
                 print(f"  ❌ Test {idx} missing 'path' field")
-                all_valid = False
+                tier_valid = False
                 continue
             
             test_type = test['type']
@@ -85,7 +88,7 @@ def validate_config(config_path: str = '.github/integration-test-config.yaml'):
             if test_type not in valid_types:
                 print(f"  ❌ Test {idx} has invalid type: {test_type}")
                 print(f"     Valid types: {', '.join(valid_types)}")
-                all_valid = False
+                tier_valid = False
             
             # Check for duplicates
             if test_path in seen_paths:
@@ -108,7 +111,9 @@ def validate_config(config_path: str = '.github/integration-test-config.yaml'):
                 if not deploy_script.exists():
                     print(f"  ⚠️  Test {idx} deploy.sh not found: {deploy_script}")
         
-        if all_valid:
+        # Update global validity and print tier-specific message
+        all_valid = all_valid and tier_valid
+        if tier_valid:
             print(f"  ✅ {tier} tier configuration valid")
     
     if all_valid:
