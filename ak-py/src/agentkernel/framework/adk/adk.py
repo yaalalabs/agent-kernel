@@ -120,6 +120,7 @@ class GoogleADKRunner(BaseRunner):
                         if not req.image_data:
                             raise ValueError("no image input provided")
                         base64_data = req.image_data
+
                     elif isinstance(req, AgentRequestFile):
                         # Handle file attachments
                         if not req.file_data:
@@ -145,18 +146,6 @@ class GoogleADKRunner(BaseRunner):
 
             if not parts:
                 return AgentReplyText(text="Sorry. No valid content found in the requests")
-
-            # Check for system prompt override in session (volatile cache)
-            v_cache = session.get_volatile_cache()
-            override_prompt = v_cache.get("_openai_system_override")  # reusing same key convention for consistency
-
-            if override_prompt:
-                # Prepend the system override to the message parts
-                # This ensures the agent sees the instruction
-                parts.insert(0, types.Part(text=f"System Instruction: {override_prompt}"))
-                prompt = f"{override_prompt}\n\n{prompt}"
-                # Cleanup
-                v_cache.delete("_openai_system_override")
 
             app_name = "AgentKernel"
             user_id = "AgentKernel"
@@ -185,8 +174,6 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
-        self.override_system_prompt()
-        self._attach_system_tools()
 
     @property
     def agent(self) -> BaseAgent:
@@ -194,12 +181,6 @@ class GoogleADKAgent(AKBaseAgent):
         Returns the GoogleADK agent instance.
         """
         return self._agent
-
-    def get_wrapped(self):
-        """
-        Returns the underlying agent object (Google ADK Agent).
-        """
-        return self.agent
 
     def get_description(self):
         """
@@ -213,33 +194,6 @@ class GoogleADKAgent(AKBaseAgent):
         """
         # TODO Add A2A card support
         pass
-
-    def override_system_prompt(self) -> None:
-        """
-        Overrides the system prompt of the agent via logic injection.
-        For Google ADK, we append to the description/instruction.
-        """
-        if hasattr(self._agent, "description") and self._agent.description:
-            self._agent.description += "\n" + AKBaseAgent.get_system_prompt_suffix()
-
-    def attach_tool(self, tool: Any) -> None:
-        """
-        Attaches a tool to the agent.
-        :param tool: The tool to attach.
-        """
-        if hasattr(self.agent, "tools"):
-            if tool not in self.agent.tools:
-                self.agent.tools.append(tool)
-
-    def _attach_system_tools(self):
-        """
-        Attaches system level tools based on configuration.
-        """
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-            from ...core.multimodal import analyis_attachments
-
-            self.attach_tool(analyis_attachments)
 
 
 class GoogleADKModule(Module):
