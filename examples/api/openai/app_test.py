@@ -16,7 +16,7 @@ class APITestClient:
         self.url = url
         self.session_id = str(uuid.uuid4())
 
-    async def send(self, prompt, endpoint: str = "/run", additional_context=None, body=None):
+    async def send(self, prompt, endpoint: str = "/api/v1/chat", additional_context=None, body=None):
         payload = (
             {
                 "prompt": prompt,
@@ -139,7 +139,7 @@ async def test_image_multipart(http_client):
     data = {"prompt": "can you describe this image?", "session_id": http_client.session_id, "agent": "support"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{http_client.url}/run-multipart", data=data, files=files)
+        resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()
         response = result.get("result", "")
@@ -167,7 +167,7 @@ async def test_pdf_multipart(http_client):
     data = {"prompt": "what is the new deadline based on this file", "session_id": "james", "agent": "support"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{http_client.url}/run-multipart", data=data, files=files)
+        resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()
         response = result.get("result", "")

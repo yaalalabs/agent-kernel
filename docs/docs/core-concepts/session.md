@@ -84,7 +84,7 @@ The CLI creates a unique session ID for each interactive session, maintaining co
 In API mode, you control session IDs to manage user conversations:
 
 ```bash
-POST /run
+POST /api/v1/chat
 {
   "agent": "assistant",
   "message": "Hello!",

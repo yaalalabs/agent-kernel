@@ -108,7 +108,7 @@ module "ecs" {
           ]
 
           health_check = {
-            command = ["CMD-SHELL", "curl -sf http://localhost:${var.ecs_container_port}${var.ecs_health_check_path} || exit 1"],
+            command = ["CMD-SHELL", "curl -sf http://localhost:${var.ecs_container_port}${var.ecs_health_check_endpoint} || exit 1"],
             interval    = 30,
             timeout     = 5,
             retries     = 3,
@@ -179,7 +179,7 @@ resource "aws_lb_target_group" "app" {
   vpc_id      = local.vpc_id
   target_type = "ip"
   health_check {
-    path                = var.ecs_health_check_path
+    path                = var.ecs_health_check_endpoint
     healthy_threshold   = 2
     unhealthy_threshold = 2
     timeout             = 5
