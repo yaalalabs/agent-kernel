@@ -74,7 +74,7 @@ class CustomHandler(RESTRequestHandler):
   def get_router(self) -> APIRouter:
       """
         - GET /health: Health check
-        - GET /agents: List available agents
+        - GET /api/v1/agents: List available agents
       """
       router = APIRouter()
 
@@ -82,7 +82,7 @@ class CustomHandler(RESTRequestHandler):
       def health():
           return {"status": "ok"}
 
-      @router.get("/agents")
+      @router.get("/api/v1/agents")
       def list_agents():
           return {"agents": list(Runtime.instance().agents().keys())}
 

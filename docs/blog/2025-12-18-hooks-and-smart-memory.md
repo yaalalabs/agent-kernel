@@ -75,7 +75,7 @@ When using Agent Kernel's REST API, you can pass custom data in your JSON reques
 
 ```bash
 # REST API request with custom fields
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "assistant",
@@ -350,7 +350,7 @@ RESTAPI.run()
 ### 4. Test It
 
 ```bash
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "assistant",

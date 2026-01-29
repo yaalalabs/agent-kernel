@@ -18,7 +18,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
     API routers that expose endpoints to interact with Slack using Agent Kernel.
     Endpoints:
     - GET /health: Health check
-    - GET /agents: List available agents. Not used by Slack but useful for testing.
+    - GET /api/v1/agents: List available agents. Not used by Slack but useful for testing.
     - POST /slack/events: Handle Slack events
     """
 
