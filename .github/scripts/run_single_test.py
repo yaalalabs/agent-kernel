@@ -5,12 +5,13 @@ Used by parallel GitHub Actions jobs.
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def run_command(command: list[str], cwd: str = None, description: str = "") -> bool:
+def run_command(command: list[str], cwd: str = None, description: str = "", env: dict = None) -> bool:
     """Run a shell command and return success status."""
     try:
         print(f"\n{'='*80}")
@@ -19,12 +20,18 @@ def run_command(command: list[str], cwd: str = None, description: str = "") -> b
         print(f"Directory: {cwd or 'current'}")
         print(f"{'='*80}\n")
         
+        # Merge environment variables
+        cmd_env = os.environ.copy()
+        if env:
+            cmd_env.update(env)
+        
         subprocess.run(
             command,
             cwd=cwd,
             check=True,
             capture_output=False,
-            text=True
+            text=True,
+            env=cmd_env
         )
         return True
     except subprocess.CalledProcessError as e:
@@ -99,11 +106,18 @@ def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
         return True
     
+    # Set Terraform automation flags for non-interactive CI execution
+    tf_env = {
+        'TF_INPUT': '0',  # Disable interactive prompts
+        'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
+    }
+    
     # Deploy
     if not run_command(
         ['./deploy.sh', 'local'],
         cwd=str(deploy_path),
-        description=f"Deploying {path}"
+        description=f"Deploying {path}",
+        env=tf_env
     ):
         return False
     
@@ -128,19 +142,26 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
         return True
     
+    # Set Terraform automation flags for non-interactive CI execution
+    tf_env = {
+        'TF_INPUT': '0',  # Disable interactive prompts
+    }
+    
     # Initialize terraform if needed
     if not run_command(
         ['terraform', 'init', '-upgrade'],
         cwd=str(deploy_path),
-        description=f"Terraform init for {path}"
+        description=f"Terraform init for {path}",
+        env=tf_env
     ):
         return False
     
-    # Destroy
+    # Destroy (already has -auto-approve flag)
     return run_command(
         ['terraform', 'destroy', '-auto-approve'],
         cwd=str(deploy_path),
-        description=f"Destroying {path}"
+        description=f"Destroying {path}",
+        env=tf_env
     )
 
 
