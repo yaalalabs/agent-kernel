@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
-      aws-tests: ${{ steps.set-matrix.outputs.aws-tests }}
+      aws-tests: ${{ steps.set-matrix.outputs['aws-tests'] }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
