@@ -174,6 +174,8 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
+        self.override_system_prompt()
+        self._attach_system_tools()
 
     @property
     def agent(self) -> BaseAgent:
@@ -194,6 +196,40 @@ class GoogleADKAgent(AKBaseAgent):
         """
         # TODO Add A2A card support
         pass
+
+    def override_system_prompt(self) -> None:
+        """
+        Overrides the system prompt of the agent via logic injection.
+        For Google ADK, we append to the description/instruction.
+        """
+        if hasattr(self._agent, "description") and self._agent.description:
+            self._agent.description += "\\n" + AKBaseAgent.get_system_prompt_suffix()
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Attaches a tool to the agent.
+        :param tool: The tool to attach.
+        """
+        print(f"DEBUG: Attempting to attach tool {tool} to {self.agent.name}")
+        if hasattr(self.agent, "tools"):
+            print(f"DEBUG: Agent has tools attribute: {self.agent.tools}")
+            if self.agent.tools is None:
+                self.agent.tools = []
+            if tool not in self.agent.tools:
+                self.agent.tools.append(tool)
+                print(f"DEBUG: Attached tool {tool} to {self.agent.name}")
+        else:
+            print(f"DEBUG: Agent {self.agent.name} has NO tools attribute")
+
+    def _attach_system_tools(self):
+        """
+        Attaches system level tools based on configuration.
+        """
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled:
+            from ...core.multimodal import analyis_attachments
+
+            self.attach_tool(analyis_attachments)
 
 
 class GoogleADKModule(Module):
