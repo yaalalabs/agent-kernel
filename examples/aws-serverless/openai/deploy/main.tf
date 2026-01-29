@@ -17,6 +17,23 @@ module "serverless_agents" {
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region
 
+  # To override the default API version, API base path, and agent endpoint
+  # api_version    = "v2"
+  # api_base_path  = "api-new"
+  # agent_endpoint = "chat-new"
+
+  # Defining custom API endpoints
+  gateway_endpoints = [
+    {
+      path           = "app",
+      method         = "GET",
+    },
+    {
+      path           = "app_info",
+      method         = "POST",
+    }
+  ] 
+
   # Environment variables passed to lambda
   environment_variables = {
     "OPENAI_API_KEY" = var.openai_api_key

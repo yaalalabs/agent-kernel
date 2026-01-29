@@ -76,6 +76,37 @@ Body:
 }
 ```
 
+### Custom endpoints (multiple handlers)
+
+You can attach additional API Gateway routes to the same Lambda by registering handlers per path and method:
+
+```python
+import json
+from agentkernel.aws import Lambda
+
+@Lambda.register("/app", method="GET")
+def custom_app_handler(event, context):
+    return {"response": "Hello! from AK 'app'"}
+
+@Lambda.register("/app_info", method="POST")
+def custom_app_info_handler(event, context):
+    payload = json.loads(event.get("body") or "{}")
+    return {"request": payload, "response": "Hello! from AK 'app_info'"}
+```
+
+> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
+
+
+### API Gateway stage variables (required when wrapping the Lambda or using custom routes)
+
+To use custom API routes or when you use this Lambda with your own API Gateway, you must define the following stage variables in API Gateway so the router can correctly map incoming paths:
+
+- **api_base_path** – Base path mapping without leading slash. Example: `api` or `prod`
+- **api_version** – Version segment. Example: `v1`
+- **agent_endpoint** – The default chat endpoint segment. Example: `chat`
+
+> **NOTE:** If you wrap our Lambda with your own API Gateway, you are responsible for injecting these stage variables. If they are not provided, only the default chat handler may work and custom routes may not resolve as expected.
+
 ## Cost Optimization
 
 ### Lambda Configuration

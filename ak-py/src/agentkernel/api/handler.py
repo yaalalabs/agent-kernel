@@ -28,7 +28,7 @@ class RESTRequestHandler(ABC):
         Returns the APIRouter instance which has configured routes
         E.g.:
         - GET /health: Health check
-        - GET /agents: List available agents
+        - GET /api/v1/agents: List available agents
 
         router = APIRouter()
 
@@ -36,7 +36,7 @@ class RESTRequestHandler(ABC):
         def health():
             return {"status": "ok"}
 
-        @router.get("/agents")
+        @router.get("/api/v1/agents")
         def list_agents():
             from ..core.runtime import Runtime
             return {"agents": list(Runtime.current().agents().keys())}
@@ -50,8 +50,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
     - GET /health: Health check
-    - GET /agents: List available agents
-    - POST /run: Run an agent with a prompt
+    - GET /api/v1/agents: List available agents
+    - POST /api/v1/chat: Run an agent with a prompt
       Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
     """
 
@@ -93,15 +93,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         def health():
             return {"status": "ok"}
 
-        @router.get("/agents")
+        @router.get("/api/v1/agents")
         def list_agents():
             return {"agents": list(Runtime.current().agents().keys())}
 
-        @router.post("/run")
+        @router.post("/api/v1/chat")
         async def run(body: AgentRESTRequestHandler.RunRequest):
             return await self.run(body)
 
-        @router.post("/run-multipart")
+        @router.post("/api/v1/chat-multipart")
         async def run_multipart(
             prompt: str = Form(...),
             agent: Optional[str] = Form(None),
@@ -175,7 +175,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         except HTTPException:
             raise
         except ValueError as e:
-            self._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
+            self._log.error(f"POST /api/v1/chat error: {e}\n{traceback.format_exc()}")
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST,
                 detail={
@@ -184,7 +184,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 },
             )
         except Exception as e:
-            self._log.error(f"POST /run error: {e}\n{traceback.format_exc()}")
+            self._log.error(f"POST /api/v1/chat error: {e}\n{traceback.format_exc()}")
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail={
@@ -295,7 +295,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         except HTTPException:
             raise
         except ValueError as e:
-            self._log.error(f"POST /run-multipart error: {e}\n{traceback.format_exc()}")
+            self._log.error(f"POST /api/v1/chat-multipart error: {e}\n{traceback.format_exc()}")
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST,
                 detail={
@@ -304,7 +304,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 },
             )
         except Exception as e:
-            self._log.error(f"POST /run-multipart error: {e}\n{traceback.format_exc()}")
+            self._log.error(f"POST /api/v1/chat-multipart error: {e}\n{traceback.format_exc()}")
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail={

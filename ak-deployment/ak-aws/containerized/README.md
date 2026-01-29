@@ -47,7 +47,7 @@ module "container_app" {
   ecs_container_port = 8000
   
   # Health check
-  ecs_health_check_path = "/health"
+  ecs_health_check_endpoint = "/health"
   
   # Environment variables
   environment_variables = {
@@ -224,7 +224,7 @@ module "production_app" {
   ecs_desired_count = 6     # High availability
   
   ecs_container_port    = 8080
-  ecs_health_check_path = "/api/health"
+  ecs_health_check_endpoint = "/api/health"
   
   environment_variables = {
     ENVIRONMENT           = "production"
@@ -299,7 +299,7 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | `ecs_memory` | Fargate memory in MiB | `number` | `512` | no |
 | `ecs_desired_count` | Number of ECS tasks to run | `number` | `1` | no |
 | `ecs_container_port` | Container port exposed by service | `number` | `8000` | no |
-| `ecs_health_check_path` | Health check path for ALB | `string` | `"/health"` | no |
+| `ecs_health_check_endpoint` | Health check path for ALB | `string` | `"/health"` | no |
 | `container_type` | Container orchestration type (ecs or eks) | `string` | `"ecs"` | no |
 | **State Management** |
 | `create_redis_cluster` | Enable Redis ElastiCache cluster | `bool` | `false` | no |
@@ -569,7 +569,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 **Solutions**:
 1. Verify health check path returns 200:
    ```hcl
-   ecs_health_check_path = "/health"  # Must return 200 OK
+   ecs_health_check_endpoint = "/health"  # Must return 200 OK
    ```
 
 2. Increase health check grace period
