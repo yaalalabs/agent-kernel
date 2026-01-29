@@ -49,7 +49,7 @@ jobs:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
 
-  deploy-openai:
+  deploy-openai: # This is handled separately because this module deploys supporting infrastructure for other tests
     needs: [build-ak-py]
     runs-on: ubuntu-latest
     defaults:

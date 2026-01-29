@@ -91,7 +91,7 @@ jobs:
             --deploy-dir ${{ matrix.deploy_dir }} \
             --action destroy
 
-  destroy-openai:
+  destroy-openai: # This is handled separately because this module deploys supporting infrastructure for other tests
     needs: [destroy-all-aws]
     runs-on: ubuntu-latest
     defaults:
@@ -128,7 +128,7 @@ jobs:
             --deploy-dir deploy \
             --action destroy
 
-  deploy-openai:
+  deploy-openai: # This is handled separately because this module deploys supporting infrastructure for other tests
     needs: [destroy-openai, build-ak-py]
     runs-on: ubuntu-latest
     defaults:

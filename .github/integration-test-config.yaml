@@ -44,9 +44,6 @@ nightly:
       path: examples/aws-serverless/adk
       deploy_dir: deploy
     - type: aws-serverless
-      path: examples/aws-serverless/openai
-      deploy_dir: deploy
-    - type: aws-serverless
       path: examples/aws-serverless/crewai
       deploy_dir: deploy
     - type: aws-serverless
@@ -75,9 +72,6 @@ weekly:
     # AWS Serverless
     - type: aws-serverless
       path: examples/aws-serverless/adk
-      deploy_dir: deploy
-    - type: aws-serverless
-      path: examples/aws-serverless/openai
       deploy_dir: deploy
     - type: aws-serverless
       path: examples/aws-serverless/crewai
