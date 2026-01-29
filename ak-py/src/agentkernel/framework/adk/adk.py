@@ -184,6 +184,12 @@ class GoogleADKAgent(AKBaseAgent):
         """
         return self._agent
 
+    def get_wrapped(self):
+        """
+        Returns the underlying agent object (Google ADK Agent).
+        """
+        return self.agent
+
     def get_description(self):
         """
         Returns the description of the agent.
@@ -210,16 +216,9 @@ class GoogleADKAgent(AKBaseAgent):
         Attaches a tool to the agent.
         :param tool: The tool to attach.
         """
-        print(f"DEBUG: Attempting to attach tool {tool} to {self.agent.name}")
         if hasattr(self.agent, "tools"):
-            print(f"DEBUG: Agent has tools attribute: {self.agent.tools}")
-            if self.agent.tools is None:
-                self.agent.tools = []
             if tool not in self.agent.tools:
                 self.agent.tools.append(tool)
-                print(f"DEBUG: Attached tool {tool} to {self.agent.name}")
-        else:
-            print(f"DEBUG: Agent {self.agent.name} has NO tools attribute")
 
     def _attach_system_tools(self):
         """
