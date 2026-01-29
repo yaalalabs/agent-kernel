@@ -18,7 +18,7 @@ nightly:
       path: examples/api/instagram
     - type: api
       path: examples/api/gmail
-    # Memory options
+    # Memory options - Move this to aws based tests later
     - type: memory
       path: examples/memory/redis
     - type: memory
@@ -39,6 +39,9 @@ nightly:
       deploy_dir: deploy
 
     # AWS Serverless
+    - type: aws-serverless
+      path: examples/aws-serverless/openai
+      deploy_dir: deploy
     - type: aws-serverless
       path: examples/aws-serverless/adk
       deploy_dir: deploy
@@ -69,6 +72,9 @@ weekly:
       deploy_dir: deploy
     
     # AWS Serverless
+    - type: aws-serverless
+      path: examples/aws-serverless/openai
+      deploy_dir: deploy
     - type: aws-serverless
       path: examples/aws-serverless/adk
       deploy_dir: deploy
