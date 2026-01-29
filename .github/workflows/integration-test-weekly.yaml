@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.setup.outputs.aws-tests) }}
+        include: ${{ fromJson(needs.setup.outputs['aws-tests']) }}
     defaults:
       run:
         shell: bash -e {0}
