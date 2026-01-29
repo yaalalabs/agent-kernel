@@ -124,11 +124,12 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
         return True
     
     # Initialize terraform if needed
-    run_command(
+    if not run_command(
         ['terraform', 'init', '-upgrade'],
         cwd=str(deploy_path),
         description=f"Terraform init for {path}"
-    )
+    ):
+        return False
     
     # Destroy
     return run_command(
