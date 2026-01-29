@@ -175,6 +175,7 @@ jobs:
       - name: Deploy and test aws-serverless/openai
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
         run: |
           python .github/scripts/run_single_test.py \
             --type aws-serverless \
@@ -225,8 +226,7 @@ jobs:
       - name: Run Test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
         run: |
           python .github/scripts/run_single_test.py \
             --type ${{ matrix.type }} \
