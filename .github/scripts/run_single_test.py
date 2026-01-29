@@ -89,7 +89,11 @@ def run_memory_test(path: str) -> bool:
 def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
     """Run AWS example test (deploy and test)."""
     deploy_path = Path(path) / deploy_dir
-    deploy_script = deploy_path / 'deploy.sh local'
+    deploy_script = deploy_path / 'deploy.sh'
+    
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
     
     if not deploy_script.exists():
         print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
@@ -97,7 +101,7 @@ def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
     
     # Deploy
     if not run_command(
-        ['./deploy.sh local'],
+        ['./deploy.sh', 'local'],
         cwd=str(deploy_path),
         description=f"Deploying {path}"
     ):
