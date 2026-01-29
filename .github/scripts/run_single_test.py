@@ -112,6 +112,15 @@ def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
         'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
     }
     
+    # Initialize terraform if needed
+    if not run_command(
+        ['terraform', 'init', '-upgrade'],
+        cwd=str(deploy_path),
+        description=f"Terraform init for {path}",
+        env=tf_env
+    ):
+        return False
+    
     # Deploy
     if not run_command(
         ['./deploy.sh', 'local'],
