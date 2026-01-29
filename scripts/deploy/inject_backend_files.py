@@ -29,6 +29,9 @@ def get_aws_projects(config: Dict) -> Set[tuple]:
     """
     aws_projects = set()
     
+    # Always include aws-serverless/openai (supporting infrastructure)
+    aws_projects.add(('examples/aws-serverless/openai', 'deploy', 'aws-serverless'))
+    
     # Process both nightly and weekly test configs
     for schedule in ['nightly', 'weekly']:
         if schedule in config and 'tests' in config[schedule]:
