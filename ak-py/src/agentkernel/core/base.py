@@ -317,9 +317,10 @@ class Agent(ABC):
         :return: The system prompt suffix.
         """
         tool_instruction = (
-            "User has attached files/images. Their IDs and descriptions are listed in the user's message. "
-            "If the user asks about them (e.g. 'explain', 'summarize'), "
-            "YOU MUST use the get_attachments tool to retrieve their content immediately. "
-            "Do not ask for clarification if you haven't read the file yet."
+            "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
+            "Available tool:\n"
+            "- analyis_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
+            "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
+            "Use this tool when asked about attached images or files. Do not ask for clarification if you haven't read the files yet."
         )
         return tool_instruction

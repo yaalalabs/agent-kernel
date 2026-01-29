@@ -237,9 +237,9 @@ class GoogleADKAgent(AKBaseAgent):
         """
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
-            from ...core.multimodal import get_attachments
+            from ...core.multimodal import analyis_attachments
 
-            self.attach_tool(get_attachments)
+            self.attach_tool(analyis_attachments)
 
 
 class GoogleADKModule(Module):

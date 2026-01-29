@@ -130,6 +130,7 @@ class _MultimodalConfig(BaseModel):
     )
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
+    model: str = Field(default="gpt-4o", description="Default LiteLLM model for multimodal analysis")
 
 
 class _TraceConfig(BaseModel):

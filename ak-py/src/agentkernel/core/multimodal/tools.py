@@ -1,61 +1,85 @@
 """
 Multimodal tools for LLM to access images/files.
 
-This module provides:
-1. describe_attachment_briefly() - PreHook uses this to get short descriptions
-2. get_attachments - Function-decorated tool that LLM can call
-
-The get_attachments tool uses AuxiliaryCache to access session data,
-making it framework-agnostic (works with OpenAI SDK, ADK, etc.)
 """
 
+import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING
+
+import litellm
+
+from ..config import AKConfig
+from .storage import get_attachment_data
 
 _log = logging.getLogger(__name__)
 
 
-def get_attachments(attachment_ids: list[str]) -> list[dict]:
+def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
     """
-    Get actual file/image data for the specified attachment IDs.
+    Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
-    Use this when you need to analyze files or images in detail.
-    You must provide attachment IDs from the available list.
-
-    :param attachment_ids: List of attachment IDs to retrieve (e.g., ['abc123', 'def456'])
-    :return: List of attachment data dictionaries with id, type, data (base64), mime_type
+    :param attachment_ids: List of attachment IDs to analyze
+    :param prompt: The question/prompt for analyzing the attachments
+    :return: Only the LLM analysis response text
     """
     if not attachment_ids:
-        return []
+        return "No attachments provided"
 
     try:
-        from ..runtime import AuxiliaryCache
-        from .storage import get_attachment_data
+        from ..base import Session
+        from ..runtime import Runtime
 
-        # Use AuxiliaryCache to access session's non-volatile cache
-        nv_cache = AuxiliaryCache.get_non_volatile_cache()
-
-        # Call storage facade with direct cache (session is None in this context)
+        # Get session and cache
+        session_id = Session.get_current_session_id()
+        session = Runtime.current().sessions().load(session_id)
+        nv_cache = session.get_non_volatile_cache()
         attachments = get_attachment_data(session=None, cache=nv_cache, attachment_ids=attachment_ids)
 
-        result = []
-        for att in attachments:
-            result.append(
-                {
-                    "id": att.id,
-                    "type": att.type,
-                    "name": att.name,
-                    "mime_type": att.mime_type,
-                    "data": att.data,  # Base64 encoded
-                }
-            )
-            _log.debug(f"Retrieved attachment: {att.id}")
+        if not attachments:
+            return "No attachments found"
 
-        return result
+        # Get API key
+        api_key = os.getenv("OPENAI_API_KEY")
+        config = AKConfig.get()
+        if hasattr(config, "openai") and config.openai.api_key:
+            api_key = config.openai.api_key
+
+        if not api_key:
+            return "Error: Missing OpenAI API Key"
+
+        # Build content with all attachments and prompt
+        content = [{"type": "text", "text": prompt}]
+
+        for att in attachments:
+            if att.mime_type.startswith("image/"):
+                content.append({"type": "image_url", "image_url": {"url": f"data:{att.mime_type};base64,{att.data}"}})
+            elif att.mime_type.startswith("application/pdf"):
+                content.append(
+                    {
+                        "type": "file",
+                        "file": {
+                            "filename": att.name or "document.pdf",
+                            "file_data": f"data:application/pdf;base64,{att.data}",
+                        },
+                    }
+                )
+            else:
+                content.append({"type": "text", "text": f"\n[Document: {att.name} ({att.mime_type})]\n"})
+
+        # Use model from config
+        model_name = getattr(config.multimodal, "model", "gpt-4o")
+        response = litellm.completion(
+            model=model_name,
+            api_key=api_key,
+            messages=[{"role": "user", "content": content}],
+        )
+        return response.choices[0].message.content.strip()
 
     except Exception as e:
-        _log.error(f"Error retrieving images: {e}")
-        return [{"error": str(e)}]
+        _log.error(f"Error analyzing attachments: {e}")
+        return f"Error: {str(e)}"
 
 
 async def describe_attachment_briefly(
@@ -75,7 +99,6 @@ async def describe_attachment_briefly(
         return "No data"
 
     try:
-
         import os
 
         import litellm
@@ -91,10 +114,12 @@ async def describe_attachment_briefly(
         if not api_key:
             return "Attachment (Description unavailable: Missing API Key)"
 
+        model_name = getattr(config.multimodal, "model", "gpt-4o")
+
         if mime_type.startswith("image/"):
             # Use Vision model for images via LiteLLM
             response = await litellm.acompletion(
-                model="gpt-4o",
+                model=model_name,
                 api_key=api_key,
                 messages=[
                     {
@@ -113,9 +138,33 @@ async def describe_attachment_briefly(
             description = response.choices[0].message.content.strip()
             _log.debug(f"Generated attachment description: {description}")
             return description
+
+        elif mime_type.startswith("application/pdf"):
+            resp = await litellm.acompletion(
+                model=model_name,
+                api_key=api_key,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Describe this PDF in one short sentence (max 20 words). Be specific."},
+                            {
+                                "type": "file",
+                                "file": {
+                                    "filename": "document.pdf",
+                                    "file_data": f"data:application/pdf;base64,{data}",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=50,
+            )
+            return resp.choices[0].message.content.strip()
+
         else:
-            # For non-images (PDFs, docs), return directive description to force tool usage
-            return f"File ({mime_type}) - Content not currently visible. Use get_attachments to analyze."
+
+            return f"File ({mime_type}) - Content not currently visible. Use analyis_attachments to analyze."
 
     except ImportError:
         _log.error("LiteLLM not installed. Cannot describe attachment.")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
-from agents import Agent, Runner
+from agents import Agent, Runner, function_tool
 from agents.memory.session import SessionABC
 
 from agentkernel.core.model import (
@@ -21,6 +21,7 @@ from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
+from ...core.multimodal import analyis_attachments
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -33,6 +34,7 @@ class OpenAISession(SessionABC):
 
     def __init__(self):
         """
+
         Initializes an OpenAISession instance.
         """
         self._items = []
@@ -238,12 +240,8 @@ class OpenAIAgent(BaseAgent):
         """
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
-            from agents import function_tool
-
-            from ...core.multimodal import get_attachments
-
-            get_attachments_tool = function_tool(get_attachments)
-            self.attach_tool(get_attachments_tool)
+            analyis_attachments_tool = function_tool(analyis_attachments)
+            self.attach_tool(analyis_attachments_tool)
 
 
 class OpenAIModule(Module):
