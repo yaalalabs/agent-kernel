@@ -51,7 +51,7 @@ def run_api_test(path: str) -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
         cwd=path,
         description=f"Testing {path}"
     )
@@ -80,7 +80,7 @@ def run_memory_test(path: str) -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
         cwd=path,
         description=f"Testing {path}"
     )
@@ -109,7 +109,7 @@ def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
         cwd=path,
         description=f"Testing {path}"
     )

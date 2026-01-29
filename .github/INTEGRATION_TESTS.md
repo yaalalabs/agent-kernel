@@ -69,7 +69,7 @@ python .github/scripts/run_single_test.py --type api --path examples/api/openai 
 python .github/scripts/run_single_test.py --type aws-serverless --path examples/aws-serverless/openai --action destroy
 ```
 
-### 4. Configuration Validator
+### 5. Configuration Validator
 **Location:** [`.github/scripts/validate_integration_config.py`](.github/scripts/validate_integration_config.py)
 
 Validates the configuration file for:

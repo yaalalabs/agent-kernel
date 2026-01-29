@@ -17,9 +17,8 @@ nightly:
     - type: api
       path: examples/api/instagram
     - type: api
-
-    # Memory options
       path: examples/api/gmail
+    # Memory options
     - type: memory
       path: examples/memory/redis
     - type: memory
