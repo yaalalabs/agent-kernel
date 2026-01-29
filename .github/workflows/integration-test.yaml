@@ -2,6 +2,7 @@ name: Nightly Integration Tests
 
 permissions:
   contents: read
+  id-token: write  # Required for OIDC authentication with AWS
 
 on:
   # Nightly build - runs daily at 2 AM UTC

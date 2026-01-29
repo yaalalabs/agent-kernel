@@ -2,6 +2,7 @@ name: Weekly Integration Tests
 
 permissions:
   contents: read
+  id-token: write  # Required for OIDC authentication with AWS
 
 on:
   # Weekly build - runs every Sunday at 3 AM UTC

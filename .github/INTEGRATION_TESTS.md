@@ -26,7 +26,7 @@ Defines which tests run in nightly vs weekly tiers and their execution order. Th
 **Location:** [`.github/workflows/integration-test-weekly.yaml`](.github/workflows/integration-test-weekly.yaml)
 
 - **Schedule:** Every Sunday at 3 AM UTC (`0 3 * * 0`)
-- **Behavior:** Full lifecycle testing - destroys all AWS resources first (in reverse order), then deploys and tests each project
+- **Behavior:** Full lifecycle testing - destroys all AWS resources first, then deploys and tests each project
 - **Manual Trigger:** Available via GitHub Actions UI
 
 ### 3. Matrix Generator

@@ -19,7 +19,7 @@ def run_command(command: list[str], cwd: str = None, description: str = "") -> b
         print(f"Directory: {cwd or 'current'}")
         print(f"{'='*80}\n")
         
-        result = subprocess.run(
+        subprocess.run(
             command,
             cwd=cwd,
             check=True,
