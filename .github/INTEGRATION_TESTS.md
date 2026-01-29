@@ -29,7 +29,27 @@ Defines which tests run in nightly vs weekly tiers and their execution order. Th
 - **Behavior:** Full lifecycle testing - destroys all AWS resources first (in reverse order), then deploys and tests each project
 - **Manual Trigger:** Available via GitHub Actions UI
 
-### 3. Test Runner Script
+### 3. Matrix Generator
+**Location:** [`.github/scripts/generate_test_matrix.py`](.github/scripts/generate_test_matrix.py)
+
+Generates test matrices for GitHub Actions workflows from the configuration file.
+
+**Features:**
+- Generates matrices for both nightly and weekly tiers
+- Nightly: Excludes `aws-serverless/openai` (runs separately)
+- Weekly: Generates both full test matrix and AWS-only matrix
+- Output formats: JSON or GitHub Actions format
+
+**Usage:**
+```bash
+# Nightly matrix (JSON format)
+python3 .github/scripts/generate_test_matrix.py --tier nightly --format json
+
+# Weekly matrices (GitHub format)
+python3 .github/scripts/generate_test_matrix.py --tier weekly --format github
+```
+
+### 4. Test Runner Script
 **Location:** [`.github/scripts/run_single_test.py`](.github/scripts/run_single_test.py)
 
 Python script that runs a single test. Used by the parallel GitHub Actions jobs.

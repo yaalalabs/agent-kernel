@@ -21,39 +21,7 @@ jobs:
       - name: Generate test matrices
         id: set-matrix
         run: |
-          # Read config and generate matrices
-          python3 -c "
-          import yaml
-          import json
-          
-          with open('.github/integration-test-config.yaml', 'r') as f:
-              config = yaml.safe_load(f)
-          
-          tests = config['weekly']['tests']
-          matrix_tests = []
-          aws_tests = []
-          
-          for idx, test in enumerate(tests):
-              matrix_tests.append({
-                  'id': idx,
-                  'type': test['type'],
-                  'path': test['path'],
-                  'deploy_dir': test.get('deploy_dir', 'deploy')
-              })
-              
-              # Collect AWS tests for destruction phase
-              if test['type'] in ['aws-containerized', 'aws-serverless']:
-                  aws_tests.append({
-                      'type': test['type'],
-                      'path': test['path'],
-                      'deploy_dir': test.get('deploy_dir', 'deploy')
-                  })
-          
-          print('matrix=' + json.dumps({'include': matrix_tests}))
-          print('aws-tests=' + json.dumps(aws_tests))
-          " > matrices.txt
-          
-          cat matrices.txt >> $GITHUB_OUTPUT
+          python3 .github/scripts/generate_test_matrix.py --tier weekly --format github >> $GITHUB_OUTPUT
 
   build-ak-py:
     runs-on: ubuntu-latest

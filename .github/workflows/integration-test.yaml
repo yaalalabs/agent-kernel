@@ -20,32 +20,7 @@ jobs:
       - name: Generate test matrix
         id: set-matrix
         run: |
-          # Read config and generate matrix, excluding aws-serverless/openai
-          python3 -c "
-          import yaml
-          import json
-          
-          with open('.github/integration-test-config.yaml', 'r') as f:
-              config = yaml.safe_load(f)
-          
-          tests = config['nightly']['tests']
-          matrix_tests = []
-          
-          for idx, test in enumerate(tests):
-              # Skip aws-serverless/openai as it runs first separately
-              if test['path'] == 'examples/aws-serverless/openai':
-                  continue
-              matrix_tests.append({
-                  'id': idx,
-                  'type': test['type'],
-                  'path': test['path'],
-                  'deploy_dir': test.get('deploy_dir', 'deploy')
-              })
-          
-          print(json.dumps({'include': matrix_tests}))
-          " > matrix.json
-          
-          echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
+          python3 .github/scripts/generate_test_matrix.py --tier nightly --format github >> $GITHUB_OUTPUT
 
   build-ak-py:
     runs-on: ubuntu-latest
