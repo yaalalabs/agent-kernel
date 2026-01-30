@@ -104,8 +104,12 @@ class Session:
         :raises: Any exceptions that may occur during lock acquisition or session setting.
         """
         await self._lock.acquire()
-        self._token = Session.current_session.set(self)
-        return self
+        try:
+            self._token = Session.current_session.set(self)
+            return self
+        except Exception:
+            self._lock.release()
+            raise
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """
