@@ -16,9 +16,8 @@ resource "azurerm_api_management" "apim" {
   virtual_network_type = "External"
   tags = var.tags
 
-  depends_on = [
-    azurerm_subnet_network_security_group_association.shared_subnet_nsg_assoc
-  ]
+  depends_on = [ azurerm_subnet_network_security_group_association.shared_subnet_nsg_assoc ]
+
 }
 
 # Create Private DNS Zone for Container Apps
@@ -441,4 +440,7 @@ resource "azurerm_network_security_rule" "allow_internet_outbound" {
 resource "azurerm_subnet_network_security_group_association" "shared_subnet_nsg_assoc" {
   subnet_id                 = local.subnet_ids
   network_security_group_id = azurerm_network_security_group.shared_nsg.id
+
+  depends_on = [ azurerm_network_security_rule.allow_http_internet, azurerm_network_security_rule.allow_https_internet, azurerm_network_security_rule.allow_internet_outbound, azurerm_network_security_rule.allow_vnet_inbound, azurerm_network_security_rule.allow_vnet_outbound, azurerm_network_security_rule.apim_management, azurerm_network_security_rule.apim_outbound_monitor, azurerm_network_security_rule.apim_outbound_sql, azurerm_network_security_rule.apim_outbound_storage,  ]
+
 }
