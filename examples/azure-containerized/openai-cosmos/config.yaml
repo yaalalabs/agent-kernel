@@ -1,0 +1,5 @@
+debug: true
+session:
+  type: cosmosdb
+  cosmosdb:
+    prefix: "ak:openai:example:"
