@@ -25,7 +25,7 @@ class APITestClient:
             if body is None
             else body
         )
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             resp.raise_for_status()
             data = resp.json()
