@@ -135,37 +135,38 @@ class Runtime:
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
         :return: The result of the agent's execution.
         """
-        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
+        async with session:
+            self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
 
-        pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
-        for hook in pre_hooks:
-            reply = await hook.on_run(session, agent, requests)
-            if isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
-                return reply
+            pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
+            for hook in pre_hooks:
+                reply = await hook.on_run(session, agent, requests)
+                if isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                    self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
+                    return reply
 
-            # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
-            if isinstance(reply, list):
-                for item in reply:
-                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
-                        raise TypeError(
-                            f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
-                        )
-            else:
-                raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
-            requests = reply
+                # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
+                if isinstance(reply, list):
+                    for item in reply:
+                        if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
+                            raise TypeError(
+                                f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
+                            )
+                else:
+                    raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
+                requests = reply
 
-        self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
+            self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
-        reply = await agent.runner.run(agent, session, requests)
+            reply = await agent.runner.run(agent, session, requests)
 
-        post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
-        for hook in post_hooks:
-            reply = await hook.on_run(session, requests, agent, reply)
-            if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
-            self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
-        return reply
+            post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
+            for hook in post_hooks:
+                reply = await hook.on_run(session, requests, agent, reply)
+                if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                    raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
+                self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
+            return reply
 
     def sessions(self) -> SessionStore:
         """
@@ -208,27 +209,23 @@ class AuxiliaryCache:
     def get_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
         Retrieves the volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the volatile cache for. If not provided, the current context is used to find the session
+        :param session_id: The session to retrieve the volatile cache for. If not provided, the current session is used to find the session
         :return: The volatile key-value cache.
         """
-        if session_id is None:
-            session_id = Session.get_current_session_id()
+        session = Runtime.current().sessions().load(session_id) if session_id else Session.current()
+        if session is None:
+            raise Exception("No current or matching session available to retrieve volatile cache.")
 
-        if session_id is None or session_id == "":
-            raise Exception("No current session context available to retrieve volatile cache.")
-
-        return Runtime.current().sessions().load(session_id).get_volatile_cache()
+        return session.get_volatile_cache()
 
     @staticmethod
     def get_non_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
         Retrieves the non-volatile key-value cache associated with the provided session.
-        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current context is used to find the session
+        :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current session is used to find the session
         :return: The non-volatile key-value cache.
         """
-        if session_id is None:
-            session_id = Session.get_current_session_id()
-
-        if session_id is None or session_id == "":
-            raise Exception("No current session context available to retrieve non-volatile cache.")
-        return Runtime.current().sessions().load(session_id).get_non_volatile_cache()
+        session = Runtime.current().sessions().load(session_id) if session_id else Session.current()
+        if session is None:
+            raise Exception("No current or matching session available to retrieve non-volatile cache.")
+        return session.get_non_volatile_cache()

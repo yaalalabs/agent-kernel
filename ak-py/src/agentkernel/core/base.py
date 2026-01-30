@@ -1,14 +1,16 @@
+import asyncio
 import contextvars
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, List
+from enum import Enum
+from typing import Any, List, Self
 
-from ..core.hooks import PostHook, PreHook
+from deprecated import deprecated
+
 from .config import AKConfig
+from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
-
-current_session = contextvars.ContextVar("session_id", default="")
 
 
 class Session:
@@ -19,8 +21,8 @@ class Session:
     allowing the runtime to track and share state across multiple related agent logic invocations.
 
     Sessions may be volatile (meaning that they are not persisted) or durable (meaning that they
-    are persisted and are available across multiple invocations of the runtime). This is governed by
-    the runtime configuration.
+    are persisted and are available across multiple instantiations of the runtime). This is governed
+    by the runtime configuration.
 
     Session class stores framework-specific session data objects in a key-value store, allowing
     different agent frameworks to store and retrieve their own session data without interfering with
@@ -32,46 +34,85 @@ class Session:
     agent context but needs to be retained across multiple interactions within the same session.
     """
 
-    VOLATILE_CACHE_KEY = "v_cache"
-    NON_VOLATILE_CACHE_KEY = "nv_cache"
+    class Keys(Enum):
+        """
+        Pre-defined session data keys for caches.
+        """
+
+        VOLATILE_CACHE = "v_cache"
+        NON_VOLATILE_CACHE = "nv_cache"
+
+    # deprecated(version="0.2.12", reason="Use Session.Keys.VOLATILE_CACHE.value instead.")
+    VOLATILE_CACHE_KEY = Keys.VOLATILE_CACHE.value
+
+    # deprecated(version="0.2.12", reason="Use Session.Keys.NON_VOLATILE_CACHE.value instead.")
+    NON_VOLATILE_CACHE_KEY = Keys.NON_VOLATILE_CACHE.value
+
+    current_session: contextvars.ContextVar["Session"] = contextvars.ContextVar("current_session", default=None)
 
     @classmethod
+    def current(cls) -> Self | None:
+        """
+        Returns the current session.
+        :return: The current Session instance.
+        """
+        return cls.current_session.get()
+
+    @classmethod
+    @deprecated(version="0.2.12", reason="Use Session.current() instead.")
     def get_current_session_id(cls) -> str:
         """
         Returns the current session identifier from the context variable.
         :return: The current session identifier.
         """
-        return current_session.get()
-
-    def get_volatile_cache(self) -> KeyValueCache:
-        """
-        Returns the volatile key-value cache associated with this session.
-        :return: The volatile KeyValueCache instance.
-        """
-        return self.get(self.VOLATILE_CACHE_KEY)
-
-    def get_non_volatile_cache(self) -> KeyValueCache:
-        """
-        Returns the non-volatile key-value cache associated with this session.
-        :return: The non-volatile KeyValueCache instance.
-        """
-        return self.get(self.NON_VOLATILE_CACHE_KEY)
+        session = cls.current()
+        return session.id if session else ""
 
     def __init__(self, id: str):
         """
         Initializes a Session instance.
         :param id: Unique identifier for the session.
         """
-        self._log = logging.getLogger("ak.core.session")
+        self._log = logging.getLogger(f"ak.core.session [{id}]")
         self._id = id
         self._data = {}
+        self._lock = asyncio.Lock()
 
         # Pre-initialize key-value caches to be used by application code
         # which will not be part of the agent context.
-        self.set(self.VOLATILE_CACHE_KEY, KeyValueCache())
-        self.set(self.NON_VOLATILE_CACHE_KEY, KeyValueCache())
+        self.set(Session.Keys.VOLATILE_CACHE.value, KeyValueCache())
+        self.set(Session.Keys.NON_VOLATILE_CACHE.value, KeyValueCache())
 
         self._token = None
+
+    def __repr__(self):
+        """
+        Returns a string representation of the Session instance.
+        :return: String representation of the Session.
+        """
+        return f"Session(id={self._id})"
+
+    async def __aenter__(self) -> Self:
+        """
+        Async context manager entry method that acquires a lock and sets the current session.
+        This method is called when entering an async context manager (using 'async with').
+
+        It acquires the internal lock to ensure that the session is used by only one coroutine
+        at a time. It also sets the current session context variable.
+
+        :param self: The Session instance entering the context.
+        :return: The same instance (self) to be used within the async with block.
+        :raises: Any exceptions that may occur during lock acquisition or session setting.
+        """
+        await self._lock.acquire()
+        self._token = Session.current_session.set(self)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._token:
+            Session.current_session.reset(self._token)
+            self._token = None
+        self._lock.release()
 
     @property
     def id(self) -> str:
@@ -89,9 +130,10 @@ class Session:
         if there is no data object with the specified key.
         """
         result = self._data.get(key)
-        self._log.debug(f"Retrieved session {self._id} data object for key {key}: {result}")
+        self._log.debug(f"Retrieved session data object for key {key}: {result}")
         return result
 
+    @deprecated(version="0.2.12", reason="Use get_all() instead.")
     def get_all_keys(self):
         """
         Returns a list of all keys in the session data.
@@ -99,13 +141,38 @@ class Session:
         """
         return self._data.keys()
 
+    def get_all(self, durable: bool = True, volatile: bool = True):
+        """
+        Returns all session data objects.
+        :param durable: Whether to include non-volatile (durable) data objects.
+        :param volatile: Whether to include volatile data objects.
+        :return: Iterator over matching session object key value pairs.
+        """
+        for key, value in self._data.items():
+            if (durable and key != Session.Keys.VOLATILE_CACHE.value) or (volatile and key == Session.Keys.VOLATILE_CACHE.value):
+                yield key, value
+
+    def get_volatile_cache(self) -> KeyValueCache:
+        """
+        Returns the volatile key-value cache associated with this session.
+        :return: The volatile KeyValueCache instance.
+        """
+        return self.get(Session.Keys.VOLATILE_CACHE.value)
+
+    def get_non_volatile_cache(self) -> KeyValueCache:
+        """
+        Returns the non-volatile key-value cache associated with this session.
+        :return: The non-volatile KeyValueCache instance.
+        """
+        return self.get(Session.Keys.NON_VOLATILE_CACHE.value)
+
     def set(self, key: str, value: Any) -> Any:
         """
         Sets a session data object for the specified key.
         :param key: The key of the session data object.
         :param value: The session data object.
         """
-        self._log.debug(f"Setting session {self._id} data object for key {key}: {value}")
+        self._log.debug(f"Setting session data object for key {key}: {value}")
         self._data[key] = value
         return value
 
@@ -115,33 +182,35 @@ class Session:
         :param key: The key of the session data object to be deleted.
         """
         if key in self._data:
-            self._log.debug(f"Deleting session {self._id} data object for key {key}")
+            self._log.debug(f"Deleting session data object for key {key}")
             del self._data[key]
 
     def clear(self) -> None:
         """
         Clears all session data objects.
         """
-        self._log.debug(f"Clearing session {self._id} data objects")
+        self._log.debug(f"Clearing all session data objects")
         self._data = {
-            self.VOLATILE_CACHE_KEY: self.get_volatile_cache(),
-            self.NON_VOLATILE_CACHE_KEY: self.get_non_volatile_cache(),
+            Session.Keys.VOLATILE_CACHE.value: self.get_volatile_cache(),
+            Session.Keys.NON_VOLATILE_CACHE.value: self.get_non_volatile_cache(),
         }
         self.get_volatile_cache().clear()
         self.get_non_volatile_cache().clear()
 
+    @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
     def set_context(self):
         """
         Sets the current session context variable to this session's ID.
         """
-        self._token = current_session.set(self._id)
+        self._token = Session.current_session.set(self)
 
+    @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
     def reset_context(self):
         """
         Resets the current session context variable to the previous value.
         """
         if self._token:
-            current_session.reset(self._token)
+            Session.current_session.reset(self._token)
 
 
 class Runner(ABC):
