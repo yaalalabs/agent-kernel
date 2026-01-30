@@ -201,10 +201,10 @@ module "authorizer_lambda" {
   create_role = false
   lambda_role = aws_iam_role.authorizer_lambda_role.arn
 
-  image_uri              = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
-  local_existing_package = var.package_type == "LocalZip" ? var.authorizer_package_path : null
+  image_uri              = var.authorizer_package_type == "Image" ? module.docker_image[0].docker_image_uri : null
+  local_existing_package = var.authorizer_package_type == "LocalZip" ? var.authorizer_package_path : null
   create_package         = false
-  package_type           = var.package_type == "Image" ? "Image" : "Zip"
+  package_type           = var.authorizer_package_type == "Image" ? "Image" : "Zip"
 
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90

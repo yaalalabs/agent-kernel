@@ -11,6 +11,10 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .handler import AgentRESTRequestHandler, RESTRequestHandler
-from .http import RESTAPI
 from .auth import AuthValidator, ValidationContext, ValidationResult
+try:
+    # AuthValidator does not need these, these need fastapi and other libraries which are not available in AuthValidator as it doesn't need them
+    from .http import RESTAPI
+    from .handler import AgentRESTRequestHandler, RESTRequestHandler
+except ImportError:
+    pass

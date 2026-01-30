@@ -19,5 +19,16 @@ create_deployment_package() {
 
 create_deployment_package $1
 
+# Create auth deployment package
+echo "Creating auth deployment package..."
+pushd ../auth_deployment
+if [[ ${1-} == "local" ]]; then
+    ./create_auth_package.sh local
+else
+    ./create_auth_package.sh
+fi
+popd || exit 1
+
+
 terraform init
 terraform apply

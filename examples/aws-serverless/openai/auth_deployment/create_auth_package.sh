@@ -5,20 +5,16 @@ create_auth_deployment_package() {
     # pushd ../ >/dev/null
 
     rm -rf auth_dist auth_dist.zip
-    mkdir -p auth_dist/data
-
-    uv export --no-hashes | grep -v "^agentkernel" > requirements.txt
+    mkdir -p auth_dist
 
     if [[ ${1-} != "local" ]]; then
-        # uv pip install -r requirements.txt --target=auth_dist/data
-        uv pip install agentkernel[api,aws] --target=auth_dist/data
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws] --target=auth_dist
     else
-        # uv pip install -r requirements.txt --target=auth_dist/data --find-links ../../../../ak-py/dist
-        uv pip install --force-reinstall --no-deps agentkernel[api,deployment] --target=auth_dist/data --find-links ../../../../ak-py/dist
-        # uv pip install --force-reinstall --no-deps agentkernel[api,aws] --target=auth_dist/data
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws] --target=auth_dist --find-links ../../../../ak-py/dist
     fi
+    uv pip install -r requirements.txt --target=auth_dist
 
-    cp -r auth_lambda.py auth_dist/data
+    cp -r auth_lambda.py auth_dist/
     # popd >/dev/null
 
     # cp Dockerfile ./auth_dist/

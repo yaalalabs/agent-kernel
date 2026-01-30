@@ -53,7 +53,8 @@ resource "aws_api_gateway_method" "endpoint" {
       aws_api_gateway_resource.main[each.value.mainpath].id
   )
   http_method  = each.value.method
-  authorization = "NONE"
+  authorization = var.authorizer_handler_path != null ? "CUSTOM" : "NONE"
+  authorizer_id = var.authorizer_handler_path != null ? aws_api_gateway_authorizer.lambda_authorizer.id : null
 }
 
 resource "aws_api_gateway_integration" "endpoint" {
@@ -200,7 +201,7 @@ resource "aws_api_gateway_authorizer" "lambda_authorizer" {
   authorizer_credentials = null
 
   type = "REQUEST"
-
+  identity_source        = "method.request.header.Authorization"
   authorizer_result_ttl_in_seconds = var.authorizer_result_ttl_in_seconds
 }
 

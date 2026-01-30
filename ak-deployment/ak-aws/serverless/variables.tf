@@ -212,6 +212,12 @@ variable "authorizer_result_ttl_in_seconds" {
   default     = 150
 }
 
+variable "authorizer_package_type" {
+  description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
+  type        = string
+  default     = "LocalZip"
+}
+
 
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
