@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 
 from agentkernel.core.base import Session
@@ -93,3 +94,22 @@ async def test_current_session():
     async with session:
         assert Session.current() == session
     assert Session.current() is None
+
+
+@pytest.mark.asyncio
+async def test_session_serial_access():
+    session = Session("test-session")
+    session.set("key", 0)
+
+    async def update_session(pre, val, timeout):
+        async with session:
+            assert pre == session.get("key")
+            session.set("key", val)
+            await asyncio.sleep(timeout)
+            assert val == session.get("key")
+
+    await asyncio.gather(
+        update_session(0, 1, 0.1),
+        update_session(1, 2, 0.05),
+        update_session(2, 3, 0.01),
+    )
