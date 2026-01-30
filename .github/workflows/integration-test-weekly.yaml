@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml
       
+      - name: Validate integration test configuration
+        run: python3 .github/scripts/validate_integration_config.py
+      
       - name: Generate test matrices
         id: set-matrix
         run: |
@@ -98,6 +101,10 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
+
+      - name: Inject dependencies
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Deploy, Test, and Destroy - ${{ matrix.path }}
         env:
@@ -169,6 +176,9 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
+
+      - name: Inject dependencies
+        run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Destroy, Deploy, and Test ${{ fromJson(needs.setup.outputs.deployment-base).path }}
         env:
