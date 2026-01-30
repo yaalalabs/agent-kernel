@@ -79,11 +79,11 @@ def test_session_clear():
 
 def test_current_session_deprecated_api():
     session = Session("test-session")
-    assert Session.get_current_session_id() is ""
+    assert Session.get_current_session_id() == ""
     session.set_context()
     assert Session.get_current_session_id() == "test-session"
     session.reset_context()
-    assert Session.get_current_session_id() is ""
+    assert Session.get_current_session_id() == ""
 
 
 @pytest.mark.asyncio

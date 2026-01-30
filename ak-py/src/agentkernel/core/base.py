@@ -109,10 +109,13 @@ class Session:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        if self._token:
-            Session.current_session.reset(self._token)
+        try:
+            if self._token:
+                Session.current_session.reset(self._token)
+        finally:
             self._token = None
-        self._lock.release()
+            if self._lock.locked():
+                self._lock.release()
 
     @property
     def id(self) -> str:
@@ -211,6 +214,7 @@ class Session:
         """
         if self._token:
             Session.current_session.reset(self._token)
+            self._token = None
 
 
 class Runner(ABC):

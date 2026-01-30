@@ -1,6 +1,6 @@
 import pytest
 
-from agentkernel import Agent, Runner, Session
+from agentkernel import Agent, Runner
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
