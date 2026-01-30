@@ -165,8 +165,12 @@ class MultimodalPreHookFactory:
 
     @staticmethod
     def get() -> PreHook:
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-            return MultimodalPreHook()
-        else:
+        try:
+            config = getattr(AKConfig.get(), "multimodal", None)
+            if config and config.enabled:
+                return MultimodalPreHook()
+            else:
+                return NoOpPreHook()
+        except Exception:
+            
             return NoOpPreHook()
