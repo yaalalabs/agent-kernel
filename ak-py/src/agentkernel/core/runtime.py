@@ -128,6 +128,9 @@ class Runtime:
         """
         Runs the specified agent with the multi-modal requests.
 
+        Note that the volatile cache is cleared after execution, including when the execution is halted by a hook.
+        On successful completion, the session stored is updated.
+
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param requests: The multi-modal inputs are provided to the agent.  It will be submitted to the agent as a single request
@@ -136,37 +139,42 @@ class Runtime:
         :return: The result of the agent's execution.
         """
         async with session:
-            self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
+            try:
+                self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
 
-            pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
-            for hook in pre_hooks:
-                reply = await hook.on_run(session, agent, requests)
-                if isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                    self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
-                    return reply
+                pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
+                for hook in pre_hooks:
+                    reply = await hook.on_run(session, agent, requests)
+                    if isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                        self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
+                        return reply
 
-                # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
-                if isinstance(reply, list):
-                    for item in reply:
-                        if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
-                            raise TypeError(
-                                f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
-                            )
-                else:
-                    raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
-                requests = reply
+                    # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
+                    if isinstance(reply, list):
+                        for item in reply:
+                            if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
+                                raise TypeError(
+                                    f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
+                                )
+                    else:
+                        raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
+                    requests = reply
 
-            self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
+                self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
-            reply = await agent.runner.run(agent, session, requests)
+                reply = await agent.runner.run(agent, session, requests)
 
-            post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
-            for hook in post_hooks:
-                reply = await hook.on_run(session, requests, agent, reply)
-                if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                    raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
-                self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
-            return reply
+                post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
+                for hook in post_hooks:
+                    reply = await hook.on_run(session, requests, agent, reply)
+                    if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                        raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
+                    self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
+
+                self.sessions().store(session)
+                return reply
+            finally:
+                session.get_volatile_cache().clear()
 
     def sessions(self) -> SessionStore:
         """

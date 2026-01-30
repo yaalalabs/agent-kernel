@@ -146,11 +146,8 @@ class AgentService:
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
 
-        with self._session:
-            result = await self._runtime.run(self._agent, self._session, requests)
-            self._runtime.sessions().store(self._session)
-            self._session.get_volatile_cache().clear()
-            return result
+        result = await self._runtime.run(self._agent, self._session, requests)
+        return result
 
     def get_response_session_id(self, session_id: str | None = None) -> str | None:
         """
