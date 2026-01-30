@@ -42,11 +42,11 @@ class Session:
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
 
-    # deprecated(version="0.2.12", reason="Use Session.Keys.VOLATILE_CACHE.value instead.")
-    VOLATILE_CACHE_KEY = Keys.VOLATILE_CACHE.value
+    VOLATILE_CACHE_KEY: str = Keys.VOLATILE_CACHE.value
+    """Deprecated since 0.2.12, use Session.Keys.VOLATILE_CACHE.value instead."""
 
-    # deprecated(version="0.2.12", reason="Use Session.Keys.NON_VOLATILE_CACHE.value instead.")
-    NON_VOLATILE_CACHE_KEY = Keys.NON_VOLATILE_CACHE.value
+    NON_VOLATILE_CACHE_KEY: str = Keys.NON_VOLATILE_CACHE.value
+    """Deprecated since 0.2.12, use Session.Keys.NON_VOLATILE_CACHE.value instead."""
 
     current_session: contextvars.ContextVar["Session"] = contextvars.ContextVar("current_session", default=None)
 
@@ -100,7 +100,6 @@ class Session:
         It acquires the internal lock to ensure that the session is used by only one coroutine
         at a time. It also sets the current session context variable.
 
-        :param self: The Session instance entering the context.
         :return: The same instance (self) to be used within the async with block.
         :raises: Any exceptions that may occur during lock acquisition or session setting.
         """
@@ -109,13 +108,24 @@ class Session:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """
+        Async context manager exit method that releases the lock and resets the current session.
+        This method is called when exiting an async context manager (using 'async with').
+        It releases the internal lock to allow other coroutines to use the session.
+        It also resets the current session context variable to its previous value.
+
+        :param exc_type: The type of exception raised (if any).
+        :param exc_val: The value of the exception raised (if any).
+        :param exc_tb: The traceback of the exception raised (if any).
+        :return: None
+        :raises: Any exceptions that may occur during lock release or session resetting.
+        """
         try:
             if self._token:
                 Session.current_session.reset(self._token)
         finally:
             self._token = None
-            if self._lock.locked():
-                self._lock.release()
+            self._lock.release()
 
     @property
     def id(self) -> str:
@@ -203,7 +213,7 @@ class Session:
     @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
     def set_context(self):
         """
-        Sets the current session context variable to this session's ID.
+        Sets the current session context variable to this session.
         """
         self._token = Session.current_session.set(self)
 
