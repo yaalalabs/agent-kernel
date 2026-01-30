@@ -15,14 +15,19 @@ Template file for Terraform S3 backend configuration with DynamoDB state locking
 This script is NOT automatically injected into projects. You can manually copy it if needed.
 
 ### `inject_dependencies.py`
-Python script that performs two key tasks:
+Python script that performs three key tasks:
 
 1. **Injects backend.tf files**: Generates `backend.tf` from the template with project-specific values and injects it into each project's deploy directory
 
-2. **Modifies main.tf for local development**: Replaces Terraform registry module sources with local relative paths
+2. **Modifies main.tf for local development**: Replaces Terraform registry module sources with local relative paths in example projects
    - Replaces `yaalalabs/ak-serverless/aws` with `../../../../ak-deployment/ak-aws/serverless`
    - Replaces `yaalalabs/ak-containerized/aws` with `../../../../ak-deployment/ak-aws/containerized`
    - Comments out `version` lines since they're not needed for local modules
+
+3. **Modifies state.tf for local development**: Replaces Terraform registry common module sources with local relative paths in module directories
+   - In `ak-deployment/ak-aws/serverless/state.tf` and `ak-deployment/ak-aws/containerized/state.tf`
+   - Replaces `yaalalabs/ak-common/aws//modules/*` with `../common/modules/*`
+   - Comments out `version` lines for local module references
 
 The script reads `.github/integration-test-config.yaml` to identify AWS projects.
 
@@ -39,6 +44,7 @@ python3 scripts/deploy/inject_dependencies.py
 This will:
 - Inject `backend.tf` into all AWS example projects
 - Modify `main.tf` files to use local module sources
+- Modify `state.tf` files in module directories to use local common modules
 
 ### Revert to Registry Modules
 
@@ -51,7 +57,7 @@ python3 scripts/deploy/inject_dependencies.py --revert
 This will:
 - Replace local module paths with registry sources
 - Uncomment `version` lines
-- Restore all `main.tf` files to their original state
+- Restore all `main.tf` and `state.tf` files to their original state
 
 ### Setting Up Backend Infrastructure (Optional)
 
@@ -76,8 +82,9 @@ After running the setup script, update the `backend.tf` file with the same value
 
 ## Notes
 
-- **Both modifications are for local development/CI/CD** - They allow testing with local module code
+- **All modifications are for local development/CI/CD** - They allow testing with local module code instead of published registry versions
 - `backend.tf` files are gitignored and only exist locally after injection
+- `main.tf` and `state.tf` files are tracked in git but modified locally for development - use `--revert` to restore them before committing changes
 - `main.tf` files are tracked in git but can be easily reverted using `--revert` flag
 - The template uses placeholder values that should be customized per environment
 - Each project gets a unique state key based on its path

@@ -5,7 +5,8 @@ Inject dependencies into AWS example projects.
 This script:
 1. Injects backend.tf files for Terraform state management
 2. Modifies main.tf files to use local module sources instead of registry modules
-3. Can revert main.tf changes back to registry modules
+3. Modifies state.tf files in module directories to use local common modules
+4. Can revert all changes back to registry modules
 
 The modifications are intended for local development and CI/CD use.
 """
@@ -16,6 +17,12 @@ import yaml
 import argparse
 from pathlib import Path
 from typing import List, Dict, Set, Tuple
+
+
+MODULE_PATHS = [
+    'ak-deployment/ak-aws/serverless',
+    'ak-deployment/ak-aws/containerized'
+]
 
 
 def load_config(config_path: str) -> Dict:
@@ -171,6 +178,109 @@ def modify_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
     return False
 
 
+def modify_state_tf(state_tf_path: str, module_path: str) -> bool:
+    """
+    Modify state.tf to use local common modules instead of registry.
+    
+    Args:
+        state_tf_path: Path to state.tf file
+        module_path: Path to the module (e.g., ak-deployment/ak-aws/serverless)
+    
+    Returns:
+        True if modifications were made, False otherwise
+    """
+    if not os.path.exists(state_tf_path):
+        return False
+    
+    with open(state_tf_path, 'r') as f:
+        content = f.read()
+    
+    original_content = content
+    
+    # Check if already using local source
+    if 'yaalalabs/ak-common/aws//modules/' not in content:
+        return False
+    
+    # Replace all occurrences of registry common modules with local path
+    # Pattern: source = "yaalalabs/ak-common/aws//modules/vpc"
+    # Replace with: source = "../common/modules/vpc"
+    source_pattern = r'(\s+source\s*=\s*)"yaalalabs/ak-common/aws//modules/([^"]+)"'
+    content = re.sub(source_pattern, r'\1"../common/modules/\2"', content)
+    
+    # Comment out version lines (for common module references)
+    # Pattern: version = "x.x.x" (that comes after a source with ../common)
+    # This is trickier, we need to find version lines that follow ../common source lines
+    lines = content.split('\n')
+    modified_lines = []
+    prev_line_has_common_source = False
+    
+    for line in lines:
+        if '../common/modules/' in line and 'source' in line:
+            prev_line_has_common_source = True
+            modified_lines.append(line)
+        elif prev_line_has_common_source and re.match(r'\s+version\s*=\s*"[^"]*"', line):
+            # Comment out this version line
+            modified_lines.append(re.sub(r'(\s+)(version\s*=\s*"[^"]*")', r'\1# \2  # Commented for local development', line))
+            prev_line_has_common_source = False
+        else:
+            if not re.match(r'\s*$', line):  # Not an empty line
+                prev_line_has_common_source = False
+            modified_lines.append(line)
+    
+    content = '\n'.join(modified_lines)
+    
+    # Only write if changes were made
+    if content != original_content:
+        with open(state_tf_path, 'w') as f:
+            f.write(content)
+        return True
+    
+    return False
+
+
+def revert_state_tf(state_tf_path: str, module_path: str) -> bool:
+    """
+    Revert state.tf back to use registry common modules.
+    
+    Args:
+        state_tf_path: Path to state.tf file
+        module_path: Path to the module (e.g., ak-deployment/ak-aws/serverless)
+    
+    Returns:
+        True if modifications were made, False otherwise
+    """
+    if not os.path.exists(state_tf_path):
+        return False
+    
+    with open(state_tf_path, 'r') as f:
+        content = f.read()
+    
+    original_content = content
+    
+    # Check if currently using local source
+    if '../common/modules/' not in content:
+        return False
+    
+    # Replace local common modules with registry path
+    # Pattern: source = "../common/modules/vpc"
+    # Replace with: source = "yaalalabs/ak-common/aws//modules/vpc"
+    source_pattern = r'(\s+source\s*=\s*)"\.\.\/common\/modules\/([^"]+)"'
+    content = re.sub(source_pattern, r'\1"yaalalabs/ak-common/aws//modules/\2"', content)
+    
+    # Uncomment version lines
+    # Pattern: # version = "x.x.x"  # Commented for local development
+    version_pattern = r'(\s+)# (version\s*=\s*"[^"]*")\s*# Commented for local development'
+    content = re.sub(version_pattern, r'\1\2', content)
+    
+    # Only write if changes were made
+    if content != original_content:
+        with open(state_tf_path, 'w') as f:
+            f.write(content)
+        return True
+    
+    return False
+
+
 def revert_main_tf(main_tf_path: str, project_path: str, project_type: str) -> bool:
     """
     Revert main.tf back to use registry module source.
@@ -234,14 +344,16 @@ def revert_dependencies(
     aws_projects: Set[Tuple[str, str, str]]
 ) -> None:
     """
-    Revert main.tf files back to registry modules.
+    Revert main.tf and state.tf files back to registry modules.
     
     Args:
         workspace_root: Root directory of the workspace
         aws_projects: Set of AWS project tuples (path, deploy_dir, type)
     """
-    module_count = 0
+    main_count = 0
+    state_count = 0
     
+    # Revert example main.tf files
     for project_path, deploy_dir, project_type in sorted(aws_projects):
         full_project_path = os.path.join(workspace_root, project_path)
         deploy_path = os.path.join(full_project_path, deploy_dir)
@@ -254,9 +366,19 @@ def revert_dependencies(
         main_tf_path = os.path.join(deploy_path, "main.tf")
         if revert_main_tf(main_tf_path, project_path, project_type):
             print(f"✅ Reverted main.tf -> {main_tf_path}")
-            module_count += 1
+            main_count += 1
     
-    print(f"\n✨ Successfully reverted main.tf in {module_count} projects")
+    # Revert module state.tf files
+    for module_path in MODULE_PATHS:
+        full_module_path = os.path.join(workspace_root, module_path)
+        state_tf_path = os.path.join(full_module_path, "state.tf")
+        
+        if revert_state_tf(state_tf_path, module_path):
+            print(f"✅ Reverted state.tf -> {state_tf_path}")
+            state_count += 1
+    
+    print(f"\n✨ Successfully reverted main.tf in {main_count} projects")
+    print(f"✨ Successfully reverted state.tf in {state_count} modules")
 
 
 def inject_dependencies(
@@ -265,7 +387,7 @@ def inject_dependencies(
     aws_projects: Set[Tuple[str, str, str]]
 ) -> None:
     """
-    Inject backend.tf and modify main.tf in AWS example projects.
+    Inject backend.tf, modify main.tf in examples, and modify state.tf in modules.
     
     Args:
         workspace_root: Root directory of the workspace
@@ -277,8 +399,10 @@ def inject_dependencies(
         template_content = f.read()
     
     backend_count = 0
-    module_count = 0
+    main_count = 0
+    state_count = 0
     
+    # Process example projects
     for project_path, deploy_dir, project_type in sorted(aws_projects):
         full_project_path = os.path.join(workspace_root, project_path)
         deploy_path = os.path.join(full_project_path, deploy_dir)
@@ -300,10 +424,20 @@ def inject_dependencies(
         main_tf_path = os.path.join(deploy_path, "main.tf")
         if modify_main_tf(main_tf_path, project_path, project_type):
             print(f"✅ Modified main.tf -> {main_tf_path}")
-            module_count += 1
+            main_count += 1
+    
+    # 3. Modify module state.tf files
+    for module_path in MODULE_PATHS:
+        full_module_path = os.path.join(workspace_root, module_path)
+        state_tf_path = os.path.join(full_module_path, "state.tf")
+        
+        if modify_state_tf(state_tf_path, module_path):
+            print(f"✅ Modified state.tf -> {state_tf_path}")
+            state_count += 1
     
     print(f"\n✨ Successfully injected backend.tf into {backend_count} projects")
-    print(f"✨ Successfully modified main.tf in {module_count} projects")
+    print(f"✨ Successfully modified main.tf in {main_count} projects")
+    print(f"✨ Successfully modified state.tf in {state_count} modules")
 
 
 def inject_files(
