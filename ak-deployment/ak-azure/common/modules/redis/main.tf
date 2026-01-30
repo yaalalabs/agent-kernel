@@ -23,6 +23,7 @@ data "azurerm_subnet" "function_subnet" {
 }
 
 resource "azurerm_network_security_rule" "allow_redis_from_function" {
+  count                       = var.create_NSG ? 1 : 0
   name                        = "Allow-Redis-From-Flex"
   priority                    = 100
   direction                   = "Inbound"
@@ -33,12 +34,13 @@ resource "azurerm_network_security_rule" "allow_redis_from_function" {
   destination_address_prefix  = "*"
   destination_port_range      = "*"
   resource_group_name         = data.azurerm_resource_group.current_group.name
-  network_security_group_name = azurerm_network_security_group.redis_nsg.name
+  network_security_group_name = azurerm_network_security_group.redis_nsg[0].name
 }
 
 resource "azurerm_subnet_network_security_group_association" "redis_subnet_nsg_assoc" {
+  count                     = var.create_NSG ? 1 : 0
   subnet_id                 = data.azurerm_subnet.redis_subnet.id
-  network_security_group_id = azurerm_network_security_group.redis_nsg.id
+  network_security_group_id = azurerm_network_security_group.redis_nsg[0].id
 }
 
 resource "azurerm_managed_redis" "redis" {
@@ -50,8 +52,8 @@ resource "azurerm_managed_redis" "redis" {
   public_network_access     = "Disabled"
 
   default_database {
-    client_protocol = "Encrypted"
-    clustering_policy = "NoCluster"
+    client_protocol                    = "Encrypted"
+    clustering_policy                  = "NoCluster"
     access_keys_authentication_enabled = true
   }
   identity {
@@ -61,6 +63,7 @@ resource "azurerm_managed_redis" "redis" {
 }
 
 resource "azurerm_network_security_group" "redis_nsg" {
+  count               = var.create_NSG ? 1 : 0
   name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-nsg"
   location            = data.azurerm_resource_group.current_group.location
   resource_group_name = data.azurerm_resource_group.current_group.name
@@ -83,18 +86,18 @@ resource "azurerm_private_endpoint" "redis" {
     is_manual_connection           = false
   }
   private_dns_zone_group {
-    name = "redis-private-dns-zone-group"
+    name                 = "redis-private-dns-zone-group"
     private_dns_zone_ids = [azurerm_private_dns_zone.redis.id]
   }
-  depends_on = [ azurerm_managed_redis.redis ]
-  tags = var.tags
+  depends_on = [azurerm_managed_redis.redis]
+  tags       = var.tags
 }
 
 # Private DNS Zone for Redis
 resource "azurerm_private_dns_zone" "redis" {
-  name = "privatelink.redis.azure.net"
+  name                = "privatelink.redis.azure.net"
   resource_group_name = data.azurerm_resource_group.current_group.name
-  tags = var.tags
+  tags                = var.tags
 }
 
 # Link DNS Zone to VNet

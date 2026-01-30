@@ -99,3 +99,28 @@ variable "public_network_access_enabled" {
   description = "Enable public network access"
   default     = true
 }
+
+variable "vnet_name" {
+  type        = string
+  description = "VNET Name"
+  default     = null
+}
+
+variable "subnet_id" {
+  type = string
+  description = "The Subnet ID of the private SUBNET"
+  default = null
+  
+}
+
+variable "function_subnet_name" {
+  type = string
+  description = "The Subnet ID of the private SUBNET with the functions"
+  default = null
+}
+
+variable "create_NSG" {
+  type = bool
+  description = "Create NSG for CosmosDB"
+  default = false
+}

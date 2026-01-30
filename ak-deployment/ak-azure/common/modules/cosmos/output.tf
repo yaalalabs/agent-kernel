@@ -46,3 +46,8 @@ output "full_connection_string" {
   description = "Cosmos DB Table API connection string"
   value = "DefaultEndpointsProtocol=https;AccountName=${azurerm_cosmosdb_account.account.name};AccountKey=${azurerm_cosmosdb_account.account.primary_key};TableEndpoint=https://${azurerm_cosmosdb_account.account.name}.table.cosmos.azure.com:443/;"
 }
+
+output "cosmosdb_account_id" {
+  description = "Cosmos DB account ID"
+  value       = azurerm_cosmosdb_account.account.id
+}

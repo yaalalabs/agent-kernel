@@ -1,6 +1,6 @@
 # API Management Service
 resource "azurerm_api_management" "apim" {
-  name                = "${var.product_alias}-${var.env_alias}-apim"
+  name                = "${var.product_alias}-${var.env_alias}-apim-flex"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
   publisher_name      = var.publisher_name
@@ -12,11 +12,6 @@ resource "azurerm_api_management" "apim" {
   }
 
   tags = var.tags
-}
-
-resource "time_sleep" "wait_for_apim" {
-  depends_on      = [azurerm_api_management.apim]
-  create_duration = "5m"
 }
 
 # API within API Management
@@ -31,7 +26,6 @@ resource "azurerm_api_management_api" "rest_api" {
 
   subscription_required = false
 
-  depends_on = [time_sleep.wait_for_apim]
 }
 
 # API Version Set

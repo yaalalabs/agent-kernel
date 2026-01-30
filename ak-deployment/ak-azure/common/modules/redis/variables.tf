@@ -50,3 +50,9 @@ variable "is_production" {
   description = "Is production?"
   default = false
 }
+
+variable "create_NSG" {
+  type = bool
+  description = "Create NSG? this may be handled from else where"
+  default = false
+}

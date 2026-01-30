@@ -4,6 +4,15 @@ data "azurerm_resource_group" "current_group" {
 
 data "azurerm_client_config" "current" {}
 
+data "azurerm_virtual_network" "vnet" {
+  name                = var.vnet_name
+  resource_group_name = data.azurerm_resource_group.current_group.name
+}
+data "azurerm_subnet" "function_subnet" {
+  name                 = var.function_subnet_name
+  virtual_network_name = data.azurerm_virtual_network.vnet.name
+  resource_group_name  = data.azurerm_virtual_network.vnet.resource_group_name
+}
 # Cosmos DB Account (Table API)
 resource "azurerm_cosmosdb_account" "account" {
   name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-cosmos"
@@ -64,4 +73,64 @@ resource "azurerm_cosmosdb_table" "table" {
   }
 
   throughput = var.billing_mode == "PROVISIONED" && var.autoscale_max_throughput == null ? var.provisioned_throughput : null
+}
+
+resource "azurerm_private_dns_zone" "cosmos_table" {
+  name                = "privatelink.table.cosmos.azure.com"
+  resource_group_name = data.azurerm_resource_group.current_group.name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "cosmos_dns_link" {
+  name                  = "cosmos-dns-link"
+  resource_group_name   = data.azurerm_resource_group.current_group.name
+  private_dns_zone_name = azurerm_private_dns_zone.cosmos_table.name
+  virtual_network_id    = data.azurerm_virtual_network.vnet.id
+}
+
+resource "azurerm_private_endpoint" "cosmos_table" {
+  name                = "${var.product_alias}-${var.env_alias}-cosmos-table-pe"
+  location            = data.azurerm_resource_group.current_group.location
+  resource_group_name = data.azurerm_resource_group.current_group.name
+  subnet_id           = var.subnet_id 
+
+  private_service_connection {
+    name                           = "cosmos-table-conn"
+    private_connection_resource_id = azurerm_cosmosdb_account.account.id
+    subresource_names              = ["Table"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "cosmos-dns"
+    private_dns_zone_ids = [azurerm_private_dns_zone.cosmos_table.id]
+  }
+}
+
+resource "azurerm_network_security_group" "cosmos_nsg" {
+  count               = var.create_NSG ? 1 : 0
+  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-cosmos-nsg"
+  location            = data.azurerm_resource_group.current_group.location
+  resource_group_name = data.azurerm_resource_group.current_group.name
+  tags                = var.tags
+}
+
+resource "azurerm_network_security_rule" "allow_cosmos_from_function" {
+  count                       = var.create_NSG ? 1 : 0
+  name                        = "Allow-Cosmos-From-Function"
+  priority                    = 100
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_address_prefix       = data.azurerm_subnet.function_subnet.address_prefix
+  source_port_range           = "*"
+  destination_address_prefix  = "*"
+  destination_port_range      = "*"
+  resource_group_name         = data.azurerm_resource_group.current_group.name
+  network_security_group_name = azurerm_network_security_group.cosmos_nsg[0].name
+}
+
+resource "azurerm_subnet_network_security_group_association" "cosmos_subnet_nsg_assoc" {
+  count                     = var.create_NSG ? 1 : 0
+  subnet_id                 = var.subnet_id
+  network_security_group_id = azurerm_network_security_group.cosmos_nsg[0].id
 }
