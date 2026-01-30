@@ -93,51 +93,6 @@ def run_memory_test(path: str) -> bool:
     )
 
 
-def run_aws_test(path: str, deploy_dir: str = 'deploy') -> bool:
-    """Run AWS example test (deploy and test)."""
-    deploy_path = Path(path) / deploy_dir
-    deploy_script = deploy_path / 'deploy.sh'
-    
-    if not deploy_path.exists():
-        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
-        return True
-    
-    if not deploy_script.exists():
-        print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
-        return True
-    
-    # Set Terraform automation flags for non-interactive CI execution
-    tf_env = {
-        'TF_INPUT': '0',  # Disable interactive prompts
-        'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
-    }
-    
-    # Initialize terraform if needed
-    if not run_command(
-        ['terraform', 'init', '-upgrade'],
-        cwd=str(deploy_path),
-        description=f"Terraform init for {path}",
-        env=tf_env
-    ):
-        return False
-    
-    # Deploy
-    if not run_command(
-        ['./deploy.sh', 'local'],
-        cwd=str(deploy_path),
-        description=f"Deploying {path}",
-        env=tf_env
-    ):
-        return False
-    
-    # Test
-    return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
-        cwd=path,
-        description=f"Testing {path}"
-    )
-
-
 def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
@@ -174,12 +129,88 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
     )
 
 
+def deploy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Deploy AWS resources only (without running tests)."""
+    deploy_path = Path(path) / deploy_dir
+    deploy_script = deploy_path / 'deploy.sh'
+    
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
+    
+    if not deploy_script.exists():
+        print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
+        return True
+    
+    # Set Terraform automation flags for non-interactive CI execution
+    tf_env = {
+        'TF_INPUT': '0',  # Disable interactive prompts
+        'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
+    }
+    
+    # Initialize terraform if needed
+    if not run_command(
+        ['terraform', 'init', '-upgrade'],
+        cwd=str(deploy_path),
+        description=f"Terraform init for {path}",
+        env=tf_env
+    ):
+        return False
+    
+    # Deploy
+    return run_command(
+        ['./deploy.sh', 'local'],
+        cwd=str(deploy_path),
+        description=f"Deploying {path}",
+        env=tf_env
+    )
+
+
+def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Test an already deployed AWS resource."""
+    deploy_path = Path(path) / deploy_dir
+    
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
+    
+    # Get agent_invoke_url terraform output and set AK_TEST_ENDPOINT
+    try:
+        print(f"\n{'='*80}")
+        print(f"Retrieving agent_invoke_url terraform output")
+        print(f"{'='*80}\n")
+        
+        result = subprocess.run(
+            ['terraform', 'output', '-raw', 'agent_invoke_url'],
+            cwd=str(deploy_path),
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        agent_invoke_url = result.stdout.strip()
+        print(f"✅ agent_invoke_url: {agent_invoke_url}")
+        
+        # Set as environment variable for test
+        test_env = {'AK_TEST_ENDPOINT': agent_invoke_url}
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️  Could not retrieve agent_invoke_url output: {e}")
+        test_env = {}
+    
+    # Test
+    return run_command(
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        cwd=path,
+        description=f"Testing {path}",
+        env=test_env
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description='Run a single integration test')
     parser.add_argument('--type', required=True, choices=['api', 'memory', 'aws-containerized', 'aws-serverless'])
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
-    parser.add_argument('--action', choices=['test', 'destroy'], default='test', help='Action to perform')
+    parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
     
     args = parser.parse_args()
     
@@ -187,7 +218,13 @@ def main():
     
     success = False
     
-    if args.action == 'destroy':
+    if args.action == 'deploy':
+        if args.type in ['aws-containerized', 'aws-serverless']:
+            success = deploy_aws_resources(args.path, args.deploy_dir)
+        else:
+            print(f"⚠️  Deploy action not applicable for type: {args.type}")
+            success = True
+    elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless']:
             success = destroy_aws_resources(args.path, args.deploy_dir)
         else:
@@ -199,7 +236,7 @@ def main():
         elif args.type == 'memory':
             success = run_memory_test(args.path)
         elif args.type in ['aws-containerized', 'aws-serverless']:
-            success = run_aws_test(args.path, args.deploy_dir)
+            success = test_aws_deployment(args.path, args.deploy_dir)
     
     if success:
         print(f"\n✅ SUCCESS: {args.path}")

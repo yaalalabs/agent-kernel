@@ -105,6 +105,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          # Deploy
+          python .github/scripts/run_single_test.py \
+            --type aws-serverless \
+            --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action deploy
+          
+          # Test
           python .github/scripts/run_single_test.py \
             --type aws-serverless \
             --path examples/aws-serverless/openai \
@@ -170,6 +178,16 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          # Deploy (for AWS types)
+          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+          fi
+          
+          # Test
           python .github/scripts/run_single_test.py \
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \
