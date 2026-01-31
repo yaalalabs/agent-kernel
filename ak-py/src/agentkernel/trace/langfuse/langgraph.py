@@ -32,9 +32,7 @@ class LangFuseLangGraph(LangGraphRunner):
         """
         prompt = ""
         for req in requests:
-            if isinstance(
-                req, AgentRequestAny
-            ):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                 continue
             if isinstance(req, AgentRequestText):
                 prompt = prompt + "\n" + req.text if prompt else req.text
@@ -48,9 +46,7 @@ class LangFuseLangGraph(LangGraphRunner):
             return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
         with self._client.start_as_current_span(name="Agent Kernel LangGraph") as span:
-            session_config = LangGraphSessionConfigModel(
-                configurable=LangGraphSessionConfigurable(thread_id=session.id)
-            )
+            session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
             config = session_config.model_dump()
             config["callbacks"] = [self._callback_handler]
             agent.agent.checkpointer = self._session(session).checkpointer

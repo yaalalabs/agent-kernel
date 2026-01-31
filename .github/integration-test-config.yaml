@@ -1,0 +1,80 @@
+# Integration Test Configuration
+# This file defines which tests run on nightly vs weekly schedules and their execution order
+
+nightly:
+  # Tests that run daily
+  # For AWS projects, only deploy.sh and pytest are executed (no terraform destroy)
+  tests:
+    # Social integrations
+    - type: api
+      path: examples/api/slack
+    - type: api
+      path: examples/api/telegram
+    - type: api
+      path: examples/api/messenger
+    - type: api
+      path: examples/api/whatsapp
+    - type: api
+      path: examples/api/instagram
+    - type: api
+      path: examples/api/gmail
+    # Memory options
+    - type: memory
+      path: examples/memory/redis
+    - type: memory
+      path: examples/memory/dynamodb
+
+    # AWS Containerized
+    - type: aws-containerized
+      path: examples/aws-containerized/adk
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-dynamodb
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/crewai
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/mcp/multi
+      deploy_dir: deploy
+
+    # AWS Serverless
+    - type: aws-serverless
+      path: examples/aws-serverless/adk
+      deploy_dir: deploy
+    - type: aws-serverless
+      path: examples/aws-serverless/crewai
+      deploy_dir: deploy
+    - type: aws-serverless
+      path: examples/aws-serverless/langgraph
+      deploy_dir: deploy
+
+weekly:
+  # Tests that run once a week
+  # For AWS projects, terraform destroy is called first, 
+  # then each project is deployed and tested
+  tests:
+    # AWS Containerized
+    - type: aws-containerized
+      path: examples/aws-containerized/adk
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-dynamodb
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/crewai
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/mcp/multi
+      deploy_dir: deploy
+    
+    # AWS Serverless
+    - type: aws-serverless
+      path: examples/aws-serverless/adk
+      deploy_dir: deploy
+    - type: aws-serverless
+      path: examples/aws-serverless/crewai
+      deploy_dir: deploy
+    - type: aws-serverless
+      path: examples/aws-serverless/langgraph
+      deploy_dir: deploy

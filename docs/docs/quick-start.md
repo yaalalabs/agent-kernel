@@ -356,7 +356,7 @@ api:
 Test it:
 
 ```bash
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"agent": "general", "prompt": "Hello!"}'
 ```

@@ -1,7 +1,7 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
-  version = "0.2.10"
+  version = "0.2.11"
 
   # Basic lambda configuration
   product_alias        = var.product_alias
@@ -10,11 +10,29 @@ module "serverless_agents" {
   function_name        = "openai-agents"
   handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist.zip"
+  package_path         = "../dist"
+  package_type         = "Image"
   memory_size          = 256
   create_redis_cluster = true
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region
+
+  # To override the default API version, API base path, and agent endpoint
+  # api_version    = "v2"
+  # api_base_path  = "api-new"
+  # agent_endpoint = "chat-new"
+
+  # Defining custom API endpoints
+  gateway_endpoints = [
+    {
+      path           = "app",
+      method         = "GET",
+    },
+    {
+      path           = "app_info",
+      method         = "POST",
+    }
+  ] 
 
   # Environment variables passed to lambda
   environment_variables = {

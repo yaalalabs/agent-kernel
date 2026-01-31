@@ -32,7 +32,7 @@ class APITestClient:
             "agent": agent,
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{self.url}/run", json=payload)
+            resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", "")

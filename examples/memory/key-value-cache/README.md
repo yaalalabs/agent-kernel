@@ -63,12 +63,12 @@ uv run app.py
 ### Test with curl
 ```bash
 # Senior assistant (with RAG context in cache)
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"agent": "senior_assistant", "session_id": "test-123", "prompt": "What is AcmeXXLabs?"}'
 
 # Junior assistant (no cached context)
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"agent": "junior_assistant", "session_id": "test-456", "prompt": "What is AcmeXXLabs?"}'
 ```

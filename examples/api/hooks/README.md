@@ -83,7 +83,7 @@ The server will start on `http://localhost:8000`.
 
 #### Test RAG Context Injection
 ```bash
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "qa_assistant",
@@ -96,7 +96,7 @@ Expected: Response includes context from the knowledge base about Agent Kernel, 
 
 #### Test Guard Rail Blocking
 ```bash
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "qa_assistant",
@@ -109,7 +109,7 @@ Expected: Request blocked with polite rejection message.
 
 #### Test Safe Query
 ```bash
-curl -X POST http://localhost:8000/run \
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "qa_assistant",

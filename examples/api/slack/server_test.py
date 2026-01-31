@@ -44,7 +44,7 @@ async def test_slack_agent(http_client):
     response = await http_client.send("/health", method="get")
 
     assert response == {"status": "ok"}
-    # response = await http_client.send("/agents", method="get")
+    # response = await http_client.send("/api/v1/agents", method="get")
     # assert response == {'agents': ['general']}
 
     # This will raise HTTPStatusError because the token is invalid & Slack bolts lib is handling the request

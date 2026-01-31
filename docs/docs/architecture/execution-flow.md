@@ -35,7 +35,7 @@ graph TD
 The request enters through one of the execution modes:
 
 - **CLI**: Interactive terminal input
-- **REST API**: HTTP POST to `/run` endpoint
+- **REST API**: HTTP POST to `/api/v1/chat` endpoint
 - **AWS Lambda**: Lambda event
 - **MCP/A2A**: Protocol-specific request
 
@@ -77,7 +77,7 @@ sequenceDiagram
     participant Session
     participant Storage
     
-    User->>API: POST /run
+    User->>API: POST /api/v1/chat
     API->>Runtime: get_agent("assistant")
     Runtime-->>API: Agent instance
     API->>Runtime: get_session("user-123")

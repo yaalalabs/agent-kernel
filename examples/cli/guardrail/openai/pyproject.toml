@@ -1,0 +1,39 @@
+[project]
+name = "guardrail-openai"
+version = "0.1.0"
+description = "Demo of LangGraph based agents running in Agent Kernel with OpenAI guardrails enabled"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,langgraph,openai]>=0.2.11",
+    "langchain-litellm>=0.2.2",
+    "langchain-openai>=0.3.28",
+    "langgraph-supervisor>=0.0.29",
+    "openai>=1.99.1",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.2.11",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
