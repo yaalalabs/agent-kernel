@@ -1,6 +1,6 @@
 region = "centralus"
 # The Azure Resource Group you want to deploy the ACR into
-resource_group_name = "central_resources"
+resource_group_name = ""
 
 # Product alias (used in ACR name and image name)
 product_alias = "ak-oai"
