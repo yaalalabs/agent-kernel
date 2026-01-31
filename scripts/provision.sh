@@ -6,6 +6,11 @@ set -e
 # This is a template that will support both AWS and Azure deployments.
 # The Build Scripts will be sourced such that, you can keep custom scripts as your process requires.
 
+CUR_SCRIPT=$(readlink -f ${BASH_SOURCE[0]})
+CUR_SCRIPT_DIR=$(dirname $CUR_SCRIPT)
+CUR_FOLDER=$(basename $CUR_SCRIPT_DIR)
+
+
 # Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -97,12 +102,8 @@ if [ "$CloudProvider" == "azure" ]; then
 
     # Export ARM environment variables for Terraform
     export ARM_SUBSCRIPTION_ID="$SUBSCRIPTION_ID"
-    export ARM_TENANT_ID="$TENANT_ID"
-    export ARM_USE_CLI=true
     
     print_success "Exported ARM_SUBSCRIPTION_ID: $ARM_SUBSCRIPTION_ID"
-    print_success "Exported ARM_TENANT_ID: $ARM_TENANT_ID"
-    print_success "Exported ARM_USE_CLI: true"
 
     # Function to check if user has a specific role
     check_role_assignment() {
@@ -170,7 +171,7 @@ if [ "$CloudProvider" == "azure" ]; then
     
     # Only check for the role that's actually needed based on your experience
     declare -A REQUIRED_ROLES=(
-        ["API Management Service Contributor"]="Required for creating and managing API Management services"
+        ["API Management Service Contributor"]="Required for creating and managing API Management services" #required for apim
     )
 
     # Check required roles
@@ -236,8 +237,6 @@ if [ "$CloudProvider" == "azure" ]; then
     echo ""
     print_info "Environment variables set:"
     print_info "  ARM_SUBSCRIPTION_ID=$ARM_SUBSCRIPTION_ID"
-    print_info "  ARM_TENANT_ID=$ARM_TENANT_ID" 
-    print_info "  ARM_USE_CLI=true"
     echo ""
 fi
 
@@ -257,11 +256,11 @@ if [ "$CloudProvider" == "aws" ]; then
 fi
 
 # Run build script if it exists
-if [ -f "build.sh" ]; then
-    print_info "Running build.sh..."
-    ./build.sh $local
+if [ -f "$CUR_FOLDER/deploy.sh" ]; then
+    print_info "Running deploy.sh..."
+    $CUR_FOLDER/deploy.sh $local
 else
-    print_warning "build.sh not found. Skipping build."
+    print_warning "deploy.sh not found. Skipping"
     print_info "Make sure the sources are properly set up for cloud deployments to work."
 fi
 
