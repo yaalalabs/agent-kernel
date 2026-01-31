@@ -1,14 +1,12 @@
+# Azure region, try to use the same as your resource group to avoid cross-region issues and costs. Make sure the resources are available in the region you specify.
 region = "centralus"
-# The Azure Resource Group you want to deploy the ACR into
+# The Azure Resource Group you want to deploy the resources into
 resource_group_name = ""
 
-# Product alias (used in ACR name and image name)
 product_alias = "demo"
 
-# Environment alias (dev, staging, d, etc.)
 env_alias = "dev"
 
-# Module name (part of ACR and image name)
 module_name = "api"
 
 create_redis_cluster=true
@@ -26,9 +24,15 @@ gateway_endpoints = [
     function_name = "AgentFunction"
     path          = "/chat"
     method        = "POST"
+  },{
+    function_name = "AgentFunction"
+    path          = "/secondary"
+    method        = "POST"
   }
-]
-publisher_email="agentkernel@yaala.ai" 
-#
 
+]
+# Email integration for Azure APIM
+publisher_email="agentkernel@yaala.ai"
+
+# OpenAI API key
 openai_api_key=""

@@ -1,18 +1,21 @@
+# Azure region, try to use the same as your resource group to avoid cross-region issues and costs. Make sure the resources are available in the region you specify.
 region = "centralus"
-# The Azure Resource Group you want to deploy the ACR into
+# The Azure Resource Group you want to deploy the resources into
 resource_group_name = ""
 
-# Product alias (used in ACR name and image name)
+# Product alias
 product_alias = "demo"
 
 # Environment alias (dev, staging, d, etc.)
 env_alias = "dev"
 
-# Module name (part of ACR and image name)
+# Module name
 module_name = "api"
 
-create_redis_cluster=true
-create_cosmosdb_cluster=false
+# Choose whether to create a Redis cluster or not
+create_redis_cluster=false
+# Choose whether to create a CosmosDB or not
+create_cosmosdb_cluster=true
 
 # Optional display name (used for tags, can be null)
 product_display_name = "Demo Platform API"
@@ -23,7 +26,6 @@ is_production = false
 module_type = "python"
 
 package_path = "./dist.zip"
-
 
 function_name = "ak-api"
 function_description = "AK API"
@@ -46,7 +48,7 @@ gateway_endpoints = [
     method        = "POST"
   }
 ]
-publisher_email="agentkernel@yaala.ai" 
+publisher_email="agentkernel@yaala.ai"
 #
 
 openai_api_key=""
