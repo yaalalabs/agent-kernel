@@ -93,16 +93,16 @@ class SessionStoreBuilder(Builder):
         @classmethod
         def from_str(cls, type_str: str) -> Self:
             """
-            Create a SessionStoreType enum member from a string representation.
+            Create a SessionStoreBuilder.Types enum member from a string representation.
 
-            This class method attempts to convert a string to its corresponding SessionStoreType
+            This class method attempts to convert a string to its corresponding SessionStoreBuilder.Types
             enum value. If the conversion fails, it logs a warning and returns the default
             IN_MEMORY type.
 
             :param type_str: The string representation of the session store type. Case-insensitive input is supported.
 
-            :returns: The corresponding SessionStoreType enum member.
-                Returns SessionStoreType.IN_MEMORY as a fallback if the input string doesn't match any valid enum member.
+            :returns: The corresponding SessionStoreBuilder.Types enum member.
+                Returns SessionStoreBuilder.Types.IN_MEMORY as a fallback if the input string doesn't match any valid enum member.
             """
             try:
                 return cls[type_str.upper()]
