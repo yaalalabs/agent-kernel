@@ -188,13 +188,16 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
             text=True
         )
         agent_invoke_url = result.stdout.strip()
+        if not agent_invoke_url:
+            print("❌ Failed to retrieve agent_invoke_url: output was empty.")
+            return False
         print(f"✅ agent_invoke_url: {agent_invoke_url}")
         
         # Set as environment variable for test
         test_env = {'AK_TEST_ENDPOINT': agent_invoke_url}
     except subprocess.CalledProcessError as e:
-        print(f"⚠️  Could not retrieve agent_invoke_url output: {e}")
-        test_env = {}
+        print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
+        return False
     
     # Test
     return run_command(
