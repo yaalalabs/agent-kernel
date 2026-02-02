@@ -5,7 +5,13 @@ from typing import Any, List
 from agents import Agent, Runner, function_tool
 from agents.memory.session import SessionABC
 
-from agentkernel.core.model import (
+from ...core import Agent as BaseAgent
+from ...core import Module, PostHook, PreHook
+from ...core import Runner as BaseRunner
+from ...core import Session
+from ...core.builder import A2ACardBuilder
+from ...core.config import AKConfig
+from ...core.model import (
     AgentReply,
     AgentReplyText,
     AgentRequest,
@@ -14,20 +20,13 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-
-from ... import PostHook, PreHook
-from ...core import Agent as BaseAgent
-from ...core import Module
-from ...core import Runner as BaseRunner
-from ...core import Session
-from ...core.config import AKConfig
 from ...core.multimodal import analyis_attachments
 from ...trace import Trace
 
 FRAMEWORK = "openai"
 
 
-class OpenAISession(SessionABC):
+class OpenAISession:
     """
     OpenAISession class provides a session for OpenAI Agents SDK-based agents.
     """
@@ -214,7 +213,7 @@ class OpenAIAgent(BaseAgent):
         skills = []
         for tool in self.agent.tools:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return self._generate_a2a_card(agent_name=self.name, description=self.agent.instructions, skills=skills)
+        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
 
     def override_system_prompt(self) -> None:
         """
@@ -289,7 +288,7 @@ class OpenAIModule(Module):
         :param hooks: List of pre-execution hooks to attach.
         :return: OpenAIModule instance.
         """
-        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        super().get_agent(agent.name).pre_hooks.extend(hooks)
         return self
 
     def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "OpenAIModule":
@@ -299,5 +298,5 @@ class OpenAIModule(Module):
         :param hooks: List of post-execution hooks to attach.
         :return: OpenAIModule instance.
         """
-        super().get_agent(agent.name).attach_post_hooks(hooks)
+        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self

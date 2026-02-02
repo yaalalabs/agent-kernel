@@ -221,7 +221,7 @@ async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatc
     from agentkernel.core.runtime import AuxiliaryCache
 
     # Without setting session context, should raise exception
-    with pytest.raises(Exception, match="No current session context available to retrieve volatile cache."):
+    with pytest.raises(Exception, match="No current or matching session available to retrieve volatile cache."):
         AuxiliaryCache.get_volatile_cache()
 
 
@@ -240,7 +240,7 @@ async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkey
     from agentkernel.core.runtime import AuxiliaryCache
 
     # Without setting session context, should raise exception
-    with pytest.raises(Exception, match="No current session context available to retrieve non-volatile cache."):
+    with pytest.raises(Exception, match="No current or matching session available to retrieve non-volatile cache."):
         AuxiliaryCache.get_non_volatile_cache()
 
 
@@ -256,16 +256,12 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.base import current_session
     from agentkernel.core.runtime import AuxiliaryCache
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-3")
-
-    # Set the session context and use runtime context manager
-    token = current_session.set("test-session-3")
-    try:
-        with runtime:
+    with runtime:
+        session = runtime.sessions().new("test-session-3")
+        async with session:
             # Get volatile cache without explicit session_id (should use context)
             v_cache = AuxiliaryCache.get_volatile_cache()
             assert v_cache is not None
@@ -278,8 +274,6 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
 
             # Verify it's the same cache by checking the session's cache also has it
             assert session.get_volatile_cache().get("context_key") == "context_value"
-    finally:
-        current_session.reset(token)
 
 
 @pytest.mark.asyncio
@@ -294,16 +288,12 @@ async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.base import current_session
     from agentkernel.core.runtime import AuxiliaryCache
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-4")
-
-    # Set the session context and use runtime context manager
-    token = current_session.set("test-session-4")
-    try:
-        with runtime:
+    with runtime:
+        session = runtime.sessions().new("test-session-4")
+        async with session:
             # Get non-volatile cache without explicit session_id (should use context)
             nv_cache = AuxiliaryCache.get_non_volatile_cache()
             assert nv_cache is not None
@@ -316,8 +306,6 @@ async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
 
             # Verify it's the same cache by checking the session's cache also has it
             assert session.get_non_volatile_cache().get("nv_context_key") == "nv_context_value"
-    finally:
-        current_session.reset(token)
 
 
 @pytest.mark.asyncio
@@ -554,8 +542,8 @@ async def test_auxiliary_cache_empty_session_id_raises(monkeypatch):
     from agentkernel.core.runtime import AuxiliaryCache
 
     # Empty string session_id should raise exception
-    with pytest.raises(Exception, match="No current session context available to retrieve volatile cache."):
+    with pytest.raises(Exception, match="No current or matching session available to retrieve volatile cache."):
         AuxiliaryCache.get_volatile_cache(session_id="")
 
-    with pytest.raises(Exception, match="No current session context available to retrieve non-volatile cache."):
+    with pytest.raises(Exception, match="No current or matching session available to retrieve non-volatile cache."):
         AuxiliaryCache.get_non_volatile_cache(session_id="")

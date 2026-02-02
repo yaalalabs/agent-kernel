@@ -1,14 +1,16 @@
+import asyncio
 import contextvars
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, List
+from collections.abc import Iterator
+from enum import Enum
+from typing import Any, ClassVar, Self, cast
 
-from ..core.hooks import PostHook, PreHook
-from .config import AKConfig
+from deprecated import deprecated
+
+from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
-
-current_session = contextvars.ContextVar("session_id", default="")
 
 
 class Session:
@@ -19,8 +21,8 @@ class Session:
     allowing the runtime to track and share state across multiple related agent logic invocations.
 
     Sessions may be volatile (meaning that they are not persisted) or durable (meaning that they
-    are persisted and are available across multiple invocations of the runtime). This is governed by
-    the runtime configuration.
+    are persisted and are available across multiple instantiations of the runtime). This is governed
+    by the runtime configuration.
 
     Session class stores framework-specific session data objects in a key-value store, allowing
     different agent frameworks to store and retrieve their own session data without interfering with
@@ -32,46 +34,102 @@ class Session:
     agent context but needs to be retained across multiple interactions within the same session.
     """
 
-    VOLATILE_CACHE_KEY = "v_cache"
-    NON_VOLATILE_CACHE_KEY = "nv_cache"
+    class Keys(Enum):
+        """
+        Pre-defined session data keys for caches.
+        """
+
+        VOLATILE_CACHE = "v_cache"
+        NON_VOLATILE_CACHE = "nv_cache"
+
+    VOLATILE_CACHE_KEY: str = Keys.VOLATILE_CACHE.value
+    """Deprecated since 0.2.12, use Session.Keys.VOLATILE_CACHE.value instead."""
+
+    NON_VOLATILE_CACHE_KEY: str = Keys.NON_VOLATILE_CACHE.value
+    """Deprecated since 0.2.12, use Session.Keys.NON_VOLATILE_CACHE.value instead."""
+
+    current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
     @classmethod
+    def current(cls) -> Self | None:
+        """
+        Returns the current session.
+        :return: The current Session instance.
+        """
+        return cls.current_session.get()
+
+    @classmethod
+    @deprecated(version="0.2.12", reason="Use Session.current() instead.")
     def get_current_session_id(cls) -> str:
         """
         Returns the current session identifier from the context variable.
         :return: The current session identifier.
         """
-        return current_session.get()
-
-    def get_volatile_cache(self) -> KeyValueCache:
-        """
-        Returns the volatile key-value cache associated with this session.
-        :return: The volatile KeyValueCache instance.
-        """
-        return self.get(self.VOLATILE_CACHE_KEY)
-
-    def get_non_volatile_cache(self) -> KeyValueCache:
-        """
-        Returns the non-volatile key-value cache associated with this session.
-        :return: The non-volatile KeyValueCache instance.
-        """
-        return self.get(self.NON_VOLATILE_CACHE_KEY)
+        session = cls.current()
+        return session.id if session else ""
 
     def __init__(self, id: str):
         """
         Initializes a Session instance.
         :param id: Unique identifier for the session.
         """
-        self._log = logging.getLogger("ak.core.session")
-        self._id = id
-        self._data = {}
+        self._log: logging.Logger = logging.getLogger(f"ak.core.session [{id}]")
+        self._id: str = id
+        self._data: dict[str, Any] = {}
+        self._lock: asyncio.Lock = asyncio.Lock()
 
         # Pre-initialize key-value caches to be used by application code
         # which will not be part of the agent context.
-        self.set(self.VOLATILE_CACHE_KEY, KeyValueCache())
-        self.set(self.NON_VOLATILE_CACHE_KEY, KeyValueCache())
+        self.set(Session.Keys.VOLATILE_CACHE.value, KeyValueCache())
+        self.set(Session.Keys.NON_VOLATILE_CACHE.value, KeyValueCache())
 
-        self._token = None
+        self._token: Any = None
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Session instance.
+        :return: String representation of the Session.
+        """
+        return f"Session({self._id})"
+
+    async def __aenter__(self) -> Self:
+        """
+        Async context manager entry method that acquires a lock and sets the current session.
+        This method is called when entering an async context manager (using 'async with').
+
+        It acquires the internal lock to ensure that the session is used by only one coroutine
+        at a time. It also sets the current session context variable.
+
+        :return: The same instance (self) to be used within the async with block.
+        :raises: Any exceptions that may occur during lock acquisition or session setting.
+        """
+        await self._lock.acquire()
+        try:
+            self._token = Session.current_session.set(self)
+            return self
+        except Exception:
+            self._lock.release()
+            raise
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """
+        Async context manager exit method that releases the lock and resets the current session.
+        This method is called when exiting an async context manager (using 'async with').
+        It releases the internal lock to allow other coroutines to use the session.
+        It also resets the current session context variable to its previous value.
+
+        :param exc_type: The type of exception raised (if any).
+        :param exc_val: The value of the exception raised (if any).
+        :param exc_tb: The traceback of the exception raised (if any).
+        :return: None
+        :raises: Any exceptions that may occur during lock release or session resetting.
+        """
+        try:
+            if self._token:
+                Session.current_session.reset(self._token)
+        finally:
+            self._token = None
+            self._lock.release()
 
     @property
     def id(self) -> str:
@@ -89,9 +147,10 @@ class Session:
         if there is no data object with the specified key.
         """
         result = self._data.get(key)
-        self._log.debug(f"Retrieved session {self._id} data object for key {key}: {result}")
+        self._log.debug(f"Retrieved session data object for key {key}: {result}")
         return result
 
+    @deprecated(version="0.2.12", reason="Use get_all() instead.")
     def get_all_keys(self):
         """
         Returns a list of all keys in the session data.
@@ -99,13 +158,38 @@ class Session:
         """
         return self._data.keys()
 
+    def get_all(self, durable: bool = True, volatile: bool = True) -> Iterator[tuple[str, Any]]:
+        """
+        Returns all session data objects.
+        :param durable: Whether to include non-volatile (durable) data objects.
+        :param volatile: Whether to include volatile data objects.
+        :return: Iterator over matching session object key value pairs.
+        """
+        for key, value in self._data.items():
+            if (durable and key != Session.Keys.VOLATILE_CACHE.value) or (volatile and key == Session.Keys.VOLATILE_CACHE.value):
+                yield key, value
+
+    def get_volatile_cache(self) -> KeyValueCache:
+        """
+        Returns the volatile key-value cache associated with this session.
+        :return: The volatile KeyValueCache instance.
+        """
+        return cast(KeyValueCache, self.get(Session.Keys.VOLATILE_CACHE.value))
+
+    def get_non_volatile_cache(self) -> KeyValueCache:
+        """
+        Returns the non-volatile key-value cache associated with this session.
+        :return: The non-volatile KeyValueCache instance.
+        """
+        return cast(KeyValueCache, self.get(Session.Keys.NON_VOLATILE_CACHE.value))
+
     def set(self, key: str, value: Any) -> Any:
         """
         Sets a session data object for the specified key.
         :param key: The key of the session data object.
         :param value: The session data object.
         """
-        self._log.debug(f"Setting session {self._id} data object for key {key}: {value}")
+        self._log.debug(f"Setting session data object for key {key}: {value}")
         self._data[key] = value
         return value
 
@@ -115,33 +199,36 @@ class Session:
         :param key: The key of the session data object to be deleted.
         """
         if key in self._data:
-            self._log.debug(f"Deleting session {self._id} data object for key {key}")
+            self._log.debug(f"Deleting session data object for key {key}")
             del self._data[key]
 
     def clear(self) -> None:
         """
         Clears all session data objects.
         """
-        self._log.debug(f"Clearing session {self._id} data objects")
+        self._log.debug(f"Clearing all session data objects")
         self._data = {
-            self.VOLATILE_CACHE_KEY: self.get_volatile_cache(),
-            self.NON_VOLATILE_CACHE_KEY: self.get_non_volatile_cache(),
+            Session.Keys.VOLATILE_CACHE.value: self.get_volatile_cache(),
+            Session.Keys.NON_VOLATILE_CACHE.value: self.get_non_volatile_cache(),
         }
         self.get_volatile_cache().clear()
         self.get_non_volatile_cache().clear()
 
+    @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
     def set_context(self):
         """
-        Sets the current session context variable to this session's ID.
+        Sets the current session context variable to this session.
         """
-        self._token = current_session.set(self._id)
+        self._token = Session.current_session.set(self)
 
+    @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
     def reset_context(self):
         """
         Resets the current session context variable to the previous value.
         """
         if self._token:
-            current_session.reset(self._token)
+            Session.current_session.reset(self._token)
+            self._token = None
 
 
 class Runner(ABC):
@@ -161,6 +248,13 @@ class Runner(ABC):
         """
         self._name = name
 
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Runner instance.
+        :return: String representation of the Runner.
+        """
+        return f"Runner({self._name})"
+
     @property
     def name(self) -> str:
         """
@@ -177,7 +271,7 @@ class Runner(ABC):
         :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
 
 class Agent(ABC):
@@ -196,10 +290,17 @@ class Agent(ABC):
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         """
-        self._name = name
-        self._runner = runner
-        self._pre_hooks = []
-        self._post_hooks = []
+        self._name: str = name
+        self._runner: Runner = runner
+        self._pre_hooks: list[PreHook] = []
+        self._post_hooks: list[PostHook] = []
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Agent instance.
+        :return: String representation of the Agent.
+        """
+        return f"Agent({self._name})"
 
     @property
     def name(self) -> str:
@@ -229,6 +330,10 @@ class Agent(ABC):
         """
         return self._post_hooks
 
+    @deprecated(
+        version="0.2.12",
+        reason="Use Agent.pre_hooks.extend() instead. Note that unlike attach_pre_hooks(), extend() does not perform duplicate checking.",
+    )
     def attach_pre_hooks(self, hooks: list[PreHook]):
         """
         Attaches pre-execution hooks to the agent.
@@ -240,6 +345,10 @@ class Agent(ABC):
             if hook not in self._pre_hooks:
                 self._pre_hooks.append(hook)
 
+    @deprecated(
+        version="0.2.12",
+        reason="Use Agent.post_hooks.extend() instead. Note that unlike attach_post_hooks(), extend() does not perform duplicate checking.",
+    )
     def attach_post_hooks(self, hooks: list[PostHook]):
         """
         Attaches post-execution hooks to the agent.
@@ -251,38 +360,8 @@ class Agent(ABC):
             if hook not in self._post_hooks:
                 self._post_hooks.append(hook)
 
-    @staticmethod
-    def _generate_a2a_card(agent_name: str, description: str, skills: List):
-        """
-        Helper method to generate an A2A AgentCard.
-        :param agent_name: Name of the agent.
-        :param description: Description of the agent.
-        :param skills: List of AgentSkill objects.
-        :return: An A2A AgentCard instance.
-        """
-        from a2a.types import AgentCapabilities, AgentCard
-
-        return AgentCard(
-            name=agent_name,
-            description=description,
-            url=f"{AKConfig.get().a2a.url}/{agent_name}",
-            version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            preferred_transport="HTTP+JSON",
-            capabilities=AgentCapabilities(streaming=False),
-            skills=skills,
-        )
-
     @abstractmethod
-    def get_a2a_card(self):
-        """
-        Returns the A2A AgentCard associated with the agent.
-        """
-        pass
-
-    @abstractmethod
-    def get_description(self):
+    def get_description(self) -> str:
         """
         Returns the description of the agent.
         """
@@ -310,6 +389,13 @@ class Agent(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_a2a_card(self) -> Any:
+        """
+        Returns the A2A AgentCard associated with the agent.
+        """
+        pass
+
     @staticmethod
     def get_system_prompt_suffix() -> str:
         """
@@ -324,3 +410,4 @@ class Agent(ABC):
             "Use this tool when asked about attached images or files. Do not ask for clarification if you haven't read the files yet."
         )
         return tool_instruction
+

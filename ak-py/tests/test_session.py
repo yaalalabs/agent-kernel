@@ -1,10 +1,21 @@
+import asyncio
+
+import pytest
+
 from agentkernel.core.base import Session
 
 
 def test_session_init():
     session = Session("test-session")
     assert session.id == "test-session"
-    assert len(session.get_all_keys()) == 2
+    assert repr(session) == "Session(test-session)"
+
+    assert len(session.get_all_keys()) == 2  # deprecated
+    assert sum(1 for _, _ in session.get_all()) == 2
+    assert sum(1 for _, _ in session.get_all(durable=False)) == 1
+    assert sum(1 for _, _ in session.get_all(volatile=False)) == 1
+    assert sum(1 for _, _ in session.get_all(durable=False, volatile=False)) == 0
+
     assert session.get_volatile_cache() is not None
     assert len(session.get_volatile_cache().keys()) == 0
     assert session.get_non_volatile_cache() is not None
@@ -14,8 +25,10 @@ def test_session_init():
 def test_session_set_get():
     session = Session("test-session")
     session.set("key1", "value1")
+    assert sum(1 for _, _ in session.get_all()) == 3
     assert session.get("key1") == "value1"
-    assert "key1" in session.get_all_keys()
+    assert "key1" in session.get_all_keys()  # deprecated
+    assert "key1" in list(k for k, _ in session.get_all())
     assert session.get("nonexistent") is None
 
 
@@ -25,9 +38,11 @@ def test_session_delete():
     session.set("key2", "value2")
     session.delete("key1")
     assert session.get("key1") is None
-    assert "key1" not in session.get_all_keys()
+    assert "key1" not in session.get_all_keys()  # deprecated
+    assert "key1" not in list(k for k, _ in session.get_all())
     assert session.get("key2") == "value2"
-    assert "key2" in session.get_all_keys()
+    assert "key2" in session.get_all_keys()  # deprecated
+    assert "key2" in list(k for k, _ in session.get_all())
 
 
 def test_session_volatile_cache():
@@ -54,10 +69,48 @@ def test_session_clear():
     session.get_non_volatile_cache().set("nvkey1", "nvvalue1")
     session.clear()
     assert session.id == "test-session"
-    assert len(session.get_all_keys()) == 2
+    assert len(session.get_all_keys()) == 2  # deprecated
+    assert sum(1 for _, _ in session.get_all()) == 2
     assert session.get("key1") is None
     assert session.get("key2") is None
     assert len(session.get_volatile_cache().keys()) == 0
     assert session.get_volatile_cache().get("vkey1") is None
     assert len(session.get_non_volatile_cache().keys()) == 0
     assert session.get_non_volatile_cache().get("nvkey1") is None
+
+
+def test_current_session_deprecated_api():
+    session = Session("test-session")
+    assert Session.get_current_session_id() == ""
+    session.set_context()
+    assert Session.get_current_session_id() == "test-session"
+    session.reset_context()
+    assert Session.get_current_session_id() == ""
+
+
+@pytest.mark.asyncio
+async def test_current_session():
+    session = Session("test-session")
+    assert Session.current() is None
+    async with session:
+        assert Session.current() == session
+    assert Session.current() is None
+
+
+@pytest.mark.asyncio
+async def test_session_serial_access():
+    session = Session("test-session")
+    session.set("key", 0)
+
+    async def update_session(pre, val, timeout):
+        async with session:
+            assert pre == session.get("key")
+            session.set("key", val)
+            await asyncio.sleep(timeout)
+            assert val == session.get("key")
+
+    await asyncio.gather(
+        update_session(0, 1, 0.1),
+        update_session(1, 2, 0.05),
+        update_session(2, 3, 0.01),
+    )
