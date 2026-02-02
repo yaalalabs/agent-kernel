@@ -139,7 +139,7 @@ jobs:
 
   e2e-tests:
     needs: [setup, build-ak-py]
-    if: ${{ inputs.run_e2e_tests && needs.setup.outputs.matrix != '' }}
+    if: ${{ inputs.run_e2e_tests && fromJson(needs.setup.outputs.matrix).include[0] != null }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
