@@ -132,7 +132,7 @@ jobs:
         working-directory: ak-py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: uv run pytest -s
+        run: ./build.sh && uv run pytest -s
 
   e2e-tests:
     needs: [setup, build-ak-py]
