@@ -3,6 +3,9 @@ name: Reusable Test Workflow
 # This is a reusable workflow that contains all the test jobs
 # It can be called by other workflows with different triggers and contexts
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
     inputs:
