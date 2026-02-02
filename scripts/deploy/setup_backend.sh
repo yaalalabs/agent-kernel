@@ -27,25 +27,35 @@ echo "Region: $REGION"
 
 # Create S3 bucket for state storage
 echo "Creating S3 bucket..."
-if aws s3 ls "s3://$BUCKET_NAME" 2>&1 | grep -q 'NoSuchBucket'; then
-    aws s3api create-bucket \
-        --bucket "$BUCKET_NAME" \
-        --region "$REGION" \
-        $(if [ "$REGION" != "us-east-1" ]; then echo "--create-bucket-configuration LocationConstraint=$REGION"; fi)
-    
-    # Enable versioning
-    aws s3api put-bucket-versioning \
-        --bucket "$BUCKET_NAME" \
-        --versioning-configuration Status=Enabled
-    
-    # Enable encryption
-    aws s3api put-bucket-encryption \
-        --bucket "$BUCKET_NAME" \
-        --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-    
-    echo "S3 bucket created successfully"
-else
+if aws s3api head-bucket --bucket "$BUCKET_NAME" --region "$REGION" >/dev/null 2>&1; then
+    # Bucket exists and is accessible
     echo "S3 bucket already exists"
+else
+    # Re-run head-bucket to capture the error message for analysis without causing the script to exit
+    bucket_check_error=$(aws s3api head-bucket --bucket "$BUCKET_NAME" --region "$REGION" 2>&1 || true)
+
+    if echo "$bucket_check_error" | grep -qiE 'NoSuchBucket|Not Found'; then
+        aws s3api create-bucket \
+            --bucket "$BUCKET_NAME" \
+            --region "$REGION" \
+            $(if [ "$REGION" != "us-east-1" ]; then echo "--create-bucket-configuration LocationConstraint=$REGION"; fi)
+
+        # Enable versioning
+        aws s3api put-bucket-versioning \
+            --bucket "$BUCKET_NAME" \
+            --versioning-configuration Status=Enabled
+
+        # Enable encryption
+        aws s3api put-bucket-encryption \
+            --bucket "$BUCKET_NAME" \
+            --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+        echo "S3 bucket created successfully"
+    else
+        echo "Error checking S3 bucket \"$BUCKET_NAME\": $bucket_check_error" >&2
+        echo "Aborting backend setup to avoid creating a bucket when the real issue may be permissions or another error." >&2
+        exit 1
+    fi
 fi
 
 # Create DynamoDB table for state locking
