@@ -1,6 +1,6 @@
-output "source_storage_s3_bucket" {
+output "source_storage_blob_container_path" {
   value       = "${azurerm_storage_account.source_storage.name}/${azurerm_storage_container.source_storage_container.name}"
-  description = "Source storage bucket ID (format: storage-account-name/container-name)"
+  description = "Source blob container path (format: storage-account-name/container-name)"
 }
 
 output "source_storage_account_name" {
