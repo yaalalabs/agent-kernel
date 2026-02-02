@@ -29,42 +29,81 @@ on:
         required: false
 
 jobs:
-  unit-test:
+  setup:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -e {0}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: |
-          pip install uv
       
-      - name: Test bump_version scripts
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: pip install pyyaml
+      
+      - name: Generate test matrix
+        id: set-matrix
         run: |
-          python scripts/test_bump_version.py
-          python scripts/test_update_terraform_versions.py
+          python3 .github/scripts/generate_test_matrix.py --tier e2e --format github >> $GITHUB_OUTPUT
 
-      - name: Build and test ak-py
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  build-ak-py:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Build ak-py
         working-directory: ak-py
-        run: |
-          set -e
-          ./build.sh
-          uv run pytest -s
+        run: ./build.sh
 
-  cli-e2e-test:
-    if: ${{ inputs.run_e2e_tests }}
+      - name: Cache ak-py build
+        uses: actions/cache/save@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
+
+  script-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test bump_version script
+        working-directory: scripts
+        run: python test_bump_version.py
+      
+      - name: Test update_terraform_versions script
+        working-directory: scripts
+        run: python test_update_terraform_versions.py
+
+  unit-tests:
+    needs: [build-ak-py]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -81,32 +120,27 @@ jobs:
           python-version: '3.12'
 
       - name: Install uv
-        run: |
-          pip install uv
+        run: pip install uv
 
-      - name: Build ak-py
+      - name: Restore ak-py build
+        uses: actions/cache/restore@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
+
+      - name: Test ak-py
         working-directory: ak-py
-        run: |
-          set -e
-          ./build.sh
-
-      - name: Run CLI examples
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          set -e
-          for example in examples/cli/* examples/cli/a2a/* examples/cli/guardrail/*; do
-            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
-              echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
-              echo "=== Running tests for $example ==="
-              (cd "$example" && uv run pytest -s)
-            fi
-          done
+        run: uv run pytest -s
 
-  api-e2e-test:
-    if: ${{ inputs.run_e2e_tests }}
+  e2e-tests:
+    needs: [setup, build-ak-py]
+    if: ${{ inputs.run_e2e_tests && needs.setup.outputs.matrix != '' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     defaults:
       run:
         shell: bash -e {0}
@@ -122,82 +156,22 @@ jobs:
           python-version: '3.12'
 
       - name: Install uv
-        run: |
-          pip install uv
+        run: pip install uv
 
-      - name: Build ak-py
-        working-directory: ak-py
-        run: |
-          set -e
-          ./build.sh
+      - name: Restore ak-py build
+        uses: actions/cache/restore@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
 
-      - name: Run API examples
+      - name: Run test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: |
-          set -e
-          for example in examples/api/* examples/api/a2a/* examples/api/mcp/*; do
-            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
-              echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
-              echo "=== Running tests for $example ==="
-              (cd "$example" && uv run pytest -s)
-            fi
-          done
-          
-      - name: Run Memory examples
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          set -e
-          for example in examples/memory/* ; do
-            if [ -d "$example" ] && [ -f "$example/build.sh" ] && [ -f "$example/app_test.py" ]; then
-              echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
-              echo "=== Running tests for $example ==="
-              (cd "$example" && uv run pytest -s)
-            fi
-          done
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --action test
 
-  containerized-e2e-test:
-    if: ${{ inputs.run_e2e_tests }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -e {0}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: |
-          pip install uv
-
-      - name: Build ak-py
-        working-directory: ak-py
-        run: |
-          set -e
-          ./build.sh
-
-      - name: Run Containerized Examples
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          set -e
-          for example in examples/containerized/* examples/containerized/a2a/*; do
-            if [ -d "$example" ] && [ -f "$example/build.sh" ]; then
-              echo "=== Running build for $example ==="
-              (cd "$example" && ./build.sh local)
-              echo "=== Running tests for $example ==="
-              (cd "$example" && uv run pytest -s)
-            fi
-          done

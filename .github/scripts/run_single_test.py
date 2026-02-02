@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Run a single integration test.
-Used by parallel GitHub Actions jobs.
+Run a single test.
+Used by parallel GitHub Actions jobs for both integration tests and e2e tests.
 """
 
 import argparse
@@ -40,8 +40,11 @@ def run_command(command: list[str], cwd: str = None, description: str = "", env:
         return False
 
 
-def run_api_test(path: str) -> bool:
-    """Run API example test."""
+def run_simple_test(path: str) -> bool:
+    """
+    Run a simple test (cli, api, memory, containerized).
+    These tests follow the same pattern: build.sh local, then pytest.
+    """
     build_script = Path(path) / 'build.sh'
     
     if not build_script.exists():
@@ -62,35 +65,26 @@ def run_api_test(path: str) -> bool:
         cwd=path,
         description=f"Testing {path}"
     )
+
+
+def run_api_test(path: str) -> bool:
+    """Run API example test."""
+    return run_simple_test(path)
 
 
 def run_memory_test(path: str) -> bool:
     """Run Memory example test."""
-    build_script = Path(path) / 'build.sh'
-    test_file = Path(path) / 'app_test.py'
-    
-    if not build_script.exists():
-        print(f"⚠️  Skipping {path} - no build.sh found")
-        return True
-    
-    if not test_file.exists():
-        print(f"⚠️  Skipping {path} - no app_test.py found")
-        return True
-    
-    # Build
-    if not run_command(
-        ['./build.sh', 'local'],
-        cwd=path,
-        description=f"Building {path}"
-    ):
-        return False
-    
-    # Test
-    return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
-        cwd=path,
-        description=f"Testing {path}"
-    )
+    return run_simple_test(path)
+
+
+def run_cli_test(path: str) -> bool:
+    """Run CLI example test."""
+    return run_simple_test(path)
+
+
+def run_containerized_test(path: str) -> bool:
+    """Run containerized example test."""
+    return run_simple_test(path)
 
 
 def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
@@ -209,8 +203,9 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run a single integration test')
-    parser.add_argument('--type', required=True, choices=['api', 'memory', 'aws-containerized', 'aws-serverless'])
+    parser = argparse.ArgumentParser(description='Run a single test')
+    parser.add_argument('--type', required=True, 
+                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless'])
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
     parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
@@ -238,6 +233,10 @@ def main():
             success = run_api_test(args.path)
         elif args.type == 'memory':
             success = run_memory_test(args.path)
+        elif args.type == 'cli':
+            success = run_cli_test(args.path)
+        elif args.type == 'containerized':
+            success = run_containerized_test(args.path)
         elif args.type in ['aws-containerized', 'aws-serverless']:
             success = test_aws_deployment(args.path, args.deploy_dir)
     
