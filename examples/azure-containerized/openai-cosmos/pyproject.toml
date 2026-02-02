@@ -1,5 +1,5 @@
 [project]
-name = "aws-containerized-openai"
+name = "azure-containerized-openai"
 version = "0.1.0"
 description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS ECS using DynamoDB as memory"
 readme = "README.md"

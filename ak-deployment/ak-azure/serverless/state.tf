@@ -65,20 +65,6 @@ module "redis" {
   create_NSG               = true
 }
 
-# module "storage" {
-#   count                = var.create_custom_storage_account == true ? 1 : 0
-#   source               = "../common/modules/blob"
-#   product_alias        = var.product_alias
-#   env_alias            = var.env_alias
-#   product_display_name = var.module_name
-#   resource_group_name  = var.resource_group_name
-#   region               = var.region
-#   s3_bucket_tags       = var.tags
-#   is_production        = var.is_production
-#   s3_kms_key_id        = var.azure_encryption_key_id
-#   depends_on           = [module.vnet]
-# }
-
 module "cosmos" {
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
   source                         = "../common/modules/cosmos"

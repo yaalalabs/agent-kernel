@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from azure.core.exceptions import ResourceNotFoundError
-from azure.data.tables import TableServiceClient, TableEntity
+from azure.data.tables import TableServiceClient
 
 from ..base import Session
 from ..config import AKConfig

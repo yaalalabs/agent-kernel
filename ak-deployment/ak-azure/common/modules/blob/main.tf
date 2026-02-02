@@ -9,7 +9,7 @@ locals {
   storage_account_name = substr(replace("${var.product_alias}${var.env_alias}src${local.subscription_hash}", "/[^a-z0-9]/", ""), 0, 24)
   container_name       = "sources"
 
-  key_vault_uri = var.s3_kms_key_id != null ? regex("(https://[^/]+)", var.s3_kms_key_id)[0] : null
+  key_vault_uri = var.blob_kms_key_id != null ? regex("(https://[^/]+)", var.blob_kms_key_id)[0] : null
 }
 
 resource "azurerm_storage_account" "source_storage" {
@@ -49,7 +49,7 @@ resource "azurerm_storage_account" "source_storage" {
     isBackupEnabled = var.is_production ? "true" : "false"
     backupType      = "critical"
     ResourceName    = "AppSourceBucket"
-  }, var.s3_bucket_tags)
+  }, var.blob_tags)
 }
 
 resource "azurerm_storage_container" "source_storage_container" {
@@ -61,8 +61,8 @@ resource "azurerm_storage_container" "source_storage_container" {
 # Customer-managed key encryption (if KMS key is provided)
 
 resource "azurerm_storage_account_customer_managed_key" "source_storage_cmk" {
-  count              = var.is_production && var.s3_kms_key_id != null ? 1 : 0
+  count              = var.is_production && var.blob_kms_key_id != null ? 1 : 0
   storage_account_id = azurerm_storage_account.source_storage.id
   key_vault_uri      = local.key_vault_uri
-  key_name           = split("/", var.s3_kms_key_id)[4]
+  key_name           = split("/", var.blob_kms_key_id)[4]
 }

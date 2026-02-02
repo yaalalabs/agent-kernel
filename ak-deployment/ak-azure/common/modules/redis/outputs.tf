@@ -7,10 +7,10 @@ output "redis_private_ip" {
 }
 
 output "primary_key" {
-  value = azurerm_managed_redis.redis.default_database[0].primary_access_key
+  value     = azurerm_managed_redis.redis.default_database[0].primary_access_key
   sensitive = true
 }
 
 output "full_redis_url" {
-  value =  "rediss://:${azurerm_managed_redis.redis.default_database[0].primary_access_key}@${azurerm_managed_redis.redis.hostname}:${azurerm_managed_redis.redis.default_database.0.port}"
+  value = "rediss://:${azurerm_managed_redis.redis.default_database[0].primary_access_key}@${azurerm_managed_redis.redis.hostname}:${azurerm_managed_redis.redis.default_database.0.port}"
 }

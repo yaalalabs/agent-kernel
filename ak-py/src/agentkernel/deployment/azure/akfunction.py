@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import traceback
-from typing import Any
 import azure.functions as func
 from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
 from ...core import AgentService
