@@ -10,12 +10,12 @@ This demo deploys the following Azure resources:
 - **Azure Container App** - Python application running the Agent Kernel implementation
 - **Azure Container Registry (ACR)** - Private container registry for the application image
 - **Azure API Management (APIM)** - API Gateway endpoint for the Container App service
-- **Azure Cosmos DB** - NoSQL database for agent memory and session storage
+- **Azure Cosmos DB** - NoSQL database for agent memory and session storage. We are using the [Azure Cosmos DB Table API](https://learn.microsoft.com/en-us/azure/cosmos-db/table/introduction) to store the session data.
 - **Azure Log Analytics Workspace** - Centralized logging for Container Apps
 - **Azure Application Insights** - Application performance monitoring and diagnostics
 - **Azure Virtual Network** - Network isolation and security
 - **Network Security Groups** - Network access control and security rules
-- **Private DNS Zone** - Internal DNS resolution for Container Apps
+- **Private DNS Zone** - Internal DNS resolution for Container Apps.
 
 ## Architecture
 
@@ -198,6 +198,10 @@ terraform destroy
    - Check Container App logs in the Azure Portal
    - Verify the application image was built and pushed successfully to ACR
 
-4. **API Management Access Issues**
+4. **API Management Creation Issues**
+  - For terraform to deploy the API Management service, you need to provide the following role assignments:
+  - API Management Service Contributor, with a scope of the resource group (minimum required)
+
+5. **API Management Access Issues**
    - Ensure the publisher email is valid
    - Check API Management policies and backend configuration
