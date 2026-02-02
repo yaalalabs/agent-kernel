@@ -75,7 +75,7 @@ Or run with defaults:
 
 ```bash
 ./setup_backend.sh
-# Uses: ak-terraform-state-bucket, ak-terraform-state-lock, ap-southeast-2
+# Uses: agent-kernel-terraform-state-bucket, ak-terraform-state-lock, ap-southeast-2
 ```
 
 After running the setup script, update the `backend.tf` file with the same values.
