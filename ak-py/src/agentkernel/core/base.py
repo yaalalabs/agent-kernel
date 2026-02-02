@@ -4,11 +4,10 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from enum import Enum
-from typing import Any, ClassVar, List, Self, cast
+from typing import Any, ClassVar, Self, cast
 
 from deprecated import deprecated
 
-from .config import AKConfig
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
@@ -272,7 +271,7 @@ class Runner(ABC):
         :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
         """
-        pass
+        raise NotImplementedError()
 
 
 class Agent(ABC):
