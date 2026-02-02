@@ -172,5 +172,5 @@ class MultimodalPreHookFactory:
             else:
                 return NoOpPreHook()
         except Exception:
-            
+
             return NoOpPreHook()
