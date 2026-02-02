@@ -226,7 +226,7 @@ class CrewAIModule(Module):
         :param hooks: List of pre-execution hooks to attach.
         :return: CrewAIModule instance.
         """
-        super().get_agent(agent.role).pre_hooks().extend(hooks)
+        super().get_agent(agent.role).pre_hooks.extend(hooks)
         return self
 
     def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "CrewAIModule":
@@ -236,5 +236,5 @@ class CrewAIModule(Module):
         :param hooks: List of post-execution hooks to attach.
         :return: CrewAIModule instance.
         """
-        super().get_agent(agent.role).post_hooks().extend(hooks)
+        super().get_agent(agent.role).post_hooks.extend(hooks)
         return self

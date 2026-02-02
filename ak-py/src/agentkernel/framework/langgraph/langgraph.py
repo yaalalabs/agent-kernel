@@ -342,7 +342,7 @@ class LangGraphModule(BaseModule):
         :param hooks: List of pre-execution hooks to attach.
         :return: LangGraphModule instance.
         """
-        super().get_agent(agent.name).pre_hooks().extend(hooks)
+        super().get_agent(agent.name).pre_hooks.extend(hooks)
         return self
 
     def post_hook(self, agent: CompiledStateGraph, hooks: list[PostHook]) -> "LangGraphModule":
@@ -352,5 +352,5 @@ class LangGraphModule(BaseModule):
         :param hooks: List of post-execution hooks to attach.
         :return: LangGraphModule instance.
         """
-        super().get_agent(agent.name).post_hooks().extend(hooks)
+        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self

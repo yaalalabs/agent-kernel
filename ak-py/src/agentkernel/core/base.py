@@ -331,7 +331,7 @@ class Agent(ABC):
         """
         return self._post_hooks
 
-    @deprecated(version="0.2.12", reason="Use Agent.pre_hooks().extend() instead.")
+    @deprecated(version="0.2.12", reason="Use Agent.pre_hooks.extend() instead.")
     def attach_pre_hooks(self, hooks: list[PreHook]):
         """
         Attaches pre-execution hooks to the agent.
@@ -343,7 +343,7 @@ class Agent(ABC):
             if hook not in self._pre_hooks:
                 self._pre_hooks.append(hook)
 
-    @deprecated(version="0.2.12", reason="Use Agent.post_hooks().extend() instead.")
+    @deprecated(version="0.2.12", reason="Use Agent.post_hooks.extend() instead.")
     def attach_post_hooks(self, hooks: list[PostHook]):
         """
         Attaches post-execution hooks to the agent.
