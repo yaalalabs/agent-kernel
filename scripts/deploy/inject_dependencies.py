@@ -75,9 +75,6 @@ def generate_backend_tf(template_content: str, project_path: str, project_type: 
     Returns:
         Generated backend.tf content
     """
-    # Extract project name from path (e.g., "adk" from "examples/aws-serverless/adk")
-    project_name = project_path.split('/')[-1]
-    
     # Generate state key based on project path
     state_key = f"{project_path}/terraform.tfstate"
     
