@@ -5,7 +5,6 @@ import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-
 from ..core.config import AKConfig
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
@@ -100,8 +99,9 @@ class RESTAPI:
 
     @classmethod
     def _remove_ip_path_part(cls, path: str) -> str:
-        parsed = urlparse(path if "://" in path else f"http://{path}")
-        parts = parsed.path.strip("/").split("/", 1)
+        path = str(path)
+        parsed = path if "://" in path else f"http://{path}"
+        parts = parsed.strip("/").split("/", 1)
         return f"/{parts[0]}" if parts and parts[0] else "/"
 
     @classmethod
