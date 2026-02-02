@@ -92,3 +92,7 @@ variable "create_cosmosdb_cluster" {
   description = "Whether to create a CosmosDB cluster"
   default     = false
 }
+variable "openai_api_key" {
+  type        = string
+  description = "The OpenAI API key"
+}

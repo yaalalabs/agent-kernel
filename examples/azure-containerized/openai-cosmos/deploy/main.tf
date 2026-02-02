@@ -11,10 +11,12 @@ module "containerd_agent" {
   tags                        = var.tags
   api_version                 = var.api_version
   gateway_endpoints           = var.gateway_endpoints
-  environment_variables       = var.environment_variables
   is_production               = var.is_production
   create_redis_cluster        = var.create_redis_cluster
   create_cosmosdb_cluster     = var.create_cosmosdb_cluster
   resource_group_name         = var.resource_group_name
   publisher_email             = var.publisher_email
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
 }

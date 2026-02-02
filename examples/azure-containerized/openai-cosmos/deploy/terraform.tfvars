@@ -23,11 +23,6 @@ is_production = false
 
 package_path = "dist"
 
-environment_variables = {
-  OPENAI_API_KEY = ""
-}
-
-
 container_port              = 8000
 container_health_check_path = "/health"
 
