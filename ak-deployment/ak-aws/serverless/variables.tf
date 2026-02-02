@@ -182,6 +182,7 @@ variable "gateway_endpoints" {
 variable "authorizer_function_name" {
   description = "Authorizer Lambda function name"
   type        = string
+  default     = null
 }
 
 variable "authorizer_function_description" {
@@ -193,11 +194,13 @@ variable "authorizer_function_description" {
 variable "authorizer_handler_path" {
   description = "Lambda authorizer handler path"
   type        = string
+  default     = null
 }
 
 variable "authorizer_package_path" {
   description = "Authorizer Lambda package path"
   type        = string
+  default     = null
 }
 
 variable "authorizer_environment_variables" {
@@ -215,7 +218,7 @@ variable "authorizer_result_ttl_in_seconds" {
 variable "authorizer_package_type" {
   description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
   type        = string
-  default     = "LocalZip"
+  default     = null
 }
 
 

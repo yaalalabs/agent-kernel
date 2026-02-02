@@ -14,6 +14,14 @@ locals {
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+  create_authorizer          = var.authorizer_handler_path != null && var.authorizer_package_type != null
+
+  # Authorizer status message for logging
+  authorizer_status_message = local.create_authorizer ? (
+    "Created Authorizer Lambda: All required variables are present (authorizer_handler_path, authorizer_package_type)"
+  ) : (
+    "Did NOT create Authorizer Lambda: Missing one or more required variables (authorizer_handler_path, authorizer_package_type)"
+  )
 
   chat_endpoint = [
     {

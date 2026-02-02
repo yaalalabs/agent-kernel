@@ -53,8 +53,8 @@ resource "aws_api_gateway_method" "endpoint" {
       aws_api_gateway_resource.main[each.value.mainpath].id
   )
   http_method  = each.value.method
-  authorization = var.authorizer_handler_path != null ? "CUSTOM" : "NONE"
-  authorizer_id = var.authorizer_handler_path != null ? aws_api_gateway_authorizer.lambda_authorizer.id : null
+  authorization = local.create_authorizer ? "CUSTOM" : "NONE"
+  authorizer_id = local.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
 }
 
 resource "aws_api_gateway_integration" "endpoint" {
@@ -185,23 +185,25 @@ resource "aws_api_gateway_stage" "stage" {
 }
 
 resource "aws_lambda_permission" "allow_apigw_authorizer" {
-  statement_id  = "AllowAPIGatewayInvokeAuthorizer"
-  action        = "lambda:InvokeFunction"
-  function_name = module.authorizer_lambda.lambda_function_name
-  principal     = "apigateway.amazonaws.com"
+  count       = local.create_authorizer ? 1 : 0
+  statement_id = "AllowAPIGatewayInvokeAuthorizer"
+  action      = "lambda:InvokeFunction"
+  function_name = module.authorizer_lambda[0].lambda_function_name
+  principal   = "apigateway.amazonaws.com"
 
   # REST API
   source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*"
 }
 
 resource "aws_api_gateway_authorizer" "lambda_authorizer" {
-  name                   = "${var.product_alias}-${var.env_alias}-authorizer"
-  rest_api_id            = aws_api_gateway_rest_api.rest_api.id
-  authorizer_uri         = module.authorizer_lambda.lambda_function_invoke_arn
+  count    = local.create_authorizer ? 1 : 0
+  name     = "${var.product_alias}-${var.env_alias}-authorizer"
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  authorizer_uri = module.authorizer_lambda[0].lambda_function_invoke_arn
   authorizer_credentials = null
 
   type = "REQUEST"
-  identity_source        = "method.request.header.Authorization"
+  identity_source = "method.request.header.Authorization"
   authorizer_result_ttl_in_seconds = var.authorizer_result_ttl_in_seconds
 }
 

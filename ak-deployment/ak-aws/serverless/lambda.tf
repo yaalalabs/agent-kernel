@@ -171,6 +171,7 @@ module "lambda_deployment" {
 
 # Authorizer Lambda
 resource "aws_iam_role" "authorizer_lambda_role" {
+  count = local.create_authorizer ? 1 : 0
   name = "${var.product_alias}-${var.env_alias}-${var.module_name}-authorizer-lambda-role"
 
   assume_role_policy = jsonencode({
@@ -186,11 +187,13 @@ resource "aws_iam_role" "authorizer_lambda_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "authorizer_basic_execution" {
-  role       = aws_iam_role.authorizer_lambda_role.name
+  count      = local.create_authorizer ? 1 : 0
+  role       = aws_iam_role.authorizer_lambda_role[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 module "authorizer_lambda" {
+  count   = local.create_authorizer ? 1 : 0
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
@@ -199,7 +202,7 @@ module "authorizer_lambda" {
   handler       = var.authorizer_handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role = false
-  lambda_role = aws_iam_role.authorizer_lambda_role.arn
+  lambda_role = aws_iam_role.authorizer_lambda_role[0].arn
 
   image_uri              = var.authorizer_package_type == "Image" ? module.docker_image[0].docker_image_uri : null
   local_existing_package = var.authorizer_package_type == "LocalZip" ? var.authorizer_package_path : null
