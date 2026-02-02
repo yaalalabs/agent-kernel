@@ -6,7 +6,7 @@ from agentkernel.core.model import AgentReply, AgentRequest
 
 class MockRunner(Runner):
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         super().__init__(name)
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
@@ -21,13 +21,13 @@ def test_runner_init():
 
 class MockAgent(Agent):
 
-    def __init__(self, name, runner):
+    def __init__(self, name: str, runner: Runner):
         super().__init__(name, runner)
 
-    def get_description(self):
+    def get_description(self) -> str:
         return "Mock Agent"
 
-    def get_a2a_card(self):
+    def get_a2a_card(self) -> Any:
         return "Mock A2A Card"
 
 

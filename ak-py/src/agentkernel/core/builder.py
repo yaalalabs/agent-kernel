@@ -1,6 +1,6 @@
 import logging
 from enum import StrEnum
-from typing import Any, List, Self
+from typing import Any, Self
 
 from .config import AKConfig
 from .session import SessionCache, SessionStore
@@ -23,7 +23,7 @@ class A2ACardBuilder(Builder):
     """
 
     @staticmethod
-    def build(name: str, description: str, skills: List[Any]) -> Any:
+    def build(name: str, description: str, skills: list[Any]) -> Any:
         """
         Build and return an A2A AgentCard instance.
         :param name: Name of the agent.
