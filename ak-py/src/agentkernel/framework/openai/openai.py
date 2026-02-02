@@ -26,7 +26,7 @@ from ...trace import Trace
 FRAMEWORK = "openai"
 
 
-class OpenAISession(SessionABC):
+class OpenAISession:
     """
     OpenAISession class provides a session for OpenAI Agents SDK-based agents.
     """
