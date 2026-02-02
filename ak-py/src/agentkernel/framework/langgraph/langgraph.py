@@ -13,15 +13,14 @@ from langgraph.checkpoint.base import (
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from agentkernel.core.base import Session
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session as BaseSession
+from ...core.base import Session
+from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
@@ -230,7 +229,7 @@ class LangGraphAgent(BaseAgent):
                         )
                     )
         # TODO extract description from graph
-        return self._generate_a2a_card(agent_name=self.name, description="", skills=skills)
+        return A2ACardBuilder.build(name=self.name, description="", skills=skills)
 
 
 class LangGraphSession:
@@ -261,7 +260,7 @@ class LangGraphRunner(BaseRunner):
         super().__init__(FRAMEWORK)
 
     @staticmethod
-    def _session(session: BaseSession) -> Any | None:
+    def _session(session: Session) -> Any | None:
         """
         Returns the LangGraph session associated with the provided session.
         :param session: The session to retrieve the LangGraph session for.
@@ -343,7 +342,7 @@ class LangGraphModule(BaseModule):
         :param hooks: List of pre-execution hooks to attach.
         :return: LangGraphModule instance.
         """
-        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        super().get_agent(agent.name).pre_hooks().extend(hooks)
         return self
 
     def post_hook(self, agent: CompiledStateGraph, hooks: list[PostHook]) -> "LangGraphModule":
@@ -353,5 +352,5 @@ class LangGraphModule(BaseModule):
         :param hooks: List of post-execution hooks to attach.
         :return: LangGraphModule instance.
         """
-        super().get_agent(agent.name).attach_post_hooks(hooks)
+        super().get_agent(agent.name).post_hooks().extend(hooks)
         return self

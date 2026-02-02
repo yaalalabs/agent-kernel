@@ -8,7 +8,7 @@ from agentkernel.core.base import Session
 def test_session_init():
     session = Session("test-session")
     assert session.id == "test-session"
-    assert repr(session) == "Session(id=test-session)"
+    assert repr(session) == "Session(test-session)"
 
     assert len(session.get_all_keys()) == 2  # deprecated
     assert sum(1 for _, _ in session.get_all()) == 2

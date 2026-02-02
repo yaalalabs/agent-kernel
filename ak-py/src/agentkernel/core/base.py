@@ -2,8 +2,9 @@ import asyncio
 import contextvars
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from enum import Enum
-from typing import Any, List, Self
+from typing import Any, ClassVar, List, Self, cast
 
 from deprecated import deprecated
 
@@ -48,7 +49,7 @@ class Session:
     NON_VOLATILE_CACHE_KEY: str = Keys.NON_VOLATILE_CACHE.value
     """Deprecated since 0.2.12, use Session.Keys.NON_VOLATILE_CACHE.value instead."""
 
-    current_session: contextvars.ContextVar["Session"] = contextvars.ContextVar("current_session", default=None)
+    current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
     @classmethod
     def current(cls) -> Self | None:
@@ -73,24 +74,24 @@ class Session:
         Initializes a Session instance.
         :param id: Unique identifier for the session.
         """
-        self._log = logging.getLogger(f"ak.core.session [{id}]")
-        self._id = id
-        self._data = {}
-        self._lock = asyncio.Lock()
+        self._log: logging.Logger = logging.getLogger(f"ak.core.session [{id}]")
+        self._id: str = id
+        self._data: dict[str, Any] = {}
+        self._lock: asyncio.Lock = asyncio.Lock()
 
         # Pre-initialize key-value caches to be used by application code
         # which will not be part of the agent context.
         self.set(Session.Keys.VOLATILE_CACHE.value, KeyValueCache())
         self.set(Session.Keys.NON_VOLATILE_CACHE.value, KeyValueCache())
 
-        self._token = None
+        self._token: Any = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Returns a string representation of the Session instance.
         :return: String representation of the Session.
         """
-        return f"Session(id={self._id})"
+        return f"Session({self._id})"
 
     async def __aenter__(self) -> Self:
         """
@@ -111,7 +112,7 @@ class Session:
             self._lock.release()
             raise
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """
         Async context manager exit method that releases the lock and resets the current session.
         This method is called when exiting an async context manager (using 'async with').
@@ -158,7 +159,7 @@ class Session:
         """
         return self._data.keys()
 
-    def get_all(self, durable: bool = True, volatile: bool = True):
+    def get_all(self, durable: bool = True, volatile: bool = True) -> Iterator[tuple[str, Any]]:
         """
         Returns all session data objects.
         :param durable: Whether to include non-volatile (durable) data objects.
@@ -174,14 +175,14 @@ class Session:
         Returns the volatile key-value cache associated with this session.
         :return: The volatile KeyValueCache instance.
         """
-        return self.get(Session.Keys.VOLATILE_CACHE.value)
+        return cast(KeyValueCache, self.get(Session.Keys.VOLATILE_CACHE.value))
 
     def get_non_volatile_cache(self) -> KeyValueCache:
         """
         Returns the non-volatile key-value cache associated with this session.
         :return: The non-volatile KeyValueCache instance.
         """
-        return self.get(Session.Keys.NON_VOLATILE_CACHE.value)
+        return cast(KeyValueCache, self.get(Session.Keys.NON_VOLATILE_CACHE.value))
 
     def set(self, key: str, value: Any) -> Any:
         """
@@ -248,6 +249,13 @@ class Runner(ABC):
         """
         self._name = name
 
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Runner instance.
+        :return: String representation of the Runner.
+        """
+        return f"Runner({self._name})"
+
     @property
     def name(self) -> str:
         """
@@ -264,7 +272,7 @@ class Runner(ABC):
         :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
         """
-        raise NotImplementedError
+        pass
 
 
 class Agent(ABC):
@@ -283,10 +291,17 @@ class Agent(ABC):
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         """
-        self._name = name
-        self._runner = runner
-        self._pre_hooks = []
-        self._post_hooks = []
+        self._name: str = name
+        self._runner: Runner = runner
+        self._pre_hooks: list[PreHook] = []
+        self._post_hooks: list[PostHook] = []
+
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the Agent instance.
+        :return: String representation of the Agent.
+        """
+        return f"Agent({self._name})"
 
     @property
     def name(self) -> str:
@@ -316,6 +331,7 @@ class Agent(ABC):
         """
         return self._post_hooks
 
+    @deprecated(version="0.2.12", reason="Use Agent.pre_hooks().extend() instead.")
     def attach_pre_hooks(self, hooks: list[PreHook]):
         """
         Attaches pre-execution hooks to the agent.
@@ -327,6 +343,7 @@ class Agent(ABC):
             if hook not in self._pre_hooks:
                 self._pre_hooks.append(hook)
 
+    @deprecated(version="0.2.12", reason="Use Agent.post_hooks().extend() instead.")
     def attach_post_hooks(self, hooks: list[PostHook]):
         """
         Attaches post-execution hooks to the agent.
@@ -338,39 +355,16 @@ class Agent(ABC):
             if hook not in self._post_hooks:
                 self._post_hooks.append(hook)
 
-    @staticmethod
-    def _generate_a2a_card(agent_name: str, description: str, skills: List):
-        """
-        Helper method to generate an A2A AgentCard.
-        :param agent_name: Name of the agent.
-        :param description: Description of the agent.
-        :param skills: List of AgentSkill objects.
-        :return: An A2A AgentCard instance.
-        """
-        from a2a.types import AgentCapabilities, AgentCard
-
-        return AgentCard(
-            name=agent_name,
-            description=description,
-            url=f"{AKConfig.get().a2a.url}/{agent_name}",
-            version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            preferred_transport="HTTP+JSON",
-            capabilities=AgentCapabilities(streaming=False),
-            skills=skills,
-        )
-
     @abstractmethod
-    def get_a2a_card(self):
+    def get_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the description of the agent.
         """
         pass
 
     @abstractmethod
-    def get_description(self):
+    def get_a2a_card(self) -> Any:
         """
-        Returns the description of the agent.
+        Returns the A2A AgentCard associated with the agent.
         """
         pass

@@ -1,10 +1,9 @@
 import logging
 from enum import StrEnum
-
-from agentkernel.core.session.base import SessionCache
+from typing import Any, List, Self
 
 from .config import AKConfig
-from .session import SessionStore
+from .session import SessionCache, SessionStore
 
 
 class Builder:
@@ -15,41 +14,36 @@ class Builder:
     _log = logging.getLogger("ak.builder")
 
 
-class SessionStoreType(StrEnum):
+class A2ACardBuilder(Builder):
     """
-    Enumeration of supported session store types.
+    Builder class for creating A2ACard instances based on configuration.
 
-    This enum defines the available backend storage options for managing session state
-    within the agent system.
-
-    Attributes:
-        IN_MEMORY: Store sessions in local memory (non-persistent).
-        REDIS: Store sessions using Redis as the backend (persistent/distributed).
+    This class implements the Builder pattern to construct A2ACard instances
+    according to the application configuration.
     """
 
-    IN_MEMORY = "IN_MEMORY"
-    REDIS = "REDIS"
-    DYNAMODB = "DYNAMODB"
-
-    @classmethod
-    def from_str(cls, type_str: str) -> "SessionStoreType":
+    @staticmethod
+    def build(name: str, description: str, skills: List[Any]) -> Any:
         """
-        Create a SessionStoreType enum member from a string representation.
-
-        This class method attempts to convert a string to its corresponding SessionStoreType
-        enum value. If the conversion fails, it logs a warning and returns the default
-        IN_MEMORY type.
-
-        :param type_str: The string representation of the session store type. Case-insensitive input is supported.
-
-        :returns: The corresponding SessionStoreType enum member.
-            Returns SessionStoreType.IN_MEMORY as a fallback if the input string doesn't match any valid enum member.
+        Build and return an A2A AgentCard instance.
+        :param name: Name of the agent.
+        :param description: Description of the agent.
+        :param skills: List of AgentSkill objects.
+        :return: An A2A AgentCard instance.
         """
-        try:
-            return cls[type_str.upper()]
-        except KeyError:
-            Builder._log.warning(f"Invalid session store type '{type_str}', falling back to IN_MEMORY")
-            return SessionStoreType.IN_MEMORY
+        from a2a.types import AgentCapabilities, AgentCard
+
+        return AgentCard(
+            name=name,
+            description=description,
+            url=f"{AKConfig.get().a2a.url}/{name}",
+            version=AKConfig.get().library_version,
+            default_input_modes=["text"],
+            default_output_modes=["json"],
+            preferred_transport="HTTP+JSON",
+            capabilities=AgentCapabilities(streaming=False),
+            skills=skills,
+        )
 
 
 class SessionCacheBuilder(Builder):
@@ -87,6 +81,35 @@ class SessionStoreBuilder(Builder):
     configuration.
     """
 
+    class Types(StrEnum):
+        """
+        Enumeration of supported session store types.
+        """
+
+        IN_MEMORY = "IN_MEMORY"
+        REDIS = "REDIS"
+        DYNAMODB = "DYNAMODB"
+
+        @classmethod
+        def from_str(cls, type_str: str) -> Self:
+            """
+            Create a SessionStoreType enum member from a string representation.
+
+            This class method attempts to convert a string to its corresponding SessionStoreType
+            enum value. If the conversion fails, it logs a warning and returns the default
+            IN_MEMORY type.
+
+            :param type_str: The string representation of the session store type. Case-insensitive input is supported.
+
+            :returns: The corresponding SessionStoreType enum member.
+                Returns SessionStoreType.IN_MEMORY as a fallback if the input string doesn't match any valid enum member.
+            """
+            try:
+                return cls[type_str.upper()]
+            except KeyError:
+                Builder._log.warning(f"Invalid session store type '{type_str}', falling back to IN_MEMORY")
+                return SessionStoreBuilder.Types.IN_MEMORY
+
     @staticmethod
     def build() -> SessionStore:
         """
@@ -100,16 +123,16 @@ class SessionStoreBuilder(Builder):
             DynamoDBSessionStore (if configured type is DYNAMODB),
             or InMemorySessionStore (for all other types).
 
-        :raises: Any exceptions raised by SessionStoreType.from_str(), AKConfig.get(),
+        :raises: Any exceptions raised by SessionStoreBuilder.Types.from_str(), AKConfig.get(),
             RedisDriver(), RedisSessionStore(), or InMemorySessionStore() initialization.
         """
-        session_store_type: SessionStoreType = SessionStoreType.from_str(AKConfig.get().session.type)
+        session_store_type: SessionStoreBuilder.Types = SessionStoreBuilder.Types.from_str(AKConfig.get().session.type)
         Builder._log.info(f"Building {session_store_type} session store")
-        if session_store_type == SessionStoreType.REDIS:
+        if session_store_type == SessionStoreBuilder.Types.REDIS:
             from .session.redis import RedisSessionStore
 
             return RedisSessionStore(cache=SessionCacheBuilder.build())
-        elif session_store_type == SessionStoreType.DYNAMODB:
+        elif session_store_type == SessionStoreBuilder.Types.DYNAMODB:
             from .session.dynamodb import DynamoDBSessionStore
 
             return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
