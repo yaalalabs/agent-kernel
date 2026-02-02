@@ -5,8 +5,7 @@ description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,redis,azure] @ file:///home/nuwan/ak-repos/agent-kernel/ak-py",
-    "azure-functions>=1.24.0"
+    "agentkernel[openai,redis,azure]>=0.2.12"
 ]
 
 [dependency-groups]

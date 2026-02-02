@@ -53,7 +53,8 @@ locals {
 # VNet Module (creates new VNet if not provided)
 module "vnet" {
   count                = var.vnet_id == null ? 1 : 0
-  source               = "../common/modules/vnet"
+  source               = "yaalalabs/ak-common/azure//modules/vnet"
+  version              = "0.2.11"
   resource_group_name  = var.vnet_resource_group_name == null ? var.resource_group_name : var.vnet_resource_group_name
   location             = var.region
   product_alias        = var.product_alias
@@ -67,7 +68,8 @@ module "vnet" {
 # Redis Module (optional)
 module "redis" {
   count                    = var.create_redis_cluster == true ? 1 : 0
-  source                   = "../common/modules/redis"
+  source                   = "yaalalabs/ak-common/azure//modules/redis"
+  version                  = "0.2.11"
   product_alias            = var.product_alias
   subnet_name              = local.subnet_name
   function_subnet          = local.function_subnet_name
@@ -82,17 +84,18 @@ module "redis" {
   depends_on               = [module.vnet]
 }
 
-# CosmosDB Module (optional)
+# CosmosDB Module
 module "cosmos" {
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
-  source                         = "../common/modules/cosmos"
+  source                         = "yaalalabs/ak-common/azure//modules/cosmos"
+  version                        = "0.2.11"
   product_alias                  = var.product_alias
   env_alias                      = var.env_alias
   module_name                    = var.module_name
   tags                           = var.tags
   vnet_name                      = local.vnet_name
   subnet_id                      = local.subnet_ids
-  function_subnet_name          = local.function_subnet_name
+  function_subnet_name           = local.function_subnet_name
   table_name                     = "session_store"
   resource_group_name            = var.resource_group_name
   consistency_level              = var.cosmosdb_consistency_level
@@ -106,7 +109,8 @@ module "cosmos" {
 
 # Docker Image Module (ACR)
 module "docker_image" {
-  source              = "../common/modules/acr"
+  source              = "yaalalabs/ak-common/azure//modules/acr"
+  version             = "0.2.11"
   enabled             = true
   env_alias           = var.env_alias
   module_name         = var.module_name

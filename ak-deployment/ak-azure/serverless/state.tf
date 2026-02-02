@@ -37,7 +37,8 @@ locals {
 
 module "vnet" {
   count                = var.vnet_id == null ? 1 : 0
-  source               = "../common/modules/vnet"
+  source               = "yaalalabs/ak-common/azure//modules/vnet"
+  version              = "0.2.11"
   resource_group_name  = var.vnet_resource_group_name == null ? var.resource_group_name : var.vnet_resource_group_name
   location             = var.region
   product_alias        = var.product_alias
@@ -49,8 +50,9 @@ module "vnet" {
 }
 
 module "redis" {
+  source                   = "yaalalabs/ak-common/azure//modules/redis"
+  version                  = "0.2.11"
   count                    = var.create_redis_cluster == true ? 1 : 0
-  source                   = "../common/modules/redis"
   product_alias            = var.product_alias
   env_alias                = var.env_alias
   module_name              = var.module_name
@@ -66,8 +68,9 @@ module "redis" {
 }
 
 module "cosmos" {
+  source                         = "yaalalabs/ak-common/azure//modules/cosmos"
+  version                        = "0.2.11"
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
-  source                         = "../common/modules/cosmos"
   product_alias                  = var.product_alias
   env_alias                      = var.env_alias
   module_name                    = var.module_name
@@ -85,14 +88,3 @@ module "cosmos" {
   create_NSG                     = true
   depends_on                     = [module.vnet]
 }
-
-
-# module "docker_image" {
-#   enabled             = var.package_type == "Image" ? true : false
-#   source              = "../common/modules/acr"
-#   env_alias           = var.env_alias
-#   module_name         = var.module_name
-#   product_alias       = var.product_alias
-#   source_path         = var.package_path
-#   resource_group_name = var.resource_group_name
-# }
