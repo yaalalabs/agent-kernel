@@ -33,6 +33,7 @@ on:
 
 jobs:
   setup:
+    if: ${{ inputs.run_e2e_tests }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
