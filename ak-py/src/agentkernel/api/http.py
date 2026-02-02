@@ -25,6 +25,7 @@ class RESTAPI:
     _log = logging.getLogger("ak.api.http")
     _custom_routers = []
     _auth_token_validators = []
+    _no_auth_endpoints = ["/health"]
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -98,11 +99,20 @@ class RESTAPI:
         uvicorn.run(app=app, host=host, port=port, reload=False)
 
     @classmethod
-    def add_auth_handlers(cls, auth_token_validators: list[AuthValidator]):
+    def _remove_ip_path_part(cls, path: str) -> str:
+        parsed = urlparse(path if "://" in path else f"http://{path}")
+        parts = parsed.path.strip("/").split("/", 1)
+        return f"/{parts[0]}" if parts and parts[0] else "/"
+
+    @classmethod
+    def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
         """Adds AuthTokenValidators to the REST API.
-        :param auth_token_validators: List of auth token validators to add."""
+        :param auth_validators: List of auth validators to add."""
         def get_auth_function(token_validator: AuthValidator):
             def verify_token(request: Request):
+                if cls._remove_ip_path_part(request.url) in cls._no_auth_endpoints: # ignore endpoints that do not need authentication
+                    return
+                cls._log.info(f"Validating token for request: {request.url}")
                 auth_token = request.headers.get("authorization")
                 cls._log.debug(f"Validating token: '{auth_token}'")
                 if auth_token is None:
@@ -110,9 +120,9 @@ class RESTAPI:
                 auth_token = auth_token.replace("Bearer ", "").strip()
                 result = token_validator.validate(token=auth_token, context=ValidationContext(path=str(request.url), http_method=request.method, headers=dict(request.headers)))
                 if not result.is_valid:
-                    raise HTTPException(status_code=401, detail=result.error or "Unauthorized")
+                    raise HTTPException(status_code=401, detail=result.error_msg or "Unauthorized")
                 return result
             return verify_token
-        for token_validator in auth_token_validators:
+        for token_validator in auth_validators:
             cls._auth_token_validators.append(Depends(get_auth_function(token_validator)))
 

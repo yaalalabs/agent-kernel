@@ -17,6 +17,7 @@ class ValidationResult(BaseModel):
     is_valid: bool
     subject: Optional[str] = "user"
     claims: Optional[Dict[str, Any]] = None
+    error_msg: Optional[str] = None
 
 
 class AuthValidator(ABC):
