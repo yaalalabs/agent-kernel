@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,6 +29,9 @@ jobs:
       
       - name: Install dependencies
         run: pip install pyyaml
+      
+      - name: Validate integration test configuration
+        run: python3 .github/scripts/validate_integration_config.py
       
       - name: Generate test matrix
         id: set-matrix
@@ -93,10 +97,24 @@ jobs:
         with:
           terraform_version: 1.9.5
 
+      - name: Inject dependencies
+        run: python3 scripts/deploy/inject_dependencies.py
+
       - name: Deploy and test aws-serverless/openai
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: |
+          # Deploy
+          python .github/scripts/run_single_test.py \
+            --type aws-serverless \
+            --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action deploy
+          
+          # Test
           python .github/scripts/run_single_test.py \
             --type aws-serverless \
             --path examples/aws-serverless/openai \
@@ -153,10 +171,27 @@ jobs:
         with:
           terraform_version: 1.9.5
 
+      - name: Inject dependencies
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        run: python3 scripts/deploy/inject_dependencies.py
+
       - name: Run Test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: |
+          # Deploy (for AWS types)
+          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+          fi
+          
+          # Test
           python .github/scripts/run_single_test.py \
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \
