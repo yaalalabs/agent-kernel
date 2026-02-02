@@ -15,13 +15,31 @@ from .storage import get_attachment_data
 
 _log = logging.getLogger(__name__)
 
+# Fallback session ID for frameworks (like ADK) that don't propagate contextvars
+# to tool execution. This is set by the runner before executing the agent.
+_fallback_session_id: str | None = None
 
-def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
+
+def set_fallback_session_id(session_id: str | None) -> None:
+    """Set the fallback session ID for tool execution."""
+    global _fallback_session_id
+    _fallback_session_id = session_id
+
+
+def get_fallback_session_id() -> str | None:
+    """Get the fallback session ID."""
+    return _fallback_session_id
+
+
+def analyis_attachments(attachment_ids: list[str], prompt: str, session_id: str = None) -> str:
     """
     Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
     :param attachment_ids: List of attachment IDs to analyze
     :param prompt: The question/prompt for analyzing the attachments
+    :param session_id: Optional session ID to use. If not provided, uses contextvar lookup.
+                       This parameter is injected by framework wrappers (like ADK) that can't
+                       propagate contextvars to tool execution context.
     :return: Only the LLM analysis response text
     """
     if not attachment_ids:
@@ -31,8 +49,14 @@ def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
         from ..base import Session
         from ..runtime import Runtime
 
-        # Get session and cache
-        session_id = Session.get_current_session_id()
+        # Get session and cache - use provided session_id, then contextvar, then fallback
+        if session_id is None:
+            session_id = Session.get_current_session_id()
+        if not session_id:
+            # Try the fallback for frameworks that don't propagate contextvars
+            session_id = get_fallback_session_id()
+        if not session_id:
+            return "No session context available"
         session = Runtime.current().sessions().load(session_id)
         nv_cache = session.get_non_volatile_cache()
         attachments = get_attachment_data(session=None, cache=nv_cache, attachment_ids=attachment_ids)
