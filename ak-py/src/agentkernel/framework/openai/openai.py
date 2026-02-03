@@ -155,23 +155,10 @@ class OpenAIRunner(BaseRunner):
             if not message_content:
                 return AgentReplyText(text="Sorry. No valid content found in the requests")
 
-            # Set fallback session ID for tools that can't access contextvar in OpenAI context
-            from agentkernel.core.multimodal.tools import set_fallback_session_id
-            set_fallback_session_id(session.id if session else None)
+            # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
+            reply = (await Runner.run(agent.agent, message_content, session=self._session(session))).final_output
 
-            try:
-                # Use the structured message format if we have images or files, otherwise use simple prompt
-                if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
-                    # Simple text-only case
-                    reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
-                else:
-                    # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
-                    reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
-
-                return AgentReplyText(text=str(reply), prompt=prompt)
-            finally:
-                # Clear the fallback session ID after execution
-                set_fallback_session_id(None)
+            return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
 

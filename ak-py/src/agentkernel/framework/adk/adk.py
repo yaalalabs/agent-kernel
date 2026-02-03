@@ -152,16 +152,9 @@ class GoogleADKRunner(BaseRunner):
             adk_session = self._session(session)
 
             # Set fallback session ID for tools that can't access contextvar in ADK context
-            from agentkernel.core.multimodal.tools import set_fallback_session_id
-            set_fallback_session_id(session.id)
-
-            try:
-                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-                runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-                reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
-            finally:
-                # Clear the fallback session ID after execution
-                set_fallback_session_id(None)
+            await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+            runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+            reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
 
             return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:

@@ -407,7 +407,7 @@ class Agent(ABC):
             "Available tool:\n"
             "- analyis_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
             "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
-            "Use this tool when asked about attached images or files. Do not ask for clarification if you haven't read the files yet."
+            "Use this tool when asked about attached images or files.\n"
+            "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS (numbers, quotes, tables) found in the files, you MUST use the `analyis_attachments` tool to inspect the file content again. Do not guess based on the summary."
         )
         return tool_instruction
-

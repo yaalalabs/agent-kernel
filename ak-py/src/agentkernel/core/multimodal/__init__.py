@@ -18,6 +18,4 @@ from .storage import (
 from .tools import (
     analyis_attachments,
     describe_attachment_briefly,
-    get_fallback_session_id,
-    set_fallback_session_id,
 )

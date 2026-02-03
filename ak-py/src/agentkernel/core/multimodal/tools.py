@@ -15,31 +15,15 @@ from .storage import get_attachment_data
 
 _log = logging.getLogger(__name__)
 
-# Fallback session ID for frameworks (like ADK) that don't propagate contextvars
-# to tool execution. This is set by the runner before executing the agent.
-_fallback_session_id: str | None = None
+from contextvars import ContextVar
 
 
-def set_fallback_session_id(session_id: str | None) -> None:
-    """Set the fallback session ID for tool execution."""
-    global _fallback_session_id
-    _fallback_session_id = session_id
-
-
-def get_fallback_session_id() -> str | None:
-    """Get the fallback session ID."""
-    return _fallback_session_id
-
-
-def analyis_attachments(attachment_ids: list[str], prompt: str, session_id: str = None) -> str:
+def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
     """
     Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
     :param attachment_ids: List of attachment IDs to analyze
     :param prompt: The question/prompt for analyzing the attachments
-    :param session_id: Optional session ID to use. If not provided, uses contextvar lookup.
-                       This parameter is injected by framework wrappers (like ADK) that can't
-                       propagate contextvars to tool execution context.
     :return: Only the LLM analysis response text
     """
     if not attachment_ids:
@@ -49,16 +33,35 @@ def analyis_attachments(attachment_ids: list[str], prompt: str, session_id: str 
         from ..base import Session
         from ..runtime import Runtime
 
-        # Get session and cache - use provided session_id, then contextvar, then fallback
-        if session_id is None:
-            session_id = Session.get_current_session_id()
-        if not session_id:
-            # Try the fallback for frameworks that don't propagate contextvars
-            session_id = get_fallback_session_id()
-        if not session_id:
-            return "No session context available"
-        session = Runtime.current().sessions().load(session_id)
+        # Logic to retrieve Session ID from the first attachment ID
+        # Format: {session_id}_{uuid} or just {uuid} (legacy)
+        session_id = None
+        first_id = attachment_ids[0]
+        if "_" in first_id:
+            # We assume the part before the first underscore is the session_id
+            # This relies on the fact that session IDs don't contain underscores usually,
+            # or we control the splitting logic.
+            # Ideally session IDs are simple strings.
+            parts = first_id.split("_")
+            if len(parts) >= 2:
+                session_id = parts[0]
+
+        # Try to load session
+        session = Session.current()
+        if not session and session_id:
+            # Load from runtime if not in current context
+            try:
+                session = Runtime.current().sessions().load(session_id)
+            except Exception:
+                _log.warning(f"Could not load session {session_id} from Runtime")
+
+        if not session:
+            return "No session context available (Session ID not found in context or attachment ID)"
+
         nv_cache = session.get_non_volatile_cache()
+        # We need to strip the session_id prefix if we want to search by partial ID,
+        # BUT the storage key is "attachment:{full_id}".
+        # So we should pass the FULL ID to get_attachment_data.
         attachments = get_attachment_data(session=None, cache=nv_cache, attachment_ids=attachment_ids)
 
         if not attachments:

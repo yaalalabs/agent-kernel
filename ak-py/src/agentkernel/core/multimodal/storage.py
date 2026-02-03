@@ -155,7 +155,13 @@ def save_attachment(
     :return: The generated attachment ID
     """
     driver = get_storage_driver(session=session, cache=cache)
-    attachment_id = str(uuid.uuid4())[:8]  # Short ID for easier reference
+    # Generate ID: if session exists, prefix it (e.g., "sess123_abc12345")
+    # This allows tools to recover the session ID just from the attachment ID.
+    unique_part = str(uuid.uuid4())[:8]
+    if session:
+        attachment_id = f"{session.id}_{unique_part}"
+    else:
+        attachment_id = unique_part
     timestamp = time.time()
 
     # Save attachment data
