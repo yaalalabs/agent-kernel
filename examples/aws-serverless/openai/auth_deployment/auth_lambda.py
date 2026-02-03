@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
@@ -10,6 +11,7 @@ class CustomAuthTokenValidator(AuthValidator):
 
         print(f"Token: {token}")
         print(f"Context: {context.model_dump_json(indent=2)}")
+        print(f"Environment Variable: 'SOME_OTHER_KEY': {os.getenv('SOME_OTHER_KEY')}")
 
         if token != "test12345":
             return ValidationResult(is_valid=False)
