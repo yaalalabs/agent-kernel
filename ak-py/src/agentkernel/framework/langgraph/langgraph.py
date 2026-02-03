@@ -231,6 +231,25 @@ class LangGraphAgent(BaseAgent):
         # TODO extract description from graph
         return A2ACardBuilder.build(name=self.name, description="", skills=skills)
 
+    def get_wrapped(self):
+        """
+        Returns the underlying agent object (LangGraph Agent).
+        """
+        return self.agent
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Attaches a tool to the agent.
+        :param tool: The tool to attach.
+        """
+        pass
+
+    def override_system_prompt(self, session: "Session", prompt: str) -> None:
+        """
+        Overrides the system prompt of the agent via Session injection.
+        """
+        pass
+
 
 class LangGraphSession:
     """
