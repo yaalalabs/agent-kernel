@@ -10,6 +10,7 @@ This module provides a complete serverless deployment solution:
 - 🌐 **API Gateway**: REST API with Three-Level Resource Creation and Routing
 - 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
+- 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
 
@@ -269,6 +270,13 @@ module "serverless_api_dynamodb" {
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
+| `authorizer_function_name` | Authorizer Lambda function name | `string` | `null` | no |
+| `authorizer_function_description` | Authorizer Lambda function description | `string` | `"API Gateway Lambda Authorizer"` | no |
+| `authorizer_handler_path` | Lambda authorizer handler path | `string` | `null` | no |
+| `authorizer_package_path` | Authorizer Lambda package path | `string` | `null` | no |
+| `authorizer_package_type` | Authorizer Lambda deployment type Image/LocalZip/S3Zip | `string` | `null` | no |
+| `authorizer_environment_variables` | Authorizer Lambda environment variables | `map(string)` | `{}` | no |
+| `authorizer_result_ttl_in_seconds` | Authorizer result TTL in seconds | `number` | `150` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
 
 ## 📤 Outputs
@@ -283,6 +291,7 @@ module "serverless_api_dynamodb" {
 | `api_gateway_stage_name` | API Gateway stage name | `agents` |
 | `dynamodb_memory_table_arn` | DynamoDB table ARN (if enabled) | `arn:aws:dynamodb:us-west-2:123456789012:table/myapp-prod-api-session_store` |
 | `dynamodb_memory_table_name` | DynamoDB table name (if enabled) | `myapp-prod-api-session_store` |
+| `authorizer_status` | Status message indicating whether the authorizer Lambda will be created | `"Created Authorizer Lambda: All required variables are present"` |
 
 ## ✨ Features
 
@@ -316,6 +325,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 - Stage name: `agents` (production-ready)
 - CORS support configurable
 - Custom domain support compatible
+- **Custom Authorizer**: Lambda-based request authorization with configurable TTL
 
 ### 🔒 Security Features
 
@@ -324,11 +334,13 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 - **Code Signing**: Optional for production deployments
 - **VPC Support**: Compatible with VPC-based Lambda
 - **Encryption**: KMS encryption support for environment variables
+- **Custom Authorization**: Lambda-based API Gateway authorizer for request authentication and authorization
 
 ### 🏷️ Naming Conventions
 
 Resources follow consistent naming:
 - Lambda Function: `{product_alias}-{env_alias}-{module_name}-{function_name}`
+- Authorizer Lambda: `{product_alias}-{env_alias}-{module_name}-{authorizer_function_name}`
 - API Gateway: `{product_alias}-{env_alias}-{module_name}-api`
 - CloudWatch Logs: `/aws/lambda/{function_name}`
 
@@ -494,7 +506,24 @@ module "api_v2" {
 }
 ```
 
-## 🔍 Troubleshooting
+## � Custom Authorizer Configuration
+
+The module supports a Lambda-based API Gateway authorizer for custom authentication and authorization logic.
+
+### Authorizer Setup
+
+**Required Variables**:
+- `authorizer_handler_path` - Path to the authorizer Lambda handler (e.g., `auth_lambda.handler`)
+- `authorizer_package_type` - Deployment type for authorizer (`Image`, `LocalZip`, or `S3Zip`)
+
+**Optional Variables**:
+- `authorizer_function_name` - Custom name for the authorizer function
+- `authorizer_function_description` - Description of the authorizer function
+- `authorizer_package_path` - Path to authorizer deployment package (required only for LocalZip package type)
+- `authorizer_environment_variables` - Environment variables for authorizer
+- `authorizer_result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
+
+## � Troubleshooting
 
 ### Lambda Function Fails to Deploy
 
