@@ -180,6 +180,30 @@ class CrewAIAgent(BaseAgent):
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
         return A2ACardBuilder.build(name=self.name, description=self.agent.backstory, skills=skills)
 
+    def get_wrapped(self):
+        """
+        Returns the underlying agent object (CrewAI Agent).
+        """
+        return self.agent
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Attaches a tool to the agent.
+        :param tool: The tool to attach.
+        """
+        if tool not in self.agent.tools:
+            self.agent.tools.append(tool)
+
+    def override_system_prompt(self, session: "Session", prompt: str) -> None:
+        """
+        Overrides the system prompt of the agent via Session injection.
+        For CrewAI, we append to the backstory as there is no system instructions field.
+        """
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled:
+
+            self._agent.backstory = self._agent.backstory + "\n" + BaseAgent.get_system_prompt_suffix()
+
 
 class CrewAIModule(Module):
     """
