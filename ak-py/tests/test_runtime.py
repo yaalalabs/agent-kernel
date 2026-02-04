@@ -158,7 +158,7 @@ async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-1")
+    runtime.sessions().new("test-session-1")
 
     # Get volatile cache with explicit session_id using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-1")
@@ -183,7 +183,7 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-2")
+    runtime.sessions().new("test-session-2")
 
     # Get non-volatile cache with explicit session_id using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-2")
@@ -211,10 +211,6 @@ async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatc
     # Without setting session context, Session.current() should return None
     current_session = Session.current()
     assert current_session is None
-
-    # Attempting to access cache on None should raise AttributeError
-    with pytest.raises(AttributeError):
-        current_session.get_volatile_cache()
 
 
 @pytest.mark.asyncio
@@ -314,8 +310,8 @@ async def test_auxiliary_cache_volatile_isolation_between_sessions(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session1 = runtime.sessions().new("test-session-5")
-    session2 = runtime.sessions().new("test-session-6")
+    runtime.sessions().new("test-session-5")
+    runtime.sessions().new("test-session-6")
 
     # Get caches for both sessions using runtime.sessions().load()
     loaded_session1 = runtime.sessions().load("test-session-5")
@@ -345,8 +341,8 @@ async def test_auxiliary_cache_non_volatile_isolation_between_sessions(monkeypat
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session1 = runtime.sessions().new("test-session-7")
-    session2 = runtime.sessions().new("test-session-8")
+    runtime.sessions().new("test-session-7")
+    runtime.sessions().new("test-session-8")
 
     # Get caches for both sessions using runtime.sessions().load()
     loaded_session1 = runtime.sessions().load("test-session-7")
@@ -376,7 +372,7 @@ async def test_auxiliary_cache_volatile_and_non_volatile_are_separate(monkeypatc
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-9")
+    runtime.sessions().new("test-session-9")
 
     # Get both caches for the same session using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-9")
@@ -520,7 +516,7 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_auxiliary_cache_empty_session_id_raises(monkeypatch):
+async def test_load_empty_session_id_creates_session(monkeypatch):
     """
     Test that empty string session_id creates a new session
     """
@@ -556,7 +552,7 @@ async def test_deprecated_auxiliary_cache_matches_new_method_with_session_id(mon
 
     runtime = Runtime(SessionStoreBuilder.build())
     with runtime:
-        session = runtime.sessions().new("test-session-verify-1")
+        runtime.sessions().new("test-session-verify-1")
 
         # Get cache using deprecated method
         import warnings
@@ -633,7 +629,7 @@ async def test_deprecated_auxiliary_cache_non_volatile_matches_new_method(monkey
 
     runtime = Runtime(SessionStoreBuilder.build())
     with runtime:
-        session = runtime.sessions().new("test-session-verify-3")
+        runtime.sessions().new("test-session-verify-3")
 
         # Get cache using deprecated method
         import warnings
