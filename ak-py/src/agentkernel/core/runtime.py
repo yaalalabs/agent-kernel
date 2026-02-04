@@ -210,7 +210,7 @@ class GlobalRuntime(Runtime, metaclass=Singleton):
 
 @deprecated(
     version="0.2.12",
-    reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead."
+    reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead.",
 )
 class AuxiliaryCache:
     """
@@ -225,7 +225,7 @@ class AuxiliaryCache:
     @staticmethod
     @deprecated(
         version="0.2.12",
-        reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead."
+        reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead.",
     )
     def get_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
@@ -245,7 +245,7 @@ class AuxiliaryCache:
     @staticmethod
     @deprecated(
         version="0.2.12",
-        reason="Use Session.current().get_non_volatile_cache() or Runtime.current().sessions().load(session_id).get_non_volatile_cache() instead."
+        reason="Use Session.current().get_non_volatile_cache() or Runtime.current().sessions().load(session_id).get_non_volatile_cache() instead.",
     )
     def get_non_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
