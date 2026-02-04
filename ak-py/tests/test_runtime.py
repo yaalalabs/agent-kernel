@@ -160,7 +160,7 @@ async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
     runtime = Runtime(SessionStoreBuilder.build())
     session = runtime.sessions().new("test-session-1")
 
-    # Get volatile cache with explicit session_id using Runtime.current().sessions().load()
+    # Get volatile cache with explicit session_id using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-1")
     v_cache = loaded_session.get_volatile_cache()
     assert v_cache is not None
@@ -185,7 +185,7 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
     runtime = Runtime(SessionStoreBuilder.build())
     session = runtime.sessions().new("test-session-2")
 
-    # Get non-volatile cache with explicit session_id using Runtime.current().sessions().load()
+    # Get non-volatile cache with explicit session_id using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-2")
     nv_cache = loaded_session.get_non_volatile_cache()
     assert nv_cache is not None
@@ -317,7 +317,7 @@ async def test_auxiliary_cache_volatile_isolation_between_sessions(monkeypatch):
     session1 = runtime.sessions().new("test-session-5")
     session2 = runtime.sessions().new("test-session-6")
 
-    # Get caches for both sessions using Runtime.current().sessions().load()
+    # Get caches for both sessions using runtime.sessions().load()
     loaded_session1 = runtime.sessions().load("test-session-5")
     loaded_session2 = runtime.sessions().load("test-session-6")
     v_cache1 = loaded_session1.get_volatile_cache()
@@ -348,7 +348,7 @@ async def test_auxiliary_cache_non_volatile_isolation_between_sessions(monkeypat
     session1 = runtime.sessions().new("test-session-7")
     session2 = runtime.sessions().new("test-session-8")
 
-    # Get caches for both sessions using Runtime.current().sessions().load()
+    # Get caches for both sessions using runtime.sessions().load()
     loaded_session1 = runtime.sessions().load("test-session-7")
     loaded_session2 = runtime.sessions().load("test-session-8")
     nv_cache1 = loaded_session1.get_non_volatile_cache()
@@ -378,7 +378,7 @@ async def test_auxiliary_cache_volatile_and_non_volatile_are_separate(monkeypatc
     runtime = Runtime(SessionStoreBuilder.build())
     session = runtime.sessions().new("test-session-9")
 
-    # Get both caches for the same session using Runtime.current().sessions().load()
+    # Get both caches for the same session using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-9")
     v_cache = loaded_session.get_volatile_cache()
     nv_cache = loaded_session.get_non_volatile_cache()
@@ -405,9 +405,9 @@ async def test_auxiliary_cache_operations_on_volatile_cache(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-10")
+    runtime.sessions().new("test-session-10")
 
-    # Get volatile cache using Runtime.current().sessions().load()
+    # Get volatile cache using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-10")
     v_cache = loaded_session.get_volatile_cache()
 
@@ -451,9 +451,9 @@ async def test_auxiliary_cache_operations_on_non_volatile_cache(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-11")
+    runtime.sessions().new("test-session-11")
 
-    # Get non-volatile cache using Runtime.current().sessions().load()
+    # Get non-volatile cache using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-11")
     nv_cache = loaded_session.get_non_volatile_cache()
 
@@ -497,9 +497,9 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-12")
+    runtime.sessions().new("test-session-12")
 
-    # Get volatile cache using Runtime.current().sessions().load()
+    # Get volatile cache using runtime.sessions().load()
     loaded_session = runtime.sessions().load("test-session-12")
     v_cache = loaded_session.get_volatile_cache()
 
