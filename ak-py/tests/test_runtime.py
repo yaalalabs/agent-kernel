@@ -198,7 +198,8 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatch):
     """
-    Test that Session.current() raises exception when no session context is available
+    Test that Session.current() returns None when no session context is available
+    and accessing cache methods raises appropriate error
     """
 
     class FakeCfg:
@@ -210,12 +211,17 @@ async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatc
     # Without setting session context, Session.current() should return None
     current_session = Session.current()
     assert current_session is None
+
+    # Attempting to access cache on None should raise AttributeError
+    with pytest.raises(AttributeError):
+        current_session.get_volatile_cache()
 
 
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkeypatch):
     """
     Test that Session.current() returns None when no session context is available
+    and accessing cache methods raises appropriate error
     """
 
     class FakeCfg:
@@ -227,6 +233,10 @@ async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkey
     # Without setting session context, Session.current() should return None
     current_session = Session.current()
     assert current_session is None
+
+    # Attempting to access cache on None should raise AttributeError
+    with pytest.raises(AttributeError):
+        current_session.get_non_volatile_cache()
 
 
 @pytest.mark.asyncio
