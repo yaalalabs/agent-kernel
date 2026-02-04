@@ -172,7 +172,7 @@ module "lambda_deployment" {
 # Authorizer Lambda
 resource "aws_iam_role" "authorizer_lambda_role" {
   count = local.create_authorizer ? 1 : 0
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-authorizer-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.authorizer_function_name}-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -197,14 +197,14 @@ module "authorizer_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-authorizer"
+  function_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.authorizer_function_name}"
   description   = "API Gateway Authorizer Lambda"
   handler       = var.authorizer_handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role = false
   lambda_role = aws_iam_role.authorizer_lambda_role[0].arn
 
-  image_uri              = var.authorizer_package_type == "Image" ? module.docker_image[0].docker_image_uri : null
+  image_uri              = var.authorizer_package_type == "Image" ? module.authorizer_docker_image[0].docker_image_uri : null
   local_existing_package = var.authorizer_package_type == "LocalZip" ? var.authorizer_package_path : null
   create_package         = false
   package_type           = var.authorizer_package_type == "Image" ? "Image" : "Zip"

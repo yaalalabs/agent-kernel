@@ -182,7 +182,7 @@ variable "gateway_endpoints" {
 variable "authorizer_function_name" {
   description = "Authorizer Lambda function name"
   type        = string
-  default     = null
+  default     = "authorizer"
 }
 
 variable "authorizer_function_description" {
@@ -201,6 +201,10 @@ variable "authorizer_package_path" {
   description = "Authorizer Lambda package path"
   type        = string
   default     = null
+  validation {
+    condition = var.authorizer_package_type == "Image" || var.authorizer_package_path != null
+    error_message = "Authorizer package path must be provided when authorizer_package_type is not 'Image'."
+  }
 }
 
 variable "authorizer_environment_variables" {
