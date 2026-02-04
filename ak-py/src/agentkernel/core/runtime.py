@@ -210,7 +210,7 @@ class GlobalRuntime(Runtime, metaclass=Singleton):
 
 @deprecated(
     version="0.2.12",
-    reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead.",
+    reason="Access to the current session is now possible with Session.current(). Access to a given session in the current runtime is possible with Runtime.current().sessions().load(session_id). Once the session is accessible, its caches can be accessed via get_volatile_cache() and get_non_volatile_cache() methods.",
 )
 class AuxiliaryCache:
     """
@@ -218,8 +218,10 @@ class AuxiliaryCache:
     the current or a provided session.
 
     .. deprecated:: 0.2.12
-        Use Session.current() or Runtime.current().sessions().load(session_id) to get the Session
-        and then call get_volatile_cache() or get_non_volatile_cache().
+        Access to the current session is now possible with Session.current(). Access to a given
+        session in the current runtime is possible with Runtime.current().sessions().load(session_id).
+        Once the session is accessible, its caches can be accessed via get_volatile_cache() and
+        get_non_volatile_cache() methods.
     """
 
     @staticmethod
