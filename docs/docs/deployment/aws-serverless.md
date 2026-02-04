@@ -406,7 +406,7 @@ module "serverless_agents" {
   # Optional authorizer settings
   # authorizer_function_description = "API Gateway Lambda Authorizer"
   # authorizer_result_ttl_in_seconds = 300
-  # authorizer_package_path = "../auth_deployment/auth_dist"  # required for LocalZip
+  # authorizer_package_path = "../auth_deployment/auth_dist"  # required for all package types
   # authorizer_environment_variables = {
   #   "SOME_OTHER_KEY" = "Some Other Value"
   # }
@@ -421,7 +421,7 @@ module "serverless_agents" {
 - `authorizer_function_name` - Custom name for the authorizer function (auto-generated if not provided)
 - `authorizer_function_description` - Description for the authorizer Lambda function (default: "API Gateway Authorizer Lambda")
 - `authorizer_result_ttl_in_seconds` - Cache TTL for authorizer results (default: 150)
-- `authorizer_package_path` - Path to authorizer package (required only for LocalZip package type)
+- `authorizer_package_path` - Path to authorizer package (required for all package types)
 - `authorizer_environment_variables` - Environment variables for the authorizer Lambda
 
 ### Deployment Packages

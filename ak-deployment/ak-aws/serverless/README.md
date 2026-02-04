@@ -519,7 +519,7 @@ The module supports a Lambda-based API Gateway authorizer for custom authenticat
 **Optional Variables**:
 - `authorizer_function_name` - Custom name for the authorizer function
 - `authorizer_function_description` - Description of the authorizer function
-- `authorizer_package_path` - Path to authorizer deployment package (required only for LocalZip package type)
+- `authorizer_package_path` - Path to authorizer deployment package (required for all package types)
 - `authorizer_environment_variables` - Environment variables for authorizer
 - `authorizer_result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
 
