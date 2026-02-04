@@ -1,4 +1,6 @@
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler
+from typing import Optional
+
+from agentkernel.api import RESTAPI, AgentRESTRequestHandler, AuthValidator, ValidationContext, ValidationResult
 from agentkernel.crewai import CrewAIModule
 from fastapi import APIRouter
 
@@ -53,6 +55,21 @@ class CustomHandler(AgentRESTRequestHandler):
 
 
 CrewAIModule([math_agent, history_agent])
+
+
+# Defining the Custom Auth validator for auth token validation
+class CustomAuthValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        """Validate JWT token and return validation result."""
+        print(f"Token: {token}")
+        print(f"Context: {context.model_dump_json(indent=2)}")
+        if token != "test12345":
+            return ValidationResult(is_valid=False)
+        return ValidationResult(is_valid=True)
+
+
+# Adding Auth handlers to the REST API
+RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
 
 
 def main():
