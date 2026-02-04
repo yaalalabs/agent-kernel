@@ -379,6 +379,55 @@ https://{api-id}.execute-api.{region}.amazonaws.com/api/{version}/{endpoint}
 - Deployed in private subnets
 - Secure VPC-only access
 
+### 🔒 Authentication
+
+For production deployments, implement authentication to secure your Agent Kernel endpoints.
+
+#### Environment Variable Configuration
+
+Configure authentication through environment variables in your Terraform configuration:
+
+```hcl
+module "container_app" {
+  source = "yaalalabs/ak-containerized/aws"
+  
+  # ... other configuration ...
+  
+  environment_variables = {
+    # Authentication configuration
+    AUTH_API_KEY = "your-secret-api-key"
+    
+    # Other app configuration
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+```
+
+#### Application Implementation
+
+In your containerized application, implement your custom authentication logic by extending the `AuthValidator` class. You may use the environment variables:
+
+> NOTE: the `validate()` function must return a `ValidationResult` object.
+
+```python
+import os
+from agentkernel.api import RESTAPI, AuthValidator, ValidationContext, ValidationResult
+from typing import Optional
+
+class CustomAuthValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        """Validate authentication token and return result."""
+        expected_token = os.getenv("AUTH_API_KEY")
+        if token != expected_token:
+            return ValidationResult(is_valid=False, error_msg="Invalid token")
+        return ValidationResult(is_valid=True, subject="api_user")
+
+# Add authentication to REST API
+RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
+```
+
+**Example:** See [examples/aws-containerized/crewai/app.py](../../../examples/aws-containerized/crewai/app.py)
+
 ## 🏗️ Architecture
 
 ```

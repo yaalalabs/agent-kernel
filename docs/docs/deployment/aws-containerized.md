@@ -260,6 +260,57 @@ Agent Kernel provides a health endpoint:
 
 Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
 
+## Authentication
+
+For production deployments, implement authentication to secure your Agent Kernel endpoints.
+
+### Environment Variable Configuration
+
+Configure authentication through environment variables in your Terraform configuration:
+
+```hcl
+module "container_app" {
+  source = "yaalalabs/ak-containerized/aws"
+  
+  # ... other configuration ...
+  
+  environment_variables = {
+    # Authentication configuration
+    AUTH_API_KEY = "your-secret-api-key"
+    
+    # Other app configuration
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+```
+
+### Application Implementation
+
+In your containerized application, implement your custom authentication logic by extending the `AuthValidator` class. You may use the environment variables:
+
+> NOTE: the `validate()` function must return a `ValidationResult` object.
+
+```python
+import os
+from agentkernel.api import RESTAPI, AuthValidator, ValidationContext, ValidationResult
+from typing import Optional
+
+class CustomAuthValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        """Validate authentication token and return result."""
+        expected_token = os.getenv("AUTH_API_KEY")
+        if token != expected_token:
+            return ValidationResult(is_valid=False, error_msg="Invalid token")
+        return ValidationResult(is_valid=True, subject="api_user")
+
+# Add authentication to REST API
+RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
+```
+
+### Example Implementation
+
+See [examples/aws-containerized/crewai/app.py](../../../examples/aws-containerized/crewai/app.py) for a complete authentication example.
+
 
 ## Best Practices
 
@@ -270,6 +321,9 @@ Users can expose their own API endpoints alongside the Agent Kernel endpoints wi
 - Enable Container Insights for monitoring
 - Set up log aggregation
 - Use secrets manager for API keys
+- **Implement authentication for all production deployments**
+- **Use environment-specific authentication configurations**
+- **Monitor authentication failures for security incidents**
 
 ## Example Deployment
 
