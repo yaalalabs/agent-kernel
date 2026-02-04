@@ -14,10 +14,10 @@ locals {
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
-  create_authorizer          = var.authorizer_handler_path != null && var.authorizer_package_type != null && (var.authorizer_package_type == "Image" || var.authorizer_package_path != null)
+  create_authorizer          = var.authorizer_handler_path != null && var.authorizer_package_type != null && var.authorizer_package_path != null
 
   # Authorizer status message for logging
-  authorizer_required_vars_text = join(", ", compact(["authorizer_handler_path", "authorizer_package_type", var.authorizer_package_type != "Image" ? "authorizer_package_path" : null]))
+  authorizer_required_vars_text = join(", ", compact(["authorizer_handler_path", "authorizer_package_type", "authorizer_package_path"]))
   authorizer_status_message = local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text)
 
 
