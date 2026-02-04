@@ -6,6 +6,7 @@ from threading import RLock
 from types import ModuleType
 from typing import Optional
 
+from deprecated import deprecated
 from singleton_type import Singleton
 
 from ..core.util.key_value_cache import KeyValueCache
@@ -207,18 +208,33 @@ class GlobalRuntime(Runtime, metaclass=Singleton):
         return GlobalRuntime()
 
 
+@deprecated(
+    version="0.2.12",
+    reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead."
+)
 class AuxiliaryCache:
     """
     AuxiliaryCache provides access to volatile and non-volatile key-value caches associated with
     the current or a provided session.
+
+    .. deprecated:: 0.2.12
+        Use Session.current() or Runtime.current().sessions().load(session_id) to get the Session
+        and then call get_volatile_cache() or get_non_volatile_cache().
     """
 
     @staticmethod
+    @deprecated(
+        version="0.2.12",
+        reason="Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead."
+    )
     def get_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
         Retrieves the volatile key-value cache associated with the provided session.
         :param session_id: The session to retrieve the volatile cache for. If not provided, the current session is used to find the session
         :return: The volatile key-value cache.
+
+        .. deprecated:: 0.2.12
+            Use Session.current().get_volatile_cache() or Runtime.current().sessions().load(session_id).get_volatile_cache() instead.
         """
         session = Runtime.current().sessions().load(session_id) if session_id else Session.current()
         if session is None:
@@ -227,11 +243,18 @@ class AuxiliaryCache:
         return session.get_volatile_cache()
 
     @staticmethod
+    @deprecated(
+        version="0.2.12",
+        reason="Use Session.current().get_non_volatile_cache() or Runtime.current().sessions().load(session_id).get_non_volatile_cache() instead."
+    )
     def get_non_volatile_cache(session_id: str | None = None) -> KeyValueCache:
         """
         Retrieves the non-volatile key-value cache associated with the provided session.
         :param session_id: The session to retrieve the non-volatile cache for. If not provided, the current session is used to find the session
         :return: The non-volatile key-value cache.
+
+        .. deprecated:: 0.2.12
+            Use Session.current().get_non_volatile_cache() or Runtime.current().sessions().load(session_id).get_non_volatile_cache() instead.
         """
         session = Runtime.current().sessions().load(session_id) if session_id else Session.current()
         if session is None:
