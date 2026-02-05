@@ -172,7 +172,7 @@ module "lambda_deployment" {
 # Authorizer Lambda
 resource "aws_iam_role" "authorizer_lambda_role" {
   count = local.create_authorizer ? 1 : 0
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.authorizer_function_name}-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${var.authorizer_module_name}-${var.authorizer_function_name}-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -192,12 +192,54 @@ resource "aws_iam_role_policy_attachment" "authorizer_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+
+# Authorizer S3 object data source
+data "aws_s3_object" "authorizer_source_code" {
+  count  = (local.create_authorizer && var.authorizer_package_type == "S3Zip") ? 1 : 0
+  bucket = module.authorizer_source_storage[0].source_storage_s3_bucket
+  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.authorizer_module_name}/lambda/${local.package_file_name}"
+  depends_on = [module.authorizer_source_package]
+}
+
+# Authorizer signing job for production
+resource "aws_signer_signing_job" "authorizer_lambda_signing_job" {
+  count = (local.create_authorizer && var.is_production && var.authorizer_package_type != "S3Zip") ? 1 : 0
+
+  profile_name = local.lambda_signer_profile_name
+  source {
+    s3 {
+      bucket  = module.authorizer_source_storage[0].source_storage_s3_bucket
+      key     = data.aws_s3_object.authorizer_source_code[0].key
+      version = data.aws_s3_object.authorizer_source_code[0].version_id
+    }
+  }
+  destination {
+    s3 {
+      bucket = module.authorizer_source_storage[0].source_storage_s3_bucket
+      prefix = "${data.aws_s3_object.authorizer_source_code[0].key}/signed/${data.aws_s3_object.authorizer_source_code[0].version_id}"
+    }
+  }
+  ignore_signing_job_failure = false
+}
+
+# Authorizer signed component code data source
+data "aws_s3_object" "authorizer_signed_component_code" {
+  count = (local.create_authorizer && var.is_production && var.authorizer_package_type != "S3Zip") ? 1 : 0
+
+  bucket = aws_signer_signing_job.authorizer_lambda_signing_job[0].signed_object[0].s3[0].bucket
+  key    = aws_signer_signing_job.authorizer_lambda_signing_job[0].signed_object[0].s3[0].key
+
+  depends_on = [
+    aws_signer_signing_job.authorizer_lambda_signing_job[0]
+  ]
+}
+
 module "authorizer_lambda" {
   count   = local.create_authorizer ? 1 : 0
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.authorizer_function_name}"
+  function_name = "${var.product_alias}-${var.env_alias}-${var.authorizer_module_name}-${var.authorizer_function_name}"
   description   = "API Gateway Authorizer Lambda"
   handler       = var.authorizer_handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
@@ -217,5 +259,13 @@ module "authorizer_lambda" {
   memory_size = var.memory_size
 
   environment_variables = var.authorizer_environment_variables
+
+  code_signing_config_arn = (var.authorizer_package_type == "S3Zip" && var.is_production == true) ? local.lambda_signing_config_arn : null
+
+  s3_existing_package = (var.authorizer_package_type == "S3Zip") ? {
+    bucket     = var.is_production ? data.aws_s3_object.authorizer_signed_component_code[0].bucket : data.aws_s3_object.authorizer_source_code[0].bucket
+    key        = var.is_production ? data.aws_s3_object.authorizer_signed_component_code[0].key : data.aws_s3_object.authorizer_source_code[0].key
+    version_id = var.is_production ? null : data.aws_s3_object.authorizer_source_code[0].version_id
+  } : {}
 
 }
