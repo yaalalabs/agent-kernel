@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 
 from .auth import AuthValidator, ValidationContext
 import uvicorn
@@ -100,9 +101,11 @@ class RESTAPI:
     @classmethod
     def _remove_ip_path_part(cls, path: str) -> str:
         path = str(path)
-        parsed = path if "://" in path else f"http://{path}"
-        parts = parsed.strip("/").split("/", 1)
-        return f"/{parts[0]}" if parts and parts[0] else "/"
+        if not path.startswith(("http://", "https://")):
+            cls._log.debug(f"Couldn't find 'http://' or 'https://' prefix, therefore adding it to path: '{path}'")
+            path = "http://" + path
+        cls._log.debug(f"Removing IP path part from path: '{path}'")
+        return urlparse(path).path
 
     @classmethod
     def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
@@ -110,9 +113,12 @@ class RESTAPI:
         :param auth_validators: List of auth validators to add."""
         def get_auth_function(token_validator: AuthValidator):
             def verify_token(request: Request):
-                if cls._remove_ip_path_part(request.url) in cls._no_auth_endpoints: # ignore endpoints that do not need authentication
+                cls._log.debug(f"Validating token for request: {request.url}") 
+                cleaned_request_url = cls._remove_ip_path_part(request.url)
+                cls._log.debug(f"Cleaned request URL: {cleaned_request_url}")
+                cls._log.debug(f"No auth endpoints: {cls._no_auth_endpoints}")
+                if cleaned_request_url in cls._no_auth_endpoints: # ignore endpoints that do not need authentication
                     return
-                cls._log.info(f"Validating token for request: {request.url}")
                 auth_token = request.headers.get("authorization")
                 cls._log.debug(f"Validating token: '{auth_token}'")
                 if auth_token is None:
