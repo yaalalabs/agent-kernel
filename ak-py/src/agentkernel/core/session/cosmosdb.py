@@ -24,12 +24,10 @@ class CosmosDBDriver:
         self._log = logging.getLogger("ak.core.session.cosmosdb.driver")
         cfg = AKConfig.get().session.cosmosdb
         if cfg is None or not cfg.connection_string:
-            raise ValueError(
-                "AKConfig.session.cosmosdb.connection_string must be set to use CosmosDBSessionStore"
-            )
+            raise ValueError("AKConfig.session.cosmosdb.connection_string must be set to use CosmosDBSessionStore")
         if not cfg.table_name:
             raise ValueError("AKConfig.session.cosmosdb.table_name must be set to use CosmosDBSessionStore")
-        
+
         self._connection_string = cfg.connection_string
         self._table_name = cfg.table_name
         self._ttl = cfg.ttl
@@ -55,26 +53,19 @@ class CosmosDBDriver:
         retries = 3
         delay = 2
         last_err: Optional[Exception] = None
-        
+
         for attempt in range(retries):
             try:
                 self._log.debug("Connecting to Cosmos DB Table API")
-                self._table_service_client = TableServiceClient.from_connection_string(
-                    conn_str=self._connection_string
-                )
-                self._table_client = self._table_service_client.get_table_client(
-                    table_name=self._table_name
-                )
+                self._table_service_client = TableServiceClient.from_connection_string(conn_str=self._connection_string)
+                self._table_client = self._table_service_client.get_table_client(table_name=self._table_name)
                 # Lightweight call to ensure table exists/accessible
                 try:
-                    self._table_client.get_entity(
-                        partition_key="__health_check__",
-                        row_key="__health_check__"
-                    )
+                    self._table_client.get_entity(partition_key="__health_check__", row_key="__health_check__")
                 except ResourceNotFoundError:
                     # Expected - just checking if table is accessible
                     pass
-                
+
                 self._log.debug("Connected to Cosmos DB Table %s", self._table_name)
                 return
             except Exception as e:
@@ -82,7 +73,7 @@ class CosmosDBDriver:
                 self._log.warning("Cosmos DB connection attempt %s failed: %s", attempt + 1, e)
                 if attempt < retries - 1:
                     time.sleep(delay)
-        
+
         if last_err:
             raise last_err
 
@@ -103,12 +94,12 @@ class CosmosDBDriver:
                 "RowKey": key,
                 "value": value,
             }
-            
+
             if self._ttl and self._ttl > 0:
                 # Store creation timestamp for manual TTL handling if needed
                 entity["CreatedAt"] = int(time.time())
                 entity["ExpiresIn"] = int(self._ttl)
-            
+
             self.table_client.upsert_entity(entity=entity)
             self._log.debug("Successfully put entity session_id=%s key=%s", session_id, key)
         except Exception as e:
@@ -124,11 +115,8 @@ class CosmosDBDriver:
         :return: The stored bytes value, or None if the entity does not exist.
         """
         try:
-            entity = self.table_client.get_entity(
-                partition_key=session_id,
-                row_key=key
-            )
-            
+            entity = self.table_client.get_entity(partition_key=session_id, row_key=key)
+
             # Check TTL if configured
             if self._ttl and self._ttl > 0:
                 created_at = entity.get("CreatedAt")
@@ -140,18 +128,18 @@ class CosmosDBDriver:
                     except Exception as delete_err:
                         self._log.warning("Failed to delete expired entity: %s", delete_err)
                     return None
-            
+
             value = entity.get("value")
             if value is None:
                 return None
-            
+
             # Handle bytes
             if isinstance(value, bytes):
                 return value
-            
+
             self._log.debug("Successfully retrieved entity session_id=%s key=%s", session_id, key)
             return value
-            
+
         except ResourceNotFoundError:
             self._log.debug("Entity not found: session_id=%s key=%s", session_id, key)
             return None
@@ -171,7 +159,7 @@ class CosmosDBDriver:
             # Query all entities with the given PartitionKey
             filter_query = f"PartitionKey eq '{session_id}'"
             entities = self.table_client.query_entities(query_filter=filter_query)
-            
+
             for entity in entities:
                 row_key = entity.get("RowKey")
                 if row_key:
@@ -183,22 +171,19 @@ class CosmosDBDriver:
                             self._log.debug("Skipping expired entity: %s", row_key)
                             # Optionally delete expired entity
                             try:
-                                self.table_client.delete_entity(
-                                    partition_key=session_id,
-                                    row_key=row_key
-                                )
+                                self.table_client.delete_entity(partition_key=session_id, row_key=row_key)
                             except Exception as delete_err:
                                 self._log.warning("Failed to delete expired entity: %s", delete_err)
                             continue
-                    
+
                     keys.append(row_key)
-            
+
             self._log.debug("Found %d keys for session_id=%s", len(keys), session_id)
-            
+
         except Exception as e:
             self._log.error("Failed to query keys for session_id=%s: %s", session_id, e)
             raise
-        
+
         return keys
 
     def delete_entity(self, session_id: str, key: str) -> None:
@@ -227,29 +212,21 @@ class CosmosDBDriver:
         try:
             # Query all entities
             entities = self.table_client.list_entities()
-            
+
             delete_count = 0
             for entity in entities:
                 partition_key = entity.get("PartitionKey")
                 row_key = entity.get("RowKey")
-                
+
                 if partition_key and row_key:
                     try:
-                        self.table_client.delete_entity(
-                            partition_key=partition_key,
-                            row_key=row_key
-                        )
+                        self.table_client.delete_entity(partition_key=partition_key, row_key=row_key)
                         delete_count += 1
                     except Exception as delete_err:
-                        self._log.warning(
-                            "Failed to delete entity %s/%s: %s",
-                            partition_key,
-                            row_key,
-                            delete_err
-                        )
-            
+                        self._log.warning("Failed to delete entity %s/%s: %s", partition_key, row_key, delete_err)
+
             self._log.info("Cleared %d entities from table %s", delete_count, self._table_name)
-            
+
         except Exception as e:
             self._log.error("Failed to clear Cosmos DB table %s: %s", self._table_name, e)
             raise
@@ -264,7 +241,7 @@ class CosmosDBSessionStore(SessionStore):
       - value: binary attribute (serialized using BinarySerde)
       - CreatedAt: optional timestamp for TTL management (UNIX epoch seconds)
       - ExpiresIn: optional TTL value in seconds
-      
+
     Note: Property names 'Timestamp' and 'TTL' are reserved in Cosmos DB Table API.
     """
 
@@ -294,17 +271,17 @@ class CosmosDBSessionStore(SessionStore):
         :return: The populated Session, or a new Session if not found and strict is False.
         """
         self._log.debug(f"Loading Cosmos DB session with ID {session_id}")
-        
+
         # Check cache first
         if self._cache:
             session = self._cache.get(session_id)
             if session:
                 self._log.debug(f"Session {session_id} found in cache")
                 return session
-        
+
         # Query all keys for this session
         keys = self._driver.query_keys(session_id)
-        
+
         if not keys:
             if strict:
                 raise KeyError(f"Session {session_id} not found")
@@ -318,11 +295,11 @@ class CosmosDBSessionStore(SessionStore):
             if payload is None:
                 continue
             session.set(k, self._serde.loads(payload))
-        
+
         # Update cache
         if self._cache:
             self._cache.set(session)
-        
+
         return session
 
     def new(self, session_id: str) -> Session:
@@ -334,23 +311,23 @@ class CosmosDBSessionStore(SessionStore):
         """
         self._log.debug("Creating new session with ID %s", session_id)
         session = Session(session_id)
-        
+
         # Update cache
         if self._cache:
             self._cache.set(session)
-        
+
         return session
 
     def store(self, session: Session) -> None:
         """
         Persist all session key/value pairs as individual Cosmos DB entities.
-        
+
         :param session: The session to persist.
         """
         for key, value in session.get_all(volatile=False):
             payload = self._serde.dumps(value)
             self._driver.put(session.id, key, payload)
-        
+
         # Update cache
         if self._cache:
             self._cache.set(session)
@@ -362,7 +339,7 @@ class CosmosDBSessionStore(SessionStore):
         This is a destructive operation intended for development/testing only.
         """
         self._driver.scan_and_clear_all()
-        
+
         # Clear cache
         if self._cache:
             self._cache.clear()

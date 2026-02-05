@@ -139,7 +139,7 @@ class SessionStoreBuilder(Builder):
             return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
         elif session_store_type == SessionStoreBuilder.Types.COSMOSDB:
             from .session.cosmosdb import CosmosDBSessionStore
-            
+
             return CosmosDBSessionStore(cache=SessionCacheBuilder.build())
         else:
             from .session.in_memory import InMemorySessionStore
