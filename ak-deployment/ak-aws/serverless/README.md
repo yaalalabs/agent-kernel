@@ -270,11 +270,12 @@ module "serverless_api_dynamodb" {
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
-| `authorizer_function_name` | Authorizer Lambda function name | `string` | `null` | no |
+| `authorizer_function_name` | Authorizer Lambda function name | `string` | n/a | **yes** |
 | `authorizer_function_description` | Authorizer Lambda function description | `string` | `"API Gateway Lambda Authorizer"` | no |
 | `authorizer_handler_path` | Lambda authorizer handler path | `string` | `null` | no |
 | `authorizer_package_path` | Authorizer Lambda package path | `string` | `null` | no |
 | `authorizer_package_type` | Authorizer Lambda deployment type Image/LocalZip/S3Zip | `string` | `null` | no |
+| `authorizer_module_name` | Authorizer module name | `string` | `null` | no |
 | `authorizer_environment_variables` | Authorizer Lambda environment variables | `map(string)` | `{}` | no |
 | `authorizer_result_ttl_in_seconds` | Authorizer result TTL in seconds | `number` | `150` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
@@ -340,7 +341,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 
 Resources follow consistent naming:
 - Lambda Function: `{product_alias}-{env_alias}-{module_name}-{function_name}`
-- Authorizer Lambda: `{product_alias}-{env_alias}-{module_name}-{authorizer_function_name}`
+- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer_module_name}-{authorizer_function_name}`
 - API Gateway: `{product_alias}-{env_alias}-{module_name}-api`
 - CloudWatch Logs: `/aws/lambda/{function_name}`
 
@@ -513,13 +514,14 @@ The module supports a Lambda-based API Gateway authorizer for custom authenticat
 ### Authorizer Setup
 
 **Required Variables**:
+- `authorizer_function_name` - Name for the authorizer Lambda function
 - `authorizer_handler_path` - Path to the authorizer Lambda handler (e.g., `auth_lambda.handler`)
 - `authorizer_package_type` - Deployment type for authorizer (`Image`, `LocalZip`, or `S3Zip`)
+- `authorizer_package_path` - Path to authorizer deployment package (required for all package types)
+- `authorizer_module_name` - Authorizer module name (required for all package types)
 
 **Optional Variables**:
-- `authorizer_function_name` - Custom name for the authorizer function
 - `authorizer_function_description` - Description of the authorizer function
-- `authorizer_package_path` - Path to authorizer deployment package (required for all package types)
 - `authorizer_environment_variables` - Environment variables for authorizer
 - `authorizer_result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
 

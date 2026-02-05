@@ -90,14 +90,14 @@ handler = Lambda.handler
 After deployment (Assuming the following URL):
 
 ```
-POST https://{api-id}.execute-api.us-east-1.amazonaws.com/prod/chat
+POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat
 ```
 
 **With Authentication:**
 If you configure a Lambda authorizer, include the Authorization header:
 
 ```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/prod/chat \
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-token" \
   -d '{
@@ -109,7 +109,7 @@ curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/prod/chat \
 
 **Without Authentication:**
 ```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/prod/chat \
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "assistant",
@@ -361,9 +361,12 @@ Authentication is completely optional. If you want to secure your API Gateway en
 
 ### When Authentication is Enabled
 
-Authentication infrastructure will only be created if you define the mandatory variables in your `main.tf` file:
+Authentication infrastructure will only be created if you define mandatory variables in your `main.tf` file:
+- `authorizer_function_name`
 - `authorizer_handler_path` 
 - `authorizer_package_type`
+- `authorizer_package_path`
+- `authorizer_module_name`
 
 If these variables are not defined, no authorizer infrastructure will be created and your endpoints will be publicly accessible.
 
@@ -392,37 +395,39 @@ handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
 
 ### Terraform Configuration
 
-To enable authentication, configure the authorizer in your `main.tf` by defining the mandatory variables:
+To enable authentication, configure the authorizer in your `main.tf` by defining the required variables:
 
 ```hcl
 module "serverless_agents" {
   # ... other configuration
   
-  # Defining the API Gateway Authorizer (optional - only creates if both variables are defined)
-  authorizer_function_name = "gateway-authorizer"
-  authorizer_handler_path = "auth_lambda.handler"
-  authorizer_package_type = "LocalZip"  # or "Image" or "S3Zip"
+  # Defining API Gateway Authorizer (optional - only creates if all required variables are defined)
+  authorizer_function_name = "gtwy-auth"
+  authorizer_handler_path = "lambda.handler"
+  authorizer_package_path = "../auth_deployment/auth_dist.zip"
+  authorizer_package_type = "S3Zip"  # or "LocalZip" or "Image"
+  authorizer_module_name = var.authorizer_module_name
   
   # Optional authorizer settings
   # authorizer_function_description = "API Gateway Lambda Authorizer"
-  # authorizer_result_ttl_in_seconds = 300
-  # authorizer_package_path = "../auth_deployment/auth_dist"  # required for all package types
+  # authorizer_result_ttl_in_seconds = 0
   # authorizer_environment_variables = {
   #   "SOME_OTHER_KEY" = "Some Other Value"
   # }
 }
 ```
 
-**Mandatory Authorizer Variables (required for auth infrastructure creation):**
-- `authorizer_handler_path` - Path to the authorizer handler (e.g., `auth_lambda.handler`)
+**Required Authorizer Variables (for auth infrastructure creation):**
+- `authorizer_function_name` - Name for the authorizer Lambda function
+- `authorizer_handler_path` - Path to the authorizer handler (e.g., `lambda.handler`)
 - `authorizer_package_type` - Package type (`LocalZip`, `S3Zip`, or `Image`)
+- `authorizer_package_path` - Path to authorizer package (required for all package types)
+- `authorizer_module_name` - Authorizer module name (required for all package types, especially S3Zip)
 
 **Optional Authorizer Variables:**
-- `authorizer_function_name` - Custom name for the authorizer function (auto-generated if not provided)
-- `authorizer_function_description` - Description for the authorizer Lambda function (default: "API Gateway Authorizer Lambda")
+- `authorizer_function_description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")
 - `authorizer_result_ttl_in_seconds` - Cache TTL for authorizer results (default: 150)
-- `authorizer_package_path` - Path to authorizer package (required for all package types)
-- `authorizer_environment_variables` - Environment variables for the authorizer Lambda
+- `authorizer_environment_variables` - Environment variables for authorizer Lambda
 
 ### Deployment Packages
 
