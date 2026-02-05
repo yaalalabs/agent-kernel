@@ -241,7 +241,7 @@ class GoogleADKModule(Module):
         :param hooks: List of pre-execution hooks to attach.
         :return: GoogleADKModule instance.
         """
-        super().get_agent(agent.name).attach_pre_hooks(hooks)
+        super().get_agent(agent.name).pre_hooks.extend(hooks)
         return self
 
     def post_hook(self, agent: BaseAgent, hooks: list[PostHook]) -> "GoogleADKModule":
@@ -251,5 +251,5 @@ class GoogleADKModule(Module):
         :param hooks: List of post-execution hooks to attach.
         :return: GoogleADKModule instance.
         """
-        super().get_agent(agent.name).attach_post_hooks(hooks)
+        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self

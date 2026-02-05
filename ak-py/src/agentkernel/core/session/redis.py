@@ -211,10 +211,7 @@ class RedisSessionStore(SessionStore):
         Stores a session or updates it if it already exists in the storage.
         :param session: The session to store.
         """
-        for key in session.get_all_keys():
-            if key == Session.VOLATILE_CACHE_KEY:  # Do not store volatile cache
-                continue
-            value = session.get(key)
+        for key, value in session.get_all(volatile=False):
             self._driver.hset(self._driver.key(session.id), key, self._serde.dumps(value))
         if self._driver.ttl:
             self._driver.expire(self._driver.key(session.id))

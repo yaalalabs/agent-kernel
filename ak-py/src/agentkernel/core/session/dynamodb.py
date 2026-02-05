@@ -244,10 +244,7 @@ class DynamoDBSessionStore(SessionStore):
         Persist all session key/value pairs as individual DynamoDB items.
         :param session: The session to persist.
         """
-        for key in session.get_all_keys():
-            if key == Session.VOLATILE_CACHE_KEY:  # Do not store volatile cache
-                continue
-            value = session.get(key)
+        for key, value in session.get_all(volatile=False):
             payload = self._serde.dumps(value)
             self._driver.put(session.id, key, payload)
         if self._cache:
