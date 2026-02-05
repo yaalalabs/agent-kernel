@@ -59,6 +59,9 @@ class RESTAPI:
 
     @classmethod
     def add(cls, router: APIRouter):
+        """Add a custom router to the REST API.
+        :param router: FastAPI router to add to the API
+        """
         cls._log.debug(f"Adding custom router")
         for route in router.routes:
             cls._log.debug(f"Route: {route.path} [{route.methods}]")
@@ -66,8 +69,8 @@ class RESTAPI:
 
     @classmethod
     def run(cls, handlers: list[RESTRequestHandler] = None):
-        """
-        Starts the REST API server.
+        """Start the REST API server.
+        :param handlers: List of REST request handlers to use (default: AgentRESTRequestHandler)
         """
         if handlers is None:
             handlers = [AgentRESTRequestHandler()]
@@ -100,6 +103,10 @@ class RESTAPI:
 
     @classmethod
     def _remove_ip_path_part(cls, path: str) -> str:
+        """Remove IP/domain part from URL path, keeping only the path component.
+        :param path: Full URL or path string
+        :return: Path component without IP/domain
+        """
         path = str(path)
         if not path.startswith(("http://", "https://")):
             cls._log.debug(f"Couldn't find 'http://' or 'https://' prefix, therefore adding it to path: '{path}'")
@@ -109,10 +116,16 @@ class RESTAPI:
 
     @classmethod
     def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
-        """Adds AuthTokenValidators to the REST API.
-        :param auth_validators: List of auth validators to add."""
+        """Add authentication validators to the REST API.
+        :param auth_validators: List of auth validators to add for token validation
+        """
         def get_auth_function(token_validator: AuthValidator):
             def verify_token(request: Request):
+                """Verify authentication token for incoming requests.
+                :param request: FastAPI Request object
+                :return: ValidationResult if token is valid
+                :raises: HTTPException if authentication fails
+                """
                 cls._log.debug(f"Validating token for request: {request.url}") 
                 cleaned_request_url = cls._remove_ip_path_part(request.url)
                 cls._log.debug(f"Cleaned request URL: {cleaned_request_url}")
