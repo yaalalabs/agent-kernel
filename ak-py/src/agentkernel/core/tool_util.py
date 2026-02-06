@@ -22,10 +22,7 @@ def needs_tool_context(tool: Callable) -> bool:
     :return: True if the function has a ToolContext parameter, False otherwise.
     """
     sig = inspect.signature(tool)
-    return any(
-        param.annotation is ToolContext or (hasattr(param.annotation, "__origin__") and param.annotation.__origin__ is ToolContext)
-        for param in sig.parameters.values()
-    )
+    return any(param.annotation is ToolContext for param in sig.parameters.values())
 
 
 def wrap_tool_with_context(
