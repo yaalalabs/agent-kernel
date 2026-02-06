@@ -66,6 +66,8 @@ jobs:
     if: ${{ always() && (needs.update-lock-files.result == 'success' || needs.update-lock-files.result == 'skipped') }}
     uses: ./.github/workflows/test-reusable.yaml
     with:
+      # For PRs, test the head SHA; for pushes, test the commit SHA
+      checkout_ref: ${{ github.event.pull_request.head.sha || github.sha }}
       # Skip e2e tests for fork PRs (they don't have access to secrets)
       run_e2e_tests: ${{ github.event.pull_request.head.repo.fork != true || github.event_name != 'pull_request' }}
     secrets:
