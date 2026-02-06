@@ -26,8 +26,8 @@ jobs:
     needs: [check-label]
     uses: ./.github/workflows/test-reusable.yaml
     with:
-      # Check out the PR's code
-      ref: ${{ github.event.pull_request.head.sha }}
+      # Test the fork PR head SHA (this is safe because the workflow only runs after manual label approval)
+      checkout_ref: ${{ github.event.pull_request.head.sha }}
       # Run all tests including e2e (this workflow has access to secrets)
       run_e2e_tests: true
     secrets:
