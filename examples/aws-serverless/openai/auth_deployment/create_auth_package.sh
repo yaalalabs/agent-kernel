@@ -3,6 +3,7 @@ set -e
 
 create_auth_deployment_package() {
     rm -rf auth_dist auth_dist.zip
+    
     mkdir -p auth_dist
     # mkdir -p auth_dist/data # For Docker Lambda Package creation....
 
@@ -22,8 +23,7 @@ create_auth_deployment_package() {
 
     cp Dockerfile ./auth_dist/
 
-    cd auth_dist && zip -r ../auth_dist.zip .
-    # cd auth_dist/data && zip -r ../../auth_dist.zip . # For Docker Lambda Package creation....
+    cd auth_dist && zip -r ../auth_dist.zip . # No need this for Docker Lambda Package creation
 }
 
 create_auth_deployment_package "$1"

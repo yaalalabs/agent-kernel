@@ -240,7 +240,7 @@ module "authorizer_lambda" {
   version = "8.0.1"
 
   function_name = "${var.product_alias}-${var.env_alias}-${var.authorizer_module_name}-${var.authorizer_function_name}"
-  description   = "API Gateway Authorizer Lambda"
+  description   = var.authorizer_function_description
   handler       = var.authorizer_handler_path
   runtime       = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role = false
