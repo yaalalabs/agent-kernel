@@ -1,16 +1,16 @@
 """
 Tests for tool builder functionality.
-These tests are framework-agnostic and test the core binding logic.
+These tests use the shared utility functions to test the core binding logic.
 """
 
 import asyncio
-import inspect
 
 import pytest
 
 from agentkernel import Agent, Runtime, Session
 from agentkernel.core.model import AgentRequestText
 from agentkernel.core.tool import ToolContext
+from agentkernel.core.tool_util import needs_tool_context, wrap_tool_with_context
 
 
 class MockAgent(Agent):
@@ -30,52 +30,17 @@ class MockAgent(Agent):
         return None
 
 
-def generic_wrap_tool(tool, runtime, session, agent, requests, params):
-    """
-    Generic tool wrapper that mimics the behavior of all framework-specific tool builders.
-    This is used for testing the core logic without importing framework-specific dependencies.
-    """
-    sig = inspect.signature(tool)
-    needs_context = any(
-        param.annotation is ToolContext or (hasattr(param.annotation, "__origin__") and param.annotation.__origin__ is ToolContext)
-        for param in sig.parameters.values()
-    )
+def test_needs_tool_context():
+    """Test the needs_tool_context detection function."""
 
-    if not needs_context:
-        return tool
+    def no_context_tool(x: int, y: int) -> int:
+        return x + y
 
-    if asyncio.iscoroutinefunction(tool):
+    def with_context_tool(ctx: ToolContext, x: int) -> str:
+        return str(x)
 
-        async def async_wrapper(**kwargs):
-            ctx = ToolContext(
-                runtime=runtime,
-                session=session,
-                agent=agent,
-                requests=requests,
-                params=params,
-            )
-            return await tool(ctx=ctx, **kwargs)
-
-        async_wrapper.__name__ = tool.__name__
-        async_wrapper.__doc__ = tool.__doc__
-        async_wrapper.__module__ = tool.__module__
-        return async_wrapper
-    else:
-
-        def sync_wrapper(**kwargs):
-            ctx = ToolContext(
-                runtime=runtime,
-                session=session,
-                agent=agent,
-                requests=requests,
-                params=params,
-            )
-            return tool(ctx=ctx, **kwargs)
-
-        sync_wrapper.__name__ = tool.__name__
-        sync_wrapper.__doc__ = tool.__doc__
-        sync_wrapper.__module__ = tool.__module__
-        return sync_wrapper
+    assert not needs_tool_context(no_context_tool)
+    assert needs_tool_context(with_context_tool)
 
 
 def test_tool_builder_no_context():
@@ -89,14 +54,7 @@ def test_tool_builder_no_context():
     session = Session("test-session")
     agent = MockAgent("test-agent")
 
-    wrapped_tool = generic_wrap_tool(
-        simple_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=[],
-        params={},
-    )
+    wrapped_tool = wrap_tool_with_context(simple_tool, runtime=runtime, session=session, agent=agent, requests=[], params={})
 
     # The tool should be the original function
     assert wrapped_tool == simple_tool
@@ -115,14 +73,7 @@ def test_tool_builder_with_context():
     session = Session("test-session")
     agent = MockAgent("test-agent")
 
-    wrapped_tool = generic_wrap_tool(
-        context_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=[],
-        params={},
-    )
+    wrapped_tool = wrap_tool_with_context(context_tool, runtime=runtime, session=session, agent=agent, requests=[], params={})
 
     # The wrapped tool should be different from the original
     assert wrapped_tool != context_tool
@@ -144,14 +95,7 @@ async def test_tool_builder_async_tool():
     session = Session("test-session-123")
     agent = MockAgent("test-agent")
 
-    wrapped_tool = generic_wrap_tool(
-        async_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=[],
-        params={},
-    )
+    wrapped_tool = wrap_tool_with_context(async_tool, runtime=runtime, session=session, agent=agent, requests=[], params={})
 
     # Test the async wrapper
     result = await wrapped_tool(value=10)
@@ -169,14 +113,7 @@ def test_tool_builder_preserves_metadata():
     session = Session("test-session")
     agent = MockAgent("test-agent")
 
-    wrapped_tool = generic_wrap_tool(
-        documented_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=[],
-        params={},
-    )
+    wrapped_tool = wrap_tool_with_context(documented_tool, runtime=runtime, session=session, agent=agent, requests=[], params={})
 
     assert wrapped_tool.__name__ == "documented_tool"
     assert wrapped_tool.__doc__ == "This is a documented tool function."
@@ -201,14 +138,7 @@ def test_tool_builder_with_all_context_fields():
     requests = [AgentRequestText(text="test1"), AgentRequestText(text="test2")]
     params = {"key1": "value1", "key2": "value2"}
 
-    wrapped_tool = generic_wrap_tool(
-        full_context_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=requests,
-        params=params,
-    )
+    wrapped_tool = wrap_tool_with_context(full_context_tool, runtime=runtime, session=session, agent=agent, requests=requests, params=params)
 
     result = wrapped_tool()
     assert result["runtime_type"] == "GlobalRuntime"
@@ -229,14 +159,7 @@ def test_tool_builder_mixed_parameters():
     session = Session("test-session")
     agent = MockAgent("mixed-agent")
 
-    wrapped_tool = generic_wrap_tool(
-        mixed_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=[],
-        params={},
-    )
+    wrapped_tool = wrap_tool_with_context(mixed_tool, runtime=runtime, session=session, agent=agent, requests=[], params={})
 
     result = wrapped_tool(a=42, b="hello", c=2.71)
     assert "mixed-agent" in result
@@ -258,14 +181,7 @@ async def test_tool_builder_async_mixed_parameters():
     session = Session("session-789")
     agent = MockAgent("async-agent")
 
-    wrapped_tool = generic_wrap_tool(
-        async_mixed_tool,
-        runtime=runtime,
-        session=session,
-        agent=agent,
-        requests=[],
-        params={},
-    )
+    wrapped_tool = wrap_tool_with_context(async_mixed_tool, runtime=runtime, session=session, agent=agent, requests=[], params={})
 
     result = await wrapped_tool(x=10, y=20)
     expected = 10 + 20 + len("session-789")

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 from typing import Any, Callable
 
 from ...core.tool import ToolContext
+from ...core.tool_util import needs_tool_context
 
 
 class ADKToolBuilder:
@@ -44,14 +44,7 @@ class ADKToolBuilder:
         :param tool: The tool function to wrap.
         :return: Wrapped tool function.
         """
-        # Check if the tool function expects a ToolContext parameter
-        sig = inspect.signature(tool)
-        needs_context = any(
-            param.annotation is ToolContext or (hasattr(param.annotation, "__origin__") and param.annotation.__origin__ is ToolContext)
-            for param in sig.parameters.values()
-        )
-
-        if not needs_context:
+        if not needs_tool_context(tool):
             # If no ToolContext is needed, return the original function
             return tool
 
@@ -61,7 +54,10 @@ class ADKToolBuilder:
             async def async_wrapper(**kwargs):
                 try:
                     from google.adk.runtime.context import get_current_context
+                except ImportError as e:
+                    raise RuntimeError(f"Failed to import ADK context for tool '{tool.__name__}'. " "Make sure google-genai-adk is installed.") from e
 
+                try:
                     adk_ctx = get_current_context()
                     ctx = ToolContext(
                         runtime=adk_ctx.state.get("runtime"),
@@ -71,8 +67,11 @@ class ADKToolBuilder:
                         params=adk_ctx.state.get("params", {}),
                     )
                     return await tool(ctx=ctx, **kwargs)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to get ADK context for tool '{tool.__name__}': {str(e)}")
+                except AttributeError as e:
+                    raise RuntimeError(
+                        f"ADK context is not properly initialized for tool '{tool.__name__}'. "
+                        "Ensure the tool is being called within an ADK agent execution context."
+                    ) from e
 
             # Preserve function metadata
             async_wrapper.__name__ = tool.__name__
@@ -84,7 +83,10 @@ class ADKToolBuilder:
             def sync_wrapper(**kwargs):
                 try:
                     from google.adk.runtime.context import get_current_context
+                except ImportError as e:
+                    raise RuntimeError(f"Failed to import ADK context for tool '{tool.__name__}'. " "Make sure google-genai-adk is installed.") from e
 
+                try:
                     adk_ctx = get_current_context()
                     ctx = ToolContext(
                         runtime=adk_ctx.state.get("runtime"),
@@ -94,8 +96,11 @@ class ADKToolBuilder:
                         params=adk_ctx.state.get("params", {}),
                     )
                     return tool(ctx=ctx, **kwargs)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to get ADK context for tool '{tool.__name__}': {str(e)}")
+                except AttributeError as e:
+                    raise RuntimeError(
+                        f"ADK context is not properly initialized for tool '{tool.__name__}'. "
+                        "Ensure the tool is being called within an ADK agent execution context."
+                    ) from e
 
             # Preserve function metadata
             sync_wrapper.__name__ = tool.__name__

@@ -67,9 +67,9 @@ def test_tool_context_is_immutable():
 
 def test_tool_builder_imports():
     """Test that all tool builders can be imported."""
-    # Test that the tool builders can be imported without errors
-    try:
-        # Import one at a time to avoid dependencies
-        pass  # Skip framework-specific imports in basic tests
-    except ImportError:
-        pytest.skip("Framework-specific dependencies not available")
+    # Test that the core utility functions can be imported
+    from agentkernel.core.tool_util import needs_tool_context, wrap_tool_with_context
+
+    # These should be callable
+    assert callable(needs_tool_context)
+    assert callable(wrap_tool_with_context)
