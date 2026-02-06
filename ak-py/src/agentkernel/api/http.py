@@ -1,12 +1,13 @@
 import logging
 from urllib.parse import urlparse
 
-from .auth import AuthValidator, ValidationContext
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+
 from ..core.config import AKConfig
+from .auth import AuthValidator, ValidationContext
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
 logging.basicConfig(
@@ -34,7 +35,12 @@ class RESTAPI:
         :param routers: List of routers to include in the app.
         :param lifespan: Optional lifespan handler.
         """
-        app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan, dependencies=cls._auth_token_validators if cls._auth_token_validators else None)
+        app = FastAPI(
+            title="Agent Kernel REST API",
+            debug=True,
+            lifespan=lifespan,
+            dependencies=cls._auth_token_validators if cls._auth_token_validators else None,
+        )
 
         app.add_middleware(
             CORSMiddleware,
@@ -119,6 +125,7 @@ class RESTAPI:
         """Add authentication validators to the REST API.
         :param auth_validators: List of auth validators to add for token validation
         """
+
         def get_auth_function(token_validator: AuthValidator):
             def verify_token(request: Request):
                 """Verify authentication token for incoming requests.
@@ -126,22 +133,25 @@ class RESTAPI:
                 :return: ValidationResult if token is valid
                 :raises: HTTPException if authentication fails
                 """
-                cls._log.debug(f"Validating token for request: {request.url}") 
+                cls._log.debug(f"Validating token for request: {request.url}")
                 cleaned_request_url = cls._remove_ip_path_part(request.url)
                 cls._log.debug(f"Cleaned request URL: {cleaned_request_url}")
                 cls._log.debug(f"No auth endpoints: {cls._no_auth_endpoints}")
-                if cleaned_request_url in cls._no_auth_endpoints: # ignore endpoints that do not need authentication
+                if cleaned_request_url in cls._no_auth_endpoints:  # ignore endpoints that do not need authentication
                     return
                 auth_token = request.headers.get("authorization")
                 cls._log.debug(f"Validating token: '{auth_token}'")
                 if auth_token is None:
                     raise HTTPException(status_code=401, detail="Missing authorization header")
                 auth_token = auth_token.replace("Bearer ", "").strip()
-                result = token_validator.validate(token=auth_token, context=ValidationContext(path=str(request.url), http_method=request.method, headers=dict(request.headers)))
+                result = token_validator.validate(
+                    token=auth_token, context=ValidationContext(path=str(request.url), http_method=request.method, headers=dict(request.headers))
+                )
                 if not result.is_valid:
                     raise HTTPException(status_code=401, detail=result.error_msg or "Unauthorized")
                 return result
+
             return verify_token
+
         for token_validator in auth_validators:
             cls._auth_token_validators.append(Depends(get_auth_function(token_validator)))
-

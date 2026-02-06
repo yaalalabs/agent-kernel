@@ -1,10 +1,14 @@
-from typing import Dict, Any, Optional
-from pydantic import BaseModel
-from ...api.auth.handler import AuthValidator, ValidationContext, ValidationResult
 import logging
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel
+
+from ...api.auth.handler import AuthValidator, ValidationContext, ValidationResult
+
 
 class Headers(BaseModel):
     Authorization: str
+
 
 class APIGatewayRequestAuthorizerEvent(BaseModel):
     type: str
@@ -22,7 +26,7 @@ class APIGatewayAuthorizer:
         self._validator = validator
         self._log = logging.getLogger("ak.deployment.aws.akauthorizer")
 
-    def handle(self, event: dict, context:dict=None) -> dict:
+    def handle(self, event: dict, context: dict = None) -> dict:
         self._log.info(f"Authorizer received event: {event}")
         request: APIGatewayRequestAuthorizerEvent = self._build_request(event)
         token = self._extract_token(request)
@@ -32,8 +36,8 @@ class APIGatewayAuthorizer:
                 path=request.path,
                 http_method=request.httpMethod,
                 headers=request.headers.model_dump(),
-            )
-        ) 
+            ),
+        )
         return_policy = self._build_policy(
             principal_id=result.subject,
             effect="Allow" if result.is_valid else "Deny",

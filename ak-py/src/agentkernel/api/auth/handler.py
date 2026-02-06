@@ -1,8 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-import hmac
-import hashlib
 import base64
+import hashlib
+import hmac
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
+
 import jwt
 from pydantic import BaseModel
 
@@ -22,7 +23,7 @@ class ValidationResult(BaseModel):
 
 class AuthValidator(ABC):
     """Base class for token validation.
-    The validate() method must be implemented by subclasses, 
+    The validate() method must be implemented by subclasses,
     There are some basic built-in cryptographic validation helpers which can be used if needed."""
 
     @abstractmethod
@@ -42,16 +43,13 @@ class AuthValidator(ABC):
         :param algorithm: Hash algorithm to use (default: sha256)
         :return: True if signature is valid, False otherwise
         """
-        mac = hmac.new(
-            key=secret.encode(),
-            msg=message,
-            digestmod=getattr(hashlib, algorithm)
-        )
+        mac = hmac.new(key=secret.encode(), msg=message, digestmod=getattr(hashlib, algorithm))
         expected = base64.b64encode(mac.digest()).decode()
         return hmac.compare_digest(expected, signature)
 
-    def _validate_rs256_jwt(self, token: str, public_key: str, audience: Optional[str] = None, 
-                            issuer: Optional[str] = None, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _validate_rs256_jwt(
+        self, token: str, public_key: str, audience: Optional[str] = None, issuer: Optional[str] = None, options: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Basic RS256 JWT validation.
         :param token: The JWT token to validate
         :param public_key: The RSA public key for signature verification
