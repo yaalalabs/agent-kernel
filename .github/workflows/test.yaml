@@ -68,7 +68,6 @@ jobs:
     with:
       # Skip e2e tests for fork PRs (they don't have access to secrets)
       run_e2e_tests: ${{ github.event.pull_request.head.repo.fork != true || github.event_name != 'pull_request' }}
-      ref: ${{ github.ref }}
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

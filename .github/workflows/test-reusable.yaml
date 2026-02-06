@@ -9,11 +9,6 @@ permissions:
 on:
   workflow_call:
     inputs:
-      ref:
-        description: 'Git ref to checkout'
-        required: false
-        type: string
-        default: ''
       run_e2e_tests:
         description: 'Whether to run e2e tests (requires secrets)'
         required: false
@@ -41,7 +36,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.ref }}
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -62,7 +57,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -91,7 +86,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -116,7 +111,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -152,7 +147,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
