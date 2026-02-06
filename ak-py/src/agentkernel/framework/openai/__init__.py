@@ -14,3 +14,4 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 from .openai import OpenAIModule
+from .tool import OpenAIToolBuilder

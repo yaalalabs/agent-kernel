@@ -28,3 +28,4 @@ from .runtime import Runtime, AuxiliaryCache
 from .service import AgentService
 from .hooks import PreHook, PostHook
 from .util.key_value_cache import KeyValueCache
+from .tool import ToolContext
