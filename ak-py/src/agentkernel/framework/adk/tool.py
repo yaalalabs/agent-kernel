@@ -57,6 +57,7 @@ class ADKToolBuilder:
 
         # Create a wrapper that injects the context from ADK
         if asyncio.iscoroutinefunction(tool):
+
             async def async_wrapper(**kwargs):
                 try:
                     from google.adk.runtime.context import get_current_context
@@ -79,6 +80,7 @@ class ADKToolBuilder:
             async_wrapper.__module__ = tool.__module__
             return async_wrapper
         else:
+
             def sync_wrapper(**kwargs):
                 try:
                     from google.adk.runtime.context import get_current_context

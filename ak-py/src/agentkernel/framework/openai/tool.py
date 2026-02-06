@@ -17,7 +17,9 @@ class OpenAIToolBuilder:
     """
 
     @staticmethod
-    def bind(tools: list[Callable], runtime: Any = None, session: Any = None, agent: Any = None, requests: list = None, params: dict[str, Any] = None) -> list[Callable]:
+    def bind(
+        tools: list[Callable], runtime: Any = None, session: Any = None, agent: Any = None, requests: list = None, params: dict[str, Any] = None
+    ) -> list[Callable]:
         """
         Bind generic tool functions for use with OpenAI Agent SDK.
 
@@ -67,6 +69,7 @@ class OpenAIToolBuilder:
 
         # Create a wrapper that injects the context
         if asyncio.iscoroutinefunction(tool):
+
             async def async_wrapper(**kwargs):
                 ctx = ToolContext(
                     runtime=runtime,
@@ -83,6 +86,7 @@ class OpenAIToolBuilder:
             async_wrapper.__module__ = tool.__module__
             return async_wrapper
         else:
+
             def sync_wrapper(**kwargs):
                 ctx = ToolContext(
                     runtime=runtime,

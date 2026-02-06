@@ -2,8 +2,10 @@
 Tests for tool builder functionality.
 These tests are framework-agnostic and test the core binding logic.
 """
+
 import asyncio
 import inspect
+
 import pytest
 
 from agentkernel import Agent, Runtime, Session
@@ -43,6 +45,7 @@ def generic_wrap_tool(tool, runtime, session, agent, requests, params):
         return tool
 
     if asyncio.iscoroutinefunction(tool):
+
         async def async_wrapper(**kwargs):
             ctx = ToolContext(
                 runtime=runtime,
@@ -58,6 +61,7 @@ def generic_wrap_tool(tool, runtime, session, agent, requests, params):
         async_wrapper.__module__ = tool.__module__
         return async_wrapper
     else:
+
         def sync_wrapper(**kwargs):
             ctx = ToolContext(
                 runtime=runtime,
