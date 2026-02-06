@@ -35,6 +35,7 @@ module "containered_agents" {
     OPENAI_API_KEY     = var.openai_api_key,
     CREWAI_STORAGE_DIR = "/tmp/crewai",
     EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
-    HOME               = "/tmp"
+    HOME               = "/tmp",
+    SOME_OTHER_KEY     = "Some Other Value"
   }
 }

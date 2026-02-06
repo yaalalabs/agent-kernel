@@ -1,8 +1,7 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
-  # source = "yaalalabs/ak-serverless/aws"
-  # version = "0.2.11"
-  source = "../../../../ak-deployment/ak-aws/serverless"
+  source = "yaalalabs/ak-serverless/aws"
+  version = "0.2.11"
 
   # Basic lambda configuration
   product_alias        = var.product_alias
@@ -46,7 +45,8 @@ module "serverless_agents" {
   # authorizer_handler_path = "lambda.handler"
   # authorizer_package_path = "../auth_deployment/auth_dist.zip"
   # authorizer_package_type = "LocalZip"
-  # # authorizer_result_ttl_in_seconds = 0
+  # authorizer_module_name = var.authorizer_module_name
+  # authorizer_result_ttl_in_seconds = 0
   # authorizer_environment_variables = {
   #   "SOME_OTHER_KEY" = "Some Other Value"
   # }
