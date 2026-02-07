@@ -2,5 +2,7 @@
 requirements.txt
 dist
 dist.zip
+auth_dist
+auth_dist.zip
 *.tfstate
 *.tfstate.backup

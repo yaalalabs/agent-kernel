@@ -1,0 +1,5 @@
+region        = "us-east-1"
+product_alias = "ak-openai-auth-serverless-tmp"
+env_alias     = "dev"
+module_name   = "examples"
+authorizer_module_name = "examples-auth"
