@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 
-from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
 
 

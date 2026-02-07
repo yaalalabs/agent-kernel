@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from ..core.config import AKConfig
-from .auth import AuthValidator, ValidationContext
+from ..auth import AuthValidator, ValidationContext
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
 logging.basicConfig(
