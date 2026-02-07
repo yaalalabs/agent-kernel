@@ -426,7 +426,7 @@ class CustomAuthValidator(AuthValidator):
 RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
 ```
 
-**Example:** See [examples/aws-containerized/crewai/app.py](../../../examples/aws-containerized/crewai/app.py)
+**Example:** See [examples/aws-containerized/crewai-auth/app.py](../../../examples/aws-containerized/crewai-auth/app.py)
 
 ## 🏗️ Architecture
 

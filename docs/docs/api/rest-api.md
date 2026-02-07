@@ -350,7 +350,7 @@ RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
 
 ### Example Implementation
 
-See [examples/aws-containerized/crewai/app.py](../../examples/aws-containerized/crewai/app.py) for a complete authentication example with custom token validation.
+See [examples/aws-containerized/crewai-auth/app.py](../../examples/aws-containerized/crewai-auth/app.py) for a complete authentication example with custom token validation.
 
 ## Best Practices
 

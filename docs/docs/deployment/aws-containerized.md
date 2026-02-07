@@ -35,7 +35,7 @@ graph TB
 
 ## Deployment
 
-Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
+Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
 ## Advantages
 
@@ -258,7 +258,7 @@ Agent Kernel provides a health endpoint:
 
 ## Application Endpoints
 
-Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
+Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth).
 
 ## Authentication
 
@@ -309,7 +309,7 @@ RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
 
 ### Example Implementation
 
-See [examples/aws-containerized/crewai/app.py](../../../examples/aws-containerized/crewai/app.py) for a complete authentication example.
+See [examples/aws-containerized/crewai-auth/app.py](../../../examples/aws-containerized/crewai-auth/app.py) for a complete authentication example.
 
 
 ## Best Practices
