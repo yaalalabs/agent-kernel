@@ -1,0 +1,209 @@
+name: Nightly Integration Tests
+
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC authentication with AWS
+
+on:
+  # Nightly build - runs daily at 2 AM UTC
+  # schedule:
+    # - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: pip install pyyaml
+      
+      - name: Validate integration test configuration
+        run: python3 .github/scripts/validate_integration_config.py
+      
+      - name: Generate test matrix
+        id: set-matrix
+        run: |
+          python3 .github/scripts/generate_test_matrix.py --tier nightly --format github >> $GITHUB_OUTPUT
+
+  build-ak-py:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Build ak-py
+        working-directory: ak-py
+        run: ./build.sh
+
+      - name: Cache ak-py build
+        uses: actions/cache/save@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
+
+  deploy-openai: # This is handled separately because this module deploys supporting infrastructure for other tests
+    needs: [build-ak-py]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install uv pyyaml
+
+      - name: Restore ak-py build
+        uses: actions/cache/restore@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Inject dependencies
+        run: python3 scripts/deploy/inject_dependencies.py
+
+      - name: Deploy and test aws-serverless/openai
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        run: |
+          # Deploy
+          python .github/scripts/run_single_test.py \
+            --type aws-serverless \
+            --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action deploy
+          
+          # Test
+          python .github/scripts/run_single_test.py \
+            --type aws-serverless \
+            --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-openai
+          path: |
+            examples/aws-serverless/openai/**/test-results/
+            examples/aws-serverless/openai/**/pytest-report.xml
+          retention-days: 30
+
+  run-tests:
+    needs: [setup, deploy-openai]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install uv pyyaml
+
+      - name: Restore ak-py build
+        uses: actions/cache/restore@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
+
+      - name: Configure AWS credentials
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Inject dependencies
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        run: python3 scripts/deploy/inject_dependencies.py
+
+      - name: Run Test - ${{ matrix.path }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        run: |
+          # Deploy (for AWS types)
+          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+          fi
+          
+          # Test
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --deploy-dir ${{ matrix.deploy_dir }} \
+            --action test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.id }}
+          path: |
+            ${{ matrix.path }}/**/test-results/
+            ${{ matrix.path }}/**/pytest-report.xml
+          retention-days: 30

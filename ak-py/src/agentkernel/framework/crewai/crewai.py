@@ -5,11 +5,11 @@ from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
 
-from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Session
+from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...trace import Trace
 
 FRAMEWORK = "crewai"
@@ -178,7 +178,7 @@ class CrewAIAgent(BaseAgent):
         skills = []
         for tool in self.agent.tools:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return self._generate_a2a_card(agent_name=self.name, description=self.agent.backstory, skills=skills)
+        return A2ACardBuilder.build(name=self.name, description=self.agent.backstory, skills=skills)
 
 
 class CrewAIModule(Module):
@@ -226,7 +226,7 @@ class CrewAIModule(Module):
         :param hooks: List of pre-execution hooks to attach.
         :return: CrewAIModule instance.
         """
-        super().get_agent(agent.role).attach_pre_hooks(hooks)
+        super().get_agent(agent.role).pre_hooks.extend(hooks)
         return self
 
     def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "CrewAIModule":
@@ -236,5 +236,5 @@ class CrewAIModule(Module):
         :param hooks: List of post-execution hooks to attach.
         :return: CrewAIModule instance.
         """
-        super().get_agent(agent.role).attach_post_hooks(hooks)
+        super().get_agent(agent.role).post_hooks.extend(hooks)
         return self

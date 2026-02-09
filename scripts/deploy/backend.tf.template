@@ -1,0 +1,13 @@
+# OPTIONAL: This file is auto-generated for CI/CD purposes
+# You can safely delete this file if you prefer to use local state
+# or configure your own backend
+
+terraform {
+  backend "s3" {
+    bucket         = "{bucket_name}"
+    key            = "{state_key}"
+    region         = "{region}"
+    dynamodb_table = "{dynamodb_table}"
+    encrypt        = true
+  }
+}
