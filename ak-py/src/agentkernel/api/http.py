@@ -26,7 +26,13 @@ class RESTAPI:
     _log = logging.getLogger("ak.api.http")
     _custom_routers = []
     _auth_token_validators = []
-    _no_auth_endpoints = ["/health"]
+
+    @classmethod
+    def _get_router_dependencies(cls):
+        """Get dependencies to apply to APIRouters.
+        :return: List of dependencies or None if no auth validators are configured
+        """
+        return cls._auth_token_validators if cls._auth_token_validators else None
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -34,12 +40,15 @@ class RESTAPI:
         Assembles a FastAPI app from routers.
         :param routers: List of routers to include in the app.
         :param lifespan: Optional lifespan handler.
+        
+        Global endpoints:
+        - GET /health: Health check
+        - GET /openapi.json: OpenAPI specification
         """
         app = FastAPI(
             title="Agent Kernel REST API",
             debug=True,
-            lifespan=lifespan,
-            dependencies=cls._auth_token_validators if cls._auth_token_validators else None,
+            lifespan=lifespan
         )
 
         app.add_middleware(
@@ -50,8 +59,12 @@ class RESTAPI:
             allow_headers=["*"],
         )
 
+        @app.get("/health")
+        def health():
+            return {"status": "ok"}
+
         for r in routers or []:
-            app.include_router(r)
+            app.include_router(router=r, dependencies=cls._get_router_dependencies())
 
         @app.get("/openapi.json")
         async def get_openapi_endpoint():
@@ -104,21 +117,9 @@ class RESTAPI:
             app = cls._create_app(routers=routers)
         # Add custom routers
         for router in cls._custom_routers:
-            app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix)
+            app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix, dependencies=cls._get_router_dependencies())
         uvicorn.run(app=app, host=host, port=port, reload=False)
 
-    @classmethod
-    def _remove_ip_path_part(cls, path: str) -> str:
-        """Remove IP/domain part from URL path, keeping only the path component.
-        :param path: Full URL or path string
-        :return: Path component without IP/domain
-        """
-        path = str(path)
-        if not path.startswith(("http://", "https://")):
-            cls._log.debug(f"Couldn't find 'http://' or 'https://' prefix, therefore adding it to path: '{path}'")
-            path = "http://" + path
-        cls._log.debug(f"Removing IP path part from path: '{path}'")
-        return urlparse(path).path
 
     @classmethod
     def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
@@ -133,19 +134,15 @@ class RESTAPI:
                 :return: ValidationResult if token is valid
                 :raises: HTTPException if authentication fails
                 """
-                cls._log.debug(f"Validating token for request: {request.url}")
-                cleaned_request_url = cls._remove_ip_path_part(request.url)
-                cls._log.debug(f"Cleaned request URL: {cleaned_request_url}")
-                cls._log.debug(f"No auth endpoints: {cls._no_auth_endpoints}")
-                if cleaned_request_url in cls._no_auth_endpoints:  # ignore endpoints that do not need authentication
-                    return
+                request_url = str(request.url)
+                cls._log.debug(f"Validating token for request: {request_url}")
                 auth_token = request.headers.get("authorization")
                 cls._log.debug(f"Validating token: '{auth_token}'")
                 if auth_token is None:
                     raise HTTPException(status_code=401, detail="Missing authorization header")
                 auth_token = auth_token.replace("Bearer ", "").strip()
                 result = token_validator.validate(
-                    token=auth_token, context=ValidationContext(path=str(request.url), http_method=request.method, headers=dict(request.headers))
+                    token=auth_token, context=ValidationContext(path=request_url, http_method=request.method, headers=dict(request.headers))
                 )
                 if not result.is_valid:
                     raise HTTPException(status_code=401, detail=result.error_msg or "Unauthorized")
