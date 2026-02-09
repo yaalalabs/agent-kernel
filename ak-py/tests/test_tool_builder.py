@@ -186,3 +186,93 @@ async def test_tool_builder_async_mixed_parameters():
     result = await wrapped_tool(x=10, y=20)
     expected = 10 + 20 + len("session-789")
     assert result == expected
+
+
+def test_tool_builder_different_parameter_name():
+    """Test that tool builder works with parameter names other than 'ctx'."""
+
+    def tool_with_custom_name(tool_context: ToolContext, value: int) -> str:
+        """Tool with ToolContext parameter named 'tool_context'."""
+        return f"{tool_context.agent.name}:{value}"
+
+    runtime = Runtime.current()
+    session = Session("test-session")
+    agent = MockAgent("test-agent")
+
+    wrapped_tool = wrap_tool_with_context(
+        tool_with_custom_name,
+        runtime=runtime,
+        session=session,
+        agent=agent,
+        requests=[],
+        params={},
+    )
+
+    result = wrapped_tool(value=42)
+    assert "test-agent:42" in result
+
+
+def test_tool_builder_context_parameter_name():
+    """Test that tool builder works with 'context' as parameter name."""
+
+    def tool_with_context_name(context: ToolContext, data: str) -> str:
+        """Tool with ToolContext parameter named 'context'."""
+        return f"Session {context.session.id}: {data}"
+
+    runtime = Runtime.current()
+    session = Session("custom-session")
+    agent = MockAgent("custom-agent")
+
+    wrapped_tool = wrap_tool_with_context(
+        tool_with_context_name,
+        runtime=runtime,
+        session=session,
+        agent=agent,
+        requests=[],
+        params={},
+    )
+
+    result = wrapped_tool(data="test-data")
+    assert "Session custom-session: test-data" in result
+
+
+@pytest.mark.asyncio
+async def test_tool_builder_async_different_parameter_name():
+    """Test that async tool builder works with different parameter names."""
+
+    async def async_tool_custom(my_ctx: ToolContext, x: int) -> int:
+        """Async tool with ToolContext parameter named 'my_ctx'."""
+        await asyncio.sleep(0.01)
+        return x + len(my_ctx.session.id)
+
+    runtime = Runtime.current()
+    session = Session("async-session-xyz")
+    agent = MockAgent("async-agent")
+
+    wrapped_tool = wrap_tool_with_context(async_tool_custom, runtime=runtime, session=session, agent=agent, requests=[], params={})
+
+    result = await wrapped_tool(x=100)
+    expected = 100 + len("async-session-xyz")
+    assert result == expected
+
+
+def test_get_tool_context_param_name():
+    """Test the get_tool_context_param_name utility function."""
+    from agentkernel.core.tool_util import get_tool_context_param_name
+
+    def tool_ctx(ctx: ToolContext) -> None:
+        pass
+
+    def tool_context(context: ToolContext) -> None:
+        pass
+
+    def tool_custom(my_context: ToolContext) -> None:
+        pass
+
+    def tool_no_context(x: int) -> None:
+        pass
+
+    assert get_tool_context_param_name(tool_ctx) == "ctx"
+    assert get_tool_context_param_name(tool_context) == "context"
+    assert get_tool_context_param_name(tool_custom) == "my_context"
+    assert get_tool_context_param_name(tool_no_context) is None

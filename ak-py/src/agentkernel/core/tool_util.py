@@ -8,6 +8,7 @@ to detect context requirements and wrap tool functions appropriately.
 from __future__ import annotations
 
 import asyncio
+import functools
 import inspect
 from typing import Any, Callable
 
@@ -25,6 +26,20 @@ def needs_tool_context(tool: Callable) -> bool:
     return any(param.annotation is ToolContext for param in sig.parameters.values())
 
 
+def get_tool_context_param_name(tool: Callable) -> str | None:
+    """
+    Get the parameter name for ToolContext in a tool function.
+
+    :param tool: The tool function to inspect.
+    :return: The parameter name if found, None otherwise.
+    """
+    sig = inspect.signature(tool)
+    for param_name, param in sig.parameters.items():
+        if param.annotation is ToolContext:
+            return param_name
+    return None
+
+
 def wrap_tool_with_context(
     tool: Callable,
     runtime: Any,
@@ -37,7 +52,8 @@ def wrap_tool_with_context(
     Wrap a tool function to inject ToolContext if needed.
 
     If the tool doesn't need context, returns it unchanged.
-    Otherwise, creates a wrapper that injects the context.
+    Otherwise, creates a wrapper that injects the context using the
+    actual parameter name from the function signature.
 
     :param tool: The tool function to wrap.
     :param runtime: Runtime instance for the context.
@@ -50,8 +66,14 @@ def wrap_tool_with_context(
     if not needs_tool_context(tool):
         return tool
 
+    # Get the actual parameter name for ToolContext
+    context_param_name = get_tool_context_param_name(tool)
+    if context_param_name is None:
+        return tool
+
     if asyncio.iscoroutinefunction(tool):
 
+        @functools.wraps(tool)
         async def async_wrapper(**kwargs):
             ctx = ToolContext(
                 runtime=runtime,
@@ -60,15 +82,14 @@ def wrap_tool_with_context(
                 requests=requests,
                 params=params,
             )
-            return await tool(ctx=ctx, **kwargs)
+            # Use the actual parameter name from the function signature
+            kwargs[context_param_name] = ctx
+            return await tool(**kwargs)
 
-        # Preserve function metadata
-        async_wrapper.__name__ = tool.__name__
-        async_wrapper.__doc__ = tool.__doc__
-        async_wrapper.__module__ = tool.__module__
         return async_wrapper
     else:
 
+        @functools.wraps(tool)
         def sync_wrapper(**kwargs):
             ctx = ToolContext(
                 runtime=runtime,
@@ -77,10 +98,8 @@ def wrap_tool_with_context(
                 requests=requests,
                 params=params,
             )
-            return tool(ctx=ctx, **kwargs)
+            # Use the actual parameter name from the function signature
+            kwargs[context_param_name] = ctx
+            return tool(**kwargs)
 
-        # Preserve function metadata
-        sync_wrapper.__name__ = tool.__name__
-        sync_wrapper.__doc__ = tool.__doc__
-        sync_wrapper.__module__ = tool.__module__
         return sync_wrapper

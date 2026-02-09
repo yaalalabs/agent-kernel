@@ -52,13 +52,13 @@ async def async_process(ctx: ToolContext, value: int) -> dict:
     """
     # Access session cache
     cache = ctx.session.get_volatile_cache()
-    
+
     # Store or retrieve some data
     count_key = "process_count"
     current_count = cache.get(count_key) or 0
     new_count = current_count + 1
     cache.set(count_key, new_count)
-    
+
     return {
         "value": value,
         "agent": ctx.agent.name,
@@ -67,7 +67,7 @@ async def async_process(ctx: ToolContext, value: int) -> dict:
 
 
 # Example usage with a framework (pseudo-code):
-# 
+#
 # For OpenAI Agents SDK:
 # from agentkernel.framework.openai import OpenAIToolBuilder
 # from agents import Agent
@@ -101,53 +101,52 @@ async def async_process(ctx: ToolContext, value: int) -> dict:
 if __name__ == "__main__":
     print("Framework-agnostic Tool Example")
     print("=" * 50)
-    
+
     # Demonstrate tool usage without framework
     print("\n1. Simple tool without context:")
     result = calculate_sum(5, 3)
     print(f"   calculate_sum(5, 3) = {result}")
-    
+
     print("\n2. Tool with ToolContext (direct call for demo):")
     # Create mock context for demonstration
     from agentkernel import Agent, Runner
-    from agentkernel.core.base import Session
-    
+
     class MockRunner(Runner):
         async def run(self, agent, session, requests):
             pass
-    
+
     class MockAgent(Agent):
         def __init__(self, name):
             super().__init__(name, MockRunner("mock"))
-        
+
         def get_description(self):
             return "Mock agent"
-        
+
         def get_a2a_card(self):
             return None
-    
+
     runtime = Runtime.current()
     session = Session("demo-session-123")
     agent = MockAgent("demo-agent")
     requests = [AgentRequestText(text="test")]
-    
+
     ctx = ToolContext(
         runtime=runtime,
         session=session,
         agent=agent,
         requests=requests,
-        params={"example": "value"}
+        params={"example": "value"},
     )
-    
+
     result = get_session_info(ctx=ctx)
     print(f"   Session info: {result}")
-    
+
     print("\n3. Tool with mixed parameters:")
     result = process_with_context(ctx=ctx, user_input="Hello", multiplier=2)
     print(f"   Result: {result}")
-    
+
     print("\n4. Async tool (would need async execution):")
     print("   async_process requires async execution context")
-    
+
     print("\nNote: In actual usage, the ToolContext is automatically injected")
     print("by the framework-specific ToolBuilder when the tool is bound to an agent.")

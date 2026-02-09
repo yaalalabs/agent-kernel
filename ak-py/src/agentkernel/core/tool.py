@@ -24,10 +24,15 @@ class ToolContext:
         agent: The Agent instance invoking the tool function.
         requests: The list of AgentRequest objects that triggered the agent invocation.
         params: Additional custom parameters that may be passed to the tool context.
+
+    Note:
+        While runtime, session, and agent are typed as non-optional, they may be None
+        in some contexts. Tool functions should handle None values appropriately or
+        ensure the context is properly initialized before use.
     """
 
-    runtime: Runtime
-    session: Session
-    agent: Agent
+    runtime: Runtime | None
+    session: Session | None
+    agent: Agent | None
     requests: list[AgentRequest]
     params: dict[str, Any]
