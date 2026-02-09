@@ -1,5 +1,4 @@
-region        = "ap-southeast-2"
+region        = "us-east-1"
 product_alias = "ak-openai-serverless"
 env_alias     = "dev"
-module_name   = "examples"
-authorizer_module_name = "examples-auth"
+module_name   = "example"
