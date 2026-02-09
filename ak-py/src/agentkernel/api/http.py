@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from ..core.config import AKConfig
 from ..auth import AuthValidator, ValidationContext
+from ..core.config import AKConfig
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
 logging.basicConfig(
@@ -40,16 +40,12 @@ class RESTAPI:
         Assembles a FastAPI app from routers.
         :param routers: List of routers to include in the app.
         :param lifespan: Optional lifespan handler.
-        
+
         Global endpoints:
         - GET /health: Health check
         - GET /openapi.json: OpenAPI specification
         """
-        app = FastAPI(
-            title="Agent Kernel REST API",
-            debug=True,
-            lifespan=lifespan
-        )
+        app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan)
 
         app.add_middleware(
             CORSMiddleware,
@@ -119,7 +115,6 @@ class RESTAPI:
         for router in cls._custom_routers:
             app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix, dependencies=cls._get_router_dependencies())
         uvicorn.run(app=app, host=host, port=port, reload=False)
-
 
     @classmethod
     def add_auth_handlers(cls, auth_validators: list[AuthValidator]):

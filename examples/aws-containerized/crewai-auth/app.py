@@ -4,9 +4,8 @@ from typing import Optional
 from agentkernel.api import RESTAPI, AgentRESTRequestHandler
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.crewai import CrewAIModule
-from fastapi import APIRouter
-
 from crewai import Agent
+from fastapi import APIRouter
 
 math_agent = Agent(
     role="math",
