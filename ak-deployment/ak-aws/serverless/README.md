@@ -507,7 +507,7 @@ module "api_v2" {
 }
 ```
 
-## � Custom Authorizer Configuration
+## 🔐 Custom Authorizer Configuration
 
 The module supports a Lambda-based API Gateway authorizer for custom authentication and authorization logic.
 

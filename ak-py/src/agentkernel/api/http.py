@@ -1,5 +1,4 @@
 import logging
-from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
@@ -130,9 +129,8 @@ class RESTAPI:
                 :raises: HTTPException if authentication fails
                 """
                 request_url = str(request.url)
-                cls._log.debug(f"Validating token for request: {request_url}")
+                cls._log.debug(f"Validating token for request: {request.method} {request_url}")
                 auth_token = request.headers.get("authorization")
-                cls._log.debug(f"Validating token: '{auth_token}'")
                 if auth_token is None:
                     raise HTTPException(status_code=401, detail="Missing authorization header")
                 auth_token = auth_token.replace("Bearer ", "").strip()

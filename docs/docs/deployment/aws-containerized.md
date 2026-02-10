@@ -292,7 +292,8 @@ In your containerized application, implement your custom authentication logic by
 
 ```python
 import os
-from agentkernel.api import RESTAPI, AuthValidator, ValidationContext, ValidationResult
+from agentkernel.api import RESTAPI
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from typing import Optional
 
 class CustomAuthValidator(AuthValidator):
