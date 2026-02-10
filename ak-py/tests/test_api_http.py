@@ -1,13 +1,12 @@
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 from fastapi.testclient import TestClient
 
 from agentkernel.api.http import RESTAPI
-from agentkernel.auth.handler import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.auth.handler import AuthValidator, ValidationResult
 
 
 class TestRESTAPI:

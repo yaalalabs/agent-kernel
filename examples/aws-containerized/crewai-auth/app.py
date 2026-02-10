@@ -62,7 +62,6 @@ CrewAIModule([math_agent, history_agent])
 class CustomAuthValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
-        print(f"Token: {token}")
         print(f"Context: {context.model_dump_json(indent=2)}")
         print(f"Environment Variable: 'SOME_OTHER_KEY': {os.getenv('SOME_OTHER_KEY')}")
         if token != "test12345":

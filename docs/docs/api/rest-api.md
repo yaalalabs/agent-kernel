@@ -334,7 +334,8 @@ Agent Kernel REST API supports authentication through custom validators. You can
 Create a custom auth validator by extending `AuthValidator`:
 
 ```python
-from agentkernel.api import RESTAPI, AuthValidator, ValidationContext, ValidationResult
+from agentkernel.api import RESTAPI
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from typing import Optional
 
 class CustomAuthValidator(AuthValidator):

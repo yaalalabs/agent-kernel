@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.auth.handler import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.deployment.aws.akauthorizer import (
     APIGatewayAuthorizer,
     APIGatewayRequestAuthorizerEvent,

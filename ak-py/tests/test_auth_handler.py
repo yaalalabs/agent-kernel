@@ -1,7 +1,7 @@
 import base64
 import hashlib
 import hmac
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import jwt
 import pytest
@@ -168,7 +168,6 @@ class TestAuthValidator:
         validator = TestValidator()
 
         # Create a valid JWT token for testing
-        private_key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAzK8l7K..."
         public_key = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzK8l7K..."
 
         # Mock jwt.decode to avoid needing real keys
