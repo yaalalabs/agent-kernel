@@ -14,15 +14,12 @@ module "containered_agents" {
   package_path         = "../dist"
   container_type       = "ecs"
   region               = var.region
-  vpc_id               = "vpc-09033229d67314c1c"
-  private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
   product_display_name = "AK Assistant"
   ecs_container_port   = 8000
-
-  enable_cors        = true
-  cors_allow_origins = ["http://localhost:3000", "https://kernel.yaala.ai"]
-  cors_allow_methods = ["POST", "OPTIONS"]
-  cors_allow_headers = ["content-type"]
+  enable_cors          = true
+  cors_allow_origins   = ["http://localhost:3000", "https://kernel.yaala.ai"]
+  cors_allow_methods   = ["POST", "OPTIONS"]
+  cors_allow_headers   = ["content-type"]
 
   throttling_rate_limit  = "50"
   throttling_burst_limit = "50"
