@@ -14,8 +14,8 @@ module "serverless_agents" {
   memory_size                  = 256
   product_display_name         = "Agent Kernel OpenAI with DynamoDB"
   create_dynamodb_memory_table = true
-  vpc_id                       = "vpc-09033229d67314c1c"
-  private_subnet_ids           = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
+  vpc_id                       = var.vpc_id
+  private_subnet_ids           = var.private_subnet_ids
   region                       = var.region
 
   # Environment variables passed to lambda
