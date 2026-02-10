@@ -13,3 +13,13 @@ output "lambda_function_invoke_arn" {
 output "agent_invoke_url" {
   value = "${aws_api_gateway_stage.stage.invoke_url}/${var.api_base_path}/${var.api_version}/${var.agent_endpoint}"
 }
+
+output "vpc_id" {
+  description = "VPC ID used for the deployment"
+  value       = local.vpc_id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used for the deployment"
+  value       = local.subnet_ids
+}
