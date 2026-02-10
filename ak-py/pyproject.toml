@@ -21,6 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+auth = [
+    "PyJWT>=2.0.0",
+]
 langfuse = [
     "langfuse>=3.9.2",
     "nest-asyncio>=1.6.0",

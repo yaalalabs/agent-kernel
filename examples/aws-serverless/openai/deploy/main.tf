@@ -38,4 +38,4 @@ module "serverless_agents" {
   environment_variables = {
     "OPENAI_API_KEY" = var.openai_api_key
   }
-} 
+}
