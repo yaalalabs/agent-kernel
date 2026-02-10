@@ -385,7 +385,7 @@ For production deployments, implement authentication to secure your Agent Kernel
 
 #### Environment Variable Configuration
 
-Configure authentication through environment variables in your Terraform configuration:
+Environment variables required for the authentication logic can be defined in the Terraform configuration as follows:
 
 ```hcl
 module "container_app" {
