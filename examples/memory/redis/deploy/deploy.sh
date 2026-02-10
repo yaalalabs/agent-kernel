@@ -10,7 +10,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist
     else
       uv pip install -r requirements.txt --target=dist --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist agentkernel[openai,redis] || true
+      uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist agentkernel[openai,redis,test] || true
     fi
     cp -r lambda.py config.yaml dist/
     cd dist && zip -r ../dist.zip .
