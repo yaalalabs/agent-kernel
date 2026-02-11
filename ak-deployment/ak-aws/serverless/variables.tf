@@ -180,26 +180,38 @@ variable "gateway_endpoints" {
 }
 
 variable "authorizer_function_name" {
-  description = "Authorizer Lambda function name"
   type        = string
+  description = "Authorizer Lambda function name"
   default     = null
 }
 
 variable "authorizer_function_description" {
-  description = "Authorizer Lambda function description"
   type        = string
+  description = "Authorizer Lambda function description"
   default     = "API Gateway Lambda Authorizer"
 }
 
 variable "authorizer_handler_path" {
-  description = "Lambda authorizer handler path"
   type        = string
+  description = "Lambda authorizer handler path"
   default     = null
 }
 
 variable "authorizer_package_path" {
-  description = "Authorizer Lambda package path"
   type        = string
+  description = "Authorizer Lambda package path or Docker image source path"
+  default     = null
+}
+
+variable "authorizer_package_type" {
+  type        = string
+  description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
+  default     = null
+}
+
+variable "authorizer_module_name" {
+  type        = string
+  description = "Authorizer module name"
   default     = null
 }
 
@@ -210,21 +222,9 @@ variable "authorizer_environment_variables" {
 }
 
 variable "authorizer_result_ttl_in_seconds" {
-  description = "Authorizer result TTL in seconds"
   type        = number
+  description = "Authorizer result TTL in seconds"
   default     = 150
-}
-
-variable "authorizer_package_type" {
-  description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
-  type        = string
-  default     = null
-}
-
-variable "authorizer_module_name" {
-  description = "Authorizer module name"
-  type        = string
-  default     = null
 }
 
 
