@@ -189,7 +189,7 @@ class TestAPIGatewayAuthorizer:
         result = sample_authorizer.handle(sample_api_gateway_event)
 
         # Verify deny policy
-        assert result["principalId"] == "user"  # default subject
+        assert result["principalId"] == "user"
         statement = result["policyDocument"]["Statement"][0]
         assert statement["Effect"] == "Deny"
         assert statement["Resource"] == sample_api_gateway_event["methodArn"]
@@ -204,7 +204,7 @@ class TestAPIGatewayAuthorizer:
         # Context should not affect the result
         result = sample_authorizer.handle(sample_api_gateway_event, sample_lambda_context)
 
-        assert result["principalId"] == "user"  # default subject
+        assert result["principalId"] == "user"  # default subject for successful validation
         assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
 
     def test_build_request(self, sample_authorizer, sample_api_gateway_event):
@@ -269,9 +269,9 @@ class TestAPIGatewayAuthorizer:
         """Test _build_policy method with Deny effect."""
         method_arn = "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
 
-        policy = sample_authorizer._build_policy(principal_id="anonymous", effect="Deny", method_arn=method_arn, context=None)
+        policy = sample_authorizer._build_policy(principal_id="someone", effect="Deny", method_arn=method_arn, context=None)
 
-        assert policy["principalId"] == "anonymous"
+        assert policy["principalId"] == "someone"
         statement = policy["policyDocument"]["Statement"][0]
         assert statement["Effect"] == "Deny"
 
@@ -334,8 +334,12 @@ class TestAPIGatewayAuthorizer:
         # Setup validator to raise exception
         mock_validator.validate.side_effect = Exception("Validation error")
 
-        with pytest.raises(Exception, match="Validation error"):
-            sample_authorizer.handle(sample_api_gateway_event)
+        result = sample_authorizer.handle(sample_api_gateway_event)
+
+        # Should return deny policy instead of raising exception
+        assert result["principalId"] == "unauthorized"
+        assert result["policyDocument"]["Statement"][0]["Effect"] == "Deny"
+        assert result["policyDocument"]["Statement"][0]["Resource"] == sample_api_gateway_event["methodArn"]
 
     def test_event_validation_error(self, sample_authorizer, mock_validator):
         """Test handling of invalid event data."""
@@ -344,10 +348,12 @@ class TestAPIGatewayAuthorizer:
             # Missing required methodArn and headers
         }
 
-        mock_validator.validate.return_value = ValidationResult(is_valid=True)
+        result = sample_authorizer.handle(invalid_event)
 
-        with pytest.raises(ValidationError):
-            sample_authorizer.handle(invalid_event)
+        # Should return deny policy instead of raising ValidationError
+        assert result["principalId"] == "unauthorized"
+        assert result["policyDocument"]["Statement"][0]["Effect"] == "Deny"
+        assert result["policyDocument"]["Statement"][0]["Resource"] == "*"
 
     def test_different_http_methods(self, sample_authorizer, mock_validator):
         """Test authorizer with different HTTP methods."""
@@ -484,7 +490,7 @@ class TestAPIGatewayAuthorizerIntegration:
 
         result = authorizer.handle(event)
 
-        assert result["principalId"] == "user"  # default
+        assert result["principalId"] == "user"
         assert result["policyDocument"]["Statement"][0]["Effect"] == "Deny"
         assert "context" not in result
 
