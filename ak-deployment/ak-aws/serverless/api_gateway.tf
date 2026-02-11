@@ -192,7 +192,7 @@ resource "aws_lambda_permission" "allow_apigw_authorizer" {
   principal   = "apigateway.amazonaws.com"
 
   # REST API
-  source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*"
+  source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/authorizers/*"
 }
 
 resource "aws_api_gateway_authorizer" "lambda_authorizer" {
@@ -200,7 +200,6 @@ resource "aws_api_gateway_authorizer" "lambda_authorizer" {
   name     = "${var.product_alias}-${var.env_alias}-${var.authorizer_module_name}-${var.authorizer_function_name}"
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   authorizer_uri = module.authorizer[0].lambda_function_invoke_arn
-  authorizer_credentials = null
 
   type = "REQUEST"
   identity_source = "method.request.header.Authorization"
