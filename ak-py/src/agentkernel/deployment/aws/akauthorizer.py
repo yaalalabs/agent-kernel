@@ -28,7 +28,7 @@ class APIGatewayAuthorizer:
 
     def handle(self, event: dict, context: dict = None) -> dict:
         self._log.info(f"Authorizer received event: {event}")
-        
+
         try:
             request: APIGatewayRequestAuthorizerEvent = self._build_request(event)
             token = self._extract_token(request)
@@ -41,10 +41,10 @@ class APIGatewayAuthorizer:
                 ),
             )
             return_policy = self._build_policy(
-                principal_id = result.subject,
-                effect = "Allow" if result.is_valid else "Deny",
-                method_arn = request.methodArn,
-                context = result.claims,
+                principal_id=result.subject,
+                effect="Allow" if result.is_valid else "Deny",
+                method_arn=request.methodArn,
+                context=result.claims,
             )
         except ValidationError as e:
             # Missing or malformed headers/Authorization
@@ -58,7 +58,7 @@ class APIGatewayAuthorizer:
             # Catch-all for unexpected errors during validation
             self._log.info(f"Unexpected error in authorizer: {e}", exc_info=True)
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
-        
+
         self._log.info(f"Authorizer return policy: {return_policy}")
         return return_policy
 
