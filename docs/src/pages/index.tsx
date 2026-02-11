@@ -53,6 +53,25 @@ function HomepageHeader() {
               View on GitHub
             </Link>
           </div>
+          <div className={styles.affiliationSection}>
+            <span className={styles.affiliationLabel}>Affiliated with</span>
+            <div className={styles.affiliationLogos}>
+              <a href="https://www.linuxfoundation.org" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="/img/lf_membership.svg"
+                  alt="Linux Foundation"
+                  className={styles.affiliationLogo}
+                />
+              </a>
+              <a href="https://aaif.io" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="/img/aaif_membership.svg"
+                  alt="Agentic AI Foundation"
+                  className={styles.affiliationLogo}
+                />
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </header>

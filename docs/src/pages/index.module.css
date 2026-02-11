@@ -561,6 +561,86 @@
   height: 400px;
 }
 
+/* Affiliation Section */
+.affiliationSection {
+  margin-top: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  animation: fadeInUp 1.2s ease-out 0.9s backwards;
+}
+
+.affiliationLabel {
+  font-size: 0.9rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #374151;
+  font-weight: 700;
+  position: relative;
+  padding: 0 1.5rem;
+}
+
+.affiliationLabel::before,
+.affiliationLabel::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #2e8555);
+}
+
+.affiliationLabel::before {
+  right: 100%;
+  background: linear-gradient(90deg, transparent, #2e8555);
+}
+
+.affiliationLabel::after {
+  left: 100%;
+  background: linear-gradient(90deg, #2e8555, transparent);
+}
+
+[data-theme='dark'] .affiliationLabel {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .affiliationLabel::before {
+  background: linear-gradient(90deg, transparent, #25c2a0);
+}
+
+[data-theme='dark'] .affiliationLabel::after {
+  background: linear-gradient(90deg, #25c2a0, transparent);
+}
+
+.affiliationLogos {
+  display: flex;
+  gap: 3rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.affiliationLogo {
+  height: 72px;
+  width: auto;
+  transition: transform 0.3s ease, filter 0.3s ease;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
+}
+
+.affiliationLogo:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 6px 20px rgba(46, 133, 85, 0.25));
+}
+
+[data-theme='dark'] .affiliationLogo {
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+}
+
+[data-theme='dark'] .affiliationLogo:hover {
+  filter: drop-shadow(0 6px 20px rgba(37, 194, 160, 0.3));
+}
+
 /* Features Button - Special Styling */
 .featuresButton {
   position: relative;
@@ -1058,6 +1138,14 @@
     align-items: stretch;
   }
 
+  .affiliationLogos {
+    gap: 2rem;
+  }
+
+  .affiliationLogo {
+    height: 60px;
+  }
+
   .sectionTitle {
     font-size: 2rem;
   }
@@ -1089,6 +1177,10 @@
 
   .heroTagline {
     font-size: 1.1rem;
+  }
+
+  .affiliationLogo {
+    height: 52px;
   }
 
   .integrationsGrid {
