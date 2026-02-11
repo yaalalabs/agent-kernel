@@ -378,16 +378,19 @@ You need to create a separate auth lambda logic by extending the `AuthValidator`
 from typing import Optional
 from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
+import jwt
 
 class CustomAuthTokenValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
-        
-        # Your custom validation logic here
-        if token != "valid_token":
-            return ValidationResult(is_valid=False)
-        
-        return ValidationResult(is_valid=True)
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            if email == "test@test.com":
+                return ValidationResult(is_valid=True)
+        except Exception:
+            pass
+        return ValidationResult(is_valid=False)
 
 # APIGatewayAuthorizer defines the auth lambda handler
 handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle

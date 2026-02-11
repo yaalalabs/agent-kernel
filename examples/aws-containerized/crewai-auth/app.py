@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 
+import jwt
 from agentkernel.api import RESTAPI, AgentRESTRequestHandler
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.crewai import CrewAIModule
@@ -62,11 +63,14 @@ CrewAIModule([math_agent, history_agent])
 class CustomAuthValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
-        print(f"Context: {context.model_dump_json(indent=2)}")
-        print(f"Environment Variable: 'SOME_OTHER_KEY': {os.getenv('SOME_OTHER_KEY')}")
-        if token != "test12345":
-            return ValidationResult(is_valid=False, error_msg="Invalid token")
-        return ValidationResult(is_valid=True)
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            if email == "test@test.com":
+                return ValidationResult(is_valid=True)
+        except Exception:
+            pass
+        return ValidationResult(is_valid=False, error_msg="Invalid token")
 
 
 # Adding Auth handlers to the REST API

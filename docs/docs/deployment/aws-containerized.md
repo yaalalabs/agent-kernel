@@ -266,7 +266,7 @@ For production deployments, implement authentication to secure your Agent Kernel
 
 ### Environment Variable Configuration
 
-Configure authentication through environment variables in your Terraform configuration:
+You can configure environment variables in your Terraform configuration like shown below:
 
 ```hcl
 module "container_app" {
@@ -276,7 +276,7 @@ module "container_app" {
   
   environment_variables = {
     # Authentication configuration
-    AUTH_API_KEY = "your-secret-api-key"
+    SOME_VALUE = "some-value"
     
     # Other app configuration
     OPENAI_API_KEY = var.openai_api_key
@@ -292,6 +292,7 @@ In your containerized application, implement your custom authentication logic by
 
 ```python
 import os
+import jwt
 from agentkernel.api import RESTAPI
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from typing import Optional
@@ -299,10 +300,14 @@ from typing import Optional
 class CustomAuthValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate authentication token and return result."""
-        expected_token = os.getenv("AUTH_API_KEY")
-        if token != expected_token:
-            return ValidationResult(is_valid=False, error_msg="Invalid token")
-        return ValidationResult(is_valid=True, subject="api_user")
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            if email == "test@test.com":
+                return ValidationResult(is_valid=True, subject="test_user")
+        except Exception:
+            pass
+        return ValidationResult(is_valid=False, error_msg="Invalid token")
 
 # Add authentication to REST API
 RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
