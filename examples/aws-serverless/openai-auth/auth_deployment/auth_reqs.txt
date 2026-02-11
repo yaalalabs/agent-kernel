@@ -2,7 +2,7 @@ agentkernel==0.2.11
 annotated-types==0.7.0
 cffi==2.0.0
 cryptography==46.0.4
-jwt==1.4.0
+PyJWT>=2.0.0
 pycparser==3.0
 pydantic==2.12.5
 pydantic-settings==2.12.0

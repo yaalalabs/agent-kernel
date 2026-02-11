@@ -63,13 +63,11 @@ CrewAIModule([math_agent, history_agent])
 class CustomAuthValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
-        try:
-            payload = jwt.decode(token, options={"verify_signature": False})
-            email = payload.get("email", "")
-            if email == "test@test.com":
-                return ValidationResult(is_valid=True)
-        except Exception:
-            pass
+        payload = jwt.decode(token, options={"verify_signature": False})
+        print("Payload", payload)
+        email = payload.get("email", "")
+        if email == "test@test.com":
+            return ValidationResult(is_valid=True)
         return ValidationResult(is_valid=False, error_msg="Invalid token")
 
 
