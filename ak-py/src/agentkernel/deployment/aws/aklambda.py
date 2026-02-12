@@ -75,7 +75,7 @@ class LambdaRouter:
     def _get_base_paths_from_env(self) -> Tuple[Optional[str], Optional[str]]:
         """
         Get the base path from environment variables.
-        :return: Tuple of (base_path, agent_endpoint) or (None, None) if not found
+        :return: Tuple of (base_path, agent_endpoint_path) or (None, None) if not found
         """
         api_base_path = os.getenv("API_BASE_PATH")
         api_version = os.getenv("API_VERSION")
