@@ -1,7 +1,8 @@
-from agentkernel.core import Session
 from agentkernel.cli import CLI
+from agentkernel.core import Session
 from agentkernel.openai import OpenAIModule
 from agents import Agent, function_tool
+
 
 @function_tool
 def get_weather(city: str) -> str:
@@ -12,6 +13,7 @@ def get_weather(city: str) -> str:
         return "The weather in Tokyo is sunny."
     else:
         return f"Cannot find weather for {city}."
+
 
 math_agent = Agent(
     name="math",
