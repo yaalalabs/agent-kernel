@@ -7,11 +7,10 @@ from crewai.memory.storage.interface import Storage
 from crewai.tools import tool as crewai_tool
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook, Runner, Session
+from ...core import Module, PostHook, PreHook, Runner, Session, ToolBuilder
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-from ...core.tool import ToolBuilder
 from ...trace import Trace
 
 FRAMEWORK = "crewai"

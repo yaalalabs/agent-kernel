@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable, List
 
-from agents import Agent, Runner
-from agents import function_tool
+from agents import Agent, Runner, function_tool
 from agents.memory.session import SessionABC
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session
+from ...core import Session, ToolBuilder
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
@@ -21,7 +20,6 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from ...core.tool import ToolBuilder
 from ...trace import Trace
 
 FRAMEWORK = "openai"

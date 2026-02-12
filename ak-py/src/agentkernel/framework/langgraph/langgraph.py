@@ -18,11 +18,10 @@ from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core.base import Session
+from ...core import Session, ToolBuilder
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-from ...core.tool import ToolBuilder
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
