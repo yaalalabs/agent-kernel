@@ -103,9 +103,9 @@ module "source_package" {
 }
 
 module "authorizer" {
-  count  = local.create_authorizer ? 1 : 0
-  source = "../common/modules/authorizer"
-
+  count                            = local.create_authorizer ? 1 : 0
+  source                           = "yaalalabs/ak-common/aws//modules/authorizer"
+  version                          = "0.2.11"
   region                           = var.region
   product_alias                    = var.product_alias
   env_alias                        = var.env_alias

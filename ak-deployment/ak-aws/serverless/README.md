@@ -525,7 +525,7 @@ The module supports a Lambda-based API Gateway authorizer for custom authenticat
 - `authorizer_environment_variables` - Environment variables for authorizer
 - `authorizer_result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
 
-## � Troubleshooting
+## 🔍 Troubleshooting
 
 ### Lambda Function Fails to Deploy
 
