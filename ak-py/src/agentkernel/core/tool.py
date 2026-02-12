@@ -7,8 +7,8 @@ accept a ToolContext parameter to access the runtime and session context.
 """
 
 import asyncio
-import inspect
 import functools
+import inspect
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable, get_type_hints
@@ -112,6 +112,7 @@ class ToolBuilder:
             return func
 
         if asyncio.iscoroutinefunction(func):
+
             @functools.wraps(func)
             async def async_wrapper(**kwargs: Any) -> Any:
                 kwargs[param_name] = cls._build_tool_context()
@@ -119,6 +120,7 @@ class ToolBuilder:
 
             return async_wrapper
         else:
+
             @functools.wraps(func)
             def sync_wrapper(**kwargs: Any) -> Any:
                 kwargs[param_name] = cls._build_tool_context()

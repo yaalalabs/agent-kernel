@@ -1,5 +1,5 @@
 """
-Tests for ADKToolBuilder.
+Tests for GoogleADKToolBuilder.
 
 Since the Google ADK SDK is an optional dependency, the SDK modules are mocked
 to allow testing the tool binding logic without requiring the SDK to be installed.
@@ -15,7 +15,6 @@ import pytest
 from agentkernel.core.base import Session
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import ToolBuilder, ToolContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers – mock the Google ADK SDK
@@ -108,9 +107,9 @@ def _mock_adk_sdk():
 
 
 def _get_builder():
-    from agentkernel.framework.adk.adk import ADKToolBuilder
+    from agentkernel.framework.adk.adk import GoogleADKToolBuilder
 
-    return ADKToolBuilder
+    return GoogleADKToolBuilder
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +117,7 @@ def _get_builder():
 # ---------------------------------------------------------------------------
 
 
-class TestADKToolBuilderBindSync:
+class TestGoogleADKToolBuilderBindSync:
     def test_bind_sync_tool(self):
         def get_weather(city: str) -> str:
             """Get the weather."""
@@ -140,7 +139,7 @@ class TestADKToolBuilderBindSync:
         assert result == "Sunny in Berlin"
 
 
-class TestADKToolBuilderBindAsync:
+class TestGoogleADKToolBuilderBindAsync:
     def test_bind_async_tool(self):
         async def get_weather(city: str) -> str:
             """Get weather async."""
@@ -162,7 +161,7 @@ class TestADKToolBuilderBindAsync:
         assert result == "Rainy in London"
 
 
-class TestADKToolBuilderWithContextState:
+class TestGoogleADKToolBuilderWithContextState:
     def test_bind_with_context_via_adk_state(self):
         """When ADK context state has ak_runtime/ak_session, they should be used."""
         mock_runtime = MagicMock(spec=Runtime)
@@ -205,7 +204,7 @@ class TestADKToolBuilderWithContextState:
                 assert "session=fallback-session" in result
 
 
-class TestADKToolBuilderWithoutContext:
+class TestGoogleADKToolBuilderWithoutContext:
     def test_bind_without_context(self):
         def get_weather(city: str) -> str:
             return f"Weather in {city}"
@@ -216,7 +215,7 @@ class TestADKToolBuilderWithoutContext:
         assert result == "Weather in Rome"
 
 
-class TestADKToolBuilderMultiple:
+class TestGoogleADKToolBuilderMultiple:
     def test_bind_multiple_tools(self):
         def tool_a(x: str) -> str:
             """Tool A."""

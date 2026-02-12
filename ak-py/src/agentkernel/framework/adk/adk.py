@@ -256,7 +256,7 @@ class GoogleADKModule(Module):
         return self
 
 
-class ADKToolBuilder(ToolBuilder):
+class GoogleADKToolBuilder(ToolBuilder):
     """
     Tool builder for Google ADK.
 

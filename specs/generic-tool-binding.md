@@ -19,7 +19,7 @@ Depending on the agent framework, it may be required to initialize the context u
 
 ## Tool function binding
 
-Each supported framework implementation (in `src/agentkernel/framework/*`) should include a class that wrap a given tool function set and emit a framework specific set of tool functions that initialize the tool context for that given agent framework. These classes should have the same naming and implementation pattern and can be named as `OpenAIToolBuilder`, `ADKToolBuilder`, etc. They can have a `bind()` function that takes an array of generic tool functions and return an array of framework specific tool functions.
+Each supported framework implementation (in `src/agentkernel/framework/*`) should include a class that wrap a given tool function set and emit a framework specific set of tool functions that initialize the tool context for that given agent framework. These classes should have the same naming and implementation pattern and can be named as `OpenAIToolBuilder`, `GoogleADKToolBuilder`, etc. They can have a `bind()` function that takes an array of generic tool functions and return an array of framework specific tool functions.
 
 ## `ToolContext` structure
 
@@ -96,11 +96,11 @@ If binding fails it should raise a suitable exception.
 
 ---
 
-### Task 3: Implement `ADKToolBuilder`
+### Task 3: Implement `GoogleADKToolBuilder`
 
 **File:** `src/agentkernel/framework/adk/adk.py` (add to existing)
 
-1. Create `ADKToolBuilder(ToolBuilder)` class.
+1. Create `GoogleADKToolBuilder(ToolBuilder)` class.
 2. Override `_build_tool_context()` to handle ADK's custom context management:
    - Attempt to retrieve the session and runtime from the ADK context state (via `google.adk.agents.get_current_context()` and its `state` dict) as the primary source.
    - Fall back to `Session.current()` / `Runtime.current()` if the ADK context is unavailable.
@@ -109,7 +109,7 @@ If binding fails it should raise a suitable exception.
    - Converts the wrapped function into an ADK-compatible `FunctionTool`.
    - Returns the list of ADK tools.
 4. Update `GoogleADKRunner.run()` to store `runtime` and `session` in the ADK context state dict so that `_build_tool_context` can retrieve them.
-5. Export `ADKToolBuilder` from `src/agentkernel/framework/adk/__init__.py` and from `src/agentkernel/adk.py`.
+5. Export `GoogleADKToolBuilder` from `src/agentkernel/framework/adk/__init__.py` and from `src/agentkernel/adk.py`.
 
 ---
 
@@ -174,7 +174,7 @@ If binding fails it should raise a suitable exception.
 
 ---
 
-### Task 8: Unit tests for `ADKToolBuilder`
+### Task 8: Unit tests for `GoogleADKToolBuilder`
 
 **File:** `tests/test_tool_adk.py` (new)
 

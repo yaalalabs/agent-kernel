@@ -12,7 +12,6 @@ from agentkernel.core.base import Session
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import ToolBuilder, ToolContext
 
-
 # ---------------------------------------------------------------------------
 # ToolContext tests
 # ---------------------------------------------------------------------------
