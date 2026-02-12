@@ -394,9 +394,6 @@ module "container_app" {
   # ... other configuration ...
   
   environment_variables = {
-    # Authentication configuration
-    AUTH_API_KEY = "your-secret-api-key"
-    
     # Other app configuration
     OPENAI_API_KEY = var.openai_api_key
   }
@@ -405,25 +402,28 @@ module "container_app" {
 
 #### Application Implementation
 
-In your containerized application, implement your custom authentication logic by extending the `AuthValidator` class. You may use the environment variables:
+In your containerized application, implement your custom authentication logic by extending the `AuthValidator` class:
 
 > NOTE: the `validate()` function must return a `ValidationResult` object.
 
 ```python
 import os
+import jwt
 from agentkernel.api import RESTAPI, AuthValidator, ValidationContext, ValidationResult
 from typing import Optional
 
-class CustomAuthValidator(AuthValidator):
+class CustomAuthTokenValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
-        """Validate authentication token and return result."""
-        expected_token = os.getenv("AUTH_API_KEY")
-        if token != expected_token:
-            return ValidationResult(is_valid=False, error_msg="Invalid token")
-        return ValidationResult(is_valid=True, subject="api_user")
+        """Validate JWT token and return validation result."""
+        payload = jwt.decode(token, options={"verify_signature": False})
+        print("Payload", payload)
+        email = payload.get("email", "")
+        if email == "test@test.com":
+            return ValidationResult(is_valid=True)
+        return ValidationResult(is_valid=False)
 
 # Add authentication to REST API
-RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
+RESTAPI.add_auth_handlers(auth_validators=[CustomAuthTokenValidator()])
 ```
 
 **Example:** See [examples/aws-containerized/crewai-auth/app.py](../../../examples/aws-containerized/crewai-auth/app.py)
