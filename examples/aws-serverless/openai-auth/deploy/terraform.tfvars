@@ -1,4 +1,4 @@
-region        = "us-east-1"
+region        = "ap-southeast-2"
 product_alias = "ak-openai-auth-srvls"
 env_alias     = "dev"
 module_name   = "examples"
