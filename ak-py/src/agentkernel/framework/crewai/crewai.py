@@ -1,15 +1,17 @@
 import logging
-from typing import Any, List
+from typing import Any, Callable, List
 
 from crewai import Agent, Crew, Task
 from crewai.memory.external.external_memory import ExternalMemory
 from crewai.memory.storage.interface import Storage
+from crewai.tools import tool as crewai_tool
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Session
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.tool import ToolBuilder
 from ...trace import Trace
 
 FRAMEWORK = "crewai"
@@ -238,3 +240,27 @@ class CrewAIModule(Module):
         """
         super().get_agent(agent.role).post_hooks.extend(hooks)
         return self
+
+
+class CrewAIToolBuilder(ToolBuilder):
+    """
+    Tool builder for CrewAI.
+
+    Wraps generic tool functions into CrewAI-compatible tool definitions
+    using the ``@tool`` decorator from the CrewAI SDK.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to CrewAI tool definitions.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of CrewAI-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
+        """
+        tools = []
+        for func in funcs:
+            wrapped = cls._wrap(func)
+            tools.append(crewai_tool(wrapped))
+        return tools

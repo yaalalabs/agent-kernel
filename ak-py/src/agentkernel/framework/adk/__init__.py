@@ -13,4 +13,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .adk import GoogleADKModule
+from .adk import GoogleADKModule, ADKToolBuilder

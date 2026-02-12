@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Any, List
+from typing import Any, Callable, List
 
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
+from google.adk.tools import FunctionTool
 from google.genai import types
 
 from agentkernel.core.model import (
@@ -24,6 +25,8 @@ from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Session
 from ...core.config import AKConfig
+from ...core.tool import ToolBuilder, ToolContext
+from ...core.runtime import Runtime
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -253,3 +256,59 @@ class GoogleADKModule(Module):
         """
         super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
+
+
+class ADKToolBuilder(ToolBuilder):
+    """
+    Tool builder for Google ADK.
+
+    Wraps generic tool functions into ADK-compatible FunctionTool instances.
+    Overrides context initialization to retrieve runtime and session from the
+    ADK context state when available.
+    """
+
+    @staticmethod
+    def _build_tool_context() -> ToolContext:
+        """
+        Build a ToolContext, preferring ADK context state if available.
+
+        Attempts to retrieve runtime and session from the ADK invocation
+        context state dictionary. Falls back to Session.current() and
+        Runtime.current() if the ADK context is unavailable.
+
+        :return: A ToolContext instance.
+        """
+        runtime = None
+        session = None
+
+        try:
+            from google.adk.agents import get_current_context
+
+            ctx = get_current_context()
+            if ctx and hasattr(ctx, "state"):
+                runtime = ctx.state.get("ak_runtime")
+                session = ctx.state.get("ak_session")
+        except Exception:
+            pass
+
+        if runtime is None:
+            runtime = Runtime.current()
+        if session is None:
+            session = Session.current()
+
+        return ToolContext(runtime=runtime, session=session)
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to ADK FunctionTool instances.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of ADK-compatible FunctionTool instances.
+        :raises TypeError: If any item in funcs is not callable.
+        """
+        tools = []
+        for func in funcs:
+            wrapped = cls._wrap(func)
+            tools.append(FunctionTool(wrapped))
+        return tools

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, Callable, List
 
 from agents import Agent, Runner
+from agents import function_tool
 from agents.memory.session import SessionABC
 
 from ...core import Agent as BaseAgent
@@ -20,6 +21,7 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from ...core.tool import ToolBuilder
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -263,3 +265,27 @@ class OpenAIModule(Module):
         """
         super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
+
+
+class OpenAIToolBuilder(ToolBuilder):
+    """
+    Tool builder for OpenAI Agents SDK.
+
+    Wraps generic tool functions into OpenAI-compatible tool definitions
+    using the ``function_tool`` helper from the OpenAI Agents SDK.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to OpenAI Agents SDK tool definitions.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of OpenAI-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
+        """
+        tools = []
+        for func in funcs:
+            wrapped = cls._wrap(func)
+            tools.append(function_tool(wrapped))
+        return tools

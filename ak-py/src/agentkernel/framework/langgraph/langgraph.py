@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Iterator, List, Optional, Sequence
+from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
     Checkpoint,
@@ -21,6 +22,7 @@ from ...core.base import Session
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.tool import ToolBuilder
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
@@ -354,3 +356,44 @@ class LangGraphModule(BaseModule):
         """
         super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
+
+
+class LangGraphToolBuilder(ToolBuilder):
+    """
+    Tool builder for LangGraph / LangChain.
+
+    Wraps generic tool functions into LangChain StructuredTool instances
+    that are compatible with LangGraph agent graphs.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to LangChain StructuredTool instances.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of LangChain StructuredTool instances.
+        :raises TypeError: If any item in funcs is not callable.
+        """
+        import asyncio
+
+        tools = []
+        for func in funcs:
+            wrapped = cls._wrap(func)
+            if asyncio.iscoroutinefunction(wrapped):
+                tools.append(
+                    StructuredTool.from_function(
+                        coroutine=wrapped,
+                        name=wrapped.__name__,
+                        description=wrapped.__doc__ or wrapped.__name__,
+                    )
+                )
+            else:
+                tools.append(
+                    StructuredTool.from_function(
+                        func=wrapped,
+                        name=wrapped.__name__,
+                        description=wrapped.__doc__ or wrapped.__name__,
+                    )
+                )
+        return tools
