@@ -68,6 +68,22 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+auth = [
+    { name = "agentkernel" },
+    { name = "annotated-types" },
+    { name = "cffi" },
+    { name = "cryptography" },
+    { name = "pycparser" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "singleton-type" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
 dev = [
     { name = "black" },
     { name = "isort" },
@@ -78,6 +94,22 @@ dev = [
 requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.2.11" }]
 
 [package.metadata.requires-dev]
+auth = [
+    { name = "agentkernel", specifier = "==0.2.11" },
+    { name = "annotated-types", specifier = "==0.7.0" },
+    { name = "cffi", specifier = "==2.0.0" },
+    { name = "cryptography", specifier = "==46.0.4" },
+    { name = "pycparser", specifier = "==3.0" },
+    { name = "pydantic", specifier = "==2.12.5" },
+    { name = "pydantic-core", specifier = "==2.41.5" },
+    { name = "pydantic-settings", specifier = "==2.12.0" },
+    { name = "pyjwt", specifier = ">=2.0.0" },
+    { name = "python-dotenv", specifier = "==1.2.1" },
+    { name = "pyyaml", specifier = "==6.0.3" },
+    { name = "singleton-type", specifier = "==0.0.5" },
+    { name = "typing-extensions", specifier = "==4.15.0" },
+    { name = "typing-inspection", specifier = "==0.4.2" },
+]
 dev = [
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },

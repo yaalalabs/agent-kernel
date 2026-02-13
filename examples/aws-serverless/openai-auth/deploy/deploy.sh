@@ -1,6 +1,8 @@
 #!/bin/bash
+set -e # exit if any command in this script fails
 
-# Create a zip file of the Lambda function code
+# Create backend lambda deployment package
+echo "Creating auth deployment package..."
 create_deployment_package() {
     pushd ../
     rm -rf dist
@@ -21,14 +23,22 @@ create_deployment_package $1
 
 # Create auth deployment package
 echo "Creating auth deployment package..."
-pushd ../auth_deployment
-if [[ ${1-} == "local" ]]; then
-    ./create_auth_package.sh local
-else
-    ./create_auth_package.sh
-fi
-popd || exit 1
+create_auth_deployment_package() {
+    pushd ../
+    rm -rf dist_auth dist_auth.zip
+    mkdir -p dist_auth
+    if [[ ${1-} != "local" ]]; then
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
+    else
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+    fi
+    uv pip install --group auth --target=dist_auth
+    cp -r lambda_auth.py dist_auth/
+    cd dist_auth && zip -r ../dist_auth.zip .
+    popd || exit 1
+}
 
+create_auth_deployment_package $1
 
 terraform init
 terraform apply
