@@ -28,9 +28,3 @@ variable "openai_api_key" {
   description = "OpenAI API Key"
   type        = string
 }
-
-variable "authorizer_module_name" {
-  description = "Authorizer module name"
-  type        = string
-  default     = null
-}
