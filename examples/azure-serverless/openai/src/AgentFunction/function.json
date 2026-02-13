@@ -1,5 +1,5 @@
 {
-  "scriptFile": "../main.py",
+  "scriptFile": "main.py",
   "entryPoint": "handler",
   "bindings": [
     {

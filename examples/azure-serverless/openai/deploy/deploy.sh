@@ -11,13 +11,9 @@ create_deployment_package() {
     else
       echo "Using local ak-py"
       uv pip install -r requirements.txt --target=dist --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist agentkernel[openai,redis] --no-cache-dir
+      uv pip install --force-reinstall --target=dist --find-links ../../../ak-py/dist agentkernel[openai,redis,azure] --no-cache-dir
     fi
-    cp -r main.py config.yaml dist
-    mkdir -p ./dist/AgentFunction
-    cp ./function.json ./dist/AgentFunction/
-    cp ./host.json ./dist/
-    cp config.yaml ./dist/
+    cp -r src/. dist/
     cd dist && zip -r -q ../dist.zip .
     popd || exit 1
 }

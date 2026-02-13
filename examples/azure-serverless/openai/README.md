@@ -65,6 +65,10 @@ is_production = false           # Development environment settings
 module_type = "python"          # Function runtime (python or nodejs)
 
 # API Gateway configuration - defines the endpoints exposed through APIM
+# Note You can map methods, paths and function names to different endpoints. 
+# Same function can have different endpoints also. Feel free to change the endpoints as per your requirement. 
+# Note that the function json file name should be updated to accept the http method you are using.  
+
 gateway_endpoints = [
   {
     function_name = "AgentFunction"  # Name of the Azure Function
@@ -72,8 +76,8 @@ gateway_endpoints = [
     method        = "POST"
   },
   {
-    function_name = "AgentFunction"  # Same function, different endpoint
-    path          = "/secondary"     # API path: /api/v1/secondary
+    function_name = "CustomFunction"  # Same function, different endpoint
+    path          = "/custom"     # API path: /api/v1/secondary
     method        = "POST"
   }
 ]
@@ -91,7 +95,7 @@ gateway_endpoints = [
    Edit `deploy/terraform.tfvars` and set the required variables:
    - `resource_group_name` - Your existing Azure Resource Group
    - `publisher_email` - Your email for API Management
-   - `openai_api_key` - Your OpenAI API key
+   - `openai_api_key` - Your OpenAI API key or export it using `export TF_VAR_openai_api_key=<OPENAI_API_KEY>`
 
 3. **Navigate to the deployment directory and run the deployment script:**
    ```bash
@@ -199,7 +203,8 @@ terraform destroy
 
 2. **OpenAI API Key Issues**
    - Verify your OpenAI API key is valid and has sufficient credits
-   - Check that the environment variable is properly set in `terraform.tfvars`
+   - Check that the variable is properly set in `terraform.tfvars`
+   - Alternatively, you can export the variable using `export TF_VAR_openai_api_key=<OPENAI_API_KEY>`
 
 3. **Function App Deployment Issues**
    - Check Function App logs in the Azure Portal

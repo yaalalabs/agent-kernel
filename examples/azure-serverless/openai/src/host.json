@@ -8,7 +8,7 @@
       }
     },
     "logLevel": {
-      "default": "Debug"
+      "default": "Trace"
     }
   },
   "extensionBundle": {
