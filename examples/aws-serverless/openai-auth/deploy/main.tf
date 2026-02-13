@@ -40,14 +40,16 @@ module "serverless_agents" {
   }
   
   # Defining the API Gateway Authorizer
-  authorizer_function_description = "API Gateway Lambda Authorizer"
-  authorizer_function_name = "gtwy-auth"
-  authorizer_handler_path = "lambda_auth.handler"
-  authorizer_package_path = "../dist_auth.zip"
-  authorizer_package_type = "LocalZip"
-  authorizer_module_name = var.authorizer_module_name
-  authorizer_result_ttl_in_seconds = 0
-  authorizer_environment_variables = {
-    "SOME_OTHER_KEY" = "Some Other Value"
+  authorizer = {
+    description           = "API Gateway Lambda Authorizer"
+    function_name         = "gtwy-auth"
+    handler_path          = "lambda_auth.handler"
+    package_path          = "../dist_auth.zip"
+    package_type          = "LocalZip"
+    module_name           = "auth-eg"
+    result_ttl_in_seconds = 0
+    environment_variables = {
+      "SOME_OTHER_KEY" = "Some Other Value"
+    }
   }
 } 

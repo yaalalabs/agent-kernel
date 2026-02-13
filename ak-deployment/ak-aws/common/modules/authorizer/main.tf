@@ -3,7 +3,7 @@ locals {
 }
 
 resource "aws_iam_role" "authorizer_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${var.authorizer_module_name}-${var.authorizer_function_name}-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${var.authorizer_info.module_name}-${var.authorizer_info.function_name}-lambda-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -55,14 +55,14 @@ resource "aws_security_group" "authorizer_lambda" {
 }
 
 data "aws_s3_object" "authorizer_source_code" {
-  count  = (var.authorizer_package_type == "S3Zip") ? 1 : 0
+  count  = (var.authorizer_info.package_type == "S3Zip") ? 1 : 0
   bucket = module.authorizer_source_storage[0].source_storage_s3_bucket
-  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.authorizer_module_name}/lambda/${local.package_file_name}"
+  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.authorizer_info.module_name}/lambda/${local.package_file_name}"
   depends_on = [module.authorizer_source_package]
 }
 
 resource "aws_signer_signing_job" "authorizer_lambda_signing_job" {
-  count = (var.is_production) && (var.authorizer_package_type != "S3Zip") ? 1 : 0
+  count = (var.is_production) && (var.authorizer_info.package_type != "S3Zip") ? 1 : 0
 
   profile_name = var.lambda_signer_profile_name
   source {
@@ -82,7 +82,7 @@ resource "aws_signer_signing_job" "authorizer_lambda_signing_job" {
 }
 
 data "aws_s3_object" "signed_authorizer_code" {
-  count = (var.is_production) && (var.authorizer_package_type != "S3Zip") ? 1 : 0
+  count = (var.is_production) && (var.authorizer_info.package_type != "S3Zip") ? 1 : 0
 
   bucket = aws_signer_signing_job.authorizer_lambda_signing_job[0].signed_object[0].s3[0].bucket
   key    = aws_signer_signing_job.authorizer_lambda_signing_job[0].signed_object[0].s3[0].key
@@ -96,16 +96,16 @@ module "authorizer_lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${var.authorizer_module_name}-${var.authorizer_function_name}"
-  description            = var.authorizer_function_description
-  handler                = var.authorizer_handler_path
+  function_name          = "${var.product_alias}-${var.env_alias}-${var.authorizer_info.module_name}-${var.authorizer_info.function_name}"
+  description            = var.authorizer_info.description
+  handler                = var.authorizer_info.handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.authorizer_lambda_role.arn
-  image_uri              = var.authorizer_package_type == "Image" ? module.authorizer_docker_image[0].docker_image_uri : null
-  local_existing_package = var.authorizer_package_type == "LocalZip" ? var.authorizer_package_path : null
+  image_uri              = var.authorizer_info.package_type == "Image" ? module.authorizer_docker_image[0].docker_image_uri : null
+  local_existing_package = var.authorizer_info.package_type == "LocalZip" ? var.authorizer_info.package_path : null
   create_package         = false
-  package_type           = var.authorizer_package_type == "Image" ? "Image" : "Zip"
+  package_type           = var.authorizer_info.package_type == "Image" ? "Image" : "Zip"
   create_layer = false
   layers                 = var.layers
 
@@ -119,15 +119,15 @@ module "authorizer_lambda_deployment" {
 
   vpc_subnet_ids = length(var.subnet_ids) > 0 ? var.subnet_ids : null
   vpc_security_group_ids = length(var.security_group_ids) > 0 ? var.security_group_ids : (length(var.subnet_ids) > 0 ? [aws_security_group.authorizer_lambda[0].id] : null)
-  code_signing_config_arn = (var.authorizer_package_type == "S3Zip" && var.is_production == true) ? var.lambda_signing_config_arn : null
+  code_signing_config_arn = (var.authorizer_info.package_type == "S3Zip" && var.is_production == true) ? var.lambda_signing_config_arn : null
 
-  s3_existing_package = (var.authorizer_package_type == "S3Zip") ? {
+  s3_existing_package = (var.authorizer_info.package_type == "S3Zip") ? {
     bucket     = var.is_production ? data.aws_s3_object.signed_authorizer_code[0].bucket : data.aws_s3_object.authorizer_source_code[0].bucket
     key        = var.is_production ? data.aws_s3_object.signed_authorizer_code[0].key : data.aws_s3_object.authorizer_source_code[0].key
     version_id = var.is_production ? null : data.aws_s3_object.authorizer_source_code[0].version_id
   } : {}
 
-  environment_variables = var.authorizer_environment_variables
+  environment_variables = var.authorizer_info.environment_variables
 
   timeout     = var.timeout
   memory_size = var.memory_size

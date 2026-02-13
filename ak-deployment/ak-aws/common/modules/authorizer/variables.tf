@@ -13,48 +13,18 @@ variable "env_alias" {
   description = "Environment alias"
 }
 
-variable "authorizer_function_name" {
-  type        = string
-  description = "Authorizer Lambda function name"
-}
-
-variable "authorizer_function_description" {
-  type        = string
-  description = "Authorizer Lambda function description"
-  default     = "API Gateway Lambda Authorizer"
-}
-
-variable "authorizer_handler_path" {
-  type        = string
-  description = "Lambda authorizer handler path"
-}
-
-variable "authorizer_package_path" {
-  type        = string
-  description = "Authorizer Lambda package path or Docker image source path"
-}
-
-variable "authorizer_package_type" {
-  type        = string
-  description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
-  default     = "LocalZip"
-}
-
-variable "authorizer_module_name" {
-  type        = string
-  description = "Authorizer module name"
-}
-
-variable "authorizer_environment_variables" {
-  description = "Authorizer Lambda environment variables"
-  type        = map(string)
-  default     = {}
-}
-
-variable "authorizer_result_ttl_in_seconds" {
-  type        = number
-  description = "Authorizer result TTL in seconds"
-  default     = 150
+variable "authorizer_info" {
+  description = "Authorizer configuration object"
+  type = object({
+    description           = optional(string, "API Gateway Lambda Authorizer")
+    function_name         = string
+    handler_path          = string
+    package_path          = string
+    package_type          = string
+    module_name           = string
+    result_ttl_in_seconds = optional(number, 150)
+    environment_variables = optional(map(string), {})
+  })
 }
 
 variable "module_type" {

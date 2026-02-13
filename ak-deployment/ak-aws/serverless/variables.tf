@@ -227,6 +227,21 @@ variable "authorizer_result_ttl_in_seconds" {
   default     = 150
 }
 
+variable "authorizer" {
+  description = "Authorizer configuration object"
+  type = object({
+    description           = optional(string, "API Gateway Lambda Authorizer")
+    function_name         = string
+    handler_path          = string
+    package_path          = string
+    package_type          = string
+    module_name           = string
+    result_ttl_in_seconds = optional(number, 150)
+    environment_variables = optional(map(string), {})
+  })
+  default = null
+}
+
 
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}

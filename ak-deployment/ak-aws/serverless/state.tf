@@ -14,7 +14,7 @@ locals {
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
-  create_authorizer          = var.authorizer_function_name != null && var.authorizer_handler_path != null && var.authorizer_package_type != null && var.authorizer_package_path != null && var.authorizer_module_name != null
+  create_authorizer          = var.authorizer != null && var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null
 
   # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["authorizer_function_name", "authorizer_handler_path", "authorizer_package_type", "authorizer_package_path", "authorizer_module_name"]))
@@ -109,13 +109,7 @@ module "authorizer" {
   region                           = var.region
   product_alias                    = var.product_alias
   env_alias                        = var.env_alias
-  authorizer_function_name         = var.authorizer_function_name
-  authorizer_function_description  = var.authorizer_function_description
-  authorizer_handler_path          = var.authorizer_handler_path
-  authorizer_package_path          = var.authorizer_package_path
-  authorizer_package_type          = var.authorizer_package_type
-  authorizer_module_name           = var.authorizer_module_name
-  authorizer_environment_variables = var.authorizer_environment_variables
+  authorizer_info                  = var.authorizer
   module_type                      = var.module_type
   timeout                          = var.timeout
   memory_size                      = var.memory_size
