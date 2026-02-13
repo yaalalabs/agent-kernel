@@ -59,8 +59,22 @@ const sidebars = {
       items: [
         'deployment/overview',
         'deployment/local',
-        'deployment/aws-serverless',
-        'deployment/aws-containerized',
+        {
+          type: 'category',
+          label: 'AWS',
+          items: [
+            'deployment/aws-serverless',
+            'deployment/aws-containerized',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Azure',
+          items: [
+            'deployment/azure-serverless',
+            'deployment/azure-containerized',
+          ],
+        },
       ],
     },
     {
