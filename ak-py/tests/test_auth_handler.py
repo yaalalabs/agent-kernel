@@ -1,8 +1,8 @@
 import base64
 import hashlib
 import hmac
-from unittest.mock import patch
 from typing import Optional
+from unittest.mock import patch
 
 import jwt
 import pytest
@@ -16,7 +16,7 @@ from agentkernel.auth.handler import (
 
 class CustomAuthTokenValidator(AuthValidator):
     """Custom JWT token validator for testing."""
-    
+
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
         try:
@@ -28,16 +28,11 @@ class CustomAuthTokenValidator(AuthValidator):
             return ValidationResult(is_valid=False, error_msg=f"Invalid email: {email}")
         except jwt.InvalidTokenError as e:
             return ValidationResult(is_valid=False, error_msg=f"Invalid token: {str(e)}")
-    
+
     @staticmethod
     def generate_test_token(email: str = "test@test.com") -> str:
         """Generate a test JWT token with specified email."""
-        payload = {
-            "email": email,
-            "sub": "user123",
-            "iat": 1234567890,
-            "exp": 9999999999
-        }
+        payload = {"email": email, "sub": "user123", "iat": 1234567890, "exp": 9999999999}
         return jwt.encode(payload, "test_secret", algorithm="HS256")
 
 
@@ -272,7 +267,7 @@ class TestCustomAuthValidator:
         """Test validate method with valid JWT token containing correct email."""
         # Generate token with correct email
         valid_token = CustomAuthTokenValidator.generate_test_token("test@test.com")
-        
+
         result = custom_validator.validate(valid_token)
 
         assert result.is_valid is True
@@ -284,7 +279,7 @@ class TestCustomAuthValidator:
         """Test validate method with JWT token containing wrong email."""
         # Generate token with wrong email
         invalid_token = CustomAuthTokenValidator.generate_test_token("wrong@email.com")
-        
+
         result = custom_validator.validate(invalid_token)
 
         assert result.is_valid is False
@@ -295,7 +290,7 @@ class TestCustomAuthValidator:
     def test_validate_with_malformed_token(self, custom_validator):
         """Test validate method with malformed JWT token."""
         malformed_token = "this.is.not.a.valid.jwt.token"
-        
+
         result = custom_validator.validate(malformed_token)
 
         assert result.is_valid is False
@@ -343,10 +338,10 @@ class TestCustomAuthValidator:
     def test_generate_test_token_with_default_email(self):
         """Test token generation with default email."""
         token = CustomAuthTokenValidator.generate_test_token()
-        
+
         # Decode to verify payload
         payload = jwt.decode(token, options={"verify_signature": False})
-        
+
         assert payload["email"] == "test@test.com"
         assert payload["sub"] == "user123"
         assert "iat" in payload
@@ -356,24 +351,19 @@ class TestCustomAuthValidator:
         """Test token generation with custom email."""
         custom_email = "custom@example.com"
         token = CustomAuthTokenValidator.generate_test_token(custom_email)
-        
+
         # Decode to verify payload
         payload = jwt.decode(token, options={"verify_signature": False})
-        
+
         assert payload["email"] == custom_email
         assert payload["sub"] == "user123"
 
     def test_validate_token_without_email_claim(self, custom_validator):
         """Test validate method with JWT token missing email claim."""
         # Generate token without email claim
-        payload = {
-            "sub": "user123",
-            "name": "Test User",
-            "iat": 1234567890,
-            "exp": 9999999999
-        }
+        payload = {"sub": "user123", "name": "Test User", "iat": 1234567890, "exp": 9999999999}
         token_without_email = jwt.encode(payload, "test_secret", algorithm="HS256")
-        
+
         result = custom_validator.validate(token_without_email)
 
         assert result.is_valid is False

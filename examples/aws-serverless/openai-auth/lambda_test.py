@@ -1,9 +1,9 @@
 import os
 import uuid
-import jwt
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import jwt
 import pytest
 import pytest_asyncio
 from agentkernel.test import Test
@@ -30,7 +30,7 @@ class APITestClient:
     async def send(self, prompt, endpoint: str = "", additional_context=None, body=None, email="test@test.com"):
         """Send request with JWT authentication."""
         token = self.generate_jwt_token(email)
-        
+
         payload = (
             {
                 "prompt": prompt,
@@ -41,12 +41,9 @@ class APITestClient:
             if body is None
             else body
         )
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        
+
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload, headers=headers)
             resp.raise_for_status()
@@ -65,7 +62,7 @@ class APITestClient:
             if body is None
             else body
         )
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             return resp
@@ -83,6 +80,7 @@ async def test_history_agent_with_valid_auth(http_client):
     """Test history agent with valid JWT token."""
     response = await http_client.send("Who won the 1996 cricket world cup?")
     Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
+
 
 @pytest.mark.asyncio
 @pytest.mark.order(2)
