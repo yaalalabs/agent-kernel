@@ -37,4 +37,5 @@ def agent_kernel_knowledge(prompt: str, session_id: str):
     """Dummy tool to test MCP"""
     return "Agent Kernel supports both MCP and A2A"
 
+
 runner = RESTAPI.run

@@ -40,7 +40,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.12"
+version = "0.2.11"
 source = { editable = "." }
 dependencies = [
     { name = "deprecated" },

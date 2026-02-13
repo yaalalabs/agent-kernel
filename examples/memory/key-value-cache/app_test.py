@@ -59,31 +59,42 @@ async def http_client():
 async def test_junior_agent_on_acme(http_client):
     response = await http_client.send("What is AcmeXXLabs?", agent="junior_assistant")
     print(f"Junior agent response: {response}")
-    assert "i don't know" in response.lower() or "no relevant information" in response.lower(), f"Expected 'I don't know' response, got: {response}"
+    assert (
+        "i don't know" in response.lower() or "no relevant information" in response.lower()
+    ), f"Expected 'I don't know' response, got: {response}"
     print(f"✓ Junior agent correctly responded to query: {response}")
-    
+
+
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_senior_agent_on_acme(http_client):
     response = await http_client.send("What is AcmeXXLabs?", agent="senior_assistant")
     print(f"Senior agent response: {response}")
-    assert "cutting-edge green technology" in response.lower() and "san francisco" in response.lower(), f"Expected 'cutting edge green technology' response, got: {response}"
+    assert (
+        "cutting-edge green technology" in response.lower() and "san francisco" in response.lower()
+    ), f"Expected 'cutting edge green technology' response, got: {response}"
     print(f"✓ Senior agent correctly responded to query: {response}")
-    
+
+
 @pytest.mark.asyncio
 @pytest.mark.order(3)
 async def test_junior_agent_on_softlabs(http_client):
     response = await http_client.send("What is SoftYYLabs?", agent="junior_assistant")
     print(f"Junior agent response: {response}")
-    assert "i don't know" in response.lower() or "no relevant information" in response.lower(), f"Expected 'I don't know' response, got: {response}"
+    assert (
+        "i don't know" in response.lower() or "no relevant information" in response.lower()
+    ), f"Expected 'I don't know' response, got: {response}"
     print(f"✓ Junior agent correctly responded to query: {response}")
-    
+
+
 @pytest.mark.asyncio
 @pytest.mark.order(4)
 async def test_senior_agent_on_softlabs(http_client):
     response = await http_client.send("What is SoftYYLabs?", agent="senior_assistant")
     print(f"Senior agent response: {response}")
-    assert "thorium" in response.lower() and "research" in response.lower() and "shandong" in response.lower(), f"Expected 'thorium based research' response, got: {response}"
+    assert (
+        "thorium" in response.lower() and "research" in response.lower() and "shandong" in response.lower()
+    ), f"Expected 'thorium based research' response, got: {response}"
     print(f"✓ Senior agent correctly responded to query: {response}")
 
 
