@@ -8,6 +8,7 @@ from agentkernel.deployment.aws import LambdaRouter
 DEFAULT_PATH = "default_agent_registered_path"  # must be same as _default_agent_registered_path in LambdaRouter
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
 
+
 # monkeypatch is a builtin fixture that allows to temporarily modify env vars, all env var changes are reverted after each test
 def make_event_with_env_vars(monkeypatch, path, method="GET", base="api", version="v1", agent_endpoint="agent"):
     """Set environment variables using monkeypatch and return event"""
