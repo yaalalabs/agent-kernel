@@ -15,19 +15,22 @@ This Terraform module creates a Lambda-based API Gateway authorizer for custom a
 
 ```hcl
 module "authorizer" {
-  source = "../../common/modules/authorizer"
+  source = "yaalalabs/ak-common/aws//modules/authorizer"
+  version = "0.2.11"
   
-  region                          = "us-west-2"
-  product_alias                   = "myapp"
-  env_alias                       = "prod"
-  authorizer_function_name        = "api-authorizer"
-  authorizer_handler_path         = "authorizer.handler"
-  authorizer_package_path         = "./authorizer"
-  authorizer_package_type         = "LocalZip"
-  authorizer_module_name          = "auth"
-  authorizer_environment_variables = {
-    JWT_SECRET = "your-secret-key"
-    API_URL    = "https://api.example.com"
+  region        = "us-west-2"
+  product_alias = "myapp"
+  env_alias     = "prod"
+  authorizer_info = {
+    function_name         = "api-authorizer"
+    handler_path          = "authorizer.handler"
+    package_path          = "./authorizer"
+    package_type          = "LocalZip"
+    module_name           = "auth"
+    environment_variables = {
+      JWT_SECRET = "your-secret-key"
+      API_URL    = "https://api.example.com"
+    }
   }
   
   # Optional VPC configuration
@@ -50,31 +53,44 @@ module "authorizer" {
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| region | AWS region | `string` | n/a | yes |
-| product_alias | Product alias | `string` | n/a | yes |
-| env_alias | Environment alias | `string` | n/a | yes |
-| authorizer_function_name | Authorizer Lambda function name | `string` | n/a | yes |
-| authorizer_handler_path | Lambda authorizer handler path | `string` | n/a | yes |
-| authorizer_package_path | Authorizer Lambda package path or Docker image source path | `string` | n/a | yes |
-| authorizer_package_type | Authorizer Lambda deployment type Image/LocalZip/S3Zip | `string` | `"LocalZip"` | no |
-| authorizer_module_name | Authorizer module name | `string` | n/a | yes |
-| authorizer_function_description | Authorizer Lambda function description | `string` | `"API Gateway Lambda Authorizer"` | no |
-| authorizer_environment_variables | Authorizer Lambda environment variables | `map(string)` | `{}` | no |
-| authorizer_result_ttl_in_seconds | Authorizer result TTL in seconds | `number` | `150` | no |
-| module_type | Module type | `string` | `"python"` | no |
-| timeout | Lambda timeout | `number` | `30` | no |
-| memory_size | Lambda memory size | `number` | `128` | no |
-| layers | Lambda layers | `list(string)` | `[]` | no |
-| tags | Resource tags | `map(string)` | `{}` | no |
-| vpc_id | VPC ID | `string` | `null` | no |
-| subnet_ids | VPC subnet IDs for Lambda | `list(string)` | `[]` | no |
-| security_group_ids | Security group IDs for Lambda | `list(string)` | `[]` | no |
-| is_production | Is production | `bool` | `false` | no |
-| lambda_kms_key_arn | KMS key ARN for Lambda encryption | `string` | `null` | no |
-| cloudwatch_kms_key_arn | KMS key ARN for CloudWatch logs encryption | `string` | `null` | no |
-| lambda_signer_profile_name | AWS Signer profile name | `string` | `"sample_profile"` | no |
-| lambda_signing_config_arn | Lambda code signing configuration ARN | `string` | `null` | no |
+|------|-------------|------|---------|:--------:|
+| `region` | AWS region for deployment | `string` | n/a | yes |
+| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
+| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
+| `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
+| `module_name` | Module name for resource identification | `string` | n/a | yes |
+| `is_production` | Enable production features (code signing) | `bool` | `false` | no |
+| `package_path` | Path to Lambda deployment package or S3 URI | `string` | n/a | yes |
+| `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
+| `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
+| `timeout` | Lambda function timeout in seconds (max 900) | `number` | `30` | no |
+| `memory_size` | Lambda function memory size in MB (128-10240) | `number` | `128` | no |
+| `function_name` | Lambda function name suffix | `string` | n/a | yes |
+| `function_description` | Lambda function description | `string` | n/a | yes |
+| `handler_path` | Handler path (e.g., `index.handler` or `app.main`) | `string` | n/a | yes |
+| `image_uri` | Container image URI (required for Image package type) | `string` | `null` | no |
+| `package_type` | Deployment type: `LocalZip`, `S3Zip`, or `Image` | `string` | `"LocalZip"` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
+| `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
+| `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
+| `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
+| `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
+| `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+
+### Authorizer Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `description` | Authorizer function description | `string` | `"API Gateway Lambda Authorizer"` | no |
+| `function_name` | Authorizer Lambda function name | `string` | n/a | yes |
+| `handler_path` | Authorizer Lambda handler path | `string` | n/a | yes |
+| `package_path` | Authorizer package path | `string` | n/a | yes |
+| `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
+| `module_name` | Authorizer module name | `string` | n/a | yes |
+| `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
 
 ## Outputs
 

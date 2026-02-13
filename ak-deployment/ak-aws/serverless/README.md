@@ -243,6 +243,54 @@ module "serverless_api_dynamodb" {
 }
 ```
 
+### With Custom Authorizer
+
+```hcl
+module "serverless_api_auth" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region              = "us-west-2"
+  product_alias       = "myapp"
+  env_alias           = "prod"
+  product_display_name = "Serverless API with Authorizer"
+  
+  module_name          = "api"
+  function_name        = "handler"
+  function_description = "Main API handler"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
+  
+  package_type = "LocalZip"
+  package_path = "${path.module}/dist/function.zip"
+  
+  # Authorizer configuration
+  authorizer = {
+    description           = "API Gateway Lambda Authorizer"
+    function_name         = "api-authorizer"
+    handler_path          = "auth.handler"
+    package_path          = "${path.module}/dist/auth.zip"
+    package_type          = "LocalZip"
+    module_name           = "auth"
+    result_ttl_in_seconds = 300
+    environment_variables = {
+      JWT_SECRET = "your-secret-key"
+      API_URL    = "https://api.example.com"
+    }
+  }
+  
+  timeout     = 30
+  memory_size = 512
+  
+  api_version    = "v1"
+  agent_endpoint = "chat"
+  
+  environment_variables = {
+    ENVIRONMENT = "production"
+    LOG_LEVEL   = "info"
+  }
+}
+```
+
 
 ## 📥 Inputs
 
@@ -270,15 +318,21 @@ module "serverless_api_dynamodb" {
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
-| `authorizer_function_name` | Authorizer Lambda function name | `string` | n/a | **yes** |
-| `authorizer_function_description` | Authorizer Lambda function description | `string` | `"API Gateway Lambda Authorizer"` | no |
-| `authorizer_handler_path` | Lambda authorizer handler path | `string` | `null` | no |
-| `authorizer_package_path` | Authorizer Lambda package path | `string` | `null` | no |
-| `authorizer_package_type` | Authorizer Lambda deployment type Image/LocalZip/S3Zip | `string` | `null` | no |
-| `authorizer_module_name` | Authorizer module name | `string` | `null` | no |
-| `authorizer_environment_variables` | Authorizer Lambda environment variables | `map(string)` | `{}` | no |
-| `authorizer_result_ttl_in_seconds` | Authorizer result TTL in seconds | `number` | `150` | no |
+| `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+
+### Authorizer Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `description` | Authorizer function description | `string` | `"API Gateway Lambda Authorizer"` | no |
+| `function_name` | Authorizer Lambda function name | `string` | n/a | yes |
+| `handler_path` | Authorizer Lambda handler path | `string` | n/a | yes |
+| `package_path` | Authorizer package path | `string` | n/a | yes |
+| `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
+| `module_name` | Authorizer module name | `string` | n/a | yes |
+| `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
 
 ## 📤 Outputs
 
@@ -513,17 +567,37 @@ The module supports a Lambda-based API Gateway authorizer for custom authenticat
 
 ### Authorizer Setup
 
-**Required Variables**:
-- `authorizer_function_name` - Name for the authorizer Lambda function
-- `authorizer_handler_path` - Path to the authorizer Lambda handler (e.g., `auth_lambda.handler`)
-- `authorizer_package_type` - Deployment type for authorizer (`Image`, `LocalZip`, or `S3Zip`)
-- `authorizer_package_path` - Path to authorizer deployment package (required for all package types)
-- `authorizer_module_name` - Authorizer module name (required for all package types)
+The authorizer is configured using a single `authorizer` object that contains all the necessary settings:
 
-**Optional Variables**:
-- `authorizer_function_description` - Description of the authorizer function
-- `authorizer_environment_variables` - Environment variables for authorizer
-- `authorizer_result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
+```hcl
+authorizer = {
+  description           = "API Gateway Lambda Authorizer"  # Optional, defaults to this value
+  function_name         = "api-authorizer"                 # Required
+  handler_path          = "auth.handler"                   # Required
+  package_path          = "./dist/auth.zip"               # Required
+  package_type          = "LocalZip"                       # Required
+  module_name           = "auth"                           # Required
+  result_ttl_in_seconds = 300                              # Optional, defaults to 150
+  environment_variables = {                                 # Optional, defaults to {}
+    JWT_SECRET = "your-secret-key"
+    API_URL    = "https://api.example.com"
+  }
+}
+```
+
+**Required Fields**:
+- `function_name` - Name for the authorizer Lambda function
+- `handler_path` - Path to the authorizer Lambda handler (e.g., `auth.handler`)
+- `package_type` - Deployment type (`Image`, `LocalZip`, or `S3Zip`)
+- `package_path` - Path to authorizer deployment package
+- `module_name` - Authorizer module name
+
+**Optional Fields**:
+- `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
+- `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
+- `environment_variables` - Environment variables for authorizer
+
+**Note**: The authorizer infrastructure will only be created if the `authorizer` object is provided and all required fields are present. If any required field is missing, no authorizer will be created and your endpoints will be publicly accessible.
 
 ## 🔍 Troubleshooting
 
