@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -8,23 +9,25 @@ DEFAULT_PATH = "default_agent_registered_path"  # must be same as _default_agent
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
 
 
-def make_event_with_stage_vars(path, method="GET", base="api", version="v1", agent_endpoint="agent"):
+# monkeypatch is a builtin fixture that allows to temporarily modify env vars, all env var changes are reverted after each test
+def make_event_with_env_vars(monkeypatch, path, method="GET", base="api", version="v1", agent_endpoint="agent"):
+    """Set environment variables using monkeypatch and return event"""
+    monkeypatch.setenv("API_BASE_PATH", base)
+    monkeypatch.setenv("API_VERSION", version)
+    monkeypatch.setenv("AGENT_ENDPOINT", agent_endpoint)
     return {
         "httpMethod": method,
         "path": path,
-        "stageVariables": {
-            "api_base_path": base,
-            "api_version": version,
-            "agent_endpoint": agent_endpoint,
-        },
     }
 
 
-def make_event_without_stage_vars(path, method="GET"):
+def make_event_without_env_vars(monkeypatch, path, method="GET"):
+    """Clear environment variables using monkeypatch and return event"""
+    for key in ["API_BASE_PATH", "API_VERSION", "AGENT_ENDPOINT"]:
+        monkeypatch.delenv(key, raising=False)
     return {
         "httpMethod": method,
         "path": path,
-        # intentionally no stageVariables
     }
 
 
@@ -51,12 +54,12 @@ def stub_default(router):  # 'router' here this means it depends on the router f
     return _register
 
 
-def test_register_normalizes_and_routes_with_stage_vars(router):
+def test_register_normalizes_and_routes_with_env_vars(router, monkeypatch):
     @router.register("foo/", method="get")  # normalizes to '/foo' and 'GET'
     def foo_handler(event, context):
         return {"ok": True, "path_seen": event.get("path")}
 
-    event = make_event_with_stage_vars("/api/v1/foo", method="GET")
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/foo", method="GET")
     resp = router.dispatch(event, context=None)
 
     assert resp["statusCode"] == 200
@@ -65,30 +68,30 @@ def test_register_normalizes_and_routes_with_stage_vars(router):
     assert body["path_seen"] == "/api/v1/foo"
 
 
-def test_dispatch_routes_to_default_when_event_is_agent_endpoint_with_stage_vars(router, stub_default):
+def test_dispatch_routes_to_default_when_event_is_agent_endpoint_with_env_vars(router, stub_default, monkeypatch):
     # Special case: path == base/agent_endpoint and method == POST => default handler
     stub_default(status=201, payload={"routed_to": "default_handler"})
 
-    event = make_event_with_stage_vars("/api/v1/agent", method="POST")
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/agent", method="POST")
     resp = router.dispatch(event, context=None)
 
     assert resp["statusCode"] == 201
     assert json.loads(resp["body"]) == {"routed_to": "default_handler"}
 
 
-def test_dispatch_default_fallback_without_stage_vars_uses_default_route(router, stub_default):
-    # No stageVariables => router forces POST and uses default path
+def test_dispatch_default_fallback_without_env_vars_uses_default_route(router, stub_default, monkeypatch):
+    # No environment variables => router forces POST and uses default path
     stub_default(status=202, payload={"fallback": True})
 
-    event = make_event_without_stage_vars("/anything/here", method="GET")
+    event = make_event_without_env_vars(monkeypatch, "/anything/here", method="GET")
     resp = router.dispatch(event, context=None)
 
     assert resp["statusCode"] == 202
     assert json.loads(resp["body"]) == {"fallback": True}
 
 
-def test_dispatch_raises_for_unknown_route_with_stage_vars(router):
-    event = make_event_with_stage_vars("/api/v1/unknown", method="GET")
+def test_dispatch_raises_for_unknown_route_with_env_vars(router, monkeypatch):
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/unknown", method="GET")
 
     with pytest.raises(ValueError) as ei:
         router.dispatch(event, context=None)
