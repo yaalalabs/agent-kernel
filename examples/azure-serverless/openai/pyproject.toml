@@ -1,7 +1,7 @@
 [project]
 name = "azure-serverless-openai"
 version = "0.1.0"
-description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS Lambda"
+description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on Azure functions with Redis as session storage"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
