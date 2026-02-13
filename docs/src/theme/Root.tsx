@@ -1,8 +1,7 @@
 import React from 'react';
-import FloatingChatbot from '@site/src/components/FloatingChatbot';
+import FloatingChatbot from '../components/FloatingChatbot';
 
-// Root component wraps the entire app and persists across page navigation
-export default function Root({ children }: { children: React.ReactNode }): JSX.Element {
+export default function Root({ children }) {
   return (
     <>
       {children}

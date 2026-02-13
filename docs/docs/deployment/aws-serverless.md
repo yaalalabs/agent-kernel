@@ -149,15 +149,17 @@ def custom_app_info_handler(event, context):
 > **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
 
 
-### API Gateway stage variables (required when wrapping the Lambda or using custom routes)
+### Lambda environment variables
 
-To use custom API routes or when you use this Lambda with your own API Gateway, you must define the following stage variables in API Gateway so the router can correctly map incoming paths:
+The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
 
-- **api_base_path** – Base path mapping without leading slash. Example: `api` or `prod`
-- **api_version** – Version segment. Example: `v1`
-- **agent_endpoint** – The default chat endpoint segment. Example: `chat`
+- **API_BASE_PATH** – Base path mapping without leading slash. Example: `api` or `prod`
+- **API_VERSION** – Version segment. Example: `v1`
+- **AGENT_ENDPOINT** – The default chat endpoint segment. Example: `chat`
 
-> **NOTE:** If you wrap our Lambda with your own API Gateway, you are responsible for injecting these stage variables. If they are not provided, only the default chat handler may work and custom routes may not resolve as expected.
+These environment variables are automatically configured by the Terraform module based on the `api_base_path`, `api_version`, and `agent_endpoint` variables in your Terraform configuration.
+
+> **NOTE:** If you wrap our Lambda with your own API Gateway and deployment method, you are responsible for setting these environment variables. If they are not provided, only the default chat handler may work and custom routes may not resolve as expected.
 
 ## Cost Optimization
 

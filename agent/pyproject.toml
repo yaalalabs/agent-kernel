@@ -5,7 +5,7 @@ description = "Agent Kernel Knowledge Agent"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,api,redis,langfuse]>=0.2.8",
+    "agentkernel[openai,api,redis,langfuse]>=0.2.11",
     "llama-index>=0.11.0",
     "llama-index-core>=0.11.0",
     "llama-index-embeddings-openai>=0.2.0",
@@ -15,7 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.7",
+    "agentkernel[test]>=0.2.11",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
