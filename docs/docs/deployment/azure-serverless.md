@@ -131,14 +131,13 @@ graph TB
     D --> F
     E --> F
     
-    F --> G[Cosmos DB<br/>Multi-Region]
+    F --> G[Cosmos DB]
     
     style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Key Features:**
-- Multi-region execution capabilities
 - No infrastructure to manage
 - Automatic scaling to demand
 - Built-in retry mechanisms
@@ -147,16 +146,13 @@ graph TB
 ### Multi-Region Architecture
 
 **Automatic Distribution:**
-- Azure Functions can run across multiple regions
 - Configured through Azure Front Door or Traffic Manager
-- Survives entire region failures
 - Geographic redundancy built-in
 
 **Benefits:**
 - Region-level isolation
 - Geographic redundancy
 - No single point of failure
-- Azure-managed failover
 
 ### Automatic Retry Logic
 
@@ -200,23 +196,17 @@ Serverless-native state management with maximum resilience:
 ```bash
 export AK_SESSION__TYPE=cosmosdb
 
-# Option 1: Using connection string (recommended)
 export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key;"
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
-
-# Option 2: Using endpoint and key separately
-export AK_SESSION_COSMOSDB_TABLE_ENDPOINT="https://your-account.documents.azure.com:443/"
-export AK_SESSION_COSMOSDB_PRIMARY_KEY="your-primary-key"
-export AK_SESSION_COSMOSDB_TABLE_NAME=sessions
 ```
 
+
+
 **Cosmos DB Fault Tolerance:**
-- **Multi-region replication** - Data replicated across multiple regions automatically
-- **Automatic failover** - Seamless failover to replica regions
 - **Point-in-time recovery** - Restore to any point in time
 - **Continuous backups** - Automatic and continuous
-- **99.999% availability SLA** - Five nines uptime for multi-region accounts
 
+  
 :::tip
 For detailed Cosmos DB session configuration and best practices, see the [Session Management](/docs/core-concepts/session#cosmosdb-storage) documentation.
 :::
@@ -258,17 +248,9 @@ For serverless deployments, use Cosmos DB or Azure Cache for Redis for session p
 ```bash
 export AK_SESSION__TYPE=cosmosdb
 
-# Option 1: Using connection string (recommended)
 export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key;"
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
 
-# Option 2: Using endpoint and key separately
-export AK_SESSION_COSMOSDB_TABLE_ENDPOINT="https://your-account.documents.azure.com:443/"
-export AK_SESSION_COSMOSDB_PRIMARY_KEY="your-primary-key"
-export AK_SESSION_COSMOSDB_TABLE_NAME=sessions
-
-# Legacy format also supported:
-export AK_SESSION_COSMOSDB_CONNECTION_STRING="AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key;"
 ```
 
 **Benefits:**
@@ -287,9 +269,12 @@ export AK_SESSION_COSMOSDB_CONNECTION_STRING="AccountEndpoint=https://your-accou
 
 ```bash
 export AK_SESSION__TYPE=redis
-export AK_SESSION__REDIS__URL=redis://your-redis-cache.redis.cache.windows.net:6380
-export AK_SESSION__REDIS__SSL=true
+export AK_SESSION__REDIS__URL=redis://your-redis-cache.redis.cache.windows.net:6379
+export AK_SESSION__REDIS__SSL=false
 ```
+
+On Tls mode, the connection URL is `rediss://:password@hostname:port`  
+
 
 **Benefits:**
 - High performance
@@ -317,4 +302,4 @@ Azure Monitor metrics automatically available:
 
 ## Example Deployment
 
-See [examples/azure-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-serverless)
+See [examples/azure-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-serverless)  

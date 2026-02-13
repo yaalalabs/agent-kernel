@@ -215,11 +215,13 @@ For detailed session storage configuration and best practices, see the [Session 
 
 ```bash
 export AK_SESSION__TYPE=redis
-export AK_SESSION__REDIS__URL=redis://your-redis-cache.redis.cache.windows.net:6380
-export AK_SESSION__REDIS__SSL=true
+export AK_SESSION__REDIS__URL=redis://your-redis-cache.redis.cache.windows.net:6379
+export AK_SESSION__REDIS__SSL=flase
 export AK_SESSION__CACHE__SIZE=256  # Enable in-memory caching
 ```
 
+On Tls mode, the connection URL is `rediss://:password@hostname:port`
+  
 **Benefits:**
 - High performance (sub-millisecond latency)
 - Low latency
@@ -239,17 +241,9 @@ export AK_SESSION__CACHE__SIZE=256  # Enable in-memory caching
 ```bash
 export AK_SESSION__TYPE=cosmosdb
 
-# Option 1: Using connection string (recommended)
 export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key;"
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
 
-# Option 2: Using endpoint and key separately
-export AK_SESSION_COSMOSDB_TABLE_ENDPOINT="https://your-account.documents.azure.com:443/"
-export AK_SESSION_COSMOSDB_PRIMARY_KEY="your-primary-key"
-export AK_SESSION_COSMOSDB_TABLE_NAME=sessions
-
-# Legacy format also supported:
-export AK_SESSION_COSMOSDB_CONNECTION_STRING="AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key;"
 ```
 
 **Benefits:**
