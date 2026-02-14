@@ -157,7 +157,13 @@ resource "aws_api_gateway_stage" "stage" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   stage_name    = "agents"
-  
+
+  variables = {
+    api_base_path  = var.api_base_path
+    api_version    = var.api_version
+    agent_endpoint = var.agent_endpoint
+  }
+
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn
     format = jsonencode({
