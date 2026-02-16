@@ -26,7 +26,7 @@ history_agent = Agent(
 router = APIRouter()
 
 
-# Adding a custom route - Option 1
+# Adding a custom route
 # Example custom route to support application-specific endpoints.
 # All custom routes are prefixed with "/custom" by default. Refer to the config documentation for more details.
 @router.get("/version")
@@ -37,25 +37,6 @@ def get_app_name():
 RESTAPI.add(router)
 
 
-# Adding a custom route - Option 2
-# Override the default handler and add your own custom logic.
-class CustomHandler(AgentRESTRequestHandler):
-    def get_router(self) -> APIRouter:
-        parent_router = super().get_router()
-
-        @parent_router.get("/whoami")
-        def whoami():
-            return {"whoami": "I am a custom application built with Agent Kernel!"}
-
-        return parent_router
-
-
-# Adding custom routes - Option 3
-# Create your own Router inheriting from RESTRequestHandler. In this case you'll have to
-# map agent invocation endpoints by yourself.
-# This example, however, showcases a combination of option 1 and 2.
-
-
 CrewAIModule([math_agent, history_agent])
 
 
@@ -63,12 +44,16 @@ CrewAIModule([math_agent, history_agent])
 class CustomAuthValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        print("Payload", payload)
-        email = payload.get("email", "")
-        if email == "test@test.com":
-            return ValidationResult(is_valid=True)
-        return ValidationResult(is_valid=False, error_msg="Invalid token")
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            if email == "test@test.com":
+                return ValidationResult(is_valid=True)
+            return ValidationResult(is_valid=False, error_msg="Invalid token")
+        except jwt.DecodeError as e:
+            return ValidationResult(is_valid=False, error_msg=f"Token decode error: {str(e)}")
+        except Exception as e:
+            return ValidationResult(is_valid=False, error_msg=f"Token validation error: {str(e)}")
 
 
 # Adding Auth handlers to the REST API
@@ -76,4 +61,4 @@ RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
 
 
 def main():
-    RESTAPI.run([CustomHandler()])
+    RESTAPI.run()
