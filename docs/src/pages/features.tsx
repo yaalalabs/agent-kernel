@@ -580,7 +580,7 @@ function DeploymentSection() {
             </span>
           </Link>
 
-          <Link to="/docs/deployment/azure-serverless" className={styles.deploymentCard}>
+          <Link to="/docs/next/deployment/azure-serverless" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <FaMicrosoft className={styles.deploymentIcon} />
               <h3>Azure Serverless</h3>
@@ -597,7 +597,7 @@ function DeploymentSection() {
             </span>
           </Link>
 
-          <Link to="/docs/deployment/azure-containerized" className={styles.deploymentCard}>
+          <Link to="/docs/next/deployment/azure-containerized" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <MdCloud className={styles.deploymentIcon} />
               <h3>Azure Containerized</h3>
