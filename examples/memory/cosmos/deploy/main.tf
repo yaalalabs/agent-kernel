@@ -3,7 +3,7 @@ module "FlexFunction" {
   version                 = "0.2.11"
   product_alias           = var.product_alias
   env_alias               = var.env_alias
-  function_description    = "Agent Kernel OpenAI Sample Lambda"
+  function_description    = "Agent Kernel OpenAI Sample Azure Function"
   function_name           = "openai-agents"
   module_name             = var.module_name
   module_type             = "python"
