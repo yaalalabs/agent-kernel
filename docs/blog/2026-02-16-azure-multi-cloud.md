@@ -20,7 +20,7 @@ Today, we're announcing full Azure support for Agent Kernel. Your AI agents can 
 
 The cloud landscape has fundamentally changed how enterprises think about infrastructure:
 
-- **70% of enterprises** operate in multi-cloud environments
+- **More than 90% of enterprises** will operate in multi-cloud environments by 2027 (Source: [Gartner](https://www.gartner.com/en/newsroom/press-releases/2024-11-19-gartner-forecasts-worldwide-public-cloud-end-user-spending-to-total-723-billion-dollars-in-2025))
 - **Vendor lock-in** is the top concern for cloud decision-makers
 - **Regulatory requirements** often mandate geographic or provider diversity
 - **Cost optimization** demands the flexibility to leverage competitive pricing
