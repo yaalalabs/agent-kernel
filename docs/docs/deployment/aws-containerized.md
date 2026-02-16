@@ -258,7 +258,7 @@ Agent Kernel provides a health endpoint:
 
 ## Application Endpoints
 
-Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth).
+Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
 
 ## Authentication
 
@@ -313,7 +313,7 @@ RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
 
 ### Example Implementation
 
-See [examples/aws-containerized/crewai-auth/app.py](../../../examples/aws-containerized/crewai-auth/app.py) for a complete authentication example.
+See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth) for a complete authentication example.
 
 
 ## Best Practices
