@@ -31,7 +31,7 @@ Perfect for serverless architectures, Azure Functions requiring VNet integration
 
 ```hcl
 module "vnet" {
-  source = "../../common/modules/vnet"
+  source = "yaalalabs/ak-common/azurerm//modules/vnet"
 
   resource_group_name  = "myapp-prod-rg"
   location            = "East US"
@@ -52,7 +52,7 @@ module "vnet" {
 
 ```hcl
 module "vnet" {
-  source = "../../common/modules/vnet"
+  source = "yaalalabs/ak-common/azurerm//modules/vnet"
 
   resource_group_name  = var.resource_group_name
   location            = var.region
@@ -78,7 +78,7 @@ resource "azurerm_linux_function_app" "api" {
 
 # Redis in infrastructure subnet (subnet 1)
 module "redis" {
-  source = "../../common/modules/redis"
+  source = "yaalalabs/ak-common/azurerm//modules/redis"
 
   product_alias       = var.product_alias
   env_alias          = var.env_alias
@@ -233,7 +233,7 @@ module "vnet" {
 
 ```hcl
 module "vnet" {
-  source = "../../common/modules/vnet"
+  source = "yaalalabs/ak-common/azurerm//modules/vnet"
   
   product_alias       = "myapp"
   env_alias          = "prod"

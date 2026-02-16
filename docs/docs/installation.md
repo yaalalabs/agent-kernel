@@ -71,12 +71,24 @@ For running agents with REST API endpoints:
 pip install agentkernel[api]
 ```
 
-### AWS Deployment
+### Multi-Cloud Deployment
 
-For deploying to AWS Lambda or ECS:
+For deploying to AWS (Lambda, ECS/Fargate):
 
 ```bash
 pip install agentkernel[aws]
+```
+
+For deploying to Azure (Functions, Container Apps):
+
+```bash
+pip install agentkernel[azure]
+```
+
+For both AWS and Azure:
+
+```bash
+pip install agentkernel[aws,azure]
 ```
 
 ### CLI Testing
@@ -89,10 +101,10 @@ pip install agentkernel[cli]
 
 ### All Features
 
-Install everything:
+Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,api,aws,cli]
+pip install agentkernel[openai,crewai,langgraph,adk,api,aws,azure,cli]
 ```
 
 ## Using UV Package Manager

@@ -25,8 +25,8 @@ graph TB
     subgraph "Execution Modes"
         G[CLI]
         H[REST API]
-        I[AWS Lambda]
-        J[AWS ECS]
+        I[AWS Lambda / Azure Functions]
+        J[AWS ECS / Azure Container Apps]
         K[MCP Server]
         L[A2A Server]
     end

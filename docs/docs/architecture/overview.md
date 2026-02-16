@@ -31,14 +31,16 @@ graph TB
     
     subgraph "Storage Layer"
         K[In-Memory]
-        L[Redis]
+        L[Redis AWS & Azure]
+        M[DynamoDB AWS]
+        N[Cosmos DB Azure]
     end
     
     subgraph "Execution Layer"
         O[CLI]
         P[REST API]
-        Q[AWS Lambda]
-        R[AWS ECS]
+        Q[AWS Lambda / Azure Functions]
+        R[AWS ECS / Azure Container Apps]
     end
     
     A --> B
@@ -55,6 +57,8 @@ graph TB
     
     E --> K
     E --> L
+    E --> M
+    E --> N
     
     F --> O
     F --> P
@@ -78,9 +82,9 @@ The framework adds minimal latency and complexity - it's primarily orchestration
 ### 3. Production Ready
 
 Built-in support for:
-- Session persistence
+- Multi-cloud session persistence (AWS and Azure)
 - Multi-agent coordination
-- Distributed deployment
+- Multi-cloud distributed deployment
 - Error handling and retry
 - Observability and tracing
 

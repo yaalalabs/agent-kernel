@@ -54,7 +54,6 @@ function HomepageHeader() {
             </Link>
           </div>
           <div className={styles.affiliationSection}>
-            <span className={styles.affiliationLabel}>Affiliated with</span>
             <div className={styles.affiliationLogos}>
               <a href="https://www.linuxfoundation.org" target="_blank" rel="noopener noreferrer">
                 <img

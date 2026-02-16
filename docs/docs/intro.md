@@ -158,7 +158,7 @@ Two types of cache with identical APIs but different lifecycles:
   - Persists across multiple requests
   - Share data between hooks and tools
 
-**Multiple backends** - swap between in-memory, Redis, or DynamoDB with just environment variables.
+**Multiple backends with multi-cloud support** - swap between in-memory (local), Redis (AWS & Azure), DynamoDB (AWS), or Cosmos DB (Azure) with just environment variables.
 
 [Read the advanced memory guide →](/docs/architecture/memory-management)
 
@@ -226,7 +226,8 @@ if __name__ == "__main__":
 
 You can:
 - Test locally with the CLI
-- Deploy to AWS Lambda or Azure Functions with one line-change
+- Deploy to **AWS Lambda** or **Azure Functions** with one line-change (multi-cloud!)
+- Deploy to **AWS ECS/Fargate** or **Azure Container Apps** for containerized workloads
 - Expose as a REST API
 - Integrate with MCP or A2A protocols
 

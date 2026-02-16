@@ -1,5 +1,6 @@
 module "containerd_agent" {
-  source              = "../../../../ak-deployment/ak-azure/containerized"
+  source              = "yaalalabs/ak-containerized/azurerm"
+  version             = "0.2.11"
   product_alias       = var.product_alias
   env_alias           = var.env_alias
   module_name         = var.module_name

@@ -53,7 +53,7 @@ locals {
 # VNet Module (creates new VNet if not provided)
 module "vnet" {
   count                = var.vnet_id == null ? 1 : 0
-  source               = "yaalalabs/ak-common/azure//modules/vnet"
+  source               = "yaalalabs/ak-common/azurerm//modules/vnet"
   version              = "0.2.11"
   resource_group_name  = var.vnet_resource_group_name == null ? var.resource_group_name : var.vnet_resource_group_name
   location             = var.region
@@ -68,7 +68,7 @@ module "vnet" {
 # Redis Module (optional)
 module "redis" {
   count                    = var.create_redis_cluster == true ? 1 : 0
-  source                   = "yaalalabs/ak-common/azure//modules/redis"
+  source                   = "yaalalabs/ak-common/azurerm//modules/redis"
   version                  = "0.2.11"
   product_alias            = var.product_alias
   subnet_name              = local.subnet_name
@@ -87,7 +87,7 @@ module "redis" {
 # CosmosDB Module
 module "cosmos" {
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
-  source                         = "yaalalabs/ak-common/azure//modules/cosmos"
+  source                         = "yaalalabs/ak-common/azurerm//modules/cosmos"
   version                        = "0.2.11"
   product_alias                  = var.product_alias
   env_alias                      = var.env_alias
@@ -109,7 +109,7 @@ module "cosmos" {
 
 # Docker Image Module (ACR)
 module "docker_image" {
-  source              = "yaalalabs/ak-common/azure//modules/acr"
+  source              = "yaalalabs/ak-common/azurerm//modules/acr"
   version             = "0.2.11"
   enabled             = true
   env_alias           = var.env_alias

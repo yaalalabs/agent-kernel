@@ -42,7 +42,7 @@ Key inputs (see `variables.tf` for full list):
 ### Basic table (serverless, session store)
 ```hcl
 module "session_table" {
-  source = "../../common/modules/cosmos"
+  source = "yaalalabs/ak-common/azurerm//modules/cosmos"
 
   product_alias       = var.product_alias
   env_alias           = var.env_alias
@@ -62,7 +62,7 @@ module "session_table" {
 ### Production table with enhanced security and backup
 ```hcl
 module "orders_table" {
-  source = "../../common/modules/cosmos"
+  source = "yaalalabs/ak-common/azurerm//modules/cosmos"
 
   product_alias       = var.product_alias
   env_alias           = var.env_alias
@@ -92,7 +92,7 @@ module "orders_table" {
 ### Provisioned throughput with autoscale
 ```hcl
 module "high_volume_table" {
-  source = "../../common/modules/cosmos"
+  source = "yaalalabs/ak-common/azurerm//modules/cosmos"
 
   product_alias       = var.product_alias
   env_alias           = var.env_alias

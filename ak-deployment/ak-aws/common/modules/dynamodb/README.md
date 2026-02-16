@@ -34,7 +34,7 @@ Key inputs (see `variables.tf` for full list):
 ### Basic table (on-demand, key-only)
 ```hcl
 module "orders_table" {
-  source = "../../common/modules/dynamodb"
+  source = "yaalalabs/ak-common/aws//modules/dynamodb"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -54,7 +54,7 @@ module "orders_table" {
 ### With a GSI and TTL
 ```hcl
 module "events_table" {
-  source = "../../common/modules/dynamodb"
+  source = "yaalalabs/ak-common/aws//modules/dynamodb"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
