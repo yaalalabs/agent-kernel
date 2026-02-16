@@ -152,7 +152,12 @@ module "lambda_deployment" {
     version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
   } : {}
 
-  environment_variables = merge(var.environment_variables, local.redis_url != null ? {
+  environment_variables = merge(var.environment_variables, {
+    API_BASE_PATH = var.api_base_path
+    API_VERSION = var.api_version
+    AGENT_ENDPOINT = var.agent_endpoint
+  },
+    local.redis_url != null ? {
     AK_SESSION__REDIS__URL = local.redis_url
   } : {},
       local.dynamodb_memory_table_arn != null ? {
