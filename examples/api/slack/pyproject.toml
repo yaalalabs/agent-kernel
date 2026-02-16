@@ -5,13 +5,13 @@ description = "Demo of OpenAI SDK agent running with a Slack integration"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,slack]>=0.2.11",
+    "agentkernel[api,openai,slack]>=0.2.12",
     "aiohttp>=3.13.2",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.11",
+    "agentkernel[test]>=0.2.12",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
