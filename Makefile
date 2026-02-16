@@ -1,6 +1,6 @@
 .PHONY: lint lint-check lint-examples lint-examples-check lint-all lint-check-all help
 
-EXAMPLE_DIRS := examples/api examples/cli examples/api/a2a examples/api/mcp examples/aws-containerized examples/aws-serverless examples/containerized
+EXAMPLE_DIRS := examples
 
 help:
 	@echo "Available targets:"
@@ -35,7 +35,7 @@ lint-examples:
 	@echo "Building ak-py to ensure dependencies are installed..."
 	cd ak-py && ./build.sh
 	@echo "Formatting examples..."
-	@for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
+	@for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 4 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
 		echo "Processing $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
@@ -50,7 +50,7 @@ lint-examples-check:
 	cd ak-py && ./build.sh
 	@echo "Checking examples formatting..."
 	@EXIT_CODE=0; \
-	for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 2 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
+	for dir in $$(find $(EXAMPLE_DIRS) -maxdepth 4 -name "pyproject.toml" -type f | sed 's|/pyproject.toml||' | sort); do \
 		echo "Checking $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \

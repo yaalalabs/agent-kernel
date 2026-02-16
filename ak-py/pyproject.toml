@@ -48,6 +48,12 @@ cli = [
 aws = [
     "boto3>=1.41.4",
 ]
+
+azure = [
+    "azure-functions>=1.24.0",
+    "azure-data-tables>=12.4.0",
+    "azure-core>=1.26.0"
+]
 redis = [
     "redis>=7.1.0",
 ]

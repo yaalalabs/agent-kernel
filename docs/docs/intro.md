@@ -8,16 +8,15 @@ slug: /
 Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for building and deploying AI agents.
 
 :::tip What's New
-🛡️ **Guardrails for Content Safety** - Protect your AI agents with OpenAI Guardrails and AWS Bedrock integration. Input/output validation, PII detection, and compliance-ready content filtering. [Read the announcement →](/blog/guardrails-content-safety)
-
-🎯 **Execution Hooks & Smart Memory** - Take complete control of your agents with pre/post-execution hooks and intelligent caching. [Read the announcement →](/blog/hooks-and-smart-memory)
+☁️ **Multi-Cloud Azure Support** - Agent Kernel now supports Microsoft Azure! Deploy to Azure Functions (serverless) or Azure Container Apps (containerized) with the same ease as AWS. Full Terraform modules, Cosmos DB session storage, and enterprise-ready deployment patterns. [Learn more →](/docs/deployment/overview)
 :::
 
 ## What is Agent Kernel?
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. It provides the low level scaffolding to build, test and deploy your agents, your mcp tools and A2A quickly in many deployment configurations. The unified execution environment provides the session and memory management seamlessly.
+Agent Kernel is a **lightweight, multi-cloud AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks and cloud providers. It provides the low level scaffolding to build, test and deploy your agents, your MCP tools and A2A quickly in many deployment configurations on **AWS and Azure**. The unified execution environment provides the session and memory management seamlessly.
 
 **Supported Python Versions:** 3.12 - 3.13.x 
+**Supported Cloud Platforms:** AWS, Azure 
 
 Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
 
@@ -63,10 +62,22 @@ Agent Kernel provides pre-built execution capabilities:
   - Telegram
   - Instagram
   - Gmail
-- **AWS Serverless Deployment** for scalable production
-- **AWS Containerized Deployment** for consistent loads
+- **Multi-Cloud Serverless Deployment** for scalable production
+  - AWS Lambda
+  - Azure Functions
+- **Multi-Cloud Containerized Deployment** for consistent loads
+  - AWS ECS/Fargate
+  - Azure Container Apps
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
+
+### Multi-Cloud Architecture
+
+Deploy the same agent code to **AWS or Azure** without modification. Agent Kernel provides:
+- Cloud-agnostic agent development
+- Provider-specific optimizations
+- Consistent APIs across clouds
+- No vendor lock-in
 
 ### Pluggable Architecture
 
@@ -77,8 +88,9 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)
-  - Redis (production)
-  - DynamoDB (serverless)
+  - Redis (AWS & Azure)
+  - DynamoDB (AWS serverless)
+  - Cosmos DB (Azure serverless)
   - **Volatile Cache**: Request-scoped temporary storage for RAG context, file content, and intermediate data
   - **Non-Volatile Cache**: Session-persistent storage for user preferences, metadata, and configurations
   
@@ -171,15 +183,20 @@ flowchart LR
     A["Agent Logic"] --> B["Deployment Mode"]
     B -- Local --> C["CLI Testing"]
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
-    B -- Cloud --> E["AWS Serverless"] & F["AWS Containers"]
-    D -- Integration --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"]
+    B -- AWS Cloud --> E["AWS Lambda"] & F["AWS ECS/Fargate"]
+    B -- Azure Cloud --> K["Azure Functions"] & L["Azure Container Apps"]
+    D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style E fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
+    style F fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
+    style K fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
+    style L fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style O fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Quick Example
@@ -209,7 +226,7 @@ if __name__ == "__main__":
 
 You can:
 - Test locally with the CLI
-- Deploy to AWS Lambda with one line-change
+- Deploy to AWS Lambda or Azure Functions with one line-change
 - Expose as a REST API
 - Integrate with MCP or A2A protocols
 
@@ -220,9 +237,9 @@ All without changing your agent code!
 Agent Kernel is ideal for:
 
 - **AI Engineers** who want framework flexibility without vendor lock-in
-- **Teams** building production AI agent systems
-- **Developers** who need to migrate between frameworks
-- **Organizations** requiring enterprise-grade agent deployment
+- **Teams** building production AI agent systems across multiple clouds
+- **Developers** who need to migrate between frameworks or cloud providers
+- **Organizations** requiring enterprise-grade agent deployment with multi-cloud strategy
 - **Researchers** exploring different agent frameworks
 
 ## Next Steps
