@@ -89,6 +89,7 @@ class SessionStoreBuilder(Builder):
         IN_MEMORY = "IN_MEMORY"
         REDIS = "REDIS"
         DYNAMODB = "DYNAMODB"
+        COSMOSDB = "COSMOSDB"
 
         @classmethod
         def from_str(cls, type_str: str) -> Self:
@@ -136,6 +137,10 @@ class SessionStoreBuilder(Builder):
             from .session.dynamodb import DynamoDBSessionStore
 
             return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
+        elif session_store_type == SessionStoreBuilder.Types.COSMOSDB:
+            from .session.cosmosdb import CosmosDBSessionStore
+
+            return CosmosDBSessionStore(cache=SessionCacheBuilder.build())
         else:
             from .session.in_memory import InMemorySessionStore
 

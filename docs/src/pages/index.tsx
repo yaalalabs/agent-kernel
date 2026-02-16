@@ -18,7 +18,7 @@ import {
   MdConstruction,
   MdHealthAndSafety
 } from 'react-icons/md';
-import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
+import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { BsMicrosoftTeams } from 'react-icons/bs';
 import { SiTerraform, SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
@@ -404,9 +404,9 @@ function FeaturesSection() {
       description: 'Native support for agent-to-agent communication and orchestration.',
     },
     {
-      title: 'Easy Deployment',
+      title: 'Multi-Cloud Deployment',
       icon: <MdFlashOn />,
-      description: 'Deploy to AWS, containerized environments, or serverless with Terraform modules.',
+      description: 'Deploy to AWS or Azure with serverless, containerized environments using Terraform modules.',
     },
   ];
 
@@ -420,6 +420,67 @@ function FeaturesSection() {
               <div className={styles.featureIcon}>{feature.icon}</div>
               <h3 className={styles.featureTitle}>{feature.title}</h3>
               <p className={styles.featureDescription}>{feature.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InfrastructureSection() {
+  const cloudProviders = [
+    {
+      name: 'Amazon AWS',
+      icon: <FaAws />,
+      description: 'Deploy with AWS Lambda (Serverless) or ECS/Fargate (Containerized)',
+      modules: [
+        { name: 'AWS Serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws' },
+        { name: 'AWS Containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws' },
+      ],
+      color: '#FF9900',
+    },
+    {
+      name: 'Microsoft Azure',
+      icon: <FaMicrosoft />,
+      description: 'Deploy with Azure Functions (Serverless) or Container Apps (Containerized)',
+      modules: [
+        { name: 'Azure Serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm' },
+        { name: 'Azure Containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
+      ],
+      color: '#0078D4',
+    },
+  ];
+
+  return (
+    <section className={styles.infrastructureSection}>
+      <div className="container">
+        <h2 className={styles.sectionTitle}>Infrastructure as Code</h2>
+        <p className={styles.sectionSubtitle}>
+          Deploy your AI agents to AWS or Azure using our official Terraform modules.
+          Production-ready infrastructure with best practices baked in.
+        </p>
+        <div className={styles.cloudProvidersGrid}>
+          {cloudProviders.map((provider, idx) => (
+            <div key={idx} className={styles.cloudProviderCard}>
+              <div className={styles.cloudProviderIcon} style={{ color: provider.color }}>
+                {provider.icon}
+              </div>
+              <h3 className={styles.cloudProviderName}>{provider.name}</h3>
+              <p className={styles.cloudProviderDescription}>{provider.description}</p>
+              <div className={styles.terraformModules}>
+                {provider.modules.map((module, mIdx) => (
+                  <Link
+                    key={mIdx}
+                    to={module.url}
+                    className={styles.moduleLink}
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    <SiTerraform className={styles.terraformIcon} />
+                    {module.name} →
+                  </Link>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -549,6 +610,7 @@ export default function Home() {
         <IntegrationsSection />
         <MessagingIntegrationsSection />
         <FeaturesSection />
+        <InfrastructureSection />
         <SecurityComplianceSection />
         <CommunitySection />
       </main>

@@ -32,6 +32,7 @@ import {
 } from 'react-icons/md';
 import { FaPython, FaAws, FaDocker, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
 import { SiTerraform, SiRedis, SiAmazondynamodb, SiOpenai, SiGmail } from 'react-icons/si';
+import { FaMicrosoft } from 'react-icons/fa';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 
 function FeaturesHero() {
@@ -40,18 +41,18 @@ function FeaturesHero() {
       <div className="container">
         <div className={styles.heroContent}>
           <div className={styles.announcement}>
-            🛡️ <strong>New:</strong> Guardrails for Content Safety — OpenAI & AWS Bedrock Integration — 
-            <Link to="/blog/guardrails-content-safety" style={{marginLeft: '8px', textDecoration: 'underline'}}>
-              Read the announcement →
+            ☁️ <strong>New:</strong> Multi-Cloud Azure Support — Deploy to Azure Functions & Container Apps — 
+            <Link to="/docs/deployment/overview" style={{marginLeft: '8px', textDecoration: 'underline'}}>
+              Learn more →
             </Link>
           </div>
           <h1 className={styles.heroTitle}>Why Agent Kernel Changes the Game</h1>
           <p className={styles.heroSubtitle}>
-            Agent Kernel isn’t just a runtime; it’s your acceleration engine.
-            Migrate any agent, unlock powerful execution and observability tools, and ship production-ready AI workflows with confidence.
+            Agent Kernel isn't just a runtime; it's your multi-cloud acceleration engine.
+            Migrate any agent, unlock powerful execution and observability tools, and ship production-ready AI workflows to AWS or Azure with confidence.
           </p>
           <p className={styles.heroSubtitle}>
-            It is a modular, framework-agnostic runtime designed for scalable agent execution. Bring your own agents,
+            It is a modular, framework-agnostic, multi-cloud runtime designed for scalable agent execution. Bring your own agents,
             leverage built-in features, and deploy with production-grade performance and reliability.
           </p>
           <div className={styles.heroButtons}>
@@ -107,8 +108,8 @@ function OverviewSection() {
             </div>
             <h3>Deploy Anywhere</h3>
             <p>
-              From CLI testing for local development to REST API servers, AWS serverless, containerized environments, 
-              or on-premise deployments. One codebase, multiple deployment options. Switch deployment modes 
+              From CLI testing for local development to REST API servers, AWS (Lambda, ECS), Azure (Functions, Container Apps),
+              or on-premise deployments. One codebase, multiple cloud providers and deployment options. Switch deployment modes 
               without changing your agent code.
             </p>
           </Link>
@@ -178,6 +179,13 @@ function CoreFeaturesSection() {
       description: 'Comprehensive tracking of agent actions, LLM calls, and collaborative operations.',
       highlights: ['LangFuse integration', 'OpenLLMetry support', 'Multi-level verbosity'],
       link: '/docs/advanced/traceability'
+    },
+    {
+      icon: <MdCloud />,
+      title: 'Multi-Cloud Deployment',
+      description: 'Deploy to AWS or Azure with seamless infrastructure as code using official Terraform modules. Same agent code, different clouds.',
+      highlights: ['AWS Lambda & ECS', 'Azure Functions & Container Apps', 'Terraform modules', 'No vendor lock-in'],
+      link: '/docs/deployment/overview'
     },
     {
       icon: <MdNetworkCheck />,
@@ -511,6 +519,21 @@ function DeploymentSection() {
         <div className={styles.deploymentOptions}>
           <Link to="/docs/deployment/overview" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
+              <MdCloud className={styles.deploymentIcon} />
+              <h3>Multi-Cloud & Multi-Region</h3>
+            </div>
+            <p>Deploy to AWS or Azure with official Terraform modules. Supports multi-region and multi-cloud strategies for high availability and geo-redundancy.</p>
+            <ul className={styles.testingList}>
+              <li>AWS Lambda (Serverless)</li>
+              <li>AWS ECS/Fargate (Containerized)</li>
+              <li>Azure Functions (Serverless)</li>
+              <li>Azure Container Apps (Containerized)</li>
+              <li>Infrastructure as Code with Terraform</li>
+            </ul>
+          </Link>
+
+          <Link to="/docs/deployment/overview" className={styles.deploymentCard}>
+            <div className={styles.deploymentHeader}>
               <MdTerminal className={styles.deploymentIcon} />
               <h3>Local Development</h3>
             </div>
@@ -557,6 +580,40 @@ function DeploymentSection() {
             </span>
           </Link>
 
+          <Link to="/docs/deployment/azure-serverless" className={styles.deploymentCard}>
+            <div className={styles.deploymentHeader}>
+              <FaMicrosoft className={styles.deploymentIcon} />
+              <h3>Azure Serverless</h3>
+            </div>
+            <p>Scale dynamically on Azure with Functions for variable workloads.</p>
+            <ul className={styles.deploymentFeatures}>
+              <li>Azure Functions execution</li>
+              <li>KEDA-based auto-scaling</li>
+              <li>Pay-per-use pricing</li>
+              <li>Cosmos DB integration</li>
+            </ul>
+            <span className={styles.deploymentLink}>
+              View Guide →
+            </span>
+          </Link>
+
+          <Link to="/docs/deployment/azure-containerized" className={styles.deploymentCard}>
+            <div className={styles.deploymentHeader}>
+              <MdCloud className={styles.deploymentIcon} />
+              <h3>Azure Containerized</h3>
+            </div>
+            <p>Consistent performance with Azure Container Apps on Azure.</p>
+            <ul className={styles.deploymentFeatures}>
+              <li>Container Apps support</li>
+              <li>Multi-zone deployment</li>
+              <li>Predictable performance</li>
+              <li>Built-in scaling</li>
+            </ul>
+            <span className={styles.deploymentLink}>
+              View Guide →
+            </span>
+          </Link>
+
           <Link to="/docs/deployment/overview" className={styles.deploymentCard}>
             <div className={styles.deploymentHeader}>
               <FaDocker className={styles.deploymentIcon} />
@@ -574,18 +631,27 @@ function DeploymentSection() {
 
         <div className={styles.terraformSection}>
           <SiTerraform className={styles.terraformIcon} />
-          <h3>Infrastructure as Code</h3>
+          <h3>Infrastructure as Code - Multi-Cloud</h3>
           <p>
-            Deploy with confidence using our official Terraform modules. One-command deployment 
-            to AWS with best practices baked in.
+            Deploy with confidence using our official Terraform modules for AWS and Azure. 
+            One-command deployment with best practices baked in. Same agent code, different clouds.
           </p>
-          <Link 
-            to="https://registry.terraform.io/modules/yaalalabs" 
-            className="button button--primary"
-            target="_blank"
-            rel="noopener noreferrer">
-            View Terraform Modules
-          </Link>
+          <div className={styles.cloudButtons}>
+            <Link 
+              to="https://registry.terraform.io/modules/yaalalabs?provider=aws" 
+              className="button button--primary"
+              target="_blank"
+              rel="noopener noreferrer">
+              <FaAws style={{ marginRight: '8px' }} /> AWS Modules
+            </Link>
+            <Link 
+              to="https://registry.terraform.io/modules/yaalalabs?provider=azurerm" 
+              className="button button--primary"
+              target="_blank"
+              rel="noopener noreferrer">
+              <FaMicrosoft style={{ marginRight: '8px' }} /> Azure Modules
+            </Link>
+          </div>
         </div>
         <div className={styles.sectionFooter}>
           <Link to="/docs/deployment/overview" className={styles.sectionLink}>

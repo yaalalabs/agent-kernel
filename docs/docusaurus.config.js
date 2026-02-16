@@ -9,7 +9,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Agent Kernel',
-  tagline: 'Production-ready framework-agnostic runtime for AI agents - Deploy agents built with your favorite framework enabling enterprise features',
+  tagline: 'Multi-cloud production-ready framework-agnostic runtime for AI agents - Deploy agents built with your favorite framework to AWS or Azure with enterprise features',
   favicon: 'img/favicon.ico',
   url: 'https://kernel.yaala.ai',
   baseUrl: '/',
