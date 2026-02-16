@@ -6,7 +6,8 @@
 
 ## Introduction
 
-Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly migrate from different AI agent frameworks without modifying the underlying agent logic.
+Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly migrate from different AI agent frameworks without modifying the underlying agent logic. AK is cloud-agnostic by design, enabling deployment across AWS, Azure, on-premise, and hybrid environments without modifying core agent logic.
+
 
 **Requirements:** Python 3.12 - 3.13.x
 
@@ -37,7 +38,10 @@ AK's Python libraries provide developers with comprehensive tools to:
 
 4. **Context and Memory Management**
    - Handle agent memory efficiently, with in-built support for memory management.
-   - It currently offers in-memory, Redis, and DynamoDB options.
+   - It currently offers in-memory and Redis-based storage.
+   - Cloud-native adapters are available for:
+      - DynamoDB (AWS)
+      - Cosmos DB (Azure)
    - Developers can customize memory management based on their preferences.
 
 5. **Traceability and Accountability**
@@ -70,7 +74,7 @@ AK supports local execution of agent logic using its in-built **Agent Tester** u
 
 ### Cloud Deployment
 
-Cloud deployment for AK is currently supported on AWS, offering two distinct execution frameworks based on the workload type:
+AK supports multi-cloud deployments, currently including AWS and Azure, offering two distinct execution frameworks based on the workload type:
 
 1. **Serverless Agent Execution Framework**
    - Ideal for scenarios with inconsistent or variable loads.
