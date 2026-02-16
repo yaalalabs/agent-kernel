@@ -53,7 +53,8 @@ resource "aws_api_gateway_method" "endpoint" {
       aws_api_gateway_resource.main[each.value.mainpath].id
   )
   http_method  = each.value.method
-  authorization = "NONE"
+  authorization = local.create_authorizer ? "CUSTOM" : "NONE"
+  authorizer_id = local.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
 }
 
 resource "aws_api_gateway_integration" "endpoint" {
@@ -182,3 +183,52 @@ resource "aws_api_gateway_stage" "stage" {
 
   depends_on = [aws_api_gateway_account.api_gateway]
 }
+
+resource "aws_api_gateway_gateway_response" "unauthorized" {
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  response_type = "UNAUTHORIZED"
+
+  status_code = "401"
+
+  response_templates = {
+    "application/json" = jsonencode({
+      message = "Authentication failed: invalid or missing credentials."
+    })
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "access_denied" {
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  response_type = "ACCESS_DENIED"
+
+  status_code = "403"
+
+  response_templates = {
+    "application/json" = jsonencode({
+      message = "Authentication failed: access denied."
+    })
+  }
+}
+
+resource "aws_lambda_permission" "allow_apigw_authorizer" {
+  count       = local.create_authorizer ? 1 : 0
+  statement_id = "AllowAPIGatewayInvokeAuthorizer"
+  action      = "lambda:InvokeFunction"
+  function_name = module.authorizer[0].lambda_function_name
+  principal   = "apigateway.amazonaws.com"
+
+  # REST API
+  source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/authorizers/*"
+}
+
+resource "aws_api_gateway_authorizer" "lambda_authorizer" {
+  count    = local.create_authorizer ? 1 : 0
+  name     = "${var.product_alias}-${var.env_alias}-${var.authorizer.module_name}-${var.authorizer.function_name}"
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  authorizer_uri = module.authorizer[0].lambda_function_invoke_arn
+
+  type = "REQUEST"
+  identity_source = "method.request.header.Authorization,context.resourcePath"
+  authorizer_result_ttl_in_seconds = var.authorizer.result_ttl_in_seconds
+}
+

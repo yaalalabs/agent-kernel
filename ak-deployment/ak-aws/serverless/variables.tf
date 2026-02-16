@@ -179,5 +179,69 @@ variable "gateway_endpoints" {
   }
 }
 
+variable "authorizer_function_name" {
+  type        = string
+  description = "Authorizer Lambda function name"
+  default     = null
+}
+
+variable "authorizer_function_description" {
+  type        = string
+  description = "Authorizer Lambda function description"
+  default     = "API Gateway Lambda Authorizer"
+}
+
+variable "authorizer_handler_path" {
+  type        = string
+  description = "Lambda authorizer handler path"
+  default     = null
+}
+
+variable "authorizer_package_path" {
+  type        = string
+  description = "Authorizer Lambda package path or Docker image source path"
+  default     = null
+}
+
+variable "authorizer_package_type" {
+  type        = string
+  description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
+  default     = null
+}
+
+variable "authorizer_module_name" {
+  type        = string
+  description = "Authorizer module name"
+  default     = null
+}
+
+variable "authorizer_environment_variables" {
+  description = "Authorizer Lambda environment variables"
+  type        = map(string)
+  default     = {}
+}
+
+variable "authorizer_result_ttl_in_seconds" {
+  type        = number
+  description = "Authorizer result TTL in seconds"
+  default     = 150
+}
+
+variable "authorizer" {
+  description = "Authorizer configuration object"
+  type = object({
+    description           = optional(string, "API Gateway Lambda Authorizer")
+    function_name         = string
+    handler_path          = string
+    package_path          = string
+    package_type          = string
+    module_name           = string
+    result_ttl_in_seconds = optional(number, 150)
+    environment_variables = optional(map(string), {})
+  })
+  default = null
+}
+
+
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}

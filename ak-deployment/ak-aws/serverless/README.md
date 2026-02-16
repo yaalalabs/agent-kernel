@@ -10,6 +10,7 @@ This module provides a complete serverless deployment solution:
 - 🌐 **API Gateway**: REST API with Three-Level Resource Creation and Routing
 - 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
+- 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
 
@@ -242,6 +243,54 @@ module "serverless_api_dynamodb" {
 }
 ```
 
+### With Custom Authorizer
+
+```hcl
+module "serverless_api_auth" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region              = "us-west-2"
+  product_alias       = "myapp"
+  env_alias           = "prod"
+  product_display_name = "Serverless API with Authorizer"
+  
+  module_name          = "api"
+  function_name        = "handler"
+  function_description = "Main API handler"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
+  
+  package_type = "LocalZip"
+  package_path = "${path.module}/dist/function.zip"
+  
+  # Authorizer configuration
+  authorizer = {
+    description           = "API Gateway Lambda Authorizer"
+    function_name         = "api-authorizer"
+    handler_path          = "auth.handler"
+    package_path          = "${path.module}/dist/auth.zip"
+    package_type          = "LocalZip"
+    module_name           = "auth"
+    result_ttl_in_seconds = 300
+    environment_variables = {
+      JWT_SECRET = "your-secret-key"
+      API_URL    = "https://api.example.com"
+    }
+  }
+  
+  timeout     = 30
+  memory_size = 512
+  
+  api_version    = "v1"
+  agent_endpoint = "chat"
+  
+  environment_variables = {
+    ENVIRONMENT = "production"
+    LOG_LEVEL   = "info"
+  }
+}
+```
+
 
 ## 📥 Inputs
 
@@ -269,7 +318,21 @@ module "serverless_api_dynamodb" {
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
+| `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+
+### Authorizer Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `description` | Authorizer function description | `string` | `"API Gateway Lambda Authorizer"` | no |
+| `function_name` | Authorizer Lambda function name | `string` | n/a | yes |
+| `handler_path` | Authorizer Lambda handler path | `string` | n/a | yes |
+| `package_path` | Authorizer package path | `string` | n/a | yes |
+| `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
+| `module_name` | Authorizer module name | `string` | n/a | yes |
+| `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
 
 ## 📤 Outputs
 
@@ -283,6 +346,7 @@ module "serverless_api_dynamodb" {
 | `api_gateway_stage_name` | API Gateway stage name | `agents` |
 | `dynamodb_memory_table_arn` | DynamoDB table ARN (if enabled) | `arn:aws:dynamodb:us-west-2:123456789012:table/myapp-prod-api-session_store` |
 | `dynamodb_memory_table_name` | DynamoDB table name (if enabled) | `myapp-prod-api-session_store` |
+| `authorizer_status` | Status message indicating whether the authorizer Lambda will be created | `"Created Authorizer Lambda: All required variables are present"` |
 
 ## ✨ Features
 
@@ -316,6 +380,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 - Stage name: `agents` (production-ready)
 - CORS support configurable
 - Custom domain support compatible
+- **Custom Authorizer**: Lambda-based request authorization with configurable TTL
 
 ### 🔒 Security Features
 
@@ -324,11 +389,13 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 - **Code Signing**: Optional for production deployments
 - **VPC Support**: Compatible with VPC-based Lambda
 - **Encryption**: KMS encryption support for environment variables
+- **Custom Authorization**: Lambda-based API Gateway authorizer for request authentication and authorization
 
 ### 🏷️ Naming Conventions
 
 Resources follow consistent naming:
 - Lambda Function: `{product_alias}-{env_alias}-{module_name}-{function_name}`
+- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer_module_name}-{authorizer_function_name}`
 - API Gateway: `{product_alias}-{env_alias}-{module_name}-api`
 - CloudWatch Logs: `/aws/lambda/{function_name}`
 
@@ -493,6 +560,44 @@ module "api_v2" {
   # ... config with new features
 }
 ```
+
+## 🔐 Custom Authorizer Configuration
+
+The module supports a Lambda-based API Gateway authorizer for custom authentication and authorization logic.
+
+### Authorizer Setup
+
+The authorizer is configured using a single `authorizer` object that contains all the necessary settings:
+
+```hcl
+authorizer = {
+  description           = "API Gateway Lambda Authorizer"  # Optional, defaults to this value
+  function_name         = "api-authorizer"                 # Required
+  handler_path          = "auth.handler"                   # Required
+  package_path          = "./dist/auth.zip"               # Required
+  package_type          = "LocalZip"                       # Required
+  module_name           = "auth"                           # Required
+  result_ttl_in_seconds = 300                              # Optional, defaults to 150
+  environment_variables = {                                 # Optional, defaults to {}
+    JWT_SECRET = "your-secret-key"
+    API_URL    = "https://api.example.com"
+  }
+}
+```
+
+**Required Fields**:
+- `function_name` - Name for the authorizer Lambda function
+- `handler_path` - Path to the authorizer Lambda handler (e.g., `auth.handler`)
+- `package_type` - Deployment type (`Image`, `LocalZip`, or `S3Zip`)
+- `package_path` - Path to authorizer deployment package
+- `module_name` - Authorizer module name
+
+**Optional Fields**:
+- `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
+- `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
+- `environment_variables` - Environment variables for authorizer
+
+**Note**: The authorizer infrastructure will only be created if the `authorizer` object is provided and all required fields are present. If any required field is missing, no authorizer will be created and your endpoints will be publicly accessible.
 
 ## 🔍 Troubleshooting
 

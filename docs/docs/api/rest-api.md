@@ -325,11 +325,39 @@ if __name__ == "__main__":
 Support for streaming responses will be available soon
 
 
+## Authentication
+
+Agent Kernel REST API supports authentication through custom validators. You can implement authentication to secure your endpoints.
+
+### Implementing Authentication
+
+Create a custom auth validator by extending `AuthValidator`:
+
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+from typing import Optional
+
+class CustomAuthValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        """Validate authentication token and return result."""
+        if token == "your-secret-token":
+            return ValidationResult(is_valid=True, subject="api_user")
+        return ValidationResult(is_valid=False, error_msg="Invalid token")
+
+# Add authentication to REST API
+RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
+```
+
+### Example Implementation
+
+See [examples/aws-containerized/crewai-auth/app.py](../../examples/aws-containerized/crewai-auth/app.py) for a complete authentication example with custom token validation.
+
 ## Best Practices
 
 - Use unique session IDs per conversation
 - Handle errors gracefully
 - Implement rate limiting in production
 - Use HTTPS in production
-- Add authentication
+- **Add authentication for production deployments**
 - Monitor API performance

@@ -1,7 +1,7 @@
 """
-Agent Kernel.
+Agent Kernel Auth package.
 
-This package contains the Agent Kernel AWS lambda implementation.
+This package contains the Auth implementation for exposing Agents.
 """
 
 import importlib.metadata
@@ -11,5 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .akauthorizer import APIGatewayAuthorizer
-from .aklambda import Lambda, LambdaRouter
+from .handler import AuthValidator, ValidationContext, ValidationResult
