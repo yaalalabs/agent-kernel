@@ -1,5 +1,7 @@
 import json
+
 from azure.functions import HttpRequest, HttpResponse
+
 
 # The handler Azure Functions will call
 def handler(req: HttpRequest) -> HttpResponse:
@@ -15,19 +17,11 @@ def handler(req: HttpRequest) -> HttpResponse:
             "url": req.url,
             "headers": dict(req.headers),
             "body": body,
-            "message": "Hello from AgentFunctionSec!"
+            "message": "Hello from AgentFunctionSec!",
         }
 
         # Respond with JSON
-        return HttpResponse(
-            json.dumps(data),
-            status_code=200,
-            mimetype="application/json"
-        )
+        return HttpResponse(json.dumps(data), status_code=200, mimetype="application/json")
 
     except Exception as e:
-        return HttpResponse(
-            json.dumps({"error": str(e)}),
-            status_code=500,
-            mimetype="application/json"
-        )
+        return HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
