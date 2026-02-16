@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Examples Overview
 
-The Agent Kernel repository includes a comprehensive set of examples demonstrating different deployment patterns, frameworks, and integrations. All examples are located in the [examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples) directory and are organized by deployment method and use case.
+The Agent Kernel repository includes a comprehensive set of examples demonstrating different **multi-cloud deployment patterns**, frameworks, and integrations for **AWS and Azure**. All examples are located in the [examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples) directory and are organized by deployment method and use case.
 
 ## Directory Structure
 
@@ -58,16 +58,32 @@ AWS Lambda serverless deployment examples:
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda
 
+### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
+
+Azure Container Apps deployment examples:
+
+- **`adk/`** - Google ADK agents deployed on Azure Container Apps
+- **`crewai/`** - CrewAI agents deployed on Azure Container Apps
+
+### 📁 Azure Serverless Examples (`/examples/azure-serverless`)
+
+Azure Functions serverless deployment examples:
+
+- **`adk/`** - Google ADK agents running on Azure Functions
+- **`crewai/`** - CrewAI agents running on Azure Functions
+- **`langgraph/`** - LangGraph agents running on Azure Functions
+- **`openai/`** - OpenAI agents running on Azure Functions
+
 ## Supported Frameworks
 
 Agent Kernel supports multiple AI agent frameworks:
 
 | Framework | Description | Examples Available |
 |-----------|-------------|-------------------|
-| **Google ADK** | Google's Agent Development Kit | CLI, AWS Containerized, AWS Serverless |
-| **CrewAI** | Multi-agent orchestration framework | CLI, AWS Containerized, AWS Serverless, API |
-| **LangGraph** | Graph-based agent framework | CLI, AWS Serverless |
-| **OpenAI Agent SDK** | OpenAI's official agent framework | CLI, Containerized, AWS Serverless, API |
+| **Google ADK** | Google's Agent Development Kit | CLI, AWS Containerized, AWS Serverless, Azure Containerized, Azure Serverless |
+| **CrewAI** | Multi-agent orchestration framework | CLI, AWS Containerized, AWS Serverless, Azure Containerized, Azure Serverless, API |
+| **LangGraph** | Graph-based agent framework | CLI, AWS Serverless, Azure Serverless |
+| **OpenAI Agent SDK** | OpenAI's official agent framework | CLI, Containerized, AWS Serverless, Azure Serverless, API |
 
 ## Deployment Patterns
 
@@ -80,14 +96,16 @@ Agent Kernel supports multiple AI agent frameworks:
 - **MCP Integration**: Expose agents as Model Context Protocol tools
 - **REST API**: Standard HTTP API for agent interaction
 
-### Container Deployment
+### Container Deployment (Multi-Cloud)
 - **Docker**: Containerized agents with REST API endpoints
 - **AWS ECS/Fargate**: Scalable container deployment on AWS
+- **Azure Container Apps**: Scalable container deployment on Azure
 
-### Serverless Deployment
-- **AWS Lambda**: Event-driven, serverless agent execution
+### Serverless Deployment (Multi-Cloud)
+- **AWS Lambda**: Event-driven, serverless agent execution on AWS
+- **Azure Functions**: Event-driven, serverless agent execution on Azure
 - Cost-effective for sporadic workloads
-- Automatic scaling based on demand
+- Automatic scaling based on demand across both cloud platforms
 
 ## Getting Started
 
@@ -138,8 +156,9 @@ Several examples demonstrate running multiple agent frameworks within a single A
 Depending on the example you choose, you may need:
 - Python 3.12+ with UV package manager
 - Docker (for containerized examples)
-- AWS CLI and credentials (for AWS examples)
-- Terraform (for AWS infrastructure deployment)
+- **AWS CLI and credentials** (for AWS examples)
+- **Azure CLI and credentials** (for Azure examples)
+- **Terraform** (for multi-cloud infrastructure deployment)
 - Valid API keys for the respective AI services (OpenAI, etc.)
 
 ## Next Steps

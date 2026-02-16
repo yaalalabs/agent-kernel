@@ -72,17 +72,19 @@ AK supports local execution of agent logic using its in-built **Agent Tester** u
 - Interact with agents via the Command Line Interface (CLI).
 - Develop and execute automated tests through predefined scenarios for comprehensive debugging and refinement.
 
-### Cloud Deployment
+### Multi-Cloud Deployment
 
-AK supports multi-cloud deployments, currently including AWS and Azure, offering two distinct execution frameworks based on the workload type:
+Cloud deployment for AK is supported on **AWS and Azure**, offering two distinct execution frameworks based on the workload type:
 
 1. **Serverless Agent Execution Framework**
-   - Ideal for scenarios with inconsistent or variable loads.
-   - Scales dynamically in response to the workload requirements.
+   - **AWS Lambda** and **Azure Functions** support
+   - Ideal for scenarios with inconsistent or variable loads
+   - Scales dynamically in response to the workload requirements
 
-2. **Server-based Agent Execution Framework**
-   - Suitable for scenarios with relatively consistent loads.
-   - Offers reduced latency compared to serverless setups, ensuring faster response times.
+2. **Containerized Agent Execution Framework**
+   - **AWS ECS/Fargate** and **Azure Container Apps** support
+   - Suitable for scenarios with relatively consistent loads
+   - Offers reduced latency compared to serverless setups, ensuring faster response times
 
 ### On-Premise Deployment
 

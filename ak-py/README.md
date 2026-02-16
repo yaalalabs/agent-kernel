@@ -3,15 +3,18 @@
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight runtime and adapter layer for building and running AI agents across multiple frameworks and running within a unified execution environment. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
+Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks and cloud providers. Deploy the same agent code to **AWS or Azure** without modification. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
+
+**Supported Cloud Platforms:** AWS, Azure
 
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK
-- **Session Management**: Built-in session abstraction for conversational state
-- **Flexible Deployment**: Interactive CLI for local development and testing, AWS Lambda handler for serverless deployment, AWS ECS Fargate deployment
-- **Pluggable Architecture**: Easy to extend with custom framework adapters
+- **Multi-Cloud Deployment**: Deploy to AWS (Lambda, ECS/Fargate) or Azure (Functions, Container Apps) with the same code
+- **Session Management**: Built-in session abstraction with multi-cloud storage (Redis, DynamoDB, Cosmos DB)
+- **Flexible Deployment**: Interactive CLI, REST API, serverless (AWS Lambda, Azure Functions), containerized (AWS ECS, Azure Container Apps)
+- **Pluggable Architecture**: Easy to extend with custom framework adapters and cloud providers
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **REST API**: Built-in REST API server for agent interaction
@@ -154,7 +157,11 @@ Then interact with your agents:
 (researcher) >> What is the latest news on AI?
 ```
 
-## AWS Lambda Deployment
+## Multi-Cloud Deployment
+
+Deploy your agents to AWS or Azure using the built-in cloud deployment handlers.
+
+### AWS Lambda Deployment
 
 Deploy your agents as serverless functions using the built-in Lambda handler.
 
@@ -169,6 +176,23 @@ assistant = OpenAIAgent(name="assistant")
 
 OpenAIModule([assistant])
 handler = Lambda.handler
+```
+
+### Azure Functions Deployment
+
+Deploy your agents as Azure Functions using the built-in Azure handler.
+
+```python
+from openai import OpenAI
+from agents import Agent as OpenAIAgent
+from agentkernel.azure import AzureFunctions
+from agentkernel.openai import OpenAIModule
+
+client = OpenAI()
+assistant = OpenAIAgent(name="assistant")
+
+OpenAIModule([assistant])
+handler = AzureFunctions.handler
 ```
 
 **Request Format:**
@@ -230,11 +254,11 @@ Supported formats: `.yaml`, `.yml`, `.json`
 
 #### Session Store
 
-Configure where agent sessions are stored.
+Configure where agent sessions are stored (supports multi-cloud storage backends).
 
 - **Field**: `session.type`
 - **Type**: string
-- **Options**: `in_memory`, `redis`
+- **Options**: `in_memory`, `redis`, `dynamodb` (AWS), `cosmosdb` (Azure)
 - **Default**: `in_memory`
 - **Environment Variable**: `AK_SESSION__TYPE`
 
