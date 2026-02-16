@@ -167,7 +167,7 @@ export AK_SESSION__REDIS__PREFIX=ak:sessions:
 - ✅ Supports distributed/multi-process deployments
 - ✅ Configurable TTL for automatic cleanup
 - ✅ Redis Cluster for high availability
-- ✅ **Multi-cloud support**: AWS ElastiCache & Azure Cache for Redis
+- ✅ **Multi-cloud support**: AWS ElastiCache & Azure Managed Redis
 - ✅ Ideal for containerized deployments (ECS/Fargate, Azure Container Apps)
 
 **Use When:**
