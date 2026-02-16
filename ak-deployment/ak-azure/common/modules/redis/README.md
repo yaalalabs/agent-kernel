@@ -49,7 +49,7 @@ Key inputs (see `variables.tf` for full list):
 ### Basic Redis for Development
 ```hcl
 module "production_redis" {
-  source = "yaalalabs/ak-common/aws//modules/redis"
+  source = "yaalalabs/ak-common/azurerm//modules/redis"
 
   product_alias            = var.product_alias
   env_alias                = var.env_alias
