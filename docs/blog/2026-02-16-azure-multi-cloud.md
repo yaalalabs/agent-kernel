@@ -102,7 +102,7 @@ The goal remains unchanged: write your agent once, deploy it everywhere.
 
 Agent Kernel is open source and community-driven. Whether you're running on AWS today and evaluating Azure, or building greenfield with multi-cloud requirements, we've got you covered.
 
-- 📖 [Azure Deployment Guide](https://kernel.yaala.ai/docs/guides/azure-deployment)
+- 📖 [Azure Deployment Guide](https://kernel.yaala.ai/docs/deployment/overview)
 - 💻 [GitHub Repository](https://github.com/yaalalabs/agent-kernel)
 - 💬 [Discord Community](https://discord.gg/yaalalabs)
 
