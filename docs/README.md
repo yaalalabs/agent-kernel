@@ -193,7 +193,7 @@ To contribute to the documentation:
 
 ## 📄 License
 
-The documentation is released under the same MIT License as Agent Kernel.
+The documentation is released under the same Apache License 2.0 as Agent Kernel.
 
 ## 🆘 Need Help?
 
