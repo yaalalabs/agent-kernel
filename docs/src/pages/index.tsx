@@ -190,14 +190,14 @@ function IntegrationsSection() {
     {
       name: 'OpenAI Guardrails',
       logo: '/img/integrations/openai.svg',
-      link: '/docs/next/advanced/guardrails-openai',
+      link: '/docs/advanced/guardrails-openai',
       category: 'Content Safety & Compliance',
       invertLogo: true,
     },
     {
       name: 'AWS Bedrock Guardrails',
       logo: '/img/integrations/bedrock.png',
-      link: '/docs/next/advanced/guardrails-bedrock',
+      link: '/docs/advanced/guardrails-bedrock',
       category: 'Content Safety & Compliance',
     },
   ];
