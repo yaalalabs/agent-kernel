@@ -104,6 +104,6 @@ Agent Kernel is open source and community-driven. Whether you're running on AWS 
 
 - 📖 [Azure Deployment Guide](https://kernel.yaala.ai/docs/deployment/overview)
 - 💻 [GitHub Repository](https://github.com/yaalalabs/agent-kernel)
-- 💬 [Discord Community](https://discord.gg/yaalalabs)
+- 💬 [Discord Community](https://discord.gg/snrPzb46uu)
 
 **The future of AI agents is multi-cloud. The future is now.**
