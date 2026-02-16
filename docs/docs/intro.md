@@ -265,7 +265,7 @@ Ready to get started? Here's what to do next:
 
 ## License
 
-Agent Kernel is released under the MIT License. See the [LICENSE](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE) file for details.
+Agent Kernel is released under the Apache License 2.0. See the [LICENSE](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE) file for details.
 
 ---
 

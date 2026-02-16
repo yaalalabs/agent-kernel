@@ -8,7 +8,7 @@ version = "0.2.11"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
     { name = "Yaala Labs", email = "agentkernel@yaalalabs.com" }
 ]

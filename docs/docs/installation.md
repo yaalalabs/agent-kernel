@@ -239,7 +239,7 @@ Now that you have Agent Kernel installed, proceed to the [Quick Start Guide](./q
 ## Version Information
 
 - **Python Requirements**: 3.12+
-- **License**: MIT
+- **License**: Apache-2.0
 
 ## Support
 
