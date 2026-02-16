@@ -184,6 +184,32 @@ resource "aws_api_gateway_stage" "stage" {
   depends_on = [aws_api_gateway_account.api_gateway]
 }
 
+resource "aws_api_gateway_gateway_response" "unauthorized" {
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  response_type = "UNAUTHORIZED"
+
+  status_code = "401"
+
+  response_templates = {
+    "application/json" = jsonencode({
+      message = "Authentication failed: invalid or missing credentials."
+    })
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "access_denied" {
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  response_type = "ACCESS_DENIED"
+
+  status_code = "403"
+
+  response_templates = {
+    "application/json" = jsonencode({
+      message = "Authentication failed: access denied."
+    })
+  }
+}
+
 resource "aws_lambda_permission" "allow_apigw_authorizer" {
   count       = local.create_authorizer ? 1 : 0
   statement_id = "AllowAPIGatewayInvokeAuthorizer"
@@ -202,7 +228,7 @@ resource "aws_api_gateway_authorizer" "lambda_authorizer" {
   authorizer_uri = module.authorizer[0].lambda_function_invoke_arn
 
   type = "REQUEST"
-  identity_source = "method.request.header.Authorization"
+  identity_source = "method.request.header.Authorization,context.resourcePath"
   authorizer_result_ttl_in_seconds = var.authorizer.result_ttl_in_seconds
 }
 
