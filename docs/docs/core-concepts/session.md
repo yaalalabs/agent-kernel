@@ -21,8 +21,9 @@ graph TB
     
     subgraph "Storage Backends"
         D[In-Memory<br/>Development]
-        E[Redis<br/>Production]
-        F[DynamoDB<br/>Serverless]
+        E[Redis<br/>AWS & Azure Production]
+        F[DynamoDB<br/>AWS Serverless]
+        G[Cosmos DB<br/>Azure Serverless]
     end
     
     A --> B
@@ -30,6 +31,7 @@ graph TB
     C --> D
     C --> E
     C --> F
+    C --> G
     
     style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
@@ -41,7 +43,11 @@ A Session:
 - **Tracks** conversation history across interactions
 - **Persists** state between agent invocations
 - **Manages** thread context for multi-turn conversations
-- **Supports** multiple storage backends (in-memory, Redis, DynamoDB)
+- **Supports** multiple storage backends with **multi-cloud support**:
+  - In-memory (development)
+  - Redis (AWS & Azure production)
+  - DynamoDB (AWS serverless)
+  - Cosmos DB (Azure serverless)
 - **Stores** framework-specific state separately per agent
 - **Enables** session-scoped caching and memory management
 
@@ -143,9 +149,9 @@ export AK_SESSION__TYPE=in_memory
 - Non-critical data
 - Single-instance deployments
 
-### Redis Storage
+### Redis Storage (AWS & Azure)
 
-Persistent, high-performance storage for production deployments:
+Persistent, high-performance storage for production deployments on both AWS and Azure:
 
 ```bash
 export AK_SESSION__TYPE=redis
@@ -161,17 +167,18 @@ export AK_SESSION__REDIS__PREFIX=ak:sessions:
 - ✅ Supports distributed/multi-process deployments
 - ✅ Configurable TTL for automatic cleanup
 - ✅ Redis Cluster for high availability
-- ✅ Ideal for containerized deployments (ECS/Fargate)
+- ✅ **Multi-cloud support**: AWS ElastiCache & Azure Cache for Redis
+- ✅ Ideal for containerized deployments (ECS/Fargate, Azure Container Apps)
 
 **Use When:**
-- Production containerized deployments
+- Production containerized deployments (AWS or Azure)
 - Multi-instance applications
 - High-throughput requirements
 - Need for sub-millisecond session access
 
 **High Availability Configuration:**
 ```bash
-# Redis Cluster endpoint
+# Redis Cluster endpoint (AWS ElastiCache or Azure Cache for Redis)
 export AK_SESSION__REDIS__URL=redis://cluster-endpoint:6379
 
 # Enable SSL/TLS
@@ -212,9 +219,44 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 
 **Note**: Agent Kernel's Terraform modules automatically create the required DynamoDB table with proper configuration.
 
-### Session Caching (Redis & DynamoDB)
+### Cosmos DB Storage
 
-Both Redis and DynamoDB backends support optional in-memory session caching for improved performance:
+Serverless, fully-managed storage for Azure deployments:
+
+```bash
+export AK_SESSION__TYPE=cosmosdb
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
+export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
+export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
+export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
+```
+
+**Characteristics:**
+- ✅ Serverless, fully managed by Azure
+- ✅ Auto-scaling capacity
+- ✅ Multi-region replication support
+- ✅ 99.999% availability SLA
+- ✅ No infrastructure management
+- ✅ Pay-per-use pricing
+- ✅ Ideal for Azure Functions deployments
+- ⚠️ Higher latency than Redis (~10-20ms)
+
+**Use When:**
+- Azure serverless deployments (Azure Functions)
+- Auto-scaling requirements
+- Azure-native infrastructure
+- Minimal operational overhead preferred
+
+**Requirements:**
+- Cosmos DB table with partition key `/session_id`
+- Optional: TTL configured on the table
+- Appropriate Azure permissions (connection string or managed identity)
+
+**Note**: Agent Kernel's Terraform modules automatically create the required Cosmos DB resources with proper configuration.
+
+### Session Caching (Redis, DynamoDB & Cosmos DB)
+
+Redis, DynamoDB, and Cosmos DB backends all support optional in-memory session caching for improved performance:
 
 ```bash
 # Enable in-memory session caching with LRU eviction
@@ -350,12 +392,12 @@ Configure session behavior via environment variables or configuration files.
 
 ```bash
 # ============================================
-# Storage Type Selection
+# Storage Type Selection (Multi-Cloud)
 # ============================================
-export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb'
+export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (AWS), 'cosmosdb' (Azure)
 
 # ============================================
-# Redis Configuration
+# Redis Configuration (AWS & Azure)
 # ============================================
 export AK_SESSION__REDIS__URL=redis://localhost:6379
 export AK_SESSION__REDIS__PASSWORD=your-password
@@ -363,13 +405,21 @@ export AK_SESSION__REDIS__TTL=604800  # 7 days in seconds
 export AK_SESSION__REDIS__PREFIX=ak:sessions:
 
 # ============================================
-# DynamoDB Configuration
+# DynamoDB Configuration (AWS)
 # ============================================
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 
 # ============================================
-# Session Caching (Redis & DynamoDB only)
+# Cosmos DB Configuration (Azure)
+# ============================================
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
+export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
+export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
+export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
+
+# ============================================
+# Session Caching (Redis, DynamoDB & Cosmos DB)
 # ============================================
 export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache (0 to disable)
 ```
@@ -390,30 +440,57 @@ session:
     table_name: agent-kernel-sessions
     ttl: 604800  # 7 days in seconds (0 to disable)
   
+  cosmosdb:
+    table_name: sessions
+    table_endpoint: https://your-account.documents.azure.com:443/
+    connection_string: AccountEndpoint=https://...;AccountKey=...
+    ttl: 604800  # 7 days in seconds (0 to disable)
+  
   cache:
     size: 256  # Enable caching (0 to disable)
 ```
 
-### Deployment-Specific Recommendations
+### Deployment-Specific Recommendations (Multi-Cloud)
 
 **Local Development:**
 ```bash
 export AK_SESSION__TYPE=in_memory
 ```
 
-**Containerized Production (ECS/Fargate/Kubernetes):**
+**Containerized Production:**
+
+*AWS (ECS/Fargate):*
 ```bash
 export AK_SESSION__TYPE=redis
 export AK_SESSION__REDIS__URL=redis://elasticache-endpoint:6379
 export AK_SESSION__CACHE__SIZE=256  # Enable with sticky sessions
 ```
 
-**AWS Serverless (Lambda):**
+*Azure (Container Apps):*
+```bash
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://azure-redis-endpoint:6379
+export AK_SESSION__CACHE__SIZE=256  # Enable with sticky sessions
+```
+
+**Serverless Deployments:**
+
+*AWS Lambda:*
 ```bash
 export AK_SESSION__TYPE=dynamodb
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 export AK_SESSION__DYNAMODB__TTL=604800
 # Caching not recommended for Lambda (stateless invocations)
+```
+
+*Azure Functions:*
+```bash
+export AK_SESSION__TYPE=cosmosdb
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
+export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
+export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
+export AK_SESSION__COSMOSDB__TTL=604800
+# Caching not recommended for Azure Functions (stateless invocations)
 ```
 
 [See deployment guides for detailed configuration →](/docs/deployment/overview)
