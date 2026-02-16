@@ -62,6 +62,7 @@ weekly:
       path: examples/memory/dynamodb
     # - type: azure-serverless
     #   path: examples/memory/cosmos
+    #   deploy_dir: deploy
 
     # # Azure Serverless
     # - type: azure-serverless
