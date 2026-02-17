@@ -1,189 +1,233 @@
-"""
-Tests for ToolContext and ToolBuilder base class.
-"""
-
-import asyncio
-from dataclasses import FrozenInstanceError
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
-from agentkernel.core.base import Session
+from agentkernel.core.base import Agent, Runner, Session
+from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import ToolBuilder, ToolContext
 
-# ---------------------------------------------------------------------------
-# ToolContext tests
-# ---------------------------------------------------------------------------
+
+# Fixtures and helpers
+class MockRunner(Runner):
+    def __init__(self, name: str = "mock-runner"):
+        super().__init__(name)
+
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        return AgentReply(content="mock-reply")
 
 
-class TestToolContext:
-    def test_creation(self):
-        runtime = MagicMock(spec=Runtime)
-        session = Session("s1")
-        ctx = ToolContext(runtime=runtime, session=session)
-        assert ctx.runtime is runtime
-        assert ctx.session is session
+class MockAgent(Agent):
+    def __init__(self, name: str = "mock-agent", runner: Runner | None = None):
+        super().__init__(name, runner or MockRunner())
 
-    def test_immutability(self):
-        runtime = MagicMock(spec=Runtime)
-        session = Session("s1")
-        ctx = ToolContext(runtime=runtime, session=session)
-        with pytest.raises(FrozenInstanceError):
-            ctx.runtime = MagicMock()
-        with pytest.raises(FrozenInstanceError):
-            ctx.session = Session("s2")
+    def get_description(self) -> str:
+        return "Mock Agent"
+
+    def get_a2a_card(self) -> Any:
+        return None
 
 
-# ---------------------------------------------------------------------------
-# ToolBuilder._needs_tool_context tests
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def mock_runtime():
+    return MagicMock(spec=Runtime)
 
 
-class TestNeedsToolContext:
-    def test_no_context_param(self):
-        def my_tool(city: str, units: str = "celsius") -> str:
-            return city
-
-        needs, name = ToolBuilder._needs_tool_context(my_tool)
-        assert needs is False
-        assert name is None
-
-    def test_sync_with_context(self):
-        def my_tool(city: str, ctx: ToolContext) -> str:
-            return city
-
-        needs, name = ToolBuilder._needs_tool_context(my_tool)
-        assert needs is True
-        assert name == "ctx"
-
-    def test_async_with_context(self):
-        async def my_tool(city: str, context: ToolContext) -> str:
-            return city
-
-        needs, name = ToolBuilder._needs_tool_context(my_tool)
-        assert needs is True
-        assert name == "context"
-
-    def test_custom_param_name(self):
-        def my_tool(city: str, my_special_ctx: ToolContext) -> str:
-            return city
-
-        needs, name = ToolBuilder._needs_tool_context(my_tool)
-        assert needs is True
-        assert name == "my_special_ctx"
-
-    def test_multiple_params_with_context(self):
-        def my_tool(city: str, units: str, tc: ToolContext, verbose: bool = False) -> str:
-            return city
-
-        needs, name = ToolBuilder._needs_tool_context(my_tool)
-        assert needs is True
-        assert name == "tc"
-
-    def test_no_annotations(self):
-        def my_tool(city, units):
-            return city
-
-        needs, name = ToolBuilder._needs_tool_context(my_tool)
-        assert needs is False
-        assert name is None
+@pytest.fixture
+def mock_agent():
+    return MockAgent()
 
 
-# ---------------------------------------------------------------------------
-# ToolBuilder._wrap sync function tests
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def mock_session():
+    return Session("test-session-id")
 
 
-class TestWrapSync:
-    def test_wrap_without_context_passthrough(self):
-        def get_weather(city: str, units: str = "celsius") -> str:
-            return f"Weather in {city} ({units})"
-
-        wrapped = ToolBuilder._wrap(get_weather)
-        # When no ToolContext param, the original function is returned
-        assert wrapped is get_weather
-        result = wrapped(city="London", units="fahrenheit")
-        assert result == "Weather in London (fahrenheit)"
-
-    def test_wrap_with_context_injection(self):
-        def get_weather(city: str, ctx: ToolContext) -> str:
-            return f"Weather in {city}, runtime={ctx.runtime is not None}"
-
-        mock_runtime = MagicMock(spec=Runtime)
-        mock_session = Session("test-session")
-
-        with patch.object(Runtime, "current", return_value=mock_runtime):
-            with patch.object(Session, "current", return_value=mock_session):
-                wrapped = ToolBuilder._wrap(get_weather)
-                assert wrapped is not get_weather
-                assert not asyncio.iscoroutinefunction(wrapped)
-                result = wrapped(city="Paris")
-                assert "Weather in Paris" in result
-                assert "runtime=True" in result
-
-    def test_wrap_preserves_function_metadata(self):
-        def get_weather(city: str, ctx: ToolContext) -> str:
-            """Get weather for a city."""
-            return city
-
-        wrapped = ToolBuilder._wrap(get_weather)
-        assert wrapped.__name__ == "get_weather"
-        assert wrapped.__doc__ == "Get weather for a city."
-
-    def test_wrap_non_callable_raises(self):
-        with pytest.raises(TypeError, match="Expected a callable"):
-            ToolBuilder._wrap("not a function")
+@pytest.fixture
+def mock_requests():
+    return [AgentRequestText(text="hello")]
 
 
-# ---------------------------------------------------------------------------
-# ToolBuilder._wrap async function tests
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def tool_context(mock_runtime, mock_agent, mock_session, mock_requests):
+    return ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
 
 
-class TestWrapAsync:
-    def test_wrap_async_without_context_passthrough(self):
-        async def get_weather(city: str) -> str:
-            return f"Weather in {city}"
+# ToolContext property tests
+class TestToolContextProperties:
 
-        wrapped = ToolBuilder._wrap(get_weather)
-        assert wrapped is get_weather
+    def test_id_is_non_empty_string(self, tool_context):
+        assert isinstance(tool_context.id, str)
+        assert len(tool_context.id) > 0
 
-    @pytest.mark.asyncio
-    async def test_wrap_async_with_context_injection(self):
-        async def get_weather(city: str, ctx: ToolContext) -> str:
-            return f"Weather in {city}, session={ctx.session.id}"
+    def test_id_is_unique(self, mock_runtime, mock_agent, mock_session, mock_requests):
+        ctx1 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+        ctx2 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+        assert ctx1.id != ctx2.id
 
-        mock_runtime = MagicMock(spec=Runtime)
-        mock_session = Session("async-session")
+    def test_runtime_property(self, tool_context, mock_runtime):
+        assert tool_context.runtime is mock_runtime
 
-        with patch.object(Runtime, "current", return_value=mock_runtime):
-            with patch.object(Session, "current", return_value=mock_session):
-                wrapped = ToolBuilder._wrap(get_weather)
-                assert wrapped is not get_weather
-                assert asyncio.iscoroutinefunction(wrapped)
-                result = await wrapped(city="Tokyo")
-                assert "Weather in Tokyo" in result
-                assert "session=async-session" in result
+    def test_agent_property(self, tool_context, mock_agent):
+        assert tool_context.agent is mock_agent
 
-    @pytest.mark.asyncio
-    async def test_wrap_async_preserves_metadata(self):
-        async def get_forecast(city: str, tc: ToolContext) -> str:
-            """Get forecast for a city."""
-            return city
+    def test_session_property(self, tool_context, mock_session):
+        assert tool_context.session is mock_session
 
-        wrapped = ToolBuilder._wrap(get_forecast)
-        assert wrapped.__name__ == "get_forecast"
-        assert wrapped.__doc__ == "Get forecast for a city."
-        assert asyncio.iscoroutinefunction(wrapped)
+    def test_requests_property(self, tool_context, mock_requests):
+        assert tool_context.requests is mock_requests
+        assert len(tool_context.requests) == 1
+        assert tool_context.requests[0].text == "hello"
 
 
-# ---------------------------------------------------------------------------
-# ToolBuilder.bind raises NotImplementedError
-# ---------------------------------------------------------------------------
+# ToolContext.get / .set / .reset (contextvars)
+class TestToolContextGetSetReset:
+
+    def test_get_raises_when_no_context_set(self):
+        # Ensure clean state
+        ToolContext._context.set(None)
+        with pytest.raises(RuntimeError, match="No ToolContext is set"):
+            ToolContext.get()
+
+    def test_set_and_get(self, tool_context):
+        tool_context.set()
+        try:
+            retrieved = ToolContext.get()
+            assert retrieved is tool_context
+        finally:
+            tool_context.reset()
+
+    def test_reset_clears_context(self, tool_context):
+        tool_context.set()
+        tool_context.reset()
+        with pytest.raises(RuntimeError, match="No ToolContext is set"):
+            ToolContext.get()
+
+    def test_reset_without_set_is_noop(self, tool_context):
+        # Should not raise
+        tool_context.reset()
+
+    def test_set_returns_self(self, tool_context):
+        try:
+            result = tool_context.set()
+            assert result is tool_context
+        finally:
+            tool_context.reset()
+
+    def test_nested_set_and_reset(self, mock_runtime, mock_agent, mock_session, mock_requests):
+        ctx1 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+        ctx2 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+
+        ctx1.set()
+        assert ToolContext.get() is ctx1
+
+        ctx2.set()
+        assert ToolContext.get() is ctx2
+
+        ctx2.reset()
+        assert ToolContext.get() is ctx1
+
+        ctx1.reset()
+        with pytest.raises(RuntimeError):
+            ToolContext.get()
 
 
-class TestToolBuilderBind:
-    def test_bind_raises(self):
-        with pytest.raises(NotImplementedError):
+# ToolContext context manager (__enter__ / __exit__)
+class TestToolContextContextManager:
+
+    def test_enter_adds_to_cache(self, tool_context):
+        with tool_context:
+            assert tool_context.id in ToolContext._cache
+            assert ToolContext._cache[tool_context.id] is tool_context
+
+    def test_exit_removes_from_cache(self, tool_context):
+        with tool_context:
+            pass
+        assert tool_context.id not in ToolContext._cache
+
+    def test_enter_returns_self(self, tool_context):
+        with tool_context as ctx:
+            assert ctx is tool_context
+
+    def test_multiple_contexts_in_cache(self, mock_runtime, mock_agent, mock_session, mock_requests):
+        ctx1 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+        ctx2 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+
+        with ctx1:
+            with ctx2:
+                assert ctx1.id in ToolContext._cache
+                assert ctx2.id in ToolContext._cache
+            # ctx2 exited
+            assert ctx1.id in ToolContext._cache
+            assert ctx2.id not in ToolContext._cache
+
+    def test_exit_on_exception_still_cleans_up(self, tool_context):
+        with pytest.raises(ValueError):
+            with tool_context:
+                raise ValueError("test error")
+        assert tool_context.id not in ToolContext._cache
+
+
+# ToolContext.fetch
+class TestToolContextFetch:
+
+    def test_fetch_returns_cached_context(self, tool_context):
+        with tool_context:
+            fetched = ToolContext.fetch(tool_context.id)
+            assert fetched is tool_context
+
+    def test_fetch_raises_for_unknown_id(self):
+        with pytest.raises(KeyError, match="No ToolContext found for id"):
+            ToolContext.fetch("nonexistent-id")
+
+    def test_fetch_raises_after_exit(self, tool_context):
+        with tool_context:
+            pass
+        with pytest.raises(KeyError):
+            ToolContext.fetch(tool_context.id)
+
+
+# ToolContext set/get combined with context manager
+class TestToolContextSetGetWithContextManager:
+
+    def test_set_inside_context_manager(self, tool_context):
+        with tool_context:
+            tool_context.set()
+            try:
+                assert ToolContext.get() is tool_context
+                assert ToolContext.fetch(tool_context.id) is tool_context
+            finally:
+                tool_context.reset()
+
+    def test_context_manager_does_not_affect_contextvar(self, tool_context):
+        """__enter__/__exit__ manage the cache, not the contextvar."""
+        ToolContext._context.set(None)
+        with tool_context:
+            # context manager doesn't call set(), so contextvar should still be None
+            with pytest.raises(RuntimeError):
+                ToolContext.get()
+
+
+# ToolBuilder
+class TestToolBuilder:
+
+    def test_bind_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError, match="bind\\(\\) must be implemented"):
             ToolBuilder.bind([lambda: None])
+
+    def test_subclass_can_override_bind(self):
+        class MyToolBuilder(ToolBuilder):
+            @classmethod
+            def bind(cls, funcs):
+                return [f.__name__ for f in funcs]
+
+        def my_func():
+            pass
+
+        result = MyToolBuilder.bind([my_func])
+        assert result == ["my_func"]
+
+    def test_bind_with_empty_list_raises(self):
+        with pytest.raises(NotImplementedError):
+            ToolBuilder.bind([])

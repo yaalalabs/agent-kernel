@@ -1,183 +1,164 @@
-"""
-Tests for CrewAIToolBuilder.
-
-Since CrewAI is an optional dependency, the SDK modules are mocked
-to allow testing the tool binding logic without requiring the SDK to be installed.
-"""
-
-import asyncio
-import sys
-import types
-from unittest.mock import MagicMock, patch
-
 import pytest
+from crewai.tools import BaseTool
 
-from agentkernel.core.base import Session
-from agentkernel.core.runtime import Runtime
-from agentkernel.core.tool import ToolBuilder, ToolContext
-
-# ---------------------------------------------------------------------------
-# Helpers – mock the CrewAI SDK
-# ---------------------------------------------------------------------------
+from agentkernel.framework.crewai.crewai import CrewAIToolBuilder
 
 
-class FakeCrewAITool:
-    """Simulates the object returned by crewai.tools.tool()."""
-
-    def __init__(self, func):
-        self._func = func
-        self.name = getattr(func, "__name__", "unknown")
-        self.description = getattr(func, "__doc__", "") or ""
+# Sample tool functions
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny"
 
 
-def _install_crewai_mocks():
-    """Create and install mock modules for CrewAI."""
-    crewai_mod = types.ModuleType("crewai")
-    crewai_mod.Agent = MagicMock
-    crewai_mod.Crew = MagicMock
-    crewai_mod.Task = MagicMock
-
-    crewai_memory = types.ModuleType("crewai.memory")
-    crewai_memory_ext = types.ModuleType("crewai.memory.external")
-    crewai_memory_ext_mod = types.ModuleType("crewai.memory.external.external_memory")
-    crewai_memory_ext_mod.ExternalMemory = MagicMock
-    crewai_memory_ext.external_memory = crewai_memory_ext_mod
-    crewai_memory.external = crewai_memory_ext
-
-    crewai_memory_storage = types.ModuleType("crewai.memory.storage")
-    crewai_memory_storage_iface = types.ModuleType("crewai.memory.storage.interface")
-    crewai_memory_storage_iface.Storage = MagicMock
-    crewai_memory_storage.interface = crewai_memory_storage_iface
-    crewai_memory.storage = crewai_memory_storage
-
-    crewai_tools = types.ModuleType("crewai.tools")
-    crewai_tools.tool = lambda func: FakeCrewAITool(func)
-
-    crewai_mod.memory = crewai_memory
-    crewai_mod.tools = crewai_tools
-
-    patches = {
-        "crewai": crewai_mod,
-        "crewai.memory": crewai_memory,
-        "crewai.memory.external": crewai_memory_ext,
-        "crewai.memory.external.external_memory": crewai_memory_ext_mod,
-        "crewai.memory.storage": crewai_memory_storage,
-        "crewai.memory.storage.interface": crewai_memory_storage_iface,
-        "crewai.tools": crewai_tools,
-    }
-    return patches
+def add(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
 
 
-@pytest.fixture(autouse=True)
-def _mock_crewai_sdk():
-    """Inject mock CrewAI SDK modules for every test."""
-    patches = _install_crewai_mocks()
-    with patch.dict(sys.modules, patches):
-        for mod_key in list(sys.modules):
-            if "agentkernel.framework.crewai" in mod_key:
-                del sys.modules[mod_key]
-        yield
+def no_params() -> str:
+    """A tool that takes no parameters."""
+    return "done"
 
 
-def _get_builder():
-    from agentkernel.framework.crewai.crewai import CrewAIToolBuilder
-
-    return CrewAIToolBuilder
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+def multi_type_params(text: str, count: int, flag: bool = False) -> str:
+    """A tool with multiple parameter types."""
+    return f"{text}-{count}-{flag}"
 
 
-class TestCrewAIToolBuilderBindSync:
-    def test_bind_sync_tool(self):
-        def get_weather(city: str) -> str:
-            """Get weather for a city."""
-            return f"Sunny in {city}"
+# bind – basic behaviour
+class TestCrewAIToolBuilderBind:
 
-        Builder = _get_builder()
-        tools = Builder.bind([get_weather])
+    def test_bind_returns_list(self):
+        tools = CrewAIToolBuilder.bind([get_weather])
+        assert isinstance(tools, list)
+
+    def test_bind_returns_base_tool_instances(self):
+        tools = CrewAIToolBuilder.bind([get_weather])
         assert len(tools) == 1
-        assert isinstance(tools[0], FakeCrewAITool)
+        assert isinstance(tools[0], BaseTool)
+
+    def test_bind_multiple_functions(self):
+        tools = CrewAIToolBuilder.bind([get_weather, add, no_params])
+        assert len(tools) == 3
+        assert all(isinstance(t, BaseTool) for t in tools)
+
+    def test_bind_empty_list(self):
+        tools = CrewAIToolBuilder.bind([])
+        assert tools == []
+
+    def test_bind_preserves_order(self):
+        tools = CrewAIToolBuilder.bind([get_weather, add, no_params])
         assert tools[0].name == "get_weather"
-
-    def test_bind_sync_invocation(self):
-        def get_weather(city: str) -> str:
-            return f"Sunny in {city}"
-
-        Builder = _get_builder()
-        tools = Builder.bind([get_weather])
-        result = tools[0]._func(city="Berlin")
-        assert result == "Sunny in Berlin"
+        assert tools[1].name == "add"
+        assert tools[2].name == "no_params"
 
 
-class TestCrewAIToolBuilderBindAsync:
-    def test_bind_async_tool(self):
-        async def get_weather(city: str) -> str:
-            """Get weather async."""
-            return f"Rainy in {city}"
+# Tool metadata – name, description, args_schema
+class TestToolMetadata:
 
-        Builder = _get_builder()
-        tools = Builder.bind([get_weather])
-        assert len(tools) == 1
-        assert tools[0].name == "get_weather"
+    def test_tool_name_matches_function(self):
+        [tool] = CrewAIToolBuilder.bind([get_weather])
+        assert tool.name == "get_weather"
 
-    @pytest.mark.asyncio
-    async def test_bind_async_invocation(self):
-        async def get_weather(city: str) -> str:
-            return f"Rainy in {city}"
+    def test_tool_description_contains_docstring(self):
+        [tool] = CrewAIToolBuilder.bind([get_weather])
+        assert "weather" in tool.description.lower()
 
-        Builder = _get_builder()
-        tools = Builder.bind([get_weather])
-        result = await tools[0]._func(city="London")
-        assert result == "Rainy in London"
+    def test_tool_has_args_schema(self):
+        [tool] = CrewAIToolBuilder.bind([get_weather])
+        schema = tool.args_schema.model_json_schema()
+        assert "properties" in schema
+        assert "city" in schema["properties"]
 
+    def test_multi_param_args_schema(self):
+        [tool] = CrewAIToolBuilder.bind([add])
+        schema = tool.args_schema.model_json_schema()
+        assert "a" in schema["properties"]
+        assert "b" in schema["properties"]
 
-class TestCrewAIToolBuilderWithContext:
-    def test_bind_with_tool_context(self):
-        def get_weather(city: str, ctx: ToolContext) -> str:
-            return f"Weather in {city}, session={ctx.session.id}"
+    def test_no_params_tool_name(self):
+        [tool] = CrewAIToolBuilder.bind([no_params])
+        assert tool.name == "no_params"
 
-        mock_runtime = MagicMock(spec=Runtime)
-        mock_session = Session("crewai-session")
-
-        Builder = _get_builder()
-        with patch.object(Runtime, "current", return_value=mock_runtime):
-            with patch.object(Session, "current", return_value=mock_session):
-                tools = Builder.bind([get_weather])
-                result = tools[0]._func(city="NYC")
-                assert "session=crewai-session" in result
-
-    def test_bind_without_tool_context(self):
-        def get_weather(city: str) -> str:
-            return f"Weather in {city}"
-
-        Builder = _get_builder()
-        tools = Builder.bind([get_weather])
-        result = tools[0]._func(city="Rome")
-        assert result == "Weather in Rome"
+    def test_multi_type_params_schema(self):
+        [tool] = CrewAIToolBuilder.bind([multi_type_params])
+        schema = tool.args_schema.model_json_schema()
+        assert "text" in schema["properties"]
+        assert "count" in schema["properties"]
+        assert "flag" in schema["properties"]
 
 
-class TestCrewAIToolBuilderMultiple:
-    def test_bind_multiple_tools(self):
-        def tool_a(x: str) -> str:
-            """Tool A."""
-            return x
+# Tool invocation via .run()
+class TestToolRun:
 
-        def tool_b(y: int) -> int:
-            """Tool B."""
-            return y
+    def test_run_single_string_param(self):
+        [tool] = CrewAIToolBuilder.bind([get_weather])
+        result = tool.run(city="Tokyo")
+        assert result == "Weather in Tokyo: sunny"
 
-        Builder = _get_builder()
-        tools = Builder.bind([tool_a, tool_b])
-        assert len(tools) == 2
-        assert tools[0].name == "tool_a"
-        assert tools[1].name == "tool_b"
+    def test_run_multiple_params(self):
+        [tool] = CrewAIToolBuilder.bind([add])
+        result = tool.run(a=3, b=4)
+        assert int(result) == 7
+
+    def test_run_no_params(self):
+        [tool] = CrewAIToolBuilder.bind([no_params])
+        result = tool.run()
+        assert result == "done"
+
+    def test_run_with_default_params(self):
+        [tool] = CrewAIToolBuilder.bind([multi_type_params])
+        result = tool.run(text="hello", count=5)
+        assert "hello" in result
+        assert "5" in result
+
+    def test_run_with_explicit_default_override(self):
+        [tool] = CrewAIToolBuilder.bind([multi_type_params])
+        result = tool.run(text="hello", count=5, flag=True)
+        assert "True" in result
 
 
-class TestCrewAIToolBuilderErrors:
-    def test_bind_non_callable_raises(self):
-        Builder = _get_builder()
+# Type validation – non-callable inputs
+class TestTypeValidation:
+
+    def test_bind_non_callable_string_raises(self):
         with pytest.raises(TypeError, match="Expected a callable"):
-            Builder.bind(["not_a_function"])
+            CrewAIToolBuilder.bind(["not a function"])
+
+    def test_bind_non_callable_int_raises(self):
+        with pytest.raises(TypeError, match="Expected a callable"):
+            CrewAIToolBuilder.bind([42])
+
+    def test_bind_non_callable_none_raises(self):
+        with pytest.raises(TypeError, match="Expected a callable"):
+            CrewAIToolBuilder.bind([None])
+
+    def test_bind_mixed_valid_and_invalid_raises(self):
+        with pytest.raises(TypeError, match="Expected a callable"):
+            CrewAIToolBuilder.bind([get_weather, "invalid"])
+
+
+# Edge cases
+class TestEdgeCases:
+
+    def test_bind_lambda(self):
+        my_lambda = lambda x: x + 1  # noqa: E731
+        my_lambda.__doc__ = "Increment by one."
+        my_lambda.__name__ = "increment"
+        tools = CrewAIToolBuilder.bind([my_lambda])
+        assert len(tools) == 1
+        assert tools[0].name == "increment"
+
+    def test_bind_same_function_twice(self):
+        tools = CrewAIToolBuilder.bind([get_weather, get_weather])
+        assert len(tools) == 2
+        assert tools[0].name == tools[1].name == "get_weather"
+
+    def test_tool_has_func_attribute(self):
+        [tool] = CrewAIToolBuilder.bind([get_weather])
+        assert hasattr(tool, "func")
+
+    def test_each_bind_produces_independent_tools(self):
+        tools_a = CrewAIToolBuilder.bind([get_weather])
+        tools_b = CrewAIToolBuilder.bind([get_weather])
+        assert tools_a[0] is not tools_b[0]

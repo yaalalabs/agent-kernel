@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
+import inspect
 import logging
 from typing import Any, Callable, List
 
 from google.adk.agents import BaseAgent
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
-from google.adk.tools import FunctionTool
+from google.adk.tools import FunctionTool, ToolContext
 from google.genai import types
+from sqlalchemy import func
 
 from agentkernel.core.model import (
     AgentReply,
@@ -23,7 +27,8 @@ from agentkernel.core.model import (
 from ...core import Agent as AKBaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Runtime, Session, ToolBuilder, ToolContext
+from ...core import Runtime, Session, ToolBuilder
+from ...core import ToolContext as AKToolContext
 from ...core.config import AKConfig
 from ...trace import Trace
 
@@ -50,9 +55,9 @@ class GoogleADKSession:
         """
         return self._session_service
 
-    async def create_session(self, app_name: str, user_id: str, session_id: str) -> Any:
+    async def create_session(self, app_name: str, user_id: str, session_id: str, state: dict[str, Any]) -> Any:
         if self._session is None:
-            self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
+            self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id, state=state)
         return self._session
 
 
@@ -152,11 +157,15 @@ class GoogleADKRunner(BaseRunner):
             user_id = "AgentKernel"
             adk_session = self._session(session)
 
-            await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-            runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-            reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+            ctx = AKToolContext(Runtime.current(), agent, session, requests)
+            with ctx:
+                state = {"ak_tool_context": ctx.id}
+                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id, state=state)
 
-            return AgentReplyText(text=reply, prompt=prompt)
+                runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+                reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+
+                return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
 
@@ -261,40 +270,9 @@ class GoogleADKToolBuilder(ToolBuilder):
     Tool builder for Google ADK.
 
     Wraps generic tool functions into ADK-compatible FunctionTool instances.
-    Overrides context initialization to retrieve runtime and session from the
-    ADK context state when available.
+    Overrides context initialization to retrieve session from the ADK context
+    state when available.
     """
-
-    @staticmethod
-    def _build_tool_context() -> ToolContext:
-        """
-        Build a ToolContext, preferring ADK context state if available.
-
-        Attempts to retrieve runtime and session from the ADK invocation
-        context state dictionary. Falls back to Session.current() and
-        Runtime.current() if the ADK context is unavailable.
-
-        :return: A ToolContext instance.
-        """
-        runtime = None
-        session = None
-
-        try:
-            from google.adk.agents import get_current_context
-
-            ctx = get_current_context()
-            if ctx and hasattr(ctx, "state"):
-                runtime = ctx.state.get("ak_runtime")
-                session = ctx.state.get("ak_session")
-        except Exception:
-            pass
-
-        if runtime is None:
-            runtime = Runtime.current()
-        if session is None:
-            session = Session.current()
-
-        return ToolContext(runtime=runtime, session=session)
 
     @classmethod
     def bind(cls, funcs: list[Callable]) -> list[Any]:
@@ -307,6 +285,44 @@ class GoogleADKToolBuilder(ToolBuilder):
         """
         tools = []
         for func in funcs:
-            wrapped = cls._wrap(func)
-            tools.append(FunctionTool(wrapped))
+            tools.append(FunctionTool(cls._wrap(func)))
         return tools
+
+    @classmethod
+    def _wrap(cls, func: Callable) -> Callable:
+        """
+        Wraps a generic tool function to ensure it can be used with the OpenAI Agents SDK.
+
+        :param func: The generic tool function to wrap.
+        :return: A wrapped version of the function that is compatible with the OpenAI Agents SDK.
+        """
+        if not callable(func):
+            raise TypeError(f"Expected a callable, got {type(func).__name__}")
+
+        if asyncio.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+                tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                try:
+                    return await func(*args, **kwargs)
+                finally:
+                    tctx.reset()
+
+        else:
+
+            @functools.wraps(func)
+            def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+                tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    tctx.reset()
+
+        signature = inspect.signature(func)
+        parameters = list(signature.parameters.values())
+        wrapper.__signature__ = signature.replace(
+            parameters=parameters + [inspect.Parameter("tool_context", inspect.Parameter.KEYWORD_ONLY, default=None)]
+        )
+
+        return wrapper

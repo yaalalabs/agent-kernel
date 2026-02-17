@@ -1,44 +1,149 @@
 """
 Generic tool binding support for Agent Kernel.
 
-This module provides the ToolContext and ToolBuilder classes that enable
-framework-agnostic tool function definitions. Tool functions can optionally
-accept a ToolContext parameter to access the runtime and session context.
+This module provides the ToolBuilder classes that enable framework-agnostic
+tool function definitions.
 """
 
-import asyncio
-import functools
-import inspect
-import logging
-from dataclasses import dataclass
-from typing import Any, Callable, get_type_hints
+import contextvars
+import uuid
+from typing import Any, Callable, ClassVar, Self
 
-from .base import Session
+from .base import Agent, AgentRequest, Session
 from .runtime import Runtime
 
-log = logging.getLogger("ak.core.tool")
 
-
-@dataclass(frozen=True)
 class ToolContext:
     """
-    Immutable context object passed to generic tool functions.
+    Execution context for tool functions.
 
-    Provides access to the runtime and session in which the tool function
-    is being invoked.
+    Provides access to the execution context of the tool, including the runtime, session, agent,
+    and the request being processed. This allows tool functions to interact with the broader
+    agent execution environment in a consistent way across different frameworks.
     """
 
-    runtime: Runtime
-    session: Session
+    def __init__(self, runtime: Runtime, agent: Agent, session: Session, requests: list[AgentRequest]):
+        """
+        Initialize the ToolContext with the given runtime, agent, session, and requests.
+        :param runtime: The Runtime instance representing the current execution context.
+        :param agent: The Agent instance representing the current agent.
+        :param session: The Session instance representing the current session.
+        :param requests: The list of AgentRequest instances representing the current requests being processed.
+        """
+        self._id = uuid.uuid4().hex
+        self._runtime: Runtime = runtime
+        self._agent: Agent = agent
+        self._session: Session = session
+        self._requests: list[AgentRequest] = requests
+        self._token: contextvars.Token[Self | None] | None = None
+
+    pass
+
+    _context: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("tool_context", default=None)
+    _cache: ClassVar[dict[str, Self]] = {}
+
+    @property
+    def id(self) -> str:
+        """
+        Get the unique identifier for this ToolContext instance.
+        :return: The unique identifier as a string.
+        """
+        return self._id
+
+    @property
+    def runtime(self) -> Runtime:
+        """
+        Get the Runtime instance representing the current execution context.
+        :return: The current Runtime instance.
+        """
+        return self._runtime
+
+    @property
+    def agent(self) -> Agent:
+        """
+        Get the Agent instance representing the current agent.
+        :return: The current Agent instance.
+        """
+        return self._agent
+
+    @property
+    def session(self) -> Session:
+        """
+        Get the Session instance representing the current session.
+        :return: The current Session instance.
+        """
+        return self._session
+
+    @property
+    def requests(self) -> list[AgentRequest]:
+        """
+        Get the list of AgentRequest instances representing the current requests being processed.
+        :return: The current list of AgentRequest instances.
+        """
+        return self._requests
+
+    @classmethod
+    def get(cls) -> Self:
+        """
+        Get the current ToolContext instance from the context variable.
+
+        :return: The current ToolContext instance.
+        :raises RuntimeError: If there is no ToolContext set in the current context.
+        """
+        context = cls._context.get()
+        if context is None:
+            raise RuntimeError("No ToolContext is set in the current context")
+        return context
+
+    def set(self) -> Self:
+        """
+        Set this ToolContext instance in the context variable.
+        """
+        self._token = ToolContext._context.set(self)
+
+        return self
+
+    def reset(self) -> None:
+        """
+        Reset the context variable to the previous value before this ToolContext was set.
+        """
+        if self._token is not None:
+            ToolContext._context.reset(self._token)
+            self._token = None
+
+    def __enter__(self) -> Self:
+        """
+        Enter the runtime context related to this ToolContext instance.
+        """
+        ToolContext._cache[self.id] = self
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """
+        Exit the runtime context related to this ToolContext instance, resetting the context variable and clearing the cache.
+        """
+        ToolContext._cache.pop(self.id, None)
+
+    @classmethod
+    def fetch(cls, id: str) -> Self:
+        """
+        Fetch a cached ToolContext instance by its ID.
+        :param id: The unique identifier of the ToolContext instance to fetch.
+        :return: The cached ToolContext instance.
+        :raises KeyError: If no ToolContext instance is found for the given ID.
+        """
+        if id not in cls._cache:
+            raise KeyError(f"No ToolContext found for id: {id}")
+        return cls._cache[id]
 
 
 class ToolBuilder:
     """
     Base class for framework-specific tool builders.
 
-    Provides common functionality for detecting ToolContext parameters in
-    function signatures, building ToolContext instances, and wrapping generic
-    tool functions with context injection.
+    Provides common functionality that bind regular synchronous and asynchronous functions
+    into framework specific tool functions. It also makes sure execution context behaves in the
+    same manner across different frameworks.
     """
 
     @classmethod
@@ -51,79 +156,3 @@ class ToolBuilder:
         :raises NotImplementedError: If called on the base ToolBuilder class.
         """
         raise NotImplementedError("bind() must be implemented by framework-specific subclasses")
-
-    @staticmethod
-    def _needs_tool_context(func: Callable) -> tuple[bool, str | None]:
-        """
-        Inspect a function signature to determine if it declares a ToolContext parameter.
-
-        Detection is based on type annotation, not parameter name.
-
-        :param func: The function to inspect.
-        :return: A tuple of (needs_context, param_name) where needs_context is True
-                 if the function has a ToolContext parameter, and param_name is the
-                 name of that parameter (or None).
-        """
-        try:
-            hints = get_type_hints(func)
-        except Exception:
-            return False, None
-
-        for param_name, param_type in hints.items():
-            if param_type is ToolContext:
-                return True, param_name
-
-        return False, None
-
-    @staticmethod
-    def _build_tool_context() -> ToolContext:
-        """
-        Build a ToolContext from the current runtime and session.
-
-        Framework-specific subclasses may override this to use alternative
-        context initialization mechanisms.
-
-        :return: A ToolContext instance.
-        :raises RuntimeError: If the current session cannot be resolved.
-        """
-        runtime = Runtime.current()
-        session = Session.current()
-        return ToolContext(runtime=runtime, session=session)
-
-    @classmethod
-    def _wrap(cls, func: Callable) -> Callable:
-        """
-        Wrap a generic tool function with ToolContext injection.
-
-        If the function declares a parameter of type ToolContext, the wrapper
-        will build a ToolContext and inject it when the function is called.
-        The wrapper preserves async/sync semantics of the original function.
-
-        :param func: The generic tool function to wrap.
-        :return: A wrapped function with context injection.
-        :raises TypeError: If func is not callable.
-        """
-        if not callable(func):
-            raise TypeError(f"Expected a callable, got {type(func).__name__}")
-
-        needs_context, param_name = cls._needs_tool_context(func)
-
-        if not needs_context:
-            return func
-
-        if asyncio.iscoroutinefunction(func):
-
-            @functools.wraps(func)
-            async def async_wrapper(**kwargs: Any) -> Any:
-                kwargs[param_name] = cls._build_tool_context()
-                return await func(**kwargs)
-
-            return async_wrapper
-        else:
-
-            @functools.wraps(func)
-            def sync_wrapper(**kwargs: Any) -> Any:
-                kwargs[param_name] = cls._build_tool_context()
-                return func(**kwargs)
-
-            return sync_wrapper

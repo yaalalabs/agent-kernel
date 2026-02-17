@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage
@@ -18,7 +19,7 @@ from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session, ToolBuilder
+from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
@@ -280,28 +281,33 @@ class LangGraphRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        for req in requests:
-            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                continue
-            if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text if prompt else req.text
-            else:
-                return AgentReplyText(
-                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
-                    prompt=prompt,
-                )
+        context: ToolContext = ToolContext(Runtime.current(), agent, session, requests).set()
+        try:
+            for req in requests:
+                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                    continue
+                if isinstance(req, AgentRequestText):
+                    prompt = prompt + "\n" + req.text if prompt else req.text
+                else:
+                    return AgentReplyText(
+                        text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                        prompt=prompt,
+                    )
 
-        if prompt.strip() == "":
-            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+            if prompt.strip() == "":
+                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-        agent.agent.checkpointer = self._session(session).checkpointer
-        result = await agent.agent.ainvoke(
-            input={"messages": [HumanMessage(content=prompt)]},
-            config=session_config.model_dump(),
-        )
-        last_message = result["messages"][-1]
-        return AgentReplyText(text=last_message.content, prompt=prompt)
+            session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+            agent.agent.checkpointer = self._session(session).checkpointer
+            result = await agent.agent.ainvoke(
+                input={"messages": [HumanMessage(content=prompt)]},
+                config=session_config.model_dump(),
+            )
+            last_message = result["messages"][-1]
+            return AgentReplyText(text=last_message.content, prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
 
 
 class LangGraphModule(BaseModule):
@@ -374,25 +380,25 @@ class LangGraphToolBuilder(ToolBuilder):
         :return: List of LangChain StructuredTool instances.
         :raises TypeError: If any item in funcs is not callable.
         """
-        import asyncio
-
         tools = []
         for func in funcs:
-            wrapped = cls._wrap(func)
-            if asyncio.iscoroutinefunction(wrapped):
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+
+            if asyncio.iscoroutinefunction(func):
                 tools.append(
                     StructuredTool.from_function(
-                        coroutine=wrapped,
-                        name=wrapped.__name__,
-                        description=wrapped.__doc__ or wrapped.__name__,
+                        coroutine=func,
+                        name=func.__name__,
+                        description=func.__doc__ or func.__name__,
                     )
                 )
             else:
                 tools.append(
                     StructuredTool.from_function(
-                        func=wrapped,
-                        name=wrapped.__name__,
-                        description=wrapped.__doc__ or wrapped.__name__,
+                        func=func,
+                        name=func.__name__,
+                        description=func.__doc__ or func.__name__,
                     )
                 )
         return tools

@@ -1,14 +1,15 @@
 from agentkernel.cli import CLI
-from agentkernel.core import Session
-from agentkernel.openai import OpenAIModule
-from agents import Agent, function_tool
+from agentkernel.core import ToolContext
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+from agents import Agent
 
 
-@function_tool
 def get_weather(city: str) -> str:
     """Returns the weather for a given city (example stub)."""
-    # In a real application, this would call an external API
-    print(Session.current().id)
+    print(ToolContext.get().session.id)
+    print(ToolContext.get().agent.name)
+    print(ToolContext.get().requests)
+
     if city == "Tokyo":
         return "The weather in Tokyo is sunny."
     else:
@@ -30,9 +31,9 @@ general_agent = Agent(
 )
 
 weather_agent = Agent(
-    name="WeatherAgent",
+    name="weather",
     instructions="You provide weather information upon request. Use the get_weather tool for all weather-related questions.",
-    tools=[get_weather],
+    tools=OpenAIToolBuilder.bind([get_weather]),
 )
 
 triage_agent = Agent(
@@ -42,7 +43,7 @@ triage_agent = Agent(
     handoffs=[general_agent, math_agent, weather_agent],
 )
 
-OpenAIModule([triage_agent, math_agent, general_agent])
+OpenAIModule([triage_agent, math_agent, general_agent, weather_agent])
 
 if __name__ == "__main__":
     CLI.main()

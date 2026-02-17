@@ -7,7 +7,7 @@ from crewai.memory.storage.interface import Storage
 from crewai.tools import tool as crewai_tool
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook, Runner, Session, ToolBuilder
+from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
@@ -99,38 +99,43 @@ class CrewAIRunner(Runner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        for req in requests:
-            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                continue
-            if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text if prompt else req.text
+        context: ToolContext = ToolContext(Runtime.current(), agent, session, requests).set()
+        try:
+            for req in requests:
+                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                    continue
+                if isinstance(req, AgentRequestText):
+                    prompt = prompt + "\n" + req.text if prompt else req.text
+                else:
+                    return AgentReplyText(
+                        text="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
+                        prompt=prompt,
+                    )
+
+            if prompt.strip() == "":
+                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+
+            task = Task(
+                description=prompt,
+                expected_output="An answer is plain text",
+                agent=agent.agent,
+            )
+            crew = Crew(
+                agents=agent.crew,
+                tasks=[task],
+                verbose=False,
+                external_memory=self._memory(session),
+            )
+            reply = crew.kickoff(inputs={})
+            if hasattr(reply, "raw"):
+                reply = str(reply.raw)
             else:
-                return AgentReplyText(
-                    text="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
-                    prompt=prompt,
-                )
+                reply = str(reply)
 
-        if prompt.strip() == "":
-            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
-
-        task = Task(
-            description=prompt,
-            expected_output="An answer is plain text",
-            agent=agent.agent,
-        )
-        crew = Crew(
-            agents=agent.crew,
-            tasks=[task],
-            verbose=False,
-            external_memory=self._memory(session),
-        )
-        reply = crew.kickoff(inputs={})
-        if hasattr(reply, "raw"):
-            reply = str(reply.raw)
-        else:
-            reply = str(reply)
-
-        return AgentReplyText(text=reply, prompt=prompt)
+            return AgentReplyText(text=reply, prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
 
 
 class CrewAIAgent(BaseAgent):
@@ -260,6 +265,7 @@ class CrewAIToolBuilder(ToolBuilder):
         """
         tools = []
         for func in funcs:
-            wrapped = cls._wrap(func)
-            tools.append(crewai_tool(wrapped))
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+            tools.append(crewai_tool(func))
         return tools

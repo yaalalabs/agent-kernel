@@ -1,7 +1,21 @@
-from agentkernel.adk import GoogleADKModule
+from agentkernel.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.cli import CLI
+from agentkernel.core import ToolContext
 from google.adk.agents import Agent, LlmAgent
 from google.adk.models.lite_llm import LiteLlm
+
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city (example stub)."""
+    print(ToolContext.get().session.id)
+    print(ToolContext.get().agent.name)
+    print(ToolContext.get().requests)
+
+    if city == "Tokyo":
+        return "The weather in Tokyo is sunny."
+    else:
+        return f"Cannot find weather for {city}."
+
 
 math_agent = Agent(
     name="math",
@@ -24,6 +38,16 @@ history_agent = Agent(
     """,
 )
 
+weather_agent = Agent(
+    name="weather",
+    model=LiteLlm(model="openai/gpt-4o-mini"),
+    description="You provide weather information upon request",
+    instruction="""
+    You provide weather information upon request. Use the get_weather tool for all weather-related questions.
+    """,
+    tools=GoogleADKToolBuilder.bind([get_weather]),
+)
+
 triage_agent = LlmAgent(
     name="triage",
     model=LiteLlm(model="openai/gpt-4o-mini"),
@@ -33,10 +57,10 @@ triage_agent = LlmAgent(
     If it's a math problem, issue an action.transfer_to_agent to the agent named "math".
     Otherwise, if it's history related query, transfer to "history".
     """,
-    sub_agents=[history_agent, math_agent],
+    sub_agents=[history_agent, math_agent, weather_agent],
 )
 
-GoogleADKModule([triage_agent, math_agent, history_agent])
+GoogleADKModule([triage_agent, math_agent, history_agent, weather_agent])
 
 if __name__ == "__main__":
     CLI.main()

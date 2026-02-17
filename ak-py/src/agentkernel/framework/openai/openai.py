@@ -3,12 +3,11 @@ from __future__ import annotations
 from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
-from agents.memory.session import SessionABC
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session, ToolBuilder
+from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
@@ -101,6 +100,7 @@ class OpenAIRunner(BaseRunner):
         """
         prompt = ""
         message_content = []
+        context = ToolContext(Runtime.current(), agent, session, requests).set()
         try:
             for req in requests:
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
@@ -164,6 +164,9 @@ class OpenAIRunner(BaseRunner):
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
+        finally:
+            if context is not None:
+                context.reset()
 
 
 class OpenAIAgent(BaseAgent):
@@ -284,6 +287,7 @@ class OpenAIToolBuilder(ToolBuilder):
         """
         tools = []
         for func in funcs:
-            wrapped = cls._wrap(func)
-            tools.append(function_tool(wrapped))
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+            tools.append(function_tool(func))
         return tools
