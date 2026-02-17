@@ -100,7 +100,7 @@ class OpenAIRunner(BaseRunner):
         """
         prompt = ""
         message_content = []
-        context = None
+        context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             for req in requests:

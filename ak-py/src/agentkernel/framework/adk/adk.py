@@ -156,7 +156,7 @@ class GoogleADKRunner(BaseRunner):
             user_id = "AgentKernel"
             adk_session = self._session(session)
 
-            ctx = AKToolContext(Runtime.current(), agent, session, requests)
+            ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
             with ctx:
                 state = {"ak_tool_context": ctx.id}
                 await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id, state=state)
@@ -280,7 +280,6 @@ class GoogleADKToolBuilder(ToolBuilder):
 
         :param funcs: List of generic tool functions to bind.
         :return: List of ADK-compatible FunctionTool instances.
-        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:

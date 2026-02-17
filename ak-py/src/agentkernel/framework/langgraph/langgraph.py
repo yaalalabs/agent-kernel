@@ -281,7 +281,7 @@ class LangGraphRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        context: ToolContext = None
+        context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             for req in requests:
