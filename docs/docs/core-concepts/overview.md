@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Overview
 
-Agent Kernel is built around five core abstractions that work together to provide a unified interface for AI agent development and execution.
+Agent Kernel is built around six core abstractions that work together to provide a unified interface for AI agent development and execution.
 
 ## Architecture Overview
 
@@ -16,6 +16,7 @@ graph TB
     
     subgraph "Agent Kernel Core"
         B[Agent<br/>Framework Wrapper]
+        T[Tools<br/>Framework-Agnostic]
         C[Runner<br/>Execution Strategy]
         D[Session<br/>Conversation State]
         E[Module<br/>Agent Registry]
@@ -32,6 +33,7 @@ graph TB
     end
     
     A --> B
+    T --> B
     B --> C
     C --> D
     E --> F
@@ -48,7 +50,7 @@ graph TB
     style E fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-## The Five Core Abstractions
+## The Six Core Abstractions
 
 ### 1. **Agent**
 
@@ -68,7 +70,28 @@ from agentkernel.core import Agent
 
 [Learn more about Agents →](./agent)
 
-### 2. **Runner**
+### 2. **Tools**
+
+Bind plain Python functions as tools to any supported agent framework.
+
+```python
+from agentkernel.core import ToolContext
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    session = ToolContext.get().session
+    return f"Weather in {city}: sunny"
+```
+
+**Key Features:**
+- Write tools once, use with any framework
+- Sync and async function support
+- Access execution context via `ToolContext.get()`
+- Framework-specific binding via `ToolBuilder.bind()`
+
+[Learn more about Tools →](./tools)
+
+### 3. **Runner**
 
 Executes agent logic using framework-specific execution strategies.
 
@@ -87,7 +110,7 @@ from agentkernel.core import Runner
 
 [Learn more about Runners →](./runner)
 
-### 3. **Session**
+### 4. **Session**
 
 Manages conversation state across multiple agent interactions.
 
@@ -107,7 +130,7 @@ session = Session(id="user-123")
 
 [Learn more about Sessions →](./session)
 
-### 4. **Module**
+### 5. **Module**
 
 A container that registers agents with the Runtime.
 
@@ -126,7 +149,7 @@ CrewAIModule([agent1, agent2, agent3])
 
 [Learn more about Modules →](./module)
 
-### 5. **Runtime**
+### 6. **Runtime**
 
 The global orchestrator that manages all agents and execution.
 
@@ -302,6 +325,7 @@ if __name__ == "__main__":
 Dive deeper into each core concept:
 
 - [**Agent**](./agent) - Learn about agent wrapping and identification
+- [**Tools**](./tools) - Write framework-agnostic tools for your agents
 - [**Runner**](./runner) - Understand execution strategies
 - [**Session**](./session) - Master conversation state management
 - [**Module**](./module) - Organize your agents effectively

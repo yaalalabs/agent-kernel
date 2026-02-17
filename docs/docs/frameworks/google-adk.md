@@ -59,13 +59,38 @@ export GOOGLE_API_KEY=...
 export GEMINI_MODEL=gemini-2.0-flash-exp  # Optional
 ```
 
+## Tool Binding
+
+Use `GoogleADKToolBuilder` to bind plain Python functions as tools to your Google ADK agents:
+
+```python
+from google.adk.agents import Agent as ADKAgent
+from agentkernel.adk import ADKModule, GoogleADKToolBuilder
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny, 25°C"
+
+agent = ADKAgent(
+    name="weather",
+    model="gemini-2.0-flash-exp",
+    description="You provide weather information upon request",
+    instruction="Use the get_weather tool for weather-related questions.",
+    tools=GoogleADKToolBuilder.bind([get_weather]),
+)
+
+ADKModule([agent])
+```
+
+See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
+
 ## Features
 
 - ✅ Gemini models
 - ✅ Google Cloud integration
 - ✅ Function calling
 - ✅ Multi-agent coordination
-- ✅ Streaming
+- ✅ Framework-agnostic tool binding
 
 ## Example
 

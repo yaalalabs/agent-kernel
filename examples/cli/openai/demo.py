@@ -1,15 +1,17 @@
-from agentkernel.cli import CLI
+import logging
 
-# from agentkernel.core import ToolContext
+from agentkernel.cli import CLI
+from agentkernel.core import ToolContext
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+
 from agents import Agent
 
 
 def get_weather(city: str) -> str:
     """Returns the weather for a given city (example stub)."""
-    # print(ToolContext.get().session.id)
-    # print(ToolContext.get().agent.name)
-    # print(ToolContext.get().requests)
+    logger = logging.getLogger(__name__)
+    logger.debug("Session ID: %s", ToolContext.get().session.id)    
+
 
     if city == "Tokyo":
         return "The weather in Tokyo is sunny."

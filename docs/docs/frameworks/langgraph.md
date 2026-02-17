@@ -76,13 +76,39 @@ graph.name = "complex_agent"
 export OPENAI_API_KEY=sk-...
 ```
 
+## Tool Binding
+
+Use `LangGraphToolBuilder` to bind plain Python functions as tools to your LangGraph agents:
+
+```python
+from langgraph.prebuilt import create_react_agent
+from agentkernel.langgraph import LangGraphModule, LangGraphToolBuilder
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny, 25°C"
+
+weather_agent = create_react_agent(
+    name="weather",
+    tools=LangGraphToolBuilder.bind([get_weather]),
+    model=model,
+    prompt="Use the get_weather tool for weather-related questions.",
+)
+
+LangGraphModule([weather_agent])
+```
+
+Both sync and async functions are supported. Async functions are automatically passed as coroutines.
+
+See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
+
 ## Features
 
 - ✅ Graph-based workflows
 - ✅ Conditional routing
 - ✅ State management
 - ✅ Checkpointing
-- ✅ Human-in-the-loop
+- ✅ Framework-agnostic tool binding
 
 ## Example
 
