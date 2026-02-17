@@ -6,7 +6,8 @@
 
 ## Introduction
 
-Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly migrate from different AI agent frameworks without modifying the underlying agent logic.
+Agent Kernel (AK) is a versatile, ready-to-use solution designed to streamline the development and execution of AI agent logic. Its framework-agnostic nature enables developers to effortlessly migrate from different AI agent frameworks without modifying the underlying agent logic. AK is cloud-agnostic by design, enabling deployment across AWS, Azure, on-premise, and hybrid environments without modifying core agent logic.
+
 
 **Requirements:** Python 3.12 - 3.13.x
 
@@ -37,7 +38,10 @@ AK's Python libraries provide developers with comprehensive tools to:
 
 4. **Context and Memory Management**
    - Handle agent memory efficiently, with in-built support for memory management.
-   - It currently offers in-memory, Redis, and DynamoDB options.
+   - It currently offers in-memory and Redis-based storage.
+   - Cloud-native adapters are available for:
+      - DynamoDB (AWS)
+      - Cosmos DB (Azure)
    - Developers can customize memory management based on their preferences.
 
 5. **Traceability and Accountability**
@@ -68,17 +72,19 @@ AK supports local execution of agent logic using its in-built **Agent Tester** u
 - Interact with agents via the Command Line Interface (CLI).
 - Develop and execute automated tests through predefined scenarios for comprehensive debugging and refinement.
 
-### Cloud Deployment
+### Multi-Cloud Deployment
 
-Cloud deployment for AK is currently supported on AWS, offering two distinct execution frameworks based on the workload type:
+Cloud deployment for AK is supported on **AWS and Azure**, offering two distinct execution frameworks based on the workload type:
 
 1. **Serverless Agent Execution Framework**
-   - Ideal for scenarios with inconsistent or variable loads.
-   - Scales dynamically in response to the workload requirements.
+   - **AWS Lambda** and **Azure Functions** support
+   - Ideal for scenarios with inconsistent or variable loads
+   - Scales dynamically in response to the workload requirements
 
-2. **Server-based Agent Execution Framework**
-   - Suitable for scenarios with relatively consistent loads.
-   - Offers reduced latency compared to serverless setups, ensuring faster response times.
+2. **Containerized Agent Execution Framework**
+   - **AWS ECS/Fargate** and **Azure Container Apps** support
+   - Suitable for scenarios with relatively consistent loads
+   - Offers reduced latency compared to serverless setups, ensuring faster response times
 
 ### On-Premise Deployment
 
@@ -86,3 +92,17 @@ Agent Kernel is equipped with a REST API which can be bundled as a docker image.
 
 
 These versatile deployment and testing options make AK a powerful and flexible platform for building, testing, and deploying AI-based agents in diverse environments.
+
+## License
+
+Unless otherwise specified, all content, including all source code files and documentation files in this repository are:
+
+Copyright (c) 2025-2026 Yaala Labs.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+SPDX-License-Identifier: Apache-2.0

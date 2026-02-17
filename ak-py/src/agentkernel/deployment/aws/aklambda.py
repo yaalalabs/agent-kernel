@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -71,16 +72,14 @@ class LambdaRouter:
 
         return _decorator
 
-    def _get_base_paths_from_stage_vars(self, event: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    def _get_base_paths_from_env(self) -> Tuple[Optional[str], Optional[str]]:
         """
-        Get the base path from stage variables.
-        :param event: API Gateway event dictionary containing stage variables
-        :return: Tuple of (base_path, agent_endpoint) or (None, None) if not found
+        Get the base path from environment variables.
+        :return: Tuple of (base_path, agent_endpoint_path) or (None, None) if not found
         """
-        stage_vars = event.get("stageVariables", {})
-        api_base_path = stage_vars.get("api_base_path")
-        api_version = stage_vars.get("api_version")
-        agent_endpoint = stage_vars.get("agent_endpoint")
+        api_base_path = os.getenv("API_BASE_PATH")
+        api_version = os.getenv("API_VERSION")
+        agent_endpoint = os.getenv("AGENT_ENDPOINT")
         base_path = f"/{api_base_path}/{api_version}"
         if api_base_path and api_version and agent_endpoint:
             return base_path, f"{base_path}/{agent_endpoint}"
@@ -99,15 +98,15 @@ class LambdaRouter:
         self._log.info(f"Event path: {event_path}, Method: {method}")
 
         converted_event_path = self._default_agent_registered_path
-        stage_var_base_path, stage_var_agent_endpoint = self._get_base_paths_from_stage_vars(event)
-        if stage_var_base_path and stage_var_agent_endpoint:
+        env_base_path, env_agent_endpoint = self._get_base_paths_from_env()
+        if env_base_path and env_agent_endpoint:
             converted_event_path = (
                 self._default_agent_registered_path
-                if event_path == stage_var_agent_endpoint and method == self._default_agent_registered_method
-                else event_path.removeprefix(stage_var_base_path)
+                if event_path == env_agent_endpoint and method == self._default_agent_registered_method
+                else event_path.removeprefix(env_base_path)
             )
         else:
-            self._log.warning("Stage variables not provided; using default agent handler")
+            self._log.warning("Environment variables not provided; using default agent handler")
             method = self._default_agent_registered_method
 
         self._log.info(f"Converted event path: {converted_event_path}")

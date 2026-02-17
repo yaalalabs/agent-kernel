@@ -14,13 +14,13 @@ class AgentState(TypedDict):
 
 class CustomAgent:
     def __init__(
-            self,
-            name: str,
-            description: str,
-            model: ChatOpenAI,
-            system_prompt: str,
-            tool_functions: List[Callable[..., Any]] = [],
-            verbose: bool = False,
+        self,
+        name: str,
+        description: str,
+        model: ChatOpenAI,
+        system_prompt: str,
+        tool_functions: List[Callable[..., Any]] = [],
+        verbose: bool = False,
     ):
         self.name = name
         self.description = description

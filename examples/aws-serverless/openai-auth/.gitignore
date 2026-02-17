@@ -1,0 +1,8 @@
+.terraform
+requirements.txt
+dist
+dist.zip
+dist_auth
+dist_auth.zip
+*.tfstate
+*.tfstate.backup
