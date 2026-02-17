@@ -65,7 +65,7 @@ Use `GoogleADKToolBuilder` to bind plain Python functions as tools to your Googl
 
 ```python
 from google.adk.agents import Agent as ADKAgent
-from agentkernel.adk import ADKModule, GoogleADKToolBuilder
+from agentkernel.adk import GoogleADKModule, GoogleADKToolBuilder
 
 def get_weather(city: str) -> str:
     """Returns the weather for a given city."""
@@ -79,7 +79,7 @@ agent = ADKAgent(
     tools=GoogleADKToolBuilder.bind([get_weather]),
 )
 
-ADKModule([agent])
+GoogleADKModule([agent])
 ```
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.

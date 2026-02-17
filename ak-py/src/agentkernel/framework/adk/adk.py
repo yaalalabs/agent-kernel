@@ -302,7 +302,7 @@ class GoogleADKToolBuilder(ToolBuilder):
             async def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
                 tctx: AKToolContext | None = None
                 try:
-                    if tool_context and tool_context.state:
+                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
                         tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
                     return await func(*args, **kwargs)
                 finally:
@@ -315,7 +315,7 @@ class GoogleADKToolBuilder(ToolBuilder):
             def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
                 tctx: AKToolContext | None = None
                 try:
-                    if tool_context and tool_context.state:
+                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
                         tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
                     return func(*args, **kwargs)
                 finally:
