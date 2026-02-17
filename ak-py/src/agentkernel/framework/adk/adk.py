@@ -5,9 +5,11 @@ import base64
 import functools
 import inspect
 import logging
+import time
 from typing import Any, Callable, List
 
 from google.adk.agents import BaseAgent
+from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.adk.tools import FunctionTool, ToolContext
@@ -54,10 +56,20 @@ class GoogleADKSession:
         """
         return self._session_service
 
-    async def create_session(self, app_name: str, user_id: str, session_id: str, state: dict[str, Any]) -> Any:
+    async def create_session(self, app_name: str, user_id: str, session_id: str) -> Any:
         if self._session is None:
-            self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id, state=state)
+            self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
         return self._session
+
+    async def update_session_state(self, invocation_id: str, author: str, state: dict) -> None:
+        if self._session:
+            event = Event(
+                invocation_id=invocation_id,
+                author=author,
+                actions=EventActions(state_delta=state),
+                timestamp=time.time(),
+            )
+            await self._session_service.append_event(self._session, event)
 
 
 class GoogleADKRunner(BaseRunner):
@@ -158,8 +170,8 @@ class GoogleADKRunner(BaseRunner):
 
             ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
             with ctx:
-                state = {"ak_tool_context": ctx.id}
-                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id, state=state)
+                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+                await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
 
                 runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
                 reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)

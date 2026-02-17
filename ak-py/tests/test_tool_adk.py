@@ -344,8 +344,8 @@ class TestGoogleADKRunnerToolContext:
     async def test_run_creates_ak_tool_context_in_session_state(self):
         """
         GoogleADKRunner.run() should create an AKToolContext, enter it via the
-        context manager, and pass its id as state['ak_tool_context'] when
-        creating the ADK session.
+        context manager, and pass its id via update_session_state as
+        state['ak_tool_context'].
         """
         runner = GoogleADKRunner()
         session = Session("runner-test-session")
@@ -353,15 +353,14 @@ class TestGoogleADKRunnerToolContext:
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
-        created_state = {}
+        updated_state = {}
 
-        async def capture_create_session(app_name, user_id, session_id, state):
-            created_state.update(state)
-            # Return a mock session object
-            return MagicMock()
+        async def capture_update_session_state(invocation_id, author, state):
+            updated_state.update(state)
 
         mock_adk_session = MagicMock()
-        mock_adk_session.create_session = AsyncMock(side_effect=capture_create_session)
+        mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
+        mock_adk_session.update_session_state = AsyncMock(side_effect=capture_update_session_state)
         mock_adk_session.session_service = MagicMock()
 
         with (
@@ -371,10 +370,10 @@ class TestGoogleADKRunnerToolContext:
         ):
             result = await runner.run(mock_agent, session, requests)
 
-        assert "ak_tool_context" in created_state
+        assert "ak_tool_context" in updated_state
         # The id should be a non-empty hex string (uuid4)
-        assert isinstance(created_state["ak_tool_context"], str)
-        assert len(created_state["ak_tool_context"]) > 0
+        assert isinstance(updated_state["ak_tool_context"], str)
+        assert len(updated_state["ak_tool_context"]) > 0
 
     @pytest.mark.asyncio
     async def test_run_tool_context_is_fetchable_during_execution(self):
@@ -390,15 +389,15 @@ class TestGoogleADKRunnerToolContext:
 
         fetched_ctx = None
 
-        async def mock_create_session(app_name, user_id, session_id, state):
+        async def mock_update_session_state(invocation_id, author, state):
             nonlocal fetched_ctx
             if "ak_tool_context" in state:
                 # This should succeed if the context is in the cache
                 fetched_ctx = AKToolContext.fetch(state["ak_tool_context"])
-            return MagicMock()
 
         mock_adk_session = MagicMock()
-        mock_adk_session.create_session = AsyncMock(side_effect=mock_create_session)
+        mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
+        mock_adk_session.update_session_state = AsyncMock(side_effect=mock_update_session_state)
         mock_adk_session.session_service = MagicMock()
 
         with (
@@ -425,14 +424,14 @@ class TestGoogleADKRunnerToolContext:
 
         captured_id = None
 
-        async def capture_state(app_name, user_id, session_id, state):
+        async def capture_state(invocation_id, author, state):
             nonlocal captured_id
             if "ak_tool_context" in state:
                 captured_id = state["ak_tool_context"]
-            return MagicMock()
 
         mock_adk_session = MagicMock()
-        mock_adk_session.create_session = AsyncMock(side_effect=capture_state)
+        mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
+        mock_adk_session.update_session_state = AsyncMock(side_effect=capture_state)
         mock_adk_session.session_service = MagicMock()
 
         with (
@@ -446,6 +445,104 @@ class TestGoogleADKRunnerToolContext:
         # After run() the context manager should have exited, clearing the cache
         with pytest.raises(KeyError):
             AKToolContext.fetch(captured_id)
+
+    @pytest.mark.asyncio
+    async def test_run_calls_create_session_without_state(self):
+        """
+        GoogleADKRunner.run() should call create_session with only
+        app_name, user_id, and session_id (no state parameter).
+        """
+        runner = GoogleADKRunner()
+        session = Session("no-state-session")
+        requests = [AgentRequestText(text="hello")]
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+
+        mock_adk_session = MagicMock()
+        mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
+        mock_adk_session.update_session_state = AsyncMock()
+        mock_adk_session.session_service = MagicMock()
+
+        with (
+            patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
+        ):
+            await runner.run(mock_agent, session, requests)
+
+        mock_adk_session.create_session.assert_awaited_once()
+        call_args = mock_adk_session.create_session.call_args
+        # create_session should be called with exactly 3 positional/keyword args, no state
+        assert "state" not in (call_args.kwargs or {})
+
+    @pytest.mark.asyncio
+    async def test_run_calls_update_session_state_after_create_session(self):
+        """
+        GoogleADKRunner.run() should call update_session_state after
+        create_session to set the ak_tool_context in session state.
+        """
+        runner = GoogleADKRunner()
+        session = Session("order-test-session")
+        requests = [AgentRequestText(text="hello")]
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+        mock_agent.name = "test-agent"
+
+        call_order = []
+
+        async def track_create_session(app_name, user_id, session_id):
+            call_order.append("create_session")
+            return MagicMock()
+
+        async def track_update_session_state(invocation_id, author, state):
+            call_order.append("update_session_state")
+
+        mock_adk_session = MagicMock()
+        mock_adk_session.create_session = AsyncMock(side_effect=track_create_session)
+        mock_adk_session.update_session_state = AsyncMock(side_effect=track_update_session_state)
+        mock_adk_session.session_service = MagicMock()
+
+        with (
+            patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
+        ):
+            await runner.run(mock_agent, session, requests)
+
+        assert call_order == ["create_session", "update_session_state"]
+
+    @pytest.mark.asyncio
+    async def test_run_update_session_state_receives_context_id_and_agent_name(self):
+        """
+        update_session_state should be called with the context id as
+        invocation_id, agent name as author, and state containing ak_tool_context.
+        """
+        runner = GoogleADKRunner()
+        session = Session("args-test-session")
+        requests = [AgentRequestText(text="hello")]
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+        mock_agent.name = "my-agent"
+
+        mock_adk_session = MagicMock()
+        mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
+        mock_adk_session.update_session_state = AsyncMock()
+        mock_adk_session.session_service = MagicMock()
+
+        with (
+            patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
+        ):
+            await runner.run(mock_agent, session, requests)
+
+        mock_adk_session.update_session_state.assert_awaited_once()
+        call_args = mock_adk_session.update_session_state.call_args
+        invocation_id, author, state = call_args.args
+        assert isinstance(invocation_id, str) and len(invocation_id) > 0
+        assert author == "my-agent"
+        assert "ak_tool_context" in state
+        assert state["ak_tool_context"] == invocation_id
 
     @pytest.mark.asyncio
     async def test_run_returns_error_reply_on_exception(self):
