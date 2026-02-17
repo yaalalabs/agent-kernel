@@ -269,8 +269,6 @@ class GoogleADKToolBuilder(ToolBuilder):
     Tool builder for Google ADK.
 
     Wraps generic tool functions into ADK-compatible FunctionTool instances.
-    Overrides context initialization to retrieve session from the ADK context
-    state when available.
     """
 
     @classmethod
@@ -333,7 +331,6 @@ class GoogleADKToolBuilder(ToolBuilder):
             tool_context_param = inspect.Parameter(
                 "tool_context",
                 kind=inspect.Parameter.KEYWORD_ONLY,
-                default=None,
             )
 
             insert_index = None

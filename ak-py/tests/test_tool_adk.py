@@ -390,13 +390,6 @@ class TestGoogleADKRunnerToolContext:
 
         fetched_ctx = None
 
-        async def intercept_get_response(runner_inst, user_id, session_id, parts):
-            nonlocal fetched_ctx
-            # During execution the context should be in the cache
-            adk_session = GoogleADKRunner._session(session)
-            adk_sess_obj = await adk_session.create_session(app_name="AgentKernel", user_id=user_id, session_id=session_id, state={})
-            return "done"
-
         async def mock_create_session(app_name, user_id, session_id, state):
             nonlocal fetched_ctx
             if "ak_tool_context" in state:

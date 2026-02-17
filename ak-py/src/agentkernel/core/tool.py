@@ -111,14 +111,14 @@ class ToolContext:
 
     def __enter__(self) -> Self:
         """
-        Enter the cache context for this ToolContext instance, adding it to the cache.
+        Add the ToolContext instance in to the cache.
         """
         ToolContext._cache[self.id] = self
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """
-        Exit the cache context for this ToolContext instance, clearing it from the cache.
+        Remove the ToolContext instance from the cache.
         """
         ToolContext._cache.pop(self.id, None)
 
