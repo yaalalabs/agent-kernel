@@ -319,8 +319,27 @@ class GoogleADKToolBuilder(ToolBuilder):
 
         signature = inspect.signature(func)
         parameters = list(signature.parameters.values())
-        wrapper.__signature__ = signature.replace(
-            parameters=parameters + [inspect.Parameter("tool_context", inspect.Parameter.KEYWORD_ONLY, default=None)]
-        )
 
+        # Only add a tool_context parameter if the original function does not already
+        # declare one, and insert it before any **kwargs (VAR_KEYWORD) parameter to
+        # maintain a valid inspect.Signature ordering.
+        if "tool_context" not in signature.parameters:
+            tool_context_param = inspect.Parameter(
+                "tool_context",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+            )
+
+            insert_index = None
+            for idx, param in enumerate(parameters):
+                if param.kind is inspect.Parameter.VAR_KEYWORD:
+                    insert_index = idx
+                    break
+
+            if insert_index is not None:
+                parameters.insert(insert_index, tool_context_param)
+            else:
+                parameters.append(tool_context_param)
+
+        wrapper.__signature__ = signature.replace(parameters=parameters)
         return wrapper
