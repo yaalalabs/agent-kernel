@@ -301,21 +301,27 @@ class GoogleADKToolBuilder(ToolBuilder):
 
             @functools.wraps(func)
             async def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
-                tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                tctx: AKToolContext | None = None
                 try:
+                    if tool_context and tool_context.state:
+                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
                     return await func(*args, **kwargs)
                 finally:
-                    tctx.reset()
+                    if tctx:
+                        tctx.reset()
 
         else:
 
             @functools.wraps(func)
             def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
-                tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                tctx: AKToolContext | None = None
                 try:
+                    if tool_context and tool_context.state:
+                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
                     return func(*args, **kwargs)
                 finally:
-                    tctx.reset()
+                    if tctx:
+                        tctx.reset()
 
         signature = inspect.signature(func)
         parameters = list(signature.parameters.values())
