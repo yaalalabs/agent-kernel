@@ -291,6 +291,7 @@ class GoogleADKToolBuilder(ToolBuilder):
 
         :param func: The generic tool function to wrap.
         :return: A wrapped version of the function that is compatible with the Google ADK.
+        :raises TypeError: If the function is not callable.
         """
         if not callable(func):
             raise TypeError(f"Expected a callable, got {type(func).__name__}")
@@ -331,6 +332,7 @@ class GoogleADKToolBuilder(ToolBuilder):
             tool_context_param = inspect.Parameter(
                 "tool_context",
                 kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
             )
 
             insert_index = None
