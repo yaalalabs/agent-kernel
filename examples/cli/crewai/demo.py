@@ -9,7 +9,7 @@ from crewai import Agent
 def get_weather(city: str) -> str:
     """Returns the weather for a given city (example stub)."""
     logger = logging.getLogger(__name__)
-    logger.debug("Session ID: %s", ToolContext.get().session.id)    
+    logger.debug("Session ID: %s", ToolContext.get().session.id)
 
     if city == "Tokyo":
         return "The weather in Tokyo is sunny."
