@@ -22,6 +22,9 @@ class ToolContext:
     agent execution environment in a consistent way across different frameworks.
     """
 
+    _context: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("tool_context", default=None)
+    _cache: ClassVar[dict[str, Self]] = {}
+
     def __init__(self, runtime: Runtime, agent: Agent, session: Session, requests: list[AgentRequest]):
         """
         Initialize the ToolContext with the given runtime, agent, session, and requests.
@@ -36,11 +39,6 @@ class ToolContext:
         self._session: Session = session
         self._requests: list[AgentRequest] = requests
         self._token: contextvars.Token[Self | None] | None = None
-
-    pass
-
-    _context: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("tool_context", default=None)
-    _cache: ClassVar[dict[str, Self]] = {}
 
     @property
     def id(self) -> str:

@@ -281,8 +281,9 @@ class LangGraphRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        context: ToolContext = ToolContext(Runtime.current(), agent, session, requests).set()
+        context: ToolContext = None
         try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
             for req in requests:
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue

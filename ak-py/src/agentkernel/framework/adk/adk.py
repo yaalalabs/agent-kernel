@@ -12,7 +12,6 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.adk.tools import FunctionTool, ToolContext
 from google.genai import types
-from sqlalchemy import func
 
 from agentkernel.core.model import (
     AgentReply,
@@ -291,10 +290,10 @@ class GoogleADKToolBuilder(ToolBuilder):
     @classmethod
     def _wrap(cls, func: Callable) -> Callable:
         """
-        Wraps a generic tool function to ensure it can be used with the OpenAI Agents SDK.
+        Wraps a generic tool function to ensure it can be used with the Google ADK.
 
         :param func: The generic tool function to wrap.
-        :return: A wrapped version of the function that is compatible with the OpenAI Agents SDK.
+        :return: A wrapped version of the function that is compatible with the Google ADK.
         """
         if not callable(func):
             raise TypeError(f"Expected a callable, got {type(func).__name__}")
