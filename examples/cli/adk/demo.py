@@ -1,15 +1,15 @@
 from agentkernel.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.cli import CLI
-from agentkernel.core import ToolContext
+# from agentkernel.core import ToolContext
 from google.adk.agents import Agent, LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 
 
 def get_weather(city: str) -> str:
     """Returns the weather for a given city (example stub)."""
-    print(ToolContext.get().session.id)
-    print(ToolContext.get().agent.name)
-    print(ToolContext.get().requests)
+    # print(ToolContext.get().session.id)
+    # print(ToolContext.get().agent.name)
+    # print(ToolContext.get().requests)
 
     if city == "Tokyo":
         return "The weather in Tokyo is sunny."
