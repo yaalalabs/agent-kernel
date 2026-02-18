@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.12"
+version = "0.2.13"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -19,9 +19,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a7/37/d9eebe8a170a6563804c29dd7fa2e32010956c9325005656535b37f21c1c/agentkernel-0.2.12.tar.gz", hash = "sha256:b0fe470ee96cdc17dc311eab90816349afe92f15a832699aa6d7965ddcd2b47d", size = 94440, upload-time = "2026-02-16T09:48:11.594Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/9b/2be514d0c7a105a2a87a94f4afebb149249855fbc30ddcb541219e19b155/agentkernel-0.2.13.tar.gz", hash = "sha256:9ec6e5488aa2a2c3a388ccc08d3524778720d1e9905d5460975d7be7aaf37280", size = 97124, upload-time = "2026-02-18T06:24:43.926Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/6a/4bccdc741c03cbf467a5e78177070be93299ab061b76e11e1910159a1ca8/agentkernel-0.2.12-py3-none-any.whl", hash = "sha256:c2a6ebf1fee25e94a25a989e49dcb1ccbb567dc0c9c3756529cce334286327d6", size = 146363, upload-time = "2026-02-16T09:48:10.061Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/2a/f7151b3b3ba45891884c63d43b1a262761d791f8240835549d509eaf3ff8/agentkernel-0.2.13-py3-none-any.whl", hash = "sha256:11640f4f20a07eebdc28b180209eaa666cd0fd8c64c490b08ac983771ebf51cf", size = 150171, upload-time = "2026-02-18T06:24:41.827Z" },
 ]
 
 [package.optional-dependencies]
@@ -827,7 +827,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "langgraph", "openai"], specifier = ">=0.2.12" },
+    { name = "agentkernel", extras = ["cli", "langgraph", "openai"], specifier = ">=0.2.13" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
     { name = "langchain-openai", specifier = ">=0.3.28" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },
@@ -836,7 +836,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.12" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.13" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
