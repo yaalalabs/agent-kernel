@@ -61,13 +61,37 @@ CrewAIModule([researcher, writer])
 export OPENAI_API_KEY=sk-...  # CrewAI uses OpenAI by default
 ```
 
+## Tool Binding
+
+Use `CrewAIToolBuilder` to bind plain Python functions as tools to your CrewAI agents:
+
+```python
+from crewai import Agent as CrewAgent
+from agentkernel.crewai import CrewAIModule, CrewAIToolBuilder
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny, 25°C"
+
+agent = CrewAgent(
+    role="weather",
+    goal="You provide weather information",
+    backstory="Use the get_weather tool for weather-related questions.",
+    tools=CrewAIToolBuilder.bind([get_weather]),
+)
+
+CrewAIModule([agent])
+```
+
+See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
+
 ## Features
 
 - ✅ Role-based agents
 - ✅ Task delegation
 - ✅ Sequential execution
 - ✅ Hierarchical teams
-- ✅ Custom tools
+- ✅ Framework-agnostic tool binding
 
 ## Example
 

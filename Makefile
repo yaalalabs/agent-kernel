@@ -2,6 +2,15 @@
 
 EXAMPLE_DIRS := examples
 
+# Ensure venv uses pyenv-managed Python when available
+define ENSURE_PYENV_VENV
+if command -v pyenv >/dev/null 2>&1; then \
+	uv venv --python "$$(pyenv which python)" --allow-existing; \
+else \
+	uv venv --allow-existing; \
+fi
+endef
+
 help:
 	@echo "Available targets:"
 	@echo "  lint                - Formats python code in ak-py"
@@ -15,12 +24,14 @@ help:
 lint: lint-fix
 
 lint-fix:
+	@cd ak-py && $(ENSURE_PYENV_VENV)
 	@echo "Sorting imports with isort..."
 	cd ak-py && uv run --dev isort --skip src/agentkernel/core/__init__.py ./src ./tests
 	@echo "Formatting ak-py code with black..."
 	cd ak-py && uv run --dev black ./src ./tests
 
 lint-check:
+	@cd ak-py && $(ENSURE_PYENV_VENV)
 	@echo "Checking import sorting with isort..."
 	@EXIT_CODE=0; \
 	(cd ak-py && uv run --dev isort --skip src/agentkernel/core/__init__.py --check-only ./src ./tests) || EXIT_CODE=$$?; \
@@ -39,6 +50,7 @@ lint-examples:
 		echo "Processing $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
+			$(ENSURE_PYENV_VENV) && \
 			uv run --dev isort --skip .venv --skip .terraform --skip dist --skip __pycache__ . || true; \
 			uv run --dev black --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || true; \
 			cd - > /dev/null; \
@@ -54,6 +66,7 @@ lint-examples-check:
 		echo "Checking $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
+			$(ENSURE_PYENV_VENV) && \
 			uv run --dev isort --check-only --skip .venv --skip .terraform --skip dist --skip __pycache__ . || EXIT_CODE=1; \
 			uv run --dev black --check --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || EXIT_CODE=1; \
 			cd - > /dev/null; \

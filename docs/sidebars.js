@@ -24,6 +24,7 @@ const sidebars = {
       items: [
         'core-concepts/overview',
         'core-concepts/agent',
+        'core-concepts/tools',
         'core-concepts/runner',
         'core-concepts/session',
         'core-concepts/module',
