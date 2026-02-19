@@ -561,6 +561,86 @@
   height: 400px;
 }
 
+/* Affiliation Section */
+.affiliationSection {
+  margin-top: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  animation: fadeInUp 1.2s ease-out 0.9s backwards;
+}
+
+.affiliationLabel {
+  font-size: 0.9rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #374151;
+  font-weight: 700;
+  position: relative;
+  padding: 0 1.5rem;
+}
+
+.affiliationLabel::before,
+.affiliationLabel::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #2e8555);
+}
+
+.affiliationLabel::before {
+  right: 100%;
+  background: linear-gradient(90deg, transparent, #2e8555);
+}
+
+.affiliationLabel::after {
+  left: 100%;
+  background: linear-gradient(90deg, #2e8555, transparent);
+}
+
+[data-theme='dark'] .affiliationLabel {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .affiliationLabel::before {
+  background: linear-gradient(90deg, transparent, #25c2a0);
+}
+
+[data-theme='dark'] .affiliationLabel::after {
+  background: linear-gradient(90deg, #25c2a0, transparent);
+}
+
+.affiliationLogos {
+  display: flex;
+  gap: 3rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.affiliationLogo {
+  height: 72px;
+  width: auto;
+  transition: transform 0.3s ease, filter 0.3s ease;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
+}
+
+.affiliationLogo:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 6px 20px rgba(46, 133, 85, 0.25));
+}
+
+[data-theme='dark'] .affiliationLogo {
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+}
+
+[data-theme='dark'] .affiliationLogo:hover {
+  filter: drop-shadow(0 6px 20px rgba(37, 194, 160, 0.3));
+}
+
 /* Features Button - Special Styling */
 .featuresButton {
   position: relative;
@@ -908,6 +988,113 @@
   color: #94a3b8;
 }
 
+/* Security & Compliance Section */
+.securitySection {
+  padding: 4rem 0;
+  background: linear-gradient(135deg, rgba(46, 133, 85, 0.05) 0%, rgba(37, 194, 160, 0.03) 100%);
+  backdrop-filter: blur(10px);
+  position: relative;
+}
+
+[data-theme='dark'] .securitySection {
+  background: linear-gradient(135deg, rgba(46, 133, 85, 0.1) 0%, rgba(37, 194, 160, 0.08) 100%);
+}
+
+.securityIntro {
+  max-width: 800px;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+  font-size: 1.1rem;
+  line-height: 1.7;
+  color: #4b5563;
+}
+
+[data-theme='dark'] .securityIntro {
+  color: #cbd5e1;
+}
+
+.certificationsWrapper {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  margin-bottom: 2.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.certificationLogo {
+  height: 120px;
+  width: auto;
+  max-width: 250px;
+  object-fit: contain;
+  transition: transform 0.3s ease, filter 0.3s ease;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
+}
+
+.certificationLogo:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 6px 20px rgba(46, 133, 85, 0.2));
+}
+
+[data-theme='dark'] .certificationLogo {
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+}
+
+[data-theme='dark'] .certificationLogo:hover {
+  filter: drop-shadow(0 6px 20px rgba(37, 194, 160, 0.25));
+}
+
+.securityFeaturesList {
+  max-width: 900px;
+  margin: 0 auto;
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.securityFeatureItem {
+  display: flex;
+  align-items: flex-start;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  border-left: 4px solid #2e8555;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #374151;
+  transition: all 0.3s ease;
+}
+
+.securityFeatureItem:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateX(4px);
+}
+
+.securityFeatureItem::before {
+  content: '✓';
+  color: #2e8555;
+  font-weight: bold;
+  margin-right: 0.75rem;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+[data-theme='dark'] .securityFeatureItem {
+  background: rgba(30, 41, 59, 0.6);
+  border-left-color: #25c2a0;
+  color: #cbd5e1;
+}
+
+[data-theme='dark'] .securityFeatureItem:hover {
+  background: rgba(30, 41, 59, 0.9);
+}
+
+[data-theme='dark'] .securityFeatureItem::before {
+  color: #25c2a0;
+}
+
 /* Community Section */
 .communitySection {
   padding: 4rem 0;
@@ -1058,6 +1245,19 @@
     align-items: stretch;
   }
 
+  .affiliationLogos {
+    gap: 2rem;
+  }
+
+  .affiliationLogo {
+    height: 60px;
+  }
+
+  .certificationLogo {
+    height: 100px;
+    max-width: 200px;
+  }
+
   .sectionTitle {
     font-size: 2rem;
   }
@@ -1089,6 +1289,19 @@
 
   .heroTagline {
     font-size: 1.1rem;
+  }
+
+  .affiliationLogo {
+    height: 52px;
+  }
+
+  .certificationsWrapper {
+    gap: 2rem;
+  }
+
+  .certificationLogo {
+    height: 90px;
+    max-width: 180px;
   }
 
   .integrationsGrid {
@@ -1665,3 +1878,170 @@
   }
 }
 
+/* Infrastructure as Code Section */
+.infrastructureSection {
+  padding: 4rem 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(248, 249, 250, 0.6) 100%);
+  backdrop-filter: blur(10px);
+  position: relative;
+}
+
+[data-theme='dark'] .infrastructureSection {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.4) 0%, rgba(30, 41, 59, 0.6) 100%);
+  backdrop-filter: blur(10px);
+}
+
+.infrastructureSection .sectionTitle {
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: #1a1a1a;
+}
+
+[data-theme='dark'] .infrastructureSection .sectionTitle {
+  color: #f1f5f9;
+}
+
+.infrastructureSection .sectionSubtitle {
+  text-align: center;
+  font-size: 1.1rem;
+  color: #666;
+  max-width: 700px;
+  margin: 0 auto 3rem;
+  line-height: 1.6;
+}
+
+[data-theme='dark'] .infrastructureSection .sectionSubtitle {
+  color: #94a3b8;
+}
+
+.cloudProvidersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 2.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.cloudProviderCard {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  border-radius: 1.5rem;
+  padding: 2.5rem;
+  border: 1px solid rgba(46, 133, 85, 0.15);
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  animation: fadeInUp 0.8s ease-out backwards;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.cloudProviderCard:nth-child(1) { animation-delay: 0.1s; }
+.cloudProviderCard:nth-child(2) { animation-delay: 0.2s; }
+
+[data-theme='dark'] .cloudProviderCard {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(37, 194, 160, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.cloudProviderCard:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 20px 50px rgba(46, 133, 85, 0.3);
+}
+
+[data-theme='dark'] .cloudProviderCard:hover {
+  box-shadow: 0 20px 50px rgba(37, 194, 160, 0.35);
+}
+
+.cloudProviderIcon {
+  font-size: 4rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: center;
+  transition: all 0.4s ease;
+}
+
+.cloudProviderCard:hover .cloudProviderIcon {
+  transform: scale(1.2) rotate(5deg);
+}
+
+.cloudProviderName {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  text-align: center;
+  color: #1a1a1a;
+}
+
+[data-theme='dark'] .cloudProviderName {
+  color: #f1f5f9;
+}
+
+.cloudProviderDescription {
+  font-size: 1rem;
+  color: #666;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  line-height: 1.6;
+}
+
+[data-theme='dark'] .cloudProviderDescription {
+  color: #94a3b8;
+}
+
+.terraformModules {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.moduleLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.875rem 1.5rem;
+  background: rgba(46, 133, 85, 0.1);
+  border: 1px solid rgba(46, 133, 85, 0.2);
+  border-radius: 0.75rem;
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+[data-theme='dark'] .moduleLink {
+  background: rgba(37, 194, 160, 0.1);
+  border: 1px solid rgba(37, 194, 160, 0.2);
+}
+
+.moduleLink:hover {
+  background: var(--ifm-color-primary);
+  color: white;
+  text-decoration: none;
+  transform: translateX(5px);
+}
+
+.terraformIcon {
+  margin-right: 0.5rem;
+  font-size: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .cloudProvidersGrid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .cloudProviderCard {
+    padding: 2rem;
+  }
+
+  .infrastructureSection .sectionTitle {
+    font-size: 2rem;
+  }
+
+  .infrastructureSection .sectionSubtitle {
+    font-size: 1rem;
+  }
+}

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, Callable, List
 
-from agents import Agent, Runner
-from agents.memory.session import SessionABC
+from agents import Agent, Runner, function_tool
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session
+from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
@@ -101,7 +100,9 @@ class OpenAIRunner(BaseRunner):
         """
         prompt = ""
         message_content = []
+        context: ToolContext | None = None
         try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
             for req in requests:
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
@@ -164,6 +165,9 @@ class OpenAIRunner(BaseRunner):
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
+        finally:
+            if context is not None:
+                context.reset()
 
 
 class OpenAIAgent(BaseAgent):
@@ -263,3 +267,28 @@ class OpenAIModule(Module):
         """
         super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
+
+
+class OpenAIToolBuilder(ToolBuilder):
+    """
+    Tool builder for OpenAI Agents SDK.
+
+    Wraps generic tool functions into OpenAI-compatible tool definitions
+    using the ``function_tool`` helper from the OpenAI Agents SDK.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to OpenAI Agents SDK tool definitions.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of OpenAI-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
+        """
+        tools = []
+        for func in funcs:
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+            tools.append(function_tool(func))
+        return tools

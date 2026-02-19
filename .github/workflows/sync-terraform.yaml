@@ -26,6 +26,18 @@ jobs:
             repo: 'yaalalabs/terraform-aws-ak-containerized'
             branch: 'develop'
             link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws/latest'
+          - module: 'ak-deployment/ak-azure/common'
+            repo: 'yaalalabs/terraform-azurerm-ak-common'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-common/azurerm/latest'
+          - module: 'ak-deployment/ak-azure/serverless'
+            repo: 'yaalalabs/terraform-azurerm-ak-serverless'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm/latest'
+          - module: 'ak-deployment/ak-azure/containerized'
+            repo: 'yaalalabs/terraform-azurerm-ak-containerized'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm/latest'
 
     steps:
       - name: Generate GitHub App Token
@@ -40,6 +52,9 @@ jobs:
             terraform-aws-ak-common
             terraform-aws-ak-serverless
             terraform-aws-ak-containerized
+            terraform-azurerm-ak-common
+            terraform-azurerm-ak-serverless
+            terraform-azurerm-ak-containerized
       
       - name: Get tag name
         id: tag
@@ -110,6 +125,13 @@ jobs:
           # Extract module name from path (e.g., 'common', 'serverless', 'containerized')
           MODULE_NAME=$(basename $MODULE)
           
+          # Determine provider based on module path (aws or azure)
+          if [[ "$MODULE" == *"ak-azure"* ]]; then
+            PROVIDER="azurerm"
+          else
+            PROVIDER="aws"
+          fi
+          
           # Determine if this is a prerelease based on tag format
           if [[ "$TAG_NAME" =~ -[ab][0-9]+$ ]]; then
             PRERELEASE_FLAG="--prerelease"
@@ -130,7 +152,7 @@ jobs:
           ### Usage
           \`\`\`hcl
           module "${MODULE_NAME}" {
-            source  = "yaalalabs/${MODULE_NAME}/aws"
+            source  = "yaalalabs/${MODULE_NAME}/${PROVIDER}"
             version = "${TAG_NAME#v}"
             
             # Add your configuration here

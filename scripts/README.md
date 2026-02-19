@@ -81,3 +81,29 @@ python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraf
 - Updates the corresponding `version` attribute to the specified version
 - Skips non-yaalalabs modules (like terraform-aws-modules)
 - Excludes `.terraform` directories by default
+
+## Provisioning
+
+The `provision.sh` script is used to give you an idea of what should be the done before deploying the project to a cloud provider. It will check for the necessary tools and permissions, and will also check for the existence of the required resources.
+
+>**Note:** The script is not needed to be used as-is. It's meant to be a starting point for your own provisioning scripts. also use this to identify what is the minimum permissions required for the project to work.
+
+### Azure
+
+To provision an Azure environment, run the following command:
+
+```bash
+./provision.sh --provider azure
+```
+
+This will check for the necessary tools and permissions, and will also check for the existence of the required resources. Also, enable the necessary Azure resource providers. including some roles that are required for the project to work.
+
+### AWS
+
+To provision an AWS environment, run the following command:
+
+```bash
+./provision.sh --provider aws
+```
+
+This will check for the necessary tools and permissions. Will check for basic AWS configurations and permissions.

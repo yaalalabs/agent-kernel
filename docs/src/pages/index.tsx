@@ -18,7 +18,7 @@ import {
   MdConstruction,
   MdHealthAndSafety
 } from 'react-icons/md';
-import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
+import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { BsMicrosoftTeams } from 'react-icons/bs';
 import { SiTerraform, SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
@@ -52,6 +52,24 @@ function HomepageHeader() {
               to="https://github.com/yaalalabs/agent-kernel">
               View on GitHub
             </Link>
+          </div>
+          <div className={styles.affiliationSection}>
+            <div className={styles.affiliationLogos}>
+              <a href="https://www.linuxfoundation.org" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="/img/lf_membership.svg"
+                  alt="Linux Foundation"
+                  className={styles.affiliationLogo}
+                />
+              </a>
+              <a href="https://aaif.io" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="/img/aaif_membership.svg"
+                  alt="Agentic AI Foundation"
+                  className={styles.affiliationLogo}
+                />
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -171,14 +189,14 @@ function IntegrationsSection() {
     {
       name: 'OpenAI Guardrails',
       logo: '/img/integrations/openai.svg',
-      link: '/docs/next/advanced/guardrails-openai',
+      link: '/docs/advanced/guardrails-openai',
       category: 'Content Safety & Compliance',
       invertLogo: true,
     },
     {
       name: 'AWS Bedrock Guardrails',
       logo: '/img/integrations/bedrock.png',
-      link: '/docs/next/advanced/guardrails-bedrock',
+      link: '/docs/advanced/guardrails-bedrock',
       category: 'Content Safety & Compliance',
     },
   ];
@@ -385,9 +403,9 @@ function FeaturesSection() {
       description: 'Native support for agent-to-agent communication and orchestration.',
     },
     {
-      title: 'Easy Deployment',
+      title: 'Multi-Cloud Deployment',
       icon: <MdFlashOn />,
-      description: 'Deploy to AWS, containerized environments, or serverless with Terraform modules.',
+      description: 'Deploy to AWS or Azure with serverless, containerized environments using Terraform modules.',
     },
   ];
 
@@ -404,6 +422,112 @@ function FeaturesSection() {
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function InfrastructureSection() {
+  const cloudProviders = [
+    {
+      name: 'Amazon AWS',
+      icon: <FaAws />,
+      description: 'Deploy with AWS Lambda (Serverless) or ECS/Fargate (Containerized)',
+      modules: [
+        { name: 'AWS Serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws' },
+        { name: 'AWS Containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws' },
+      ],
+      color: '#FF9900',
+    },
+    {
+      name: 'Microsoft Azure',
+      icon: <FaMicrosoft />,
+      description: 'Deploy with Azure Functions (Serverless) or Container Apps (Containerized)',
+      modules: [
+        { name: 'Azure Serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm' },
+        { name: 'Azure Containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
+      ],
+      color: '#0078D4',
+    },
+  ];
+
+  return (
+    <section className={styles.infrastructureSection}>
+      <div className="container">
+        <h2 className={styles.sectionTitle}>Infrastructure as Code</h2>
+        <p className={styles.sectionSubtitle}>
+          Deploy your AI agents to AWS or Azure using our official Terraform modules.
+          Production-ready infrastructure with best practices baked in.
+        </p>
+        <div className={styles.cloudProvidersGrid}>
+          {cloudProviders.map((provider, idx) => (
+            <div key={idx} className={styles.cloudProviderCard}>
+              <div className={styles.cloudProviderIcon} style={{ color: provider.color }}>
+                {provider.icon}
+              </div>
+              <h3 className={styles.cloudProviderName}>{provider.name}</h3>
+              <p className={styles.cloudProviderDescription}>{provider.description}</p>
+              <div className={styles.terraformModules}>
+                {provider.modules.map((module, mIdx) => (
+                  <Link
+                    key={mIdx}
+                    to={module.url}
+                    className={styles.moduleLink}
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    <SiTerraform className={styles.terraformIcon} />
+                    {module.name} →
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SecurityComplianceSection() {
+  const certifications = [
+    {
+      logo: '/img/iso.png',
+      alt: 'ISO 27001 Certified',
+    },
+    {
+      logo: '/img/soc.png',
+      alt: 'SOC 2 Type 2 Compliant',
+    },
+  ];
+
+  const securityFeatures = [
+    'Security Compliance',
+    'Secure Development',
+    'Controls and Monitoring',
+  ];
+
+  return (
+    <section className={styles.securitySection}>
+      <div className="container">
+        <h2 className={styles.sectionTitle}>Security & Compliance</h2>
+        <p className={styles.securityIntro}>
+          Trust in our commitment to security and compliance. Agent Kernel is built on industry-leading standards and best practices, ensuring your data is protected and your applications are developed in a secure, reliable environment.
+        </p>
+        <div className={styles.certificationsWrapper}>
+          {certifications.map((cert, idx) => (
+            <img
+              key={idx}
+              src={cert.logo}
+              alt={cert.alt}
+              className={styles.certificationLogo}
+            />
+          ))}
+        </div>
+        <ul className={styles.securityFeaturesList}>
+          {securityFeatures.map((feature, idx) => (
+            <li key={idx} className={styles.securityFeatureItem}>{feature}</li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -485,6 +609,8 @@ export default function Home() {
         <IntegrationsSection />
         <MessagingIntegrationsSection />
         <FeaturesSection />
+        <InfrastructureSection />
+        <SecurityComplianceSection />
         <CommunitySection />
       </main>
     </Layout>

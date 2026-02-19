@@ -60,3 +60,16 @@ weekly:
       path: examples/memory/redis
     - type: aws-serverless
       path: examples/memory/dynamodb
+    # - type: azure-serverless
+    #   path: examples/memory/cosmos
+    #   deploy_dir: deploy
+
+    # # Azure Serverless
+    # - type: azure-serverless
+    #   path: examples/azure-serverless/openai
+    #   deploy_dir: deploy
+    
+    # # Azure Containerized
+    # - type: azure-containerized
+    #   path: examples/azure-containerized/openai-cosmos
+    #   deploy_dir: deploy

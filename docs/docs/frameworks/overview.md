@@ -83,6 +83,25 @@ OpenAIModule([agent])
 
 Your execution code (CLI, API, deployment) remains unchanged!
 
+## Portable Tool Functions
+
+Agent Kernel lets you write tool functions as plain Python and bind them to any framework using a `ToolBuilder`. The same tool works across all supported frameworks:
+
+```python
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny"
+
+# Same function, any framework
+from agentkernel.openai import OpenAIToolBuilder
+from agentkernel.crewai import CrewAIToolBuilder
+
+openai_tools = OpenAIToolBuilder.bind([get_weather])
+crewai_tools = CrewAIToolBuilder.bind([get_weather])
+```
+
+[Learn more about Tools →](../core-concepts/tools)
+
 ## Framework Portability
 
 Available soon!
