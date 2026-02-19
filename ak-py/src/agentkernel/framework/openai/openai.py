@@ -221,15 +221,11 @@ class OpenAIAgent(BaseAgent):
         so the base Agent._attach_system_tools() can pass raw functions generically.
         :param tool: Raw Python callable or already-wrapped OpenAI function_tool.
         """
-        if callable(tool) and not hasattr(tool, "name"):
-            # Raw function — wrap via the OpenAI tool builder
-            wrapped = OpenAIToolBuilder.bind([tool])
-            for w in wrapped:
-                if hasattr(self._agent, "tools") and w not in self._agent.tools:
-                    self._agent.tools.append(w)
-        elif hasattr(self._agent, "tools") and tool not in self._agent.tools:
-            # Already wrapped — attach directly
-            self._agent.tools.append(tool)
+        # Delegate to the tool builder to handle binding
+        wrapped = OpenAIToolBuilder.bind([tool])
+        for w in wrapped:
+            if hasattr(self._agent, "tools") and w not in self._agent.tools:
+                self._agent.tools.append(w)
 
     def get_a2a_card(self):
         """
@@ -311,17 +307,17 @@ class OpenAIToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Any]) -> list[Any]:
         """
         Bind generic tool functions to OpenAI Agents SDK tool definitions.
 
-        :param funcs: List of generic tool functions to bind.
+        :param funcs: List of generic tool functions or existing tools to bind.
         :return: List of OpenAI-compatible tool definitions.
-        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:
-            if not callable(func):
-                raise TypeError(f"Expected a callable, got {type(func).__name__}")
-            tools.append(function_tool(func))
+            if callable(func) and not hasattr(func, "name"):
+                tools.append(function_tool(func))
+            else:
+                tools.append(func)
         return tools

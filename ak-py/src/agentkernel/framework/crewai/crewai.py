@@ -201,15 +201,11 @@ class CrewAIAgent(BaseAgent):
         so the base Agent._attach_system_tools() can pass raw functions generically.
         :param tool: Raw Python callable or already-wrapped CrewAI tool.
         """
-        if callable(tool) and not hasattr(tool, "name"):
-            # Raw function — wrap via the CrewAI tool builder
-            wrapped = CrewAIToolBuilder.bind([tool])
-            for w in wrapped:
-                if w not in self.agent.tools:
-                    self.agent.tools.append(w)
-        elif tool not in self.agent.tools:
-            # Already wrapped — attach directly
-            self.agent.tools.append(tool)
+        # Delegate to the tool builder to handle binding
+        wrapped = CrewAIToolBuilder.bind([tool])
+        for w in wrapped:
+            if w not in self.agent.tools:
+                self.agent.tools.append(w)
 
     def override_system_prompt(self, session: "Session", prompt: str) -> None:
         """
@@ -288,17 +284,17 @@ class CrewAIToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Any]) -> list[Any]:
         """
         Bind generic tool functions to CrewAI tool definitions.
 
-        :param funcs: List of generic tool functions to bind.
+        :param funcs: List of generic tool functions or existing tools to bind.
         :return: List of CrewAI-compatible tool definitions.
-        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:
-            if not callable(func):
-                raise TypeError(f"Expected a callable, got {type(func).__name__}")
-            tools.append(crewai_tool(func))
+            if callable(func) and not hasattr(func, "name"):
+                tools.append(crewai_tool(func))
+            else:
+                tools.append(func)
         return tools

@@ -251,15 +251,11 @@ class LangGraphAgent(BaseAgent):
         tools are stored on the agent wrapper for inspection and future use.
         :param tool: Raw Python callable or already-wrapped LangChain StructuredTool.
         """
-        if callable(tool) and not hasattr(tool, "name"):
-            # Raw function — wrap via the LangGraph tool builder
-            wrapped = LangGraphToolBuilder.bind([tool])
-            for w in wrapped:
-                if w not in self._tools:
-                    self._tools.append(w)
-        elif tool not in self._tools:
-            # Already a StructuredTool — store directly
-            self._tools.append(tool)
+        # Delegate to the tool builder to handle binding
+        wrapped = LangGraphToolBuilder.bind([tool])
+        for w in wrapped:
+            if w not in self._tools:
+                self._tools.append(w)
 
     def override_system_prompt(self, session: "Session", prompt: str) -> None:
         """
@@ -412,33 +408,33 @@ class LangGraphToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Any]) -> list[Any]:
         """
         Bind generic tool functions to LangChain StructuredTool instances.
 
-        :param funcs: List of generic tool functions to bind.
+        :param funcs: List of generic tool functions or existing tools to bind.
         :return: List of LangChain StructuredTool instances.
-        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:
-            if not callable(func):
-                raise TypeError(f"Expected a callable, got {type(func).__name__}")
-
-            if asyncio.iscoroutinefunction(func):
-                tools.append(
-                    StructuredTool.from_function(
-                        coroutine=func,
-                        name=func.__name__,
-                        description=func.__doc__ or func.__name__,
+            if callable(func) and not hasattr(func, "name"):
+                if asyncio.iscoroutinefunction(func):
+                    tools.append(
+                        StructuredTool.from_function(
+                            func=None,
+                            coroutine=func,
+                            name=func.__name__,
+                            description=func.__doc__ or func.__name__,
+                        )
                     )
-                )
+                else:
+                    tools.append(
+                        StructuredTool.from_function(
+                            func=func,
+                            name=func.__name__,
+                            description=func.__doc__ or func.__name__,
+                        )
+                    )
             else:
-                tools.append(
-                    StructuredTool.from_function(
-                        func=func,
-                        name=func.__name__,
-                        description=func.__doc__ or func.__name__,
-                    )
-                )
+                tools.append(func)
         return tools

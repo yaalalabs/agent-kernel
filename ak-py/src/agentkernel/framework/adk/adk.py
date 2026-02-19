@@ -232,15 +232,11 @@ class GoogleADKAgent(AKBaseAgent):
         so the base Agent._attach_system_tools() can pass raw functions generically.
         :param tool: Raw Python callable or already-wrapped ADK FunctionTool.
         """
-        if callable(tool) and not hasattr(tool, "name"):
-            # Raw function — wrap it via the ADK tool builder
-            wrapped = GoogleADKToolBuilder.bind([tool])
-            for w in wrapped:
-                if hasattr(self._agent, "tools") and w not in self._agent.tools:
-                    self._agent.tools.append(w)
-        elif hasattr(self._agent, "tools") and tool not in self._agent.tools:
-            # Already a wrapped FunctionTool — attach directly
-            self._agent.tools.append(tool)
+        # Delegate to the tool builder to handle binding
+        wrapped = GoogleADKToolBuilder.bind([tool])
+        for w in wrapped:
+            if hasattr(self._agent, "tools") and w not in self._agent.tools:
+                self._agent.tools.append(w)
 
     def get_a2a_card(self):
         """
@@ -317,16 +313,19 @@ class GoogleADKToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Any]) -> list[Any]:
         """
         Bind generic tool functions to ADK FunctionTool instances.
 
-        :param funcs: List of generic tool functions to bind.
+        :param funcs: List of generic tool functions or existing tools to bind.
         :return: List of ADK-compatible FunctionTool instances.
         """
         tools = []
         for func in funcs:
-            tools.append(FunctionTool(cls._wrap(func)))
+            if callable(func) and not hasattr(func, "name"):
+                tools.append(FunctionTool(cls._wrap(func)))
+            else:
+                tools.append(func)
         return tools
 
     @classmethod
