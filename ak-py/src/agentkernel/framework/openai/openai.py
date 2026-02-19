@@ -184,6 +184,8 @@ class OpenAIAgent(BaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
+        self._setup_system_prompt()
+        self._attach_system_tools()
 
     @property
     def agent(self) -> Agent:
@@ -197,6 +199,37 @@ class OpenAIAgent(BaseAgent):
         Returns the description of the agent.
         """
         return self.agent.instructions
+
+    def get_wrapped(self):
+        """
+        Returns the underlying OpenAI agent object.
+        """
+        return self._agent
+
+    def override_system_prompt(self, session: "Session", prompt: str) -> None:
+        """
+        Appends the given prompt text to the OpenAI agent's instructions.
+        Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
+        """
+        if hasattr(self._agent, "instructions") and self._agent.instructions:
+            if prompt not in self._agent.instructions:
+                self._agent.instructions += "\n" + prompt
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Accepts a raw Callable and wraps it with OpenAIToolBuilder before attaching,
+        so the base Agent._attach_system_tools() can pass raw functions generically.
+        :param tool: Raw Python callable or already-wrapped OpenAI function_tool.
+        """
+        if callable(tool) and not hasattr(tool, "name"):
+            # Raw function — wrap via the OpenAI tool builder
+            wrapped = OpenAIToolBuilder.bind([tool])
+            for w in wrapped:
+                if hasattr(self._agent, "tools") and w not in self._agent.tools:
+                    self._agent.tools.append(w)
+        elif hasattr(self._agent, "tools") and tool not in self._agent.tools:
+            # Already wrapped — attach directly
+            self._agent.tools.append(tool)
 
     def get_a2a_card(self):
         """

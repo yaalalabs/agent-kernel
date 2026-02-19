@@ -195,6 +195,8 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
+        self._setup_system_prompt()
+        self._attach_system_tools()
 
     @property
     def agent(self) -> BaseAgent:
@@ -208,6 +210,37 @@ class GoogleADKAgent(AKBaseAgent):
         Returns the description of the agent.
         """
         return self.agent.description
+
+    def get_wrapped(self):
+        """
+        Returns the underlying Google ADK agent object.
+        """
+        return self._agent
+
+    def override_system_prompt(self, session: Any, prompt: str) -> None:
+        """
+        Appends the given prompt text to the ADK agent's description.
+        Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
+        """
+        if hasattr(self._agent, "description") and self._agent.description:
+            if prompt not in self._agent.description:
+                self._agent.description += "\n" + prompt
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Accepts a raw Callable and wraps it with GoogleADKToolBuilder before attaching,
+        so the base Agent._attach_system_tools() can pass raw functions generically.
+        :param tool: Raw Python callable or already-wrapped ADK FunctionTool.
+        """
+        if callable(tool) and not hasattr(tool, "name"):
+            # Raw function — wrap it via the ADK tool builder
+            wrapped = GoogleADKToolBuilder.bind([tool])
+            for w in wrapped:
+                if hasattr(self._agent, "tools") and w not in self._agent.tools:
+                    self._agent.tools.append(w)
+        elif hasattr(self._agent, "tools") and tool not in self._agent.tools:
+            # Already a wrapped FunctionTool — attach directly
+            self._agent.tools.append(tool)
 
     def get_a2a_card(self):
         """

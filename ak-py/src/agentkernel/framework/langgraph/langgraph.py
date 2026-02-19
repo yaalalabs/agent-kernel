@@ -195,6 +195,10 @@ class LangGraphAgent(BaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
+        self._tools: list[Any] = []
+        self._system_prompt: str = ""
+        self._setup_system_prompt()
+        self._attach_system_tools()
 
     @property
     def agent(self) -> CompiledStateGraph:
@@ -241,16 +245,32 @@ class LangGraphAgent(BaseAgent):
 
     def attach_tool(self, tool: Any) -> None:
         """
-        Attaches a tool to the agent.
-        :param tool: The tool to attach.
+        Accepts a raw Callable and wraps it with LangGraphToolBuilder before storing.
+        Follows the same pattern as ADK, OpenAI, and CrewAI.
+        Note: LangGraph tools must be passed to the graph BEFORE compile(); these wrapped
+        tools are stored on the agent wrapper for inspection and future use.
+        :param tool: Raw Python callable or already-wrapped LangChain StructuredTool.
         """
-        pass
+        if callable(tool) and not hasattr(tool, "name"):
+            # Raw function — wrap via the LangGraph tool builder
+            wrapped = LangGraphToolBuilder.bind([tool])
+            for w in wrapped:
+                if w not in self._tools:
+                    self._tools.append(w)
+        elif tool not in self._tools:
+            # Already a StructuredTool — store directly
+            self._tools.append(tool)
 
     def override_system_prompt(self, session: "Session", prompt: str) -> None:
         """
-        Overrides the system prompt of the agent via Session injection.
+        Stores the system prompt suffix on the agent wrapper.
+        Follows the same pattern as ADK, OpenAI, and CrewAI.
+        Note: LangGraph compiled graphs do not expose a mutable system prompt field;
+        the value is stored here for inspection. Set the prompt in your graph nodes
+        before compile() for it to take effect at inference time.
         """
-        pass
+        if prompt not in self._system_prompt:
+            self._system_prompt += ("\n" if self._system_prompt else "") + prompt
 
 
 class LangGraphSession:

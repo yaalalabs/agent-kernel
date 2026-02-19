@@ -19,6 +19,9 @@ dev = [
 [tool.uv]
 package = false
 
+[tool.uv.sources]
+agentkernel = { path = "../../../ak-py", editable = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

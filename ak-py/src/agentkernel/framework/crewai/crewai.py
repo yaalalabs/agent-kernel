@@ -155,6 +155,8 @@ class CrewAIAgent(BaseAgent):
         super().__init__(name, runner)
         self._agent = agent
         self._crew = crew
+        self._setup_system_prompt()
+        self._attach_system_tools()
 
     @property
     def agent(self) -> Agent:
@@ -195,21 +197,27 @@ class CrewAIAgent(BaseAgent):
 
     def attach_tool(self, tool: Any) -> None:
         """
-        Attaches a tool to the agent.
-        :param tool: The tool to attach.
+        Accepts a raw Callable and wraps it with CrewAIToolBuilder before attaching,
+        so the base Agent._attach_system_tools() can pass raw functions generically.
+        :param tool: Raw Python callable or already-wrapped CrewAI tool.
         """
-        if tool not in self.agent.tools:
+        if callable(tool) and not hasattr(tool, "name"):
+            # Raw function — wrap via the CrewAI tool builder
+            wrapped = CrewAIToolBuilder.bind([tool])
+            for w in wrapped:
+                if w not in self.agent.tools:
+                    self.agent.tools.append(w)
+        elif tool not in self.agent.tools:
+            # Already wrapped — attach directly
             self.agent.tools.append(tool)
 
     def override_system_prompt(self, session: "Session", prompt: str) -> None:
         """
-        Overrides the system prompt of the agent via Session injection.
-        For CrewAI, we append to the backstory as there is no system instructions field.
+        Appends the given prompt text to the CrewAI agent's backstory.
+        Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
         """
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-
-            self._agent.backstory = self._agent.backstory + "\n" + BaseAgent.get_system_prompt_suffix()
+        if prompt not in self._agent.backstory:
+            self._agent.backstory += "\n" + prompt
 
 
 class CrewAIModule(Module):

@@ -411,3 +411,32 @@ class Agent(ABC):
             "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS (numbers, quotes, tables) found in the files, you MUST use the `analyis_attachments` tool to inspect the file content again. Do not guess based on the summary."
         )
         return tool_instruction
+
+    def _setup_system_prompt(self) -> None:
+        """
+        Appends the Agent Kernel system prompt suffix to the agent's system prompt at init time.
+        Only applies when multimodal is enabled in AKConfig.
+        Subclasses should call this in __init__ after setting up the underlying agent.
+        The actual injection is done by override_system_prompt() which each subclass implements.
+        """
+        from .config import AKConfig
+
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled:
+            self.override_system_prompt(session=None, prompt=self.get_system_prompt_suffix())
+
+    def _attach_system_tools(self) -> None:
+        """
+        Attaches Agent Kernel system-level tools to the agent at init time.
+        Only applies when multimodal is enabled in AKConfig.
+        Calls self.attach_tool() with each raw Callable — each framework's attach_tool
+        implementation is responsible for wrapping it into the framework-specific tool format.
+        """
+        from .config import AKConfig
+
+        config = getattr(AKConfig.get(), "multimodal", None)
+        if config and config.enabled:
+            from .multimodal import analyis_attachments
+
+            self.attach_tool(analyis_attachments)
+
