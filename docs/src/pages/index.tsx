@@ -53,6 +53,25 @@ function HomepageHeader() {
               View on GitHub
             </Link>
           </div>
+          <div className={styles.affiliationSection}>
+            <span className={styles.affiliationLabel}>Affiliated with</span>
+            <div className={styles.affiliationLogos}>
+              <a href="https://www.linuxfoundation.org" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="/img/lf_membership.svg"
+                  alt="Linux Foundation"
+                  className={styles.affiliationLogo}
+                />
+              </a>
+              <a href="https://aaif.io" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="/img/aaif_membership.svg"
+                  alt="Agentic AI Foundation"
+                  className={styles.affiliationLogo}
+                />
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -409,6 +428,51 @@ function FeaturesSection() {
   );
 }
 
+function SecurityComplianceSection() {
+  const certifications = [
+    {
+      logo: '/img/iso.png',
+      alt: 'ISO 27001 Certified',
+    },
+    {
+      logo: '/img/soc.png',
+      alt: 'SOC 2 Type 2 Compliant',
+    },
+  ];
+
+  const securityFeatures = [
+    'Security Compliance',
+    'Secure Development',
+    'Controls and Monitoring',
+  ];
+
+  return (
+    <section className={styles.securitySection}>
+      <div className="container">
+        <h2 className={styles.sectionTitle}>Security & Compliance</h2>
+        <p className={styles.securityIntro}>
+          Trust in our commitment to security and compliance. Agent Kernel is built on industry-leading standards and best practices, ensuring your data is protected and your applications are developed in a secure, reliable environment.
+        </p>
+        <div className={styles.certificationsWrapper}>
+          {certifications.map((cert, idx) => (
+            <img
+              key={idx}
+              src={cert.logo}
+              alt={cert.alt}
+              className={styles.certificationLogo}
+            />
+          ))}
+        </div>
+        <ul className={styles.securityFeaturesList}>
+          {securityFeatures.map((feature, idx) => (
+            <li key={idx} className={styles.securityFeatureItem}>{feature}</li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 function CommunitySection() {
   const communityLinks = [
     {
@@ -485,6 +549,7 @@ export default function Home() {
         <IntegrationsSection />
         <MessagingIntegrationsSection />
         <FeaturesSection />
+        <SecurityComplianceSection />
         <CommunitySection />
       </main>
     </Layout>

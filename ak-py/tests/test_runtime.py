@@ -1,6 +1,6 @@
 import pytest
 
-from agentkernel import Agent, Runner
+from agentkernel import Agent, Runner, Session
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
@@ -157,7 +157,7 @@ async def test_runtime_current_context_manager(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
     """
-    Test AuxiliaryCache.get_volatile_cache with explicit session_id
+    Test volatile cache access using Runtime.current().sessions().load() with explicit session_id
     """
 
     class FakeCfg:
@@ -166,13 +166,12 @@ async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-1")
+    runtime.sessions().new("test-session-1")
 
-    # Get volatile cache with explicit session_id
-    v_cache = AuxiliaryCache.get_volatile_cache(session_id="test-session-1")
+    # Get volatile cache with explicit session_id using runtime.sessions().load()
+    loaded_session = runtime.sessions().load("test-session-1")
+    v_cache = loaded_session.get_volatile_cache()
     assert v_cache is not None
 
     # Set and get a value
@@ -183,7 +182,7 @@ async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
     """
-    Test AuxiliaryCache.get_non_volatile_cache with explicit session_id
+    Test non-volatile cache access using Runtime.current().sessions().load() with explicit session_id
     """
 
     class FakeCfg:
@@ -192,13 +191,12 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-2")
+    runtime.sessions().new("test-session-2")
 
-    # Get non-volatile cache with explicit session_id
-    nv_cache = AuxiliaryCache.get_non_volatile_cache(session_id="test-session-2")
+    # Get non-volatile cache with explicit session_id using runtime.sessions().load()
+    loaded_session = runtime.sessions().load("test-session-2")
+    nv_cache = loaded_session.get_non_volatile_cache()
     assert nv_cache is not None
 
     # Set and get a value
@@ -209,7 +207,8 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatch):
     """
-    Test that AuxiliaryCache.get_volatile_cache raises exception when no session context is available
+    Test that Session.current() returns None when no session context is available
+    and accessing cache methods raises appropriate error
     """
 
     class FakeCfg:
@@ -218,17 +217,16 @@ async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatc
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
-    # Without setting session context, should raise exception
-    with pytest.raises(Exception, match="No current or matching session available to retrieve volatile cache."):
-        AuxiliaryCache.get_volatile_cache()
+    # Without setting session context, Session.current() should return None
+    current_session = Session.current()
+    assert current_session is None
 
 
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkeypatch):
     """
-    Test that AuxiliaryCache.get_non_volatile_cache raises exception when no session context is available
+    Test that Session.current() returns None when no session context is available
+    and accessing cache methods raises appropriate error
     """
 
     class FakeCfg:
@@ -237,17 +235,19 @@ async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkey
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
+    # Without setting session context, Session.current() should return None
+    current_session = Session.current()
+    assert current_session is None
 
-    # Without setting session context, should raise exception
-    with pytest.raises(Exception, match="No current or matching session available to retrieve non-volatile cache."):
-        AuxiliaryCache.get_non_volatile_cache()
+    # Attempting to access cache on None should raise AttributeError
+    with pytest.raises(AttributeError):
+        current_session.get_non_volatile_cache()
 
 
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
     """
-    Test AuxiliaryCache.get_volatile_cache using context variable
+    Test volatile cache access using Session.current() with context variable
     """
 
     class FakeCfg:
@@ -256,17 +256,16 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
     with runtime:
         session = runtime.sessions().new("test-session-3")
         async with session:
-            # Get volatile cache without explicit session_id (should use context)
-            v_cache = AuxiliaryCache.get_volatile_cache()
+            # Get volatile cache using Session.current()
+            current_session = Session.current()
+            v_cache = current_session.get_volatile_cache()
             assert v_cache is not None
 
-            # Set value via AuxiliaryCache
+            # Set value via cache
             v_cache.set("context_key", "context_value")
 
             # Verify the value is accessible
@@ -279,7 +278,7 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
     """
-    Test AuxiliaryCache.get_non_volatile_cache using context variable
+    Test non-volatile cache access using Session.current() with context variable
     """
 
     class FakeCfg:
@@ -288,17 +287,16 @@ async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
     with runtime:
         session = runtime.sessions().new("test-session-4")
         async with session:
-            # Get non-volatile cache without explicit session_id (should use context)
-            nv_cache = AuxiliaryCache.get_non_volatile_cache()
+            # Get non-volatile cache using Session.current()
+            current_session = Session.current()
+            nv_cache = current_session.get_non_volatile_cache()
             assert nv_cache is not None
 
-            # Set value via AuxiliaryCache
+            # Set value via cache
             nv_cache.set("nv_context_key", "nv_context_value")
 
             # Verify the value is accessible
@@ -320,15 +318,15 @@ async def test_auxiliary_cache_volatile_isolation_between_sessions(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session1 = runtime.sessions().new("test-session-5")
-    session2 = runtime.sessions().new("test-session-6")
+    runtime.sessions().new("test-session-5")
+    runtime.sessions().new("test-session-6")
 
-    # Get caches for both sessions
-    v_cache1 = AuxiliaryCache.get_volatile_cache(session_id="test-session-5")
-    v_cache2 = AuxiliaryCache.get_volatile_cache(session_id="test-session-6")
+    # Get caches for both sessions using runtime.sessions().load()
+    loaded_session1 = runtime.sessions().load("test-session-5")
+    loaded_session2 = runtime.sessions().load("test-session-6")
+    v_cache1 = loaded_session1.get_volatile_cache()
+    v_cache2 = loaded_session2.get_volatile_cache()
 
     # Set different values in each cache
     v_cache1.set("shared_key", "value_from_session1")
@@ -351,15 +349,15 @@ async def test_auxiliary_cache_non_volatile_isolation_between_sessions(monkeypat
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session1 = runtime.sessions().new("test-session-7")
-    session2 = runtime.sessions().new("test-session-8")
+    runtime.sessions().new("test-session-7")
+    runtime.sessions().new("test-session-8")
 
-    # Get caches for both sessions
-    nv_cache1 = AuxiliaryCache.get_non_volatile_cache(session_id="test-session-7")
-    nv_cache2 = AuxiliaryCache.get_non_volatile_cache(session_id="test-session-8")
+    # Get caches for both sessions using runtime.sessions().load()
+    loaded_session1 = runtime.sessions().load("test-session-7")
+    loaded_session2 = runtime.sessions().load("test-session-8")
+    nv_cache1 = loaded_session1.get_non_volatile_cache()
+    nv_cache2 = loaded_session2.get_non_volatile_cache()
 
     # Set different values in each cache
     nv_cache1.set("shared_key", "nv_value_from_session1")
@@ -382,14 +380,13 @@ async def test_auxiliary_cache_volatile_and_non_volatile_are_separate(monkeypatc
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-9")
+    runtime.sessions().new("test-session-9")
 
-    # Get both caches for the same session
-    v_cache = AuxiliaryCache.get_volatile_cache(session_id="test-session-9")
-    nv_cache = AuxiliaryCache.get_non_volatile_cache(session_id="test-session-9")
+    # Get both caches for the same session using runtime.sessions().load()
+    loaded_session = runtime.sessions().load("test-session-9")
+    v_cache = loaded_session.get_volatile_cache()
+    nv_cache = loaded_session.get_non_volatile_cache()
 
     # Set same key in both caches with different values
     v_cache.set("common_key", "volatile_value")
@@ -403,7 +400,7 @@ async def test_auxiliary_cache_volatile_and_non_volatile_are_separate(monkeypatc
 @pytest.mark.asyncio
 async def test_auxiliary_cache_operations_on_volatile_cache(monkeypatch):
     """
-    Test various operations on volatile cache through AuxiliaryCache
+    Test various operations on volatile cache through direct session access
     """
 
     class FakeCfg:
@@ -412,12 +409,12 @@ async def test_auxiliary_cache_operations_on_volatile_cache(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-10")
+    runtime.sessions().new("test-session-10")
 
-    v_cache = AuxiliaryCache.get_volatile_cache(session_id="test-session-10")
+    # Get volatile cache using runtime.sessions().load()
+    loaded_session = runtime.sessions().load("test-session-10")
+    v_cache = loaded_session.get_volatile_cache()
 
     # Test set and get
     v_cache.set("key1", "value1")
@@ -449,7 +446,7 @@ async def test_auxiliary_cache_operations_on_volatile_cache(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_operations_on_non_volatile_cache(monkeypatch):
     """
-    Test various operations on non-volatile cache through AuxiliaryCache
+    Test various operations on non-volatile cache through direct session access
     """
 
     class FakeCfg:
@@ -458,12 +455,12 @@ async def test_auxiliary_cache_operations_on_non_volatile_cache(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-11")
+    runtime.sessions().new("test-session-11")
 
-    nv_cache = AuxiliaryCache.get_non_volatile_cache(session_id="test-session-11")
+    # Get non-volatile cache using runtime.sessions().load()
+    loaded_session = runtime.sessions().load("test-session-11")
+    nv_cache = loaded_session.get_non_volatile_cache()
 
     # Test set and get
     nv_cache.set("key1", "value1")
@@ -495,7 +492,7 @@ async def test_auxiliary_cache_operations_on_non_volatile_cache(monkeypatch):
 @pytest.mark.asyncio
 async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
     """
-    Test AuxiliaryCache with various complex data types
+    Test cache with various complex data types
     """
 
     class FakeCfg:
@@ -504,12 +501,12 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    from agentkernel.core.runtime import AuxiliaryCache
-
     runtime = Runtime(SessionStoreBuilder.build())
-    session = runtime.sessions().new("test-session-12")
+    runtime.sessions().new("test-session-12")
 
-    v_cache = AuxiliaryCache.get_volatile_cache(session_id="test-session-12")
+    # Get volatile cache using runtime.sessions().load()
+    loaded_session = runtime.sessions().load("test-session-12")
+    v_cache = loaded_session.get_volatile_cache()
 
     # Test with dict
     test_dict = {"name": "test", "value": 123}
@@ -528,9 +525,30 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_auxiliary_cache_empty_session_id_raises(monkeypatch):
+async def test_load_empty_session_id_creates_session(monkeypatch):
     """
-    Test that empty string session_id raises exception
+    Test that empty string session_id creates a new session
+    """
+
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    runtime = Runtime(SessionStoreBuilder.build())
+
+    # Empty string session_id should create a new session
+    loaded_session = runtime.sessions().load("")
+    assert loaded_session is not None
+    assert loaded_session.id == ""
+
+
+@pytest.mark.asyncio
+async def test_deprecated_auxiliary_cache_matches_new_method_with_session_id(monkeypatch):
+    """
+    Test that deprecated AuxiliaryCache.get_volatile_cache() returns the same cache as the new method
+    when using explicit session_id
     """
 
     class FakeCfg:
@@ -541,9 +559,102 @@ async def test_auxiliary_cache_empty_session_id_raises(monkeypatch):
 
     from agentkernel.core.runtime import AuxiliaryCache
 
-    # Empty string session_id should raise exception
-    with pytest.raises(Exception, match="No current or matching session available to retrieve volatile cache."):
-        AuxiliaryCache.get_volatile_cache(session_id="")
+    runtime = Runtime(SessionStoreBuilder.build())
+    with runtime:
+        runtime.sessions().new("test-session-verify-1")
 
-    with pytest.raises(Exception, match="No current or matching session available to retrieve non-volatile cache."):
-        AuxiliaryCache.get_non_volatile_cache(session_id="")
+        # Get cache using deprecated method
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            cache_old = AuxiliaryCache.get_volatile_cache(session_id="test-session-verify-1")
+            cache_old.set("key1", "value1")
+
+        # Get cache using new method
+        cache_new = Runtime.current().sessions().load("test-session-verify-1").get_volatile_cache()
+
+        # Verify they access the same underlying cache
+        assert cache_new.get("key1") == "value1"
+        cache_new.set("key2", "value2")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            assert cache_old.get("key2") == "value2"
+
+
+@pytest.mark.asyncio
+async def test_deprecated_auxiliary_cache_matches_new_method_current_session(monkeypatch):
+    """
+    Test that deprecated AuxiliaryCache.get_volatile_cache() returns the same cache as the new method
+    when using current session context
+    """
+
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    from agentkernel.core.runtime import AuxiliaryCache
+
+    runtime = Runtime(SessionStoreBuilder.build())
+    with runtime:
+        session = runtime.sessions().new("test-session-verify-2")
+        async with session:
+            # Get cache using deprecated method
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                cache_old = AuxiliaryCache.get_volatile_cache()
+                cache_old.set("ctx_key1", "ctx_value1")
+
+            # Get cache using new method
+            cache_new = Session.current().get_volatile_cache()
+
+            # Verify they access the same underlying cache
+            assert cache_new.get("ctx_key1") == "ctx_value1"
+            cache_new.set("ctx_key2", "ctx_value2")
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                assert cache_old.get("ctx_key2") == "ctx_value2"
+
+
+@pytest.mark.asyncio
+async def test_deprecated_auxiliary_cache_non_volatile_matches_new_method(monkeypatch):
+    """
+    Test that deprecated AuxiliaryCache.get_non_volatile_cache() returns the same cache as the new method
+    """
+
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    from agentkernel.core.runtime import AuxiliaryCache
+
+    runtime = Runtime(SessionStoreBuilder.build())
+    with runtime:
+        runtime.sessions().new("test-session-verify-3")
+
+        # Get cache using deprecated method
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            nv_cache_old = AuxiliaryCache.get_non_volatile_cache(session_id="test-session-verify-3")
+            nv_cache_old.set("nv_key1", "nv_value1")
+
+        # Get cache using new method
+        nv_cache_new = Runtime.current().sessions().load("test-session-verify-3").get_non_volatile_cache()
+
+        # Verify they access the same underlying cache
+        assert nv_cache_new.get("nv_key1") == "nv_value1"
+        nv_cache_new.set("nv_key2", "nv_value2")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            assert nv_cache_old.get("nv_key2") == "nv_value2"

@@ -1,0 +1,57 @@
+# Test Configuration
+# This file defines which e2e tests to run in parallel
+# Follows the same format as integration-test-config.yaml for consistency
+
+# E2E tests - require secrets to run
+e2e:
+  tests:
+    # CLI examples
+    - type: cli
+      path: examples/cli/openai
+    - type: cli
+      path: examples/cli/openai-dynamic
+    - type: cli
+      path: examples/cli/adk
+    - type: cli
+      path: examples/cli/crewai
+    - type: cli
+      path: examples/cli/langgraph
+    - type: cli
+      path: examples/cli/multi
+    - type: cli
+      path: examples/cli/guardrail/openai
+    - type: cli
+      path: examples/cli/guardrail/bedrock
+    
+    # API examples
+    - type: api
+      path: examples/api/openai
+    - type: api
+      path: examples/api/adk
+    - type: api
+      path: examples/api/hooks
+    - type: api
+      path: examples/api/slack
+      requires_slack: true
+    - type: api
+      path: examples/api/telegram
+    - type: api
+      path: examples/api/messenger
+    - type: api
+      path: examples/api/whatsapp
+    - type: api
+      path: examples/api/instagram
+    - type: api
+      path: examples/api/gmail
+    - type: api
+      path: examples/api/a2a/multi
+    - type: api
+      path: examples/api/mcp/multi
+    
+    # Memory examples
+    - type: memory
+      path: examples/memory/key-value-cache
+    
+    # Containerized examples
+    - type: containerized
+      path: examples/containerized/openai
