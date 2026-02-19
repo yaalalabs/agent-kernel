@@ -16,6 +16,10 @@ Storage format:
         "description": str,
         "timestamp": float
     }
+
+Attachment IDs are short random UUIDs (8 chars). Session isolation is
+enforced by storing attachments in the session's own non-volatile cache,
+not by embedding the session ID in the attachment ID.
 """
 
 import logging
@@ -155,13 +159,10 @@ def save_attachment(
     :return: The generated attachment ID
     """
     driver = get_storage_driver(session=session, cache=cache)
-    # Generate ID: if session exists, prefix it (e.g., "sess123_abc12345")
-    # This allows tools to recover the session ID just from the attachment ID.
-    unique_part = str(uuid.uuid4())[:8]
-    if session:
-        attachment_id = f"{session.id}_{unique_part}"
-    else:
-        attachment_id = unique_part
+    # Generate a clean short UUID — no session prefix needed.
+    # Session isolation is enforced by the storage driver using the session's
+    # own non-volatile cache, so attachment IDs are always session-scoped.
+    attachment_id = str(uuid.uuid4())[:8]
     timestamp = time.time()
 
     # Save attachment data

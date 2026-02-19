@@ -50,7 +50,6 @@ Telegram doesn't require webhook verification like Meta platforms. The webhook U
 ## Simple Telegram Integration Code
 
 ```python
-from agentkernel.core.multimodal import get_attachments
 from agents import Agent as OpenAIAgent
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
@@ -61,7 +60,6 @@ general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers",
-    tools=[get_attachments],
 )
 
 # Initialize module with agent
@@ -72,6 +70,7 @@ if __name__ == "__main__":
     RESTAPI.run([handler])
 ```
 
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyis_attachments` tool is automatically attached to your agent by Agent Kernel at startup. 
 ## Configuration Options
 
 ### config.yaml
@@ -133,6 +132,7 @@ The Telegram integration **fully supports** sending images and documents to agen
 
 - **HTTPS Required**: Telegram requires webhook URLs to use HTTPS
 - **Token Authentication**: Bot token authenticates all API calls
+- **Session-scoped attachments**: Files/images are stored in the session's own cache, isolated per chat. One user cannot access another user's attachments.
 
 ## Testing
 

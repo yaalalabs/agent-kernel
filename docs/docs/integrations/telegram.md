@@ -139,9 +139,12 @@ The Telegram integration supports sending images and documents alongside text me
 1. User sends an image or document with optional text caption
 2. Telegram webhook delivers the message to your agent
 3. Agent Kernel downloads and processes the file
-4. File is base64-encoded and sent to the agent for analysis
-5. Agent generates response based on file content + text
-6. Response is sent back through Telegram
+4. A brief description of the file is generated via LLM and the file is saved to the **session cache** (not sent raw to the agent)
+5. The description is injected into the user's message text so the agent understands what was attached
+6. When the agent needs to inspect the file in detail, it calls the `analyis_attachments` tool, which retrieves the file from the session cache
+7. Response is sent back through Telegram
+
+> **Note:** The `analyis_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
 
 ### Example Scenarios
 
@@ -167,15 +170,25 @@ The Telegram integration supports sending images and documents alongside text me
 Each chat maintains conversation history:
 
 - Previous messages are remembered
-- Images/files from earlier messages can be referenced
+- Images/files from earlier messages can be referenced and re-analyzed via `analyis_attachments`
 - Multi-turn conversations with rich context
 - Works seamlessly with OpenAI GPT-4o and compatible models
-  if command == "/status":
-  await self._send_message(chat_id, "✅ Bot is running!")
-  elif command == "/about":
-  await self._send_message(chat_id, "I'm powered by Agent Kernel and OpenAI")
-  else:
-  await super()._handle_command(chat_id, command)
+- **Session-scoped storage**: Files are stored in each chat's own session cache, isolated per user — one user cannot access another user's attachments
+
+### Custom Command Handler
+
+```python
+from agentkernel.telegram import AgentTelegramRequestHandler
+
+class CustomTelegramHandler(AgentTelegramRequestHandler):
+    async def _handle_command(self, chat_id: int, command: str):
+        if command == "/status":
+            await self._send_message(chat_id, "✅ Bot is running!")
+        elif command == "/about":
+            await self._send_message(chat_id, "I'm powered by Agent Kernel and OpenAI")
+        else:
+            await super()._handle_command(chat_id, command)
+```
 
 
 ### Multi-Agent Setup

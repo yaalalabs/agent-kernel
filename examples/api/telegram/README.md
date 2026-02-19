@@ -284,7 +284,6 @@ support_agent = OpenAIAgent(
     name="support",
     handoff_description="Customer support agent",
     instructions="Provide helpful customer support. Be concise for Telegram.",
-    tools=[get_attachments],
 )
 
 sales_agent = OpenAIAgent(
@@ -296,6 +295,8 @@ sales_agent = OpenAIAgent(
 # Initialize with multiple agents
 OpenAIModule([support_agent, sales_agent])
 ```
+
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyis_attachments` tool is automatically attached to all agents by Agent Kernel at startup. You do not need to add it manually.
 
 ### Send Inline Keyboards
 

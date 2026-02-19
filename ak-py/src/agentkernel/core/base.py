@@ -439,4 +439,3 @@ class Agent(ABC):
             from .multimodal import analyis_attachments
 
             self.attach_tool(analyis_attachments)
-

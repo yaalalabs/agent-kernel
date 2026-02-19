@@ -31,41 +31,27 @@ def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
 
     try:
         from ..base import Session
-        from ..runtime import Runtime
+        from ..tool import ToolContext
 
-        # Logic to retrieve Session ID from the first attachment ID
-        # Format: {session_id}_{uuid} or just {uuid} (legacy)
-        session_id = None
-        first_id = attachment_ids[0]
-        if "_" in first_id:
-            # We assume the part before the first underscore is the session_id
-            # This relies on the fact that session IDs don't contain underscores usually,
-            # or we control the splitting logic.
-            # Ideally session IDs are simple strings.
-            parts = first_id.split("_")
-            if len(parts) >= 2:
-                session_id = parts[0]
-
-        # Try to load session
+        # Resolve session from ToolContext — available because framework tool builders
+        # (ADK, OpenAI, CrewAI) propagate ToolContext into every tool call.
         session = Session.current()
-        if not session and session_id:
-            # Load from runtime if not in current context
+        if not session:
+            # Fallback: try to get from ToolContext directly
             try:
-                session = Runtime.current().sessions().load(session_id)
-            except Exception:
-                _log.warning(f"Could not load session {session_id} from Runtime")
+                ctx = ToolContext.get()
+                session = ctx.session if ctx else None
+            except RuntimeError:
+                session = None
 
         if not session:
-            return "No session context available (Session ID not found in context or attachment ID)"
+            return "Error: No session context available. Cannot load attachments."
 
         nv_cache = session.get_non_volatile_cache()
-        # We need to strip the session_id prefix if we want to search by partial ID,
-        # BUT the storage key is "attachment:{full_id}".
-        # So we should pass the FULL ID to get_attachment_data.
         attachments = get_attachment_data(session=None, cache=nv_cache, attachment_ids=attachment_ids)
 
         if not attachments:
-            return "No attachments found"
+            return "No attachments found for the given IDs in this session"
 
         # Get API key
         api_key = os.getenv("OPENAI_API_KEY")
