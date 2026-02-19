@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Inject dependencies into AWS example projects.
+Inject dependencies into AWS and Azure example projects.
 
 This script:
 1. Injects backend.tf files for Terraform state management
@@ -21,7 +21,9 @@ from typing import List, Dict, Set, Tuple
 
 MODULE_PATHS = [
     'ak-deployment/ak-aws/serverless',
-    'ak-deployment/ak-aws/containerized'
+    'ak-deployment/ak-aws/containerized',
+    'ak-deployment/ak-azure/serverless',
+    'ak-deployment/ak-azure/containerized'
 ]
 
 
@@ -31,36 +33,36 @@ def load_config(config_path: str) -> Dict:
         return yaml.safe_load(f)
 
 
-def get_aws_projects(config: Dict) -> Set[tuple]:
+def get_projects(config: Dict) -> Set[tuple]:
     """
-    Extract AWS project paths from the configuration.
+    Extract AWS and Azure project paths from the configuration.
     
     Returns a set of tuples: (project_path, deploy_dir, project_type)
     """
-    aws_projects = set()
+    projects = set()
     
     # Include deployment base infrastructure
     if 'deployment_base' in config:
         for project in config['deployment_base']:
             test_type = project.get('type', '')
-            if test_type in ['aws-serverless', 'aws-containerized']:
+            if test_type in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized']:
                 path = project.get('path', '')
                 deploy_dir = project.get('deploy_dir', 'deploy')
                 if path:
-                    aws_projects.add((path, deploy_dir, test_type))
+                    projects.add((path, deploy_dir, test_type))
     
     # Process both nightly and weekly test configs
     for schedule in ['nightly', 'weekly']:
         if schedule in config and 'tests' in config[schedule]:
             for test in config[schedule]['tests']:
                 test_type = test.get('type', '')
-                if test_type in ['aws-serverless', 'aws-containerized']:
+                if test_type in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized']:
                     path = test.get('path', '')
                     deploy_dir = test.get('deploy_dir', 'deploy')
                     if path:
-                        aws_projects.add((path, deploy_dir, test_type))
+                        projects.add((path, deploy_dir, test_type))
     
-    return aws_projects
+    return projects
 
 
 def generate_backend_tf(template_content: str, project_path: str, project_type: str) -> str:
@@ -97,17 +99,19 @@ def calculate_relative_path(from_path: str, project_type: str) -> str:
     Calculate relative path from example deploy directory to module source.
     
     Args:
-        from_path: Path to the example (e.g., examples/aws-serverless/adk)
-        project_type: Type of project (aws-serverless or aws-containerized)
+        from_path: Path to the example (e.g., examples/aws-serverless/adk or examples/azure-serverless/openai)
+        project_type: Type of project (aws-serverless, aws-containerized, azure-serverless, or azure-containerized)
     
     Returns:
         Relative path to the module source
     """
-    # Module is at ak-deployment/ak-aws/serverless or ak-deployment/ak-aws/containerized
-    if project_type == 'aws-serverless':
-        module_subdir = 'serverless'
-    elif project_type == 'aws-containerized':
-        module_subdir = 'containerized'
+    # Determine cloud provider and module type
+    if project_type in ['aws-serverless', 'aws-containerized']:
+        cloud = 'aws'
+        module_subdir = 'serverless' if project_type == 'aws-serverless' else 'containerized'
+    elif project_type in ['azure-serverless', 'azure-containerized']:
+        cloud = 'azure'
+        module_subdir = 'serverless' if project_type == 'azure-serverless' else 'containerized'
     else:
         return None
     
@@ -116,7 +120,7 @@ def calculate_relative_path(from_path: str, project_type: str) -> str:
     depth = len(from_path.split('/')) + 1  # +1 for deploy dir
     up_levels = '../' * depth
     
-    return f"{up_levels}ak-deployment/ak-aws/{module_subdir}"
+    return f"{up_levels}ak-deployment/ak-{cloud}/{module_subdir}"
 
 
 def modify_main_tf(main_tf_path: str, project_path: str, project_type: str) -> bool:
@@ -125,8 +129,8 @@ def modify_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
     
     Args:
         main_tf_path: Path to main.tf file
-        project_path: Path to the project (e.g., examples/aws-serverless/adk)
-        project_type: Type of project (aws-serverless or aws-containerized)
+        project_path: Path to the project (e.g., examples/aws-serverless/adk or examples/azure-serverless/openai)
+        project_type: Type of project (aws-serverless, aws-containerized, azure-serverless, or azure-containerized)
     
     Returns:
         True if modifications were made, False otherwise
@@ -144,6 +148,10 @@ def modify_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
         registry_source = 'yaalalabs/ak-serverless/aws'
     elif project_type == 'aws-containerized':
         registry_source = 'yaalalabs/ak-containerized/aws'
+    elif project_type == 'azure-serverless':
+        registry_source = 'yaalalabs/ak-serverless/azurerm'
+    elif project_type == 'azure-containerized':
+        registry_source = 'yaalalabs/ak-containerized/azurerm'
     else:
         return False
     
@@ -157,7 +165,7 @@ def modify_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
         return False
     
     # Replace source line
-    # Pattern: source = "yaalalabs/ak-serverless/aws" or source = "yaalalabs/ak-containerized/aws"
+    # Pattern: source = "yaalalabs/ak-serverless/aws" or source = "yaalalabs/ak-containerized/aws" etc.
     source_pattern = rf'(\s+source\s*=\s*"){re.escape(registry_source)}(")'
     content = re.sub(source_pattern, rf'\1{relative_path}\2', content)
     
@@ -181,7 +189,7 @@ def modify_state_tf(state_tf_path: str, module_path: str) -> bool:
     
     Args:
         state_tf_path: Path to state.tf file
-        module_path: Path to the module (e.g., ak-deployment/ak-aws/serverless)
+        module_path: Path to the module (e.g., ak-deployment/ak-aws/serverless or ak-deployment/ak-azure/serverless)
     
     Returns:
         True if modifications were made, False otherwise
@@ -194,14 +202,21 @@ def modify_state_tf(state_tf_path: str, module_path: str) -> bool:
     
     original_content = content
     
+    # Determine cloud provider from module path
+    is_azure = 'ak-azure' in module_path
+    common_registry_pattern = 'yaalalabs/ak-common/azurerm//modules/' if is_azure else 'yaalalabs/ak-common/aws//modules/'
+    
     # Check if already using local source
-    if 'yaalalabs/ak-common/aws//modules/' not in content:
+    if common_registry_pattern not in content:
         return False
     
     # Replace all occurrences of registry common modules with local path
-    # Pattern: source = "yaalalabs/ak-common/aws//modules/vpc"
+    # Pattern: source = "yaalalabs/ak-common/aws//modules/vpc" or source = "yaalalabs/ak-common/azurerm//modules/vpc"
     # Replace with: source = "../common/modules/vpc"
-    source_pattern = r'(\s+source\s*=\s*)"yaalalabs/ak-common/aws//modules/([^"]+)"'
+    if is_azure:
+        source_pattern = r'(\s+source\s*=\s*)"yaalalabs/ak-common/azurerm//modules/([^"]+)"'
+    else:
+        source_pattern = r'(\s+source\s*=\s*)"yaalalabs/ak-common/aws//modules/([^"]+)"'
     content = re.sub(source_pattern, r'\1"../common/modules/\2"', content)
     
     # Comment out version lines (for common module references)
@@ -241,7 +256,7 @@ def revert_state_tf(state_tf_path: str, module_path: str) -> bool:
     
     Args:
         state_tf_path: Path to state.tf file
-        module_path: Path to the module (e.g., ak-deployment/ak-aws/serverless)
+        module_path: Path to the module (e.g., ak-deployment/ak-aws/serverless or ak-deployment/ak-azure/serverless)
     
     Returns:
         True if modifications were made, False otherwise
@@ -258,11 +273,15 @@ def revert_state_tf(state_tf_path: str, module_path: str) -> bool:
     if '../common/modules/' not in content:
         return False
     
+    # Determine cloud provider from module path
+    is_azure = 'ak-azure' in module_path
+    common_registry = 'yaalalabs/ak-common/azurerm' if is_azure else 'yaalalabs/ak-common/aws'
+    
     # Replace local common modules with registry path
     # Pattern: source = "../common/modules/vpc"
-    # Replace with: source = "yaalalabs/ak-common/aws//modules/vpc"
-    source_pattern = r'(\s+source\s*=\s*)"\.\.\/common\/modules\/([^"]+)"'
-    content = re.sub(source_pattern, r'\1"yaalalabs/ak-common/aws//modules/\2"', content)
+    # Replace with: source = "yaalalabs/ak-common/aws//modules/vpc" or "yaalalabs/ak-common/azurerm//modules/vpc"
+    source_pattern = r'(\s+source\s*=\s*)"\.\.\/common\/modules\/([^"]+)"'  
+    content = re.sub(source_pattern, rf'\1"{common_registry}//modules/\2"', content)
     
     # Uncomment version lines
     # Pattern: # version = "x.x.x"  # Commented for local development
@@ -284,8 +303,8 @@ def revert_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
     
     Args:
         main_tf_path: Path to main.tf file
-        project_path: Path to the project (e.g., examples/aws-serverless/adk)
-        project_type: Type of project (aws-serverless or aws-containerized)
+        project_path: Path to the project (e.g., examples/aws-serverless/adk or examples/azure-serverless/openai)
+        project_type: Type of project (aws-serverless, aws-containerized, azure-serverless, or azure-containerized)
     
     Returns:
         True if modifications were made, False otherwise
@@ -303,6 +322,10 @@ def revert_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
         registry_source = 'yaalalabs/ak-serverless/aws'
     elif project_type == 'aws-containerized':
         registry_source = 'yaalalabs/ak-containerized/aws'
+    elif project_type == 'azure-serverless':
+        registry_source = 'yaalalabs/ak-serverless/azurerm'
+    elif project_type == 'azure-containerized':
+        registry_source = 'yaalalabs/ak-containerized/azurerm'
     else:
         return False
     
@@ -338,20 +361,20 @@ def revert_main_tf(main_tf_path: str, project_path: str, project_type: str) -> b
 
 def revert_dependencies(
     workspace_root: str,
-    aws_projects: Set[Tuple[str, str, str]]
+    projects: Set[Tuple[str, str, str]]
 ) -> None:
     """
     Revert main.tf and state.tf files back to registry modules.
     
     Args:
         workspace_root: Root directory of the workspace
-        aws_projects: Set of AWS project tuples (path, deploy_dir, type)
+        projects: Set of project tuples (path, deploy_dir, type) for both AWS and Azure
     """
     main_count = 0
     state_count = 0
     
     # Revert example main.tf files
-    for project_path, deploy_dir, project_type in sorted(aws_projects):
+    for project_path, deploy_dir, project_type in sorted(projects):
         full_project_path = os.path.join(workspace_root, project_path)
         deploy_path = os.path.join(full_project_path, deploy_dir)
         
@@ -381,7 +404,7 @@ def revert_dependencies(
 def inject_dependencies(
     workspace_root: str,
     template_path: str,
-    aws_projects: Set[Tuple[str, str, str]]
+    projects: Set[Tuple[str, str, str]]
 ) -> None:
     """
     Inject backend.tf, modify main.tf in examples, and modify state.tf in modules.
@@ -389,7 +412,7 @@ def inject_dependencies(
     Args:
         workspace_root: Root directory of the workspace
         template_path: Path to backend.tf.template
-        aws_projects: Set of AWS project tuples (path, deploy_dir, type)
+        projects: Set of project tuples (path, deploy_dir, type) for both AWS and Azure
     """
     # Read template
     with open(template_path, 'r') as f:
@@ -400,7 +423,7 @@ def inject_dependencies(
     state_count = 0
     
     # Process example projects
-    for project_path, deploy_dir, project_type in sorted(aws_projects):
+    for project_path, deploy_dir, project_type in sorted(projects):
         full_project_path = os.path.join(workspace_root, project_path)
         deploy_path = os.path.join(full_project_path, deploy_dir)
         
@@ -440,15 +463,15 @@ def inject_dependencies(
 def inject_files(
     workspace_root: str,
     template_path: str,
-    aws_projects: Set[tuple]
+    projects: Set[tuple]
 ) -> None:
     """
-    Inject backend.tf files into AWS example projects.
+    Inject backend.tf files into AWS and Azure example projects.
     
     Args:
         workspace_root: Root directory of the workspace
         template_path: Path to backend.tf.template
-        aws_projects: Set of AWS project tuples (path, deploy_dir, type)
+        projects: Set of project tuples (path, deploy_dir, type) for both AWS and Azure
     """
     # Read template
     with open(template_path, 'r') as f:
@@ -456,7 +479,7 @@ def inject_files(
     
     injected_count = 0
     
-    for project_path, deploy_dir, project_type in sorted(aws_projects):
+    for project_path, deploy_dir, project_type in sorted(projects):
         full_project_path = os.path.join(workspace_root, project_path)
         deploy_path = os.path.join(full_project_path, deploy_dir)
         
@@ -480,7 +503,7 @@ def inject_files(
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Inject or revert dependencies in AWS example projects'
+        description='Inject or revert dependencies in AWS and Azure example projects'
     )
     parser.add_argument(
         '--revert',
@@ -505,16 +528,16 @@ def main():
     print("🔍 Loading integration test configuration...")
     config = load_config(str(config_path))
     
-    print("🔍 Identifying AWS projects...")
-    aws_projects = get_aws_projects(config)
-    print(f"   Found {len(aws_projects)} AWS projects")
+    print("🔍 Identifying AWS and Azure projects...")
+    projects = get_projects(config)
+    print(f"   Found {len(projects)} projects (AWS and Azure)")
     
     if args.revert:
         # Revert mode: restore registry modules
         print("\n🔄 Reverting to registry modules...")
         revert_dependencies(
             str(workspace_root),
-            aws_projects
+            projects
         )
     else:
         # Inject mode: inject backend.tf and modify main.tf
@@ -526,7 +549,7 @@ def main():
         inject_dependencies(
             str(workspace_root),
             str(template_path),
-            aws_projects
+            projects
         )
     
     return 0

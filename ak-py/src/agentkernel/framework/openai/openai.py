@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
-from agents.memory.session import SessionABC
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session
+from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
@@ -20,7 +19,6 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from ...core.multimodal import analyis_attachments
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -33,7 +31,6 @@ class OpenAISession:
 
     def __init__(self):
         """
-
         Initializes an OpenAISession instance.
         """
         self._items = []
@@ -103,7 +100,9 @@ class OpenAIRunner(BaseRunner):
         """
         prompt = ""
         message_content = []
+        context: ToolContext | None = None
         try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
             for req in requests:
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
@@ -166,6 +165,9 @@ class OpenAIRunner(BaseRunner):
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
+        finally:
+            if context is not None:
+                context.reset()
 
 
 class OpenAIAgent(BaseAgent):
@@ -181,9 +183,7 @@ class OpenAIAgent(BaseAgent):
         :param agent: The OpenAI agent instance.
         """
         super().__init__(name, runner)
-        self._agent: Agent = agent
-        self.override_system_prompt()
-        self._attach_system_tools()
+        self._agent = agent
 
     @property
     def agent(self) -> Agent:
@@ -191,12 +191,6 @@ class OpenAIAgent(BaseAgent):
         Returns the OpenAI agent instance.
         """
         return self._agent
-
-    def get_wrapped(self):
-        """
-        Returns the underlying agent object (OpenAI Agent).
-        """
-        return self.agent
 
     def get_description(self):
         """
@@ -214,33 +208,6 @@ class OpenAIAgent(BaseAgent):
         for tool in self.agent.tools:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
         return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
-
-    def override_system_prompt(self) -> None:
-        """
-        Overrides the system prompt of the agent via Session injection.
-        This ensures the override is isolated to the current session/request
-        and doesn't mutate the global Agent instance.
-        """
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-            self._agent.instructions = self._agent.instructions + "\n" + BaseAgent.get_system_prompt_suffix()
-
-    def attach_tool(self, tool: Any) -> None:
-        """
-        Attaches a tool to the agent.
-        :param tool: The tool to attach.
-        """
-        if tool not in self.agent.tools:
-            self.agent.tools.append(tool)
-
-    def _attach_system_tools(self):
-        """
-        Attaches system level tools based on configuration.
-        """
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-            analyis_attachments_tool = function_tool(analyis_attachments)
-            self.attach_tool(analyis_attachments_tool)
 
 
 class OpenAIModule(Module):
@@ -300,3 +267,28 @@ class OpenAIModule(Module):
         """
         super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
+
+
+class OpenAIToolBuilder(ToolBuilder):
+    """
+    Tool builder for OpenAI Agents SDK.
+
+    Wraps generic tool functions into OpenAI-compatible tool definitions
+    using the ``function_tool`` helper from the OpenAI Agents SDK.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to OpenAI Agents SDK tool definitions.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of OpenAI-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
+        """
+        tools = []
+        for func in funcs:
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+            tools.append(function_tool(func))
+        return tools

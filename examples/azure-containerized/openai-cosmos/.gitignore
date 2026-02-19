@@ -1,0 +1,7 @@
+.terraform
+requirements.txt
+dist
+dist.zip
+*.tfstate
+*.tfstate.backup
+backend.tf

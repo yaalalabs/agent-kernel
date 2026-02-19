@@ -59,13 +59,36 @@ export OPENAI_API_KEY=sk-...
 export OPENAI_MODEL=gpt-4  # Optional, override default
 ```
 
+## Tool Binding
+
+Use `OpenAIToolBuilder` to bind plain Python functions as tools to your OpenAI agents:
+
+```python
+from agents import Agent as OpenAIAgent
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny, 25°C"
+
+agent = OpenAIAgent(
+    name="weather",
+    instructions="You provide weather information.",
+    tools=OpenAIToolBuilder.bind([get_weather]),
+)
+
+OpenAIModule([agent])
+```
+
+See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
+
 ## Features
 
 - ✅ Function calling
 - ✅ Multi-agent handoff
 - ✅ Streaming responses
 - ✅ Session management
-- ✅ Tool integration
+- ✅ Framework-agnostic tool binding
 
 ## Example
 

@@ -159,7 +159,7 @@ We'd love to hear from you! Whether you're building your first agent or deployin
 
 ## 📄 License
 
-Agent Kernel is released under the **MIT License**, making it free to use in both personal and commercial projects.
+Agent Kernel is released under the **Apache License 2.0**, making it free to use in both personal and commercial projects.
 
 ---
 

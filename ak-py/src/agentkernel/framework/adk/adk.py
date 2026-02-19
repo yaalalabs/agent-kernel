@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
+import inspect
 import logging
-from typing import Any, List
+import time
+from typing import Any, Callable, List
 
 from google.adk.agents import BaseAgent
+from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
+from google.adk.tools import FunctionTool, ToolContext
 from google.genai import types
 
 from agentkernel.core.model import (
@@ -22,7 +28,8 @@ from agentkernel.core.model import (
 from ...core import Agent as AKBaseAgent
 from ...core import Module, PostHook, PreHook
 from ...core import Runner as BaseRunner
-from ...core import Session
+from ...core import Runtime, Session, ToolBuilder
+from ...core import ToolContext as AKToolContext
 from ...core.config import AKConfig
 from ...trace import Trace
 
@@ -53,6 +60,16 @@ class GoogleADKSession:
         if self._session is None:
             self._session = await self._session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
         return self._session
+
+    async def update_session_state(self, invocation_id: str, author: str, state: dict) -> None:
+        if self._session:
+            event = Event(
+                invocation_id=invocation_id,
+                author=author,
+                actions=EventActions(state_delta=state),
+                timestamp=time.time(),
+            )
+            await self._session_service.append_event(self._session, event)
 
 
 class GoogleADKRunner(BaseRunner):
@@ -151,12 +168,15 @@ class GoogleADKRunner(BaseRunner):
             user_id = "AgentKernel"
             adk_session = self._session(session)
 
-            # Set fallback session ID for tools that can't access contextvar in ADK context
-            await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-            runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-            reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+            ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
+            with ctx:
+                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+                await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
 
-            return AgentReplyText(text=reply, prompt=prompt)
+                runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+                reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+
+                return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=f"Error during agent execution: {str(e)}")
 
@@ -175,8 +195,6 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
-        self.override_system_prompt()
-        self._attach_system_tools()
 
     @property
     def agent(self) -> BaseAgent:
@@ -184,12 +202,6 @@ class GoogleADKAgent(AKBaseAgent):
         Returns the GoogleADK agent instance.
         """
         return self._agent
-
-    def get_wrapped(self):
-        """
-        Returns the underlying agent object (Google ADK Agent).
-        """
-        return self.agent
 
     def get_description(self):
         """
@@ -203,33 +215,6 @@ class GoogleADKAgent(AKBaseAgent):
         """
         # TODO Add A2A card support
         pass
-
-    def override_system_prompt(self) -> None:
-        """
-        Overrides the system prompt of the agent via logic injection.
-        For Google ADK, we append to the description/instruction.
-        """
-        if hasattr(self._agent, "description") and self._agent.description:
-            self._agent.description += "\\n" + AKBaseAgent.get_system_prompt_suffix()
-
-    def attach_tool(self, tool: Any) -> None:
-        """
-        Attaches a tool to the agent.
-        :param tool: The tool to attach.
-        """
-        if hasattr(self.agent, "tools"):
-            if tool not in self.agent.tools:
-                self.agent.tools.append(tool)
-
-    def _attach_system_tools(self):
-        """
-        Attaches system level tools based on configuration.
-        """
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-            from ...core.multimodal import analyis_attachments
-
-            self.attach_tool(analyis_attachments)
 
 
 class GoogleADKModule(Module):
@@ -289,3 +274,89 @@ class GoogleADKModule(Module):
         """
         super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
+
+
+class GoogleADKToolBuilder(ToolBuilder):
+    """
+    Tool builder for Google ADK.
+
+    Wraps generic tool functions into ADK-compatible FunctionTool instances.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to ADK FunctionTool instances.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of ADK-compatible FunctionTool instances.
+        """
+        tools = []
+        for func in funcs:
+            tools.append(FunctionTool(cls._wrap(func)))
+        return tools
+
+    @classmethod
+    def _wrap(cls, func: Callable) -> Callable:
+        """
+        Wraps a generic tool function to ensure it can be used with the Google ADK.
+
+        :param func: The generic tool function to wrap.
+        :return: A wrapped version of the function that is compatible with the Google ADK.
+        :raises TypeError: If the function is not callable.
+        """
+        if not callable(func):
+            raise TypeError(f"Expected a callable, got {type(func).__name__}")
+
+        if asyncio.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+                tctx: AKToolContext | None = None
+                try:
+                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
+                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                    return await func(*args, **kwargs)
+                finally:
+                    if tctx:
+                        tctx.reset()
+
+        else:
+
+            @functools.wraps(func)
+            def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+                tctx: AKToolContext | None = None
+                try:
+                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
+                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                    return func(*args, **kwargs)
+                finally:
+                    if tctx:
+                        tctx.reset()
+
+        signature = inspect.signature(func)
+        parameters = list(signature.parameters.values())
+
+        # Only add a tool_context parameter if the original function does not already
+        # declare one, and insert it before any **kwargs (VAR_KEYWORD) parameter to
+        # maintain a valid inspect.Signature ordering.
+        if "tool_context" not in signature.parameters:
+            tool_context_param = inspect.Parameter(
+                "tool_context",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+            )
+
+            insert_index = None
+            for idx, param in enumerate(parameters):
+                if param.kind is inspect.Parameter.VAR_KEYWORD:
+                    insert_index = idx
+                    break
+
+            if insert_index is not None:
+                parameters.insert(insert_index, tool_context_param)
+            else:
+                parameters.append(tool_context_param)
+
+        wrapper.__signature__ = signature.replace(parameters=parameters)
+        return wrapper
