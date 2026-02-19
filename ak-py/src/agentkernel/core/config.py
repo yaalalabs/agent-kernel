@@ -140,7 +140,14 @@ class _MultimodalConfig(BaseModel):
     )
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
-    model: str = Field(default="gpt-4o", description="Default LiteLLM model for multimodal analysis")
+    description_model: str = Field(
+        default="gpt-4o",
+        description="LiteLLM model used to generate brief descriptions when an attachment is first received (called by the pre-hook)",
+    )
+    analysis_model: str = Field(
+        default="gpt-4o",
+        description="LiteLLM model used by the analyis_attachments tool when the agent requests a full analysis of an attachment",
+    )
 
 
 class _TraceConfig(BaseModel):

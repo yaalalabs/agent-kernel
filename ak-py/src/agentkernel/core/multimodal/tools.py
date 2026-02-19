@@ -3,10 +3,7 @@ Multimodal tools for LLM to access images/files.
 
 """
 
-import asyncio
 import logging
-import os
-from typing import TYPE_CHECKING
 
 import litellm
 
@@ -14,8 +11,6 @@ from ..config import AKConfig
 from .storage import get_attachment_data
 
 _log = logging.getLogger(__name__)
-
-from contextvars import ContextVar
 
 
 def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
@@ -30,37 +25,18 @@ def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
         return "No attachments provided"
 
     try:
-        from ..base import Session
         from ..tool import ToolContext
 
-        # Resolve session from ToolContext — available because framework tool builders
-        # (ADK, OpenAI, CrewAI) propagate ToolContext into every tool call.
-        session = Session.current()
-        if not session:
-            # Fallback: try to get from ToolContext directly
-            try:
-                ctx = ToolContext.get()
-                session = ctx.session if ctx else None
-            except RuntimeError:
-                session = None
+        ctx = ToolContext.get()
+        session = ctx.session
 
-        if not session:
-            return "Error: No session context available. Cannot load attachments."
-
-        nv_cache = session.get_non_volatile_cache()
-        attachments = get_attachment_data(session=None, cache=nv_cache, attachment_ids=attachment_ids)
+        attachments = get_attachment_data(session=session, attachment_ids=attachment_ids)
 
         if not attachments:
             return "No attachments found for the given IDs in this session"
 
-        # Get API key
-        api_key = os.getenv("OPENAI_API_KEY")
         config = AKConfig.get()
-        if hasattr(config, "openai") and config.openai.api_key:
-            api_key = config.openai.api_key
-
-        if not api_key:
-            return "Error: Missing OpenAI API Key"
+        model_name = config.multimodal.analysis_model
 
         # Build content with all attachments and prompt
         content = [{"type": "text", "text": prompt}]
@@ -81,11 +57,8 @@ def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
             else:
                 content.append({"type": "text", "text": f"\n[Document: {att.name} ({att.mime_type})]\n"})
 
-        # Use model from config
-        model_name = getattr(config.multimodal, "model", "gpt-4o")
         response = litellm.completion(
             model=model_name,
-            api_key=api_key,
             messages=[{"role": "user", "content": content}],
         )
         return response.choices[0].message.content.strip()
@@ -112,28 +85,14 @@ async def describe_attachment_briefly(
         return "No data"
 
     try:
-        import os
-
-        import litellm
-
-        from ..config import AKConfig
-
-        # Try to get API key from config or env
-        api_key = os.getenv("OPENAI_API_KEY")
         config = AKConfig.get()
-        if hasattr(config, "openai") and config.openai.api_key:
-            api_key = config.openai.api_key
-
-        if not api_key:
-            return "Attachment (Description unavailable: Missing API Key)"
-
-        model_name = getattr(config.multimodal, "model", "gpt-4o")
+        model_name = config.multimodal.description_model
 
         if mime_type.startswith("image/"):
             # Use Vision model for images via LiteLLM
+            # litellm reads API keys from environment automatically (e.g. OPENAI_API_KEY)
             response = await litellm.acompletion(
                 model=model_name,
-                api_key=api_key,
                 messages=[
                     {
                         "role": "user",
@@ -155,7 +114,6 @@ async def describe_attachment_briefly(
         elif mime_type.startswith("application/pdf"):
             resp = await litellm.acompletion(
                 model=model_name,
-                api_key=api_key,
                 messages=[
                     {
                         "role": "user",

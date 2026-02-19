@@ -159,9 +159,7 @@ def save_attachment(
     :return: The generated attachment ID
     """
     driver = get_storage_driver(session=session, cache=cache)
-    # Generate a clean short UUID — no session prefix needed.
-    # Session isolation is enforced by the storage driver using the session's
-    # own non-volatile cache, so attachment IDs are always session-scoped.
+
     attachment_id = str(uuid.uuid4())[:8]
     timestamp = time.time()
 
@@ -189,16 +187,19 @@ def get_attachment_data(
     """
     Load actual attachment data for specific IDs using the storage driver.
 
-    :param session: The session to read from
+    Prefer passing `session` directly — it is always available via ToolContext.
+    `cache` is an optional escape hatch for callers that only have a KeyValueCache.
+
+    :param session: The session to read from (preferred)
     :param attachment_ids: List of attachment IDs to load
-    :param cache: Optional direct cache to use if session is None
+    :param cache: Direct cache to use when session is not available
     :return: List of AttachmentData objects
     """
     if not attachment_ids:
         return []
 
-    # Use 'or' to check if either is present to proceed
     if not session and not cache:
+        _log.warning("get_attachment_data called without session or cache")
         return []
 
     driver = get_storage_driver(session=session, cache=cache)
