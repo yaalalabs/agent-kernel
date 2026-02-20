@@ -62,8 +62,45 @@ jobs:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
 
-  run-tests:
+  get-base-outputs:
     needs: [setup, build-ak-py]
+    runs-on: ubuntu-latest
+    outputs:
+      vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
+      private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Inject dependencies and retrieve base outputs
+        id: base-outputs
+        run: |
+          python3 scripts/deploy/inject_dependencies.py
+          python3 .github/scripts/get_base_outputs.py \
+            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
+
+  run-tests:
+    needs: [setup, build-ak-py, get-base-outputs]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -102,14 +139,9 @@ jobs:
         with:
           terraform_version: 1.9.5
 
-      - name: Inject dependencies and retrieve base outputs
-        id: base-infra
+      - name: Inject dependencies
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
-        run: |
-          python3 scripts/deploy/inject_dependencies.py
-          python3 .github/scripts/get_base_outputs.py \
-            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
-            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
+        run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Deploy, Test, and Destroy - ${{ matrix.path }}
         env:
@@ -123,8 +155,8 @@ jobs:
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \
             --deploy-dir ${{ matrix.deploy_dir }} \
-            --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
-            --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
+            --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
+            --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
             --action deploy
           
           # Test
@@ -139,8 +171,8 @@ jobs:
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \
             --deploy-dir ${{ matrix.deploy_dir }} \
-            --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
-            --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
+            --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
+            --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
             --action destroy
 
       - name: Upload test results
