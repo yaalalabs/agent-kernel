@@ -135,7 +135,7 @@ class _MultimodalConfig(BaseModel):
     """Configuration for multimodal attachment memory."""
 
     enabled: bool = Field(
-        default=True,
+        default=False,
         description="Enable multimodal memory for images and files.",
     )
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
