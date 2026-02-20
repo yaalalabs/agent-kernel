@@ -13,7 +13,6 @@ from ..core.util.key_value_cache import KeyValueCache
 from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
-from .config import AKConfig
 from .model import (
     AgentReply,
     AgentReplyImage,

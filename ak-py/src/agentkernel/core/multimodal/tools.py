@@ -4,7 +4,6 @@ Multimodal tools for LLM to access images/files.
 """
 
 import logging
-from typing import Optional
 
 from ..config import AKConfig
 from .storage import get_attachment_data
