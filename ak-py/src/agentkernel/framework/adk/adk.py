@@ -317,15 +317,12 @@ class GoogleADKToolBuilder(ToolBuilder):
         """
         Bind generic tool functions to ADK FunctionTool instances.
 
-        :param funcs: List of generic tool functions or existing tools to bind.
+        :param funcs: List of generic tool functions to bind.
         :return: List of ADK-compatible FunctionTool instances.
         """
         tools = []
         for func in funcs:
-            if callable(func) and not hasattr(func, "name"):
-                tools.append(FunctionTool(cls._wrap(func)))
-            else:
-                tools.append(func)
+            tools.append(FunctionTool(cls._wrap(func)))
         return tools
 
     @classmethod

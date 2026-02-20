@@ -311,13 +311,13 @@ class OpenAIToolBuilder(ToolBuilder):
         """
         Bind generic tool functions to OpenAI Agents SDK tool definitions.
 
-        :param funcs: List of generic tool functions or existing tools to bind.
+        :param funcs: List of generic tool functions to bind.
         :return: List of OpenAI-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:
-            if callable(func) and not hasattr(func, "name"):
-                tools.append(function_tool(func))
-            else:
-                tools.append(func)
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+            tools.append(function_tool(func))
         return tools
