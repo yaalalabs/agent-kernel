@@ -288,13 +288,13 @@ class CrewAIToolBuilder(ToolBuilder):
         """
         Bind generic tool functions to CrewAI tool definitions.
 
-        :param funcs: List of generic tool functions or existing tools to bind.
+        :param funcs: List of generic tool functions to bind.
         :return: List of CrewAI-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:
-            if callable(func) and not hasattr(func, "name"):
-                tools.append(crewai_tool(func))
-            else:
-                tools.append(func)
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+            tools.append(crewai_tool(func))
         return tools

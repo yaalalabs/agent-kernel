@@ -5,7 +5,7 @@ Multimodal tools for LLM to access images/files.
 
 import logging
 
-import litellm
+from typing import Optional
 
 from ..config import AKConfig
 from .storage import get_attachment_data
@@ -57,6 +57,8 @@ def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
             else:
                 content.append({"type": "text", "text": f"\n[Document: {att.name} ({att.mime_type})]\n"})
 
+        import litellm
+
         response = litellm.completion(
             model=model_name,
             messages=[{"role": "user", "content": content}],
@@ -85,6 +87,8 @@ async def describe_attachment_briefly(
         return "No data"
 
     try:
+        import litellm
+
         config = AKConfig.get()
         model_name = config.multimodal.description_model
 

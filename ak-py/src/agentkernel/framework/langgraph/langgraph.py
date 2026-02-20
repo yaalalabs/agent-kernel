@@ -412,29 +412,30 @@ class LangGraphToolBuilder(ToolBuilder):
         """
         Bind generic tool functions to LangChain StructuredTool instances.
 
-        :param funcs: List of generic tool functions or existing tools to bind.
+        :param funcs: List of generic tool functions to bind.
         :return: List of LangChain StructuredTool instances.
+        :raises TypeError: If any item in funcs is not callable.
         """
         tools = []
         for func in funcs:
-            if callable(func) and not hasattr(func, "name"):
-                if asyncio.iscoroutinefunction(func):
-                    tools.append(
-                        StructuredTool.from_function(
-                            func=None,
-                            coroutine=func,
-                            name=func.__name__,
-                            description=func.__doc__ or func.__name__,
-                        )
+            if not callable(func):
+                raise TypeError(f"Expected a callable, got {type(func).__name__}")
+
+            if asyncio.iscoroutinefunction(func):
+                tools.append(
+                    StructuredTool.from_function(
+                        func=None,
+                        coroutine=func,
+                        name=func.__name__,
+                        description=func.__doc__ or func.__name__,
                     )
-                else:
-                    tools.append(
-                        StructuredTool.from_function(
-                            func=func,
-                            name=func.__name__,
-                            description=func.__doc__ or func.__name__,
-                        )
-                    )
+                )
             else:
-                tools.append(func)
+                tools.append(
+                    StructuredTool.from_function(
+                        func=func,
+                        name=func.__name__,
+                        description=func.__doc__ or func.__name__,
+                    )
+                )
         return tools
