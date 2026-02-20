@@ -102,9 +102,14 @@ jobs:
         with:
           terraform_version: 1.9.5
 
-      - name: Inject dependencies
+      - name: Inject dependencies and retrieve base outputs
+        id: base-infra
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
-        run: python3 scripts/deploy/inject_dependencies.py
+        run: |
+          python3 scripts/deploy/inject_dependencies.py
+          python3 .github/scripts/get_base_outputs.py \
+            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
 
       - name: Deploy, Test, and Destroy - ${{ matrix.path }}
         env:
@@ -118,6 +123,8 @@ jobs:
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \
             --deploy-dir ${{ matrix.deploy_dir }} \
+            --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
+            --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
             --action deploy
           
           # Test
@@ -132,6 +139,8 @@ jobs:
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \
             --deploy-dir ${{ matrix.deploy_dir }} \
+            --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
+            --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
             --action destroy
 
       - name: Upload test results

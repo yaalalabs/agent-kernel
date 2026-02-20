@@ -5,63 +5,10 @@ Used by parallel GitHub Actions jobs for both integration tests and e2e tests.
 """
 
 import argparse
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-
-
-def get_base_deployment_outputs(base_path: str = "examples/aws-serverless/openai", deploy_dir: str = "deploy") -> dict:
-    """
-    Retrieve outputs from the base deployment (aws-serverless/openai).
-    Returns a dict with vpc_id and private_subnet_ids.
-    """
-    deploy_path = Path(base_path) / deploy_dir
-    
-    if not deploy_path.exists():
-        print(f"⚠️  Warning: Base deployment path not found: {deploy_path}")
-        return {}
-    
-    try:
-        print(f"\n{'='*80}")
-        print(f"Retrieving VPC information from base deployment: {base_path}")
-        print(f"{'='*80}\n")
-        
-        # Get vpc_id
-        result = subprocess.run(
-            ['terraform', 'output', '-raw', 'vpc_id'],
-            cwd=str(deploy_path),
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        vpc_id = result.stdout.strip()
-        
-        # Get private_subnet_ids (JSON output)
-        result = subprocess.run(
-            ['terraform', 'output', '-json', 'private_subnet_ids'],
-            cwd=str(deploy_path),
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        private_subnet_ids = json.loads(result.stdout.strip())
-        
-        print(f"✅ Retrieved VPC ID: {vpc_id}")
-        print(f"✅ Retrieved Private Subnet IDs: {private_subnet_ids}")
-        
-        return {
-            'vpc_id': vpc_id,
-            'private_subnet_ids': private_subnet_ids
-        }
-    except subprocess.CalledProcessError as e:
-        print(f"⚠️  Warning: Failed to retrieve VPC information from base deployment: {e}")
-        print(f"   This is expected if the base deployment hasn't been deployed yet.")
-        return {}
-    except json.JSONDecodeError as e:
-        print(f"⚠️  Warning: Failed to parse subnet IDs JSON: {e}")
-        return {}
 
 
 def run_command(command: list[str], cwd: str = None, description: str = "", env: dict = None) -> bool:
@@ -140,7 +87,7 @@ def run_containerized_test(path: str) -> bool:
     return run_simple_test(path)
 
 
-def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
+def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
     deploy_script = deploy_path / 'deploy.sh'
@@ -158,23 +105,14 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
         'TF_INPUT': '0',  # Disable interactive prompts
     }
     
-    # Get VPC information from base deployment and inject as Terraform variables
-    base_outputs = get_base_deployment_outputs()
-    if base_outputs:
-        vpc_id = base_outputs.get('vpc_id')
-        private_subnet_ids = base_outputs.get('private_subnet_ids', [])
+    # Inject VPC configuration as Terraform variables if provided
+    if vpc_id and private_subnet_ids:
+        tf_env['TF_VAR_vpc_id'] = vpc_id
+        tf_env['TF_VAR_private_subnet_ids'] = private_subnet_ids
         
-        if vpc_id and private_subnet_ids:
-            # Convert subnet IDs list to Terraform format
-            subnet_ids_str = json.dumps(private_subnet_ids)
-            
-            # Set as Terraform environment variables
-            tf_env['TF_VAR_vpc_id'] = vpc_id
-            tf_env['TF_VAR_private_subnet_ids'] = subnet_ids_str
-            
-            print(f"\n✅ Injecting VPC configuration as Terraform variables for destroy:")
-            print(f"   TF_VAR_vpc_id={vpc_id}")
-            print(f"   TF_VAR_private_subnet_ids={subnet_ids_str}\n")
+        print(f"\n✅ Injecting VPC configuration as Terraform variables for destroy:")
+        print(f"   TF_VAR_vpc_id={vpc_id}")
+        print(f"   TF_VAR_private_subnet_ids={private_subnet_ids}\n")
     
     # Initialize terraform if needed
     if not run_command(
@@ -194,7 +132,7 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
     )
 
 
-def deploy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
+def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Deploy AWS resources only (without running tests)."""
     deploy_path = Path(path) / deploy_dir
     deploy_script = deploy_path / 'deploy.sh'
@@ -213,23 +151,14 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy') -> bool:
         'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
     }
     
-    # Get VPC information from base deployment and inject as Terraform variables
-    base_outputs = get_base_deployment_outputs()
-    if base_outputs:
-        vpc_id = base_outputs.get('vpc_id')
-        private_subnet_ids = base_outputs.get('private_subnet_ids', [])
+    # Inject VPC configuration as Terraform variables if provided
+    if vpc_id and private_subnet_ids:
+        tf_env['TF_VAR_vpc_id'] = vpc_id
+        tf_env['TF_VAR_private_subnet_ids'] = private_subnet_ids
         
-        if vpc_id and private_subnet_ids:
-            # Convert subnet IDs list to Terraform format
-            subnet_ids_str = json.dumps(private_subnet_ids)
-            
-            # Set as Terraform environment variables
-            tf_env['TF_VAR_vpc_id'] = vpc_id
-            tf_env['TF_VAR_private_subnet_ids'] = subnet_ids_str
-            
-            print(f"\n✅ Injecting VPC configuration as Terraform variables:")
-            print(f"   TF_VAR_vpc_id={vpc_id}")
-            print(f"   TF_VAR_private_subnet_ids={subnet_ids_str}\n")
+        print(f"\n✅ Injecting VPC configuration as Terraform variables:")
+        print(f"   TF_VAR_vpc_id={vpc_id}")
+        print(f"   TF_VAR_private_subnet_ids={private_subnet_ids}\n")
     
     # Initialize terraform if needed
     if not run_command(
@@ -298,6 +227,8 @@ def main():
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
     parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
+    parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
+    parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
     
     args = parser.parse_args()
     
@@ -307,13 +238,13 @@ def main():
     
     if args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:
-            success = deploy_aws_resources(args.path, args.deploy_dir)
+            success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Deploy action not applicable for type: {args.type}")
             success = True
     elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless']:
-            success = destroy_aws_resources(args.path, args.deploy_dir)
+            success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Destroy action not applicable for type: {args.type}")
             success = True
