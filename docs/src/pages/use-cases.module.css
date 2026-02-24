@@ -60,6 +60,7 @@
   text-align: center;
   overflow: hidden;
   background: #07080c;
+  animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .heroOrb {

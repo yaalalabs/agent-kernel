@@ -123,6 +123,41 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* =============================================================================
+   Page Transitions
+   ============================================================================= */
+
+@keyframes pageFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Docs and blog — article remounts on every client-side navigation */
+article {
+  animation: pageFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Scroll reveal — applied by clientModules/scrollReveal.js */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.scroll-reveal.scroll-reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* =============================================================================
    Navbar
    ============================================================================= */
 

@@ -19,6 +19,8 @@ const config = {
   projectName: 'agent-kernel',
   trailingSlash: false,
 
+  clientModules: ['./src/clientModules/scrollReveal.js'],
+
   onBrokenLinks: 'throw',
 
   // SEO head tags
