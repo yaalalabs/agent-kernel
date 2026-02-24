@@ -299,6 +299,25 @@ code {
 }
 
 /* =============================================================================
+   Mermaid Diagrams
+   ============================================================================= */
+
+.docusaurus-mermaid-container {
+  border-radius: 0.625rem;
+  border: 1px solid var(--ak-border);
+  padding: 1rem;
+  background: var(--ak-surface);
+  overflow: hidden;
+  margin: 1.25rem 0;
+}
+
+.docusaurus-mermaid-container svg {
+  background: transparent !important;
+  display: block;
+  margin: 0 auto;
+}
+
+/* =============================================================================
    Doc Content
    ============================================================================= */
 
