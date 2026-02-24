@@ -4,140 +4,156 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
 import {
-  MdMenuBook,
-  MdArticle,
-  MdLink,
-  MdBusiness,
-  MdPower,
-  MdRocket,
-  MdHandshake,
-  MdFlashOn,
-  MdStar,
-  MdChat,
+  MdRocketLaunch,
+  MdSwapHoriz,
+  MdCloud,
+  MdMemory,
+  MdSecurity,
+  MdVisibility,
   MdCode,
-  MdConstruction,
-  MdHealthAndSafety
+  MdBugReport,
+  MdSettings,
+  MdBusiness,
+  MdGroup,
+  MdAutoAwesome,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
-import { BsMicrosoftTeams } from 'react-icons/bs';
-import { SiTerraform, SiGmail } from 'react-icons/si';
+import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 
-function HomepageHeader() {
-  const { siteConfig } = useDocusaurusContext();
+/* ─── Hero ──────────────────────────────────────────────────────────────── */
+
+function Hero() {
   return (
-    <header className={styles.heroBanner}>
+    <section className={styles.hero}>
+      <div className={styles.heroOrb} />
+      <div className={styles.heroGrid} />
       <div className="container">
         <div className={styles.heroContent}>
-          <img
-            src="/img/logo.svg"
-            alt="Agent Kernel Logo"
-            className={styles.heroLogo}
-          />
-          <h1 className={styles.heroTitle}>{siteConfig.title}</h1>
-          <p className={styles.heroTagline}>{siteConfig.tagline}</p>
+          <img src="/img/branding/agent-kernel-icon-color.svg" alt="Agent Kernel" className={styles.heroLogo} />
+          <h1 className={styles.heroTitle}>Agent Kernel</h1>
+          <p className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
+          <p className={styles.heroBody}>
+            The open-source, framework-agnostic, multi-cloud runtime for production AI agents.
+            Works with OpenAI, LangGraph, CrewAI, and Google ADK — simultaneously, in one runtime.
+            Deploys to AWS, Azure, or on-prem with zero platform code.
+          </p>
           <div className={styles.heroButtons}>
-            <Link
-              className="button button--primary button--lg"
-              to="/docs">
+            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
               Get Started →
             </Link>
             <Link
-              className={`button button--secondary button--lg ${styles.featuresButton}`}
-              to="/features">
-              Explore Features →
-            </Link>
-            <Link
-              className="button button--secondary button--lg"
-              to="https://github.com/yaalalabs/agent-kernel">
+              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              to="https://github.com/yaalalabs/agent-kernel"
+              target="_blank"
+              rel="noopener noreferrer">
+              <FaGithub style={{ marginRight: '8px' }} />
               View on GitHub
             </Link>
-          </div>
-          <div className={styles.affiliationSection}>
-            <div className={styles.affiliationLogos}>
-              <a href="https://www.linuxfoundation.org" target="_blank" rel="noopener noreferrer">
-                <img
-                  src="/img/lf_membership.svg"
-                  alt="Linux Foundation"
-                  className={styles.affiliationLogo}
-                />
-              </a>
-              <a href="https://aaif.io" target="_blank" rel="noopener noreferrer">
-                <img
-                  src="/img/aaif_membership.svg"
-                  alt="Agentic AI Foundation"
-                  className={styles.affiliationLogo}
-                />
-              </a>
-            </div>
+            <Link className={`button button--secondary button--lg ${styles.btnGhost}`} to="/features">
+              Explore Features
+            </Link>
           </div>
         </div>
       </div>
-    </header>
+    </section>
   );
 }
 
-function NavigationSection() {
-  const navigationCards = [
-    {
-      title: 'Integrations',
-      icon: <MdHandshake />,
-      description: 'Explore integrations to connect your AI agents with popular platforms.',
-      link: '#integrations',
-      linkText: 'View Integrations',
-      color: 'teal',
-    },
-    {
-      title: 'Documentation',
-      icon: <MdMenuBook />,
-      description: 'Explore comprehensive guides, API references, and tutorials to get the most out of Agent Kernel.',
-      link: '/docs',
-      linkText: 'Browse Documentation',
-      color: 'blue',
-    },
-    {
-      title: 'Links',
-      icon: <MdLink />,
-      description: 'Connect with our community and explore related resources across different platforms.',
-      link: '#community',
-      linkText: 'Explore Links',
-      color: 'purple',
-    },
-    {
-      title: 'Blog',
-      icon: <MdArticle />,
-      description: 'Stay updated with the latest news, release announcements, and technical articles from the team.',
-      link: '/blog',
-      linkText: 'Read Blog Posts',
-      color: 'green',
-    },
-    {
-      title: 'Yaala Labs',
-      icon: <MdBusiness />,
-      description: 'Learn more about Yaala Labs and our expertise in building mission-critical market infrastructure.',
-      link: 'https://www.yaalalabs.com/',
-      linkText: 'Visit Yaala Labs',
-      color: 'orange',
-      external: true,
-    },
+/* ─── Frameworks Strip ──────────────────────────────────────────────────── */
+
+function FrameworksStrip() {
+  const frameworks = [
+    { name: 'OpenAI Agents SDK', logo: '/img/integrations/openai.svg', link: '/docs/frameworks/openai', invert: true },
+    { name: 'LangGraph', logo: '/img/integrations/langgraph.png', link: '/docs/frameworks/langgraph', invert: true },
+    { name: 'CrewAI', logo: '/img/integrations/crewai.svg', link: '/docs/frameworks/crewai', invert: false },
+    { name: 'Google ADK', logo: '/img/integrations/adk.png', link: '/docs/frameworks/google-adk', invert: false },
   ];
 
   return (
-    <section className={styles.navigationSection}>
+    <section className={styles.frameworksStrip}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Navigate</h2>
-        <div className={styles.cardGrid}>
-          {navigationCards.map((card, idx) => (
-            <div key={idx} className={`${styles.card} ${styles[card.color]}`}>
-              <div className={styles.cardIcon}>{card.icon}</div>
-              <h3 className={styles.cardTitle}>{card.title}</h3>
-              <p className={styles.cardDescription}>{card.description}</p>
-              <Link
-                className={styles.cardLink}
-                to={card.link}
-                {...(card.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
-                {card.linkText} →
-              </Link>
+        <p className={styles.frameworksLabel}>Works with the frameworks you already use</p>
+        <div className={styles.frameworksRow}>
+          {frameworks.map((f, i) => (
+            <Link key={i} to={f.link} className={styles.frameworkItem}>
+              <img
+                src={f.logo}
+                alt={f.name}
+                className={`${styles.frameworkLogo} ${f.invert ? styles.invertOnDark : ''}`}
+              />
+              <span className={styles.frameworkName}>{f.name}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Affiliations Strip ────────────────────────────────────────────────── */
+
+function AffiliationsStrip() {
+  return (
+    <section className={styles.affiliationsStrip}>
+      <div className="container">
+        <p className={styles.affiliationsLabel}>Member of</p>
+        <div className={styles.affiliationsRow}>
+          <a
+            href="https://www.linuxfoundation.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.affiliationItem}>
+            <img src="/img/lf_membership.svg" alt="Linux Foundation Member" className={styles.affiliationLogo} />
+          </a>
+          <a
+            href="https://aaif.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.affiliationItem}>
+            <img src="/img/aaif_membership.svg" alt="Agentic AI Foundation Member" className={styles.affiliationLogo} />
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Value Proposition ─────────────────────────────────────────────────── */
+
+function ValueProp() {
+  const items = [
+    { problem: 'Months of platform engineering', solution: 'Production-ready in days' },
+    { problem: 'Framework lock-in', solution: 'Switch with 2 import lines' },
+    { problem: 'Cloud lock-in', solution: 'AWS + Azure, same code' },
+    { problem: 'Build session management', solution: 'Multi-backend, built-in' },
+    { problem: 'Wire messaging platforms', solution: 'Slack, WhatsApp, 6+ out of the box' },
+    { problem: 'No testing standard', solution: 'pytest-integrated test framework' },
+  ];
+
+  return (
+    <section className={styles.section}>
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Stop Building Plumbing.</h2>
+          <h2 className={`${styles.sectionTitle} ${styles.gradientText}`}>Start Building Intelligence.</h2>
+          <p className={styles.sectionSubtitle}>
+            Every hour your team spends on infrastructure is an hour not spent on your core AI product.
+            Agent Kernel handles the entire platform layer so you don't have to.
+          </p>
+        </div>
+        <div className={styles.valuePropGrid}>
+          {items.map((item, i) => (
+            <div key={i} className={styles.valuePropCard}>
+              <div className={styles.valueProblem}>
+                <span className={styles.xMark}>✕</span>
+                {item.problem}
+              </div>
+              <div className={styles.valueArrow}>→</div>
+              <div className={styles.valueSolution}>
+                <span className={styles.checkMark}>✓</span>
+                {item.solution}
+              </div>
             </div>
           ))}
         </div>
@@ -146,472 +162,369 @@ function NavigationSection() {
   );
 }
 
-function IntegrationsSection() {
-  const integrations = [
+/* ─── Who It's For ──────────────────────────────────────────────────────── */
+
+function WhoItsFor() {
+  const segments = [
     {
-      name: 'OpenAI Agents SDK',
-      logo: '/img/integrations/openai.svg',
-      link: '/docs/frameworks/openai',
-      category: 'Agentic Frameworks',
-      invertLogo: true,
+      icon: <MdBusiness />,
+      title: 'Software Companies\n(Services)',
+      tagline: 'Ship AI agent solutions to clients in weeks, not months.',
+      href: '/use-cases#software-services',
+      accent: 'cyan',
     },
     {
-      name: 'LangGraph',
-      logo: '/img/integrations/langgraph.png',
-      link: '/docs/frameworks/langgraph',
-      category: 'Agentic Frameworks',
-      invertLogo: true,
+      icon: <MdAutoAwesome />,
+      title: 'Software Companies\n(Products)',
+      tagline: 'Add intelligent agents to your SaaS without framework lock-in.',
+      href: '/use-cases#software-products',
+      accent: 'violet',
     },
     {
-      name: 'CrewAI',
-      logo: '/img/integrations/crewai.svg',
-      link: '/docs/frameworks/crewai',
-      category: 'Agentic Frameworks',
+      icon: <MdRocketLaunch />,
+      title: 'AI Startups',
+      tagline: 'Go from prototype to production in days, not quarters.',
+      href: '/use-cases#ai-startups',
+      accent: 'cyan',
     },
     {
-      name: 'Google ADK',
-      logo: '/img/integrations/adk.png',
-      link: '/docs/frameworks/google-adk',
-      category: 'Agentic Frameworks',
-    },
-    {
-      name: 'LangFuse',
-      logo: '/img/integrations/langfuse.png',
-      link: '/docs/advanced/traceability',
-      category: 'Traceability & Observability',
-    },
-    {
-      name: 'TraceLoop OpenLLMetry',
-      logo: '/img/integrations/traceloop.png',
-      link: '/docs/advanced/traceability',
-      category: 'Traceability & Observability',
-    },
-    {
-      name: 'OpenAI Guardrails',
-      logo: '/img/integrations/openai.svg',
-      link: '/docs/advanced/guardrails-openai',
-      category: 'Content Safety & Compliance',
-      invertLogo: true,
-    },
-    {
-      name: 'AWS Bedrock Guardrails',
-      logo: '/img/integrations/bedrock.png',
-      link: '/docs/advanced/guardrails-bedrock',
-      category: 'Content Safety & Compliance',
+      icon: <MdGroup />,
+      title: 'Domain Experts',
+      tagline: 'Build production AI products without a full engineering team.',
+      href: '/use-cases#domain-experts',
+      accent: 'violet',
     },
   ];
 
   return (
-    <section className={styles.integrationsSection}>
+    <section className={styles.section}>
       <div className="container">
-        <div className={styles.integrationsHeader}>
-          <h2 className={styles.integrationsSectionTitle}>Production Runtime with Enterprise Integrations</h2>
-          <p className={styles.integrationsSectionSubtitle}>
-            Deploy and scale LangGraph, OpenAI Agents SDK, Google ADK and CrewAI with Agent Kernel.
-            A framework-agnostic runtime with enterprise-grade features and seamless observability integrations.
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Built for Teams Who Move Fast</h2>
+          <p className={styles.sectionSubtitle}>
+            From AI service agencies to domain experts — Agent Kernel meets you where you are.
           </p>
         </div>
-
-        <div className={styles.integrationsContainer}>
-          <div className={styles.integrationsUnifiedGrid}>
-            {integrations.map((integration, idx) => (
-              <Link
-                key={idx}
-                to={integration.link}
-                className={styles.integrationCard}
-                style={{ animationDelay: `${idx * 0.1}s` }}>
-                <div className={styles.integrationLogoWrapper}>
-                  <img
-                    src={integration.logo}
-                    alt={integration.name}
-                    className={`${styles.integrationLogo} ${integration.invertLogo ? styles.invertLogoDark : ''}`}
-                  />
-                </div>
-                <h4 className={styles.integrationName}>{integration.name}</h4>
-                <span className={styles.integrationCategoryLabel}>
-                  {integration.category}
-                </span>
-              </Link>
-            ))}
-          </div>
+        <div className={styles.segmentsGrid}>
+          {segments.map((s, i) => (
+            <Link key={i} to={s.href} className={`${styles.segmentCard} ${styles[`accent_${s.accent}`]}`}>
+              <div className={styles.segmentIcon}>{s.icon}</div>
+              <h3 className={styles.segmentTitle}>{s.title}</h3>
+              <p className={styles.segmentTagline}>{s.tagline}</p>
+              <span className={styles.segmentCta}>Learn more →</span>
+            </Link>
+          ))}
+        </div>
+        <div className={styles.sectionFooter}>
+          <Link to="/use-cases" className={styles.sectionLink}>
+            See all use cases and market segments →
+          </Link>
         </div>
       </div>
     </section>
   );
 }
 
-function MessagingIntegrationsSection() {
-  const activeIntegrations = [
-    {
-      name: 'Slack',
-      icon: <FaSlack />,
-      description: 'Build AI agents for Slack workspaces',
-      status: 'active',
-      color: '#4A154B',
-      link: '/docs/integrations/slack',
-    },
-    {
-      name: 'WhatsApp',
-      icon: <FaWhatsapp />,
-      description: 'Deploy agents on WhatsApp Business',
-      status: 'active',
-      color: '#25D366',
-      link: '/docs/integrations/whatsapp',
-    },
-    {
-      name: 'Messenger',
-      icon: <FaFacebookMessenger />,
-      description: 'Integrate with Facebook Messenger',
-      status: 'active',
-      color: '#0084FF',
-      link: '/docs/integrations/messenger',
-    },
-    {
-      name: 'Instagram',
-      icon: <FaInstagram />,
-      description: 'Deploy agents for Instagram DMs',
-      status: 'active',
-      color: '#E4405F',
-      link: '/docs/integrations/instagram',
-    },
-    {
-      name: 'Telegram',
-      icon: <FaTelegram />,
-      description: 'Build Telegram bots with AI agents',
-      status: 'active',
-      color: '#0088CC',
-      link: '/docs/integrations/telegram',
-    },
-    {
-      name: 'Gmail',
-      icon: <SiGmail />,
-      description: 'Email conversation handling with Gmail',
-      status: 'active',
-      color: '#EA4335',
-      link: '/docs/integrations/gmail',
-    },
-  ];
+/* ─── Key Features ──────────────────────────────────────────────────────── */
 
-  const comingSoonIntegrations = [
-    {
-      name: 'Teams',
-      icon: <BsMicrosoftTeams />,
-      description: 'Build AI Agents for Microsoft Teams',
-      status: 'active',
-      color: '#6264A7',
-      // link: '/docs/integrations/teams',
-    },
-  ];
-
-  return (
-    <section id="integrations" className={styles.messagingIntegrationsSection}>
-      <div className="container">
-        <div className={styles.integrationsHeader}>
-          <h2 className={styles.integrationsSectionTitle}>Messaging Platform Integrations</h2>
-          <p className={styles.integrationsSectionSubtitle}>
-            Connect your AI agents to popular messaging platforms including Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail
-          </p>
-        </div>
-
-        <div className={styles.messagingIntegrationsContainer}>
-          <div className={styles.messagingIntegrationsGrid}>
-            {/* First set of cards */}
-            {activeIntegrations.map((platform, idx) => (
-              <Link
-                key={`active-1-${idx}`}
-                to={platform.link}
-                className={styles.messagingIntegrationCard}>
-                <div
-                  className={styles.messagingIntegrationIcon}
-                  style={{ color: platform.color }}>
-                  {platform.icon}
-                </div>
-                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
-                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
-              </Link>
-            ))}
-            {comingSoonIntegrations.map((platform, idx) => (
-              <div
-                key={`coming-1-${idx}`}
-                className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
-                <div
-                  className={styles.messagingIntegrationIcon}
-                  style={{ color: platform.color }}>
-                  {platform.icon}
-                </div>
-                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
-                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
-                <span className={`${styles.integrationStatusBadge} ${styles.comingSoonBadge}`}>Coming Soon</span>
-              </div>
-            ))}
-            {/* Duplicate set for seamless loop */}
-            {activeIntegrations.map((platform, idx) => (
-              <Link
-                key={`active-2-${idx}`}
-                to={platform.link}
-                className={styles.messagingIntegrationCard}>
-                <div
-                  className={styles.messagingIntegrationIcon}
-                  style={{ color: platform.color }}>
-                  {platform.icon}
-                </div>
-                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
-                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
-              </Link>
-            ))}
-            {comingSoonIntegrations.map((platform, idx) => (
-              <div
-                key={`coming-2-${idx}`}
-                className={`${styles.messagingIntegrationCard} ${styles.comingSoon}`}>
-                <div
-                  className={styles.messagingIntegrationIcon}
-                  style={{ color: platform.color }}>
-                  {platform.icon}
-                </div>
-                <h4 className={styles.messagingIntegrationName}>{platform.name}</h4>
-                <p className={styles.messagingIntegrationDescription}>{platform.description}</p>
-                <span className={`${styles.integrationStatusBadge} ${styles.comingSoonBadge}`}>Coming Soon</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FeaturesSection() {
+function KeyFeatures() {
   const features = [
     {
-      title: 'Framework Agnostic',
-      icon: <MdPower />,
-      description: 'Support for LangGraph, OpenAI Agents SDK, Google ADK, and custom frameworks.',
+      icon: <MdSwapHoriz />,
+      title: 'Framework-Agnostic',
+      description: 'Run OpenAI, LangGraph, CrewAI, and Google ADK side by side in one runtime. Switch frameworks with 2 import lines.',
+      size: 'wide',
+      link: '/docs/frameworks/overview',
     },
     {
-      title: 'Production Ready',
-      icon: <MdRocket />,
-      description: 'Built-in state management, monitoring, and scalability for enterprise deployments.',
+      icon: <MdCloud />,
+      title: 'Multi-Cloud',
+      description: 'Same agent code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps. Zero vendor lock-in.',
+      size: 'normal',
+      link: '/docs/deployment/overview',
     },
     {
-      title: 'Fault Tolerant',
-      icon: <MdHealthAndSafety />,
-      description: 'Multi-AZ deployments with automatic recovery, health monitoring, and zero downtime.',
+      icon: <MdMemory />,
+      title: 'Session & Memory',
+      description: 'Built-in volatile and non-volatile caching. Backends: Redis, DynamoDB, Cosmos DB, in-memory.',
+      size: 'normal',
+      link: '/docs/architecture/memory-management',
     },
     {
-      title: 'Multi-Agent Systems',
-      icon: <MdHandshake />,
-      description: 'Native support for agent-to-agent communication and orchestration.',
+      icon: <MdSettings />,
+      title: 'Execution Hooks',
+      description: 'Pre/post-execution hooks for guardrails, RAG injection, analytics, and response moderation. Works across all frameworks.',
+      size: 'normal',
+      link: '/docs/integrations/hooks',
     },
     {
-      title: 'Multi-Cloud Deployment',
-      icon: <MdFlashOn />,
-      description: 'Deploy to AWS or Azure with serverless, containerized environments using Terraform modules.',
+      icon: <FaSlack />,
+      title: 'Messaging Integrations',
+      description: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
+      size: 'normal',
+      link: '/docs/integrations/overview',
+    },
+    {
+      icon: <MdBugReport />,
+      title: 'Testing Framework',
+      description: 'pytest-integrated agent testing with fuzzy, semantic, and fallback comparison modes. CI/CD ready.',
+      size: 'wide',
+      link: '/docs/testing/overview',
+    },
+    {
+      icon: <MdSecurity />,
+      title: 'Guardrails',
+      description: 'OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, and content moderation. Enforce safety policies without touching agent logic.',
+      size: 'wide',
+      link: '/docs/advanced/guardrails',
+    },
+    {
+      icon: <MdVisibility />,
+      title: 'Observability & Tracing',
+      description: 'LangFuse and OpenLLMetry tracing with one config line. Full visibility into every agent, tool, and LLM call — in development and production.',
+      size: 'wide',
+      link: '/docs/advanced/traceability',
     },
   ];
 
   return (
-    <section className={styles.featuresSection}>
+    <section className={styles.section}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Why Agent Kernel?</h2>
-        <div className={styles.featuresGrid}>
-          {features.map((feature, idx) => (
-            <div key={idx} className={styles.feature}>
-              <div className={styles.featureIcon}>{feature.icon}</div>
-              <h3 className={styles.featureTitle}>{feature.title}</h3>
-              <p className={styles.featureDescription}>{feature.description}</p>
-            </div>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Everything You Need in Production</h2>
+          <p className={styles.sectionSubtitle}>
+            No more cobbling together deployment pipelines, session stores, and integration glue.
+            Agent Kernel gives you the full stack from day one.
+          </p>
+        </div>
+        <div className={styles.bentoGrid}>
+          {features.map((f, i) => (
+            <Link
+              key={i}
+              to={f.link}
+              className={`${styles.bentoCard} ${f.size === 'wide' ? styles.bentoWide : ''}`}>
+              <div className={styles.bentoIcon}>{f.icon}</div>
+              <h3 className={styles.bentoTitle}>{f.title}</h3>
+              <p className={styles.bentoDescription}>{f.description}</p>
+            </Link>
           ))}
+        </div>
+        <div className={styles.sectionFooter}>
+          <Link to="/features" className={styles.sectionLink}>View all features →</Link>
         </div>
       </div>
     </section>
   );
 }
 
-function InfrastructureSection() {
-  const cloudProviders = [
+/* ─── Deployment ────────────────────────────────────────────────────────── */
+
+function Deployment() {
+  const clouds = [
     {
-      name: 'Amazon AWS',
       icon: <FaAws />,
-      description: 'Deploy with AWS Lambda (Serverless) or ECS/Fargate (Containerized)',
+      name: 'Amazon AWS',
+      color: '#FF9900',
+      description: 'Serverless or containerized deployments with Terraform modules.',
+      modes: ['AWS Lambda (Serverless)', 'AWS ECS/Fargate (Containerized)'],
       modules: [
         { name: 'AWS Serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws' },
         { name: 'AWS Containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws' },
       ],
-      color: '#FF9900',
+      comingSoon: false,
     },
     {
-      name: 'Microsoft Azure',
       icon: <FaMicrosoft />,
-      description: 'Deploy with Azure Functions (Serverless) or Container Apps (Containerized)',
+      name: 'Microsoft Azure',
+      color: '#0078D4',
+      description: 'Functions or Container Apps with Cosmos DB session storage.',
+      modes: ['Azure Functions (Serverless)', 'Azure Container Apps (Containerized)'],
       modules: [
         { name: 'Azure Serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm' },
         { name: 'Azure Containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
       ],
-      color: '#0078D4',
+      comingSoon: false,
+    },
+    {
+      icon: <SiGooglecloud />,
+      name: 'Google Cloud',
+      color: '#4285F4',
+      description: 'Cloud Run and Cloud Functions deployments — Terraform modules in progress.',
+      modes: ['Cloud Run (Containerized)', 'Cloud Functions (Serverless)'],
+      modules: [],
+      comingSoon: true,
     },
   ];
 
   return (
-    <section className={styles.infrastructureSection}>
+    <section className={styles.section}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Infrastructure as Code</h2>
-        <p className={styles.sectionSubtitle}>
-          Deploy your AI agents to AWS or Azure using our official Terraform modules.
-          Production-ready infrastructure with best practices baked in.
-        </p>
-        <div className={styles.cloudProvidersGrid}>
-          {cloudProviders.map((provider, idx) => (
-            <div key={idx} className={styles.cloudProviderCard}>
-              <div className={styles.cloudProviderIcon} style={{ color: provider.color }}>
-                {provider.icon}
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Deploy Anywhere</h2>
+          <p className={styles.sectionSubtitle}>
+            AWS, Azure, or on-prem Docker. Same agent code — zero platform rewrites.
+            Full Terraform modules with production best practices baked in.
+          </p>
+        </div>
+        <div className={styles.cloudGrid}>
+          {clouds.map((c, i) => (
+            <div key={i} className={`${styles.cloudCard} ${c.comingSoon ? styles.cloudCardComingSoon : ''}`}>
+              <div className={styles.cloudIcon} style={{ color: c.color }}>{c.icon}</div>
+              <div className={styles.cloudNameRow}>
+                <h3 className={styles.cloudName}>{c.name}</h3>
+                {c.comingSoon && <span className={styles.cloudComingSoonBadge}>Coming Soon</span>}
               </div>
-              <h3 className={styles.cloudProviderName}>{provider.name}</h3>
-              <p className={styles.cloudProviderDescription}>{provider.description}</p>
-              <div className={styles.terraformModules}>
-                {provider.modules.map((module, mIdx) => (
-                  <Link
-                    key={mIdx}
-                    to={module.url}
-                    className={styles.moduleLink}
-                    target="_blank"
-                    rel="noopener noreferrer">
-                    <SiTerraform className={styles.terraformIcon} />
-                    {module.name} →
-                  </Link>
-                ))}
-              </div>
+              <p className={styles.cloudDescription}>{c.description}</p>
+              <ul className={styles.cloudModes}>
+                {c.modes.map((m, j) => <li key={j}>{m}</li>)}
+              </ul>
+              {!c.comingSoon && (
+                <div className={styles.cloudModules}>
+                  {c.modules.map((m, j) => (
+                    <Link
+                      key={j}
+                      to={m.url}
+                      className={styles.terraformLink}
+                      target="_blank"
+                      rel="noopener noreferrer">
+                      <SiTerraform className={styles.terraformIcon} />
+                      {m.name} →
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
-      </div>
-    </section>
-  );
-}
-
-function SecurityComplianceSection() {
-  const certifications = [
-    {
-      logo: '/img/iso.png',
-      alt: 'ISO 27001 Certified',
-    },
-    {
-      logo: '/img/soc.png',
-      alt: 'SOC 2 Type 2 Compliant',
-    },
-  ];
-
-  const securityFeatures = [
-    'Security Compliance',
-    'Secure Development',
-    'Controls and Monitoring',
-  ];
-
-  return (
-    <section className={styles.securitySection}>
-      <div className="container">
-        <h2 className={styles.sectionTitle}>Security & Compliance</h2>
-        <p className={styles.securityIntro}>
-          Trust in our commitment to security and compliance. Agent Kernel is built on industry-leading standards and best practices, ensuring your data is protected and your applications are developed in a secure, reliable environment.
-        </p>
-        <div className={styles.certificationsWrapper}>
-          {certifications.map((cert, idx) => (
-            <img
-              key={idx}
-              src={cert.logo}
-              alt={cert.alt}
-              className={styles.certificationLogo}
-            />
-          ))}
+        <div className={styles.sectionFooter}>
+          <Link to="/docs/deployment/overview" className={styles.sectionLink}>View deployment docs →</Link>
         </div>
-        <ul className={styles.securityFeaturesList}>
-          {securityFeatures.map((feature, idx) => (
-            <li key={idx} className={styles.securityFeatureItem}>{feature}</li>
-          ))}
-        </ul>
       </div>
     </section>
   );
 }
 
-function CommunitySection() {
-  const communityLinks = [
-    {
-      name: 'GitHub',
-      description: 'Star our repository and contribute',
-      icon: <FaGithub />,
-      url: 'https://github.com/yaalalabs/agent-kernel',
-    },
-    {
-      name: 'Discord',
-      description: 'Join our community chat',
-      icon: <FaDiscord />,
-      url: 'https://discord.gg/snrPzb46uu',
-    },
-    {
-      name: 'PyPI',
-      description: 'Install via pip',
-      icon: <FaPython />,
-      url: 'https://pypi.org/project/agentkernel/',
-    },
-    {
-      name: 'Terraform',
-      description: 'Deploy with Terraform',
-      icon: <SiTerraform />,
-      url: 'https://registry.terraform.io/modules/yaalalabs',
-    },
+/* ─── Messaging Integrations ────────────────────────────────────────────── */
+
+function MessagingIntegrations() {
+  const platforms = [
+    { name: 'Slack', icon: <FaSlack />, color: '#4A154B', link: '/docs/integrations/slack' },
+    { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#25D366', link: '/docs/integrations/whatsapp' },
+    { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#0084FF', link: '/docs/integrations/messenger' },
+    { name: 'Instagram', icon: <FaInstagram />, color: '#E4405F', link: '/docs/integrations/instagram' },
+    { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
+    { name: 'Gmail', icon: <SiGmail />, color: '#EA4335', link: '/docs/integrations/gmail' },
   ];
 
   return (
-    <section id="community" className={styles.communitySection}>
+    <section className={styles.messagingSection}>
       <div className="container">
-        <h2 className={styles.sectionTitle}>Join Our Community</h2>
-        <div className={styles.communityGrid}>
-          {communityLinks.map((link, idx) => (
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Reach Users Where They Are</h2>
+          <p className={styles.sectionSubtitle}>
+            Built-in integrations for the world's most popular messaging platforms.
+            No custom bots to build — just plug and play.
+          </p>
+        </div>
+        <div className={styles.messagingTrackWrapper}>
+          <div className={styles.messagingTrack}>
+            {[...platforms, ...platforms].map((p, i) => (
+              <Link
+                key={i}
+                to={p.link}
+                className={styles.messagingCard}
+                style={{ '--platform-color': p.color } as React.CSSProperties}>
+                <div className={styles.messagingIcon} style={{ color: p.color }}>{p.icon}</div>
+                <span className={styles.messagingName}>{p.name}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className={styles.comingSoonRow}>
+          <div className={`${styles.messagingCard} ${styles.comingSoonCard}`}>
+            <MdCode className={styles.messagingIcon} style={{ color: '#6264A7' } as React.CSSProperties} />
+            <span className={styles.messagingName}>Teams</span>
+            <span className={styles.comingSoonBadge}>Coming Soon</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Community / CTA ───────────────────────────────────────────────────── */
+
+function Community() {
+  const links = [
+    { icon: <FaGithub />, name: 'GitHub', description: 'Star us and contribute', url: 'https://github.com/yaalalabs/agent-kernel' },
+    { icon: <FaDiscord />, name: 'Discord', description: 'Join the community', url: 'https://discord.gg/snrPzb46uu' },
+    { icon: <FaPython />, name: 'PyPI', description: 'pip install agentkernel', url: 'https://pypi.org/project/agentkernel/' },
+    { icon: <SiTerraform />, name: 'Terraform', description: 'Official registry modules', url: 'https://registry.terraform.io/modules/yaalalabs' },
+  ];
+
+  return (
+    <section className={styles.ctaSection}>
+      <div className={styles.ctaGlow} />
+      <div className="container">
+        <div className={styles.ctaContent}>
+          <h2 className={styles.ctaTitle}>Ready to Ship Your First Agent?</h2>
+          <p className={styles.ctaSubtitle}>
+            Free, open-source, Apache 2.0. No licensing costs, no vendor lock-in.
+            Join hundreds of developers building production AI agents with Agent Kernel.
+          </p>
+          <div className={styles.ctaButtons}>
+            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
+              Get Started →
+            </Link>
             <Link
-              key={idx}
-              to={link.url}
-              className={styles.communityCard}
+              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
-              <div className={styles.communityIcon}>{link.icon}</div>
-              <h3 className={styles.communityName}>{link.name}</h3>
-              <p className={styles.communityDescription}>{link.description}</p>
+              <FaGithub style={{ marginRight: '8px' }} />
+              View on GitHub
             </Link>
-          ))}
+          </div>
+          <div className={styles.communityLinks}>
+            {links.map((l, i) => (
+              <Link
+                key={i}
+                to={l.url}
+                className={styles.communityLink}
+                target="_blank"
+                rel="noopener noreferrer">
+                <span className={styles.communityLinkIcon}>{l.icon}</span>
+                <div>
+                  <div className={styles.communityLinkName}>{l.name}</div>
+                  <div className={styles.communityLinkDesc}>{l.description}</div>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </section>
   );
 }
+
+/* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Production-ready agentic framework runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI with enterprise features. Framework-agnostic alternative to Semantic Kernel for AI agent deployment, orchestration, and monitoring.">
-      <div className={styles.animatedBackground}></div>
-      <div className={styles.gridOverlay}></div>
-      <div className={styles.particle}></div>
-      <div className={styles.particle}></div>
-      <div className={styles.particle}></div>
-      <div className={styles.particle}></div>
-      <div className={styles.particle}></div>
-      <div className={styles.beam}></div>
-      <div className={styles.beam}></div>
-      <div className={styles.beam}></div>
-      <div className={styles.beam}></div>
-      <div className={styles.beam}></div>
-      <div className={styles.beam}></div>
-      <HomepageHeader />
+      title={`${siteConfig.title} — ${siteConfig.tagline}`}
+      description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
+      <Hero />
       <main>
-        <NavigationSection />
-        <IntegrationsSection />
-        <MessagingIntegrationsSection />
-        <FeaturesSection />
-        <InfrastructureSection />
-        <SecurityComplianceSection />
-        <CommunitySection />
+        <AffiliationsStrip />
+        <FrameworksStrip />
+        <ValueProp />
+        <WhoItsFor />
+        <KeyFeatures />
+        <Deployment />
+        <MessagingIntegrations />
+        <Community />
       </main>
     </Layout>
   );

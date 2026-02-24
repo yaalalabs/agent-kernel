@@ -1,0 +1,13 @@
+<svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Layer 3 (bottom) -->
+  <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="#1a1b2e" opacity="0.12"/>
+  <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#1a1b2e" stroke-width="1.5" fill="none" opacity="0.2"/>
+  <!-- Layer 2 (middle) -->
+  <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="#1a1b2e" opacity="0.2"/>
+  <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#1a1b2e" stroke-width="1.8" fill="none" opacity="0.4"/>
+  <!-- Layer 1 (top) -->
+  <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="#1a1b2e" opacity="0.35"/>
+  <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="#1a1b2e" stroke-width="2.5" fill="none" opacity="0.85"/>
+  <!-- Core diamond -->
+  <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="#1a1b2e"/>
+</svg>

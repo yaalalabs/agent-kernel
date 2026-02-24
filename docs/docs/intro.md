@@ -5,7 +5,7 @@ slug: /
 
 # Introduction to Agent Kernel
 
-Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for building and deploying AI agents.
+**From Agent Logic to Production in Minutes.**
 
 :::tip What's New
 ☁️ **Multi-Cloud Azure Support** - Agent Kernel now supports Microsoft Azure! Deploy to Azure Functions (serverless) or Azure Container Apps (containerized) with the same ease as AWS. Full Terraform modules, Cosmos DB session storage, and enterprise-ready deployment patterns. [Learn more →](/docs/deployment/overview)
@@ -13,18 +13,18 @@ Welcome to **Agent Kernel** - a versatile, framework-agnostic runtime for buildi
 
 ## What is Agent Kernel?
 
-Agent Kernel is a **lightweight, multi-cloud AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks and cloud providers. It provides the low level scaffolding to build, test and deploy your agents, your MCP tools and A2A quickly in many deployment configurations on **AWS and Azure**. The unified execution environment provides the session and memory management seamlessly.
+Agent Kernel is an **open-source runtime** that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code. Built-in integrations for Slack, WhatsApp, and more mean your agents can reach users instantly.
 
-**Supported Python Versions:** 3.12 - 3.13.x 
-**Supported Cloud Platforms:** AWS, Azure 
+**Think of it like Express.js for web servers, or Spring Boot for Java microservices** — but for AI agents. It gives you the scaffolding, execution environment, session management, and deployment infrastructure so you can focus on writing the logic that matters.
 
-Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. It eliminates the complexity of framework development allowing AI engineers to focus on Agent development and provides a consistent development experience regardless of the underlying AI agent framework.
+**Supported Python Versions:** 3.12 - 3.13.x
+**Supported Cloud Platforms:** AWS, Azure
 
-It's not
-- a substitute for popular Agent frameworks and SDKs like LangGraph and OpenAI 
+It's not:
+- a substitute for popular agent frameworks and SDKs like LangGraph, OpenAI Agents, CrewAI, or Google ADK
 - another heavy abstraction that you have to learn
 
-It's a lightweight, simple, intuitive framework to make your life easy.
+It's a **lightweight, thin adapter** that wraps your existing agents and instantly provides everything else — testing, deployment, integrations, session management, observability.
 
 ```mermaid
 ---
@@ -235,13 +235,21 @@ All without changing your agent code!
 
 ## Who Should Use Agent Kernel?
 
-Agent Kernel is ideal for:
+Agent Kernel is built for four types of teams:
 
-- **AI Engineers** who want framework flexibility without vendor lock-in
-- **Teams** building production AI agent systems across multiple clouds
-- **Developers** who need to migrate between frameworks or cloud providers
-- **Organizations** requiring enterprise-grade agent deployment with multi-cloud strategy
-- **Researchers** exploring different agent frameworks
+### Software Companies (Services)
+Development houses and IT services firms with clients asking for AI-powered solutions. Agent Kernel lets them stand up AI agent capabilities quickly without a 6-month R&D cycle — focusing developer time on client-specific agent logic, not infrastructure.
+
+### Software Companies (Products)
+SaaS and enterprise software companies wanting to embed AI agents into their products. Agent Kernel's framework-agnostic design eliminates lock-in — add intelligent agents today, switch frameworks tomorrow, and your platform code never changes.
+
+### AI Startups
+Early to growth-stage startups building AI-native products. With open-source, no licensing costs, and full deployment infrastructure (Terraform, Docker) out of the box, startups go from prototype to production in days — not quarters.
+
+### Domain Experts
+Subject matter experts in finance, healthcare, legal, education, or other fields who want to build AI products without a fulltime engineering team. Agent Kernel dramatically reduces the software engineering surface area — define your agent logic, and Agent Kernel handles the rest.
+
+→ **[Explore all use cases →](/use-cases)**
 
 ## Next Steps
 

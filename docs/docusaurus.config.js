@@ -9,8 +9,8 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Agent Kernel',
-  tagline: 'Multi-cloud production-ready framework-agnostic runtime for AI agents - Deploy agents built with your favorite framework to AWS or Azure with enterprise features',
-  favicon: 'img/favicon.ico',
+  tagline: 'From Agent Logic to Production in Minutes.',
+  favicon: 'img/branding/agent-kernel-icon-color.svg',
   url: 'https://kernel.yaala.ai',
   baseUrl: '/',
 
@@ -27,7 +27,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'keywords',
-        content: 'agent kernel, agentic framework, agentic frameworks, AI agent runtime, LangGraph runtime, OpenAI Agents deployment, Google ADK deployment, CrewAI deployment, agent kernel vs semantic kernel, production AI agents, AI agent orchestration, multi-agent systems, LangGraph production, OpenAI Agents SDK, Google Gemini ADK, framework-agnostic agents, agent deployment platform, stateful AI agents, AI agent monitoring, LangGraph alternative, OpenAI agent framework, Python AI agents, enterprise AI agents, AI DevOps, MLOps agents, agent-to-agent communication, serverless agents, containerized agents',
+        content: 'agent kernel, AI agent framework, AI agent runtime, AI agent deployment, AI agent platform, agentic AI development, multi-cloud AI agents, framework-agnostic AI, deploy AI agents, how to build AI agents, how to deploy AI agents to AWS, how to deploy AI agents to Azure, AI agent development platform open source, build AI agents with Python, LangGraph vs OpenAI agents vs CrewAI, AI agent Slack integration, WhatsApp AI bot, production AI agent deployment, AI agent testing framework, AI agent session management, AI agent guardrails, AI agent safety, agent-to-agent communication, MCP protocol, model context protocol, AI agent observability, AI agent tracing, agentkernel, Yaala Labs, LangGraph runtime, OpenAI Agents SDK deployment, Google ADK deployment, CrewAI deployment, serverless AI agents, containerized AI agents, multi-agent systems, AI agent orchestration, enterprise AI agents, Python AI agents, open source AI agent platform',
       },
     },
     {
@@ -41,14 +41,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel - Production-ready framework-agnostic runtime for AI agents',
+        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Agent Kernel: The production-ready agentic framework-agnostic runtime. Deploy LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI with built-in state management, monitoring, and enterprise scalability.',
+        content: 'Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. Works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or your own servers with zero platform code.',
       },
     },
     {
@@ -83,14 +83,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel - Production-ready framework-agnostic runtime for AI agents',
+        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         name: 'twitter:description',
-        content: 'Production agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Enterprise-ready framework with state management and monitoring.',
+        content: 'Open-source, framework-agnostic, multi-cloud AI agent runtime. Build, test, and deploy production AI agents to AWS or Azure in days — not months. Works with OpenAI, LangGraph, CrewAI, and Google ADK.',
       },
     },
     {
@@ -153,7 +153,7 @@ const config = {
         '@type': 'SoftwareApplication',
         name: 'Agent Kernel',
         applicationCategory: 'DeveloperApplication',
-        description: 'Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Framework-agnostic runtime.',
+        description: 'Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy AI agents to AWS or Azure in days instead of months. Works with OpenAI, LangGraph, CrewAI, and Google ADK — run multiple frameworks simultaneously in a single runtime.',
         operatingSystem: 'Linux, macOS, Windows',
         offers: {
           '@type': 'Offer',
@@ -166,16 +166,20 @@ const config = {
           url: 'https://www.yaalalabs.com',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent kernel, agentic framework, LangGraph runtime, OpenAI Agents, Google ADK, CrewAI, AI agent deployment, agent kernel vs semantic kernel, Agentic AI',
+        keywords: 'Agent Kernel, agentkernel, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK',
         featureList: [
-          'LangGraph support',
-          'OpenAI Agents SDK support',
-          'Google ADK support',
-          'CrewAI support',
-          'Multi-agent orchestration',
-          'State management',
-          'Production monitoring',
-          'Framework-agnostic runtime',
+          'Framework-agnostic runtime — OpenAI Agents, LangGraph, CrewAI, Google ADK',
+          'Multi-framework simultaneous execution in a single runtime',
+          'Multi-cloud deployment — AWS Lambda, ECS, Azure Functions, Container Apps',
+          'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail integrations',
+          'Session and memory management — Redis, DynamoDB, Cosmos DB, in-memory',
+          'Execution hooks for guardrails, RAG, analytics, and moderation',
+          'pytest-integrated agent testing framework',
+          'OpenAI and AWS Bedrock guardrails for content safety',
+          'LangFuse and OpenLLMetry observability',
+          'MCP Server and A2A Server protocol support',
+          'Full Terraform modules for AWS and Azure',
+          'Open-source — Apache 2.0 license',
         ],
       }),
     },
@@ -193,7 +197,7 @@ const config = {
         sameAs: [
           'https://github.com/yaalalabs/agent-kernel',
         ],
-        description: 'Enterprise AI infrastructure and agentic framework solutions',
+        description: 'Yaala Labs is a technology company that builds next-generation cloud-native marketplace and capital markets infrastructure for both traditional and digital assets. Creator and maintainer of Agent Kernel, the open-source, framework-agnostic, multi-cloud runtime for production AI agents.',
       }),
     },
   ],
@@ -267,11 +271,12 @@ const config = {
             const items = await defaultCreateSitemapItems(rest);
             return items.map((item) => {
               // Set highest priority for key landing pages
-              if (item.url === 'https://kernel.yaala.ai/' || 
+              if (item.url === 'https://kernel.yaala.ai/' ||
                   item.url === 'https://kernel.yaala.ai/docs' ||
                   item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
                   item.url === 'https://kernel.yaala.ai/docs/installation' ||
                   item.url === 'https://kernel.yaala.ai/features' ||
+                  item.url === 'https://kernel.yaala.ai/use-cases' ||
                   item.url === 'https://kernel.yaala.ai/blog') {
                 return {...item, priority: 1.0, changefreq: 'daily'};
               }
@@ -300,9 +305,9 @@ const config = {
     ({
       // SEO metadata
       metadata: [
-        { 
+        {
           name: 'description',
-          content: 'Agent Kernel: Production-ready agentic framework runtime for LangGraph, OpenAI Agents SDK, Google ADK, and CrewAI. Deploy and scale AI agents with enterprise features. Framework-agnostic framework with built-in state management, monitoring, and observability.',
+          content: 'Agent Kernel: The open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months. Built-in messaging integrations, session management, testing framework, guardrails, and observability.',
         },
         {
           property: 'og:image',
@@ -318,10 +323,11 @@ const config = {
         title: 'Agent Kernel',
         logo: {
           alt: 'Agent Kernel Logo',
-          src: 'img/logo.svg',
+          src: 'img/branding/agent-kernel-icon-color.svg',
         },
         items: [
-          { to: '/features', label: 'Explore Features', position: 'left' },
+          { to: '/features', label: 'Features', position: 'left' },
+          { to: '/use-cases', label: 'Use Cases', position: 'left' },
           {
             type: 'docSidebar',
             sidebarId: 'tutorialSidebar',
@@ -376,6 +382,10 @@ const config = {
               {
                 label: 'Getting Started',
                 to: '/docs',
+              },
+              {
+                label: 'Use Cases',
+                to: '/use-cases',
               },
               {
                 label: 'Architecture',
@@ -447,9 +457,9 @@ const config = {
         additionalLanguages: ['python', 'bash', 'json', 'yaml'],
       },
       colorMode: {
-        defaultMode: 'light',
+        defaultMode: 'dark',
         disableSwitch: false,
-        respectPrefersColorScheme: true,
+        respectPrefersColorScheme: false,
       },
       mermaid: {
         options: {

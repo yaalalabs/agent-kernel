@@ -1,0 +1,27 @@
+<svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g1" x1="30" y1="30" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f7df7"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="30" y1="60" x2="170" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="30" y1="90" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.3"/>
+    </linearGradient>
+  </defs>
+  <!-- Layer 3 (bottom) -->
+  <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+  <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#8b5cf6" stroke-width="1.2" fill="none" opacity="0.35"/>
+  <!-- Layer 2 (middle) -->
+  <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+  <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#6d6af7" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <!-- Layer 1 (top - the kernel) -->
+  <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+  <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="2" fill="none"/>
+  <!-- Core diamond -->
+  <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+</svg>
