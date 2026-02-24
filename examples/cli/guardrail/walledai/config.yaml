@@ -1,0 +1,10 @@
+guardrail:
+  input:
+    enabled: true
+    type: walledai
+    # Optionally, specify config paths if your implementation supports it
+    # redact_config: /path/to/redact_config.json
+    # protect_config: /path/to/protect_config.json
+  output:
+    enabled: true
+    type: walledai
