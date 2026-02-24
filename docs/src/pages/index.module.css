@@ -192,26 +192,6 @@
   margin-bottom: 2.5rem;
 }
 
-.affiliations {
-  display: flex;
-  gap: 1.5rem;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.55;
-  margin-top: 0.5rem;
-  transition: opacity 0.2s;
-}
-
-.affiliations:hover {
-  opacity: 0.75;
-}
-
-.affiliationLogo {
-  height: 52px;
-  width: auto;
-  filter: brightness(0) invert(1);
-}
-
 /* ─── Affiliations Strip ───────────────────────────────────────────────────── */
 
 .affiliationsStrip {
@@ -239,20 +219,21 @@
 }
 
 .affiliationItem {
-  opacity: 0.55;
-  transition: opacity 0.2s ease;
   display: flex;
   align-items: center;
+  justify-content: center;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
 }
 
 .affiliationItem:hover {
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .affiliationLogo {
-  height: 40px;
+  height: 36px;
   width: auto;
-  filter: brightness(0) invert(1);
+  max-width: 180px;
 }
 
 /* ─── Frameworks Strip ─────────────────────────────────────────────────────── */

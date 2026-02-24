@@ -704,6 +704,20 @@
   flex-wrap: wrap;
 }
 
+/* Azure button sits on a blue-tinted banner — secondary needs a visible surface */
+.terraformBannerButtons :global(.button--secondary) {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(139, 92, 246, 0.55);
+  color: #dfe1f0;
+}
+
+.terraformBannerButtons :global(.button--secondary):hover {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: #8b5cf6;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
 /* ─── Observability / Guardrails ──────────────────────────────────────────── */
 
 .observabilityLayout {
