@@ -1,10 +1,5 @@
-import base64
-import hashlib
-import hmac
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
-
-import jwt
 from pydantic import BaseModel
 
 
@@ -43,6 +38,7 @@ class AuthValidator(ABC):
         :param algorithm: Hash algorithm to use (default: sha256)
         :return: True if signature is valid, False otherwise
         """
+        import base64, hashlib, hmac
         mac = hmac.new(key=secret.encode(), msg=message, digestmod=getattr(hashlib, algorithm))
         expected = base64.b64encode(mac.digest()).decode()
         return hmac.compare_digest(expected, signature)
@@ -59,6 +55,7 @@ class AuthValidator(ABC):
         :return: Decoded JWT claims dictionary
         :raises: jwt exceptions if token is invalid
         """
+        import jwt
         return jwt.decode(
             token,
             public_key,
