@@ -3,6 +3,7 @@ import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
+import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
 import {
   MdRocketLaunch,
   MdSwapHoriz,
@@ -519,6 +520,7 @@ export default function Home() {
       <main>
         <AffiliationsStrip />
         <FrameworksStrip />
+        <AgentKernelArchDiagram />
         <ValueProp />
         <WhoItsFor />
         <KeyFeatures />

@@ -2,6 +2,7 @@ import React from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
+import UseCaseJourneyMap from '../components/UseCaseJourneyMap';
 import {
   MdBusiness,
   MdAutoAwesome,
@@ -315,6 +316,7 @@ export default function UseCases() {
       description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
       <Hero />
       <main>
+        <UseCaseJourneyMap />
         <SegmentsSection />
         <Differentiators />
         <FinalCTA />

@@ -1,0 +1,282 @@
+/*
+  AgentKernelArchDiagram — vertical three-layer architecture with SVG particle flow.
+  Animation philosophy: purposeful, restrained, premium.
+
+  Layout (SVG viewBox 900×420 matches CSS pixel heights of each row):
+    topBox  :  h≈74px  (y 0-74)
+    gap     :  36px    (y 74-110)  ← SVG connector line here
+    hubCard :  h≈130px (y 110-240)
+    gap     :  40px    (y 240-280) ← SVG fan lines here
+    deployRow: h≈72px  (y 280-352)
+
+  Total ≈ 420px — matches SVG_H constant in index.tsx.
+*/
+
+.archSection {
+  padding: 5rem 0 4.5rem;
+  position: relative;
+  background: linear-gradient(180deg, transparent, rgba(79, 125, 247, 0.025) 40%, transparent);
+}
+
+.header {
+  text-align: center;
+  max-width: 580px;
+  margin: 0 auto 2.5rem;
+}
+
+.title {
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ak-text);
+  margin-bottom: 0.6rem;
+}
+
+.subtitle {
+  font-size: 0.95rem;
+  color: var(--ak-text-secondary);
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ─── Diagram container ──────────────────────────────────────────────────── */
+
+.diagram {
+  position: relative;
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Total height matches SVG_H so the overlay aligns correctly */
+  min-height: 420px;
+  gap: 0;
+}
+
+/* SVG sits behind all HTML layers */
+.svgOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+
+/* ─── Layer entrance animation ───────────────────────────────────────────── */
+
+@keyframes layerFadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.layerIn {
+  animation: layerFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--layer-delay, 0ms);
+}
+
+/* ─── Top box ────────────────────────────────────────────────────────────── */
+
+.topBox {
+  /* height ≈ 74px → matches SVG TOP_BOTTOM=74 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ak-surface-raised);
+  border: 1px solid var(--ak-border-accent);
+  border-radius: 0.875rem;
+  padding: 1rem 2.5rem;
+  box-shadow: 0 2px 24px var(--ak-blue-glow);
+  z-index: 1;
+  opacity: 0;
+  width: fit-content;
+}
+
+.topBoxContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.topBoxLabel {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ak-text);
+}
+
+.topBoxSub {
+  font-size: 0.78rem;
+  color: var(--ak-text-muted);
+}
+
+/* Gap spacer between topBox and hubCard: 36px for SVG connector */
+.topBox + .hubCard {
+  margin-top: 36px;
+}
+
+/* ─── Hub card ───────────────────────────────────────────────────────────── */
+
+.hubCard {
+  /* height ≈ 130px → hub_top 110, hub_bottom 240 */
+  width: 100%;
+  background: linear-gradient(135deg, rgba(79, 125, 247, 0.06), rgba(139, 92, 246, 0.06));
+  border: 1px solid var(--ak-border-accent);
+  border-radius: 1.25rem;
+  padding: 1.25rem 1.75rem;
+  box-shadow: 0 0 40px rgba(79, 125, 247, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+  z-index: 1;
+  opacity: 0;
+}
+
+.hubHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.hubLogo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.hubLabel {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ak-text);
+  letter-spacing: -0.01em;
+}
+
+/* ─── Module chips grid ──────────────────────────────────────────────────── */
+
+.modulesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.55rem;
+}
+
+@keyframes moduleReveal {
+  from { opacity: 0; transform: scale(0.88) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.moduleChip {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: var(--ak-surface-raised);
+  border: 1px solid var(--ak-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  opacity: 0;
+}
+
+.moduleIn {
+  animation: moduleReveal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: var(--mod-delay, 0ms);
+}
+
+.moduleIcon {
+  font-size: 1rem;
+  color: var(--ak-purple);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.moduleLabel {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--ak-text-secondary);
+  line-height: 1.25;
+}
+
+/* Gap between hubCard and deployRow: 40px for SVG fan lines */
+.hubCard + .deployRow {
+  margin-top: 40px;
+}
+
+/* ─── Deploy row ─────────────────────────────────────────────────────────── */
+
+.deployRow {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  width: 100%;
+  z-index: 1;
+}
+
+@keyframes deployFadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.deployBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: 0.625rem;
+  padding: 0.65rem 0.9rem;
+  min-width: 110px;
+  flex: 1;
+  opacity: 0;
+}
+
+.deployIn {
+  animation: deployFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--deploy-delay, 0ms);
+}
+
+.deployIcon {
+  font-size: 1.25rem;
+  color: var(--ak-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deployLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ak-text-muted);
+  text-align: center;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .modulesGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .topBox {
+    padding: 0.85rem 1.5rem;
+  }
+
+  .hubCard {
+    padding: 1rem 1.25rem;
+  }
+
+  .deployBox {
+    min-width: 80px;
+  }
+}
+
+@media (max-width: 400px) {
+  .modulesGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .deployRow {
+    gap: 0.4rem;
+  }
+}

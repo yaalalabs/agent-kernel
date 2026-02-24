@@ -2,6 +2,7 @@ import React from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './features.module.css';
+import RequestLifecycleAnimation from '../components/RequestLifecycleAnimation';
 import {
   MdMemory,
   MdShare,
@@ -724,6 +725,7 @@ export default function Features() {
       <Hero />
       <main>
         <ProblemTable />
+        <RequestLifecycleAnimation />
         <CoreFeatures />
         <FrameworkSupport />
         <MemorySection />
