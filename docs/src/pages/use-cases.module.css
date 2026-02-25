@@ -117,40 +117,225 @@
   flex-wrap: wrap;
 }
 
-/* ─── Segments Section ────────────────────────────────────────────────────── */
+/* ─── Segment Tiles ───────────────────────────────────────────────────────── */
 
-.segmentsSection {
-  padding: 4rem 0 6rem;
+.tilesSection {
+  padding: 4rem 0;
 }
 
-.segmentsSection > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
+.tilesGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
 }
 
-.segmentCard {
+.tile {
   background: #0e1017;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+  padding: 1.75rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.tile:hover {
+  transform: translateY(-3px);
+  border-color: rgba(79, 125, 247, 0.25);
+}
+
+.tile_cyan   { border-left: 4px solid #4f7df7; }
+.tile_violet { border-left: 4px solid #8b5cf6; }
+
+.tileIconWrap {
+  font-size: 1.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.tileIconWrap_cyan   { color: #4f7df7; }
+.tileIconWrap_violet { color: #8b5cf6; }
+
+.tileTitle {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #dfe1f0;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.tileSub {
+  font-size: 0.82rem;
+  color: #5e627d;
+  margin: 0;
+  flex: 1;
+}
+
+.tileBtn {
+  align-self: flex-start;
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: none;
+  border: 1px solid rgba(79, 125, 247, 0.35);
+  color: #4f7df7;
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tileBtn:hover {
+  background: rgba(79, 125, 247, 0.1);
+  border-color: #4f7df7;
+}
+
+.tileBtn_violet {
+  border-color: rgba(139, 92, 246, 0.35);
+  color: #8b5cf6;
+}
+
+.tileBtn_violet:hover {
+  background: rgba(139, 92, 246, 0.1);
+  border-color: #8b5cf6;
+}
+
+/* ─── Modal ───────────────────────────────────────────────────────────────── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modalContainer {
+  background: #0e1017;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1.25rem;
   padding: 2.5rem;
-  scroll-margin-top: 80px;
+  width: 90vw;
+  max-width: 780px;
+  max-height: 85vh;
+  overflow-y: auto;
+  position: relative;
+  animation: modalSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.accent_cyan {
-  border-left: 4px solid #4f7df7;
+@keyframes modalSlideIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.accent_violet {
-  border-left: 4px solid #8b5cf6;
+.modalClose {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: #94a3b8;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.segmentHeader {
+.modalClose:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #dfe1f0;
+}
+
+.modalHeader {
   display: flex;
   align-items: flex-start;
   gap: 1.25rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  padding-right: 2.5rem;
 }
+
+.modalTitle {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #dfe1f0;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.1rem;
+}
+
+.modalSubtitle {
+  font-size: 0.9rem;
+  color: #5e627d;
+  margin: 0;
+}
+
+/* ─── Modal Diagram ───────────────────────────────────────────────────────── */
+
+.modalDiagram {
+  display: flex;
+  align-items: stretch;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.875rem;
+  margin-bottom: 1.75rem;
+  overflow: hidden;
+}
+
+.diagramStep {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.25rem 1rem;
+  gap: 0.35rem;
+}
+
+.diagramStepCenter {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(79, 125, 247, 0.04);
+}
+
+.diagramArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  color: #4f7df7;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.diagramStepIcon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 0.15rem;
+}
+
+.diagramStepLabel {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #dfe1f0;
+}
+
+.diagramStepDesc {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+/* ─── Modal body (reused classes) ────────────────────────────────────────── */
 
 .segmentIconWrapper {
   width: 56px;
@@ -173,20 +358,6 @@
   background: rgba(139, 92, 246, 0.1);
   color: #8b5cf6;
   border: 1px solid rgba(139, 92, 246, 0.2);
-}
-
-.segmentTitle {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: #dfe1f0;
-  letter-spacing: -0.03em;
-  margin-bottom: 0.1rem;
-}
-
-.segmentSubtitle {
-  font-size: 0.9rem;
-  color: #5e627d;
-  margin: 0;
 }
 
 .segmentProfile {
@@ -234,13 +405,8 @@
   align-items: flex-start;
 }
 
-.painList li {
-  color: #94a3b8;
-}
-
-.valueList li {
-  color: #cbd5e1;
-}
+.painList li { color: #94a3b8; }
+.valueList li { color: #cbd5e1; }
 
 .painIcon {
   color: #ef4444;
@@ -257,9 +423,7 @@
   margin-top: 0.1rem;
 }
 
-.accent_violet .valueIcon {
-  color: #8b5cf6;
-}
+.accent_violet .valueIcon { color: #8b5cf6; }
 
 .segmentQuote {
   border-left: 3px solid #4f7df7;
@@ -283,16 +447,11 @@
   font-style: normal;
 }
 
-.segmentCta {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 700 !important;
-}
-
 .ctaAccent_cyan {
   background: #4f7df7 !important;
   color: #07080c !important;
   border: none !important;
+  font-weight: 700 !important;
 }
 
 .ctaAccent_cyan:hover {
@@ -304,6 +463,7 @@
   background: #8b5cf6 !important;
   color: #fff !important;
   border: none !important;
+  font-weight: 700 !important;
 }
 
 .ctaAccent_violet:hover {
@@ -413,6 +573,10 @@
 /* ─── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 996px) {
+  .tilesGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .diffGrid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -427,14 +591,6 @@
     padding: 5rem 0 3.5rem;
   }
 
-  .segmentCard {
-    padding: 1.75rem;
-  }
-
-  .segmentHeader {
-    flex-direction: column;
-  }
-
   .diffGrid {
     grid-template-columns: 1fr;
   }
@@ -445,5 +601,31 @@
 
   .heroTitle {
     font-size: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .tilesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .modalContainer {
+    padding: 1.5rem;
+  }
+
+  .modalDiagram {
+    flex-direction: column;
+  }
+
+  .diagramStepCenter {
+    border-left: none;
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .diagramArrow {
+    transform: rotate(90deg);
+    padding: 0.25rem 0;
   }
 }

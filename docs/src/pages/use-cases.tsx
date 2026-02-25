@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
@@ -50,7 +50,7 @@ function Hero() {
   );
 }
 
-/* ─── Segments ──────────────────────────────────────────────────────────── */
+/* ─── Segments data ─────────────────────────────────────────────────────── */
 
 const segments = [
   {
@@ -58,8 +58,10 @@ const segments = [
     icon: <MdBusiness />,
     accent: 'cyan',
     title: 'Established Software Companies',
-    subtitle: '(Services / Dev Houses)',
+    subtitle: 'Services / Dev Houses',
     profile: 'Development houses and IT services firms with existing clients who are asking for AI-powered solutions. They have developers on staff but lack AI agent platform expertise.',
+    diagramLeft:  { label: 'Client AI Request', desc: 'Existing clients asking for agents' },
+    diagramRight: { label: 'Shipped in Weeks', desc: 'Production agents, on time' },
     painPoints: [
       'Need to stand up AI agent capabilities quickly without a 6-month R&D cycle',
       'Building the platform layer (deployment, session management, integrations) from scratch is expensive',
@@ -82,8 +84,10 @@ const segments = [
     icon: <MdAutoAwesome />,
     accent: 'violet',
     title: 'Software Companies Enhancing Products',
-    subtitle: '(SaaS / Enterprise Software)',
+    subtitle: 'SaaS / Enterprise Software',
     profile: 'Product companies with existing SaaS or enterprise software who want to embed conversational AI, intelligent automation, or agent-driven workflows into their products.',
+    diagramLeft:  { label: 'Existing SaaS', desc: 'Your current product' },
+    diagramRight: { label: 'AI-Enhanced Product', desc: 'Agents embedded, zero lock-in' },
     painPoints: [
       'Need to add AI agent capabilities without massive re-architecture',
       "Framework lock-in is a real risk — the AI landscape changes fast, and picking the wrong framework today could mean expensive rewrites tomorrow",
@@ -107,8 +111,10 @@ const segments = [
     icon: <MdRocketLaunch />,
     accent: 'cyan',
     title: 'AI Startups',
-    subtitle: '(Early to Growth Stage)',
+    subtitle: 'Early to Growth Stage',
     profile: 'Early to growth-stage startups building AI-native products. Small engineering teams that need to move fast and can\'t afford to build platform infrastructure.',
+    diagramLeft:  { label: 'MVP Idea', desc: 'Prototype stage, lean team' },
+    diagramRight: { label: 'Production in Days', desc: 'Multi-cloud, fully deployed' },
     painPoints: [
       'Engineering bandwidth is the scarcest resource — every hour on infrastructure is an hour not spent on core AI',
       "Can't afford platform engineering before finding product-market fit",
@@ -132,8 +138,10 @@ const segments = [
     icon: <MdGroup />,
     accent: 'violet',
     title: 'Domain Experts',
-    subtitle: '(Finance, Healthcare, Legal, Education…)',
+    subtitle: 'Finance, Healthcare, Legal, Education…',
     profile: 'Subject matter experts or small teams with deep domain knowledge who want to build AI products but lack (or want to minimize) expensive software engineering overhead.',
+    diagramLeft:  { label: 'Domain Knowledge', desc: 'Your expertise and use case' },
+    diagramRight: { label: 'AI Product', desc: 'Deployed without a DevOps team' },
     painPoints: [
       'Know what they want their AI agent to do — but building the software platform around it requires expensive engineering',
       "APIs, cloud deployments, database integrations, messaging connectors — require a fulltime DevOps team they can't afford",
@@ -154,54 +162,134 @@ const segments = [
   },
 ];
 
-function SegmentsSection() {
+/* ─── Segment Modal ─────────────────────────────────────────────────────── */
+
+function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [onClose]);
+
   return (
-    <section className={styles.segmentsSection}>
+    <div
+      className={styles.modalOverlay}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={segment.title}
+    >
+      <div className={styles.modalContainer} onClick={e => e.stopPropagation()}>
+        <button className={styles.modalClose} onClick={onClose} aria-label="Close">×</button>
+
+        {/* Header */}
+        <div className={styles.modalHeader}>
+          <div className={`${styles.segmentIconWrapper} ${styles[`iconAccent_${segment.accent}`]}`}>
+            {segment.icon}
+          </div>
+          <div>
+            <h2 className={styles.modalTitle}>{segment.title}</h2>
+            <p className={styles.modalSubtitle}>{segment.subtitle}</p>
+          </div>
+        </div>
+
+        {/* Diagram */}
+        <div className={styles.modalDiagram}>
+          <div className={styles.diagramStep}>
+            <div className={styles.diagramStepLabel}>{segment.diagramLeft.label}</div>
+            <div className={styles.diagramStepDesc}>{segment.diagramLeft.desc}</div>
+          </div>
+          <div className={styles.diagramArrow}>→</div>
+          <div className={`${styles.diagramStep} ${styles.diagramStepCenter}`}>
+            <img
+              src="/img/branding/agent-kernel-icon-color.svg"
+              alt="Agent Kernel"
+              className={styles.diagramStepIcon}
+            />
+            <div className={styles.diagramStepLabel}>Agent Kernel</div>
+            <div className={styles.diagramStepDesc}>Runtime · Deploy · Integrate</div>
+          </div>
+          <div className={styles.diagramArrow}>→</div>
+          <div className={styles.diagramStep}>
+            <div className={styles.diagramStepLabel}>{segment.diagramRight.label}</div>
+            <div className={styles.diagramStepDesc}>{segment.diagramRight.desc}</div>
+          </div>
+        </div>
+
+        {/* Profile */}
+        <p className={styles.segmentProfile}>{segment.profile}</p>
+
+        {/* Pain points + value props */}
+        <div className={styles.segmentBody}>
+          <div className={styles.segmentColumn}>
+            <h4 className={styles.segmentColumnTitle}>Pain Points</h4>
+            <ul className={styles.painList}>
+              {segment.painPoints.map((p, j) => (
+                <li key={j}>
+                  <span className={styles.painIcon}>✕</span>
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className={styles.segmentColumn}>
+            <h4 className={styles.segmentColumnTitle}>Agent Kernel Value</h4>
+            <ul className={styles.valueList}>
+              {segment.valueProps.map((v, j) => (
+                <li key={j}>
+                  <MdCheck className={styles.valueIcon} />
+                  {v}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Quote */}
+        <div className={`${styles.segmentQuote} ${styles[`accent_${segment.accent}`]}`}>
+          <blockquote>{segment.keyMessage}</blockquote>
+        </div>
+
+        {/* CTA */}
+        <Link
+          to={segment.cta}
+          className={`button button--primary ${styles[`ctaAccent_${segment.accent}`]}`}
+          onClick={onClose}
+        >
+          {segment.ctaLabel}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Segment Tiles ─────────────────────────────────────────────────────── */
+
+function SegmentTilesSection({ onOpen }: { onOpen: (s: typeof segments[0]) => void }) {
+  return (
+    <section className={styles.tilesSection}>
       <div className="container">
-        {segments.map((s, i) => (
-          <div key={i} id={s.id} className={`${styles.segmentCard} ${styles[`accent_${s.accent}`]}`}>
-            <div className={styles.segmentHeader}>
-              <div className={`${styles.segmentIconWrapper} ${styles[`iconAccent_${s.accent}`]}`}>
+        <div className={styles.tilesGrid}>
+          {segments.map(s => (
+            <div key={s.id} className={`${styles.tile} ${styles[`tile_${s.accent}`]}`}>
+              <div className={`${styles.tileIconWrap} ${styles[`tileIconWrap_${s.accent}`]}`}>
                 {s.icon}
               </div>
-              <div>
-                <h2 className={styles.segmentTitle}>{s.title}</h2>
-                <p className={styles.segmentSubtitle}>{s.subtitle}</p>
-              </div>
+              <h3 className={styles.tileTitle}>{s.title}</h3>
+              <p className={styles.tileSub}>{s.subtitle}</p>
+              <button
+                className={`${styles.tileBtn} ${s.accent === 'violet' ? styles.tileBtn_violet : ''}`}
+                onClick={() => onOpen(s)}
+              >
+                Learn More
+              </button>
             </div>
-            <p className={styles.segmentProfile}>{s.profile}</p>
-            <div className={styles.segmentBody}>
-              <div className={styles.segmentColumn}>
-                <h4 className={styles.segmentColumnTitle}>Pain Points</h4>
-                <ul className={styles.painList}>
-                  {s.painPoints.map((p, j) => (
-                    <li key={j}>
-                      <span className={styles.painIcon}>✕</span>
-                      {p}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className={styles.segmentColumn}>
-                <h4 className={styles.segmentColumnTitle}>Agent Kernel Value</h4>
-                <ul className={styles.valueList}>
-                  {s.valueProps.map((v, j) => (
-                    <li key={j}>
-                      <MdCheck className={styles.valueIcon} />
-                      {v}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <div className={styles.segmentQuote}>
-              <blockquote>{s.keyMessage}</blockquote>
-            </div>
-            <Link to={s.cta} className={`button button--primary ${styles.segmentCta} ${styles[`ctaAccent_${s.accent}`]}`}>
-              {s.ctaLabel}
-            </Link>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -310,6 +398,8 @@ function FinalCTA() {
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function UseCases() {
+  const [activeSegment, setActiveSegment] = useState<typeof segments[0] | null>(null);
+
   return (
     <Layout
       title="Use Cases"
@@ -317,10 +407,13 @@ export default function UseCases() {
       <Hero />
       <main>
         <UseCaseJourneyMap />
-        <SegmentsSection />
+        <SegmentTilesSection onOpen={setActiveSegment} />
         <Differentiators />
         <FinalCTA />
       </main>
+      {activeSegment && (
+        <SegmentModal segment={activeSegment} onClose={() => setActiveSegment(null)} />
+      )}
     </Layout>
   );
 }
