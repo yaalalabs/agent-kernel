@@ -125,8 +125,8 @@
 }
 
 @keyframes stagePulseRing {
-  from { transform: scale(1);    opacity: 0.6; }
-  to   { transform: scale(1.12); opacity: 0;   }
+  from { opacity: 0.6; }
+  to   { opacity: 0; }
 }
 
 /* Dimmed (passed) stage */
