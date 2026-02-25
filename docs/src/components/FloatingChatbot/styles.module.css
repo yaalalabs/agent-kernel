@@ -716,6 +716,11 @@
   .chatButtonContainer {
     bottom: 20px;
     right: 20px;
+    /* The Docusaurus navbar has position:sticky + z-index:200, creating a
+       stacking context. The navbar-sidebar (z-index:400) is inside that
+       context, so it's effectively at z-index 200 globally. We must stay
+       below 200 so the mobile sidebar always appears above the chatbot. */
+    z-index: 150;
   }
 
   .chatWindow {
@@ -724,6 +729,7 @@
     bottom: 88px;
     right: 16px;
     left: 16px;
+    z-index: 149;
   }
 
   .chatWindow.maximized {

@@ -168,6 +168,16 @@ article {
   -webkit-backdrop-filter: blur(16px);
 }
 
+/* On mobile, backdrop-filter creates a compositing layer that breaks the
+   navbar-sidebar z-index ordering. Remove it so the sidebar renders correctly. */
+@media (max-width: 996px) {
+  .navbar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: rgba(14, 16, 23, 0.98);
+  }
+}
+
 [data-theme='light'] .navbar {
   background-color: rgba(255, 255, 255, 0.95);
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
