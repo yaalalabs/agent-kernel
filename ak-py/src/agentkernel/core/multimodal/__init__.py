@@ -16,6 +16,6 @@ from .storage import (
     save_attachment,
 )
 from .tools import (
-    analyis_attachments,
+    analyze_attachments,
     describe_attachment_briefly,
 )

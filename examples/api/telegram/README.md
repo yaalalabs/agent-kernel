@@ -38,7 +38,7 @@ export OPENAI_API_KEY="your_openai_api_key"
 For image and document support, configure these environment variables:
 
 ```bash
-export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: true)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
 export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
 export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
 ```
@@ -206,7 +206,7 @@ The bot maintains conversation history:
 
 ### Multimodal Limitations
 
-- File size: Max 2MB 
+- File size: Max 20MB (configurable via `max_file_size`)
 - Timeout: Requests take longer (30-60 seconds for large files)
 - Context: Session cleared on server restart
 - Supported models: OpenAI GPT-4o or compatible
@@ -296,7 +296,7 @@ sales_agent = OpenAIAgent(
 OpenAIModule([support_agent, sales_agent])
 ```
 
-> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyis_attachments` tool is automatically attached to all agents by Agent Kernel at startup. You do not need to add it manually.
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to all agents by Agent Kernel at startup. You do not need to add it manually.
 
 ### Send Inline Keyboards
 

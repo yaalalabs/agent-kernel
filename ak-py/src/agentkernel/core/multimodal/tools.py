@@ -11,7 +11,7 @@ from .storage import get_attachment_data
 _log = logging.getLogger(__name__)
 
 
-def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
+def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
     """
     Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
@@ -64,8 +64,8 @@ def analyis_attachments(attachment_ids: list[str], prompt: str) -> str:
         return response.choices[0].message.content.strip()
 
     except Exception as e:
-        _log.error(f"Error analyzing attachments: {e}")
-        return f"Error: {str(e)}"
+        _log.exception("Error analyzing attachments")
+        return "Failed to analyze attachments. Please try again later."
 
 
 async def describe_attachment_briefly(
@@ -137,10 +137,10 @@ async def describe_attachment_briefly(
 
         else:
 
-            return f"File ({mime_type}) - Content not currently visible. Use analyis_attachments to analyze."
+            return f"File ({mime_type}) - Content not currently visible. Use analyze_attachments to analyze."
 
     except ImportError:
-        _log.error("LiteLLM not installed. Cannot describe attachment.")
+        _log.error("LiteLLM not installed. Install with: pip install litellm")
         return "Attachment (LiteLLM missing)"
     except Exception as e:
         _log.error(f"Error describing attachment: {e}")

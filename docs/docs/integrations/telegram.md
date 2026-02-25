@@ -50,7 +50,7 @@ export OPENAI_API_KEY="your_openai_api_key"
 For image and document support, configure these environment variables:
 
 ```bash
-export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: true)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
 export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
 export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
 ```
@@ -141,10 +141,10 @@ The Telegram integration supports sending images and documents alongside text me
 3. Agent Kernel downloads and processes the file
 4. A brief description of the file is generated via LLM and the file is saved to the **session cache** (not sent raw to the agent)
 5. The description is injected into the user's message text so the agent understands what was attached
-6. When the agent needs to inspect the file in detail, it calls the `analyis_attachments` tool, which retrieves the file from the session cache
+6. When the agent needs to inspect the file in detail, it calls the `analyze_attachments` tool, which retrieves the file from the session cache
 7. Response is sent back through Telegram
 
-> **Note:** The `analyis_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
+> **Note:** The `analyze_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
 
 ### Example Scenarios
 
@@ -170,7 +170,7 @@ The Telegram integration supports sending images and documents alongside text me
 Each chat maintains conversation history:
 
 - Previous messages are remembered
-- Images/files from earlier messages can be referenced and re-analyzed via `analyis_attachments`
+- Images/files from earlier messages can be referenced and re-analyzed via `analyze_attachments`
 - Multi-turn conversations with rich context
 - Works seamlessly with OpenAI GPT-4o and compatible models
 - **Session-scoped storage**: Files are stored in each chat's own session cache, isolated per user — one user cannot access another user's attachments

@@ -146,7 +146,7 @@ class _MultimodalConfig(BaseModel):
     )
     analysis_model: str = Field(
         default="gpt-4o",
-        description="LiteLLM model used by the analyis_attachments tool when the agent requests a full analysis of an attachment",
+        description="LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment",
     )
 
 

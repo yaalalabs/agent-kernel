@@ -172,5 +172,7 @@ class MultimodalPreHookFactory:
             else:
                 return NoOpPreHook()
         except Exception:
-
+            logging.getLogger("ak.hooks.multimodal_pre").exception(
+                "Failed to initialize MultimodalPreHook; falling back to NoOpPreHook."
+            )
             return NoOpPreHook()

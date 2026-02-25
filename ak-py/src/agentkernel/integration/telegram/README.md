@@ -70,7 +70,7 @@ if __name__ == "__main__":
     RESTAPI.run([handler])
 ```
 
-> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyis_attachments` tool is automatically attached to your agent by Agent Kernel at startup. 
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to your agent by Agent Kernel at startup. 
 ## Configuration Options
 
 ### config.yaml
@@ -115,7 +115,7 @@ The Telegram integration **fully supports** sending images and documents to agen
 
 **Limitations:**
 
-- Maximum file size: ~2MB 
+- Maximum file size: ~20MB (configurable via `max_file_size`)
 - Processing time: Large files may take 30-60 seconds to download and analyze
 - Session context: Cleared on server restart (can be persisted with external storage)
 - Model requirements: Agent must support multimodal (OpenAI GPT-4o, Google ADK, etc.)

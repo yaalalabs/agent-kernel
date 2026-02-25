@@ -405,10 +405,10 @@ class Agent(ABC):
         tool_instruction = (
             "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
             "Available tool:\n"
-            "- analyis_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
+            "- analyze_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
             "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
             "Use this tool when asked about attached images or files.\n"
-            "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS (numbers, quotes, tables) found in the files, you MUST use the `analyis_attachments` tool to inspect the file content again. Do not guess based on the summary."
+            "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS (numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to inspect the file content again. Do not guess based on the summary."
         )
         return tool_instruction
 
@@ -436,6 +436,6 @@ class Agent(ABC):
 
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
-            from .multimodal import analyis_attachments
+            from .multimodal import analyze_attachments
 
-            self.attach_tool(analyis_attachments)
+            self.attach_tool(analyze_attachments)
