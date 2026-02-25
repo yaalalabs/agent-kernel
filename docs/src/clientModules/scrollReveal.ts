@@ -1,4 +1,4 @@
-let activeObserver = null;
+let activeObserver: IntersectionObserver | null = null;
 
 function initScrollReveal() {
   if (activeObserver) {
