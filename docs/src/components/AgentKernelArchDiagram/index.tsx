@@ -31,31 +31,16 @@ const deployTargets = [
 ];
 
 /*
- * Layout constants — these match the CSS below.
- * The SVG viewBox is 900 × 420. All Y values are in those units.
+ * SVG overlay only handles two simple connectors:
+ *   1. Top connector:  Your Code box bottom → hub card top  (~36px gap)
+ *   2. Fan connector:  hub card bottom → each deploy box top (~44px gap)
  *
- *   topBox  :  y=0   → h=74   → bottom at 74
- *   gap     :  74   → 110
- *   hub     :  110  → h=130  → bottom at 240   center=175
- *   gap     :  240  → 280
- *   deployRow: 280  → h=72   → center=316
+ * The SVG is placed between rows as narrow strips so coordinate alignment is exact.
+ * No coordinate ambiguity — each SVG strip is only as tall as the gap it fills.
  */
-const SVG_W = 900;
-const SVG_H = 420;
 
-const TOP_BOTTOM  = 74;
-const HUB_TOP     = 110;
-const HUB_BOTTOM  = 240;
-const HUB_CX      = 450;
-
-const DEPLOY_TOP  = 280;
-const DEPLOY_BOTTOM = 352;
-const DEPLOY_CX   = DEPLOY_TOP + (DEPLOY_BOTTOM - DEPLOY_TOP) / 2; // y midpoint
-
-// 5 deploy targets, evenly spread across 900px with padding
-const DEPLOY_POSITIONS = [100, 230, 450, 670, 800];
-
-const TRACK_LEN = SVG_W - 120;
+// 5 deploy targets; their x-center positions spread across 900px
+const DEPLOY_X = [90, 225, 450, 675, 810];
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
@@ -99,113 +84,7 @@ export default function AgentKernelArchDiagram() {
           </p>
         </div>
 
-        {/*
-          The diagram is a single relative container. One SVG overlay covers
-          the full container for lines and particles. HTML layers are stacked on top.
-          All SVG Y values correspond directly to CSS row positions (SVG viewBox = actual px layout).
-        */}
         <div className={styles.diagram}>
-
-          {/* SVG overlay — absolute, covers full .diagram height */}
-          <svg
-            className={styles.svgOverlay}
-            viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-            preserveAspectRatio="xMidYMid meet"
-            aria-hidden="true"
-          >
-            <defs>
-              <linearGradient id="akGradV" x1="0" y1={`${TOP_BOTTOM}`} x2="0" y2={`${HUB_TOP}`} gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="var(--ak-blue)" stopOpacity="0.7" />
-                <stop offset="100%" stopColor="var(--ak-blue)" stopOpacity="0.35" />
-              </linearGradient>
-              <filter id="akGlowF" x="-100%" y="-100%" width="300%" height="300%">
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <marker id="akArrowBlue" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
-                <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--ak-blue)" opacity="0.5" />
-              </marker>
-
-              {/* Particle paths */}
-              <path id="akPathTopHub" d={`M ${HUB_CX} ${TOP_BOTTOM} L ${HUB_CX} ${HUB_TOP}`} />
-              {DEPLOY_POSITIONS.map((x, i) => (
-                <path key={i}
-                  id={`akPathDeploy${i}`}
-                  d={`M ${HUB_CX} ${HUB_BOTTOM} C ${HUB_CX} ${HUB_BOTTOM + 40}, ${x} ${DEPLOY_TOP - 20}, ${x} ${DEPLOY_TOP}`}
-                />
-              ))}
-            </defs>
-
-            {/* Top connector line: Your Code → Hub */}
-            <line
-              x1={HUB_CX} y1={TOP_BOTTOM}
-              x2={HUB_CX} y2={HUB_TOP}
-              stroke="url(#akGradV)" strokeWidth="1.5"
-              strokeDasharray="36"
-              strokeDashoffset={visible ? 0 : 36}
-              style={{ transition: 'stroke-dashoffset 0.45s cubic-bezier(0.22,1,0.36,1) 0.1s' }}
-              markerEnd="url(#akArrowBlue)"
-            />
-
-            {/* Fan lines: Hub → Deploy targets */}
-            {DEPLOY_POSITIONS.map((x, i) => {
-              const dy = DEPLOY_TOP - HUB_BOTTOM;
-              const dx = x - HUB_CX;
-              const len = Math.round(Math.sqrt(dx * dx + dy * dy) + 40); // approx bezier len
-              return (
-                <path
-                  key={i}
-                  d={`M ${HUB_CX} ${HUB_BOTTOM} C ${HUB_CX} ${HUB_BOTTOM + 40}, ${x} ${DEPLOY_TOP - 20}, ${x} ${DEPLOY_TOP}`}
-                  fill="none"
-                  stroke="var(--ak-blue)" strokeWidth="1" strokeOpacity="0.2"
-                  strokeDasharray={len}
-                  strokeDashoffset={visible ? 0 : len}
-                  style={{
-                    transition: `stroke-dashoffset 0.5s cubic-bezier(0.22,1,0.36,1) ${0.38 + i * 0.07}s`,
-                  }}
-                  markerEnd="url(#akArrowBlue)"
-                />
-              );
-            })}
-
-            {/* Animated particles */}
-            {visible && !reducedMotion && (
-              <>
-                {/* Top → Hub */}
-                <circle r="4" fill="var(--ak-blue)" filter="url(#akGlowF)">
-                  <animateMotion dur="1.8s" repeatCount="indefinite" begin="0.9s">
-                    <mpath href="#akPathTopHub" />
-                  </animateMotion>
-                </circle>
-                {/* Hub → deploys (staggered) */}
-                {[0, 2, 4].map(i => (
-                  <circle key={i} r="3.5" fill="var(--ak-purple)" filter="url(#akGlowF)" opacity="0.85">
-                    <animateMotion
-                      dur={`${1.8 + i * 0.2}s`}
-                      repeatCount="indefinite"
-                      begin={`${1.6 + i * 0.5}s`}
-                    >
-                      <mpath href={`#akPathDeploy${i}`} />
-                    </animateMotion>
-                  </circle>
-                ))}
-                {[1, 3].map(i => (
-                  <circle key={i} r="3" fill="var(--ak-blue)" filter="url(#akGlowF)" opacity="0.8">
-                    <animateMotion
-                      dur={`${2.0 + i * 0.15}s`}
-                      repeatCount="indefinite"
-                      begin={`${2.2 + i * 0.4}s`}
-                    >
-                      <mpath href={`#akPathDeploy${i}`} />
-                    </animateMotion>
-                  </circle>
-                ))}
-              </>
-            )}
-          </svg>
 
           {/* ── Layer 1: Your Agent Logic ── */}
           <div
@@ -217,6 +96,47 @@ export default function AgentKernelArchDiagram() {
               <span className={styles.topBoxSub}>OpenAI · LangGraph · CrewAI · Google ADK</span>
             </div>
           </div>
+
+          {/*
+            ── Connector 1: topBox → hubCard ──
+            A narrow SVG strip (36px tall) sits between the two rows.
+            viewBox 900×36 maps exactly to the CSS gap height.
+          */}
+          <svg
+            className={styles.connectorSvg}
+            viewBox="0 0 900 36"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <defs>
+              <marker id="akArrow1" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+                <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--ak-blue)" opacity="0.6" />
+              </marker>
+              <filter id="akGlowTop" x="-200%" y="-200%" width="500%" height="500%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <path id="akDown1" d="M 450 0 L 450 36" />
+            </defs>
+            <line
+              x1="450" y1="0" x2="450" y2="30"
+              stroke="var(--ak-blue)" strokeWidth="1.5" strokeOpacity="0.5"
+              strokeDasharray="30"
+              strokeDashoffset={visible ? 0 : 30}
+              style={{ transition: 'stroke-dashoffset 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s' }}
+              markerEnd="url(#akArrow1)"
+            />
+            {visible && !reducedMotion && (
+              <circle r="3.5" fill="var(--ak-blue)" filter="url(#akGlowTop)" opacity="0.9">
+                <animateMotion dur="1.8s" repeatCount="indefinite" begin="0.9s">
+                  <mpath href="#akDown1" />
+                </animateMotion>
+              </circle>
+            )}
+          </svg>
 
           {/* ── Layer 2: Agent Kernel Runtime hub card ── */}
           <div
@@ -245,6 +165,79 @@ export default function AgentKernelArchDiagram() {
             </div>
           </div>
 
+          {/*
+            ── Connector 2: hubCard → deployRow ──
+            A 44px SVG strip — fan of 5 lines from hub center (x=450) to each deploy box.
+            viewBox 900×44 maps exactly to this gap.
+            Lines go from y=0 (hub card bottom) to y=44 (deploy box top).
+          */}
+          <svg
+            className={styles.connectorSvg}
+            viewBox="0 0 900 44"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <defs>
+              <marker id="akArrow2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 Z" fill="var(--ak-blue)" opacity="0.4" />
+              </marker>
+              <filter id="akGlowFan" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              {/* Particle paths — one per deploy target */}
+              {DEPLOY_X.map((x, i) => (
+                <path
+                  key={i}
+                  id={`akFan${i}`}
+                  d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
+                />
+              ))}
+            </defs>
+
+            {/* Fan lines: hub center → each deploy box top */}
+            {DEPLOY_X.map((x, i) => {
+              const dx = x - 450;
+              const len = Math.round(Math.sqrt(dx * dx + 44 * 44) + 20);
+              return (
+                <path
+                  key={i}
+                  d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
+                  fill="none"
+                  stroke="var(--ak-blue)"
+                  strokeWidth="1"
+                  strokeOpacity="0.22"
+                  strokeDasharray={len}
+                  strokeDashoffset={visible ? 0 : len}
+                  style={{
+                    transition: `stroke-dashoffset 0.45s cubic-bezier(0.22,1,0.36,1) ${0.35 + i * 0.06}s`,
+                  }}
+                  markerEnd="url(#akArrow2)"
+                />
+              );
+            })}
+
+            {/* Particles — staggered to different deploy targets */}
+            {visible && !reducedMotion && [0, 2, 4, 1, 3].map((targetIdx, j) => (
+              <circle key={j} r="3.5"
+                fill={j % 2 === 0 ? 'var(--ak-blue)' : 'var(--ak-purple)'}
+                filter="url(#akGlowFan)"
+                opacity="0.85"
+              >
+                <animateMotion
+                  dur={`${1.6 + j * 0.2}s`}
+                  repeatCount="indefinite"
+                  begin={`${1.5 + j * 0.45}s`}
+                >
+                  <mpath href={`#akFan${targetIdx}`} />
+                </animateMotion>
+              </circle>
+            ))}
+          </svg>
+
           {/* ── Layer 3: Deployment targets ── */}
           <div className={styles.deployRow}>
             {deployTargets.map((t, i) => (
@@ -258,6 +251,7 @@ export default function AgentKernelArchDiagram() {
               </div>
             ))}
           </div>
+
         </div>
       </div>
     </section>

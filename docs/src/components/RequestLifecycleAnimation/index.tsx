@@ -21,31 +21,26 @@ interface Stage {
 }
 
 const stages: Stage[] = [
-  { id: 'input',     label: 'User Message',      icon: <MdMessage />,    color: 'blue'   },
-  { id: 'prehooks',  label: 'Pre-Hooks',          sublabel: 'guardrails · RAG', icon: <MdSettings />, color: 'violet' },
-  { id: 'adapter',   label: 'Framework',          sublabel: 'adapter',    icon: <MdSwapHoriz />, color: 'blue' },
-  { id: 'llm',       label: 'Agent Invocation',           icon: <SiOpenai />,     color: 'violet' },
-  { id: 'tools',     label: 'Tool Execution',     icon: <MdCode />,       color: 'blue'   },
-  { id: 'posthooks', label: 'Post-Hooks',         sublabel: 'moderation', icon: <MdSecurity />, color: 'violet' },
-  { id: 'response',  label: 'Response',           icon: <MdRocketLaunch />, color: 'green' },
+  { id: 'input',     label: 'User Message',    icon: <MdMessage />,      color: 'blue'   },
+  { id: 'prehooks',  label: 'Pre-Hooks',        sublabel: 'guardrails · RAG', icon: <MdSettings />,  color: 'violet' },
+  { id: 'adapter',   label: 'Framework',        sublabel: 'adapter',      icon: <MdSwapHoriz />, color: 'blue'   },
+  { id: 'llm',       label: 'Agent Invocation', icon: <SiOpenai />,       color: 'violet' },
+  { id: 'tools',     label: 'Tool Execution',   icon: <MdCode />,         color: 'blue'   },
+  { id: 'posthooks', label: 'Post-Hooks',       sublabel: 'moderation',   icon: <MdSecurity />,  color: 'violet' },
+  { id: 'response',  label: 'Response',         icon: <MdRocketLaunch />, color: 'green'  },
 ];
 
 const SVG_WIDTH = 900;
 const STAGE_COUNT = stages.length;
-// Stage tick X positions: evenly spaced from 60 to SVG_WIDTH-60
+
+// Stage X positions: evenly spaced from 60 to SVG_WIDTH-60
 const stageXPositions = stages.map((_, i) =>
   Math.round(60 + (i * (SVG_WIDTH - 120)) / (STAGE_COUNT - 1))
 );
 const TRACK_LENGTH = SVG_WIDTH - 120;
 
-// keyPoints and keyTimes for animateMotion — evenly spaced
-const keyPointsStr = stageXPositions.map(x => ((x - 60) / TRACK_LENGTH).toFixed(4)).join(';');
-const keyTimesStr = stageXPositions.map((_, i) => (i / (STAGE_COUNT - 1)).toFixed(4)).join(';');
-// cubic ease for each segment
-const keySplines = Array(STAGE_COUNT - 1).fill('0.4 0 0.2 1').join('; ');
-
-// Duration per full loop: 380ms per stage with a 600ms pause at end
-const LOOP_DUR_S = (STAGE_COUNT * 380 + 600) / 1000;
+// Per-stage dwell time in ms
+const STAGE_DWELL = 460;
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
@@ -76,30 +71,51 @@ export default function RequestLifecycleAnimation() {
     return () => observer.disconnect();
   }, []);
 
-  // Stage highlight cycle (synced roughly with the SVG animateMotion)
+  /*
+   * Stage highlight + packet position loop.
+   * The packet is a CSS-transitioned SVG <g> driven by activeStage,
+   * so packet and card highlight are ALWAYS in sync — no drift.
+   *
+   * Sequence:  wait 900ms → show stage 0 → advance every STAGE_DWELL ms
+   *            → at last stage, pause 700ms → reset to -1 (hide) → restart
+   */
   useEffect(() => {
     if (!visible) return;
-    let stageIdx = 0;
-    const startTimer = setTimeout(() => {
-      const interval = setInterval(() => {
-        setActiveStage(stageIdx);
-        stageIdx++;
-        if (stageIdx >= STAGE_COUNT) {
-          stageIdx = 0;
-          // Brief gap before restarting (matches SVG loop gap)
-          setActiveStage(-1);
-          setTimeout(() => { stageIdx = 0; }, 600);
-        }
-      }, 380);
-      return () => clearInterval(interval);
-    }, 900); // wait for nodes to appear
 
-    return () => clearTimeout(startTimer);
+    let idx = 0;
+    let intervalId: ReturnType<typeof setInterval>;
+
+    const startCycle = () => {
+      idx = 0;
+      setActiveStage(0);
+      intervalId = setInterval(() => {
+        idx++;
+        if (idx >= STAGE_COUNT) {
+          // End of cycle — hide packet briefly then restart
+          clearInterval(intervalId);
+          setActiveStage(-1);
+          setTimeout(startCycle, 700);
+        } else {
+          setActiveStage(idx);
+        }
+      }, STAGE_DWELL);
+    };
+
+    const initTimer = setTimeout(startCycle, 900);
+
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(intervalId);
+    };
   }, [visible]);
 
   const reducedMotion =
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Packet x-position: falls back to first stage when hidden (opacity handles visibility)
+  const packetX = activeStage >= 0 ? stageXPositions[activeStage] : stageXPositions[0];
+  const packetVisible = visible && !reducedMotion && activeStage >= 0;
 
   return (
     <div ref={wrapperRef} className={styles.wrapper}>
@@ -156,8 +172,6 @@ export default function RequestLifecycleAnimation() {
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
-              {/* Path for animateMotion */}
-              <path id="rlTrackPath" d={`M 60 24 L ${SVG_WIDTH - 60} 24`} />
             </defs>
 
             {/* Background track */}
@@ -166,7 +180,7 @@ export default function RequestLifecycleAnimation() {
               stroke="var(--ak-border)" strokeWidth="2"
             />
 
-            {/* Animated fill track */}
+            {/* Animated fill track — draws on scroll-into-view */}
             <line
               x1="60" y1="24" x2={SVG_WIDTH - 60} y2="24"
               stroke="url(#rlTrackGrad)" strokeWidth="2"
@@ -175,40 +189,36 @@ export default function RequestLifecycleAnimation() {
               className={styles.trackLine}
             />
 
-            {/* Stage tick circles */}
+            {/* Stage tick circles — fill as packet passes */}
             {stageXPositions.map((x, i) => (
               <circle
                 key={i}
                 cx={x} cy="24" r="5"
-                fill={
-                  activeStage > i
-                    ? 'var(--ak-blue)'
-                    : activeStage === i
-                    ? 'var(--ak-blue)'
-                    : 'var(--ak-surface-overlay)'
-                }
-                stroke={
-                  activeStage >= i ? 'var(--ak-blue)' : 'var(--ak-border)'
-                }
+                fill={activeStage >= i && activeStage >= 0 ? 'var(--ak-blue)' : 'var(--ak-surface-overlay)'}
+                stroke={activeStage >= i && activeStage >= 0 ? 'var(--ak-blue)' : 'var(--ak-border)'}
                 strokeWidth="1.5"
                 style={{ transition: 'fill 0.2s ease, stroke 0.2s ease' }}
               />
             ))}
 
-            {/* Animated packet dot */}
-            {visible && !reducedMotion && (
-              <circle r="8" fill="var(--ak-blue)" filter="url(#rlGlow)" opacity="0.9">
-                <animateMotion
-                  dur={`${LOOP_DUR_S}s`}
-                  repeatCount="indefinite"
-                  keyPoints={keyPointsStr}
-                  keyTimes={keyTimesStr}
-                  calcMode="spline"
-                  keySplines={keySplines}
-                >
-                  <mpath href="#rlTrackPath" />
-                </animateMotion>
-              </circle>
+            {/*
+              Packet dot — a <g> whose translateX is driven by activeStage.
+              CSS transition on transform keeps it perfectly in sync with the
+              card highlights (both driven from the same React state), eliminating drift.
+            */}
+            {visible && (
+              <g
+                style={{
+                  transform: `translateX(${packetX}px)`,
+                  transition: activeStage >= 0
+                    ? `transform ${STAGE_DWELL * 0.65}ms cubic-bezier(0.4, 0, 0.2, 1)`
+                    : 'none',
+                  opacity: packetVisible ? 1 : 0,
+                }}
+              >
+                <circle cx="0" cy="24" r="9" fill="var(--ak-blue)" filter="url(#rlGlow)" opacity="0.85" />
+                <circle cx="0" cy="24" r="5" fill="white" opacity="0.35" />
+              </g>
             )}
           </svg>
         </div>

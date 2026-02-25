@@ -42,26 +42,25 @@
 /* ─── Diagram container ──────────────────────────────────────────────────── */
 
 .diagram {
-  position: relative;
   max-width: 900px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Total height matches SVG_H so the overlay aligns correctly */
-  min-height: 420px;
   gap: 0;
 }
 
-/* SVG sits behind all HTML layers */
-.svgOverlay {
-  position: absolute;
-  inset: 0;
+/*
+  Connector SVGs are narrow strips that sit between rows.
+  They are NOT absolutely positioned — they flow naturally in the column.
+  preserveAspectRatio="none" stretches them to full container width.
+*/
+.connectorSvg {
   width: 100%;
-  height: 100%;
+  display: block;
   pointer-events: none;
   overflow: visible;
-  z-index: 0;
+  flex-shrink: 0;
 }
 
 /* ─── Layer entrance animation ───────────────────────────────────────────── */
@@ -111,10 +110,7 @@
   color: var(--ak-text-muted);
 }
 
-/* Gap spacer between topBox and hubCard: 36px for SVG connector */
-.topBox + .hubCard {
-  margin-top: 36px;
-}
+/* topBox height sets the first connectorSvg's height (viewBox="0 0 900 36") */
 
 /* ─── Hub card ───────────────────────────────────────────────────────────── */
 
@@ -195,10 +191,7 @@
   line-height: 1.25;
 }
 
-/* Gap between hubCard and deployRow: 40px for SVG fan lines */
-.hubCard + .deployRow {
-  margin-top: 40px;
-}
+/* hubCard → connectorSvg(44px) → deployRow flows naturally in column */
 
 /* ─── Deploy row ─────────────────────────────────────────────────────────── */
 

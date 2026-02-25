@@ -17,9 +17,8 @@ const tracks: Track[] = [
     id: 'traditional',
     title: 'Traditional Approach',
     timeLabel: '3–6 Months',
-    fillPercent: 90,
+    fillPercent: 92,
     barDuration: '1.4s',
-    // 7 chips — fits within a ~90% wide bar without overflow
     steps: ['Platform Eng.', 'Framework Setup', 'Cloud Config', 'Session Mgmt', 'Integrations', 'Testing Setup', 'Deploy Pipeline'],
   },
   {
@@ -28,7 +27,7 @@ const tracks: Track[] = [
     timeLabel: 'Days',
     fillPercent: 28,
     barDuration: '0.5s',
-    // 2 chips — bar intentionally short; whitespace to the right reinforces simplicity
+    // Only 2 chips — bar intentionally short; empty space reinforces simplicity
     steps: ['Write Logic', 'Deploy'],
   },
 ];
@@ -74,7 +73,7 @@ export default function UseCaseJourneyMap() {
         </div>
 
         <div className={styles.tracksWrapper}>
-          {/* SVG bracket — positioned absolutely over trackMeta column */}
+          {/* SVG bracket — spans between the two trackMeta labels */}
           <svg
             className={styles.bracketSvg}
             viewBox="0 0 40 100"
@@ -100,7 +99,8 @@ export default function UseCaseJourneyMap() {
           </svg>
 
           {tracks.map((track, i) => (
-            <div key={track.id} className={`${styles.trackRow} ${styles[`trackRow_${track.id}`]}`}>
+            <div key={track.id} className={styles.trackRow}>
+              {/* Left: label + time */}
               <div className={styles.trackMeta}>
                 <span className={styles.trackTitle}>{track.title}</span>
                 <span className={`${styles.trackTime} ${styles[`trackTime_${track.id}`]}`}>
@@ -108,31 +108,37 @@ export default function UseCaseJourneyMap() {
                 </span>
               </div>
 
-              <div className={styles.trackBarOuter}>
-                <div
-                  className={`${styles.trackBar} ${styles[`bar_${track.id}`]} ${visible ? styles.trackBarVisible : ''}`}
-                  style={{
-                    '--bar-target': `${track.fillPercent}%`,
-                    '--bar-duration': track.barDuration,
-                    '--bar-delay': `${i * 150}ms`,
-                  } as React.CSSProperties}
-                >
+              {/* Right: chips (above bar) + bar + badge */}
+              <div className={styles.trackContent}>
+                {/* Step chips — always fully visible, outside the animated bar */}
+                <div className={styles.chipsRow}>
                   {track.steps.map((step, j) => (
                     <span
                       key={j}
-                      className={`${styles.stepChip} ${visible ? styles.chipVisible : ''}`}
-                      style={{ '--chip-delay': `${i * 150 + 650 + j * 65}ms` } as React.CSSProperties}
+                      className={`${styles.stepChip} ${styles[`chip_${track.id}`]} ${visible ? styles.chipVisible : ''}`}
+                      style={{ '--chip-delay': `${i * 150 + 400 + j * 60}ms` } as React.CSSProperties}
                     >
                       {step}
                     </span>
                   ))}
+                  {track.id === 'with-ak' && (
+                    <span className={`${styles.timeSavedBadge} ${visible ? styles.badgeVisible : ''}`}>
+                      ~90% less time
+                    </span>
+                  )}
                 </div>
 
-                {track.id === 'with-ak' && (
-                  <span className={`${styles.timeSavedBadge} ${visible ? styles.badgeVisible : ''}`}>
-                    ~90% less time
-                  </span>
-                )}
+                {/* Progress bar — animates independently of chips */}
+                <div className={styles.trackBarOuter}>
+                  <div
+                    className={`${styles.trackBar} ${styles[`bar_${track.id}`]} ${visible ? styles.trackBarVisible : ''}`}
+                    style={{
+                      '--bar-target': `${track.fillPercent}%`,
+                      '--bar-duration': track.barDuration,
+                      '--bar-delay': `${i * 150}ms`,
+                    } as React.CSSProperties}
+                  />
+                </div>
               </div>
             </div>
           ))}
