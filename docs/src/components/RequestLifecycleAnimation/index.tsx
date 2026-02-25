@@ -142,7 +142,7 @@ export default function RequestLifecycleAnimation() {
                   ${activeStage === i ? styles.stageActive : ''}
                   ${activeStage > i ? styles.stageDimmed : ''}
                 `}
-                style={{ '--stage-delay': `${i * 90}ms` } as React.CSSProperties}
+                style={{ '--stage-delay': `${i * 120}ms` } as React.CSSProperties}
               >
                 <div className={styles.stageIcon}>{stage.icon}</div>
                 <div className={styles.stageLabel}>{stage.label}</div>

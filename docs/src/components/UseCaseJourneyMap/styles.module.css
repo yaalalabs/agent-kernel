@@ -8,7 +8,7 @@
 .journeySection {
   padding: 5rem 0 4rem;
   position: relative;
-  background: linear-gradient(180deg, transparent, rgba(79, 125, 247, 0.03) 50%, transparent);
+  background: #000;
 }
 
 .header {
