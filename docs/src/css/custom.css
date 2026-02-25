@@ -1,122 +1,476 @@
+/* =============================================================================
+   Agent Kernel Design System — Dark Technical Premium
+   Brand Colors: Blue (#4f7df7) + Purple (#8b5cf6) on Deep Black (#07080c)
+   Fonts: Instrument Sans (body) + JetBrains Mono (code)
+   ============================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 :root {
-  /* Fresh green theme for light mode */
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
-  --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(46, 133, 85, 0.1);
-  
-  /* Enhanced typography */
-  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  --ifm-heading-font-weight: 600;
-  
-  /* Improved spacing and borders */
-  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  /* Brand Palette */
+  --ak-bg:              #07080c;
+  --ak-surface:         #0e1017;
+  --ak-surface-raised:  #151820;
+  --ak-surface-overlay: #1c1f2e;
+  --ak-border:          #1c1f2e;
+  --ak-border-accent:   rgba(79, 125, 247, 0.3);
+
+  /* Accent Colors */
+  --ak-blue:            #4f7df7;
+  --ak-blue-light:      #6d6af7;
+  --ak-blue-dark:       #3a6ae0;
+  --ak-blue-glow:       rgba(79, 125, 247, 0.15);
+  --ak-purple:          #8b5cf6;
+  --ak-purple-light:    #a78bfa;
+  --ak-purple-glow:     rgba(139, 92, 246, 0.15);
+  --ak-gradient:        linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
+  --ak-gradient-subtle: linear-gradient(135deg, rgba(79,125,247,0.08) 0%, rgba(139,92,246,0.08) 100%);
+
+  /* Text */
+  --ak-text:           #dfe1f0;
+  --ak-text-secondary: #94a3b8;
+  --ak-text-muted:     #5e627d;
+
+  /* Semantic */
+  --ak-green:  #10b981;
+  --ak-aws:    #FF9900;
+  --ak-azure:  #0078D4;
+
+  /* Docusaurus primary (brand blue) */
+  --ifm-color-primary:          #4f7df7;
+  --ifm-color-primary-dark:     #3a6ae0;
+  --ifm-color-primary-darker:   #2d5fc4;
+  --ifm-color-primary-darkest:  #1e4ba8;
+  --ifm-color-primary-light:    #6d8ef9;
+  --ifm-color-primary-lighter:  #8aa5fb;
+  --ifm-color-primary-lightest: #b3c4fd;
+
+  /* Docusaurus layout */
+  --ifm-background-color:         #07080c;
+  --ifm-background-surface-color: #0e1017;
+  --ifm-navbar-background-color:  #0e1017;
+  --ifm-footer-background-color:  #07080c;
+
+  --ifm-code-font-size: 94%;
+  --docusaurus-highlighted-code-line-bg: rgba(79, 125, 247, 0.1);
+
+  /* Typography */
+  --ifm-font-family-base: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-font-color-base: #dfe1f0;
+  --ifm-font-color-secondary: #94a3b8;
+
+  /* Layout */
   --ifm-global-radius: 0.5rem;
+  --ifm-navbar-shadow: 0 1px 0 0 #1c1f2e;
+  --ifm-toc-border-color: #1c1f2e;
 }
 
+/* Dark mode (same palette — site is dark-first) */
 [data-theme='dark'] {
-  /* Vibrant green theme for dark mode */
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(37, 194, 160, 0.15);
-  
-  /* Enhanced dark mode colors */
-  --ifm-background-color: #0f172a;
-  --ifm-background-surface-color: #1e293b;
-  --ifm-navbar-background-color: #1e293b;
-  --ifm-footer-background-color: #0f172a;
+  --ifm-color-primary:          #4f7df7;
+  --ifm-color-primary-dark:     #3a6ae0;
+  --ifm-color-primary-darker:   #2d5fc4;
+  --ifm-color-primary-darkest:  #1e4ba8;
+  --ifm-color-primary-light:    #6d8ef9;
+  --ifm-color-primary-lighter:  #8aa5fb;
+  --ifm-color-primary-lightest: #b3c4fd;
+
+  --ifm-background-color:         #07080c;
+  --ifm-background-surface-color: #0e1017;
+  --ifm-navbar-background-color:  #0e1017;
+  --ifm-footer-background-color:  #07080c;
+
+  --ifm-font-color-base: #dfe1f0;
+  --docusaurus-highlighted-code-line-bg: rgba(79, 125, 247, 0.1);
 }
 
-/* Custom navbar styling */
+/* Light mode fallback — keep it clean */
+[data-theme='light'] {
+  --ifm-color-primary:          #3a6ae0;
+  --ifm-color-primary-dark:     #2d5fc4;
+  --ifm-color-primary-darker:   #2555b0;
+  --ifm-color-primary-darkest:  #1e4ba8;
+  --ifm-color-primary-light:    #4f7df7;
+  --ifm-color-primary-lighter:  #6d8ef9;
+  --ifm-color-primary-lightest: #8aa5fb;
+
+  --ifm-background-color:        #ffffff;
+  --ifm-background-surface-color: #f8fafc;
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-footer-background-color: #07080c;
+}
+
+/* =============================================================================
+   Global
+   ============================================================================= */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--ak-bg);
+  color: var(--ak-text);
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.02em;
+  color: var(--ak-text);
+}
+
+/* =============================================================================
+   Page Transitions
+   ============================================================================= */
+
+@keyframes pageFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Docs and blog — article remounts on every client-side navigation */
+article {
+  animation: pageFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Scroll reveal — applied by clientModules/scrollReveal.js */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.scroll-reveal.scroll-reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* =============================================================================
+   Navbar
+   ============================================================================= */
+
 .navbar {
+  background-color: rgba(14, 16, 23, 0.92);
+  border-bottom: 1px solid var(--ak-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* On mobile, backdrop-filter creates a compositing layer that breaks the
+   navbar-sidebar z-index ordering. Remove it so the sidebar renders correctly. */
+@media (max-width: 996px) {
+  .navbar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: rgba(14, 16, 23, 0.98);
+  }
+}
+
+[data-theme='light'] .navbar {
   background-color: rgba(255, 255, 255, 0.95);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-[data-theme='dark'] .navbar {
-  background-color: rgba(30, 41, 59, 0.95);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 1.1rem;
 }
 
-/* Enhanced buttons */
+.navbar__link {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.navbar__link:hover,
+.navbar__link--active {
+  color: var(--ak-blue);
+}
+
+/* =============================================================================
+   Footer
+   ============================================================================= */
+
+.footer {
+  background-color: #07080c;
+  border-top: 1px solid var(--ak-border);
+  padding: 3rem 0 2rem;
+}
+
+.footer__title {
+  color: var(--ak-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.footer__link-item {
+  color: var(--ak-text-secondary);
+  font-size: 0.9rem;
+  transition: color 0.15s ease;
+}
+
+.footer__link-item:hover {
+  color: var(--ak-blue);
+  text-decoration: none;
+}
+
+.footer__copyright {
+  color: var(--ak-text-muted);
+  font-size: 0.85rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ak-border);
+}
+
+/* =============================================================================
+   Buttons
+   ============================================================================= */
+
 .button--primary {
-  background: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-darker) 100%);
+  background: var(--ak-blue);
+  color: #07080c;
+  font-weight: 600;
   border: none;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  letter-spacing: -0.01em;
 }
 
 .button--primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(46, 133, 85, 0.3);
+  background: var(--ak-blue-light);
+  color: #07080c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(79, 125, 247, 0.3);
 }
 
-[data-theme='dark'] .button--primary:hover {
-  box-shadow: 0 4px 12px rgba(37, 194, 160, 0.3);
-}
-
-/* Code blocks enhancement */
-.prism-code {
-  border-radius: var(--ifm-global-radius);
-}
-
-/* Improved sidebar */
-.menu__link {
-  border-radius: 0.375rem;
-}
-
-.menu__link--active {
-  background: linear-gradient(135deg, rgba(46, 133, 85, 0.1) 0%, rgba(46, 133, 85, 0.05) 100%);
+.button--secondary {
+  background: transparent;
+  border: 1px solid var(--ak-border-accent);
+  color: var(--ak-blue);
   font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  letter-spacing: -0.01em;
 }
 
-[data-theme='dark'] .menu__link--active {
-  background: linear-gradient(135deg, rgba(37, 194, 160, 0.15) 0%, rgba(37, 194, 160, 0.05) 100%);
+.button--secondary:hover {
+  background: var(--ak-blue-glow);
+  border-color: var(--ak-blue);
+  color: var(--ak-blue);
+  transform: translateY(-1px);
 }
 
-/* Card-like containers */
+/* =============================================================================
+   Code Blocks
+   ============================================================================= */
+
+.prism-code {
+  border-radius: 0.5rem;
+  background: #0c0f1a !important;
+  border: 1px solid var(--ak-border);
+}
+
 .docusaurus-highlight-code-line {
   background-color: var(--docusaurus-highlighted-code-line-bg);
   display: block;
   margin: 0 calc(-1 * var(--ifm-pre-padding));
   padding: 0 var(--ifm-pre-padding);
-  border-left: 3px solid var(--ifm-color-primary);
+  border-left: 3px solid var(--ak-blue);
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+code {
+  background: rgba(79, 125, 247, 0.08);
+  border: 1px solid rgba(79, 125, 247, 0.15);
+  border-radius: 0.25rem;
+  color: var(--ak-blue-light);
+  font-size: 0.875em;
+  padding: 0.125em 0.35em;
+  font-family: var(--ifm-font-family-monospace);
 }
 
-/* GitHub icon in navbar */
+[data-theme='light'] code {
+  background: rgba(58, 106, 224, 0.07);
+  border-color: rgba(58, 106, 224, 0.15);
+  color: #2d5fc4;
+}
+
+/* =============================================================================
+   Sidebar
+   ============================================================================= */
+
+.menu {
+  padding: 0.5rem 0.75rem;
+}
+
+.menu__link {
+  border-radius: 0.375rem;
+  color: var(--ak-text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.menu__link:hover {
+  color: var(--ak-text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.menu__link--active {
+  color: var(--ak-blue) !important;
+  background: rgba(79, 125, 247, 0.08) !important;
+  font-weight: 600;
+  border-left: 2px solid var(--ak-blue);
+  padding-left: calc(var(--ifm-menu-link-padding-horizontal) - 2px);
+}
+
+.menu__list-item-collapsible:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ak-border) !important;
+}
+
+/* =============================================================================
+   Mermaid Diagrams
+   ============================================================================= */
+
+.docusaurus-mermaid-container {
+  border-radius: 0.625rem;
+  border: 1px solid var(--ak-border);
+  padding: 1rem;
+  background: var(--ak-surface);
+  overflow: hidden;
+  margin: 1.25rem 0;
+}
+
+.docusaurus-mermaid-container svg {
+  background: transparent !important;
+  display: block;
+  margin: 0 auto;
+}
+
+/* =============================================================================
+   Doc Content
+   ============================================================================= */
+
+article {
+  padding: 0 0.5rem;
+}
+
+.markdown h1 {
+  font-size: 2.2rem;
+}
+
+.markdown h2 {
+  font-size: 1.6rem;
+  border-bottom: 1px solid var(--ak-border);
+  padding-bottom: 0.5rem;
+}
+
+.markdown a {
+  color: var(--ak-blue);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.markdown a:hover {
+  border-bottom-color: var(--ak-blue);
+}
+
+/* Admonitions */
+.alert {
+  border-radius: 0.5rem;
+  border: 1px solid var(--ak-border);
+  background: var(--ak-surface-raised);
+}
+
+.alert--info {
+  border-color: rgba(79, 125, 247, 0.3);
+  background: rgba(79, 125, 247, 0.05);
+}
+
+.alert--success {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.alert--warning {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+/* Table of Contents */
+.table-of-contents__link {
+  color: var(--ak-text-muted);
+  font-size: 0.85rem;
+  transition: color 0.15s ease;
+}
+
+.table-of-contents__link:hover,
+.table-of-contents__link--active {
+  color: var(--ak-blue);
+}
+
+/* Pagination */
+.pagination-nav__link {
+  border: 1px solid var(--ak-border);
+  border-radius: 0.5rem;
+  background: var(--ak-surface-raised);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ak-border-accent);
+  background: var(--ak-surface-overlay);
+}
+
+/* =============================================================================
+   Navbar Icon Links
+   ============================================================================= */
+
+.header-github-link,
+.header-pypi-link,
+.header-terraform-link,
+.header-discord-link {
+  padding: 0.5rem;
+  transition: opacity 0.15s ease;
+}
+
+.header-github-link:hover,
+.header-pypi-link:hover,
+.header-terraform-link:hover,
+.header-discord-link:hover {
+  opacity: 0.7;
+}
+
 .header-github-link::before {
   content: '';
   width: 24px;
   height: 24px;
   display: flex;
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%231b1f23' d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E")
-    no-repeat;
-}
-
-[data-theme='dark'] .header-github-link::before {
   background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='white' d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E")
     no-repeat;
 }
 
-.header-github-link:hover {
-  opacity: 0.6;
+[data-theme='light'] .header-github-link::before {
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%231b1f23' d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E")
+    no-repeat;
 }
 
-/* Python icon in navbar */
 .header-pypi-link::before {
   content: '';
   width: 24px;
@@ -126,16 +480,6 @@ html {
     no-repeat;
 }
 
-[data-theme='dark'] .header-pypi-link::before {
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%233776AB' d='M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z'/%3E%3C/svg%3E")
-    no-repeat;
-}
-
-.header-pypi-link:hover {
-  opacity: 0.6;
-}
-
-/* Terraform icon in navbar */
 .header-terraform-link::before {
   content: '';
   width: 24px;
@@ -145,16 +489,6 @@ html {
     no-repeat;
 }
 
-[data-theme='dark'] .header-terraform-link::before {
-  background: url("data:image/svg+xml,%3Csvg viewBox='-17.5 0 291 291' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='xMidYMid'%3E%3Cpolygon fill='%234040B2' points='176.485057 188.994162 256.000302 143.127442 256.000302 51.2485453 176.485057 97.2122358'%3E%3C/polygon%3E%3Cpath d='M88.2425283,51.2485453 L167.757774,97.2122358 L167.757774,188.994162 L88.2425283,143.078957 M0,91.8304113 L79.5152453,137.745617 L79.5152453,45.9152057 L0,0 M88.2425283,244.994228 L167.757774,290.909434 L167.757774,199.079023 L88.2425283,153.163817' fill='%235C4EE5'%3E%3C/path%3E%3C/svg%3E")
-    no-repeat;
-}
-
-.header-terraform-link:hover {
-  opacity: 0.6;
-}
-
-/* Discord icon in navbar */
 .header-discord-link::before {
   content: '';
   width: 24px;
@@ -162,13 +496,4 @@ html {
   display: flex;
   background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%235865F2' d='M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419-.0003 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9554 2.4189-2.1568 2.4189Z'/%3E%3C/svg%3E")
     no-repeat;
-}
-
-[data-theme='dark'] .header-discord-link::before {
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%235865F2' d='M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419-.0003 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9554 2.4189-2.1568 2.4189Z'/%3E%3C/svg%3E")
-    no-repeat;
-}
-
-.header-discord-link:hover {
-  opacity: 0.6;
 }

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Kernel — Logo System</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07080c;
+    --surface: #0e1017;
+    --surface2: #151820;
+    --border: #1c1f2e;
+    --text: #dfe1f0;
+    --muted: #5e627d;
+    --blue: #4f7df7;
+    --mid: #6d6af7;
+    --purple: #8b5cf6;
+    --cyan: #38bdf8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Instrument Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* Hero */
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 40px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(ellipse, rgba(79,125,247,0.08) 0%, rgba(139,92,246,0.04) 40%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-logo { margin-bottom: 32px; }
+  .hero-logo svg { width: 180px; height: 180px; }
+
+  .hero-wordmark {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .hero-wordmark svg { width: 44px; height: 44px; }
+
+  .hero-wordmark h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #dfe1f0 30%, #a0a3c0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .hero-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* Sections */
+  .section {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 40px;
+  }
+
+  .section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--purple);
+    margin-bottom: 32px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Variations Grid */
+  .var-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+
+  .var-card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: border-color 0.3s;
+  }
+
+  .var-card:hover { border-color: #282c44; }
+
+  .var-card.dark-bg { background: var(--surface); }
+  .var-card.light-bg { background: #f4f5f9; }
+  .var-card.mid-bg { background: #1e2235; }
+
+  .var-card svg { margin-bottom: 20px; }
+
+  .var-label {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .var-card.light-bg .var-label { color: #1a1b2e; }
+
+  .var-sublabel {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+  }
+  .var-card.light-bg .var-sublabel { color: #8a8da6; }
+
+  /* Lockup Row */
+  .lockup-row {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .lockup-card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.3s;
+  }
+  .lockup-card:hover { border-color: #282c44; }
+  .lockup-card.dark-bg { background: var(--surface); }
+  .lockup-card.light-bg { background: #f4f5f9; }
+
+  /* Favicon / small sizes */
+  .size-row {
+    display: flex;
+    gap: 32px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .size-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .size-item span {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+  }
+
+  .size-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+  }
+
+  /* Color palette */
+  .palette {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .swatch-circle {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+  }
+
+  .swatch-label {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .swatch-hex {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+  }
+
+  /* Usage guidelines */
+  .guidelines {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  @media (max-width: 640px) {
+    .guidelines { grid-template-columns: 1fr; }
+  }
+
+  .guide-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .guide-card h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .guide-card h4 .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .guide-card h4 .dot.green { background: #34d399; }
+  .guide-card h4 .dot.red { background: #f87171; }
+
+  .guide-card p {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 48px 40px;
+    border-top: 1px solid var(--border);
+    margin-top: 32px;
+  }
+
+  .footer p {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<!-- ====== HERO ====== -->
+<div class="hero">
+  <div class="hero-logo">
+    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g1" x1="30" y1="30" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#4f7df7"/>
+          <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+        <linearGradient id="g2" x1="30" y1="60" x2="170" y2="140" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.6"/>
+        </linearGradient>
+        <linearGradient id="g3" x1="30" y1="90" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.3"/>
+          <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.3"/>
+        </linearGradient>
+      </defs>
+      <!-- Layer 3 (bottom) -->
+      <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+      <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#8b5cf6" stroke-width="1.2" fill="none" opacity="0.35"/>
+      <!-- Layer 2 (middle) -->
+      <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+      <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#6d6af7" stroke-width="1.5" fill="none" opacity="0.6"/>
+      <!-- Layer 1 (top) - the kernel -->
+      <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+      <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="2" fill="none"/>
+      <!-- Core diamond -->
+      <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+    </svg>
+  </div>
+
+  <div class="hero-wordmark">
+    <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+      <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#8b5cf6" stroke-width="1.5" fill="none" opacity="0.35"/>
+      <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+      <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#6d6af7" stroke-width="1.8" fill="none" opacity="0.6"/>
+      <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+      <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="2.5" fill="none"/>
+      <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+    </svg>
+    <h1>Agent Kernel</h1>
+  </div>
+  <p class="hero-sub">Logo System</p>
+</div>
+
+<!-- ====== ICON VARIATIONS ====== -->
+<div class="section">
+  <div class="section-title">Icon Variations</div>
+  <div class="var-grid">
+
+    <!-- Full color on dark -->
+    <div class="var-card dark-bg">
+      <svg width="80" height="80" viewBox="0 0 200 200" fill="none">
+        <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+        <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#8b5cf6" stroke-width="1.5" fill="none" opacity="0.35"/>
+        <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+        <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#6d6af7" stroke-width="1.8" fill="none" opacity="0.6"/>
+        <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+        <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="2.5" fill="none"/>
+        <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+      </svg>
+      <div class="var-label">Full Color</div>
+      <div class="var-sublabel">Dark background</div>
+    </div>
+
+    <!-- Full color on light -->
+    <div class="var-card light-bg">
+      <svg width="80" height="80" viewBox="0 0 200 200" fill="none">
+        <defs>
+          <linearGradient id="lg1" x1="30" y1="30" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#3a65d4"/>
+            <stop offset="100%" stop-color="#7244d4"/>
+          </linearGradient>
+          <linearGradient id="lg2" x1="30" y1="60" x2="170" y2="140" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#3a65d4" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#7244d4" stop-opacity="0.5"/>
+          </linearGradient>
+          <linearGradient id="lg3" x1="30" y1="90" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#3a65d4" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="#7244d4" stop-opacity="0.25"/>
+          </linearGradient>
+        </defs>
+        <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#lg3)"/>
+        <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#7244d4" stroke-width="1.5" fill="none" opacity="0.3"/>
+        <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#lg2)"/>
+        <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#5855d6" stroke-width="1.8" fill="none" opacity="0.5"/>
+        <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#lg1)" opacity="0.6"/>
+        <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#lg1)" stroke-width="2.5" fill="none"/>
+        <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#lg1)"/>
+      </svg>
+      <div class="var-label">Full Color</div>
+      <div class="var-sublabel">Light background</div>
+    </div>
+
+    <!-- Mono white -->
+    <div class="var-card dark-bg">
+      <svg width="80" height="80" viewBox="0 0 200 200" fill="none">
+        <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="#dfe1f0" opacity="0.15"/>
+        <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#dfe1f0" stroke-width="1.5" fill="none" opacity="0.25"/>
+        <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="#dfe1f0" opacity="0.25"/>
+        <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#dfe1f0" stroke-width="1.8" fill="none" opacity="0.5"/>
+        <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="#dfe1f0" opacity="0.4"/>
+        <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="#dfe1f0" stroke-width="2.5" fill="none" opacity="0.9"/>
+        <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="#dfe1f0"/>
+      </svg>
+      <div class="var-label">Monochrome</div>
+      <div class="var-sublabel">White on dark</div>
+    </div>
+
+    <!-- Mono dark -->
+    <div class="var-card light-bg">
+      <svg width="80" height="80" viewBox="0 0 200 200" fill="none">
+        <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="#1a1b2e" opacity="0.12"/>
+        <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#1a1b2e" stroke-width="1.5" fill="none" opacity="0.2"/>
+        <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="#1a1b2e" opacity="0.2"/>
+        <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#1a1b2e" stroke-width="1.8" fill="none" opacity="0.4"/>
+        <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="#1a1b2e" opacity="0.35"/>
+        <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="#1a1b2e" stroke-width="2.5" fill="none" opacity="0.85"/>
+        <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="#1a1b2e"/>
+      </svg>
+      <div class="var-label">Monochrome</div>
+      <div class="var-sublabel">Dark on light</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ====== HORIZONTAL LOCKUPS ====== -->
+<div class="section">
+  <div class="section-title">Horizontal Lockup</div>
+  <div class="lockup-row">
+
+    <div class="lockup-card dark-bg">
+      <svg width="320" height="56" viewBox="0 0 320 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#4f7df7"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+          </linearGradient>
+          <linearGradient id="hg2" x1="0" y1="8" x2="48" y2="40" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.55"/>
+            <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.55"/>
+          </linearGradient>
+          <linearGradient id="hg3" x1="0" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.28"/>
+            <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.28"/>
+          </linearGradient>
+        </defs>
+        <!-- Icon layers -->
+        <g transform="translate(4, 2)">
+          <path d="M24 50 L46 41 L46 37 L24 46 L2 37 L2 41 Z" fill="url(#hg3)"/>
+          <path d="M24 46 L46 37 L24 28 L2 37 Z" stroke="#8b5cf6" stroke-width="0.6" fill="none" opacity="0.35"/>
+          <path d="M24 42 L46 33 L46 29 L24 38 L2 29 L2 33 Z" fill="url(#hg2)"/>
+          <path d="M24 38 L46 29 L24 20 L2 29 Z" stroke="#6d6af7" stroke-width="0.7" fill="none" opacity="0.6"/>
+          <path d="M24 33 L46 24 L46 20 L24 29 L2 20 L2 24 Z" fill="url(#hg1)" opacity="0.7"/>
+          <path d="M24 29 L46 20 L24 11 L2 20 Z" stroke="url(#hg1)" stroke-width="0.9" fill="none"/>
+          <path d="M24 16 L30 20 L24 24 L18 20 Z" fill="url(#hg1)"/>
+        </g>
+        <!-- Text -->
+        <text x="64" y="26" font-family="'Instrument Sans', sans-serif" font-size="22" font-weight="700" fill="#dfe1f0" letter-spacing="-0.5">Agent</text>
+        <text x="134" y="26" font-family="'Instrument Sans', sans-serif" font-size="22" font-weight="700" fill="url(#hg1)" letter-spacing="-0.5">Kernel</text>
+        <text x="64" y="44" font-family="'JetBrains Mono', monospace" font-size="9" fill="#5e627d" letter-spacing="2">AI AGENT RUNTIME</text>
+      </svg>
+    </div>
+
+    <div class="lockup-card light-bg">
+      <svg width="320" height="56" viewBox="0 0 320 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hlg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#3a65d4"/>
+            <stop offset="100%" stop-color="#7244d4"/>
+          </linearGradient>
+          <linearGradient id="hlg2" x1="0" y1="8" x2="48" y2="40" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#3a65d4" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#7244d4" stop-opacity="0.5"/>
+          </linearGradient>
+          <linearGradient id="hlg3" x1="0" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#3a65d4" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="#7244d4" stop-opacity="0.25"/>
+          </linearGradient>
+        </defs>
+        <g transform="translate(4, 2)">
+          <path d="M24 50 L46 41 L46 37 L24 46 L2 37 L2 41 Z" fill="url(#hlg3)"/>
+          <path d="M24 46 L46 37 L24 28 L2 37 Z" stroke="#7244d4" stroke-width="0.6" fill="none" opacity="0.3"/>
+          <path d="M24 42 L46 33 L46 29 L24 38 L2 29 L2 33 Z" fill="url(#hlg2)"/>
+          <path d="M24 38 L46 29 L24 20 L2 29 Z" stroke="#5855d6" stroke-width="0.7" fill="none" opacity="0.5"/>
+          <path d="M24 33 L46 24 L46 20 L24 29 L2 20 L2 24 Z" fill="url(#hlg1)" opacity="0.6"/>
+          <path d="M24 29 L46 20 L24 11 L2 20 Z" stroke="url(#hlg1)" stroke-width="0.9" fill="none"/>
+          <path d="M24 16 L30 20 L24 24 L18 20 Z" fill="url(#hlg1)"/>
+        </g>
+        <text x="64" y="26" font-family="'Instrument Sans', sans-serif" font-size="22" font-weight="700" fill="#1a1b2e" letter-spacing="-0.5">Agent</text>
+        <text x="134" y="26" font-family="'Instrument Sans', sans-serif" font-size="22" font-weight="700" fill="url(#hlg1)" letter-spacing="-0.5">Kernel</text>
+        <text x="64" y="44" font-family="'JetBrains Mono', monospace" font-size="9" fill="#8a8da6" letter-spacing="2">AI AGENT RUNTIME</text>
+      </svg>
+    </div>
+
+  </div>
+</div>
+
+<!-- ====== SIZE SCALING ====== -->
+<div class="section">
+  <div class="section-title">Size Scaling</div>
+  <div class="size-row">
+    <div class="size-item">
+      <div class="size-box" style="width:100px;height:100px;">
+        <svg width="64" height="64" viewBox="0 0 200 200" fill="none">
+          <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+          <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#8b5cf6" stroke-width="1.5" fill="none" opacity="0.35"/>
+          <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+          <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#6d6af7" stroke-width="1.8" fill="none" opacity="0.6"/>
+          <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+          <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="2.5" fill="none"/>
+          <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+        </svg>
+      </div>
+      <span>64px</span>
+    </div>
+    <div class="size-item">
+      <div class="size-box" style="width:68px;height:68px;">
+        <svg width="40" height="40" viewBox="0 0 200 200" fill="none">
+          <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+          <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+          <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+          <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="3" fill="none"/>
+          <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+        </svg>
+      </div>
+      <span>40px</span>
+    </div>
+    <div class="size-item">
+      <div class="size-box" style="width:52px;height:52px;">
+        <svg width="24" height="24" viewBox="0 0 200 200" fill="none">
+          <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+          <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+          <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.8"/>
+          <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="4" fill="none"/>
+          <path d="M100 40 L122 56 L100 72 L78 56 Z" fill="url(#g1)"/>
+        </svg>
+      </div>
+      <span>24px</span>
+    </div>
+    <div class="size-item">
+      <div class="size-box" style="width:44px;height:44px;">
+        <svg width="16" height="16" viewBox="0 0 200 200" fill="none">
+          <path d="M100 155 L172 118 L172 100 L100 137 L28 100 L28 118 Z" fill="url(#g2)"/>
+          <path d="M100 120 L172 83 L172 65 L100 102 L28 65 L28 83 Z" fill="url(#g1)" opacity="0.85"/>
+          <path d="M100 102 L172 65 L100 28 L28 65 Z" stroke="url(#g1)" stroke-width="6" fill="none"/>
+          <path d="M100 45 L122 65 L100 85 L78 65 Z" fill="url(#g1)"/>
+        </svg>
+      </div>
+      <span>16px favicon</span>
+    </div>
+  </div>
+</div>
+
+<!-- ====== COLOR PALETTE ====== -->
+<div class="section">
+  <div class="section-title">Color Palette</div>
+  <div class="palette">
+    <div class="swatch">
+      <div class="swatch-circle" style="background:#4f7df7;"></div>
+      <div class="swatch-label">Blue</div>
+      <div class="swatch-hex">#4F7DF7</div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-circle" style="background:#6d6af7;"></div>
+      <div class="swatch-label">Mid</div>
+      <div class="swatch-hex">#6D6AF7</div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-circle" style="background:#8b5cf6;"></div>
+      <div class="swatch-label">Purple</div>
+      <div class="swatch-hex">#8B5CF6</div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-circle" style="background:#0e1017;"></div>
+      <div class="swatch-label">Surface</div>
+      <div class="swatch-hex">#0E1017</div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-circle" style="background:#dfe1f0;"></div>
+      <div class="swatch-label">Text</div>
+      <div class="swatch-hex">#DFE1F0</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== USAGE GUIDELINES ====== -->
+<div class="section">
+  <div class="section-title">Usage Guidelines</div>
+  <div class="guidelines">
+    <div class="guide-card">
+      <h4><span class="dot green"></span> Do</h4>
+      <p>Maintain clear space around the icon equal to at least the width of the core diamond. Use the full-color version on dark backgrounds whenever possible.</p>
+    </div>
+    <div class="guide-card">
+      <h4><span class="dot green"></span> Do</h4>
+      <p>Use the monochrome variant when the logo appears alongside other brand marks or on colored backgrounds where the gradient may clash.</p>
+    </div>
+    <div class="guide-card">
+      <h4><span class="dot red"></span> Don't</h4>
+      <p>Rotate, skew, or distort the isometric perspective. The 30° viewing angle is integral to the identity.</p>
+    </div>
+    <div class="guide-card">
+      <h4><span class="dot red"></span> Don't</h4>
+      <p>Place the full-color logo on busy photographic backgrounds or mid-tone surfaces that reduce contrast.</p>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <p>Agent Kernel Logo System — Stack Concept</p>
+</div>
+
+</body>
+</html>
