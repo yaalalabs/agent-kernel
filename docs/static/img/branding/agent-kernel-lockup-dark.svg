@@ -1,0 +1,30 @@
+<svg width="320" height="56" viewBox="0 0 320 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="hg1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f7df7"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="hg2" x1="0" y1="8" x2="48" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="hg3" x1="0" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.28"/>
+    </linearGradient>
+  </defs>
+  <!-- Icon -->
+  <g transform="translate(4, 2)">
+    <path d="M24 50 L46 41 L46 37 L24 46 L2 37 L2 41 Z" fill="url(#hg3)"/>
+    <path d="M24 46 L46 37 L24 28 L2 37 Z" stroke="#8b5cf6" stroke-width="0.6" fill="none" opacity="0.35"/>
+    <path d="M24 42 L46 33 L46 29 L24 38 L2 29 L2 33 Z" fill="url(#hg2)"/>
+    <path d="M24 38 L46 29 L24 20 L2 29 Z" stroke="#6d6af7" stroke-width="0.7" fill="none" opacity="0.6"/>
+    <path d="M24 33 L46 24 L46 20 L24 29 L2 20 L2 24 Z" fill="url(#hg1)" opacity="0.7"/>
+    <path d="M24 29 L46 20 L24 11 L2 20 Z" stroke="url(#hg1)" stroke-width="0.9" fill="none"/>
+    <path d="M24 16 L30 20 L24 24 L18 20 Z" fill="url(#hg1)"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="64" y="26" font-family="'Instrument Sans', system-ui, sans-serif" font-size="22" font-weight="700" fill="#dfe1f0" letter-spacing="-0.5">Agent</text>
+  <text x="134" y="26" font-family="'Instrument Sans', system-ui, sans-serif" font-size="22" font-weight="700" fill="url(#hg1)" letter-spacing="-0.5">Kernel</text>
+  <text x="64" y="44" font-family="'JetBrains Mono', 'Courier New', monospace" font-size="9" fill="#5e627d" letter-spacing="2">AI AGENT RUNTIME</text>
+</svg>
