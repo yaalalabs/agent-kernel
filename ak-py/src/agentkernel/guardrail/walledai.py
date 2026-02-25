@@ -27,7 +27,6 @@ class WalledAIGuardrailBase(BaseGuardrailUtil):
         self.redact_client = WalledRedact(api_key=os.getenv("WALLED_API_KEY"))
         self.protect_client = WalledProtect(api_key=os.getenv("WALLED_API_KEY"))
 
-
 class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase, BaseGuardrailUtil):
 
     def _handle_exception(self, res):
