@@ -1,7 +1,8 @@
 debug: true
 session:
   type: redis
-  cache: 256
+  cache: 
+    size: 256
   redis:
     prefix: "ak:oai:redis:"
     url: "redis://ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
