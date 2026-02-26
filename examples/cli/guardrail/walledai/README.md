@@ -97,5 +97,5 @@ pytest tests/test_guardrail.py -v
 ## Additional Resources
 
 - [Walled AI Documentation](https://walled.ai/)
-- [Agent Kernel Documentation](../../../../docs/README.md)
+- [Agent Kernel Documentation](https://github.com/yaalalabs/agent-kernel/blob/develop/ak-py/README.md)
 
