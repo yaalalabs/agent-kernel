@@ -120,6 +120,10 @@ class MultimodalPreHook(PreHook):
                         mime_type=req.mime_type or "image/jpeg",
                     )
 
+                    # Truncate description to configured max length
+                    if len(description) > config.description_max_length:
+                        description = description[: config.description_max_length]
+
                     # Save image to storage
                     attachment_id = save_attachment(
                         session=session,
@@ -141,6 +145,11 @@ class MultimodalPreHook(PreHook):
                         data=req.file_data,
                         mime_type=req.mime_type or "application/octet-stream",
                     )
+
+                    # Truncate description to configured max length
+                    if len(description) > config.description_max_length:
+                        description = description[: config.description_max_length]
+
                     attachment_id = save_attachment(
                         session=session,
                         data=req.file_data,

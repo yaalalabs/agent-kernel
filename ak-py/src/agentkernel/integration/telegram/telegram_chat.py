@@ -87,10 +87,6 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         except Exception as e:
             self._log.error(f"Error processing webhook: {e}\n{traceback.format_exc()}")
 
-    async def _handle_webhook(self, request: Request):
-        # Deprecated/Removed in favor of split logic
-        pass
-
     async def _handle_message(self, message: dict):
         """
         Handle an individual Telegram message.
