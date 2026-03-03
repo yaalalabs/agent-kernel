@@ -388,36 +388,43 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                     file_info = await self._get_file_info(file_id)
                     if file_info:
                         file_path = file_info.get("file_path")
-                        file_size = file_info.get("file_size", 0)
+                        file_size = file_info.get("file_size")
 
-                        # Validate file size before download (require valid size)
-                        if file_size and file_size <= self._max_file_size:
-                            # Download file
+                        # Skip before download only if we have a known positive size that exceeds the limit
+                        if isinstance(file_size, int) and file_size > 0 and file_size > self._max_file_size:
+                            self._log.warning(f"Photo is too large to process ({file_size} bytes > {self._max_file_size} bytes). Skipping.")
+                            failed_files.append("photo")
+                        else:
+                            # Download file (size unknown or within declared limit)
                             file_content = await self._download_telegram_file(file_path)
                             if file_content is not None:
-                                # Base64 encode
-                                image_data_base64 = base64.b64encode(file_content).decode("utf-8")
-
-                                # Detect actual MIME type from file path
-                                photo_name = file_path.rsplit("/", 1)[-1] if file_path else "photo"
-                                guessed_mime_type, _ = mimetypes.guess_type(file_path or "")
-                                photo_mime_type = guessed_mime_type or "image/jpeg"
-
-                                # Add as image request
-                                requests.append(
-                                    AgentRequestImage(
-                                        image_data=image_data_base64,
-                                        name=photo_name,
-                                        mime_type=photo_mime_type,
+                                content_size = len(file_content)
+                                if content_size > self._max_file_size:
+                                    self._log.warning(
+                                        f"Downloaded photo is too large ({content_size} bytes > {self._max_file_size} bytes). Skipping."
                                     )
-                                )
-                                self._log.debug(f"Added photo to request (size: {file_size} bytes)")
+                                    failed_files.append("photo")
+                                else:
+                                    # Base64 encode
+                                    image_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                                    # Detect actual MIME type from file path
+                                    photo_name = file_path.rsplit("/", 1)[-1] if file_path else "photo"
+                                    guessed_mime_type, _ = mimetypes.guess_type(file_path or "")
+                                    photo_mime_type = guessed_mime_type or "image/jpeg"
+
+                                    # Add as image request
+                                    requests.append(
+                                        AgentRequestImage(
+                                            image_data=image_data_base64,
+                                            name=photo_name,
+                                            mime_type=photo_mime_type,
+                                        )
+                                    )
+                                    self._log.debug(f"Added photo to request (size: {content_size} bytes)")
                             else:
                                 self._log.warning(f"Failed to download photo")
                                 failed_files.append("photo")
-                        else:
-                            self._log.warning(f"Photo is too large to process " f"({file_size} bytes > {self._max_file_size} bytes). Skipping.")
-                            failed_files.append("photo")
                     else:
                         self._log.warning("Failed to get photo file info")
                         failed_files.append("photo")
@@ -440,33 +447,38 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                 file_info = await self._get_file_info(file_id)
                 if file_info:
                     file_path = file_info.get("file_path")
-                    file_size = file_info.get("file_size", 0)
+                    file_size = file_info.get("file_size")
 
-                    # Validate file size before download (require valid size)
-                    if file_size and file_size <= self._max_file_size:
-                        # Download file
+                    # Skip before download only if we have a known positive size that exceeds the limit
+                    if isinstance(file_size, int) and file_size > 0 and file_size > self._max_file_size:
+                        self._log.warning(f"File '{file_name}' is too large to process ({file_size} bytes > {self._max_file_size} bytes). Skipping.")
+                        failed_files.append(file_name)
+                    else:
+                        # Download file (size unknown or within declared limit)
                         file_content = await self._download_telegram_file(file_path)
                         if file_content is not None:
-                            # Base64 encode
-                            file_data_base64 = base64.b64encode(file_content).decode("utf-8")
-
-                            # Add as file request
-                            requests.append(
-                                AgentRequestFile(
-                                    file_data=file_data_base64,
-                                    name=file_name,
-                                    mime_type=mime_type,
+                            content_size = len(file_content)
+                            if content_size > self._max_file_size:
+                                self._log.warning(
+                                    f"Downloaded file '{file_name}' is too large ({content_size} bytes > {self._max_file_size} bytes). Skipping."
                                 )
-                            )
-                            self._log.debug(f"Added file to request: {file_name} (size: {file_size} bytes)")
+                                failed_files.append(file_name)
+                            else:
+                                # Base64 encode
+                                file_data_base64 = base64.b64encode(file_content).decode("utf-8")
+
+                                # Add as file request
+                                requests.append(
+                                    AgentRequestFile(
+                                        file_data=file_data_base64,
+                                        name=file_name,
+                                        mime_type=mime_type,
+                                    )
+                                )
+                                self._log.debug(f"Added file to request: {file_name} (size: {content_size} bytes)")
                         else:
                             self._log.warning(f"Failed to download file: {file_name}")
                             failed_files.append(file_name)
-                    else:
-                        self._log.warning(
-                            f"File '{file_name}' is too large to process " f"({file_size} bytes > {self._max_file_size} bytes). Skipping."
-                        )
-                        failed_files.append(file_name)
                 else:
                     self._log.warning(f"Failed to get file info for {file_name}")
                     failed_files.append(file_name)

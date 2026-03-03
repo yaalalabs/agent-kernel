@@ -28,11 +28,23 @@ class SessionNonVolatileCacheStorageDriver(AttachmentStorageDriver):
     def __init__(self, session_id: str):
         """
         Initialize the driver by resolving the session's non-volatile cache.
-        :param session_id: The session ID to resolve.
-        """
-        from ...runtime import Runtime
 
-        session = Runtime.current().sessions().load(session_id)
+        Uses Session.current() to get the active session in the current execution
+        context, ensuring writes go to the same Session instance the runtime will
+        persist. Falls back to Runtime.load() if no active session context exists.
+
+        :param session_id: The session ID (used as fallback key for load()).
+        """
+        from ...base import Session
+
+        current = Session.current()
+        if current and current.id == session_id:
+            session = current
+        else:
+            from ...runtime import Runtime
+
+            session = Runtime.current().sessions().load(session_id)
+
         self._cache = session.get_non_volatile_cache()
 
     def save(self, attachment: dict, max_attachments: int) -> str:
