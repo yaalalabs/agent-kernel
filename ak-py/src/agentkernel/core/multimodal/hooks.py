@@ -83,7 +83,12 @@ class MultimodalPreHook(PreHook):
         last_text_idx = -1
 
         for req in requests:
-            if isinstance(req, (AgentRequestImage, AgentRequestFile)):
+            # Drop images (their data is stored and described)
+            if isinstance(req, AgentRequestImage):
+                continue
+            # Keep files so unsupported file types remain available to downstream frameworks
+            if isinstance(req, AgentRequestFile):
+                filtered_requests.append(req)
                 continue
             if isinstance(req, AgentRequestText):
                 last_text_idx = len(filtered_requests)

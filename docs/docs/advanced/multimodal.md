@@ -93,7 +93,7 @@ Persistent storage for production. Requires a Redis server.
 ```bash
 export AK_MULTIMODAL__STORAGE_TYPE=redis
 export AK_MULTIMODAL__REDIS__URL=redis://localhost:6379
-export AK_MULTIMODAL__REDIS__KEY_PREFIX=ak:attachments:
+export AK_MULTIMODAL__REDIS__PREFIX=ak:attachments:
 export AK_MULTIMODAL__REDIS__TTL=3600
 ```
 
@@ -138,14 +138,18 @@ export AK_MULTIMODAL__STORAGE_TYPE=session_cache
 When multimodal is enabled, a system tool called `analyze_attachments` is automatically registered on all agents. This allows the agent to retrieve and re-analyze previously stored attachments.
 
 ```python
-# The agent can call this internally:
-analyze_attachments(session_id="user-123", query="What breed is the dog?")
+# attachment_ids usually come from the multimodal storage layer
+analyze_attachments(
+    attachment_ids=["att_123", "att_456"],
+    prompt="What breed is the dog?",
+)
 ```
 
 The tool:
-1. Retrieves all stored attachments for the session
-2. Sends them (with the query) to the vision LLM
-3. Returns a detailed analysis
+1. Takes a list of attachment IDs (returned when attachments are stored by the multimodal pre-hook or storage backend; see the attachment_id in the sequence diagram above)
+2. Fetches those attachments from storage
+3. Sends them (with the prompt) to the vision LLM
+4. Returns a detailed analysis
 
 This enables multi-turn conversations about images:
 
@@ -170,7 +174,7 @@ multimodal:
 
   redis:
     url: "redis://localhost:6379"
-    key_prefix: "ak:attachments:"
+    prefix: "ak:attachments:"
     ttl: 3600
 
   dynamodb:

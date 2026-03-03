@@ -128,11 +128,11 @@ The Telegram integration supports sending images and documents alongside text me
 
 ### Supported File Types
 
-| Type                | Formats                  | Use Cases                                       |
-| ------------------- | ------------------------ | ----------------------------------------------- |
-| **Images**    | JPEG, PNG, WebP, GIF     | Photo analysis, vision tasks, object detection  |
-| **Documents** | PDF, TXT, CSV, DOCX, DOC | Document summarization, Q&A, content extraction |
-| **Text**      | Plain messages           | Standard conversations                          |
+| Type                | Formats                                            | Use Cases                                       |
+| ------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| **Images**          | JPEG, PNG, WebP, GIF                               | Photo analysis, vision tasks, object detection  |
+| **Documents**       | PDF (other text formats are handled as plain text) | Document summarization, Q&A, content extraction |
+| **Text**            | Plain messages                                     | Standard conversations                          |
 
 ### How It Works
 

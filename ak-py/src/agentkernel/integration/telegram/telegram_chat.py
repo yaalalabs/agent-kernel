@@ -58,7 +58,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
 
         return router
 
-    async def _process_webhook_body(self, body: dict, headers: dict):
+    async def _process_webhook_body(self, body: dict, headers: Mapping[str, str]):
         """
         Process the webhook body in background.
         """
