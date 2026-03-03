@@ -8,6 +8,12 @@ from agentkernel.test import Test
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
+@pytest.fixture(scope="session", autouse=True)
+def require_walled_api_key():
+    if not os.getenv("WALLED_API_KEY"):
+        pytest.fail("WALLED_API_KEY environment variable is required for WalledAI tests.")
+
+
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def test_client():
     test = Test("demo.py")
@@ -34,10 +40,6 @@ async def test_second_question(test_client):
 
 @pytest.mark.asyncio
 async def test_walledai_redact_masking():
-    api_key = os.getenv("WALLED_API_KEY")
-    if not api_key:
-        pytest.skip("WALLED_API_KEY environment variable not set. Skipping Walled AI redact masking test.")
-
     guardrail = WalledAIGuardrailBase()
     test_text = "my name is john"
     redact_res = guardrail.redact_client.guard(test_text)

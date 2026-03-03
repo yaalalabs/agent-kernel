@@ -137,10 +137,14 @@ guardrail:
   input:
     enabled: true
     type: walledai
+    pii_enabled: true
   output:
     enabled: true
     type: walledai
+    pii_enabled: true
 ```
+
+Set `pii_enabled: false` to disable PII masking/unmasking for Walled AI while keeping safety checks enabled.
 
 ### 3. Test Your Guardrails
 

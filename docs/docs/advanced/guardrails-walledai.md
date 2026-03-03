@@ -43,9 +43,11 @@ guardrail:
   input:
     enabled: true
     type: walledai
+    pii_enabled: true
   output:
     enabled: true
     type: walledai
+    pii_enabled: true
 ```
 
 Equivalent environment-variable configuration:
@@ -53,8 +55,14 @@ Equivalent environment-variable configuration:
 ```bash
 export AK_GUARDRAIL__INPUT__ENABLED=true
 export AK_GUARDRAIL__INPUT__TYPE=walledai
+export AK_GUARDRAIL__INPUT__PII_ENABLED=true
 export AK_GUARDRAIL__OUTPUT__ENABLED=true
 export AK_GUARDRAIL__OUTPUT__TYPE=walledai
+export AK_GUARDRAIL__OUTPUT__PII_ENABLED=true
+
+# Optional: disable WalledAI PII redaction/unmasking while keeping safety checks
+# export AK_GUARDRAIL__INPUT__PII_ENABLED=false
+# export AK_GUARDRAIL__OUTPUT__PII_ENABLED=false
 ```
 
 ## How It Works

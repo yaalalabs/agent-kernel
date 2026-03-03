@@ -570,7 +570,7 @@ Create guardrail configuration:
 
 **For Bedrock:** Create a guardrail in AWS Bedrock and note the guardrail ID and version.
 
-**For Walled AI:** Set `WALLED_API_KEY` and use guardrail type `walledai`.
+**For Walled AI:** Set `WALLED_API_KEY`, use guardrail type `walledai`, and control PII masking with `pii_enabled`.
 
 Configure guardrails in your configuration:
 
@@ -610,9 +610,11 @@ guardrail:
   input:
     enabled: true
     type: walledai
+    pii_enabled: true
   output:
     enabled: true
     type: walledai
+    pii_enabled: true
 ```
 
 #### Messaging Platform Integrations
@@ -727,6 +729,8 @@ export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 # Walled AI guardrails
 export WALLED_API_KEY=your-walledai-api-key
+export AK_GUARDRAIL__INPUT__PII_ENABLED=true
+export AK_GUARDRAIL__OUTPUT__PII_ENABLED=true
 export AK_LOG_LEVEL=DEBUG
 # Messaging platforms (optional)
 export AK_SLACK__AGENT=my-agent
@@ -801,14 +805,17 @@ guardrail:
   input:
     enabled: false
     type: openai
+    pii_enabled: true
     model: gpt-4o-mini
     config_path: /path/to/guardrails_input.json
   output:
     enabled: false
     type: openai
+    pii_enabled: true
     model: gpt-4o-mini
     config_path: /path/to/guardrails_output.json
-  # For Walled AI, set type: walledai and WALLED_API_KEY in environment variables.
+  # For Walled AI, set type: walledai, WALLED_API_KEY,
+  # and optionally use input/output pii_enabled (default: true) to enable/disable PII masking.
 slack:
   agent: my-agent
   agent_acknowledgement: "Processing your request..."

@@ -6,6 +6,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from walledai import WalledProtect, WalledRedact
 
 from ..core.base import Agent, Session
+from ..core.config import AKConfig
 from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
@@ -123,6 +124,10 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                 log.info(f"Blocked unsafe input: {raw_text}")
                 return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
 
+        if not AKConfig.get().guardrail.input.pii_enabled:
+            log.debug("WalledAI PII redaction is disabled for input guardrail.")
+            return requests
+
         try:
             redact_res = await to_thread(silent_call, self.redact_client.guard, raw_text)
 
@@ -170,6 +175,10 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
         :return: Unmasked reply when mapping exists; otherwise original reply.
         :rtype: AgentReply
         """
+        if not AKConfig.get().guardrail.output.pii_enabled:
+            log.debug("WalledAI PII unmasking is disabled for output guardrail.")
+            return agent_reply
+
         masked_output = self._extract_text_from_reply(agent_reply)
         mapping = self._get_pii_mapping(session)
 
