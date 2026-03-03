@@ -2,6 +2,7 @@ import base64
 import logging
 import mimetypes
 import traceback
+from typing import Mapping
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
