@@ -19,7 +19,7 @@ from ..model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from .storage import save_attachment
+from .storage import AttachmentStorageManager
 from .tools import describe_attachment_briefly
 
 if TYPE_CHECKING:
@@ -106,6 +106,7 @@ class MultimodalPreHook(PreHook):
         Returns list of (attachment_id, description) tuples.
         """
         descriptions = []
+        manager = AttachmentStorageManager(session_id=session.id)
 
         for req in requests:
             # Skip injected context requests
@@ -125,8 +126,7 @@ class MultimodalPreHook(PreHook):
                         description = description[: config.description_max_length]
 
                     # Save image to storage
-                    attachment_id = save_attachment(
-                        session=session,
+                    attachment_id = manager.save_attachment(
                         data=req.image_data,
                         attachment_type="image",
                         name=getattr(req, "name", "image"),
@@ -150,8 +150,7 @@ class MultimodalPreHook(PreHook):
                     if len(description) > config.description_max_length:
                         description = description[: config.description_max_length]
 
-                    attachment_id = save_attachment(
-                        session=session,
+                    attachment_id = manager.save_attachment(
                         data=req.file_data,
                         attachment_type="file",
                         name=getattr(req, "name", "file"),

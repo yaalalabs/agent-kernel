@@ -131,12 +131,28 @@ class _GmailConfig(BaseModel):
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
 
 
+class _MultimodalStorageRedisConfig(BaseModel):
+    url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
+    ttl: int = Field(default=604800, description="Attachment TTL in seconds")
+    prefix: str = Field(default="ak:attachments:", description="Key prefix for attachment keys")
+
+
+class _MultimodalStorageDynamoDBConfig(BaseModel):
+    table_name: str = Field(description="DynamoDB table name for attachment storage")
+    ttl: int = Field(default=604800, description="Attachment TTL in seconds (0 disables)")
+
+
 class _MultimodalConfig(BaseModel):
     """Configuration for multimodal attachment memory."""
 
     enabled: bool = Field(
         default=False,
         description="Enable multimodal memory for images and files.",
+    )
+    storage_type: str = Field(
+        default="in_memory",
+        pattern="^(session_cache|in_memory|redis|dynamodb)$",
+        description="Storage backend for multimodal attachments. Options: session_cache, in_memory, redis, dynamodb",
     )
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
@@ -148,6 +164,8 @@ class _MultimodalConfig(BaseModel):
         default="gpt-4o",
         description="LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment",
     )
+    redis: Optional[_MultimodalStorageRedisConfig] = None
+    dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
 
 
 class _TraceConfig(BaseModel):

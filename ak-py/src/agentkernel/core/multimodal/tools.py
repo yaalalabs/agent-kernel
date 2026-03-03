@@ -6,7 +6,7 @@ Multimodal tools for LLM to access images/files.
 import logging
 
 from ..config import AKConfig
-from .storage import get_attachment_data
+from .storage import AttachmentStorageManager
 
 _log = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
         ctx = ToolContext.get()
         session = ctx.session
 
-        attachments = get_attachment_data(session=session, attachment_ids=attachment_ids)
+        attachments = AttachmentStorageManager(session_id=session.id).get_attachment_data(attachment_ids=attachment_ids)
 
         if not attachments:
             return "No attachments found for the given IDs in this session"
