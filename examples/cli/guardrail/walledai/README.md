@@ -1,33 +1,60 @@
+# Agent Kernel running LangGraph Agents with Walled AI Guardrails configured
 
-# Agent Kernel running LangGraph Agents with Walled AI Guardrails
+This package contains a demo of Agent Kernel running agents built with LangGraph
+with [Walled AI](https://walled.ai/) guardrails configured.
+Users can interact with agents via the Agent Kernel CLI.
 
-This package contains a demo of Agent Kernel running agents built with LangGraph and [Walled AI Guardrails](https://walled.ai/) configured. Users can interact with agents via the Agent Kernel CLI.
-
-## Installation
-
-Install dependencies:
+Install dependencies using:
 
     ./build.sh
 
-Install local dependencies in development mode:
+Install local dependencies in development mode using:
 
     ./build.sh local
 
-## Usage
-
-Run the demo:
+Run this demo using:
 
     python demo.py
 
+To run tests:
+
+    pytest demo_test.py -v
+
 ## Guardrail Configuration
 
-Walled AI guardrails are configured via environment variable:
+### 1. Update Agent Kernel Configuration
+
+Set guardrail type to `walledai` in `config.yaml`:
+
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: walledai
+  output:
+    enabled: true
+    type: walledai
+```
+
+### 2. Set Environment Variables
 
 ```bash
 export WALLED_API_KEY=your-walledai-api-key
+export OPENAI_API_KEY=your-openai-api-key
+export AK_LOG_LEVEL=DEBUG
 ```
 
-No JSON config file is required. All PII redaction and safety checks are handled by the Walled AI API.
+- `WALLED_API_KEY` is used by Walled AI safety and redaction clients.
+- `OPENAI_API_KEY` is required by the LangGraph demo model (`ChatOpenAI`).
+- `AK_LOG_LEVEL` controls Walled AI guardrail logger verbosity.
+
+Supported `AK_LOG_LEVEL` values:
+
+```bash
+DEBUG | INFO | WARNING | ERROR | CRITICAL
+```
+
+If `AK_LOG_LEVEL` is not set or invalid, logging defaults to `INFO`.
 
 ## How It Works
 
@@ -36,63 +63,77 @@ No JSON config file is required. All PII redaction and safety checks are handled
 Input guardrails run **before** requests are sent to the agent:
 
 1. Extract text from incoming requests
-2. Call Walled AI to check safety and redact PII
-3. Store PII mapping in session
-4. If unsafe or PII detected, return masked/error response
-5. If validation passes, continue to agent
+2. Call Walled AI Protect API for safety validation
+3. Call Walled AI Redact API to mask sensitive values
+4. Persist placeholder-to-original mapping in session non-volatile cache
+5. Forward masked text to the agent
+
+If safety validation fails, the request is blocked with:
+
+"I cannot fulfill this request as it violates safety guidelines."
 
 ### Output Guardrails (PostHook)
 
 Output guardrails run **after** the agent generates a response:
 
-1. Extract text from agent's reply
-2. Use session mapping to unmask PII placeholders
-3. Return unmasked response to user
+1. Extract text from the agent reply
+2. Load stored mapping from session state
+3. Replace placeholders with original values
+4. Return the unmasked response
 
-## Example Scenarios
+## Examples
 
 ### Example 1: Block Unsafe Content
 
 **Input**: "How can I hack into someone's account?"
 
-**Guardrail Triggered**: Safety check (unsafe content)
+**Guardrail Triggered**: Safety check
 
 **Response**: "I cannot fulfill this request as it violates safety guidelines."
 
-### Example 2: PII Redaction
+### Example 2: PII Redaction and Unmasking
 
-**Input**: "My email is john.doe@example.com and my phone is 555-1234"
+**Input**: "my name is john"
 
-**Guardrail Triggered**: PII redaction
+**Redacted Request to Agent**: "my name is [Person_1]"
 
-**Response**: "My email is <PII_EMAIL_ADDRESS> and my phone is <PII_PHONE_NUMBER>"
+**Reply Unmasking**: placeholders in the reply are converted back using session mapping.
 
 ### Example 3: Safe Request
 
 **Input**: "What is the capital of France?"
 
-**Guardrail**: Passes validation
+**Guardrail**: Passes safety/redaction checks
 
-**Response**: "The capital of France is Paris."
-
-
-## Troubleshooting
-
-1. Verify config file path is correct in `config.yaml`
-2. Check that config file exists and is valid JSON
-3. Ensure WalledAI API key is set
-4. Check logs for warning/error messages
+**Response**: Normal agent response
 
 ## Testing
 
-Guardrails are covered by unit tests in `tests/test_guardrail.py`.
+This example includes integration and guardrail tests in `demo_test.py`.
 
 Run tests with:
 
 ```bash
-pytest tests/test_guardrail.py -v
+pytest demo_test.py -v
 ```
 
+## Troubleshooting
+
+### Guardrails not triggering
+
+1. Ensure `guardrail.input.type` and `guardrail.output.type` are set to `walledai`
+2. Ensure `WALLED_API_KEY` is set in your shell
+3. Verify network access to Walled AI APIs
+4. Set `AK_LOG_LEVEL=DEBUG` and review CLI logs
+
+### Missing API key errors
+
+Set required environment variables before running:
+
+```bash
+export WALLED_API_KEY=your-walledai-api-key
+export OPENAI_API_KEY=your-openai-api-key
+```
 
 ## Additional Resources
 

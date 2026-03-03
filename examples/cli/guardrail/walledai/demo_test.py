@@ -35,7 +35,8 @@ async def test_second_question(test_client):
 @pytest.mark.asyncio
 async def test_walledai_redact_masking():
     api_key = os.getenv("WALLED_API_KEY")
-    assert api_key, "WALLED_API_KEY must be set in environment"
+    if not api_key:
+        pytest.skip("WALLED_API_KEY environment variable not set. Skipping Walled AI redact masking test.")
 
     guardrail = WalledAIGuardrailBase()
     test_text = "my name is john"

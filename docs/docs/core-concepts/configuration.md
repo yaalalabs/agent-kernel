@@ -108,7 +108,7 @@ telegram:
 guardrail:
   input:
     enabled: false  # Enable input guardrails
-    type: openai  # Guardrail provider: openai or bedrock
+    type: openai  # Guardrail provider: openai, bedrock, or walledai
     # OpenAI-specific fields:
     model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
@@ -117,7 +117,7 @@ guardrail:
     version: "DRAFT"  # AWS Bedrock guardrail version (Bedrock only)
   output:
     enabled: false  # Enable output guardrails
-    type: openai  # Guardrail provider: openai or bedrock
+    type: openai  # Guardrail provider: openai, bedrock, or walledai
     # OpenAI-specific fields:
     model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
@@ -385,7 +385,7 @@ export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base 
 ```bash
 # Enable input guardrails
 export AK_GUARDRAIL__INPUT__ENABLED=true  # default: false
-export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock' (default: openai)
+export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walledai' (default: openai)
 
 # OpenAI-specific input guardrail configuration
 export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
@@ -395,9 +395,12 @@ export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path t
 export AK_GUARDRAIL__INPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
 export AK_GUARDRAIL__INPUT__VERSION=1  # AWS Bedrock guardrail version (default: DRAFT)
 
+# Walled AI-specific input guardrail configuration
+export WALLED_API_KEY=your-walledai-api-key
+
 # Enable output guardrails
 export AK_GUARDRAIL__OUTPUT__ENABLED=true  # default: false
-export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock' (default: openai)
+export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walledai' (default: openai)
 
 # OpenAI-specific output guardrail configuration
 export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
@@ -406,6 +409,9 @@ export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path
 # Bedrock-specific output guardrail configuration
 export AK_GUARDRAIL__OUTPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
 export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default: DRAFT)
+
+# Optional logger level for Walled AI guardrails
+export AK_LOG_LEVEL=INFO
 ```
 
 
@@ -507,12 +513,12 @@ trace:
 guardrail:
   input:                        # Input guardrail configuration
     enabled: false              # Enable input guardrails
-    type: "openai"              # Guardrail provider: 'openai' or 'bedrock' (bedrock coming soon)
+    type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
   output:                       # Output guardrail configuration
     enabled: false              # Enable output guardrails
-    type: "openai"              # Guardrail provider: 'openai' or 'bedrock' (bedrock coming soon)
+    type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 ```

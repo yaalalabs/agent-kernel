@@ -9,75 +9,169 @@ from ..core.base import Agent, Session
 from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
-log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger("ak.guardrail.walledai")
+
+WALLEDAI_PII_MAPPING_KEY = "walledai_pii_mapping"
+
+
+def _resolve_log_level() -> int:
+    """
+    Resolve the logger level from environment variables.
+
+    :return: A valid ``logging`` module integer level.
+    :rtype: int
+    """
+    level_name = os.getenv("AK_LOG_LEVEL", "INFO")
+    normalized_level = level_name.upper()
+    resolved_level = getattr(logging, normalized_level, None)
+    if isinstance(resolved_level, int):
+        return resolved_level
+    return logging.INFO
+
+
+resolved_log_level = _resolve_log_level()
+log.setLevel(resolved_log_level)
+
+if not log.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(resolved_log_level)
+    handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
+    log.addHandler(handler)
+
+log.propagate = False
 
 
 def silent_call(func, *args, **kwargs):
-    """Swallows the SDK's hardcoded print statements."""
+    """
+    Execute a callable while suppressing stdout/stderr output.
+
+    This is used to silence hardcoded print statements in the Walled AI SDK
+    without affecting guardrail behavior.
+
+    :param func: Callable to execute.
+    :param args: Positional arguments for the callable.
+    :param kwargs: Keyword arguments for the callable.
+    :return: The callable return value.
+    """
     with open(os.devnull, "w") as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             return func(*args, **kwargs)
 
 
+# We wrap the Walled AI SDK calls in a base class to handle the common logic of suppressing prints and catching exceptions.
 class WalledAIGuardrailBase(BaseGuardrailUtil):
-    _session_pii_mappings: dict[str, dict] = {}
+    """
+    Base class for Walled AI guardrails with shared clients and mapping helpers.
+    """
 
     def __init__(self):
+        """
+        Initialize Walled AI redact and protect clients.
+        """
         self.redact_client = WalledRedact(api_key=os.getenv("WALLED_API_KEY"))
         self.protect_client = WalledProtect(api_key=os.getenv("WALLED_API_KEY"))
 
+    def _get_pii_mapping(self, session: Session) -> dict:
+        """
+        Retrieve the persisted PII placeholder mapping for the session.
 
-class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase, BaseGuardrailUtil):
+        :param session: Active session containing guardrail state.
+        :return: Placeholder-to-original-value mapping.
+        :rtype: dict
+        """
+        mapping = session.get_non_volatile_cache().get(WALLEDAI_PII_MAPPING_KEY, {})
+        if isinstance(mapping, dict):
+            return mapping
+        return {}
 
-    def _handle_exception(self, res):
-        warning_msg = "\033[33m[Warning] Input too short for Walled AI check. Bypassing guardrail...\033[0m"
-        if isinstance(res, Exception):
-            if "INPUT_SHORT" in str(res):
-                log.warning(warning_msg)
-                return True
-            raise res
-        return False
+    def _set_pii_mapping(self, session: Session, mapping: dict) -> None:
+        """
+        Persist the PII placeholder mapping for the session.
+
+        :param session: Active session containing guardrail state.
+        :param mapping: Placeholder-to-original-value mapping.
+        :return: None
+        """
+        session.get_non_volatile_cache().set(WALLEDAI_PII_MAPPING_KEY, mapping)
+
+
+# The input guardrail will run both the safety and redaction checks, while the output guardrail will handle unmasking any placeholders in the agent's reply.
+class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
+    """
+    Walled AI input guardrail that performs safety checks and PII redaction.
+
+    Input text is first evaluated for safety, then redacted. The redaction
+    mapping is stored in session state for later unmasking on output.
+    """
 
     async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+        """
+        Validate and redact incoming requests before agent execution.
+
+        :param session: Session object containing interaction state.
+        :param agent: Agent that will process the sanitized request.
+        :param requests: Incoming requests to validate and redact.
+        :return: Redacted request list, original requests, or blocked reply.
+        :rtype: list[AgentRequest] | AgentReply
+        """
         raw_text = self._extract_text_from_requests(requests)
 
-        safety_res = await to_thread(silent_call, self.protect_client.guard, raw_text, generic_safety_check=True)
-
-        if self._handle_exception(safety_res):
-            return requests
-
-        log.debug(f"Walled AI safety response: {safety_res}")
+        safety_res = await to_thread(silent_call, self.protect_client.guard, raw_text)
 
         if isinstance(safety_res, dict) and "data" in safety_res:
             if not safety_res["data"]["safety"][0]["isSafe"]:
+                log.info(f"Blocked unsafe input: {raw_text}")
                 return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
 
-        redact_res = await to_thread(silent_call, self.redact_client.guard, raw_text)
+        try:
+            redact_res = await to_thread(silent_call, self.redact_client.guard, raw_text)
 
-        if self._handle_exception(redact_res):
-            return requests
+        except Exception as e:
+            if "INPUT_SHORT" in str(e):
+                log.debug("Input too short for redaction; bypassing.")
+                return requests
+            else:
+                log.error(f"Redaction error: {e}")
+                raise
 
         if isinstance(redact_res, dict) and "data" in redact_res:
-            masked_text = redact_res["data"]["masked_text"]
-            new_mapping = redact_res["data"]["mapping"]
+            data = redact_res["data"]
+            masked_text = data.get("masked_text", raw_text)
+            new_mapping = data.get("mapping", {})
 
-            existing_mapping = session._data.get("walledai_pii_mapping", {})
+            existing_mapping = self._get_pii_mapping(session)
             existing_mapping.update(new_mapping)
-            session._data["walledai_pii_mapping"] = existing_mapping
+            self._set_pii_mapping(session, existing_mapping)
 
-            log.debug(f"Redacted input text: {masked_text}")
-            log.debug(f"mapping: {existing_mapping}")
+            log.debug(f"masked_text: {masked_text}")
+            log.debug(f"existing_mapping: {existing_mapping}")
 
             return [AgentRequestText(text=masked_text)]
 
-        raise ValueError("Received unexpected response format from Walled AI.")
+        return requests
 
 
-class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase, BaseGuardrailUtil):
+class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
+    """
+    Walled AI output guardrail that restores redacted placeholders.
+
+    Uses the session mapping generated during input redaction to replace
+    placeholders in the agent reply with original values.
+    """
+
     async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
+        """
+        Unmask placeholders in the outgoing agent reply.
+
+        :param session: Session object containing stored PII mappings.
+        :param requests: Original requests associated with this reply.
+        :param agent: Agent that generated the reply.
+        :param agent_reply: Reply potentially containing masked placeholders.
+        :return: Unmasked reply when mapping exists; otherwise original reply.
+        :rtype: AgentReply
+        """
         masked_output = self._extract_text_from_reply(agent_reply)
-        mapping = session._data.get("walledai_pii_mapping", {})
+        mapping = self._get_pii_mapping(session)
 
         if not mapping:
             return agent_reply
