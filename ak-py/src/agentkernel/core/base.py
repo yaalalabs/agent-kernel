@@ -368,16 +368,14 @@ class Agent(ABC):
         pass
 
     @abstractmethod
-    def get_wrapped(self):
+    def override_system_prompt(self, prompt: str) -> None:
         """
-        Returns the underlying agent object.
-        """
-        pass
+        Appends additional instructions to the agent's system prompt.
 
-    @abstractmethod
-    def override_system_prompt(self, session: "Session", prompt: str) -> None:
-        """
-        Overrides the system prompt of the agent via Session injection.
+        Called by ``_setup_system_prompt()`` at init time to inject system-level
+        tool instructions (e.g., multimodal attachment analysis guidance).
+
+        :param prompt: The instruction text to append.
         """
         pass
 
@@ -396,21 +394,36 @@ class Agent(ABC):
         """
         pass
 
+    # Registry for system tool instructions — each entry is (tool_name, instruction_text)
+    _system_tool_instructions: list[tuple[str, str]] = []
+
+    @classmethod
+    def register_system_tool_instruction(cls, tool_name: str, instruction: str) -> None:
+        """
+        Register a system-level tool instruction to be injected into agent prompts.
+
+        This is the extension point for system tools (multimodal, future tools, etc.)
+        to register their instruction text. All registered instructions are collected
+        by ``get_system_prompt_suffix()`` and injected into agent prompts at init time.
+
+        :param tool_name: Unique name for the tool (avoids duplicates).
+        :param instruction: Instruction text to inject into agent prompts.
+        """
+        if not any(name == tool_name for name, _ in cls._system_tool_instructions):
+            cls._system_tool_instructions.append((tool_name, instruction))
+
     @staticmethod
     def get_system_prompt_suffix() -> str:
         """
-        Returns the system prompt suffix to be appended to the agent's system prompt.
-        :return: The system prompt suffix.
+        Collects and returns all registered system tool instructions.
+
+        :return: Combined instruction text from all registered system tools,
+                 or empty string if none are registered.
         """
-        tool_instruction = (
-            "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
-            "Available tool:\n"
-            "- analyze_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
-            "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
-            "Use this tool when asked about attached images or files.\n"
-            "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS (numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to inspect the file content again. Do not guess based on the summary."
-        )
-        return tool_instruction
+        if not Agent._system_tool_instructions:
+            return ""
+        parts = [instruction for _, instruction in Agent._system_tool_instructions]
+        return "\n".join(parts)
 
     def _setup_system_prompt(self) -> None:
         """
@@ -423,7 +436,9 @@ class Agent(ABC):
 
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
-            self.override_system_prompt(session=None, prompt=self.get_system_prompt_suffix())
+            suffix = self.get_system_prompt_suffix()
+            if suffix:
+                self.override_system_prompt(prompt=suffix)
 
     def _attach_system_tools(self) -> None:
         """
@@ -437,5 +452,18 @@ class Agent(ABC):
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
             from .multimodal import analyze_attachments
+
+            # Register the tool instruction for prompt injection
+            tool_instruction = (
+                "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
+                "Available tool:\n"
+                "- analyze_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
+                "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
+                "Use this tool when asked about attached images or files.\n"
+                "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS "
+                "(numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to "
+                "inspect the file content again. Do not guess based on the summary."
+            )
+            Agent.register_system_tool_instruction("analyze_attachments", tool_instruction)
 
             self.attach_tool(analyze_attachments)

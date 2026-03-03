@@ -155,8 +155,8 @@ class CrewAIAgent(BaseAgent):
         super().__init__(name, runner)
         self._agent = agent
         self._crew = crew
-        self._setup_system_prompt()
         self._attach_system_tools()
+        self._setup_system_prompt()
 
     @property
     def agent(self) -> Agent:
@@ -189,12 +189,6 @@ class CrewAIAgent(BaseAgent):
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
         return A2ACardBuilder.build(name=self.name, description=self.agent.backstory, skills=skills)
 
-    def get_wrapped(self):
-        """
-        Returns the underlying agent object (CrewAI Agent).
-        """
-        return self.agent
-
     def attach_tool(self, tool: Any) -> None:
         """
         Accepts a raw Callable and wraps it with CrewAIToolBuilder before attaching,
@@ -207,7 +201,7 @@ class CrewAIAgent(BaseAgent):
             if w not in self.agent.tools:
                 self.agent.tools.append(w)
 
-    def override_system_prompt(self, session: "Session", prompt: str) -> None:
+    def override_system_prompt(self, prompt: str) -> None:
         """
         Appends the given prompt text to the CrewAI agent's backstory.
         Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
@@ -284,7 +278,7 @@ class CrewAIToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Any]) -> list[Any]:
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
         """
         Bind generic tool functions to CrewAI tool definitions.
 

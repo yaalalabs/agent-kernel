@@ -197,8 +197,8 @@ class LangGraphAgent(BaseAgent):
         self._agent = agent
         self._tools: list[Any] = []
         self._system_prompt: str = ""
-        self._setup_system_prompt()
         self._attach_system_tools()
+        self._setup_system_prompt()
 
     @property
     def agent(self) -> CompiledStateGraph:
@@ -237,12 +237,6 @@ class LangGraphAgent(BaseAgent):
         # TODO extract description from graph
         return A2ACardBuilder.build(name=self.name, description="", skills=skills)
 
-    def get_wrapped(self):
-        """
-        Returns the underlying agent object (LangGraph Agent).
-        """
-        return self.agent
-
     def attach_tool(self, tool: Any) -> None:
         """
         Accepts a raw Callable and wraps it with LangGraphToolBuilder before storing.
@@ -257,7 +251,7 @@ class LangGraphAgent(BaseAgent):
             if w not in self._tools:
                 self._tools.append(w)
 
-    def override_system_prompt(self, session: "Session", prompt: str) -> None:
+    def override_system_prompt(self, prompt: str) -> None:
         """
         Stores the system prompt suffix on the agent wrapper.
         Follows the same pattern as ADK, OpenAI, and CrewAI.
@@ -408,7 +402,7 @@ class LangGraphToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Any]) -> list[Any]:
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
         """
         Bind generic tool functions to LangChain StructuredTool instances.
 

@@ -195,8 +195,8 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
-        self._setup_system_prompt()
         self._attach_system_tools()
+        self._setup_system_prompt()
 
     @property
     def agent(self) -> BaseAgent:
@@ -211,13 +211,7 @@ class GoogleADKAgent(AKBaseAgent):
         """
         return self.agent.description
 
-    def get_wrapped(self):
-        """
-        Returns the underlying Google ADK agent object.
-        """
-        return self._agent
-
-    def override_system_prompt(self, session: Any, prompt: str) -> None:
+    def override_system_prompt(self, prompt: str) -> None:
         """
         Appends the given prompt text to the ADK agent's description.
         Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
@@ -313,7 +307,7 @@ class GoogleADKToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Any]) -> list[Any]:
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
         """
         Bind generic tool functions to ADK FunctionTool instances.
 

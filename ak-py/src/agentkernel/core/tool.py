@@ -145,11 +145,11 @@ class ToolBuilder:
     """
 
     @classmethod
-    def bind(cls, funcs: list[Any]) -> list[Any]:
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
         """
-        Bind a list of generic tool functions to framework-specific tool definitions.
+        Bind a list of tool functions to framework-specific tool definitions.
 
-        :param funcs: List of generic tool functions or existing tools to bind.
+        :param funcs: List of callable tool functions to bind.
         :return: List of framework-specific tool definitions.
         :raises NotImplementedError: If called on the base ToolBuilder class.
         """

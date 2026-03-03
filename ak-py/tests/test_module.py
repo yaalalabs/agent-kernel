@@ -40,10 +40,7 @@ class KernelWrappedAgent(Agent):
     def get_description(self):
         pass
 
-    def get_wrapped(self):
-        return self._agent
-
-    def override_system_prompt(self, session, prompt):
+    def override_system_prompt(self, prompt):
         pass
 
     def attach_tool(self, tool):
