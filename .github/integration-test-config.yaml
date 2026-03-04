@@ -24,6 +24,9 @@ nightly:
       path: examples/api/instagram
     - type: api
       path: examples/api/gmail
+    - type: api
+      path: examples/api/multimodal/dynamodb
+      requires_aws: true
 
 weekly:
   # Tests that run once a week

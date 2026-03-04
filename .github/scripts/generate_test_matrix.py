@@ -45,6 +45,8 @@ def generate_matrix_from_config(config_path: str, tier: str) -> tuple[dict, dict
         # Add optional fields
         if 'requires_slack' in test:
             test_item['requires_slack'] = test['requires_slack']
+        if 'requires_aws' in test:
+            test_item['requires_aws'] = test['requires_aws']
         
         matrix_tests.append(test_item)
     
