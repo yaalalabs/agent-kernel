@@ -9,7 +9,6 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_asyncio
-
 from agentkernel.test import Test
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -43,7 +42,7 @@ class APITestClient:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def app_client():
     env = os.environ.copy()
-    
+
     proc = subprocess.Popen(
         [sys.executable, "app.py"],
         stdout=sys.stdout,
