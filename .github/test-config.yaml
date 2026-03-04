@@ -29,6 +29,14 @@ e2e:
     - type: api
       path: examples/api/adk
     - type: api
+      path: examples/api/multimodal/openai
+    - type: api
+      path: examples/api/multimodal/adk
+    - type: api
+      path: examples/api/multimodal/crewai
+    - type: api
+      path: examples/api/multimodal/langgraph
+    - type: api
       path: examples/api/hooks
     - type: api
       path: examples/api/slack

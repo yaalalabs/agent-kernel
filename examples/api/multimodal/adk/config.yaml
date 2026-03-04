@@ -1,0 +1,3 @@
+multimodal:
+  enabled: true
+  storage_type: inmemory

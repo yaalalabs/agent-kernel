@@ -28,14 +28,14 @@ This example demonstrates how to use Agent Kernel's `DynamoDBStorageDriver` to s
            AttributeName=session_id,KeyType=HASH \
            AttributeName=attachment_id,KeyType=RANGE \
        --billing-mode PAY_PER_REQUEST \
-       --profile agent-kernel-dev
+       --profile your-aws-profile-name
    ```
 
 ## Running the Example
 
 ```bash
 # Login to AWS
-aws sso login --profile agent-kernel-dev
+aws sso login --profile your-aws-profile-name
 
 # Install dependencies
 ./build.sh local
