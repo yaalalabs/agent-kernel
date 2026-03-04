@@ -194,7 +194,7 @@ export AK_MULTIMODAL__STORAGE_TYPE=in_memory
 
 # Redis storage
 export AK_MULTIMODAL__REDIS__URL=redis://localhost:6379
-export AK_MULTIMODAL__REDIS__KEY_PREFIX=ak:attachments:
+export AK_MULTIMODAL__REDIS__PREFIX=ak:attachments:
 export AK_MULTIMODAL__REDIS__TTL=3600
 
 # DynamoDB storage
