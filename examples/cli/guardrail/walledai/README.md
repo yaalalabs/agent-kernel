@@ -43,21 +43,13 @@ guardrail:
 ```bash
 export WALLED_API_KEY=your-walledai-api-key
 export OPENAI_API_KEY=your-openai-api-key
-export AK_LOG_LEVEL=DEBUG
+export AK_DEBUG=true
 ```
 
 - `WALLED_API_KEY` is used by Walled AI safety and redaction clients.
 - `OPENAI_API_KEY` is required by the LangGraph demo model (`ChatOpenAI`).
-- `AK_LOG_LEVEL` controls Walled AI guardrail logger verbosity.
+- `AK_DEBUG=true` enables Walled AI guardrail debug logging.
 - `pii` controls PII masking/unmasking for Walled AI (`true` by default).
-
-Supported `AK_LOG_LEVEL` values:
-
-```bash
-DEBUG | INFO | WARNING | ERROR | CRITICAL
-```
-
-If `AK_LOG_LEVEL` is not set or invalid, logging defaults to `INFO`.
 
 ## How It Works
 
@@ -129,7 +121,7 @@ pytest demo_test.py -v
 3. If PII masking is expected, verify `guardrail.input.pii: true`
 4. If output restoration is expected, verify `guardrail.output.pii: true`
 5. Verify network access to Walled AI APIs
-6. Set `AK_LOG_LEVEL=DEBUG` and review CLI logs
+6. Set `AK_DEBUG=true` and review CLI logs
 
 ### Missing API key errors
 

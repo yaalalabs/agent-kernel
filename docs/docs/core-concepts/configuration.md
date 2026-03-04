@@ -414,8 +414,8 @@ export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path
 export AK_GUARDRAIL__OUTPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
 export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default: DRAFT)
 
-# Optional logger level for Walled AI guardrails
-export AK_LOG_LEVEL=INFO
+# Optional: enable debug logs for Walled AI guardrails
+export AK_DEBUG=true
 ```
 
 

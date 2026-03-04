@@ -731,7 +731,7 @@ export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 export WALLED_API_KEY=your-walledai-api-key
 export AK_GUARDRAIL__INPUT__PII=true
 export AK_GUARDRAIL__OUTPUT__PII=true
-export AK_LOG_LEVEL=DEBUG
+export AK_DEBUG=true
 # Messaging platforms (optional)
 export AK_SLACK__AGENT=my-agent
 export AK_WHATSAPP__AGENT=my-agent

@@ -17,17 +17,12 @@ WALLEDAI_PII_MAPPING_KEY = "walledai_pii_mapping"
 
 def _resolve_log_level() -> int:
     """
-    Resolve the logger level from environment variables.
+    Resolve the logger level from global AK configuration.
 
     :return: A valid ``logging`` module integer level.
     :rtype: int
     """
-    level_name = os.getenv("AK_LOG_LEVEL", "INFO")
-    normalized_level = level_name.upper()
-    resolved_level = getattr(logging, normalized_level, None)
-    if isinstance(resolved_level, int):
-        return resolved_level
-    return logging.INFO
+    return logging.DEBUG if AKConfig.get().debug else logging.INFO
 
 
 resolved_log_level = _resolve_log_level()
