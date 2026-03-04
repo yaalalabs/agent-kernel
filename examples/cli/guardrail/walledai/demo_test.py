@@ -1,8 +1,9 @@
+import asyncio
 import os
 
 import pytest
 import pytest_asyncio
-from agentkernel.guardrail.walledai import WalledAIGuardrailBase
+from agentkernel.guardrail.walledai import WalledAIGuardrailBase, silent_call
 from agentkernel.test import Test
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
@@ -42,6 +43,6 @@ async def test_second_question(test_client):
 async def test_walledai_redact_masking():
     guardrail = WalledAIGuardrailBase()
     test_text = "my name is john"
-    redact_res = guardrail.redact_client.guard(test_text)
+    redact_res = await asyncio.to_thread(silent_call, guardrail.redact_client.guard, test_text)
     masked_text = redact_res["data"]["masked_text"]
     assert masked_text == "my name is [Person_1]", f"Masked text incorrect: {masked_text}"
