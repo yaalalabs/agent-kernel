@@ -124,7 +124,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                 log.info(f"Blocked unsafe input: {raw_text}")
                 return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
 
-        if not AKConfig.get().guardrail.input.pii_enabled:
+        if not AKConfig.get().guardrail.input.pii:
             log.debug("WalledAI PII redaction is disabled for input guardrail.")
             return requests
 
@@ -175,7 +175,7 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
         :return: Unmasked reply when mapping exists; otherwise original reply.
         :rtype: AgentReply
         """
-        if not AKConfig.get().guardrail.output.pii_enabled:
+        if not AKConfig.get().guardrail.output.pii:
             log.debug("WalledAI PII unmasking is disabled for output guardrail.")
             return agent_reply
 

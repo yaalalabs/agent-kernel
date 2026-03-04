@@ -125,15 +125,15 @@ def test_session_cache_env(monkeypatch):
     assert cfg.session.cache.size == 500
 
 
-def test_guardrail_pii_enabled_default():
+def test_guardrail_pii_default():
     cfg = AKConfig()
-    assert cfg.guardrail.input.pii_enabled is True
-    assert cfg.guardrail.output.pii_enabled is True
+    assert cfg.guardrail.input.pii is True
+    assert cfg.guardrail.output.pii is True
 
 
-def test_guardrail_pii_enabled_env_override(monkeypatch):
-    monkeypatch.setenv("AK_GUARDRAIL__INPUT__PII_ENABLED", "false")
-    monkeypatch.setenv("AK_GUARDRAIL__OUTPUT__PII_ENABLED", "false")
+def test_guardrail_pii_env_override(monkeypatch):
+    monkeypatch.setenv("AK_GUARDRAIL__INPUT__PII", "false")
+    monkeypatch.setenv("AK_GUARDRAIL__OUTPUT__PII", "false")
     cfg = AKConfig()
-    assert cfg.guardrail.input.pii_enabled is False
-    assert cfg.guardrail.output.pii_enabled is False
+    assert cfg.guardrail.input.pii is False
+    assert cfg.guardrail.output.pii is False

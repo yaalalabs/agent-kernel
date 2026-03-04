@@ -31,11 +31,11 @@ guardrail:
   input:
     enabled: true
     type: walledai
-    pii_enabled: true
+    pii: true
   output:
     enabled: true
     type: walledai
-    pii_enabled: true
+    pii: true
 ```
 
 ### 2. Set Environment Variables
@@ -49,7 +49,7 @@ export AK_LOG_LEVEL=DEBUG
 - `WALLED_API_KEY` is used by Walled AI safety and redaction clients.
 - `OPENAI_API_KEY` is required by the LangGraph demo model (`ChatOpenAI`).
 - `AK_LOG_LEVEL` controls Walled AI guardrail logger verbosity.
-- `pii_enabled` controls PII masking/unmasking for Walled AI (`true` by default).
+- `pii` controls PII masking/unmasking for Walled AI (`true` by default).
 
 Supported `AK_LOG_LEVEL` values:
 
@@ -126,8 +126,8 @@ pytest demo_test.py -v
 
 1. Ensure `guardrail.input.type` and `guardrail.output.type` are set to `walledai`
 2. Ensure `WALLED_API_KEY` is set in your shell
-3. If PII masking is expected, verify `guardrail.input.pii_enabled: true`
-4. If output restoration is expected, verify `guardrail.output.pii_enabled: true`
+3. If PII masking is expected, verify `guardrail.input.pii: true`
+4. If output restoration is expected, verify `guardrail.output.pii: true`
 5. Verify network access to Walled AI APIs
 6. Set `AK_LOG_LEVEL=DEBUG` and review CLI logs
 

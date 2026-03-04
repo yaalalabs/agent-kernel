@@ -109,7 +109,7 @@ guardrail:
   input:
     enabled: false  # Enable input guardrails
     type: openai  # Guardrail provider: openai, bedrock, or walledai
-    pii_enabled: true  # Enable PII redaction/unmasking (WalledAI only)
+    pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
     model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
@@ -119,7 +119,7 @@ guardrail:
   output:
     enabled: false  # Enable output guardrails
     type: openai  # Guardrail provider: openai, bedrock, or walledai
-    pii_enabled: true  # Enable PII redaction/unmasking (WalledAI only)
+    pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
     model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
@@ -388,7 +388,7 @@ export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base 
 # Enable input guardrails
 export AK_GUARDRAIL__INPUT__ENABLED=true  # default: false
 export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walledai' (default: openai)
-export AK_GUARDRAIL__INPUT__PII_ENABLED=true  # WalledAI only (default: true)
+export AK_GUARDRAIL__INPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific input guardrail configuration
 export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
@@ -404,7 +404,7 @@ export WALLED_API_KEY=your-walledai-api-key
 # Enable output guardrails
 export AK_GUARDRAIL__OUTPUT__ENABLED=true  # default: false
 export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walledai' (default: openai)
-export AK_GUARDRAIL__OUTPUT__PII_ENABLED=true  # WalledAI only (default: true)
+export AK_GUARDRAIL__OUTPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific output guardrail configuration
 export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
@@ -518,13 +518,13 @@ guardrail:
   input:                        # Input guardrail configuration
     enabled: false              # Enable input guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
-    pii_enabled: true           # Enable PII redaction/unmasking (WalledAI only)
+    pii: true           # Enable PII redaction/unmasking (WalledAI only)
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
   output:                       # Output guardrail configuration
     enabled: false              # Enable output guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
-    pii_enabled: true           # Enable PII redaction/unmasking (WalledAI only)
+    pii: true           # Enable PII redaction/unmasking (WalledAI only)
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 ```

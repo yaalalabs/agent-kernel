@@ -2,8 +2,8 @@ guardrail:
   input:
     enabled: true
     type: walledai
-    pii_enabled: true
+    pii: true
   output:
     enabled: true
     type: walledai
-    pii_enabled: true
+    pii: true
