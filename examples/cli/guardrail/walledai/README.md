@@ -112,6 +112,19 @@ Run tests with:
 pytest demo_test.py -v
 ```
 
+## Optional: Local WalledGuard-Edge
+
+If you want to test local moderation behavior manually, you can run `walledai/walledguard-edge` directly from Hugging Face.
+
+According to Walled AI's announcement, WalledGuard-Edge is a 0.6B open-source model (Apache-2.0) and is positioned to outperform LlamaGuard3 (1B) on multilingual and jailbreak scenarios.
+
+- API access and product updates: [www.walled.ai](https://www.walled.ai/)
+- Hugging Face model page (includes latest usage example): [walledai/walledguard-edge](https://huggingface.co/walledai/walledguard-edge)
+
+Typical local dependencies include `torch` and `transformers`.
+
+This local model usage is optional and separate from the default Walled AI API path used in this demo.
+
 ## Troubleshooting
 
 ### Guardrails not triggering

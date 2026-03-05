@@ -89,6 +89,25 @@ Recommended controls for production:
 - Restrict storage access
 - Encrypt data at rest
 
+## Optional: Local WalledGuard-Edge Moderation
+
+If you want to run local moderation experiments, you can use `walledai/walledguard-edge` from Hugging Face.
+
+According to Walled AI's announcement, WalledGuard-Edge is a 0.6B open-source model (Apache-2.0) positioned as stronger than LlamaGuard3 (1B) across multilingual and multiple jailbreak categories.
+
+- API access and product updates: [www.walled.ai](https://www.walled.ai/)
+
+
+### Manual setup
+
+For local inference steps and the latest runnable example code, follow the model card:
+
+- Hugging Face model page: [walledai/walledguard-edge](https://huggingface.co/walledai/walledguard-edge)
+
+Typical local dependencies include `torch` and `transformers`.
+
+This local flow is optional and separate from the default Agent Kernel Walled AI API integration.
+
 ## Example
 
 Input:
