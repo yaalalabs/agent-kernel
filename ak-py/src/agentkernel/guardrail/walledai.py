@@ -64,8 +64,14 @@ class WalledAIGuardrailBase(BaseGuardrailUtil):
         """
         Initialize Walled AI redact and protect clients.
         """
-        self.redact_client = WalledRedact(api_key=os.getenv("WALLED_API_KEY"))
-        self.protect_client = WalledProtect(api_key=os.getenv("WALLED_API_KEY"))
+        # self.redact_client = WalledRedact(api_key=os.getenv("WALLED_API_KEY"))
+        # self.protect_client = WalledProtect(api_key=os.getenv("WALLED_API_KEY"))
+
+        api_key = os.getenv("WALLED_API_KEY")
+        if not api_key:
+            raise RuntimeError("WALLED_API_KEY environment variable is required for Walled AI guardrails.")
+        self.redact_client = WalledRedact(api_key=api_key)
+        self.protect_client = WalledProtect(api_key=api_key)
 
     def _get_pii_mapping(self, session: Session) -> dict:
         """
@@ -112,11 +118,22 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
         """
         raw_text = self._extract_text_from_requests(requests)
 
-        safety_res = await to_thread(silent_call, self.protect_client.guard, raw_text)
+        if not raw_text:
+            log.debug("No input text found; skipping WalledAI input guardrail checks.")
+            return requests
+
+        try:
+            safety_res = await to_thread(silent_call, self.protect_client.guard, raw_text)
+        except Exception as e:
+            log.error(f"Safety validation error: {e}")
+            return AgentReplyText(
+                text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                prompt=raw_text,
+            )
 
         if isinstance(safety_res, dict) and "data" in safety_res:
             if not safety_res["data"]["safety"][0]["isSafe"]:
-                log.info(f"Blocked unsafe input: {raw_text}")
+                log.info("Blocked unsafe input due to safety concerns")
                 return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
 
         if not AKConfig.get().guardrail.input.pii:
