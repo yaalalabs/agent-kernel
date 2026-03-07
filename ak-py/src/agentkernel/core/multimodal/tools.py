@@ -31,7 +31,7 @@ def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
         attachments = AttachmentStorageManager(session_id=session.id).get_attachment_data(attachment_ids=attachment_ids)
 
         if not attachments:
-            return "No attachments found for the given IDs in this session"
+            return "No attachments found for the given n this session"
 
         config = AKConfig.get()
         model_name = config.multimodal.analysis_model

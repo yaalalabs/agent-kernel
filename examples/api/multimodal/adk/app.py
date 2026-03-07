@@ -3,16 +3,14 @@ from agentkernel.api import RESTAPI
 from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 
-support_agent = Agent(
-    name="support",
+general_agent = Agent(
+    name="general",
     model=LiteLlm(model="openai/gpt-4o-mini"),
-    description="Assistant that can analyze images",
-    instruction="You are an AI assistant that can see and analyze images. "
-    "When a user uploads an image, describe it in detail. "
-    "Remember context from previous messages in the conversation.",
+    description="Assistant with general queries",
+    instruction="You provide assistance with general queries. Give short and clear answers",
 )
 
-GoogleADKModule([support_agent])
+GoogleADKModule([general_agent])
 
 if __name__ == "__main__":
     RESTAPI.run()

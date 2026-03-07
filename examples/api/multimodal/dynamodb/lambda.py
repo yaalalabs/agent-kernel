@@ -1,4 +1,4 @@
-from agentkernel.api import RESTAPI
+from agentkernel.aws import Lambda
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
@@ -9,5 +9,4 @@ general_agent = Agent(
 
 OpenAIModule([general_agent])
 
-if __name__ == "__main__":
-    RESTAPI.run()
+handler = Lambda.handler

@@ -4,11 +4,11 @@ version = "0.1.0"
 description = "ADK multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,adk,cli]>=0.2.13",
+    "agentkernel[adk,api,cli]>=0.2.13",
     "google-adk[lite-llm]>=0.3.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
-    "python-multipart>=0.0.12"
+    "python-multipart>=0.0.12",
 ]
 
 [dependency-groups]
@@ -23,6 +23,9 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+agentkernel = { path = "../../../../ak-py", editable = true }
 
 [tool.isort]
 profile = "black"

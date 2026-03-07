@@ -138,7 +138,7 @@ class _MultimodalStorageRedisConfig(BaseModel):
 
 
 class _MultimodalStorageDynamoDBConfig(BaseModel):
-    table_name: str = Field(description="DynamoDB table name for attachment storage")
+    table_name: str = Field(default="ak-attachments", description="DynamoDB table name for attachment storage")
     ttl: int = Field(default=604800, description="Attachment TTL in seconds (0 disables)")
 
 

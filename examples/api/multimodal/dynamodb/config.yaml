@@ -1,5 +1,3 @@
 multimodal:
   enabled: true
   storage_type: dynamodb
-  dynamodb:
-    table_name: "AgentKernelMultimodalTable"

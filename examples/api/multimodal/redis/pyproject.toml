@@ -1,14 +1,11 @@
 [project]
-name = "api-redis-multimodal-example"
+name = "multimodal-redis-serverless"
 version = "0.1.0"
-description = "Redis multimodal storage driver example for Agent Kernel"
+description = "Multimodal Agent Kernel example with Redis attachment storage on AWS Lambda"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,cli,redis]>=0.2.13",
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "python-multipart>=0.0.12"
+    "agentkernel[openai,redis,aws]>=0.2.13"
 ]
 
 [dependency-groups]

@@ -6,16 +6,14 @@ from langgraph.prebuilt import create_react_agent
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
-support_agent = create_react_agent(
-    name="support",
-    tools=[],
+general_agent = create_react_agent(
+    name="general",
     model=model,
-    prompt="You are an AI assistant that can see and analyze images. "
-    "When a user uploads an image, describe it in detail. "
-    "Remember context from previous messages in the conversation.",
+    tools=[],
+    prompt="You provide assistance with general queries. Give short and clear answers",
 )
 
-LangGraphModule([support_agent])
+LangGraphModule([general_agent])
 
 if __name__ == "__main__":
     RESTAPI.run()

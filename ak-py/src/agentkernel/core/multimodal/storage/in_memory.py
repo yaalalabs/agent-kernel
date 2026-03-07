@@ -1,56 +1,47 @@
-"""
-In-memory storage driver for multimodal attachments.
-
-This driver stores attachments in a module-level dictionary, independent of
-the session object. Data is isolated per session_id but does not bloat
-the session itself. Data is lost on process restart.
-"""
-
 import logging
 from typing import ClassVar, Optional
 
-from .base import (
-    ATTACHMENT_INDEX_KEY,
-    AttachmentStorageDriver,
-)
-
-_log = logging.getLogger("ak.core.multimodal.storage.in_memory")
+from .base import AttachmentStorageDriver
 
 
-class InMemoryStorageDriver(AttachmentStorageDriver):
+class InMemoryAttachmentStore(AttachmentStorageDriver):
     """
-    In-memory attachment storage, independent of the session.
+    InMemoryAttachmentStore class provides an in-memory implementation of the AttachmentStorageDriver interface.
 
-    Uses a module-level dict keyed by ``{session_id}:{attachment_id}`` so that
-    different sessions are isolated without embedding data in the Session object.
+    Storage is shared across all instances via ClassVar so that attachments
+    persist for the lifetime of the process, independent of how many times
+    a new instance is created per request.
     """
 
-    # Shared across all instances — lives for the lifetime of the process
-    _store: ClassVar[dict[str, dict]] = {}
+    # Shared across all instances — survives across multiple instantiations per request
+    _attachments: ClassVar[dict[str, dict]] = {}  # "session_id:attachment_id" -> attachment
     _index: ClassVar[dict[str, list[str]]] = {}  # session_id -> [attachment_ids]
 
     def __init__(self, session_id: str):
         """
-        Initialize the driver for a specific session.
+        Initializes an InMemoryAttachmentStore instance.
         :param session_id: Session identifier for isolation.
         """
         self._session_id = session_id
+        self._log = logging.getLogger("ak.core.multimodal.storage.inmemory")
 
     def _key(self, attachment_id: str) -> str:
         return f"{self._session_id}:{attachment_id}"
 
     def save(self, attachment: dict, max_attachments: int) -> str:
+        """
+        Saves an attachment and prunes old ones if the limit is exceeded.
+        :param attachment: Attachment data dictionary.
+        :param max_attachments: Maximum number of attachments to keep.
+        :return: The attachment ID.
+        """
         attachment_id = attachment["id"]
+        self._attachments[self._key(attachment_id)] = attachment
 
-        # Save payload
-        self._store[self._key(attachment_id)] = attachment
-
-        # Update index
         if self._session_id not in self._index:
             self._index[self._session_id] = []
         self._index[self._session_id].append(attachment_id)
 
-        # Prune old attachments
         ids = self._index[self._session_id]
         if len(ids) > max_attachments:
             old_ids = ids[:-max_attachments]
@@ -58,10 +49,32 @@ class InMemoryStorageDriver(AttachmentStorageDriver):
                 self.delete(old_id)
             self._index[self._session_id] = ids[-max_attachments:]
 
+        self._log.debug(f"Saved attachment: {attachment_id}")
         return attachment_id
 
     def get(self, attachment_id: str) -> Optional[dict]:
-        return self._store.get(self._key(attachment_id))
+        """
+        Retrieves an attachment by its ID.
+        :param attachment_id: Attachment ID.
+        :return: Attachment data dict or None if not found.
+        """
+        return self._attachments.get(self._key(attachment_id))
 
     def delete(self, attachment_id: str) -> None:
-        self._store.pop(self._key(attachment_id), None)
+        """
+        Deletes an attachment by its ID.
+        :param attachment_id: Attachment ID.
+        """
+        self._attachments.pop(self._key(attachment_id), None)
+        if self._session_id in self._index and attachment_id in self._index[self._session_id]:
+            self._index[self._session_id].remove(attachment_id)
+        self._log.debug(f"Deleted attachment: {attachment_id}")
+
+    def clear(self) -> None:
+        """
+        Clears all stored attachments for this session.
+        """
+        self._log.debug(f"Clearing all attachments for session {self._session_id}")
+        ids = self._index.pop(self._session_id, [])
+        for attachment_id in ids:
+            self._attachments.pop(self._key(attachment_id), None)

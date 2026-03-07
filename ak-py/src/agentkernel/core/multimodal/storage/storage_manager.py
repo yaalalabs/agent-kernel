@@ -57,7 +57,7 @@ class AttachmentStorageManager:
             return SessionNonVolatileCacheStorageDriver(session_id)
 
         elif storage_type == "redis":
-            from .redis import RedisStorageDriver
+            from .redis import RedisAttachmentStore
 
             redis_config = config.redis
             if redis_config is None:
@@ -65,7 +65,7 @@ class AttachmentStorageManager:
                     "Multimodal storage_type is 'redis' but no 'redis' configuration "
                     "is provided under 'multimodal'. Please set AK_MULTIMODAL__REDIS__URL etc."
                 )
-            return RedisStorageDriver(
+            return RedisAttachmentStore(
                 session_id=session_id,
                 url=redis_config.url,
                 ttl=redis_config.ttl,
@@ -73,7 +73,7 @@ class AttachmentStorageManager:
             )
 
         elif storage_type == "dynamodb":
-            from .dynamodb import DynamoDBStorageDriver
+            from .dynamodb import DynamoDBAttachmentStore
 
             dynamodb_config = config.dynamodb
             if dynamodb_config is None:
@@ -81,7 +81,7 @@ class AttachmentStorageManager:
                     "Multimodal storage_type is 'dynamodb' but no 'dynamodb' configuration "
                     "is provided under 'multimodal'. Please set AK_MULTIMODAL__DYNAMODB__TABLE_NAME etc."
                 )
-            return DynamoDBStorageDriver(
+            return DynamoDBAttachmentStore(
                 session_id=session_id,
                 table_name=dynamodb_config.table_name,
                 ttl=dynamodb_config.ttl,
@@ -89,9 +89,9 @@ class AttachmentStorageManager:
 
         else:
             # Default: in_memory
-            from .in_memory import InMemoryStorageDriver
+            from .in_memory import InMemoryAttachmentStore
 
-            return InMemoryStorageDriver(session_id)
+            return InMemoryAttachmentStore(session_id)
 
     def save_attachment(
         self,

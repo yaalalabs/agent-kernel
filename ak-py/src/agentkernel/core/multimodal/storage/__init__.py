@@ -6,4 +6,5 @@ and the ``AttachmentStorageManager`` high-level API.
 """
 
 from .base import AttachmentData, AttachmentStorageDriver
+from .in_memory import InMemoryAttachmentStore
 from .storage_manager import AttachmentStorageManager

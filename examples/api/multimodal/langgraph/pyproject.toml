@@ -4,12 +4,12 @@ version = "0.1.0"
 description = "LangGraph multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,langgraph,cli,auth]>=0.2.13",
+    "agentkernel[api,auth,cli,langgraph]>=0.2.13",
     "langchain-openai>=0.1.0",
     "langgraph>=0.0.26",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
-    "python-multipart>=0.0.12"
+    "python-multipart>=0.0.12",
 ]
 
 [dependency-groups]
@@ -24,6 +24,9 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+agentkernel = { path = "../../../../ak-py", editable = true }
 
 [tool.isort]
 profile = "black"

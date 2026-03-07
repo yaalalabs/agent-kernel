@@ -198,6 +198,8 @@ class CrewAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         wrapped = CrewAIToolBuilder.bind([tool])
         for w in wrapped:
+            if not hasattr(self.agent, "tools") or self.agent.tools is None:
+                self.agent.tools = []
             if w not in self.agent.tools:
                 self.agent.tools.append(w)
 

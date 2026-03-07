@@ -218,7 +218,9 @@ class OpenAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         wrapped = OpenAIToolBuilder.bind([tool])
         for w in wrapped:
-            if hasattr(self._agent, "tools") and w not in self._agent.tools:
+            if not hasattr(self._agent, "tools") or self._agent.tools is None:
+                self._agent.tools = []
+            if w not in self._agent.tools:
                 self._agent.tools.append(w)
 
     def get_a2a_card(self):

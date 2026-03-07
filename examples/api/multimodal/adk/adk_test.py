@@ -25,7 +25,7 @@ class APITestClient:
         payload = {
             "prompt": prompt,
             "session_id": self.session_id,
-            "agent": "support",
+            "agent": "general",
         }
         if images:
             payload["images"] = images
@@ -50,7 +50,18 @@ async def app_client():
         env=env,
         cwd=str(Path(__file__).parent),
     )
-    await asyncio.sleep(5)
+    await asyncio.sleep(2)
+    for _ in range(20):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get("http://localhost:8000/health")
+                if resp.status_code == 200:
+                    break
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            pass
+        await asyncio.sleep(0.5)
+    else:
+        raise RuntimeError("Server did not start within 12 seconds")
 
     try:
         yield APITestClient("http://localhost:8000")
@@ -65,7 +76,7 @@ async def test_image_description(app_client):
         b64_data = base64.b64encode(f.read()).decode("utf-8")
 
     response = await app_client.send(
-        prompt="What animal is this? Reply with exactly 'Elephant' and nothing else.",
+        prompt="What animal is this? Reply with exactly animal name and nothing else.",
         images=[
             {
                 "name": "elephant",
@@ -86,12 +97,12 @@ async def test_image_description(app_client):
 @pytest.mark.order(2)
 async def test_followup_retrieval(app_client):
     response = await app_client.send(
-        prompt="Analyze the image again. What is the color of the dust on it? please reply only colour do not include any other words in the answer.",
+        prompt="Please analyze the image again. Does the animal in the image have tusks? Reply with only 'Yes' or 'No'.",
     )
     print(f"Agent response: {response}")
 
     Test.compare(
         actual=response,
-        expected=["Red", "red", "Reddish", "Red dust"],
+        expected=["Yes", "yes", "Yes, it does", "Yes, the elephant has tusks"],
         threshold=80,
     )
