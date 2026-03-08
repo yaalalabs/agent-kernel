@@ -8,28 +8,21 @@ Demonstrates multimodal (image/file) support with a LangGraph agent.
 AK_MULTIMODAL__ENABLED=true uv run python app.py
 ```
 
-## LangGraph Limitation
+## Tool Injection
 
-Unlike OpenAI, CrewAI, and ADK — where agents hold a **mutable tools list** that Agent Kernel can append to at startup — LangGraph compiles a **static DAG** via `create_react_agent(tools=[...])`. The tool list is baked in at compile time; there is no official post-compile API to add tools.
+LangGraph compiles a **static DAG** via `create_react_agent(tools=[...])` — tools are baked in at compile time. Agent Kernel handles this automatically through `LangGraphToolBuilder.bind()`, which injects system tools (such as `analyze_attachments`) before the graph is compiled.
 
-As a result, Agent Kernel **cannot automatically inject** the `analyze_attachments` system tool into LangGraph agents the way it does for other frameworks.
-
-**You must pass it explicitly before compile:**
+Simply pass your tools through `bind()` and Agent Kernel takes care of the rest:
 
 ```python
-from agentkernel.core.multimodal import analyze_attachments
 from agentkernel.langgraph import LangGraphToolBuilder
 
 general_agent = create_react_agent(
     name="general",
     model=model,
-    tools=LangGraphToolBuilder.bind([analyze_attachments]),   # <-- required
+    tools=LangGraphToolBuilder.bind([]),  # system tools injected automatically
     prompt="...",
 )
 ```
 
-If you omit this, the agent will receive image descriptions in the conversation but will not be able to call `analyze_attachments` for follow-up questions about attachments.
-
-## Other Frameworks
-
-For OpenAI, CrewAI, and ADK, no changes to `app.py` are needed — Agent Kernel injects `analyze_attachments` automatically when `AK_MULTIMODAL__ENABLED=true`.
+This is consistent with how Agent Kernel works across all frameworks (OpenAI, CrewAI, and ADK) — no manual tool imports required.

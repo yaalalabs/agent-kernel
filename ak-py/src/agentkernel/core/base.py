@@ -440,15 +440,15 @@ class Agent(ABC):
             if suffix:
                 self.override_system_prompt(prompt=suffix)
 
-    def _attach_system_tools(self) -> None:
+    @classmethod
+    def get_system_tools(cls) -> list[Any]:
         """
-        Attaches Agent Kernel system-level tools to the agent at init time.
-        Only applies when multimodal is enabled in AKConfig.
-        Calls self.attach_tool() with each raw Callable — each framework's attach_tool
-        implementation is responsible for wrapping it into the framework-specific tool format.
+        Retrieves the global system tools applicable to all agents (e.g., multimodal tools).
+        Also registers their instructions so they can be injected into the system prompt.
         """
         from .config import AKConfig
 
+        tools = []
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
             from .multimodal import analyze_attachments
@@ -464,6 +464,16 @@ class Agent(ABC):
                 "(numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to "
                 "inspect the file content again. Do not guess based on the summary."
             )
-            Agent.register_system_tool_instruction("analyze_attachments", tool_instruction)
+            cls.register_system_tool_instruction("analyze_attachments", tool_instruction)
+            tools.append(analyze_attachments)
 
-            self.attach_tool(analyze_attachments)
+        return tools
+
+    def _attach_system_tools(self) -> None:
+        """
+        Attaches Agent Kernel system-level tools to the agent at init time.
+        Calls self.attach_tool() with each raw Callable — each framework's attach_tool
+        implementation is responsible for wrapping it into the framework-specific tool format.
+        """
+        for tool in self.get_system_tools():
+            self.attach_tool(tool)
