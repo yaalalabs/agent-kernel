@@ -57,11 +57,12 @@ export AK_DEBUG=true
 
 Input guardrails run **before** requests are sent to the agent:
 
-1. Extract text from incoming requests
-2. Call Walled AI Protect API for safety validation
-3. Call Walled AI Redact API to mask sensitive values
-4. Persist placeholder-to-original mapping in session non-volatile cache
-5. Forward masked text to the agent
+1. Iterate through incoming request objects
+2. For each text request, call Walled AI Protect API for safety validation
+3. For each text request, call Walled AI Redact API to mask sensitive values
+4. Pass non-text requests through unchanged (for example image/file requests)
+5. Persist placeholder-to-original mapping in session non-volatile cache
+6. Forward masked text requests to the agent
 
 If safety validation fails, the request is blocked with:
 

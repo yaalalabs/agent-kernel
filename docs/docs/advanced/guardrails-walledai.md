@@ -63,11 +63,12 @@ export AK_GUARDRAIL__OUTPUT__PII=true
 
 ### Input Guardrails
 
-1. Extract request text from incoming user messages
-2. Validate text with Walled AI Protect (safety)
-3. Redact sensitive entities with Walled AI Redact
-4. Store placeholder mapping in session cache
-5. Forward masked text to the agent
+1. Iterate incoming request objects
+2. For each text request, validate text with Walled AI Protect (safety)
+3. For each text request, redact sensitive entities with Walled AI Redact
+4. Preserve non-text requests unchanged (for example file/image inputs)
+5. Store placeholder mapping in session cache
+6. Forward masked text requests to the agent
 
 If safety validation fails, Agent Kernel returns a safe refusal response.
 

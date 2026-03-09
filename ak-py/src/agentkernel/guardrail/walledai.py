@@ -64,8 +64,7 @@ class WalledAIGuardrailBase(BaseGuardrailUtil):
         """
         Initialize Walled AI redact and protect clients.
         """
-        # self.redact_client = WalledRedact(api_key=os.getenv("WALLED_API_KEY"))
-        # self.protect_client = WalledProtect(api_key=os.getenv("WALLED_API_KEY"))
+        
 
         api_key = os.getenv("WALLED_API_KEY")
         if not api_key:
@@ -116,56 +115,81 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
         :return: Redacted request list, original requests, or blocked reply.
         :rtype: list[AgentRequest] | AgentReply
         """
-        raw_text = self._extract_text_from_requests(requests)
-
-        if not raw_text:
-            log.debug("No input text found; skipping WalledAI input guardrail checks.")
-            return requests
-
-        try:
-            safety_res = await to_thread(silent_call, self.protect_client.guard, raw_text)
-        except Exception as e:
-            log.error(f"Safety validation error: {e}")
-            return AgentReplyText(
-                text="I apologize, but I'm unable to process your request at this time. Please try again later.",
-                prompt=raw_text,
-            )
-
-        if isinstance(safety_res, dict) and "data" in safety_res:
-            if not safety_res["data"]["safety"][0]["isSafe"]:
-                log.info("Blocked unsafe input due to safety concerns")
-                return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
-
-        if not AKConfig.get().guardrail.input.pii:
+        pii_enabled = AKConfig.get().guardrail.input.pii
+        if not pii_enabled:
             log.debug("WalledAI PII redaction is disabled for input guardrail.")
-            return requests
 
-        try:
-            redact_res = await to_thread(silent_call, self.redact_client.guard, raw_text)
+        new_requests: list[AgentRequest] = []
+        has_text_request = False
+        existing_mapping = self._get_pii_mapping(session) if pii_enabled else {}
+        mapping_updated = False
 
-        except Exception as e:
-            if "INPUT_SHORT" in str(e):
-                log.debug("Input too short for redaction; bypassing.")
-                return requests
-            else:
+        # Process each text request independently so safety and redaction decisions
+        # stay aligned with the original request object boundaries.
+        for req in requests:
+            if not isinstance(req, AgentRequestText):
+                new_requests.append(req)
+                continue
+
+            has_text_request = True
+            raw_text = req.text
+
+            if not raw_text:
+                new_requests.append(req)
+                continue
+
+            try:
+                safety_res = await to_thread(silent_call, self.protect_client.guard, raw_text)
+            except Exception as e:
+                log.error(f"Safety validation error: {e}")
+                return AgentReplyText(
+                    text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                    prompt=raw_text,
+                )
+
+            if isinstance(safety_res, dict) and "data" in safety_res:
+                if not safety_res["data"]["safety"][0]["isSafe"]:
+                    log.info("Blocked unsafe input due to safety concerns")
+                    return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
+
+            if not pii_enabled:
+                new_requests.append(req)
+                continue
+
+            try:
+                redact_res = await to_thread(silent_call, self.redact_client.guard, raw_text)
+            except Exception as e:
+                if "INPUT_SHORT" in str(e):
+                    log.debug("Input too short for redaction; bypassing for this request.")
+                    new_requests.append(req)
+                    continue
+
                 log.error(f"Redaction error: {e}")
                 raise
 
-        if isinstance(redact_res, dict) and "data" in redact_res:
-            data = redact_res["data"]
-            masked_text = data.get("masked_text", raw_text)
-            new_mapping = data.get("mapping", {})
+            if isinstance(redact_res, dict) and "data" in redact_res:
+                data = redact_res["data"]
+                masked_text = data.get("masked_text", raw_text)
+                new_mapping = data.get("mapping", {})
+                if isinstance(new_mapping, dict) and new_mapping:
+                    existing_mapping.update(new_mapping)
+                    mapping_updated = True
 
-            existing_mapping = self._get_pii_mapping(session)
-            existing_mapping.update(new_mapping)
+                log.debug(f"masked_text: {masked_text}")
+                new_requests.append(AgentRequestText(text=masked_text))
+                continue
+
+            new_requests.append(req)
+
+        if not has_text_request:
+            log.debug("No input text found; skipping WalledAI input guardrail checks.")
+            return requests
+
+        if pii_enabled and mapping_updated:
             self._set_pii_mapping(session, existing_mapping)
-
-            log.debug(f"masked_text: {masked_text}")
             log.debug(f"existing_mapping: {existing_mapping}")
 
-            return [AgentRequestText(text=masked_text)]
-
-        return requests
+        return new_requests
 
 
 class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
