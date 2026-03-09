@@ -64,7 +64,6 @@ class WalledAIGuardrailBase(BaseGuardrailUtil):
         """
         Initialize Walled AI redact and protect clients.
         """
-        
 
         api_key = os.getenv("WALLED_API_KEY")
         if not api_key:
