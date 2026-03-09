@@ -26,6 +26,7 @@ Guardrails act as protective layers that validate content before and after agent
 |----------|--------|---------------|
 | **OpenAI Guardrails** | ✅ Available Now | [OpenAI Guardrails →](./guardrails-openai) |
 | **AWS Bedrock Guardrails** | ✅ Available Now | [Bedrock Guardrails →](./guardrails-bedrock) |
+| **Walled AI Guardrails** | ✅ Available Now | [Walled AI Guardrails →](./guardrails-walledai) |
 
 ## How Guardrails Work
 
@@ -89,6 +90,13 @@ pip install agentkernel[aws]
 
 See the [Bedrock Guardrails Guide](./guardrails-bedrock) for setup instructions.
 
+**Walled AI Guardrails**:
+```bash
+pip install agentkernel[walledai]
+```
+
+See the [Walled AI Guardrails Guide](./guardrails-walledai) for setup instructions.
+
 ### 2. Configure Agent Kernel
 
 Add guardrail configuration to `config.yaml`:
@@ -122,6 +130,21 @@ guardrail:
     id: your-guardrail-id
     version: "1"
 ```
+
+**Walled AI Guardrails:**
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: walledai
+    pii: true
+  output:
+    enabled: true
+    type: walledai
+    pii: true
+```
+
+Set `pii: false` to disable PII masking/unmasking for Walled AI while keeping safety checks enabled.
 
 ### 3. Test Your Guardrails
 
@@ -310,6 +333,10 @@ guardrail:
 ### Learn About Bedrock Guardrails
 
 👉 **[Bedrock Guardrails Guide](./guardrails-bedrock)**
+
+### Learn About Walled AI Guardrails
+
+👉 **[Walled AI Guardrails Guide](./guardrails-walledai)**
 
 - Complete setup instructions
 - Configuration examples

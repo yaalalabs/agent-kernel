@@ -698,6 +698,8 @@ guardrail:
 - [OpenAI Guardrails PyPI Package](https://pypi.org/project/openai-guardrails/)
 - [Configuration Guide](../core-concepts/configuration)
 - [Guardrails Overview](./guardrails)
+- [AWS Bedrock Guardrails](./guardrails-bedrock) - Alternative provider
+- [Walled AI Guardrails](./guardrails-walledai) - Alternative provider
 
 ## Examples
 

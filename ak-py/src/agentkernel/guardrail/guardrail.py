@@ -35,6 +35,10 @@ class InputGuardrailFactory:
                 from .bedrock import BedrockInputGuardrail
 
                 return BedrockInputGuardrail()
+            elif AKConfig.get().guardrail.input.type == "walledai":
+                from .walledai import WalledAIInputGuardrail
+
+                return WalledAIInputGuardrail()
             else:
                 raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.input.type}")
         else:
@@ -54,6 +58,10 @@ class OutputGuardrailFactory:
                 from .bedrock import BedrockOutputGuardrail
 
                 return BedrockOutputGuardrail()
+            elif AKConfig.get().guardrail.output.type == "walledai":
+                from .walledai import WalledAIOutputGuardrail
+
+                return WalledAIOutputGuardrail()
             else:
                 raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.output.type}")
         else:
