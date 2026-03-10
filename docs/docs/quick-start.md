@@ -203,7 +203,7 @@ Create a file called `my_agent.py`:
 ```python
 from adk import Agent as ADKAgent
 from agentkernel.cli import CLI
-from agentkernel.adk import ADKModule
+from agentkernel.adk import GoogleADKModule
 
 # Define your agent
 agent = ADKAgent(
@@ -213,7 +213,7 @@ agent = ADKAgent(
 )
 
 # Register with Agent Kernel
-ADKModule([agent])
+GoogleADKModule([agent])
 
 if __name__ == "__main__":
     CLI.main()

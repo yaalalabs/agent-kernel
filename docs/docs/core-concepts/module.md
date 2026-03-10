@@ -62,14 +62,14 @@ graph.name = "assistant"
 LangGraphModule([graph])
 ```
 
-### ADKModule
+### GoogleADKModule
 
 ```python
-from agentkernel.adk import ADKModule
+from agentkernel.adk import GoogleADKModule
 from adk import Agent as ADKAgent
 
 agent = ADKAgent(name="assistant", model="gemini-2.0-flash-exp", ...)
-ADKModule([agent])
+GoogleADKModule([agent])
 ```
 
 ## Module Lifecycle
