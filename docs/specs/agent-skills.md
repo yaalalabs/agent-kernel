@@ -114,10 +114,12 @@ ak skill update --assistant claude     # Update for a specific assistant
 
 ### Implementation
 
-- `ak-py/src/agentkernel/cli/ak.py` — argparse-based CLI
-- `ak-py/src/agentkernel/skills/__init__.py` — `get_skills_dir()` and `list_skills()` helpers
-- Skills copied via `shutil.copytree()` with `dirs_exist_ok=True`
-- YAML frontmatter parsed with stdlib (no external deps)
+- `ak-py/src/agentkernel/cli/ak.py` — argparse-based `AK` CLI class, uses `Skill` for all operations
+- `ak-py/src/agentkernel/skills/skills.py` — `Skill` class (discovery, install), `Assistant` dataclass, `ASSISTANTS` registry
+- `ak-py/src/agentkernel/skills/__init__.py` — thin wrappers (`get_skills_dir()`, `list_skills()`) for backward compatibility
+- Skills copied via `shutil.copytree()` with `__pycache__`/`.pyc` exclusion
+- YAML frontmatter parsed with stdlib regex (no external deps)
+- `--assistant` resolves target directory from `ASSISTANTS` registry; `--target` overrides
 
 ## Phase 4 — Distribution (Deferred)
 
@@ -163,7 +165,8 @@ ak-py/src/agentkernel/
 ├── cli/
 │   └── ak.py                          # ak CLI entry point
 └── skills/
-    ├── __init__.py                     # get_skills_dir(), list_skills()
+    ├── __init__.py                     # get_skills_dir(), list_skills() wrappers
+    ├── skills.py                       # Skill class, Assistant dataclass, ASSISTANTS registry
     ├── ak-add-capabilities/SKILL.md
     ├── ak-add-integration/SKILL.md
     ├── ak-cloud-deploy/SKILL.md
@@ -272,6 +275,58 @@ Copilot Agent Plugin and Claude marketplace plugin were deferred because:
 - The skills already work via `.agents/skills/` directory convention — no plugin needed for basic functionality
 - Plugin submission processes and formats may change — better to stabilize the skills first
 - The PyPI distribution (`ak skill install`) covers the primary use case
+
+### Skill Renaming — `ak-` Prefix for User Skills
+
+Originally, user skills had plain descriptive names: `scaffold-agent-project`, `add-capabilities`, `add-integration`, `deploy-to-cloud`, `test-and-debug`. These were renamed in stages:
+
+1. **`scaffold-agent-project` → `ak-init`**: The original name was too verbose and didn't match the CLI naming convention. `ak-init` is concise, follows the `<namespace>-<action>` pattern (like `git init`, `npm init`), and clearly signals it's an Agent Kernel command.
+
+2. **Remaining skills got `ak-` prefix**: `add-capabilities` → `ak-add-capabilities`, `add-integration` → `ak-add-integration`, `deploy-to-cloud` → `ak-cloud-deploy`, `test-and-debug` → `ak-test`. This namespaces user skills under `ak-` so they're immediately recognizable as Agent Kernel skills when installed alongside other projects' skills in `.agents/skills/`.
+
+The naming now follows two conventions:
+- **Developer skills**: `ak-dev-*` (7 skills) — for contributors to the AK codebase
+- **User skills**: `ak-*` without `dev` (5 skills) — for end users building with AK
+
+### `Skill` Class Refactor — From Functions to OOP
+
+Initially, skill discovery and installation logic was scattered:
+- `__init__.py` had `get_skills_dir()` and `list_skills()` with inline frontmatter parsing
+- `ak.py` had `_get_skills_source_dir()`, `_parse_skill_frontmatter()`, `_get_available_skills()`, and `_copy_skill()` — all duplicating the same logic
+
+This was refactored into a `Skill` class in `skills.py`:
+- `Skill.list_all()` — class method replaces both `list_skills()` and `_get_available_skills()`
+- `Skill.find(name)` — class method for single-skill lookup
+- `skill.install(target, force=...)` — instance method replaces `_copy_skill()`
+- `skill.exists` — property for validation
+- `Skill._parse_frontmatter()` — single implementation for YAML parsing
+
+The `__init__.py` functions (`get_skills_dir()`, `list_skills()`) were preserved as thin wrappers around the `Skill` class for backward compatibility. The `AK` CLI class now imports and uses `Skill` directly — no more internal helper methods.
+
+### Multi-Assistant Support — `--assistant` Flag
+
+The original design assumed all coding agents use `.agents/skills/`. In practice, each assistant has its own convention for where to discover skills/commands:
+
+| Assistant | Directory | Convention Source |
+|-----------|-----------|-------------------|
+| GitHub Copilot | `.agents/skills` | Agent Skills Open Standard |
+| Claude Code | `.claude/commands` | Anthropic's custom commands |
+| Cursor | `.cursor/rules` | Cursor rules directory |
+| Windsurf | `.windsurf/rules` | Windsurf rules directory |
+| Codex CLI | `.codex/skills` | OpenAI convention |
+| Aider | `.aider/skills` | Aider convention |
+
+Rather than force users to manually copy skills to different directories, the `ak skill install --assistant <name>` flag resolves the correct target directory automatically. Key decisions:
+
+1. **`--assistant` and `--target` are mutually exclusive**: `--target` is the escape hatch for custom locations; `--assistant` covers the standard cases. Using both would be ambiguous.
+
+2. **`copilot` is the default**: Most users will start with Copilot (it's the most widely installed coding agent). Running `ak skill install` without flags installs to `.agents/skills/`.
+
+3. **Registry lives in `skills.py`**: The `ASSISTANTS` dict and `Assistant` dataclass are in the skills module, not the CLI. This means other tools (scripts, tests, future APIs) can access the registry without importing the CLI.
+
+4. **`ak skill assistants` subcommand**: Users need to discover what's supported. This is more useful than burying the list in `--help` output, and it shows the actual directories each assistant uses.
+
+5. **Same SKILL.md for all assistants**: The skill content is identical regardless of target. We don't transform or adapt the SKILL.md per assistant — it's the same file copied to a different directory. If an assistant needs a different format in the future, that transformation would happen at copy time (not implemented yet — deferred until needed).
 - Can revisit once skill content is validated by real users
 
 ### Known Issues & Future Considerations
