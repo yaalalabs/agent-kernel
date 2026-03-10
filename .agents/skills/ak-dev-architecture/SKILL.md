@@ -5,7 +5,7 @@ description: >
   Use this skill when you need to understand the codebase structure, how components
   interact, or before making changes to core functionality. Covers Session, Agent,
   Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, and the adapter pattern.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer

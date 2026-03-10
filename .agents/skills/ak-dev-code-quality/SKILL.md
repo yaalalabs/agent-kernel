@@ -4,7 +4,7 @@ description: >
   Code quality standards, formatting, commit conventions, and PR workflow for
   Agent Kernel development. Use this skill when making contributions, formatting
   code, writing commit messages, or preparing pull requests.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer

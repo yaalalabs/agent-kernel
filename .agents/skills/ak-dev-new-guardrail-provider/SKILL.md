@@ -5,7 +5,7 @@ description: >
   Use this skill when you need to integrate a new content safety or guardrail
   service (beyond OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI). Covers implementing
   input/output guardrails, factory registration, configuration, and testing.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer

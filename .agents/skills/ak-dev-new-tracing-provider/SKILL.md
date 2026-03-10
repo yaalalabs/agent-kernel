@@ -5,7 +5,7 @@ description: >
   Use this skill when you need to integrate a new tracing backend (beyond Langfuse
   and OpenLLMetry/Traceloop). Covers implementing the BaseTrace interface, creating
   framework-specific traced runners, configuration, and testing.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer

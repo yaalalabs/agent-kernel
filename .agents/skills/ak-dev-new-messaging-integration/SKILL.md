@@ -5,7 +5,7 @@ description: >
   Use this skill when you need to add support for a new chat platform (beyond Slack,
   WhatsApp, Messenger, Instagram, Telegram, Gmail). Covers creating the integration
   handler, webhook routes, message parsing, configuration, and examples.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer

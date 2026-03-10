@@ -5,7 +5,7 @@ description: >
   Use this skill when writing tests for new features, debugging test failures,
   or understanding the test infrastructure. Covers pytest patterns, async testing,
   mocking, the built-in Test framework, and CI/CD test workflows.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer

@@ -5,7 +5,7 @@ description: >
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
   CrewAI, LangGraph, Google ADK). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
-license: apache-2.0
+license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer
