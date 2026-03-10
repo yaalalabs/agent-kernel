@@ -30,12 +30,14 @@ module "serverless_agents" {
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   function_description = "Agent Kernel Multimodal with DynamoDB"
-  function_name        = "multimodal-ddb"
+  function_name        = "mm-ddb"
   handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist.zip"
-  memory_size          = 256
-  product_display_name = "Agent Kernel Multimodal DynamoDB"
+  package_path         = "../dist"
+  package_type         = "Image"
+  memory_size          = 512
+  timeout              = 60
+  product_display_name = "Agent Kernel Multimodal with DynamoDB"
   region               = var.region
 
   # Environment variables passed to lambda

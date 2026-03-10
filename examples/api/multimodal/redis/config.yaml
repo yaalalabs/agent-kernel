@@ -3,4 +3,3 @@ multimodal:
   storage_type: redis
   redis:
     prefix: "ak:mm:redis:"
-    url: "redis://ak-mm-redis-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
