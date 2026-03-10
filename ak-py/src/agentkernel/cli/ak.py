@@ -41,9 +41,7 @@ class AK:
         assistant = ASSISTANTS.get(assistant_name)
         if not assistant:
             print(f"Error: unknown assistant '{assistant_name}'.", file=sys.stderr)
-            print(
-                f"Supported: {', '.join(ASSISTANTS.keys())}", file=sys.stderr
-            )
+            print(f"Supported: {', '.join(ASSISTANTS.keys())}", file=sys.stderr)
             sys.exit(1)
         return Path(assistant.skills_dir)
 
@@ -108,9 +106,7 @@ class AK:
             skill = Skill.find(skill_name)
             if skill is None:
                 print(f"Error: skill '{skill_name}' not found.", file=sys.stderr)
-                print(
-                    f"Run 'ak skill list' to see available skills.", file=sys.stderr
-                )
+                print(f"Run 'ak skill list' to see available skills.", file=sys.stderr)
                 return 1
 
             target.mkdir(parents=True, exist_ok=True)
@@ -167,34 +163,26 @@ class AK:
 
         # `ak skill` subcommand
         skill_parser = subparsers.add_parser("skill", help="Manage agent skills")
-        skill_subparsers = skill_parser.add_subparsers(
-            dest="skill_command", help="Skill commands"
-        )
+        skill_subparsers = skill_parser.add_subparsers(dest="skill_command", help="Skill commands")
 
         # `ak skill list`
         skill_subparsers.add_parser("list", help="List all available skills")
 
         # `ak skill info <name>`
-        info_parser = skill_subparsers.add_parser(
-            "info", help="Show full details for a skill"
-        )
+        info_parser = skill_subparsers.add_parser("info", help="Show full details for a skill")
         info_parser.add_argument(
             "name",
             help="Skill name to show details for",
         )
 
         # `ak skill assistants`
-        skill_subparsers.add_parser(
-            "assistants", help="List supported coding assistants"
-        )
+        skill_subparsers.add_parser("assistants", help="List supported coding assistants")
 
         # shared --assistant choices
         assistant_names = list(ASSISTANTS.keys())
 
         # `ak skill install`
-        install_parser = skill_subparsers.add_parser(
-            "install", help="Install skills to your project"
-        )
+        install_parser = skill_subparsers.add_parser("install", help="Install skills to your project")
         install_parser.add_argument(
             "name",
             nargs="?",
@@ -215,9 +203,7 @@ class AK:
         )
 
         # `ak skill update`
-        update_parser = skill_subparsers.add_parser(
-            "update", help="Update (overwrite) installed skills"
-        )
+        update_parser = skill_subparsers.add_parser("update", help="Update (overwrite) installed skills")
         update_group = update_parser.add_mutually_exclusive_group()
         update_group.add_argument(
             "--assistant",

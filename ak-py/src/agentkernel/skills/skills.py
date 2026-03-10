@@ -8,7 +8,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 # ── Assistant registry ────────────────────────────────────────────────
 
 
@@ -173,14 +172,10 @@ class Skill:
         # Multi-line description (YAML block scalar)
         desc_match = re.search(r"description:\s*>?\s*\n((?:\s+.*\n)*)", frontmatter)
         if desc_match:
-            description = " ".join(
-                line.strip() for line in desc_match.group(1).strip().splitlines()
-            )
+            description = " ".join(line.strip() for line in desc_match.group(1).strip().splitlines())
         else:
             # Single-line description
-            desc_match = re.search(
-                r'description:\s*["\']?(.*?)["\']?\s*$', frontmatter, re.MULTILINE
-            )
+            desc_match = re.search(r'description:\s*["\']?(.*?)["\']?\s*$', frontmatter, re.MULTILINE)
             if desc_match:
                 description = desc_match.group(1).strip()
 
