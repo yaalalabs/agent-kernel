@@ -52,7 +52,7 @@ At a high level:
 4. Placeholder mapping is stored in session cache.
 5. On output, placeholders are restored before replying to the user.
 
-We intentionally process requests individually and preserve non-text request objects (files/images/other) without suppressing them.
+In Agent Kernel, we intentionally process requests individually and preserve non-text request objects (files/images/other) without suppressing them by default. Since Walled AI is text-focused, non-text validation should be implemented via separate hooks/policies when needed.
 
 ## Local Model Support (WalledGuard-Edge)
 
@@ -80,7 +80,7 @@ Walled AI is strong for baseline safety and PII redaction, but there are provide
 
 ### 1. No Cross-Call Placeholder Memory
 
-Walled AI does not keep a session memory of placeholders across redaction calls.
+Walled AI does not keep a session memory of placeholders across redaction calls, and it does not maintain thread history between requests.
 
 Example:
 
@@ -145,7 +145,7 @@ If you are integrating Walled AI into your own framework/runtime:
 
 1. Treat placeholders as call-scoped unless you explicitly design session behavior.
 2. Handle short-input redaction outcomes (`INPUT_SHORT`) as expected edge cases.
-3. Never suppress non-text content just because guardrail provider focuses on text.
+3. Do not suppress non-text content by default just because a provider focuses on text; use a separate hook/policy to validate non-text content as needed.
 4. Keep observability context (`prompt`, session IDs, trace metadata) intact.
 5. Add a policy layer if you need highly selective PII masking logic.
 
