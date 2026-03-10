@@ -110,19 +110,31 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 - *"Set up automated testing for my agent"*
 - *"My agent session isn't persisting across requests"*
 
-## Developer Skills
+## Developer Skills — Accelerating Contributions with AI
 
-These skills live in `.agents/skills/` at the repository root and help contributors to Agent Kernel:
+Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains seven developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
-| Skill | Description |
+When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards — eliminating the onboarding curve for new contributors.
+
+| Skill | What It Teaches Your Coding Assistant |
 |---|---|
-| `ak-dev-architecture` | Core abstractions, design principles, directory structure, execution flow |
-| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter |
-| `ak-dev-new-messaging-integration` | Guide to add a new messaging platform integration |
-| `ak-dev-new-guardrail-provider` | Guide to add a new guardrail provider |
-| `ak-dev-new-tracing-provider` | Guide to add a new observability/tracing provider |
-| `ak-dev-testing-conventions` | Testing patterns, async testing, mocking, CI/CD |
-| `ak-dev-code-quality` | Formatting standards, commit conventions, PR workflow |
+| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow — everything needed to understand the codebase |
+| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK) — subclass creation, dependency wiring, exports, tests |
+| `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail) — handler class, webhook routes, message parsing, config |
+| `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI) — input/output guardrails, factory registration, configuration |
+| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry) — `BaseTrace` interface, traced runners, factory wiring |
+| `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
+| `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
+
+### How Contributors Benefit
+
+A first-time contributor doesn't need to spend hours reading source code to understand how Agent Kernel is structured. They simply ask their coding assistant:
+
+- *"Add support for a new agent framework called X"* → The assistant reads `ak-dev-new-framework-integration` and generates the complete adapter module with correct subclasses, exports, and tests.
+- *"Add a new tracing provider for Datadog"* → The assistant reads `ak-dev-new-tracing-provider` and implements the `BaseTrace` interface, creates traced runners, and wires the factory.
+- *"Add Microsoft Teams integration"* → The assistant reads `ak-dev-new-messaging-integration` and scaffolds the handler, webhook routes, config, and example.
+
+The skills carry the same architectural knowledge the core team has — patterns, conventions, where things go, how components interact. Contributors ship features faster because their coding assistant already understands the codebase.
 
 ## Example Workflow
 

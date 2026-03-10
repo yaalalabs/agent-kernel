@@ -163,6 +163,38 @@ ak skill install
 
 You don't read the documentation. You don't learn the framework. You don't study the deployment patterns. **Agent Kernel's skills already know all of it — and they teach your coding assistant so it can build enterprise agents for you.**
 
+## Skills for Contributors Too: The `.agents` Folder
+
+Agent Skills aren't just for users building agents. They also power Agent Kernel's own development.
+
+The Agent Kernel repository ships a `.agents/skills/` folder containing seven developer skills — the same open standard, but focused inward. These skills teach coding assistants how to contribute to Agent Kernel itself:
+
+| Skill | What It Teaches Your Assistant |
+|-------|-------------------------------|
+| **ak-dev-architecture** | Core abstractions, design principles, adapter pattern, execution flow — everything needed to understand the codebase |
+| **ak-dev-new-framework-integration** | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK) |
+| **ak-dev-new-messaging-integration** | How to add a new messaging platform (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail) |
+| **ak-dev-new-guardrail-provider** | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI) |
+| **ak-dev-new-tracing-provider** | How to add a new observability backend (beyond Langfuse, OpenLLMetry) |
+| **ak-dev-testing-conventions** | Pytest patterns, async testing, mocking, CI/CD workflows |
+| **ak-dev-code-quality** | Formatting standards, commit conventions, PR workflow |
+
+This means a new contributor doesn't need to spend hours studying the codebase before making their first contribution. They open the repo in their coding assistant, and the `.agents/skills/` folder is automatically discovered. Now the assistant knows:
+
+- The architecture — how `Session`, `Agent`, `Runner`, `Module`, and `Runtime` fit together
+- The adapter pattern — that each framework lives in its own module under `agentkernel/framework/`
+- The exact steps to add a new framework, integration, guardrail, or tracing provider
+- The testing conventions — how to write async tests, mock external services, run CI
+- The code quality standards — formatting, commit messages, PR checklist
+
+Ask your assistant *"Add support for a new agent framework called X"* and it reads `ak-dev-new-framework-integration`. It knows to create the adapter module, implement `Agent`, `Runner`, and `Module` subclasses, add optional dependencies, update exports, and write tests — all following Agent Kernel's established patterns.
+
+Ask *"Add a new tracing provider for Datadog"* and it reads `ak-dev-new-tracing-provider`. It knows to implement the `BaseTrace` interface, create framework-specific traced runners, add config support, and wire up the factory.
+
+The result: **contributors ship features faster because their coding assistant already understands the entire codebase.** The skills eliminate the onboarding curve. A first-time contributor with the right coding assistant can implement a complete framework adapter or messaging integration — correctly — in a single session.
+
+This is the same philosophy applied in both directions. Agent Kernel exposes its capabilities as skills so users can build agents without reading docs. And it exposes its internals as skills so contributors can extend the platform without studying the codebase. Skills all the way down.
+
 ---
 
 *Agent Skills follow the [SKILL.md open standard](https://agentskills.io). Agent Kernel is open-source under the Apache 2.0 license. [Get started →](/docs)*
