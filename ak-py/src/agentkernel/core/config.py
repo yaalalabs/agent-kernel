@@ -186,7 +186,8 @@ class _TestConfig(BaseModel):
 
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
-    type: str = Field(default="openai", pattern="^(openai|bedrock)$")
+    type: str = Field(default="openai", pattern="^(openai|bedrock|walledai)$")
+    pii: bool = Field(default=True, description="Enable PII redaction/unmasking (WalledAI only)")
     config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
     model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
     id: Optional[str] = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")

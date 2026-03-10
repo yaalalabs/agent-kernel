@@ -22,6 +22,8 @@ e2e:
       path: examples/cli/guardrail/openai
     - type: cli
       path: examples/cli/guardrail/bedrock
+    - type: cli
+      path: examples/cli/guardrail/walledai
     
     # API examples
     - type: api

@@ -124,6 +124,7 @@ const sidebars = {
             'advanced/guardrails',
             'advanced/guardrails-openai',
             'advanced/guardrails-bedrock',
+            'advanced/guardrails-walledai',
           ],
         },
       ],

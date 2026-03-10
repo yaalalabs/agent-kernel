@@ -67,6 +67,9 @@ adk = [
     "litellm~=1.74.3",
     "openinference-instrumentation-google-adk>=0.1.6",
 ]
+walledai = [
+    "walledai>=4.9.3"
+]
 api = [
     "fastapi>=0.118.0",
     "uvicorn>=0.37.0",

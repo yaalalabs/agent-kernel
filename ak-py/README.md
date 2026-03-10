@@ -478,7 +478,7 @@ Configure input and output guardrails to validate agent requests and responses f
   - **Type**
     - **Field**: `guardrail.input.type`
     - **Default**: `openai`
-    - **Options**: `openai`, `bedrock`
+    - **Options**: `openai`, `bedrock`, `walledai`
     - **Description**: Guardrail provider type
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__TYPE`
 
@@ -516,7 +516,7 @@ Configure input and output guardrails to validate agent requests and responses f
   - **Type**
     - **Field**: `guardrail.output.type`
     - **Default**: `openai`
-    - **Options**: `openai`, `bedrock`
+    - **Options**: `openai`, `bedrock`, `walledai`
     - **Description**: Guardrail provider type
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__TYPE`
 
@@ -558,11 +558,19 @@ To use AWS Bedrock guardrails, install the AWS package:
 pip install agentkernel[aws]
 ```
 
+To use Walled AI guardrails, install the Walled AI package:
+
+```bash
+pip install agentkernel[walledai]
+```
+
 Create guardrail configuration:
 
 **For OpenAI:** Create configuration files following the [OpenAI Guardrails format](https://guardrails.openai.com/).
 
 **For Bedrock:** Create a guardrail in AWS Bedrock and note the guardrail ID and version.
+
+**For Walled AI:** Set `WALLED_API_KEY`, use guardrail type `walledai`, and control PII masking with `pii`.
 
 Configure guardrails in your configuration:
 
@@ -594,6 +602,19 @@ guardrail:
     type: bedrock
     id: your-guardrail-id
     version: "1"
+```
+
+**Walled AI Example:**
+```yaml
+guardrail:
+  input:
+    enabled: true
+    type: walledai
+    pii: true
+  output:
+    enabled: true
+    type: walledai
+    pii: true
 ```
 
 #### Messaging Platform Integrations
@@ -706,6 +727,11 @@ export AK_GUARDRAIL__OUTPUT__ENABLED=false
 export AK_GUARDRAIL__OUTPUT__TYPE=openai
 export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
+# Walled AI guardrails
+export WALLED_API_KEY=your-walledai-api-key
+export AK_GUARDRAIL__INPUT__PII=true
+export AK_GUARDRAIL__OUTPUT__PII=true
+export AK_DEBUG=true
 # Messaging platforms (optional)
 export AK_SLACK__AGENT=my-agent
 export AK_WHATSAPP__AGENT=my-agent
@@ -779,13 +805,17 @@ guardrail:
   input:
     enabled: false
     type: openai
+    pii: true
     model: gpt-4o-mini
     config_path: /path/to/guardrails_input.json
   output:
     enabled: false
     type: openai
+    pii: true
     model: gpt-4o-mini
     config_path: /path/to/guardrails_output.json
+  # For Walled AI, set type: walledai, WALLED_API_KEY,
+  # and optionally use input/output pii (default: true) to enable/disable PII masking.
 slack:
   agent: my-agent
   agent_acknowledgement: "Processing your request..."
