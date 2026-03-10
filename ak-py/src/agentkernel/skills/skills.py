@@ -178,8 +178,7 @@ class Skill:
             fm_name = name_match.group(1).strip()
             if fm_name and fm_name != dir_name:
                 print(
-                    f"  Warning: skill '{dir_name}' has mismatched frontmatter "
-                    f"name '{fm_name}'; using directory name",
+                    f"  Warning: skill '{dir_name}' has mismatched frontmatter " f"name '{fm_name}'; using directory name",
                     file=sys.stderr,
                 )
             elif fm_name:
