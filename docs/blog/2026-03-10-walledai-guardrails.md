@@ -164,5 +164,5 @@ That combination is where reliability comes from.
 ## Related Resources
 
 - [Walled AI Documentation](https://walled.ai/)
-- [Walled AI Guardrails (Agent Kernel Docs)](../docs/advanced/guardrails-walledai)
-- [Walled AI Example (Agent Kernel)](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail/walledai)
+- [Walled AI Guardrails (Agent Kernel Docs)](https://github.com/yaalalabs/agent-kernel/blob/develop/docs/docs/advanced/guardrails-walledai.md)
+- [Walled AI Example (Agent Kernel)](https://github.com/yaalalabs/agent-kernel/blob/develop/examples/cli/guardrail/walledai/README.md)
