@@ -148,7 +148,7 @@ class AK:
                 success_count += 1
 
         print(f"\n{success_count}/{len(skills)} skills updated.")
-        return 0
+        return 0 if success_count == len(skills) else 1
 
     # ── Parser ────────────────────────────────────────────────────────
 
