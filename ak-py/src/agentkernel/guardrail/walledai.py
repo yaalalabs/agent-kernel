@@ -164,7 +164,10 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                     continue
 
                 log.error(f"Redaction error: {e}")
-                raise
+                return AgentReplyText(
+                    text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                    prompt=raw_text,
+                )
 
             if isinstance(redact_res, dict) and "data" in redact_res:
                 data = redact_res["data"]
@@ -224,4 +227,4 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
         for placeholder, original_value in mapping.items():
             unmasked_text = unmasked_text.replace(placeholder, str(original_value))
 
-        return AgentReplyText(text=unmasked_text)
+        return AgentReplyText(text=unmasked_text, prompt=getattr(agent_reply, "prompt", ""))
