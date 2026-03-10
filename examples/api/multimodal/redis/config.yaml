@@ -2,5 +2,5 @@ multimodal:
   enabled: true
   storage_type: redis
   redis:
-    url: redis://ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379
+    url: redis://ak-mm-redis-2-dev-examples-redis.dirnvi.0001.use1.cache.amazonaws.com:6379
     prefix: "ak:mm:redis:"
