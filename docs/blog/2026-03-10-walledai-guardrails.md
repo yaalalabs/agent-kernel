@@ -74,64 +74,60 @@ Reference links:
 - API access and product updates: [www.walled.ai](https://www.walled.ai/)
 - Hugging Face model page: [walledai/walledguard-edge](https://huggingface.co/walledai/walledguard-edge)
 
-## Issue 1: Very Short Inputs and `INPUT_SHORT`
+## Limitations
 
-A common real-world chat pattern is very short messages:
+Walled AI is strong for baseline safety and PII redaction, but there are provider-level limitations teams should understand before production rollout.
 
-- "hi"
-- "ok"
-- "23"
+### 1. No Cross-Call Placeholder Memory
 
-For short inputs, redaction can return `INPUT_SHORT`. This is not an unsafe-content signal; it means the redaction operation is not applicable to that payload.
+Walled AI does not keep a session memory of placeholders across redaction calls.
 
-### What we do
-
-- For `INPUT_SHORT`, we bypass redaction for that request and continue.
-- For other redaction errors, we return a safe fallback response instead of crashing runtime execution.
-
-This keeps the system resilient and avoids full-request failures due to provider-side redaction limitations.
-
-## Issue 2: Placeholder Numbering Is Local Per Call (No Cross-Call Memory)
-
-A subtle but important behavior:
+Example:
 
 - Call A: "my name is john" -> `my name is [Person_1]`
 - Call B: "my brother is james" -> `my brother is [Person_1]`
 
-Both calls can produce `[Person_1]` for different people because numbering is local to each redaction call.
+The same label can appear again for a different value in later calls. Teams should treat placeholder IDs as call-scoped unless they add an application-side session strategy.
 
-That means teams must not assume placeholder IDs are globally stable across turns unless they add their own session strategy.
+### 2. Limited PII Masking Configuration Controls
 
-### Why this matters
+Fine-grained field-level controls can be limited for some domain requirements.
 
-If you naively merge mappings across turns, later turns can overwrite earlier values for the same placeholder key.
+Example requirement:
 
-### What we do
-
-- Maintain mapping at session level for output restoration.
-- Design guardrail handling to avoid destructive behavior in mixed-content and multi-turn flows.
-- Keep this behavior documented so teams do not over-assume provider memory semantics.
-
-## Issue 3: Limited Field-Level PII Customization
-
-A frequent product request is selective masking, for example:
-
-- Mask only bank CVV.
+- Mask only CVV.
 - Keep account number visible (or partially visible).
 
-With provider-level PII redaction, fine-grained "mask this exact entity but not that one" controls may be limited depending on SDK/API capabilities and policy surface.
+If you need this type of selective policy, you may need an extra policy layer before or after provider redaction.
 
-### Practical implication
+### 3. Text-Centric Guardrail Surface
 
-If you need domain-specific masking rules (for example, payment workflows, healthcare identifiers, or country-specific formats), you may need an additional policy layer before/after provider redaction.
+The primary safety/redaction operations are text-focused. Mixed-content pipelines (text + image/file/other) still need runtime logic to preserve and route non-text objects correctly.
 
-## Issue 4: Tracing Context Can Be Lost If Reply Metadata Is Not Preserved
+## Issues in Existing Features
 
-When unmasking output, if you construct a fresh response object and forget to preserve `prompt`, tracing tools lose input-output linkage.
+These are practical issues observed while integrating current features in Agent Kernel.
 
-### What we do
+### 1. Short Inputs and `INPUT_SHORT`
 
-When returning unmasked `AgentReplyText`, preserve prompt context from the original reply to keep observability and downstream tooling intact.
+Very short messages like "hi", "ok", or "23" can return `INPUT_SHORT` during redaction.
+
+- This is not a safety violation.
+- It means redaction was not applicable for that payload.
+
+Agent Kernel handles this by bypassing redaction for that request and continuing.
+
+### 2. Redaction Failure Handling
+
+If redaction fails for reasons other than `INPUT_SHORT`, allowing the exception to bubble can fail the full request path.
+
+Agent Kernel now returns a safe fallback response for this path to keep runtime behavior resilient.
+
+### 3. Tracing Context Loss on Output Rewrite
+
+If unmasking creates a new reply object without preserving metadata, tracing tools can lose input-output linkage.
+
+Agent Kernel preserves `prompt` when returning unmasked `AgentReplyText` to maintain observability context.
 
 ## What We Improved in Agent Kernel
 
