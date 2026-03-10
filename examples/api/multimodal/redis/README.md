@@ -8,7 +8,7 @@ This demo deploys the following AWS resources:
 
 - AWS Lambda function running the Agent Kernel implementation.
 - API Gateway endpoint for the Lambda function.
-- Redis (ElastiCache) cluster for multimodal attachment storage (optional — set `create_redis_cluster = true` in `main.tf`, or configure an existing Redis URL in `config.yaml`).
+- Redis (ElastiCache) cluster for multimodal attachment storage (set `create_redis_cluster = true` in `main.tf`, or configure an existing Redis URL in `config.yaml`).
 
 ## Prerequisites
 

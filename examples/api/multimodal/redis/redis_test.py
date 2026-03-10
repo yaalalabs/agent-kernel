@@ -37,6 +37,8 @@ class APITestClient:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
     endpoint = os.getenv("AK_TEST_ENDPOINT")
+    if not endpoint:
+        pytest.skip("AK_TEST_ENDPOINT environment variable is not set")
     yield APITestClient(endpoint)
 
 

@@ -430,7 +430,6 @@ class LangGraphToolBuilder(ToolBuilder):
             if asyncio.iscoroutinefunction(func):
                 tools.append(
                     StructuredTool.from_function(
-                        func=None,
                         coroutine=func,
                         name=func.__name__,
                         description=func.__doc__ or func.__name__,

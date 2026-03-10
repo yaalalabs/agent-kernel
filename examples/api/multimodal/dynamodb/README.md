@@ -6,7 +6,7 @@ This example demonstrates how to use Agent Kernel's `DynamoDBStorageDriver` to s
 
 | File | Purpose |
 |---|---|
-| `app.py` | REST API server — the clean example you can run and learn from |
+| `lambda.py` | AWS Lambda REST API server — the clean example you can deploy and learn from |
 | `dynamodb_test.py` | Automated pytest — runs nightly in CI |
 | `test_image.webp` | Test image (elephant with red dust) |
 
@@ -17,7 +17,7 @@ This example demonstrates how to use Agent Kernel's `DynamoDBStorageDriver` to s
    ```bash
    aws configure sso
    ```
-3. **DynamoDB Table** — the test creates and deletes its own table automatically. For the `app.py` example, create one manually:
+3. **DynamoDB Table** — deployment automatically creates the `mm-attachments` table for you when running `./deploy.sh local`. If doing custom usage outside of deployment:
    ```bash
    aws dynamodb create-table \
        --table-name AgentKernelMultimodalTable \
@@ -47,5 +47,5 @@ export OPENAI_API_KEY="your-key"
 uv run app.py
 ```
 
-The server starts at `http://localhost:8000`. Send images via the `/api/v1/chat` endpoint.
+The server will be deployed to an AWS API Gateway. Use the provided execution URL to send requests.
 

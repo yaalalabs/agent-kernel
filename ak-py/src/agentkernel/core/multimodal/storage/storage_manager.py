@@ -1,10 +1,5 @@
 """
 Attachment storage manager for multimodal memory.
-
-This module provides the ``AttachmentStorageManager`` class — a high-level API
-for saving and retrieving attachments.  It acts as a factory that resolves
-the correct ``AttachmentStorageDriver`` from configuration (lazy imports) and
-exposes simple ``save_attachment`` / ``get_attachment_data`` methods.
 """
 
 import logging
@@ -25,10 +20,6 @@ _log = logging.getLogger("ak.core.multimodal.storage")
 class AttachmentStorageManager:
     """
     High-level API for attachment storage.
-
-    Resolves the storage driver from ``AKConfig.multimodal.storage_type``
-    with lazy imports, following the same pattern as ``SessionStoreBuilder``
-    and ``Trace.get()``.
     """
 
     def __init__(self, session_id: str):
@@ -113,7 +104,7 @@ class AttachmentStorageManager:
         :param max_attachments: Maximum number of attachments to keep.
         :return: The generated attachment ID.
         """
-        attachment_id = str(uuid.uuid4())[:8]
+        attachment_id = str(uuid.uuid4())
         timestamp = time.time()
 
         attachment = {

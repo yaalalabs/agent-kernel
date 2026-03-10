@@ -73,9 +73,8 @@ export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only ch
 For image and document support, configure these environment variables:
 
 ```bash
-export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: true)
-export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
-export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
+export AK_MULTIMODAL__ENABLED=false              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__DYNAMODB__TTL=604800       # Optional: Backend-specific TTL in seconds (e.g. for DynamoDB/Redis)
 ```
 
 ### Webhook Verification

@@ -1,3 +1,3 @@
 multimodal:
   enabled: true
-  storage_type: session_cache
+  storage_type: in_memory

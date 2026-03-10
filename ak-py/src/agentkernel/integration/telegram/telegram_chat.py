@@ -52,24 +52,24 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             """
             Handle incoming Telegram webhook updates.
             """
+            # Verify request signature if webhook secret is configured synchronously in the HTTP context
+            if self._webhook_secret:
+                secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+                if secret_token != self._webhook_secret:
+                    self._log.warning("Invalid webhook secret token on foreground route request.")
+                    raise HTTPException(status_code=403, detail="Invalid secret token")
+
             # Read body first to avoid stream consumption issues in background
             body = await request.json()
-            background_tasks.add_task(self._process_webhook_body, body, request.headers)
+            background_tasks.add_task(self._process_webhook_body, body)
             return {"ok": True}
 
         return router
 
-    async def _process_webhook_body(self, body: dict, headers: Mapping[str, str]):
+    async def _process_webhook_body(self, body: dict):
         """
         Process the webhook body in background.
         """
-        # Verify request signature if webhook secret is configured
-        if self._webhook_secret:
-            secret_token = headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-            if secret_token != self._webhook_secret:
-                self._log.warning("Invalid webhook secret token")
-                return  # Can't raise HTTP exception here as response is sent
-
         try:
             self._log.debug(f"Received Telegram update: {body}")
 
