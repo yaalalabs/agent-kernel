@@ -17,6 +17,11 @@ import {
   MdBusiness,
   MdGroup,
   MdAutoAwesome,
+  MdTerminal,
+  MdBuild,
+  MdExtension,
+  MdIntegrationInstructions,
+  MdCloudUpload,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
@@ -453,6 +458,90 @@ function MessagingIntegrations() {
   );
 }
 
+/* ─── Agent Skills ──────────────────────────────────────────────────────── */
+
+function AgentSkills() {
+  const skills = [
+    { icon: <MdRocketLaunch />, name: 'ak-init', label: 'Scaffold', description: 'Create a new project from scratch — any framework, any deployment mode' },
+    { icon: <MdBuild />, name: 'ak-build', label: 'Build', description: 'Add tools, agents, and handoffs — context-aware, framework-specific' },
+    { icon: <MdExtension />, name: 'ak-add-capabilities', label: 'Capabilities', description: 'Guardrails, tracing, sessions, MCP, A2A, hooks, multimodal' },
+    { icon: <MdIntegrationInstructions />, name: 'ak-add-integration', label: 'Integrate', description: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail' },
+    { icon: <MdCloudUpload />, name: 'ak-cloud-deploy', label: 'Deploy', description: 'AWS Lambda, ECS, Azure Functions, Container Apps — full Terraform' },
+    { icon: <MdBugReport />, name: 'ak-test', label: 'Test', description: 'Fuzzy, judge, and fallback test modes + debugging playbook' },
+  ];
+
+  return (
+    <section className={styles.skillsSection}>
+      <div className={styles.skillsGlow} />
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <p className={styles.skillsBadge}>
+            <MdTerminal style={{ fontSize: '0.85rem' }} /> Agent Skills
+          </p>
+          <h2 className={styles.sectionTitle}>
+            Your Coding Assistant,{' '}
+            <span className={styles.gradientText}>Supercharged.</span>
+          </h2>
+          <p className={styles.sectionSubtitle}>
+            Install Agent Kernel skills and your coding assistant — Copilot, Claude, Cursor, or Windsurf
+            — becomes an expert at building production AI agents. No more hallucinated APIs.
+          </p>
+        </div>
+
+        <div className={styles.skillsInstall}>
+          <div className={styles.skillsTerminal}>
+            <div className={styles.terminalBar}>
+              <span className={styles.terminalDot} />
+              <span className={styles.terminalDot} />
+              <span className={styles.terminalDot} />
+              <span className={styles.terminalTitle}>Terminal</span>
+            </div>
+            <div className={styles.terminalBody}>
+              <code>
+                <span className={styles.terminalComment}># Install the CLI</span>{'\n'}
+                <span className={styles.terminalPrompt}>$</span> pip install agentkernel{'\n\n'}
+                <span className={styles.terminalComment}># Install skills for your coding assistant</span>{'\n'}
+                <span className={styles.terminalPrompt}>$</span> ak skill install{'\n\n'}
+                <span className={styles.terminalComment}># Or for a specific assistant</span>{'\n'}
+                <span className={styles.terminalPrompt}>$</span> ak skill install --assistant claude
+              </code>
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.skillsGrid}>
+          {skills.map((s, i) => (
+            <div key={i} className={styles.skillCard}>
+              <div className={styles.skillIcon}>{s.icon}</div>
+              <div className={styles.skillInfo}>
+                <div className={styles.skillName}>{s.name}</div>
+                <div className={styles.skillDesc}>{s.description}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className={styles.skillsFlow}>
+          <span className={styles.flowStep}>ak-init</span>
+          <span className={styles.flowArrow}>→</span>
+          <span className={styles.flowStep}>ak-build</span>
+          <span className={styles.flowArrowRepeat}>↻</span>
+          <span className={styles.flowArrow}>→</span>
+          <span className={styles.flowStep}>ak-cloud-deploy</span>
+          <span className={styles.flowArrow}>→</span>
+          <span className={styles.flowStep}>ak-test</span>
+        </div>
+
+        <div className={styles.sectionFooter}>
+          <Link to="/docs/next/agent-skills" className={styles.sectionLink}>
+            Learn more about Agent Skills →
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Community / CTA ───────────────────────────────────────────────────── */
 
 function Community() {
@@ -524,6 +613,7 @@ export default function Home() {
         <ValueProp />
         <WhoItsFor />
         <KeyFeatures />
+        <AgentSkills />
         <Deployment />
         <MessagingIntegrations />
         <Community />

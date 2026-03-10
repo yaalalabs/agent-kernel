@@ -12,7 +12,7 @@ Agent Skills are machine-readable guides that coding agents discover and follow 
 
 Each skill is a `SKILL.md` file with:
 - **YAML frontmatter** — name, description, metadata for discovery (~100 tokens)
-- **Markdown body** — step-by-step instructions, code templates, checklists (<5000 tokens)
+- **Markdown body** — step-by-step instructions, code templates, checklists (under 5000 tokens)
 
 ## Installing Skills
 
