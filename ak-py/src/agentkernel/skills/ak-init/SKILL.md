@@ -235,7 +235,7 @@ if __name__ == "__main__":
 
 ```python
 from agentkernel.cli import CLI  # or RESTAPI, Lambda
-from agentkernel.adk import ADKModule
+from agentkernel.adk import GoogleADKModule
 from google.adk.agents import Agent
 
 <agent_name> = Agent(
@@ -244,7 +244,7 @@ from google.adk.agents import Agent
     instruction="<instructions>",
 )
 
-ADKModule([<agent_name>])
+GoogleADKModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()

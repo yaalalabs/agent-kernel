@@ -157,10 +157,13 @@ class Skill:
         """Parse name and description from SKILL.md YAML frontmatter.
 
         Returns:
-            A (name, description) tuple.
+            A (name, description) tuple.  The name from frontmatter is
+            validated against the directory name; a mismatch triggers a
+            warning and the directory name is used.
         """
         content = skill_md.read_text(encoding="utf-8")
-        name = skill_md.parent.name
+        dir_name = skill_md.parent.name
+        name = dir_name
         description = ""
 
         frontmatter_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
@@ -168,6 +171,19 @@ class Skill:
             return name, description
 
         frontmatter = frontmatter_match.group(1)
+
+        # Parse name from frontmatter
+        name_match = re.search(r'^name:\s*["\']?(.*?)["\']?\s*$', frontmatter, re.MULTILINE)
+        if name_match:
+            fm_name = name_match.group(1).strip()
+            if fm_name and fm_name != dir_name:
+                print(
+                    f"  Warning: skill '{dir_name}' has mismatched frontmatter "
+                    f"name '{fm_name}'; using directory name",
+                    file=sys.stderr,
+                )
+            elif fm_name:
+                name = fm_name
 
         # Multi-line description (YAML block scalar)
         desc_match = re.search(r"description:\s*>?\s*\n((?:\s+.*\n)*)", frontmatter)
