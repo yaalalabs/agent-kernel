@@ -6,6 +6,7 @@ Currently supports `ak skill` for managing agent skills.
 
 Usage:
     ak skill list                      List all available skills
+    ak skill info <name>               Show full details for a skill
     ak skill assistants                List supported coding assistants
     ak skill install                   Install all skills (default: copilot)
     ak skill install <name>            Install a specific skill
@@ -66,6 +67,20 @@ class AK:
             print(f"  {name}  {desc}")
 
         print(f"\nInstall with: ak skill install [<name>] [--assistant <name>]")
+        print(f"Details:      ak skill info <name>")
+        return 0
+
+    def cmd_skill_info(self, args: argparse.Namespace) -> int:
+        """Handle `ak skill info <name>`."""
+        skill = Skill.find(args.name)
+        if skill is None:
+            print(f"Error: skill '{args.name}' not found.", file=sys.stderr)
+            print("Run 'ak skill list' to see available skills.", file=sys.stderr)
+            return 1
+
+        print(f"\n  {skill.name}")
+        print(f"  {'─' * len(skill.name)}")
+        print(f"  {skill.description}\n")
         return 0
 
     def cmd_skill_assistants(self, args: argparse.Namespace) -> int:
@@ -159,6 +174,15 @@ class AK:
         # `ak skill list`
         skill_subparsers.add_parser("list", help="List all available skills")
 
+        # `ak skill info <name>`
+        info_parser = skill_subparsers.add_parser(
+            "info", help="Show full details for a skill"
+        )
+        info_parser.add_argument(
+            "name",
+            help="Skill name to show details for",
+        )
+
         # `ak skill assistants`
         skill_subparsers.add_parser(
             "assistants", help="List supported coding assistants"
@@ -226,6 +250,7 @@ class AK:
 
             handlers = {
                 "list": self.cmd_skill_list,
+                "info": self.cmd_skill_info,
                 "assistants": self.cmd_skill_assistants,
                 "install": self.cmd_skill_install,
                 "update": self.cmd_skill_update,
