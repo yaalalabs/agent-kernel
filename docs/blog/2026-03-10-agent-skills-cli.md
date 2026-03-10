@@ -125,11 +125,11 @@ pip install agentkernel
 ak skill install
 
 # Or pick your assistant
-ak skill install --assistant claude     # → .claude/skills/
-ak skill install --assistant cursor     # → .cursor/skills/
-ak skill install --assistant windsurf   # → .windsurf/skills/
-ak skill install --assistant codex      # → .codex/skills/
-ak skill install --assistant aider      # → .aider/skills/
+ak skill install --assistant claude     # → .claude/commands/
+ak skill install --assistant cursor     # → .cursor/rules/
+ak skill install --assistant windsurf   # → .windsurf/rules/
+ak skill install --assistant codex      # → .codex/rules/
+ak skill install --assistant aider      # → .aider/rules/
 ```
 
 Browse and explore:
