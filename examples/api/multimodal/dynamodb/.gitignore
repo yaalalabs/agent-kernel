@@ -7,4 +7,3 @@ dist.zip
 
 # Auto-injected backend files (optional for CI/CD)
 deploy/backend.tf
-deploy/terraform.tfvars

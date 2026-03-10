@@ -13,9 +13,10 @@ module "serverless_agents" {
   package_path         = "../dist"
   package_type         = "Image"
   memory_size          = 512
-  timeout              = 60
-  create_redis_cluster = true
+  create_redis_cluster = false
   product_display_name = "Agent Kernel Multimodal with Redis"
+  vpc_id               = "vpc-09033229d67314c1c"
+  private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
   region               = var.region
 
   # Environment variables passed to lambda

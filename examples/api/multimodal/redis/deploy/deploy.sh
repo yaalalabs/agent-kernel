@@ -3,15 +3,14 @@
 # Create a deployment package for container image
 create_deployment_package() {
     pushd ../
-    rm -rf dist dist.zip
+    rm -rf dist 
     mkdir -p dist/data
     uv export --no-dev --no-hashes > requirements.txt
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist/data
     else
-      # Install everything from requirements, then forcefully overwrite agentkernel with the local build
-      uv pip install -r requirements.txt --target=dist/data
-      uv pip install --force-reinstall --find-links ../../../../ak-py/dist --target=dist/data "agentkernel[openai,redis,aws]" || true
+      uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
+      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,redis,aws] || true
     fi
     cp -r lambda.py config.yaml dist/data
     popd || exit 1
