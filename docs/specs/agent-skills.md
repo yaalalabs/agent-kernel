@@ -355,7 +355,7 @@ Rather than force users to manually copy skills to different directories, the `a
 
 - **Skill testing**: No automated tests for skill content correctness yet. Could add a CI step that validates SKILL.md frontmatter format and checks that referenced code patterns still match the actual codebase.
 
-- **User skills prefix**: User skills currently have no prefix. If the number of skills grows significantly, may want to add an `ak-` prefix for namespacing (e.g., `ak-init`). Deferred to avoid over-engineering.
+- **User skills prefix**: User skills use an `ak-` prefix for namespacing (e.g., `ak-init`, `ak-build`). If the number of skills grows significantly, we may want to formalize and document this convention further, but the existing `ak-` prefix scheme is currently sufficient.
 
 ### RFC Alignment (ak-build, Eval Suites, Progressive Disclosure)
 

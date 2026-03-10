@@ -1,5 +1,5 @@
 ---
-name: testing-conventions
+name: ak-dev-testing-conventions
 description: >
   Testing conventions, patterns, and automation for Agent Kernel development.
   Use this skill when writing tests for new features, debugging test failures,

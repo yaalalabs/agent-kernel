@@ -17,7 +17,7 @@ This guide walks through adding support for a new agent framework to Agent Kerne
 
 ## Prerequisites
 
-- Understand the architecture skill (`.agents/skills/architecture/SKILL.md`)
+- Understand the architecture skill (`.agents/skills/ak-dev-architecture/SKILL.md`)
 - Familiarity with the target framework's API
 - The target framework must support async execution (or provide an async wrapper)
 
