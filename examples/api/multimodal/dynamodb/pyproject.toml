@@ -5,7 +5,7 @@ description = "Multimodal Agent Kernel example with DynamoDB attachment storage 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,aws]>=0.2.13"
+    "agentkernel[openai,aws,multimodal]>=0.2.13"
 ]
 
 [dependency-groups]

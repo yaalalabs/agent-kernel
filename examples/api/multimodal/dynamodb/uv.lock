@@ -1746,7 +1746,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "aws"], specifier = ">=0.2.13" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "aws", "multimodal"], specifier = ">=0.2.13" }]
 
 [package.metadata.requires-dev]
 dev = [

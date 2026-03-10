@@ -14,6 +14,8 @@ locals {
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+  dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
+  dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   create_authorizer          = var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
 
   # Authorizer status message for logging
@@ -163,4 +165,22 @@ module "dynamodb_memory" {
   product_alias      = var.product_alias
   table_name         = "session_store"
   ttl_attribute_name = "expiry_time"
+}
+
+module "dynamodb_multimodal_memory" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.13"
+  count   = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "attachment_id", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "attachment_id"
+  ttl_enabled        = true
+  ttl_attribute_name = "expiry_time"
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "mm-attachments"
 }
