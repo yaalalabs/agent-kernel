@@ -68,6 +68,15 @@ Interactively scaffold a new Agent Kernel project. Covers all four supported fra
 - *"Create a new agent project using CrewAI for AWS Lambda"*
 - *"Scaffold a LangGraph project with REST API"*
 
+### ak-build
+
+Add tools, agents, and handoffs to an existing project. The workhorse skill for iterative development — reads your project's framework, existing agents, and config, then generates context-aware code for new tools, agents, and routing.
+
+**Example prompts:**
+- *"Add a weather lookup tool to my agent"*
+- *"Add a support agent and wire it into the triage handoffs"*
+- *"Add a new tool that accesses session state"*
+
 ### ak-add-integration
 
 Add messaging platform integrations to an existing project. Covers Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail with complete configuration and setup instructions.

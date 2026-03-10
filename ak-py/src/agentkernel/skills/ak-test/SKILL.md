@@ -317,3 +317,14 @@ curl http://localhost:8000/health
 ```
 
 Use this to verify your server is running and accessible.
+
+---
+
+### What to Do Next
+
+Your tests are set up and passing. Here's what you might do next:
+
+- **Add more tools & agents** → Use the `ak-build` skill to iterate on your project — add new capabilities, then come back here to add tests for them.
+- **Deploy to cloud** → Use the `ak-cloud-deploy` skill to deploy your tested agent to AWS or Azure.
+- **Add guardrails** → Use the `ak-add-capabilities` skill to add input/output guardrails, tracing, or session persistence.
+- **Connect a messaging platform** → Use the `ak-add-integration` skill to make your tested agent available on Slack, WhatsApp, or other channels.

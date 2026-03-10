@@ -435,3 +435,14 @@ curl -X POST http://localhost:8000/run \
   -F "agent=general" \
   -F "file=@document.pdf"
 ```
+
+---
+
+### What to Do Next
+
+You've added new capabilities to your project. Here's what you might do next:
+
+- **Add more tools & agents** → Use the `ak-build` skill to add new tools and specialist agents that leverage your new capabilities (e.g., agents that use guardrails or hooks).
+- **Connect a messaging platform** → Use the `ak-add-integration` skill to add Slack, WhatsApp, Telegram, or other channels so users can interact with your enhanced agents.
+- **Deploy to cloud** → Use the `ak-cloud-deploy` skill to deploy your agent (with all its capabilities) to AWS or Azure.
+- **Set up testing** → Use the `ak-test` skill to verify your capabilities work correctly — especially guardrails and hooks.

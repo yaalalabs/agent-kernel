@@ -368,3 +368,14 @@ To destroy the infrastructure:
 cd deploy
 terraform destroy
 ```
+
+---
+
+### What to Do Next
+
+Your agent is deployed. Here's what you might do next:
+
+- **Set up testing** → Use the `ak-test` skill to configure tests against your deployed endpoint (API test mode with `AK_TEST_ENDPOINT`).
+- **Add guardrails & tracing** → Use the `ak-add-capabilities` skill to add production-grade guardrails and observability tracing before your agent handles real traffic.
+- **Connect a messaging platform** → Use the `ak-add-integration` skill to connect Slack, WhatsApp, or other channels to your deployed agent.
+- **Iterate** → Use the `ak-build` skill to add new tools and agents, then re-deploy with `terraform apply`.

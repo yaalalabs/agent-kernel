@@ -325,3 +325,14 @@ After making changes:
 3. Start the server: `python server.py`
 4. Check health: `curl http://localhost:8000/health`
 5. Configure the platform webhook to point to your server URL
+
+---
+
+### What to Do Next
+
+Your messaging integration is connected. Here's what you might do next:
+
+- **Add more tools & agents** → Use the `ak-build` skill to add new tools and agents that handle platform-specific interactions.
+- **Add guardrails** → Use the `ak-add-capabilities` skill to add input/output guardrails — especially important for public-facing messaging channels.
+- **Deploy to cloud** → Use the `ak-cloud-deploy` skill to deploy your agent to AWS or Azure so your webhook endpoints are publicly accessible.
+- **Set up testing** → Use the `ak-test` skill to test your agent's responses before going live.

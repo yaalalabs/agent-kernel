@@ -72,9 +72,10 @@ These skills help end users building agent projects with Agent Kernel. They are 
 | Skill | Purpose |
 |---|---|
 | `ak-init` | Interactive scaffolding for all 4 frameworks (OpenAI, CrewAI, LangGraph, ADK) × all deployment modes (CLI, API, Lambda, Functions, containerized). Complete code templates for each combination. |
+| `ak-build` | Add tools, agents, and handoffs to an existing project. Reads the project's framework, agents, tools, and config first, then generates context-aware code. Covers all 4 frameworks with gotcha guards. |
 | `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
 | `ak-cloud-deploy` | Deploy to AWS or Azure: 4 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps). Complete Terraform files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh). |
-| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
+| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
 | `ak-test` | Test setup (fuzzy/judge/fallback modes, CLI/API patterns) + 8 debugging scenarios: no agents available, session not persisting, ToolContext errors, guardrail blocking, import errors, Redis connection, Terraform failures, webhook issues. |
 
 ## CLI Design
@@ -167,11 +168,24 @@ ak-py/src/agentkernel/
 └── skills/
     ├── __init__.py                     # get_skills_dir(), list_skills() wrappers
     ├── skills.py                       # Skill class, Assistant dataclass, ASSISTANTS registry
-    ├── ak-add-capabilities/SKILL.md
-    ├── ak-add-integration/SKILL.md
-    ├── ak-cloud-deploy/SKILL.md
-    ├── ak-init/SKILL.md
-    └── ak-test/SKILL.md
+    ├── ak-add-capabilities/
+    │   ├── SKILL.md
+    │   └── evals/evals.json
+    ├── ak-add-integration/
+    │   ├── SKILL.md
+    │   └── evals/evals.json
+    ├── ak-build/
+    │   ├── SKILL.md
+    │   └── evals/evals.json
+    ├── ak-cloud-deploy/
+    │   ├── SKILL.md
+    │   └── evals/evals.json
+    ├── ak-init/
+    │   ├── SKILL.md
+    │   └── evals/evals.json
+    └── ak-test/
+        ├── SKILL.md
+        └── evals/evals.json
 
 .vscode/settings.json                  # chat.agentSkillsLocations config
 ```
@@ -261,6 +275,8 @@ User skills don't have a prefix — they're the primary audience and should have
 
 - **`ak-init`**: The entry point for new users. Covers 4 frameworks × multiple deployment modes. Each combination has complete, copy-pasteable templates (app.py, config.yaml, pyproject.toml, build.sh). The coding agent asks the user which framework and deployment mode, then generates everything.
 
+- **`ak-build`**: The workhorse skill for iterative development. After `ak-init` scaffolds a project, users spend most of their time adding tools, agents, and handoffs — that's `ak-build`. It reads the existing project first (framework, agents, tools, config) then generates context-aware code. Includes a gotchas table covering all 4 frameworks (LangGraph `name=`, CrewAI `role=`, ADK `LiteLlm()`, ToolContext usage).
+
 - **`ak-add-integration`**: After scaffolding, the most common next step is "connect my agent to Slack/WhatsApp/etc." Each platform has its own section with config changes, code changes, env vars, and setup instructions (e.g., creating a Slack app, setting up Meta webhooks).
 
 - **`ak-cloud-deploy`**: Complete Terraform configurations for all 4 deployment targets. Users shouldn't have to write Terraform from scratch — the skill generates all files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh) using AK's published Terraform modules.
@@ -340,4 +356,14 @@ Rather than force users to manually copy skills to different directories, the `a
 - **Skill testing**: No automated tests for skill content correctness yet. Could add a CI step that validates SKILL.md frontmatter format and checks that referenced code patterns still match the actual codebase.
 
 - **User skills prefix**: User skills currently have no prefix. If the number of skills grows significantly, may want to add an `ak-` prefix for namespacing (e.g., `ak-init`). Deferred to avoid over-engineering.
+
+### RFC Alignment (ak-build, Eval Suites, Progressive Disclosure)
+
+After comparing the implementation against AFC-01 (Agent Kernel Skills for Claude Code, by Ishan De Silva), three gaps were identified and addressed:
+
+1. **`ak-build` skill**: The RFC's `/ak-build` was the workhorse command — "add a tool/agent to an existing project." Our implementation had `ak-init` for scaffolding and `ak-add-capabilities` for features, but nothing for the core iterative loop of adding tools and agents. `ak-build` fills this gap. It reads the project first (framework, agents, tools, config), then generates framework-specific code with gotcha guards (LangGraph `name=`, CrewAI `role=`, ADK `LiteLlm()`, ToolContext patterns).
+
+2. **Eval suites**: Each skill now has an `evals/evals.json` file defining test scenarios with `expected_outputs` and `must_not_contain` arrays. These validate that the skill produces correct, framework-specific output. For example, `ak-build`'s evals verify that CrewAI output uses `role=` not `name=`, and that LangGraph output includes `name=` in `create_react_agent()`. Evals are structured for automated validation in CI.
+
+3. **"What to do next" progressive disclosure**: Every skill now ends with a "What to Do Next" section that suggests natural next steps and references other skills. This creates a guided arc: `ak-init → ak-build (iterate) → ak-add-capabilities / ak-add-integration → ak-cloud-deploy → ak-test`. Users are never left wondering "what now?" after completing a skill.
 

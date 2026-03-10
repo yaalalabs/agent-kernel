@@ -332,3 +332,15 @@ After generating the project, tell the user:
 3. Activate: `source .venv/bin/activate`
 4. Run: `python <main-file>.py`
 5. For tests: `uv run pytest`
+
+---
+
+### What to Do Next
+
+Your project is scaffolded and running. Here's the natural progression:
+
+- **Add tools & agents** → Use the `ak-build` skill to add new tools, specialist agents, and handoffs to your project. This is the skill you'll use most often as you iterate.
+- **Add guardrails or tracing** → Use the `ak-add-capabilities` skill to add input/output guardrails, observability tracing, session persistence, MCP, A2A, hooks, or multimodal support.
+- **Connect a messaging platform** → Use the `ak-add-integration` skill to add Slack, WhatsApp, Telegram, or other messaging channels.
+- **Deploy to cloud** → Use the `ak-cloud-deploy` skill to deploy to AWS or Azure with Terraform.
+- **Set up testing** → Use the `ak-test` skill to configure test modes and write agent tests.
