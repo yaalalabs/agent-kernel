@@ -185,7 +185,7 @@ async def test_pre_hook_halts_execution():
 
 ## Built-in Test Framework
 
-Agent Kernel provides a `Test` class (`ak-py/src/agentkernel/test/`) for integration testing:
+Agent Kernel provides a `Test` class (`ak-py/src/agentkernel/test/`) for integration testing. This framework is used in examples and can be used for testing deployed agents as well.
 
 ```python
 from agentkernel.test import Test
