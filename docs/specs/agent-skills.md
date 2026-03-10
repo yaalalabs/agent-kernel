@@ -1,0 +1,288 @@
+# Agent Skills for Agent Kernel
+
+This spec describes the design and implementation plan for Agent Skills — structured, machine-readable guides that coding agents (GitHub Copilot, Claude Code, Codex, etc.) can follow to help developers build, extend, and deploy AI agents with Agent Kernel.
+
+## Status
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1 | ✅ Complete | Developer skills in `.agents/skills/` |
+| Phase 2 | ✅ Complete | User skills bundled in `agentkernel` PyPI package |
+| Phase 3 | ✅ Complete | `ak` CLI with `skill list/install/update` subcommands |
+| Phase 4 | ⏳ Deferred | Copilot Agent Plugin & Claude marketplace plugin |
+| Phase 5 | ✅ Complete | Documentation updates |
+
+## Overview
+
+### Problem
+
+AI agent developers need to perform many tasks when building with Agent Kernel: scaffolding projects, adding integrations, deploying to cloud, adding capabilities, etc. These tasks are well-documented but require manual reading and translation into code.
+
+### Solution
+
+Ship machine-readable "skills" that coding agents discover and execute automatically. A user describes what they want in natural language, and the coding agent reads the relevant skill to generate correct, idiomatic code.
+
+### Standard
+
+All skills use the [Agent Skills Open Standard](https://agentskills.io) — `SKILL.md` files with YAML frontmatter. This standard is supported by GitHub Copilot, Claude Code, OpenAI Codex, Cursor, Windsurf, and other coding agents.
+
+### Skill Format
+
+```markdown
+---
+name: skill-name
+description: Brief description for discovery (~100 tokens)
+version: 0.1.0
+---
+
+# Skill Title
+
+Step-by-step instructions, code templates, checklists (<5000 tokens total)
+```
+
+Progressive disclosure model:
+- **Discovery** (~100 tokens): YAML frontmatter for agent to decide relevance
+- **Activation** (<5000 tokens): Full markdown body with instructions
+- **Execution**: Agent follows instructions using existing tools (file creation, shell commands)
+
+## Two-Tier Skill Architecture
+
+### Tier 1 — Developer Skills (for contributors)
+
+**Location**: `.agents/skills/` at repository root
+
+These skills help developers contributing to Agent Kernel itself. They are part of the repo and discovered automatically by coding agents when a developer opens the project.
+
+| Skill | Purpose |
+|---|---|
+| `ak-dev-architecture` | Core abstractions (Session, Agent, Runner, Module, Runtime, AgentService, AKConfig), design principles (framework-agnostic core, adapter pattern, config-driven, session lifecycle, plugin architecture), directory structure, execution flow |
+| `ak-dev-new-framework-integration` | 14-step guide to add a new agent framework adapter: session state class, Runner subclass, Agent wrapper, ToolBuilder, Module, public API, optional deps, tracing, tests, examples |
+| `ak-dev-new-messaging-integration` | 12-step guide to add a new messaging platform: RESTRequestHandler subclass, webhook routes, message parsing, config, webhook verification, message chunking |
+| `ak-dev-new-guardrail-provider` | Adding input/output guardrails: base provider class, InputGuardrail (PreHook), OutputGuardrail (PostHook), factory registration, config, fail-open policy |
+| `ak-dev-new-tracing-provider` | Adding observability/tracing: BaseTrace interface, traced runners, factory registration, transparent tracing |
+| `ak-dev-testing-conventions` | Testing patterns: pytest, async testing, DummyRunner/DummyAgent, monkeypatching config, session context tests, hook testing, Test.compare(), test modes |
+| `ak-dev-code-quality` | Standards: black/isort (150 line length core, 120 examples), conventional commits, PR workflow, version bumping via `scripts/bump_version.py` |
+
+### Tier 2 — User Skills (for end users)
+
+**Location**: `ak-py/src/agentkernel/skills/` (bundled in PyPI package)
+
+These skills help end users building agent projects with Agent Kernel. They are distributed via the `agentkernel` PyPI package and installed into user projects via the `ak skill install` CLI command.
+
+| Skill | Purpose |
+|---|---|
+| `ak-init` | Interactive scaffolding for all 4 frameworks (OpenAI, CrewAI, LangGraph, ADK) × all deployment modes (CLI, API, Lambda, Functions, containerized). Complete code templates for each combination. |
+| `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
+| `ak-cloud-deploy` | Deploy to AWS or Azure: 4 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps). Complete Terraform files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh). |
+| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
+| `ak-test` | Test setup (fuzzy/judge/fallback modes, CLI/API patterns) + 8 debugging scenarios: no agents available, session not persisting, ToolContext errors, guardrail blocking, import errors, Redis connection, Terraform failures, webhook issues. |
+
+## CLI Design
+
+### Entry Point
+
+```toml
+# ak-py/pyproject.toml
+[project.scripts]
+ak = "agentkernel.cli.ak:main"
+```
+
+### Commands
+
+```bash
+ak skill list                          # List all bundled skills
+ak skill assistants                    # List supported coding assistants
+ak skill install                       # Install all skills (default: copilot)
+ak skill install <name>                # Install a specific skill
+ak skill install --assistant claude    # Install for Claude Code → .claude/commands/
+ak skill install --assistant cursor    # Install for Cursor → .cursor/rules/
+ak skill install --target PATH         # Install to custom directory
+ak skill update                        # Force-overwrite existing skills
+ak skill update --assistant claude     # Update for a specific assistant
+```
+
+### Supported Assistants
+
+| Assistant  | Directory          | Description                          |
+|------------|--------------------|--------------------------------------|
+| `copilot`  | `.agents/skills`   | GitHub Copilot (default)             |
+| `claude`   | `.claude/commands`  | Claude Code (Anthropic)              |
+| `cursor`   | `.cursor/rules`    | Cursor IDE                           |
+| `windsurf` | `.windsurf/rules`  | Windsurf (Codeium)                   |
+| `codex`    | `.codex/skills`    | Codex CLI (OpenAI)                   |
+| `aider`    | `.aider/skills`    | Aider                                |
+
+### Implementation
+
+- `ak-py/src/agentkernel/cli/ak.py` — argparse-based CLI
+- `ak-py/src/agentkernel/skills/__init__.py` — `get_skills_dir()` and `list_skills()` helpers
+- Skills copied via `shutil.copytree()` with `dirs_exist_ok=True`
+- YAML frontmatter parsed with stdlib (no external deps)
+
+## Phase 4 — Distribution (Deferred)
+
+### Copilot Agent Plugin
+
+Create a repository `yaalalabs/agentkernel-copilot-plugin` containing user skills formatted as a Copilot Agent Plugin. Register in the GitHub Awesome Copilot marketplace.
+
+### Claude Marketplace Plugin
+
+Package user skills for Claude's marketplace. Submit for review.
+
+### Implementation Notes
+
+- Both plugins would contain the same 5 user skills
+- Plugin metadata wraps the SKILL.md content in platform-specific formats
+- Skills remain the canonical source; plugins are generated from them
+
+## Phase 5 — Documentation
+
+### Files Updated
+
+| File | Change |
+|---|---|
+| `ak-py/README.md` | Added "Agent Skills" section before "Extensibility" — CLI commands, skills table, example workflow |
+| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 7 dev skills, usage examples |
+| `CONTRIBUTING.md` | Added "Agent Skills" section after "Developer Guide" — brief reference to `.agents/skills/` |
+| `docs/docs/agent-skills.md` | New docs site page — full guide with all skills, CLI usage, compatibility matrix |
+| `docs/sidebars.js` | Added `agent-skills` entry after `quick-start` |
+
+## File Inventory
+
+```
+.agents/skills/
+├── ak-dev-architecture/SKILL.md
+├── ak-dev-code-quality/SKILL.md
+├── ak-dev-new-framework-integration/SKILL.md
+├── ak-dev-new-guardrail-provider/SKILL.md
+├── ak-dev-new-messaging-integration/SKILL.md
+├── ak-dev-new-tracing-provider/SKILL.md
+└── ak-dev-testing-conventions/SKILL.md
+
+ak-py/src/agentkernel/
+├── cli/
+│   └── ak.py                          # ak CLI entry point
+└── skills/
+    ├── __init__.py                     # get_skills_dir(), list_skills()
+    ├── ak-add-capabilities/SKILL.md
+    ├── ak-add-integration/SKILL.md
+    ├── ak-cloud-deploy/SKILL.md
+    ├── ak-init/SKILL.md
+    └── ak-test/SKILL.md
+
+.vscode/settings.json                  # chat.agentSkillsLocations config
+```
+
+## Design Decisions
+
+1. **SKILL.md standard over proprietary formats**: Ensures cross-agent compatibility. One skill works with Copilot, Claude Code, Codex, Cursor, Windsurf.
+
+2. **`.agents/skills/` over `.github/skills/`**: Vendor-neutral path. Not tied to GitHub.
+
+3. **Bundled in `agentkernel` over separate PyPI package**: Users already install `agentkernel`. No extra dependency. Skills stay in sync with library version.
+
+4. **`ak skill install` over auto-discovery from package**: Users explicitly control what's in their project. Skills are visible in `.agents/skills/` for inspection and customization.
+
+5. **argparse over click/typer**: Zero additional dependencies. The CLI is simple enough for stdlib.
+
+6. **YAML frontmatter parsed with stdlib**: No dependency on `pyyaml`. Simple regex-based extraction of name/description fields.
+
+## Thought Process & Decision Journal
+
+This section captures the reasoning and evolution of decisions throughout the project, so the context is preserved for future sessions.
+
+### Starting Point — The Core Idea
+
+The goal was to make Agent Kernel "coding-agent-friendly" — not just well-documented for humans, but structured so that AI coding agents (Copilot, Claude Code, Codex, etc.) can autonomously help users build, extend, and deploy agents. Two distinct audiences emerged early:
+
+1. **Contributors** who work on Agent Kernel itself (adding frameworks, integrations, providers)
+2. **End users** who build their own agent projects using Agent Kernel as a dependency
+
+These are fundamentally different workflows — contributors need to understand AK internals; users need recipes for their own projects. This drove the **two-tier architecture**.
+
+### Skills Standard — Why SKILL.md
+
+Evaluated multiple approaches:
+- **AGENTS.md** (single monolithic file) — too large, no discovery mechanism, hard to maintain
+- **Proprietary formats** (Copilot-specific, Claude-specific) — locks into one ecosystem
+- **Agent Skills Open Standard** (agentskills.io, SKILL.md) — vendor-neutral, progressive disclosure (frontmatter for discovery, body for execution), supported by multiple agents
+
+Chose SKILL.md because AK itself is framework-agnostic, so the skills should be agent-agnostic too. The progressive disclosure model (discovery ~100 tokens → activation <5000 tokens) was a strong fit — agents don't need to read everything, just what's relevant.
+
+### Directory Path — `.agents/skills/` not `.github/skills/`
+
+Initial plan used `.github/skills/` following some early conventions. Changed to `.agents/skills/` because:
+- AK is not GitHub-specific — it deploys to AWS and Azure, supports multiple frameworks
+- `.agents/` is vendor-neutral and self-descriptive
+- Avoids confusion with GitHub Actions, GitHub-specific configs already in `.github/`
+
+### Distribution — Bundled, Not Separate
+
+Initial plan was a separate `agentkernel-skills` PyPI package. Changed to bundling inside `agentkernel` because:
+- Users already `pip install agentkernel` — no extra step
+- Skills are tightly coupled to library version (code templates reference specific APIs)
+- Version drift between skills package and library would cause broken templates
+- `ak skill install` copies skills into the user's project, making them inspectable and customizable
+
+### CLI — `ak skill install` not `ak-skills install`
+
+Initially planned a separate `ak-skills` CLI. Changed to `ak skill` subcommand because:
+- `ak` is the natural top-level command for the Agent Kernel ecosystem
+- Subcommand pattern (`ak skill`, and future `ak deploy`, `ak test`, etc.) is more scalable
+- Single entry point in pyproject.toml: `ak = "agentkernel.cli.ak:main"`
+
+### Naming — `ak-dev-` Prefix for Developer Skills
+
+Added `ak-dev-` prefix to developer skills to:
+- Clearly distinguish them from user skills when both are in the same `.agents/skills/` directory
+- Signal that these are internal/contributor skills, not end-user workflows
+- Make it easy to filter/search (e.g., `ls .agents/skills/ak-dev-*`)
+
+User skills don't have a prefix — they're the primary audience and should have clean names (e.g., `ak-init`, not `ak-user-scaffold-agent-project`).
+
+### What's In Each Developer Skill and Why
+
+- **`ak-dev-architecture`**: The "orientation" skill. A contributor's first question is "how does this all fit together?" This skill maps the core abstractions, design principles, directory layout, and execution flow. Without this, every other skill lacks context.
+
+- **`ak-dev-new-framework-integration`**: The most common contribution type. AK's value proposition is multi-framework support, so adding a new framework adapter should be a well-paved path. The 14-step guide was derived by studying the existing OpenAI, CrewAI, LangGraph, and ADK adapters and extracting the common pattern.
+
+- **`ak-dev-new-messaging-integration`**: Second most common contribution. The Slack integration was used as the reference implementation — webhook handling, message parsing, config registration, chunking.
+
+- **`ak-dev-new-guardrail-provider`** and **`ak-dev-new-tracing-provider`**: These follow a factory/registry pattern. The skills document the base classes, registration mechanism, and config integration.
+
+- **`ak-dev-testing-conventions`**: Testing is where contributors most often get stuck (async patterns, session mocking, DummyRunner). The skill codifies patterns that would otherwise require reading multiple test files.
+
+- **`ak-dev-code-quality`**: Prevents common PR friction — wrong line length, non-conventional commits, missing formatting. This is the "read before your first PR" skill.
+
+### What's In Each User Skill and Why
+
+- **`ak-init`**: The entry point for new users. Covers 4 frameworks × multiple deployment modes. Each combination has complete, copy-pasteable templates (app.py, config.yaml, pyproject.toml, build.sh). The coding agent asks the user which framework and deployment mode, then generates everything.
+
+- **`ak-add-integration`**: After scaffolding, the most common next step is "connect my agent to Slack/WhatsApp/etc." Each platform has its own section with config changes, code changes, env vars, and setup instructions (e.g., creating a Slack app, setting up Meta webhooks).
+
+- **`ak-cloud-deploy`**: Complete Terraform configurations for all 4 deployment targets. Users shouldn't have to write Terraform from scratch — the skill generates all files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh) using AK's published Terraform modules.
+
+- **`ak-add-capabilities`**: A "shopping list" skill — pick what you need (guardrails, tracing, session persistence, MCP, A2A, hooks, multimodal) and get the exact config + code. Each capability is independent.
+
+- **`ak-test`**: Combines test setup (often overlooked) with a debugging FAQ. The 8 debugging scenarios were chosen based on the most common issues: misconfigured agents, session problems, import errors, infrastructure failures.
+
+### Phase 4 Deferral Reasoning
+
+Copilot Agent Plugin and Claude marketplace plugin were deferred because:
+- The skills already work via `.agents/skills/` directory convention — no plugin needed for basic functionality
+- Plugin submission processes and formats may change — better to stabilize the skills first
+- The PyPI distribution (`ak skill install`) covers the primary use case
+- Can revisit once skill content is validated by real users
+
+### Known Issues & Future Considerations
+
+- **`ak` CLI config warning**: Running `ak --help` shows `WARNING: Could not open yaml settings file at: config.yaml` because importing the `agentkernel.cli` namespace triggers `AKConfig` initialization. This is harmless (config file only exists in agent projects, not the dev repo) but could be addressed by lazy-loading in `cli/__init__.py`.
+
+- **Skill versioning**: Skills currently don't have independent version tracking. If skills evolve independently of the library, may need a version field in frontmatter and a version check in `ak skill update`.
+
+- **User skill customization**: After `ak skill install`, users can edit the SKILL.md files in their project. `ak skill update` will overwrite customizations. Could add a merge/diff strategy in the future.
+
+- **Skill testing**: No automated tests for skill content correctness yet. Could add a CI step that validates SKILL.md frontmatter format and checks that referenced code patterns still match the actual codebase.
+
+- **User skills prefix**: User skills currently have no prefix. If the number of skills grows significantly, may want to add an `ak-` prefix for namespacing (e.g., `ak-init`). Deferred to avoid over-engineering.
+
