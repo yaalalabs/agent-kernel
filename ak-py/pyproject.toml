@@ -116,6 +116,9 @@ mcp = [
     "fastmcp>=2.12.4",
 ]
 
+[project.scripts]
+ak = "agentkernel.cli.ak:main"
+
 [dependency-groups]
 dev = [
     "black>=23.0.0",
