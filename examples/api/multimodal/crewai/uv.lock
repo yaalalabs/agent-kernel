@@ -108,8 +108,9 @@ requires-dist = [
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
+    { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "openai", "adk", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [
