@@ -1,0 +1,131 @@
+{
+  "skill": "ak-test",
+  "description": "Evaluations for the ak-test (testing and debugging) skill",
+  "version": "0.2.13",
+  "evals": [
+    {
+      "id": "test-setup-cli",
+      "name": "Set up CLI agent tests",
+      "input": "Set up tests for my CLI-mode agent",
+      "expected_outputs": [
+        "from agentkernel.test import Test",
+        "Test(\"demo.py\")",
+        "await test.start()",
+        "await test.stop()",
+        "test_client.send(",
+        "test_client.expect([",
+        "pytest.mark.asyncio",
+        "pytest.mark.order("
+      ]
+    },
+    {
+      "id": "test-setup-api",
+      "name": "Set up API agent tests",
+      "input": "Set up tests for my API-mode agent",
+      "expected_outputs": [
+        "httpx",
+        "session_id",
+        "/run",
+        "Test.compare("
+      ]
+    },
+    {
+      "id": "test-mode-fuzzy",
+      "name": "Configure fuzzy test mode",
+      "input": "Set up fuzzy matching for my agent tests",
+      "expected_outputs": [
+        "test:",
+        "mode: fuzzy"
+      ]
+    },
+    {
+      "id": "test-mode-judge",
+      "name": "Configure judge test mode",
+      "input": "Set up LLM judge for my agent tests",
+      "expected_outputs": [
+        "test:",
+        "mode: judge",
+        "judge:",
+        "model:"
+      ]
+    },
+    {
+      "id": "test-mode-fallback",
+      "name": "Configure fallback test mode",
+      "input": "Set up fallback test mode",
+      "expected_outputs": [
+        "test:",
+        "mode: fallback"
+      ]
+    },
+    {
+      "id": "test-deps",
+      "name": "Add test dependencies",
+      "input": "Set up testing for my project",
+      "expected_outputs": [
+        "[dependency-groups]",
+        "agentkernel[test]",
+        "uv sync"
+      ]
+    },
+    {
+      "id": "test-run-commands",
+      "name": "Show test run commands",
+      "input": "How do I run my tests?",
+      "expected_outputs": [
+        "uv run pytest"
+      ]
+    },
+    {
+      "id": "debug-no-agents",
+      "name": "Debug: no agents available",
+      "input": "I get 'No agents available' error",
+      "expected_outputs": [
+        "Module",
+        "OpenAIModule",
+        "register"
+      ]
+    },
+    {
+      "id": "debug-toolcontext",
+      "name": "Debug: ToolContext not available",
+      "input": "I get 'ToolContext is not set' error",
+      "expected_outputs": [
+        "ToolContext.get()",
+        "ToolBuilder",
+        "Runtime.run()"
+      ]
+    },
+    {
+      "id": "debug-session",
+      "name": "Debug: session not persisting",
+      "input": "My agent doesn't remember previous messages",
+      "expected_outputs": [
+        "session_id",
+        "Redis",
+        "DynamoDB",
+        "session:",
+        "type:"
+      ]
+    },
+    {
+      "id": "debug-import",
+      "name": "Debug: import errors",
+      "input": "I get ModuleNotFoundError for agents package",
+      "expected_outputs": [
+        "agentkernel[openai]",
+        "pip install",
+        "extras"
+      ]
+    },
+    {
+      "id": "debug-logging",
+      "name": "Enable debug logging",
+      "input": "How do I enable debug logging?",
+      "expected_outputs": [
+        "debug: true",
+        "AK_DEBUG"
+      ]
+    }
+  ]
+}

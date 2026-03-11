@@ -1,0 +1,142 @@
+{
+  "skill": "ak-init",
+  "description": "Evaluations for the ak-init (project scaffolding) skill",
+  "version": "0.2.13",
+  "evals": [
+    {
+      "id": "init-openai-cli",
+      "name": "Scaffold OpenAI CLI project",
+      "input": "Create a new Agent Kernel project using OpenAI Agents SDK with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.openai import OpenAIModule",
+        "from agentkernel.openai import OpenAIToolBuilder",
+        "from agents import Agent",
+        "OpenAIModule([",
+        "agentkernel[openai]",
+        "config.yaml",
+        "pyproject.toml"
+      ],
+      "expected_files": [
+        "demo.py",
+        "tool.py",
+        "config.yaml",
+        "pyproject.toml",
+        "build.sh",
+        "demo_test.py"
+      ],
+      "must_not_contain": [
+        "RESTAPI",
+        "Lambda.handler",
+        "AzureFunction"
+      ]
+    },
+    {
+      "id": "init-openai-api",
+      "name": "Scaffold OpenAI API project",
+      "input": "Create a new Agent Kernel project using OpenAI Agents SDK with REST API mode",
+      "expected_outputs": [
+        "from agentkernel.api import RESTAPI",
+        "from agentkernel.openai import OpenAIModule",
+        "RESTAPI.run()",
+        "agentkernel[openai,api]"
+      ],
+      "expected_files": [
+        "app.py",
+        "tool.py",
+        "config.yaml",
+        "pyproject.toml"
+      ]
+    },
+    {
+      "id": "init-langgraph-cli",
+      "name": "Scaffold LangGraph CLI project",
+      "input": "Create a new Agent Kernel project using LangGraph with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.langgraph import LangGraphModule",
+        "from agentkernel.langgraph import LangGraphToolBuilder",
+        "from langgraph.prebuilt import create_react_agent",
+        "name=",
+        "LangGraphModule(["
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "CrewAIModule"
+      ]
+    },
+    {
+      "id": "init-crewai-cli",
+      "name": "Scaffold CrewAI CLI project",
+      "input": "Create a new Agent Kernel project using CrewAI with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.crewai import CrewAIModule",
+        "from agentkernel.crewai import CrewAIToolBuilder",
+        "from crewai import Agent",
+        "role=",
+        "verbose=False",
+        "CrewAIModule(["
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "name=\"triage\""
+      ]
+    },
+    {
+      "id": "init-adk-cli",
+      "name": "Scaffold Google ADK CLI project",
+      "input": "Create a new Agent Kernel project using Google ADK with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.adk import GoogleADKModule",
+        "from agentkernel.adk import GoogleADKToolBuilder",
+        "from google.adk.agents import Agent",
+        "LiteLlm(model=",
+        "GoogleADKModule(["
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "crewai"
+      ]
+    },
+    {
+      "id": "init-openai-lambda",
+      "name": "Scaffold OpenAI AWS Lambda project",
+      "input": "Create a new Agent Kernel project using OpenAI with AWS Lambda deployment",
+      "expected_outputs": [
+        "from agentkernel.aws import Lambda",
+        "handler = Lambda.handler",
+        "deploy/main.tf",
+        "deploy/Dockerfile"
+      ],
+      "expected_files": [
+        "lambda.py",
+        "config.yaml",
+        "deploy/main.tf",
+        "deploy/variables.tf",
+        "deploy/deploy.sh",
+        "deploy/Dockerfile"
+      ]
+    },
+    {
+      "id": "init-config-yaml",
+      "name": "Generate valid config.yaml",
+      "input": "Create a new Agent Kernel project",
+      "expected_outputs": [
+        "session:",
+        "type: in_memory"
+      ],
+      "must_not_contain": [
+        "type: redis"
+      ]
+    },
+    {
+      "id": "init-pyproject-toml",
+      "name": "Generate valid pyproject.toml",
+      "input": "Create a new Agent Kernel project",
+      "expected_outputs": [
+        "[project]",
+        "requires-python",
+        "agentkernel[",
+        ">=0.2.13"
+      ]
+    }
+  ]
+}

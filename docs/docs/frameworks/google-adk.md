@@ -17,7 +17,7 @@ pip install agentkernel[adk]
 ```python
 from adk import Agent as ADKAgent
 from agentkernel.cli import CLI
-from agentkernel.adk import ADKModule
+from agentkernel.adk import GoogleADKModule
 
 agent = ADKAgent(
     name="assistant",
@@ -25,7 +25,7 @@ agent = ADKAgent(
     instructions="You are a helpful AI assistant",
 )
 
-ADKModule([agent])
+GoogleADKModule([agent])
 
 if __name__ == "__main__":
     CLI.main()
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
 ```python
 from adk import Agent as ADKAgent
-from agentkernel.adk import ADKModule
+from agentkernel.adk import GoogleADKModule
 
 general_agent = ADKAgent(
     name="general",
@@ -49,7 +49,7 @@ specialist_agent = ADKAgent(
     instructions="You handle specialized queries",
 )
 
-ADKModule([general_agent, specialist_agent])
+GoogleADKModule([general_agent, specialist_agent])
 ```
 
 ## Configuration

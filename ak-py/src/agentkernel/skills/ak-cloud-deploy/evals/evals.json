@@ -1,0 +1,133 @@
+{
+  "skill": "ak-cloud-deploy",
+  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill",
+  "version": "0.2.13",
+  "evals": [
+    {
+      "id": "deploy-aws-serverless",
+      "name": "Deploy to AWS Lambda",
+      "input": "Deploy my agent to AWS Lambda",
+      "expected_outputs": [
+        "from agentkernel.aws import Lambda",
+        "handler = Lambda.handler",
+        "yaalalabs/ak-serverless/aws",
+        "deploy/main.tf",
+        "deploy/variables.tf",
+        "deploy/deploy.sh",
+        "deploy/Dockerfile",
+        "terraform init",
+        "terraform apply"
+      ],
+      "must_not_contain": [
+        "ak-containerized",
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-aws-containerized",
+      "name": "Deploy to AWS ECS Fargate",
+      "input": "Deploy my agent to AWS ECS Fargate",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "RESTAPI.run()",
+        "deploy/main.tf",
+        "deploy/Dockerfile",
+        "container_port",
+        "8000"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-azure-serverless",
+      "name": "Deploy to Azure Functions",
+      "input": "Deploy my agent to Azure Functions",
+      "expected_outputs": [
+        "from agentkernel.azure import AzureFunction",
+        "yaalalabs/ak-serverless/azurerm",
+        "deploy/main.tf"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "ak-containerized"
+      ]
+    },
+    {
+      "id": "deploy-azure-containerized",
+      "name": "Deploy to Azure Container Apps",
+      "input": "Deploy my agent to Azure Container Apps",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/azurerm",
+        "RESTAPI.run()",
+        "deploy/main.tf",
+        "container_port"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "ak-serverless"
+      ]
+    },
+    {
+      "id": "deploy-session-dynamodb",
+      "name": "AWS deployment with DynamoDB sessions",
+      "input": "Deploy to AWS Lambda with DynamoDB session persistence",
+      "expected_outputs": [
+        "session:",
+        "type: dynamodb",
+        "table_name:",
+        "agentkernel[", "aws"
+      ]
+    },
+    {
+      "id": "deploy-session-redis",
+      "name": "Containerized deployment with Redis sessions",
+      "input": "Deploy to AWS ECS with Redis session persistence",
+      "expected_outputs": [
+        "session:",
+        "type: redis",
+        "create_redis_cluster",
+        "true"
+      ]
+    },
+    {
+      "id": "deploy-prerequisites-aws",
+      "name": "Show AWS prerequisites",
+      "input": "Deploy to AWS",
+      "expected_outputs": [
+        "AWS CLI",
+        "aws configure",
+        "Terraform",
+        "S3 bucket"
+      ]
+    },
+    {
+      "id": "deploy-prerequisites-azure",
+      "name": "Show Azure prerequisites",
+      "input": "Deploy to Azure",
+      "expected_outputs": [
+        "Azure CLI",
+        "az login",
+        "Terraform"
+      ]
+    },
+    {
+      "id": "deploy-teardown",
+      "name": "Include teardown instructions",
+      "input": "Deploy my agent to AWS",
+      "expected_outputs": [
+        "terraform destroy"
+      ]
+    },
+    {
+      "id": "deploy-no-project",
+      "name": "No project found fallback",
+      "input": "Deploy my agent (no pyproject.toml exists)",
+      "expected_outputs": [
+        "ak-init"
+      ],
+      "description": "Should suggest using ak-init skill when no project is found"
+    }
+  ]
+}
