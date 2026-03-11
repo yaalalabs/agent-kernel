@@ -69,37 +69,16 @@ For local development with Agent Kernel source:
 
 ## Run
 
-### Option 1: Using OpenAI SDK (Recommended for beginners)
-
 ```bash
 uv run server.py
 ```
 
 **Features:**
 
-- Uses OpenAI GPT-4o-mini model
+- Uses Agent Kernel telegram handler with an OpenAI agent
 - Built-in image and document analysis
 - Session memory for multi-turn conversations
 - Simple, straightforward setup
-
-### Option 2: Using Google ADK
-
-```bash
-uv run server_adk.py
-```
-
-**Features:**
-
-- Uses Google ADK framework with OpenAI model via LiteLLM
-- Same image/file analysis capabilities
-- Different agent framework (for framework comparison)
-- Requires `google-adk` package
-
-**Switching between frameworks:**
-
-- Both use the same Telegram bot configuration
-- Same `config.yaml` file works for both
-- Just run different server files to test
 
 ## Expose Local Server
 

@@ -31,21 +31,36 @@ This example demonstrates how to use Agent Kernel's `DynamoDBStorageDriver` to s
        --profile your-aws-profile-name
    ```
 
-## Running the Example
+## Deployment Steps
 
-```bash
-# Login to AWS
-aws sso login --profile your-aws-profile-name
+1. Configure environment variables:
+    ```bash
+    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    ```
 
-# Install dependencies
-./build.sh local
+2. Navigate to the deployment directory and run the deployment script:
+    ```bash
+    cd deploy && ./deploy.sh
+    # or ./deploy.sh local if building from local source
+    ```
 
-# Set environment and run
-export AWS_PROFILE="your-aws-profile name"
-export AWS_REGION="your-aws-region"
-export OPENAI_API_KEY="your-key"
-uv run app.py
+## Config options (`config.yaml`)
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: dynamodb
+  dynamodb:
+    table_name: "mm-attachments"
 ```
 
-The server will be deployed to an AWS API Gateway. Use the provided execution URL to send requests.
+## Running the Integration Test
+
+After deployment, run the test against the deployed endpoint:
+
+```bash
+export AK_TEST_ENDPOINT=<API_GATEWAY_URL>
+export OPENAI_API_KEY=<OPENAI_API_KEY>
+uv run pytest dynamodb_test.py -v -s
+```
 
