@@ -49,8 +49,8 @@ At a high level:
 1. Each incoming text request is checked with `Protect`.
 2. If safe, the same text is sent to `Redact`.
 3. Masked text is forwarded to the agent.
-4. Placeholder mapping is stored in session cache.
-5. On output, placeholders are restored before replying to the user.
+4. Placeholder mapping is stored in the session’s non-volatile cache (via `session.get_non_volatile_cache()`).
+5. On output, placeholders are restored from this non-volatile cache before replying to the user.
 
 In Agent Kernel, we intentionally process requests individually and preserve non-text request objects (files/images/other) without suppressing them by default. Since Walled AI is text-focused, non-text validation should be implemented via separate hooks/policies when needed.
 
@@ -121,13 +121,13 @@ Agent Kernel handles this by bypassing redaction for that request and continuing
 
 If redaction fails for reasons other than `INPUT_SHORT`, allowing the exception to bubble can fail the full request path.
 
-Agent Kernel now returns a safe fallback response for this path to keep runtime behavior resilient.
+In the current implementation, Agent Kernel logs the exception and re-raises it rather than returning a fallback response.
 
 ### 3. Tracing Context Loss on Output Rewrite
 
 If unmasking creates a new reply object without preserving metadata, tracing tools can lose input-output linkage.
 
-Agent Kernel preserves `prompt` when returning unmasked `AgentReplyText` to maintain observability context.
+In the current implementation, unmasking returns a new `AgentReplyText` with rewritten text and does not preserve `prompt` metadata by default.
 
 ## What We Improved in Agent Kernel
 
@@ -135,8 +135,8 @@ Based on integration feedback and code reviews, we implemented these hardening c
 
 - Per-request text processing for safety + redaction.
 - Pass-through for non-text request types.
-- Graceful fallback response on non-`INPUT_SHORT` redaction failures.
-- Prompt preservation on unmasked output replies.
+- Explicit `INPUT_SHORT` bypass; non-`INPUT_SHORT` redaction errors are logged and re-raised.
+- Output unmasking support, with metadata preservation still an active consideration.
 
 
 ## Recommendations for Teams Using Walled AI
