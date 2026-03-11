@@ -14,8 +14,6 @@ from .base import (
     AttachmentStorageDriver,
 )
 
-_log = logging.getLogger("ak.core.multimodal.storage.session_cache")
-
 
 class SessionNonVolatileCacheStorageDriver(AttachmentStorageDriver):
     """
@@ -24,6 +22,8 @@ class SessionNonVolatileCacheStorageDriver(AttachmentStorageDriver):
     Attachments are stored inside the session object itself. This keeps things
     simple but causes session size to grow with each attachment.
     """
+
+    _log = logging.getLogger("ak.core.multimodal.storage.session_cache")
 
     def __init__(self, session_id: str):
         """

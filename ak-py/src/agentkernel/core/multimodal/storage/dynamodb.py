@@ -17,8 +17,6 @@ from typing import Optional
 
 from .base import AttachmentStorageDriver
 
-_log = logging.getLogger("ak.core.multimodal.storage.dynamodb")
-
 
 class DynamoDBAttachmentDriver:
     """
@@ -26,13 +24,14 @@ class DynamoDBAttachmentDriver:
     raw DynamoDB attachment operations.
     """
 
+    _log = logging.getLogger("ak.core.multimodal.storage.dynamodb.driver")
+
     def __init__(self, table_name: str, ttl: int):
         """
         Initialize the DynamoDB attachment driver.
         :param table_name: DynamoDB table name.
         :param ttl: TTL in seconds for attachment items (0 = no TTL).
         """
-        self._log = logging.getLogger("ak.core.multimodal.storage.dynamodb.driver")
         self._table_name = table_name
         self._ttl = ttl
         self._table = None
@@ -129,6 +128,8 @@ class DynamoDBAttachmentStore(AttachmentStorageDriver):
     for pruning.
     """
 
+    _log = logging.getLogger("ak.core.multimodal.storage.dynamodb")
+
     def __init__(self, session_id: str, table_name: str, ttl: int):
         """
         Initializes a DynamoDBAttachmentStore instance.
@@ -138,7 +139,6 @@ class DynamoDBAttachmentStore(AttachmentStorageDriver):
         """
         self._session_id = session_id
         self._driver = DynamoDBAttachmentDriver(table_name=table_name, ttl=ttl)
-        self._log = logging.getLogger("ak.core.multimodal.storage.dynamodb")
 
     def save(self, attachment: dict, max_attachments: int) -> str:
         """

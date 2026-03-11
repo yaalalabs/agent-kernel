@@ -16,6 +16,7 @@ class InMemoryAttachmentStore(AttachmentStorageDriver):
     # Shared across all instances — survives across multiple instantiations per request
     _attachments: ClassVar[dict[str, dict]] = {}  # "session_id:attachment_id" -> attachment
     _index: ClassVar[dict[str, list[str]]] = {}  # session_id -> [attachment_ids]
+    _log = logging.getLogger("ak.core.multimodal.storage.inmemory")
 
     def __init__(self, session_id: str):
         """
@@ -23,7 +24,6 @@ class InMemoryAttachmentStore(AttachmentStorageDriver):
         :param session_id: Session identifier for isolation.
         """
         self._session_id = session_id
-        self._log = logging.getLogger("ak.core.multimodal.storage.inmemory")
 
     def _key(self, attachment_id: str) -> str:
         return f"{self._session_id}:{attachment_id}"

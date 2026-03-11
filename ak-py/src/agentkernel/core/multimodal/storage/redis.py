@@ -12,8 +12,6 @@ from typing import Optional
 
 from .base import AttachmentStorageDriver
 
-_log = logging.getLogger("ak.core.multimodal.storage.redis")
-
 
 class RedisAttachmentDriver:
     """
@@ -21,6 +19,7 @@ class RedisAttachmentDriver:
     raw Redis attachment operations.
     """
 
+    _log = logging.getLogger("ak.core.multimodal.storage.redis.driver")
     _redis_client = None
 
     def __init__(self, url: str, ttl: int, prefix: str):
@@ -30,7 +29,6 @@ class RedisAttachmentDriver:
         :param ttl: TTL in seconds for attachment keys (0 = no TTL).
         :param prefix: Key prefix for attachment keys.
         """
-        self._log = logging.getLogger("ak.core.multimodal.storage.redis.driver")
         self._url = url
         self._ttl = ttl
         self._prefix = prefix
