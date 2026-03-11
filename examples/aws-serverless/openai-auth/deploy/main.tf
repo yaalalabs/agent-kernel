@@ -1,7 +1,7 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
-  version = "0.2.13"
+  version = "0.2.14"
 
   # Basic lambda configuration
   product_alias        = var.product_alias
@@ -18,7 +18,7 @@ module "serverless_agents" {
   region               = var.region
 
   # To override the default API version, API base path, and agent endpoint
-  # api_version    = "0.2.13"
+  # api_version    = "0.2.14"
   # api_base_path  = "api-new"
   # agent_endpoint = "chat-new"
 
