@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agentkernel"
-version = "0.2.13"
+version = "0.2.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -13,9 +13,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/9b/2be514d0c7a105a2a87a94f4afebb149249855fbc30ddcb541219e19b155/agentkernel-0.2.13.tar.gz", hash = "sha256:9ec6e5488aa2a2c3a388ccc08d3524778720d1e9905d5460975d7be7aaf37280", size = 97124, upload-time = "2026-02-18T06:24:43.926Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/ba/76928c19495fe1d70410e7c92e5e3961096d28056ed5db11ed9401cfff3e/agentkernel-0.2.14.tar.gz", hash = "sha256:3f1d1179016d177ad51bd781b7c2b649d7ade0920926b8925f0fb45b62ab985e", size = 124556, upload-time = "2026-03-11T06:50:25.882Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ff/2a/f7151b3b3ba45891884c63d43b1a262761d791f8240835549d509eaf3ff8/agentkernel-0.2.13-py3-none-any.whl", hash = "sha256:11640f4f20a07eebdc28b180209eaa666cd0fd8c64c490b08ac983771ebf51cf", size = 150171, upload-time = "2026-02-18T06:24:41.827Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/cd/a1f856dc5e0c724e59aeab6238d5cc796d182c13c9fa12c10d0ea0108530/agentkernel-0.2.14-py3-none-any.whl", hash = "sha256:d4b4fbb1a390dcd623098b65fa4c0d4483eea8db31f34b11f14ea0ae49766f8d", size = 189365, upload-time = "2026-03-11T06:50:23.55Z" },
 ]
 
 [package.optional-dependencies]
@@ -94,11 +94,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.2.13" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.2.14" }]
 
 [package.metadata.requires-dev]
 auth = [
-    { name = "agentkernel", specifier = ">=0.2.13" },
+    { name = "agentkernel", specifier = ">=0.2.14" },
     { name = "annotated-types", specifier = "==0.7.0" },
     { name = "cffi", specifier = "==2.0.0" },
     { name = "cryptography", specifier = "==46.0.4" },

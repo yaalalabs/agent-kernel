@@ -15,8 +15,8 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.13"
-source = { registry = "../../../../ak-py/dist" }
+version = "0.2.14"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -24,17 +24,14 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.2.13.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/ba/76928c19495fe1d70410e7c92e5e3961096d28056ed5db11ed9401cfff3e/agentkernel-0.2.14.tar.gz", hash = "sha256:3f1d1179016d177ad51bd781b7c2b649d7ade0920926b8925f0fb45b62ab985e", size = 124556, upload-time = "2026-03-11T06:50:25.882Z" }
 wheels = [
-    { path = "agentkernel-0.2.13-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/5e/cd/a1f856dc5e0c724e59aeab6238d5cc796d182c13c9fa12c10d0ea0108530/agentkernel-0.2.14-py3-none-any.whl", hash = "sha256:d4b4fbb1a390dcd623098b65fa4c0d4483eea8db31f34b11f14ea0ae49766f8d", size = 189365, upload-time = "2026-03-11T06:50:23.55Z" },
 ]
 
 [package.optional-dependencies]
 aws = [
     { name = "boto3" },
-]
-multimodal = [
-    { name = "litellm" },
 ]
 openai = [
     { name = "openai-agents" },
@@ -1740,7 +1737,7 @@ name = "multimodal-redis-serverless"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["aws", "multimodal", "openai", "redis"] },
+    { name = "agentkernel", extra = ["aws", "openai", "redis"] },
 ]
 
 [package.dev-dependencies]
@@ -1752,11 +1749,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "aws", "multimodal"], specifier = ">=0.2.13" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "aws", "multimodal"], specifier = ">=0.2.14" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.13" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.14" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

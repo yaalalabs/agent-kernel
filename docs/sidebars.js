@@ -18,6 +18,7 @@ const sidebars = {
     'intro',
     'installation',
     'quick-start',
+    'agent-skills',
     {
       type: 'category',
       label: 'Core Concepts',

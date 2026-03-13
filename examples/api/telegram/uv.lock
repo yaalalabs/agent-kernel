@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.13"
+version = "0.2.14"
 source = { editable = "../../../ak-py" }
 dependencies = [
     { name = "deprecated" },
