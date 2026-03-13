@@ -4,10 +4,8 @@ version = "0.1.0"
 description = "OpenAI multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,cli,openai]>=0.2.13",
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "python-multipart>=0.0.12",
+    "agentkernel[api,cli,openai]>=0.2.14",
+    
 ]
 
 [dependency-groups]
@@ -23,12 +21,16 @@ dev = [
 [tool.uv]
 package = false
 
-[tool.uv.sources]
-agentkernel = { path = "../../../../ak-py", editable = true }
-
 [tool.isort]
 profile = "black"
 line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 
 [tool.black]
 line-length = 120

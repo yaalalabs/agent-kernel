@@ -1,26 +1,16 @@
 #!/bin/bash
-set -e
 
-# Default source location
-SOURCE="local"
-
-# Parse arguments
-if [ "$1" == "local" ]; then
-    SOURCE="local"
-elif [ "$1" == "pypi" ]; then
-    SOURCE="pypi"
-elif [ -n "$1" ]; then
-    echo "Usage: ./build.sh [local|pypi]"
-    echo "  local (default): Install agentkernel from local source"
-    echo "  pypi: Install agentkernel from PyPI"
-    exit 1
+set -euo pipefail
+if command -v pyenv >/dev/null 2>&1; then
+  uv venv --python "$(pyenv which python)" --allow-existing
+else
+  uv venv --allow-existing
 fi
 
-uv sync
-
-if [ "$SOURCE" == "local" ]; then
-    echo "Installing agentkernel from local source..."
-    uv pip install -e ../../../../ak-py[test,api,openai,cli]
+if [[ ${1-} != "local" ]]; then
+  uv sync --all-extras
 else
-    echo "Installing agentkernel from PyPI..."
+  # For local development of agentkernel, you can force reinstall from local dist
+  uv sync --find-links ../../../../ak-py/dist --all-extras
+  uv pip install --force-reinstall --find-links ../../../../ak-py/dist "agentkernel[api,openai,multimodal,test]" || true
 fi

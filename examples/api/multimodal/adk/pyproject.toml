@@ -2,34 +2,33 @@
 name = "api-adk-multimodal-example"
 version = "0.1.0"
 description = "ADK multimodal example for Agent Kernel"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[adk,api,cli]>=0.2.13",
-    "google-adk[lite-llm]>=0.3.0",
-    "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
-    "python-multipart>=0.0.12",
+    "agentkernel[adk,api,multimodal]>=0.2.14",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.13",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "httpx>=0.27.0",
+    "agentkernel[test]>=0.2.14",
     "black>=23.0.0",
     "isort>=5.0.0",
+    "mypy>=1.0.0",
 ]
 
 [tool.uv]
 package = false
 
-[tool.uv.sources]
-agentkernel = { path = "../../../../ak-py", editable = true }
-
 [tool.isort]
 profile = "black"
 line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 
 [tool.black]
 line-length = 120

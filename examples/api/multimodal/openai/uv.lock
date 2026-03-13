@@ -16,13 +16,17 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.2.14"
-source = { editable = "../../../../ak-py" }
+source = { registry = "../../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "singleton-type" },
+]
+sdist = { path = "agentkernel-0.2.14.tar.gz" }
+wheels = [
+    { path = "agentkernel-0.2.14-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -47,72 +51,6 @@ test = [
     { name = "pytest-order" },
     { name = "ragas" },
     { name = "rapidfuzz" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = ">=0.3.6" },
-    { name = "azure-core", marker = "extra == 'azure'", specifier = ">=1.26.0" },
-    { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
-    { name = "azure-functions", marker = "extra == 'azure'", specifier = ">=1.24.0" },
-    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
-    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.150.0" },
-    { name = "datasets", marker = "extra == 'test'", specifier = ">=2.14.0" },
-    { name = "deprecated", specifier = ">=1.2.18" },
-    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.118.0" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=2.12.4" },
-    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
-    { name = "google-api-python-client", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
-    { name = "google-auth", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
-    { name = "google-auth-httplib2", marker = "extra == 'gmail'", specifier = ">=0.2.0" },
-    { name = "google-auth-oauthlib", marker = "extra == 'gmail'", specifier = ">=1.0.0" },
-    { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
-    { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
-    { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
-    { name = "httpx", marker = "extra == 'slack'", specifier = ">=0.27.0" },
-    { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },
-    { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
-    { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=1.2.3" },
-    { name = "langchain-community", marker = "extra == 'langgraph'", specifier = "~=0.4.1" },
-    { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=3.9.2" },
-    { name = "langgraph", marker = "extra == 'langgraph'", specifier = "~=1.0.5" },
-    { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.74.3" },
-    { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.9" },
-    { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
-    { name = "litellm", marker = "extra == 'test'", specifier = ">=1.74.9" },
-    { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
-    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.6.5" },
-    { name = "openai-guardrails", marker = "extra == 'openai'", specifier = ">=0.2.1" },
-    { name = "openinference-instrumentation-crewai", marker = "extra == 'crewai'", specifier = ">=0.1.16" },
-    { name = "openinference-instrumentation-google-adk", marker = "extra == 'adk'", specifier = ">=0.1.6" },
-    { name = "openinference-instrumentation-litellm", marker = "extra == 'crewai'", specifier = ">=0.1.28" },
-    { name = "openinference-instrumentation-openai-agents", marker = "extra == 'openai'", specifier = ">=1.4.0" },
-    { name = "pandas", marker = "extra == 'test'", specifier = ">=2.0.0" },
-    { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "pydantic-settings", specifier = ">=2.10.1" },
-    { name = "pyjwt", marker = "extra == 'auth'", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.2.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.2.1" },
-    { name = "pytest-html", marker = "extra == 'test'", specifier = ">=4.1.1" },
-    { name = "pytest-order", marker = "extra == 'test'", specifier = ">=1.3.0" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "ragas", marker = "extra == 'test'", specifier = ">=0.4.1" },
-    { name = "rapidfuzz", marker = "extra == 'test'", specifier = ">=3.14.1" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
-    { name = "singleton-type", specifier = ">=0.0.5" },
-    { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
-    { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
-    { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
-    { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
-]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "black", specifier = ">=23.0.0" },
-    { name = "isort", specifier = ">=5.0.0" },
-    { name = "mypy", specifier = ">=1.0.0" },
 ]
 
 [[package]]
@@ -259,9 +197,6 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["api", "openai"] },
-    { name = "fastapi" },
-    { name = "python-multipart" },
-    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -275,16 +210,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "agentkernel", extras = ["api", "cli", "openai"], editable = "../../../../ak-py" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "python-multipart", specifier = ">=0.0.12" },
-    { name = "uvicorn", specifier = ">=0.30.0" },
-]
+requires-dist = [{ name = "agentkernel", extras = ["api", "cli", "openai"], specifier = ">=0.2.14" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], editable = "../../../../ak-py" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.2.13" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "isort", specifier = ">=5.0.0" },
