@@ -436,6 +436,7 @@ class Agent(ABC):
 
         config = getattr(AKConfig.get(), "multimodal", None)
         if config and config.enabled:
+
             suffix = self.get_system_prompt_suffix()
             if suffix:
                 self.override_system_prompt(prompt=suffix)
@@ -444,7 +445,6 @@ class Agent(ABC):
     def get_system_tools(cls) -> list[Any]:
         """
         Retrieves the global system tools applicable to all agents (e.g., multimodal tools).
-        Also registers their instructions so they can be injected into the system prompt.
         """
         from .config import AKConfig
 
@@ -453,18 +453,6 @@ class Agent(ABC):
         if config and config.enabled:
             from .multimodal import analyze_attachments
 
-            # Register the tool instruction for prompt injection
-            tool_instruction = (
-                "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
-                "Available tool:\n"
-                "- analyze_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
-                "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
-                "Use this tool when asked about attached images or files.\n"
-                "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS "
-                "(numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to "
-                "inspect the file content again. Do not guess based on the summary."
-            )
-            cls.register_system_tool_instruction("analyze_attachments", tool_instruction)
             tools.append(analyze_attachments)
 
         return tools

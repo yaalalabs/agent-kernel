@@ -15,7 +15,7 @@ import logging
 import time
 from typing import Optional
 
-from .base import AttachmentStorageDriver
+from .base import AttachmentStore
 
 
 class DynamoDBAttachmentDriver:
@@ -117,10 +117,10 @@ class DynamoDBAttachmentDriver:
         self.table.delete_item(Key={"session_id": session_id, "attachment_id": attachment_id})
 
 
-class DynamoDBAttachmentStore(AttachmentStorageDriver):
+class DynamoDBAttachmentStore(AttachmentStore):
     """
     DynamoDBAttachmentStore class provides a DynamoDB-backed implementation
-    of the AttachmentStorageDriver interface.
+    of the AttachmentStore interface.
 
     Each attachment is stored as an item with ``session_id`` as the partition key
     and ``attachment_id`` as the sort key. An additional index item

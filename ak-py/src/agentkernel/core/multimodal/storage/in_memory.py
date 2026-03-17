@@ -1,12 +1,12 @@
 import logging
 from typing import ClassVar, Optional
 
-from .base import AttachmentStorageDriver
+from .base import AttachmentStore
 
 
-class InMemoryAttachmentStore(AttachmentStorageDriver):
+class InMemoryAttachmentStore(AttachmentStore):
     """
-    InMemoryAttachmentStore class provides an in-memory implementation of the AttachmentStorageDriver interface.
+    InMemoryAttachmentStore class provides an in-memory implementation of the AttachmentStore interface.
 
     Storage is shared across all instances via ClassVar so that attachments
     persist for the lifetime of the process, independent of how many times

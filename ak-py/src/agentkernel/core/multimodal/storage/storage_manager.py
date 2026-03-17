@@ -11,7 +11,7 @@ from ...config import AKConfig
 from .base import (
     DEFAULT_MAX_ATTACHMENTS,
     AttachmentData,
-    AttachmentStorageDriver,
+    AttachmentStore,
 )
 
 _log = logging.getLogger("ak.core.multimodal.storage")
@@ -31,21 +31,21 @@ class AttachmentStorageManager:
         self._driver = self._build_driver(session_id)
 
     @staticmethod
-    def _build_driver(session_id: str) -> AttachmentStorageDriver:
+    def _build_driver(session_id: str) -> AttachmentStore:
         """
         Factory method to create the appropriate storage driver based on config.
         Uses lazy imports to avoid loading unnecessary dependencies.
 
         :param session_id: Session identifier for isolation.
-        :return: An AttachmentStorageDriver instance.
+        :return: An AttachmentStore instance.
         """
         config = AKConfig.get().multimodal
         storage_type = config.storage_type
 
         if storage_type == "session_cache":
-            from .session_cache import SessionNonVolatileCacheStorageDriver
+            from .session_cache import SessionNonVolatileCacheAttachmentStore
 
-            return SessionNonVolatileCacheStorageDriver(session_id)
+            return SessionNonVolatileCacheAttachmentStore(session_id)
 
         elif storage_type == "redis":
             from .redis import RedisAttachmentStore

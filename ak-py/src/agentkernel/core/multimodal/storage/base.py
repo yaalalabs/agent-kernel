@@ -1,7 +1,7 @@
 """
 Base classes for multimodal attachment storage.
 
-This module defines the abstract storage driver interface and the
+This module defines the abstract storage interface and the
 AttachmentData dataclass used across all storage backends.
 """
 
@@ -28,8 +28,8 @@ class AttachmentData:
     timestamp: float
 
 
-class AttachmentStorageDriver(ABC):
-    """Abstract base class for attachment storage drivers."""
+class AttachmentStore(ABC):
+    """Abstract base class for attachment stores."""
 
     @abstractmethod
     def save(self, attachment: dict, max_attachments: int) -> str:

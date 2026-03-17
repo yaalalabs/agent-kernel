@@ -10,7 +10,7 @@ import logging
 import time
 from typing import Optional
 
-from .base import AttachmentStorageDriver
+from .base import AttachmentStore
 
 
 class RedisAttachmentDriver:
@@ -118,7 +118,7 @@ class RedisAttachmentDriver:
         return self.client.llen(self.index_key(session_id))
 
 
-class RedisAttachmentStore(AttachmentStorageDriver):
+class RedisAttachmentStore(AttachmentStore):
     """
     Redis-backed attachment storage.
 

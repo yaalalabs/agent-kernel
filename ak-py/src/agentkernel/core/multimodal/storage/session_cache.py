@@ -11,11 +11,11 @@ from typing import Optional
 from .base import (
     ATTACHMENT_INDEX_KEY,
     ATTACHMENT_KEY_PREFIX,
-    AttachmentStorageDriver,
+    AttachmentStore,
 )
 
 
-class SessionNonVolatileCacheStorageDriver(AttachmentStorageDriver):
+class SessionNonVolatileCacheAttachmentStore(AttachmentStore):
     """
     Storage driver that uses the Session's non-volatile cache.
 
