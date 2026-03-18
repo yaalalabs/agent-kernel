@@ -400,6 +400,7 @@ class Agent(ABC):
         Should be invoked by subclasses in their initialization process after configuration.
         """
         from agentkernel.core.tool import SystemToolFactory
+
         suffix = SystemToolFactory.get_system_prompt_suffix()
         self.override_system_prompt(prompt=suffix)
 
@@ -408,5 +409,6 @@ class Agent(ABC):
         Attaches system-level tools to the agent during initialization.
         """
         from agentkernel.core.tool import SystemToolFactory
+
         for tool in SystemToolFactory.get_all():
             self.attach_tool(tool.func)

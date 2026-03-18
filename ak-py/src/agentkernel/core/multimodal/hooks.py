@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Optional
 
 import litellm
 
-from .storage import AttachmentStorageManager
+from ...core.base import Agent, Session
 from ..config import AKConfig, _MultimodalConfig
 from ..hooks import PreHook
 from ..model import (
@@ -22,7 +22,7 @@ from ..model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from ...core.base import Session, Agent
+from .storage import AttachmentStorageManager
 
 if TYPE_CHECKING:
     pass
@@ -44,7 +44,11 @@ class MultimodalPreHook(PreHook):
     def __init__(self):
         self._log = logging.getLogger("ak.hooks.multimodal_pre")
 
-    async def _describe_attachment_briefly(self, data: str, mime_type: str = "image/jpeg", ) -> str:
+    async def _describe_attachment_briefly(
+        self,
+        data: str,
+        mime_type: str = "image/jpeg",
+    ) -> str:
         """
         Get a brief description of the attachment using a vision LLM via LiteLLM.
 
@@ -170,10 +174,10 @@ class MultimodalPreHook(PreHook):
         return filtered_requests
 
     async def _process_attachments(
-            self,
-            session: "Session",
-            requests: list[AgentRequest],
-            config: _MultimodalConfig,
+        self,
+        session: "Session",
+        requests: list[AgentRequest],
+        config: _MultimodalConfig,
     ) -> list[tuple[str, str]]:
         """
         Describe and save each attachment in the current request.
@@ -192,7 +196,7 @@ class MultimodalPreHook(PreHook):
                 continue
 
             # Generate brief description via LLM
-            description = await  self._describe_attachment_briefly(data=data, mime_type=mime_type)
+            description = await self._describe_attachment_briefly(data=data, mime_type=mime_type)
 
             # Truncate to configured max length
             if len(description) > config.description_max_length:

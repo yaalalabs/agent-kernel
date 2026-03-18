@@ -1,8 +1,8 @@
 import logging
 
-from ..config import AKConfig
 from ...core.hooks import PreHook
 from ...core.model import AgentRequest
+from ..config import AKConfig
 
 
 class NoOpPreHook(PreHook):
@@ -24,6 +24,7 @@ class MultimodalPreHookFactory:
             config = getattr(AKConfig.get(), "multimodal", None)
             if config and config.enabled:
                 from .hooks import MultimodalPreHook
+
                 return MultimodalPreHook()
             return NoOpPreHook()
         except Exception:

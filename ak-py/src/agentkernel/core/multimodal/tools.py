@@ -5,10 +5,10 @@ Multimodal tools for LLM to access images/files.
 
 import logging
 
-from .storage import AttachmentStorageManager
 from ..config import AKConfig
 from ..model import SystemTool
 from ..tool import ToolContext
+from .storage import AttachmentStorageManager
 
 _log = logging.getLogger(__name__)
 

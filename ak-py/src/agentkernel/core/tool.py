@@ -7,7 +7,7 @@ tool function definitions.
 
 import contextvars
 import uuid
-from typing import Any, Callable, ClassVar, Self, List
+from typing import Any, Callable, ClassVar, List, Self
 
 from .base import Agent, AgentRequest, Session
 from .config import AKConfig
@@ -169,6 +169,7 @@ class SystemToolFactory:
         config = AKConfig.get().multimodal
         if config and config.enabled:
             from .multimodal import AnalyzeAttachmentsTool
+
             tools.append(AnalyzeAttachmentsTool)
 
         return tools
