@@ -604,14 +604,12 @@ topic = session.get("conversation_topic")
 Debug session contents during development:
 
 ```python
-# List all keys in session
-keys = session.get_all_keys()
-for key in keys:
-    value = session.get(key)
+# Iterate all session data
+for key, value in session.get_all():
     print(f"{key}: {value}")
 
 # Check if key exists
-if session.has_key("user_preferences"):
+if session.get("user_preferences") is not None:
     prefs = session.get("user_preferences")
 ```
 

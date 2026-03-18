@@ -6,8 +6,6 @@ from collections.abc import Iterator
 from enum import Enum
 from typing import Any, ClassVar, Self, cast
 
-from deprecated import deprecated
-
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
@@ -42,12 +40,6 @@ class Session:
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
 
-    VOLATILE_CACHE_KEY: str = Keys.VOLATILE_CACHE.value
-    """Deprecated since 0.2.12, use Session.Keys.VOLATILE_CACHE.value instead."""
-
-    NON_VOLATILE_CACHE_KEY: str = Keys.NON_VOLATILE_CACHE.value
-    """Deprecated since 0.2.12, use Session.Keys.NON_VOLATILE_CACHE.value instead."""
-
     current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
     @classmethod
@@ -57,16 +49,6 @@ class Session:
         :return: The current Session instance.
         """
         return cls.current_session.get()
-
-    @classmethod
-    @deprecated(version="0.2.12", reason="Use Session.current() instead.")
-    def get_current_session_id(cls) -> str:
-        """
-        Returns the current session identifier from the context variable.
-        :return: The current session identifier.
-        """
-        session = cls.current()
-        return session.id if session else ""
 
     def __init__(self, id: str):
         """
@@ -150,14 +132,6 @@ class Session:
         self._log.debug(f"Retrieved session data object for key {key}: {result}")
         return result
 
-    @deprecated(version="0.2.12", reason="Use get_all() instead.")
-    def get_all_keys(self):
-        """
-        Returns a list of all keys in the session data.
-        :return: A list of all keys in the session data.
-        """
-        return self._data.keys()
-
     def get_all(self, durable: bool = True, volatile: bool = True) -> Iterator[tuple[str, Any]]:
         """
         Returns all session data objects.
@@ -213,22 +187,6 @@ class Session:
         }
         self.get_volatile_cache().clear()
         self.get_non_volatile_cache().clear()
-
-    @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
-    def set_context(self):
-        """
-        Sets the current session context variable to this session.
-        """
-        self._token = Session.current_session.set(self)
-
-    @deprecated(version="0.2.12", reason="Use async with on the session to acquire it.")
-    def reset_context(self):
-        """
-        Resets the current session context variable to the previous value.
-        """
-        if self._token:
-            Session.current_session.reset(self._token)
-            self._token = None
 
 
 class Runner(ABC):
@@ -329,36 +287,6 @@ class Agent(ABC):
         Returns the list of post-execution hooks registered for the agent.
         """
         return self._post_hooks
-
-    @deprecated(
-        version="0.2.12",
-        reason="Use Agent.pre_hooks.extend() instead. Note that unlike attach_pre_hooks(), extend() does not perform duplicate checking.",
-    )
-    def attach_pre_hooks(self, hooks: list[PreHook]):
-        """
-        Attaches pre-execution hooks to the agent.
-        Duplicate hook objects are ignored to prevent multiple registrations
-        of the same hook.
-        :param hooks: List of pre-execution hooks to attach.
-        """
-        for hook in hooks:
-            if hook not in self._pre_hooks:
-                self._pre_hooks.append(hook)
-
-    @deprecated(
-        version="0.2.12",
-        reason="Use Agent.post_hooks.extend() instead. Note that unlike attach_post_hooks(), extend() does not perform duplicate checking.",
-    )
-    def attach_post_hooks(self, hooks: list[PostHook]):
-        """
-        Attaches post-execution hooks to the agent.
-        Duplicate hook objects are ignored to prevent multiple registrations
-        of the same hook.
-        :param hooks: List of post-execution hooks to attach.
-        """
-        for hook in hooks:
-            if hook not in self._post_hooks:
-                self._post_hooks.append(hook)
 
     @abstractmethod
     def get_description(self) -> str:
