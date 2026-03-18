@@ -5,6 +5,8 @@ This module provides the ToolBuilder classes that enable framework-agnostic
 tool function definitions.
 """
 
+from __future__ import annotations
+
 import contextvars
 import uuid
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Self
