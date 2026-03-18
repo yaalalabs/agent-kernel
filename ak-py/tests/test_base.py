@@ -47,24 +47,6 @@ def test_agent_init():
     assert agent.get_a2a_card() == "Mock A2A Card"
 
 
-def test_agent_hooks_deprecated_api():
-    runner = MockRunner("test-runner")
-    agent = MockAgent("test-agent", runner)
-
-    pre_hook_1 = lambda req: req
-    pre_hook_2 = lambda req: req
-    post_hook_1 = lambda rep: rep
-    post_hook_2 = lambda rep: rep
-
-    agent.attach_pre_hooks([pre_hook_1, pre_hook_2])  # deprecated
-    agent.attach_post_hooks([post_hook_1, post_hook_2])  # deprecated
-
-    assert pre_hook_1 in agent.pre_hooks
-    assert pre_hook_2 in agent.pre_hooks
-    assert post_hook_1 in agent.post_hooks
-    assert post_hook_2 in agent.post_hooks
-
-
 def test_agent_hooks():
     runner = MockRunner("test-runner")
     agent = MockAgent("test-agent", runner)
