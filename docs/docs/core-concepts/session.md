@@ -609,8 +609,9 @@ for key, value in session.get_all():
     print(f"{key}: {value}")
 
 # Check if key exists
-if session.get("user_preferences") is not None:
-    prefs = session.get("user_preferences")
+prefs = session.get("user_preferences")
+if prefs is not None:
+    ...
 ```
 
 ### Session Clearing
