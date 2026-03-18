@@ -204,4 +204,3 @@ class GlobalRuntime(Runtime, metaclass=Singleton):
         :return: The global singleton runtime instance.
         """
         return GlobalRuntime()
-
