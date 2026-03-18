@@ -35,6 +35,9 @@ api = [
     { name = "gunicorn" },
     { name = "uvicorn" },
 ]
+multimodal = [
+    { name = "litellm" },
+]
 openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
@@ -196,7 +199,7 @@ name = "api-openai-multimodal-example"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["api", "openai"] },
+    { name = "agentkernel", extra = ["api", "multimodal", "openai"] },
 ]
 
 [package.dev-dependencies]
@@ -210,7 +213,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["api", "cli", "openai"], specifier = ">=0.2.14" }]
+requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "multimodal"], specifier = ">=0.2.14" }]
 
 [package.metadata.requires-dev]
 dev = [
