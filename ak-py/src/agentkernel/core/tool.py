@@ -5,14 +5,18 @@ This module provides the ToolBuilder classes that enable framework-agnostic
 tool function definitions.
 """
 
+from __future__ import annotations
+
 import contextvars
 import uuid
-from typing import Any, Callable, ClassVar, List, Self
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Self
 
 from .base import Agent, AgentRequest, Session
 from .config import AKConfig
 from .model import SystemTool
-from .runtime import Runtime
+
+if TYPE_CHECKING:
+    from .runtime import Runtime
 
 
 class ToolContext:
