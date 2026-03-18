@@ -5,13 +5,15 @@ Multimodal tools for LLM to access images/files.
 
 import logging
 
-from ..config import AKConfig
 from .storage import AttachmentStorageManager
+from ..config import AKConfig
+from ..model import SystemTool
+from ..tool import ToolContext
 
 _log = logging.getLogger(__name__)
 
 
-def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
+def _analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
     """
     Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
@@ -23,8 +25,6 @@ def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
         return "No attachments provided"
 
     try:
-        from ..tool import ToolContext
-
         ctx = ToolContext.get()
         session = ctx.session
 
@@ -68,80 +68,16 @@ def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
         return "Failed to analyze attachments. Please try again later."
 
 
-async def describe_attachment_briefly(
-    data: str,
-    mime_type: str = "image/jpeg",
-) -> str:
-    """
-    Get a brief description of the attachment using a vision LLM via LiteLLM.
-
-    Called by PreHook to generate descriptions for new attachments.
-
-    :param data: Base64 encoded attachment data
-    :param mime_type: MIME type of the attachment
-    :return: Brief description of the attachment
-    """
-    if not data:
-        return "No data"
-
-    try:
-        import litellm
-
-        config = AKConfig.get()
-        model_name = config.multimodal.description_model
-
-        if mime_type.startswith("image/"):
-            # Use Vision model for images via LiteLLM
-            # litellm reads API keys from environment automatically (e.g. OPENAI_API_KEY)
-            response = await litellm.acompletion(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Describe this image in one short sentence (max 20 words). Be specific."},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:{mime_type};base64,{data}"},
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=50,
-            )
-            description = response.choices[0].message.content.strip()
-            _log.debug(f"Generated attachment description: {description}")
-            return description
-
-        elif mime_type.startswith("application/pdf"):
-            resp = await litellm.acompletion(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Describe this PDF in one short sentence (max 20 words). Be specific."},
-                            {
-                                "type": "file",
-                                "file": {
-                                    "filename": "document.pdf",
-                                    "file_data": f"data:application/pdf;base64,{data}",
-                                },
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=50,
-            )
-            return resp.choices[0].message.content.strip()
-
-        else:
-
-            return f"File ({mime_type}) - Content not currently visible. Use analyze_attachments to analyze."
-
-    except ImportError:
-        _log.error("LiteLLM not installed. Install with: pip install litellm")
-        return "Attachment (LiteLLM missing)"
-    except Exception as e:
-        _log.error(f"Error describing attachment: {e}")
-        return "Attachment (description failed)"
+class AnalyzeAttachmentsTool(SystemTool):
+    name = "analyze_attachments"
+    description = (
+        "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
+        "Available tool:\n"
+        "- analyze_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
+        "  Returns only analysis text (no raw data), perfect for saving clean conversation history.\n"
+        "Use this tool when asked about attached images or files.\n"
+        "IMPORTANT: The descriptions above are brief summaries. If the user asks for SPECIFIC DETAILS "
+        "(numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to "
+        "inspect the file content again. Do not guess based on the summary."
+    )
+    func = _analyze_attachments

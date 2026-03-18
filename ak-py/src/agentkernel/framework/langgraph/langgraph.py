@@ -23,6 +23,7 @@ from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.tool import SystemToolFactory
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
@@ -418,9 +419,9 @@ class LangGraphToolBuilder(ToolBuilder):
 
         # Inject system tools (e.g., analyze_attachments)
         all_funcs = list(funcs)
-        for sys_tool in Agent.get_system_tools():
+        for sys_tool in SystemToolFactory.get_all():
             if sys_tool not in all_funcs:
-                all_funcs.append(sys_tool)
+                all_funcs.append(sys_tool.func)
 
         tools = []
         for func in all_funcs:

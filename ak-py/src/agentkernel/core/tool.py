@@ -7,9 +7,11 @@ tool function definitions.
 
 import contextvars
 import uuid
-from typing import Any, Callable, ClassVar, Self
+from typing import Any, Callable, ClassVar, Self, List
 
 from .base import Agent, AgentRequest, Session
+from .config import AKConfig
+from .model import SystemTool
 from .runtime import Runtime
 
 
@@ -154,3 +156,37 @@ class ToolBuilder:
         :raises NotImplementedError: If called on the base ToolBuilder class.
         """
         raise NotImplementedError("bind() must be implemented by framework-specific subclasses")
+
+
+class SystemToolFactory:
+    @staticmethod
+    def get_all() -> list[SystemTool]:
+        """
+        Retrieves the enabled system tools applicable to all agents (e.g., multimodal tools).
+        """
+        tools = []
+
+        config = AKConfig.get().multimodal
+        if config and config.enabled:
+            from .multimodal import AnalyzeAttachmentsTool
+            tools.append(AnalyzeAttachmentsTool)
+
+        return tools
+
+    @staticmethod
+    def get_system_prompt_suffix() -> str:
+        """
+        Generate the system prompt suffix based on enabled tools.
+
+        This method retrieves all enabled system tools and constructs a suffix string
+        containing their descriptions, which can be appended to the system prompt for agents.
+
+        :return: A string containing the concatenated descriptions of all enabled tools,
+                 or an empty string if no tools are enabled.
+        """
+
+        tools: List[SystemTool] = SystemToolFactory.get_all()
+
+        if tools is None or len(tools) == 0:
+            return ""
+        return "\n".join(tool.description for tool in tools)

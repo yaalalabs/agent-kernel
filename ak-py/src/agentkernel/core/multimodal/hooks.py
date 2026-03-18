@@ -11,6 +11,9 @@ This module provides a PreHook that:
 import logging
 from typing import TYPE_CHECKING, Optional
 
+import litellm
+
+from .storage import AttachmentStorageManager
 from ..config import AKConfig, _MultimodalConfig
 from ..hooks import PreHook
 from ..model import (
@@ -19,21 +22,10 @@ from ..model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from .storage import AttachmentStorageManager
-from .tools import describe_attachment_briefly
+from ...core.base import Session, Agent
 
 if TYPE_CHECKING:
-    from ..base import Agent, Session
-
-
-class NoOpPreHook(PreHook):
-    """No-op pre-hook when multimodal is disabled."""
-
-    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest]:
-        return requests
-
-    def name(self) -> str:
-        return "NoOpMultimodalPreHook"
+    pass
 
 
 class MultimodalPreHook(PreHook):
@@ -52,7 +44,81 @@ class MultimodalPreHook(PreHook):
     def __init__(self):
         self._log = logging.getLogger("ak.hooks.multimodal_pre")
 
-    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest]:
+    async def _describe_attachment_briefly(self, data: str, mime_type: str = "image/jpeg", ) -> str:
+        """
+        Get a brief description of the attachment using a vision LLM via LiteLLM.
+
+        Called by PreHook to generate descriptions for new attachments.
+
+        :param data: Base64 encoded attachment data
+        :param mime_type: MIME type of the attachment
+        :return: Brief description of the attachment
+        """
+        if not data:
+            return "No data"
+
+        try:
+
+            config = AKConfig.get()
+            model_name = config.multimodal.description_model
+
+            if mime_type.startswith("image/"):
+                # Use Vision model for images via LiteLLM
+                # litellm reads API keys from environment automatically (e.g. OPENAI_API_KEY)
+                response = await litellm.acompletion(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Describe this image in one short sentence (max 20 words). Be specific."},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime_type};base64,{data}"},
+                                },
+                            ],
+                        }
+                    ],
+                    max_tokens=50,
+                )
+                description = response.choices[0].message.content.strip()
+                self._log.debug(f"Generated attachment description: {description}")
+                return description
+
+            elif mime_type.startswith("application/pdf"):
+                resp = await litellm.acompletion(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Describe this PDF in one short sentence (max 20 words). Be specific."},
+                                {
+                                    "type": "file",
+                                    "file": {
+                                        "filename": "document.pdf",
+                                        "file_data": f"data:application/pdf;base64,{data}",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    max_tokens=50,
+                )
+                return resp.choices[0].message.content.strip()
+
+            else:
+
+                return f"File ({mime_type}) - Content not currently visible. Use analyze_attachments to analyze."
+
+        except ImportError:
+            self._log.error("LiteLLM not installed. Install with: pip install litellm")
+            return "Attachment (LiteLLM missing)"
+        except Exception as e:
+            self._log.error(f"Error describing attachment: {e}")
+            return "Attachment (description failed)"
+
+    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest]:
         """
         Process current attachments and inject descriptions into requests.
 
@@ -104,10 +170,10 @@ class MultimodalPreHook(PreHook):
         return filtered_requests
 
     async def _process_attachments(
-        self,
-        session: "Session",
-        requests: list[AgentRequest],
-        config: _MultimodalConfig,
+            self,
+            session: "Session",
+            requests: list[AgentRequest],
+            config: _MultimodalConfig,
     ) -> list[tuple[str, str]]:
         """
         Describe and save each attachment in the current request.
@@ -126,7 +192,7 @@ class MultimodalPreHook(PreHook):
                 continue
 
             # Generate brief description via LLM
-            description = await describe_attachment_briefly(data=data, mime_type=mime_type)
+            description = await  self._describe_attachment_briefly(data=data, mime_type=mime_type)
 
             # Truncate to configured max length
             if len(description) > config.description_max_length:
@@ -173,18 +239,3 @@ class MultimodalPreHook(PreHook):
 
     def name(self) -> str:
         return "MultimodalPreHook"
-
-
-class MultimodalPreHookFactory:
-    """Factory to get the appropriate multimodal pre-hook based on config."""
-
-    @staticmethod
-    def get() -> PreHook:
-        try:
-            config = getattr(AKConfig.get(), "multimodal", None)
-            if config and config.enabled:
-                return MultimodalPreHook()
-            return NoOpPreHook()
-        except Exception:
-            logging.getLogger("ak.hooks.multimodal_pre").exception("Failed to initialize MultimodalPreHook; falling back to NoOpPreHook.")
-            return NoOpPreHook()

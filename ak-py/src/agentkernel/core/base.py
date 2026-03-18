@@ -377,7 +377,7 @@ class Agent(ABC):
 
         :param prompt: The instruction text to append.
         """
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
     def attach_tool(self, tool: Any) -> None:
@@ -385,7 +385,7 @@ class Agent(ABC):
         Attaches a tool to the agent.
         :param tool: The tool to attach.
         """
-        pass
+        raise NotImplementedError()
 
     @abstractmethod
     def get_a2a_card(self) -> Any:
@@ -394,74 +394,19 @@ class Agent(ABC):
         """
         pass
 
-    # Registry for system tool instructions — each entry is (tool_name, instruction_text)
-    _system_tool_instructions: list[tuple[str, str]] = []
-
-    @classmethod
-    def register_system_tool_instruction(cls, tool_name: str, instruction: str) -> None:
-        """
-        Register a system-level tool instruction to be injected into agent prompts.
-
-        This is the extension point for system tools (multimodal, future tools, etc.)
-        to register their instruction text. All registered instructions are collected
-        by ``get_system_prompt_suffix()`` and injected into agent prompts at init time.
-
-        :param tool_name: Unique name for the tool (avoids duplicates).
-        :param instruction: Instruction text to inject into agent prompts.
-        """
-        if not any(name == tool_name for name, _ in cls._system_tool_instructions):
-            cls._system_tool_instructions.append((tool_name, instruction))
-
-    @staticmethod
-    def get_system_prompt_suffix() -> str:
-        """
-        Collects and returns all registered system tool instructions.
-
-        :return: Combined instruction text from all registered system tools,
-                 or empty string if none are registered.
-        """
-        if not Agent._system_tool_instructions:
-            return ""
-        parts = [instruction for _, instruction in Agent._system_tool_instructions]
-        return "\n".join(parts)
-
     def _setup_system_prompt(self) -> None:
         """
-        Appends the Agent Kernel system prompt suffix to the agent's system prompt at init time.
-        Only applies when multimodal is enabled in AKConfig.
-        Subclasses should call this in __init__ after setting up the underlying agent.
-        The actual injection is done by override_system_prompt() which each subclass implements.
+        Appends system-defined instructions to the agent's prompt during initialization.
+        Should be invoked by subclasses in their initialization process after configuration.
         """
-        from .config import AKConfig
-
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-
-            suffix = self.get_system_prompt_suffix()
-            if suffix:
-                self.override_system_prompt(prompt=suffix)
-
-    @classmethod
-    def get_system_tools(cls) -> list[Any]:
-        """
-        Retrieves the global system tools applicable to all agents (e.g., multimodal tools).
-        """
-        from .config import AKConfig
-
-        tools = []
-        config = getattr(AKConfig.get(), "multimodal", None)
-        if config and config.enabled:
-            from .multimodal import analyze_attachments
-
-            tools.append(analyze_attachments)
-
-        return tools
+        from agentkernel.core.tool import SystemToolFactory
+        suffix = SystemToolFactory.get_system_prompt_suffix()
+        self.override_system_prompt(prompt=suffix)
 
     def _attach_system_tools(self) -> None:
         """
-        Attaches Agent Kernel system-level tools to the agent at init time.
-        Calls self.attach_tool() with each raw Callable — each framework's attach_tool
-        implementation is responsible for wrapping it into the framework-specific tool format.
+        Attaches system-level tools to the agent during initialization.
         """
-        for tool in self.get_system_tools():
-            self.attach_tool(tool)
+        from agentkernel.core.tool import SystemToolFactory
+        for tool in SystemToolFactory.get_all():
+            self.attach_tool(tool.func)

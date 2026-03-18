@@ -5,14 +5,13 @@ Attachment storage manager for multimodal memory.
 import logging
 import time
 import uuid
-from typing import Optional
 
-from ...config import AKConfig
 from .base import (
     DEFAULT_MAX_ATTACHMENTS,
     AttachmentData,
     AttachmentStore,
 )
+from ...config import AKConfig
 
 _log = logging.getLogger("ak.core.multimodal.storage")
 
@@ -85,13 +84,13 @@ class AttachmentStorageManager:
             return InMemoryAttachmentStore(session_id)
 
     def save_attachment(
-        self,
-        data: str,
-        attachment_type: str,
-        name: str,
-        mime_type: str,
-        description: str = "",
-        max_attachments: int = DEFAULT_MAX_ATTACHMENTS,
+            self,
+            data: str,
+            attachment_type: str,
+            name: str,
+            mime_type: str,
+            description: str = "",
+            max_attachments: int = DEFAULT_MAX_ATTACHMENTS,
     ) -> str:
         """
         Save an attachment using the configured storage driver.
@@ -122,8 +121,8 @@ class AttachmentStorageManager:
         return attachment_id
 
     def get_attachment_data(
-        self,
-        attachment_ids: list[str],
+            self,
+            attachment_ids: list[str],
     ) -> list[AttachmentData]:
         """
         Load actual attachment data for specific IDs using the storage driver.
