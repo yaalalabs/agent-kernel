@@ -4,6 +4,7 @@ Multimodal tools for LLM to access images/files.
 """
 
 import logging
+from typing import Callable
 
 from ..config import AKConfig
 from ..model import SystemTool
@@ -69,8 +70,8 @@ def _analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
 
 
 class AnalyzeAttachmentsTool(SystemTool):
-    name = "analyze_attachments"
-    description = (
+    name: str = "analyze_attachments"
+    description: str = (
         "User has attached files/images. Their IDs and descriptions are listed in the user's message.\n"
         "Available tool:\n"
         "- analyze_attachments(attachment_ids, prompt): Analyze attachments using litellm.\n"
@@ -80,4 +81,4 @@ class AnalyzeAttachmentsTool(SystemTool):
         "(numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to "
         "inspect the file content again. Do not guess based on the summary."
     )
-    func = _analyze_attachments
+    func: Callable = _analyze_attachments
