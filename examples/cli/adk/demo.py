@@ -62,7 +62,7 @@ triage_agent = LlmAgent(
     sub_agents=[math_agent, history_agent, weather_agent],
 )
 
-GoogleADKModule([triage_agent])
+GoogleADKModule([triage_agent, math_agent, history_agent, weather_agent])
 
 if __name__ == "__main__":
     CLI.main()
