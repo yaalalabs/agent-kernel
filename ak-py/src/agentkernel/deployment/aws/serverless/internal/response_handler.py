@@ -2,8 +2,8 @@ import logging
 import json
 from typing import Dict, Any
 
-from ..core.sqs_consumer import LambdaSQSConsumer
-from ...response_store.handler import ResponseDBHandler
+from agentkernel.deployment.aws.serverless.core.sqs_consumer import LambdaSQSConsumer
+from agentkernel.deployment.aws.response_store.handler import ResponseDBHandler
 
 
 class ResponseHandler(LambdaSQSConsumer):
