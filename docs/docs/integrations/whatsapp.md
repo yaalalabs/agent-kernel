@@ -20,7 +20,7 @@ The `AgentWhatsAppRequestHandler` class handles conversations with agents via Wh
 
 - **Text Messages**: Standard text messages
 - **Interactive Messages**: Button and list replies
-- **Media Messages**: Image, documents
+- **Media Messages**: Images and documents (PDF files only)
 
 ### Multimodal Configuration
 

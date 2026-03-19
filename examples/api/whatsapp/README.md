@@ -123,11 +123,8 @@ Can you help me with a technical issue?
 "Can you analyze this document?" [attach PDF]
 ```
 
-**Multimodal Messages (with attachments):**
-```bash
-"What's in this photo?" [attach image]
-"Can you analyze this document?" [attach PDF]
-```
+
+
 
 ## Advanced Examples
 

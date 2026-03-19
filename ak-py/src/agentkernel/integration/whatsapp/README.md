@@ -91,7 +91,7 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 
 - **Text Messages**: Standard text messages
 - **Interactive Messages**: Button and list replies
-- **Media Messages**: Image, video, audio, and document (basic support)
+- **Media Messages**: Images and documents (PDF files only)
 
 ### Message Handling
 
