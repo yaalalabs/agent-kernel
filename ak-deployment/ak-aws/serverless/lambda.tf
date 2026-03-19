@@ -62,6 +62,38 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb_describe_attachment" 
   policy_arn = aws_iam_policy.lambda_dynamodb_describe_policy[0].arn
 }
 
+resource "aws_iam_policy" "lambda_dynamodb_multimodal_describe_policy" {
+  count = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-ddb-mm"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ],
+        Resource = [
+          local.dynamodb_multimodal_memory_table_arn,
+          "${local.dynamodb_multimodal_memory_table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb_multimodal_describe_attachment" {
+  count      = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_dynamodb_multimodal_describe_policy[0].arn
+}
+
 data "aws_s3_object" "source_code" {
   count  = (var.package_type == "S3Zip") ? 1 : 0
   bucket = module.source_storage[0].source_storage_s3_bucket
@@ -162,6 +194,9 @@ module "lambda_deployment" {
   } : {},
       local.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = local.dynamodb_memory_table_name
+    } : {},
+      local.dynamodb_multimodal_memory_table_arn != null ? {
+      AK_MULTIMODAL__DYNAMODB__TABLE_NAME = local.dynamodb_multimodal_memory_table_name
     } : {}
   )
   event_source_mapping = var.event_source_mapping

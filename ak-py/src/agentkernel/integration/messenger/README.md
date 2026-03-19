@@ -68,6 +68,15 @@ export AK_MESSENGER__APP_SECRET="your_app_secret"  # Optional, but strongly reco
 export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only change if you want to move to a different version
 ```
 
+### Multimodal Configuration
+
+For image and document support, configure these environment variables:
+
+```bash
+export AK_MULTIMODAL__ENABLED=false              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__DYNAMODB__TTL=604800       # Optional: Backend-specific TTL in seconds (e.g. for DynamoDB/Redis)
+```
+
 ### Webhook Verification
 The handler automatically responds to Facebook's webhook verification challenge via `<hosted URL>/messenger/webhook` (e.g., `http://localhost:8000/messenger/webhook`). When you configure the webhook URL in Facebook's developer portal, Facebook will send a GET request to verify the endpoint. The handler processes this automatically.
 

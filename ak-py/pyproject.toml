@@ -115,6 +115,9 @@ a2a = [
 mcp = [
     "fastmcp>=2.12.4",
 ]
+multimodal = [
+    "litellm>=1.74.9",
+]
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"

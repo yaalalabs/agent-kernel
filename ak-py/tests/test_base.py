@@ -30,6 +30,12 @@ class MockAgent(Agent):
     def get_a2a_card(self) -> Any:
         return "Mock A2A Card"
 
+    def override_system_prompt(self, prompt: str) -> None:
+        pass
+
+    def attach_tool(self, tool: Any) -> None:
+        pass
+
 
 def test_agent_init():
     runner = MockRunner("test-runner")

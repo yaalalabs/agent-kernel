@@ -1,0 +1,5 @@
+multimodal:
+  enabled: true
+  storage_type: dynamodb
+  dynamodb:
+    table_name: "ak-mm-ddb-dev-examples-mm-attachments"

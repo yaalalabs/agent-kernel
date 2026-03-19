@@ -21,6 +21,7 @@ from .model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from .multimodal import MultimodalPreHookFactory
 from .session import SessionStore
 
 
@@ -31,7 +32,7 @@ class Runtime:
 
     _current: Optional[Runtime] = None
     _lock: RLock = RLock()
-    _system_pre_hooks: list = [InputGuardrailFactory.get()]
+    _system_pre_hooks: list = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]
     _system_post_hooks: list = [OutputGuardrailFactory.get()]
 
     def __init__(self, sessions: SessionStore):

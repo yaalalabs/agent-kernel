@@ -296,8 +296,47 @@ class Agent(ABC):
         pass
 
     @abstractmethod
+    def override_system_prompt(self, prompt: str) -> None:
+        """
+        Appends additional instructions to the agent's system prompt.
+
+        Called by ``_setup_system_prompt()`` at init time to inject system-level
+        tool instructions (e.g., multimodal attachment analysis guidance).
+
+        :param prompt: The instruction text to append.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Attaches a tool to the agent.
+        :param tool: The tool to attach.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
     def get_a2a_card(self) -> Any:
         """
         Returns the A2A AgentCard associated with the agent.
         """
         pass
+
+    def _setup_system_prompt(self) -> None:
+        """
+        Appends system-defined instructions to the agent's prompt during initialization.
+        Should be invoked by subclasses in their initialization process after configuration.
+        """
+        from agentkernel.core.tool import SystemToolFactory
+
+        suffix = SystemToolFactory.get_system_prompt_suffix()
+        self.override_system_prompt(prompt=suffix)
+
+    def _attach_system_tools(self) -> None:
+        """
+        Attaches system-level tools to the agent during initialization.
+        """
+        from agentkernel.core.tool import SystemToolFactory
+
+        for tool in SystemToolFactory.get_all():
+            self.attach_tool(tool.func)

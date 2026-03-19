@@ -1,0 +1,6 @@
+multimodal:
+  enabled: true
+  storage_type: redis
+  redis:
+    url: redis://ak-mm-redis-dev-examples-redis.dirnvi.0001.use1.cache.amazonaws.com:6379
+    prefix: "ak:mm:redis:"

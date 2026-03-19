@@ -35,6 +35,12 @@ class DummyAgent(Agent):
     def get_description(self):
         pass
 
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
 
 def test_runtime_instance_redis_when_config(monkeypatch):
     class FakeCfg:
