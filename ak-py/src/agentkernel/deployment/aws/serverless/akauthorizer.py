@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ValidationError
 
-from ...auth.handler import AuthValidator, ValidationContext, ValidationResult
+from ....auth.handler import AuthValidator, ValidationContext, ValidationResult
 
 
 class Headers(BaseModel):

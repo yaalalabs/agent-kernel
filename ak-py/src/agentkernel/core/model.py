@@ -1,4 +1,5 @@
 from typing import Any, Literal, Union
+from enum import Enum
 
 from pydantic import BaseModel
 
@@ -104,3 +105,20 @@ class AgentReplyImage(BaseModel):
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
 type AgentReply = Union[AgentReplyText, AgentReplyImage]
+
+
+class ResponseDB(str, Enum):
+    """
+    Response DBs
+    """
+    REDIS = "redis"
+    DYNAMODB = "dynamodb"
+
+class ExecutionMode(str, Enum):
+    """
+    Execution mode enumeration for Lambda function behavior.
+    """
+    REST_SYNC = "rest_sync"
+    REST_ASYNC = "rest_async"
+    STREAM = "stream"
+    ASYNC = "async"

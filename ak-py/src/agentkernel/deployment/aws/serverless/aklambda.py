@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
-import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
-
-from ...core import AgentService
+from .core import DefaultEndpointsHandler
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -21,7 +17,6 @@ logging.basicConfig(
 class LambdaRouter:
     """
     A router for AWS Lambda events coming from API Gateway (REST API v1).
-
     - Register handlers per (method, path).
     - Path can be provided in multiple forms and will be normalized.
     - If no handler match is found, the router returns None and caller can fallback.
@@ -29,11 +24,14 @@ class LambdaRouter:
 
     def __init__(self):
         self._log = logging.getLogger("ak.aws.lambda.router")
-        self._default_agent_registered_path = "default_agent_registered_path"
-        self._default_agent_registered_method = "POST"
-        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {
-            self._default_agent_registered_path: {self._default_agent_registered_method: self._handle_agent_chat}
-        }
+        (
+            self._default_chat_path,
+            self._default_chat_method,
+            self._default_user_polling_method,
+        ) = DefaultEndpointsHandler.get_default_endpoint_info()
+        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = (
+            DefaultEndpointsHandler.get_routes()
+        )
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -42,6 +40,7 @@ class LambdaRouter:
             return "/"
         if not path.startswith("/"):
             path = "/" + path
+
         if len(path) > 1 and path.endswith("/"):
             path = path[:-1]
         return path
@@ -50,7 +49,9 @@ class LambdaRouter:
     def _normalize_method(method: Optional[str]) -> str:
         return (method or "GET").upper()
 
-    def register(self, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
+    def register(
+        self, path: str, method: str = "GET"
+    ) -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a handler for a given HTTP path and method.
         :param path: URL path for the route
@@ -61,11 +62,15 @@ class LambdaRouter:
         norm_method = self._normalize_method(method)
 
         def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
-            self._log.info(f"Registering route {norm_method} {norm_path} -> {func.__name__}")
+            self._log.info(
+                f"Registering route {norm_method} {norm_path} -> {func.__name__}"
+            )
 
             methods = self._routes.setdefault(norm_path, {})
             if norm_method in methods:
-                self._log.warning(f"Route {norm_method} {norm_path} already exists. Skipping.")
+                self._log.warning(
+                    f"Route {norm_method} {norm_path} already exists. Skipping."
+                )
                 return func
             methods[norm_method] = func
             return func
@@ -97,105 +102,38 @@ class LambdaRouter:
         event_path = event.get("path") or event.get("resource") or "/"
         self._log.info(f"Event path: {event_path}, Method: {method}")
 
-        converted_event_path = self._default_agent_registered_path
+        converted_event_path = self._default_chat_path
         env_base_path, env_agent_endpoint = self._get_base_paths_from_env()
         if env_base_path and env_agent_endpoint:
             converted_event_path = (
-                self._default_agent_registered_path
-                if event_path == env_agent_endpoint and method == self._default_agent_registered_method
+                self._default_chat_path
+                if event_path == env_agent_endpoint
+                and method == self._default_chat_method
                 else event_path.removeprefix(env_base_path)
             )
         else:
-            self._log.warning("Environment variables not provided; using default agent handler")
-            method = self._default_agent_registered_method
+            self._log.warning(
+                "Environment variables not provided; using default agent handler"
+            )
+            method = (
+                self._default_user_polling_method
+                if method == self._default_user_polling_method
+                else self._default_chat_method
+            )
 
         self._log.info(f"Converted event path: {converted_event_path}")
         methods = self._routes.get(converted_event_path, {})
         handler = methods.get(method)
         if not methods or not handler:
-            self._log.warning(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
-            raise ValueError(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
+            self._log.warning(
+                f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'"
+            )
+            raise ValueError(
+                f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'"
+            )
         result = handler(event, context)
-        self._log.debug(f"Wrapping Lambda function result: {result}")
-        return Lambda._wrap_response(result)
-
-    def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """
-        Handle agent chat invocation with default behavior.
-        :param event: API Gateway event dictionary containing request body
-        :param context: AWS Lambda context object
-        :return: API Gateway response dictionary with status code and body
-        """
-        service = AgentService()
-        try:
-            body = json.loads(event.get("body", "{}"))
-            prompt = body.get("prompt", None)
-            agent = body.get("agent", None)
-            session_id = body.get("session_id", None)
-
-            if session_id is None:
-                raise ValueError("No session_id is provided in the request")
-
-            requests = []
-            if prompt:
-                requests.append(AgentRequestText(text=prompt))
-            else:
-                raise ValueError("No prompt provided in the request")
-
-            for key, value in body.items():
-                if key in ["prompt", "agent", "session_id"]:
-                    continue
-                self._log.info(f"Adding additional context: {key}={value}")
-                requests.append(AgentRequestAny(name=key, content=value))
-
-            service.select(session_id, agent)
-            if not service.agent:
-                raise ValueError("No agent available")
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    asyncio.set_event_loop(asyncio.new_event_loop())
-                    result = asyncio.run(service.run_multi(requests=requests))
-                else:
-                    result = loop.run_until_complete(service.run_multi(requests=requests))
-            except RuntimeError:
-                result = asyncio.run(service.run_multi(requests=requests))
-            self._log.debug(f"Result: {result}")
-
-            return {
-                "statusCode": 200,
-                "body": json.dumps(
-                    {
-                        "result": (
-                            str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
-                        ),  # sending image is not supported at the moment
-                        "session_id": service.get_response_session_id(session_id),
-                    }
-                ),
-            }
-
-        except ValueError as ve:
-            self._log.error(f"ValueError processing request: {ve}\n{traceback.format_exc()}")
-            return {
-                "statusCode": 400,
-                "body": json.dumps(
-                    {
-                        "error": str(ve),
-                        "session_id": service.get_response_session_id(None),
-                    }
-                ),
-            }
-        except Exception as e:
-            self._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
-            return {
-                "statusCode": 500,
-                "body": json.dumps(
-                    {
-                        "error": str(e),
-                        "session_id": service.get_response_session_id(None),
-                    }
-                ),
-            }
+        self._log.debug(f"Lambda function result: {result}")
+        return result
 
 
 class Lambda:
@@ -247,8 +185,12 @@ class Lambda:
         cls._log.info(f"Registered Routes: {cls._router._routes}")
         # Attempting to dispatch to custom routes
         try:
-            return cls._router.dispatch(event, context)
+            result = cls._router.dispatch(event, context)
+            return cls._wrap_response(result)
         except Exception as e:
             # Exception in custom route handler/Lambda function raise 500
             cls._log.exception(f"Custom route handler failed: {e}")
-            return {"statusCode": 500, "body": json.dumps({"error": f"Custom handler error: {e}"})}
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": f"Custom handler error: {e}"}),
+            }
