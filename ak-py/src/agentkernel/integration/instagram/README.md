@@ -33,29 +33,30 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`).
 ### Configuration Steps
 
 1. **Create a Meta App**
+
    - Go to https://developers.facebook.com/apps
    - Create a new app and select "Business" type
    - Add **Instagram API** product (with Business Login)
-
 2. **Set Up Business Login for Instagram**
+
    - In **Use Cases**, select "Instagram Business"
    - Click "API setup with Instagram login"
    - Add required permissions:
      - `instagram_business_basic`
      - `instagram_business_manage_messages`
-
 3. **Generate Access Token**
+
    - Go to "Generate access tokens" section
    - Add your Instagram Professional account
    - Generate a token with the required permissions
    - The token will start with `IGAA...`
-
 4. **Get Your Credentials**
+
    - **Access Token**: Generated from the step above (starts with `IGAA...`)
    - **App Secret**: App > App Settings > Basic (for webhook signature verification)
    - **Verify Token**: Create your own secure random string for webhook verification
-
 5. **Configure Webhook**
+
    - In "Configure webhooks" section, enter:
      - **Callback URL**: Your public HTTPS endpoint + `/instagram/webhook`
      - **Verify Token**: Your chosen verify token
@@ -114,6 +115,30 @@ RESTAPI.run([handler])
 - `messaging_reads`: Read receipts (logged only)
 - `messaging_reactions`: Message reactions (logged only)
 
+## Multi-Modal Support (Images & Files) 
+
+The Instagram integration fully supports sending and analyzing images and files:
+
+**Supported File Types:**
+
+- **Images**: JPEG, PNG, GIF, WebP
+- **Documents**: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Text files
+- **Media**: Audio and video files
+
+**How It Works:**
+
+1. User sends message with attachment (image or file)
+2. Handler downloads attachment from Instagram
+3. File is validated against size limit (default 2 MB, configurable)
+4. File is base64-encoded for transmission to AI agent
+5. Agent analyzes and responds with insights
+
+**File Size Limits:**
+
+- Default maximum: **2 MB per file**
+- Base64 encoding increases size by ~33%, so effective usable size is ~1.5 MB
+- Configurable via `api.max_file_size` in config.yaml
+
 ## Character Limits
 
 Instagram DM messages have a 1000 character limit. Long responses are automatically split into multiple messages.
@@ -123,6 +148,7 @@ Instagram DM messages have a 1000 character limit. Long responses are automatica
 ### 401 Unauthorized / Cannot Parse Access Token
 
 This is the most common issue. It occurs when:
+
 - Using a Facebook Page Access Token instead of Instagram User Access Token
 - Token has expired (tokens are valid for 60 days)
 - Token doesn't have required permissions
