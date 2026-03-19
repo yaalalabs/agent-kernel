@@ -142,8 +142,6 @@ Without multimodal enabled, attachments are still processed but not retained in 
 **Documents:**
 
 - PDF (.pdf)
-- Microsoft Word (.doc, .docx)
-- Microsoft Excel (.xls, .xlsx)
 
 ### How Attachments Work
 

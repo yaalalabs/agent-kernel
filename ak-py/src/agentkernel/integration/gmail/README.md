@@ -125,7 +125,7 @@ gmail:
 - **Email Threading**: Replies maintain conversation thread with full context
 - **Thread Support**: Each Gmail thread maintains a separate conversation session
 - **Image Attachments**: JPEG, PNG, GIF, WebP images are extracted and sent to agents
-- **File Attachments**: PDF, Word, Excel documents are extracted and sent to agents
+- **File Attachments**: PDF documents are extracted and sent to agents
 - **Custom Signatures**: Configurable email signatures with name and sign-off format
 
 ### Supported Attachment Types
@@ -140,8 +140,6 @@ gmail:
 **Documents:**
 
 - PDF (.pdf) - `application/pdf`
-- Microsoft Word (.doc, .docx)
-- Microsoft Excel (.xls, .xlsx)
 
 Attachments are automatically:
 

@@ -214,7 +214,6 @@ When `AK_MULTIMODAL__ENABLED=true` is set, the system remembers attachments acro
 | -------------------------- | ------------------------------ | ------------------------------------------------------------------- |
 | **Images**           | .jpg, .jpeg, .png, .gif, .webp | image/jpeg, image/png, image/gif, image/webp                        |
 | **Documents**        | .pdf                           | application/pdf                                                     |
-| **Microsoft Office** | .doc, .docx, .xls, .xlsx       | application/msword, application/vnd.openxmlformats-officedocument.* |
 
 ### How It Works
 
