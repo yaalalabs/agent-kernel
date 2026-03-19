@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "LangGraph multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,auth,cli,langgraph,multimodal]>=0.2.14",
+    "agentkernel[api,auth,langgraph,multimodal]>=0.2.14",
     "langchain-openai>=0.1.0",
     "python-multipart>=0.0.12",
 

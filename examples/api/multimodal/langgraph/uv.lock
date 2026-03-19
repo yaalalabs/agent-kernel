@@ -217,7 +217,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["api", "auth", "cli", "langgraph", "multimodal"], specifier = ">=0.2.14" },
+    { name = "agentkernel", extras = ["api", "auth", "langgraph", "multimodal"], specifier = ">=0.2.14" },
     { name = "langchain-openai", specifier = ">=0.1.0" },
     { name = "python-multipart", specifier = ">=0.0.12" },
 ]

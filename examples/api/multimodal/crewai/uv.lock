@@ -227,7 +227,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["api", "cli", "crewai", "multimodal"], specifier = ">=0.2.14" }]
+requires-dist = [{ name = "agentkernel", extras = ["api", "crewai", "multimodal"], specifier = ">=0.2.14" }]
 
 [package.metadata.requires-dev]
 dev = [
