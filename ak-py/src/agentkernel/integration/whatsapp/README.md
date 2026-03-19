@@ -127,13 +127,21 @@ ssh -p443 -R0:localhost:8000 a.pinggy.io
 
 A detailed example is provided in the examples section.
 
-:::info Current Limitation
-Currently, passed images and files are not added to the chat history. So all questions have to be asked with the caption sent along with the attachments. Follow up questions, which require re-analysis of the file/image cannot be answered by the LLM.
+### Multimodal Features
 
-Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/api/rest-api.md) on how to handle this properly without exhausting the token limits.
-:::
+The integration supports full file and image analysis, allowing agents to retain files in memory across the conversation thread if multimodal support is enabled.
 
-**Note**: To prevent large files from being passed to LLMs, use the `max_file_size` option in the REST API configuration (see the REST API configuration details in the document linked above), which limits the attached file size.
+**File Size Limits:**
+- Default: 20 MB per file (configurable via `api.max_file_size`)
+- Base64 encoding overhead applies automatically
+
+**Multimodal Configuration:**
+To enable your agent to remember files across messages, configure these environment variables:
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal memory
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session
+export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # Memory lifetime in seconds
+```
 
 ### Testing Steps
 

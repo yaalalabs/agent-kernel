@@ -34,6 +34,10 @@ export AK_WHATSAPP__API_VERSION="v21.0"  # Optional
 
 # OpenAI API Key for the agent
 export OPENAI_API_KEY="your_openai_api_key"
+
+# Multimodal Configuration (Optional)
+export AK_MULTIMODAL__ENABLED=true
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5
 ```
 
 ### 3. Create Configuration File
@@ -111,6 +115,12 @@ Copy the HTTPS URL and configure it in your WhatsApp webhook settings.
 Hello
 What services do you offer?
 Can you help me with a technical issue?
+```
+
+**Multimodal Messages (with attachments):**
+```bash
+"What's in this photo?" [attach image]
+"Can you analyze this document?" [attach PDF]
 ```
 
 ## Advanced Examples
