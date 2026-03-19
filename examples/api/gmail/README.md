@@ -62,6 +62,12 @@ export AK_GMAIL__SENDER_FILTER="user@example.com,support@company.com"  # Only fr
 export AK_GMAIL__SUBJECT_FILTER="Support,Help,Urgent"                   # Only with these keywords
 ```
 
+### Multimodal Configuration
+For enhanced attachment processing with memory and context, configure these environment variables:
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=20        # Keep last N files in session (default: 20)
+```
 **Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 
 ## Build
@@ -117,6 +123,13 @@ The bot will use the saved `token.pickle` and start polling immediately.
 
 The Gmail integration supports processing email attachments and passing them to your AI agent for analysis.
 
+### Multimodal Memory
+When `AK_MULTIMODAL__ENABLED=true` is set, the system:
+- **Remembers attachments** across the conversation thread
+- **Generates descriptions** of images and files when first received
+- **Maintains context** for the last N attachments (configurable via `AK_MULTIMODAL__MAX_ATTACHMENTS`)
+- **Enables cross-references** - agent can refer back to previously shared files
+Without multimodal enabled, attachments are still processed but not retained in session memory.
 ### Supported File Types
 
 **Images:**
