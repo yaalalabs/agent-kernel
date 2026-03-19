@@ -156,9 +156,8 @@ class MultimodalPreHook(PreHook):
             # Drop images (their data is stored and described)
             if isinstance(req, AgentRequestImage):
                 continue
-            # Keep files so unsupported file types remain available to downstream frameworks
+            # Drop files as well after persisting; rely on injected IDs + analyze_attachments
             if isinstance(req, AgentRequestFile):
-                filtered_requests.append(req)
                 continue
             if isinstance(req, AgentRequestText):
                 last_text_idx = len(filtered_requests)

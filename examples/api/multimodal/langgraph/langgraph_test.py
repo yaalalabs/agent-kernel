@@ -97,7 +97,7 @@ async def test_image_description(app_client):
 @pytest.mark.order(2)
 async def test_followup_retrieval(app_client):
     response = await app_client.send(
-        prompt="Please analyze the image again. Does the animal in the image have tusks? Reply with only 'Yes' or 'No' If you can not analyis give the answer as 'Can not analyze'.",
+        prompt="Please analyze the image again. Does the animal in the image have tusks? Reply with only 'Yes' or 'No' If you can not analyze give the answer as 'Can not analyze'.",
     )
     print(f"Agent response: {response}")
 

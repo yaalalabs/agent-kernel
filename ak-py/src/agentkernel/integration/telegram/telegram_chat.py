@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
-from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core.model import AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentTelegramRequestHandler(RESTRequestHandler):
@@ -322,7 +322,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         except Exception as e:
             self._log.warning(f"Failed to answer callback query: {e}")
 
-    async def _get_file_info(self, file_id: str):
+    async def _get_file_info(self, file_id: str) -> dict | None:
         """
         Get file information from Telegram API.
 
@@ -364,7 +364,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
             self._log.error(f"Error downloading file from Telegram: {e}")
             return None
 
-    async def _process_files(self, message: dict, requests: list) -> list[str]:
+    async def _process_files(self, message: dict, requests: list[AgentRequest]) -> list[str]:
         """
         Process files and images in a Telegram message.
 
@@ -394,6 +394,9 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                         # Skip before download only if we have a known positive size that exceeds the limit
                         if isinstance(file_size, int) and file_size > 0 and file_size > self._max_file_size:
                             self._log.warning(f"Photo is too large to process ({file_size} bytes > {self._max_file_size} bytes). Skipping.")
+                            failed_files.append("photo")
+                        elif not file_path:
+                            self._log.warning("File path is missing from file info")
                             failed_files.append("photo")
                         else:
                             # Download file (size unknown or within declared limit)
@@ -453,6 +456,9 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                     # Skip before download only if we have a known positive size that exceeds the limit
                     if isinstance(file_size, int) and file_size > 0 and file_size > self._max_file_size:
                         self._log.warning(f"File '{file_name}' is too large to process ({file_size} bytes > {self._max_file_size} bytes). Skipping.")
+                        failed_files.append(file_name)
+                    elif not file_path:
+                        self._log.warning(f"File path is missing from file info for {file_name}")
                         failed_files.append(file_name)
                     else:
                         # Download file (size unknown or within declared limit)

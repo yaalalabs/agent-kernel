@@ -420,7 +420,7 @@ class LangGraphToolBuilder(ToolBuilder):
         # Inject system tools (e.g., analyze_attachments)
         all_funcs = list(funcs)
         for sys_tool in SystemToolFactory.get_all():
-            if sys_tool not in all_funcs:
+            if sys_tool.func not in all_funcs:
                 all_funcs.append(sys_tool.func)
 
         tools = []
