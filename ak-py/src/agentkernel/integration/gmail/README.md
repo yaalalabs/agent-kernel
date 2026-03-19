@@ -55,6 +55,10 @@ export AK_GMAIL__POLL_INTERVAL="30"                # Default: 30 seconds
 export AK_GMAIL__AGENT="general"                   # Agent name to handle emails
 export AK_GMAIL__LABEL_FILTER="INBOX"              # Gmail label to monitor
 
+# Multimodal Configuration (Optional)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=20        # Keep last N files in session (default: 20)
+
 # Email Signature Customization
 export AK_CLIENT_NAME="Your Name"                  # Name to sign replies with
 export AK_GMAIL_SIGN_OFF="Best regards"            # Sign-off format (e.g., "Sincerely", "Kind regards")
