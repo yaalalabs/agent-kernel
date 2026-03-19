@@ -122,7 +122,7 @@ The Instagram integration fully supports sending and analyzing images and files:
 **Supported File Types:**
 
 - **Images**: JPEG, PNG, GIF, WebP
-- **Documents**: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Text files
+- **Documents**: PDF files only
 - **Media**: Audio and video files
 
 **How It Works:**

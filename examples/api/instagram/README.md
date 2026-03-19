@@ -199,7 +199,7 @@ The integration now supports file and image analysis:
 **Supported Attachments:**
 
 - Images (JPEG, PNG, GIF, WebP)
-- Documents (PDF, Word, Excel, PowerPoint)
+- Documents (PDF files only)
 - Audio and video files
 
 **File Size Limits:**

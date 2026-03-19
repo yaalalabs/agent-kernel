@@ -305,7 +305,7 @@ The integration provides full support for images and file attachments with AI an
 **Supported Formats:**
 
 - **Images**: JPEG, PNG, GIF, WebP (detected automatically)
-- **Documents**: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Text files
+- **Documents**: PDF files only
 - **Media**: Audio and video files
 
 **How It Works:**
