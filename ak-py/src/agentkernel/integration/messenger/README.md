@@ -15,28 +15,28 @@ The `AgentMessengerRequestHandler` class handles conversations with agents via F
 ## Facebook Messenger Setup
 
 ### Prerequisites
+
 Please follow the steps in the [Messenger Platform Getting Started Guide](https://developers.facebook.com/docs/messenger-platform/getting-started)
 
 ### Configuration Steps
 
 1. **Create a Facebook App**
+
    - Go to https://developers.facebook.com/apps
    - Create a new app and select "Business" type
    - Add Messenger product to your app
-
 2. **Create or Link a Facebook Page**
+
    - You need a Facebook Page to use Messenger Platform
    - Link your page to the app in Messenger Settings
-
 3. **Get Your Credentials**
+
    - **Page Access Token**:  App > Left side panel > Select 'Use cases' > Select 'Engage with customers on messenger from Meta' > Select 'Customise'
-          - Click on 'Messenger API settings' > Select "Generate Access Tokens" and do the needful
-
+     - Click on 'Messenger API settings' > Select "Generate Access Tokens" and do the needful
    - **App Secret**: [Optional but recommended for security]. App > App Setting > Basic
-         
    - **Verify Token**: Create your own secure random string for webhook verification
-
 4. **Configure Webhook**
+
    - Go to 'Messenger API settings' (described above) > Select "Config Webhooks"
    - click "Add Callback URL". Set callback URL: `https://your-domain.com/messenger/webhook`
    - Set verify token: Your chosen verify token. Click "Verify and Save"
@@ -46,18 +46,18 @@ Please follow the steps in the [Messenger Platform Getting Started Guide](https:
      - `messaging_postbacks` - To handle button clicks
      - `message_deliveries` - For delivery confirmations (optional)
      - `message_reads` - For read receipts (optional)
-
 5. **Subscribe Your Page**
-   * After webhook verification, subscribe your page to receive events. To do that go back to "Generate Access Token" > "Webhook Subcription"
-    * Subscribe to these webhook fields:
-      * `messages` - To receive messages
-      * `messaging_optins` - To receive messages
-      * `messaging_postbacks` - To handle button clicks
 
+   * After webhook verification, subscribe your page to receive events. To do that go back to "Generate Access Token" > "Webhook Subcription"
+   * Subscribe to these webhook fields:
+     * `messages` - To receive messages
+     * `messaging_optins` - To receive messages
+     * `messaging_postbacks` - To handle button clicks
 6. **Testing**
-  * See the  Testing steps at the bottom
-  * You need to get the approval for the FB page to enable message flow from the page to the Agent.
-    * From 'Messenger API settings' > 'Complete App Review' section > Select 'Request Permission'
+
+* See the  Testing steps at the bottom
+* You need to get the approval for the FB page to enable message flow from the page to the Agent.
+  * From 'Messenger API settings' > 'Complete App Review' section > Select 'Request Permission'
 
 ### Required Environment Variables
 
@@ -73,11 +73,13 @@ export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only ch
 For image and document support, configure these environment variables:
 
 ```bash
-export AK_MULTIMODAL__ENABLED=false              # Enable multimodal support (default: false)
-export AK_MULTIMODAL__DYNAMODB__TTL=604800       # Optional: Backend-specific TTL in seconds (e.g. for DynamoDB/Redis)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: true)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
+export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
 ```
 
 ### Webhook Verification
+
 The handler automatically responds to Facebook's webhook verification challenge via `<hosted URL>/messenger/webhook` (e.g., `http://localhost:8000/messenger/webhook`). When you configure the webhook URL in Facebook's developer portal, Facebook will send a GET request to verify the endpoint. The handler processes this automatically.
 
 ## Simple Facebook Messenger Integration Code
@@ -103,6 +105,8 @@ if __name__ == "__main__":
     RESTAPI.run([handler])
 ```
 
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analysis_attachments` tool is automatically attached to your agent by Agent Kernel at startup.
+
 ## Configuration Options
 
 ### config.yaml
@@ -112,6 +116,7 @@ messenger:
   agent: "general"  # Name of the agent to handle Messenger messages
   api_version: "v21.0"  # Optional, defaults to v24.0
 ```
+
 It is strongly recommended not to keep secrets and keys in the config file. Set them as environment variables.
 
 ## Features
@@ -120,9 +125,33 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 
 - **Text Messages**: Standard text messages
 - **Postbacks**: Button clicks and quick reply selections
-- **Attachments**: Images, videos, audio, files (basic detection)
+- **Attachments**: Images, videos, audio, files with full multimodal analysis ✅
 - **Delivery Receipts**: Message delivery confirmations
 - **Read Receipts**: Message read notifications
+
+### Multi-Modal Support (Images & Files) ✅
+
+The Messenger integration fully supports sending and analyzing images and files:
+
+**Supported File Types:**
+
+- **Images**: JPEG, PNG, GIF, WebP
+- **Documents**: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Text files
+- **Media**: Audio and video files
+
+**How It Works:**
+
+1. User sends message with attachment (image or file)
+2. Handler downloads attachment from Messenger
+3. File is validated against size limit (default 2 MB, configurable)
+4. File is base64-encoded for transmission to AI agent
+5. Agent analyzes and responds with insights
+
+**File Size Limits:**
+
+- Default maximum: **2 MB per file**
+- Base64 encoding increases size by ~33%, so effective usable size is ~1.5 MB
+- Configurable via `api.max_file_size` in config.yaml
 
 ### Message Handling
 
@@ -130,12 +159,15 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 - **Session Management**: Uses sender ID as session ID to maintain conversation context
 - **Typing Indicators**: Shows typing indicator while processing
 - **Message Threading**: Maintains conversation flow
+- **Multimodal Processing**: Automatically detects and processes images and files alongside text
+- **File Size Validation**: Prevents oversized files from being processed
 
 ### Security
 
 - **Webhook Signature Verification**: All incoming webhooks are verified using HMAC-SHA256
 - **Token Authentication**: Uses verify token for webhook setup
 - **Secure API Calls**: All API calls use Bearer token authentication
+- **Session-scoped attachments**: Files/images are stored in the session's own cache, isolated per user. One user cannot access another user's attachments.
 
 ## Testing
 
@@ -144,11 +176,13 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 For local testing, use a tunneling service to expose your local server:
 
 **Using ngrok:**
+
 ```bash
 ngrok http 8000
 ```
 
 **Using pinggy:**
+
 ```bash
 ssh -p443 -R0:localhost:8000 a.pinggy.io
 ```
@@ -156,10 +190,11 @@ ssh -p443 -R0:localhost:8000 a.pinggy.io
 Update your Facebook webhook URL with the tunnel URL.
 
 ### Testing Steps
+
 This assumes that you have successfully verified the Webhook URL and correct subscriptions are enabled.
 
 1. App > Left side panel > Select 'Use cases' > Select 'Engage with customers on messenger from Meta' > Select 'Customise'
-          - Click on 'Messenger API settings' > Select "API integration helper"
+   - Click on 'Messenger API settings' > Select "API integration helper"
 2. In the API integration helper, insert your page access token and the page will automatically get selected.
 3. From there select a recipient, insert the test message and click on "Send message"
 
@@ -177,7 +212,7 @@ class CustomMessengerHandler(AgentMessengerRequestHandler):
         # Add custom preprocessing
         message = messaging_event.get("message", {})
         message_text = message.get("text", "")
-        
+      
         # Custom logic here
         if message_text.startswith("/help"):
             sender_id = messaging_event["sender"]["id"]
@@ -186,7 +221,7 @@ class CustomMessengerHandler(AgentMessengerRequestHandler):
                 "Available commands: ..."
             )
             return
-        
+      
         # Call parent handler
         await super()._handle_message(messaging_event)
 ```
@@ -203,7 +238,7 @@ async def _send_quick_replies(self, recipient_id: str, text: str, quick_replies:
         "Authorization": f"Bearer {self._access_token}",
         "Content-Type": "application/json"
     }
-    
+  
     payload = {
         "recipient": {"id": recipient_id},
         "message": {
@@ -212,7 +247,7 @@ async def _send_quick_replies(self, recipient_id: str, text: str, quick_replies:
         },
         "messaging_type": "RESPONSE"
     }
-    
+  
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=payload, headers=headers)
         response.raise_for_status()
@@ -223,12 +258,14 @@ async def _send_quick_replies(self, recipient_id: str, text: str, quick_replies:
 ### Common Issues
 
 **Webhook verification fails:**
+
 - Ensure verify token in config matches what you set in Facebook developer portal
 - Check that your endpoint is accessible via HTTPS
 - Verify the callback URL is correct
 - Make sure the handler returns the challenge as an integer
 
 **No Messages Received:**
+
 - Check webhook subscription is active
 - Verify page is subscribed to webhook events
 - Check app secret and access token are correct
@@ -236,12 +273,14 @@ async def _send_quick_replies(self, recipient_id: str, text: str, quick_replies:
 - Ensure the app is not in development mode restrictions
 
 **Agent Not Responding:**
+
 - Verify access token has correct permissions
 - Check agent configuration in config.yaml
 - Review server logs for agent errors
 - Ensure the page access token hasn't expired
 
 **Messages Not Sending:**
+
 - Verify access token is a page access token, not user token
 - Check token permissions include `pages_messaging`
 - Ensure recipient has messaged your page first (24-hour window rule)
@@ -259,6 +298,7 @@ logging.basicConfig(level=logging.DEBUG)
 ## API Rate Limits
 
 Facebook Messenger API has rate limits:
+
 - **Standard Messaging**: 10,000 messages per day per page (varies by tier)
 - **Broadcast Messages**: Requires approval and different messaging type
 - **Response Time**: Must respond to user messages within 24 hours
@@ -270,6 +310,7 @@ For higher limits, apply for standard messaging access.
 ### Message Types
 
 The platform supports three messaging types:
+
 - **RESPONSE**: Reply to user messages (default, used in this integration)
 - **UPDATE**: Send proactive notifications (requires approval)
 - **MESSAGE_TAG**: Send messages outside 24-hour window with approved tags
@@ -281,6 +322,7 @@ Quick replies provide predefined response options to users. Extend the handler t
 ### Buttons and Templates
 
 Messenger supports rich templates like:
+
 - Button template
 - Generic template (cards)
 - List template
@@ -291,12 +333,14 @@ These can be added by extending the `_send_message` method.
 ## Privacy and Compliance
 
 ### User Data
+
 - Store user data securely
 - Implement data retention policies
 - Provide data deletion capabilities
 - Follow GDPR/CCPA requirements
 
 ### Facebook Policies
+
 - Review Facebook Platform Policy
 - Ensure compliance with Messenger Platform Policy
 - Get required permissions before going live
@@ -315,7 +359,9 @@ For production deployment:
 7. **Get App Reviewed**: Submit your app for review to remove development mode restrictions
 
 ### App Review
+
 Before going live:
+
 1. Complete app review process
 2. Request `pages_messaging` permission
 3. Provide test credentials and instructions
