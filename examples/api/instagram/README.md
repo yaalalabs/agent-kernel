@@ -204,7 +204,7 @@ The integration now supports file and image analysis:
 
 **File Size Limits:**
 
-- Default: 2 MB per file (configurable)
+- Default: 20 MB per file (configurable)
 - Base64 encoding adds ~33% overhead
 - Check logs for size validation messages
 
@@ -212,7 +212,7 @@ The integration now supports file and image analysis:
 
 ```yaml
 api:
-  max_file_size: 2097152  # 2 MB in bytes
+  max_file_size: 20971520  # 20 MB in bytes
 ```
 
 ## API Endpoint

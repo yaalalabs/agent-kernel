@@ -2,7 +2,6 @@ import base64
 import hashlib
 import hmac
 import logging
-import mimetypes
 import traceback
 
 import httpx

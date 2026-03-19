@@ -312,16 +312,16 @@ The integration provides full support for images and file attachments with AI an
 
 1. **Detection**: When user sends message with attachment, handler identifies type
 2. **Download**: File is downloaded from Instagram's servers
-3. **Validation**: File size checked against limit (default 2 MB)
+3. **Validation**: File size checked against limit (default 20 MB)
 4. **Encoding**: File converted to base64 for transmission
 5. **Processing**: Agent receives file and can analyze it
 6. **Response**: Agent provides insights or answers about the content
 
 **File Size Limits:**
 
-- **Default**: 2 MB per file (2,097,152 bytes)
+- **Default**: 20 MB per file (20,971,520 bytes)
 - **Base64 Overhead**: ~33% increase in size
-- **Effective Size**: ~1.5 MB usable after base64 encoding
+- **Effective Size**: ~15 MB usable after base64 encoding
 - **Configurable**: Set `api.max_file_size` in config.yaml
 
 **Example User Interactions:**
