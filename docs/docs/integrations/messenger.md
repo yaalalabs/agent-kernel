@@ -92,7 +92,6 @@ export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```bash
 export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: true)
 export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
-export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
 ```
 
 ### 4. Set Up Your Webhook
@@ -317,8 +316,7 @@ The integration provides full support for images and file attachments with AI an
 **Supported Formats:**
 
 - **Images**: JPEG, PNG, GIF, WebP (detected automatically)
-- **Documents**: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Text files
-- **Media**: Audio and video files
+- **Documents**: PDF (.pdf)
 
 **How It Works:**
 
