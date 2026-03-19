@@ -68,7 +68,7 @@ export AK_TEAMS__TENANT_ID="your-tenant-id"  # Defaults to 'common' for multi-te
 ## Features
 
 *   **Text Messaging**: Full support for 1:1 and group conversations.
-*   **File Attachments**: Automatically downloads and processes files (PDFs, docs) shared in chat specific logic to handle `tempauth` tokens for secure access.
+*   **File Attachments**: Automatically downloads and processes files (PDF files only) shared in chat specific logic to handle `tempauth` tokens for secure access.
 *   **Images**: Supports viewing and generating images.
 *   **Mentions**: Automatically strips `@BotName` mentions from the prompt.
 

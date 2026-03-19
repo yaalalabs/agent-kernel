@@ -75,7 +75,7 @@ Copy the HTTPS URL (e.g., `https://1234abcd.ngrok-free.app`) and update your **A
 2.  Select your Bot (preview/sideloaded via Developer Portal).
 3.  Send a message: "Hello".
 4.  The bot should reply using the configured Agent.
-5.  **File Testing**: Drag and drop a file (like a PDF) into the chat. The bot should download and process it.
+5.  **File Testing**: Drag and drop a PDF file into the chat. The bot should download and process it.
 
 ## Troubleshooting
 

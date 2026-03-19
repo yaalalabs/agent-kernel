@@ -10,7 +10,7 @@ The `AgentTeamsRequestHandler` class handles conversations with agents via Micro
 2.  The handler verifies the request and authenticates it using your Azure App credentials.
 3.  The message is processed and passed to your chosen Agent.
 4.  The Agent's response is sent back to Teams using the Bot Framework APIs.
-5.  File attachments (like PDFs) are automatically downloaded (handling authentication) and processed.
+5.  File attachments (PDF files only) are automatically downloaded (handling authentication) and processed.
 
 ## Setup Guide
 
