@@ -140,7 +140,6 @@ To enable your agent to remember files across messages, configure these environm
 ```bash
 export AK_MULTIMODAL__ENABLED=true              # Enable multimodal memory
 export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session
-export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # Memory lifetime in seconds
 ```
 
 ### Testing Steps

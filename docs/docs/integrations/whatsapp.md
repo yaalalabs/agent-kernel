@@ -29,7 +29,6 @@ For enhanced attachment processing with memory and context, configure these envi
 ```bash
 export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support
 export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session
-export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # Memory lifetime in seconds
 ```
 
 When `AK_MULTIMODAL__ENABLED=true` is set, the system remembers attachments across the conversation thread, allowing users to ask follow-up questions about files they previously sent.
