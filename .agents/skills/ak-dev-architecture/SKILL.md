@@ -4,7 +4,7 @@ description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
   interact, or before making changes to core functionality. Covers Session, Agent,
-  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, and the adapter pattern.
+  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, and the adapter pattern.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -115,7 +115,64 @@ Pydantic-based configuration:
 
 - **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply` — return modified requests to continue, or an `AgentReply` to halt execution
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply` — return modified or unmodified reply
-- Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification
+- Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing
+
+## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
+
+Provides image and file attachment support via a pluggable storage and PreHook architecture. When enabled, attachments are automatically processed, described via a vision LLM, and stored outside the session to prevent memory bloat.
+
+### Key Components
+
+- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, removes raw binaries from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`
+- **`MultimodalPreHookFactory`** (`factory.py`): Returns `MultimodalPreHook` when `config.multimodal.enabled` is `True`, otherwise a `NoOpPreHook`
+- **`AnalyzeAttachmentsTool`** (`tools.py`): A `SystemTool` auto-registered on all agents when multimodal is enabled. Lets the agent retrieve and analyze stored attachments (images and PDFs) on demand via the `analyze_attachments(attachment_ids, prompt)` function
+- **`AttachmentStorageManager`** (`storage/storage_manager.py`): High-level API that delegates to the configured `AttachmentStore` backend. Generates UUIDs for attachment IDs and serializes `AttachmentData` dicts
+- **`AttachmentStore`** (`storage/base.py`): Abstract base with `save()`, `get()`, `delete()` methods
+- **`AttachmentData`** (`storage/base.py`): Dataclass: `id`, `type`, `data` (base64), `name`, `mime_type`, `description`, `timestamp`
+
+### Storage Backends
+
+| Backend | Class | Module | Key traits |
+|---------|-------|--------|------------|
+| In-memory | `InMemoryAttachmentStore` | `storage/in_memory.py` | `ClassVar` dict, ephemeral, zero setup |
+| Redis | `RedisAttachmentStore` | `storage/redis.py` | Persistent, TTL, connection pooling |
+| DynamoDB | `DynamoDBAttachmentStore` | `storage/dynamodb.py` | Serverless/AWS, TTL via `expiry_time` |
+| Session cache | `SessionNonVolatileCacheAttachmentStore` | `storage/session_cache.py` | Legacy, stores in `nv_cache` (not recommended) |
+
+### Execution Flow
+
+```
+User sends {text + image/file}
+  → MultimodalPreHook.on_run()
+    → _describe_attachment_briefly()        # Vision LLM via LiteLLM
+    → AttachmentStorageManager.save_attachment()  # store binary
+    → Remove AgentRequestImage/AgentRequestFile from requests
+    → Inject "[Attached Images/Files:]\n- <id>: <description>" into last AgentRequestText
+  → Agent sees text with attachment metadata only (no binary)
+  → Agent calls analyze_attachments(ids, prompt) when detailed analysis is needed
+    → AttachmentStorageManager.get_attachment_data()
+    → LiteLLM vision call with binary + user prompt
+    → Returns analysis text (clean for conversation history)
+```
+
+### Configuration (`_MultimodalConfig` in `config.py`)
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: in_memory        # in_memory | redis | dynamodb | session_cache
+  max_attachments: 20
+  description_max_length: 200
+  description_model: gpt-4o      # LiteLLM model for brief descriptions (PreHook)
+  analysis_model: gpt-4o         # LiteLLM model for detailed analysis (tool)
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 604800
+    prefix: "ak:attachments:"
+  dynamodb:
+    table_name: "ak-attachments"
+    ttl: 604800
+```
 
 ## Directory Structure
 
@@ -172,6 +229,16 @@ ak-py/src/agentkernel/
 ├── auth/                    # Authentication
 ├── test/                    # Test automation
 └── core/multimodal/         # Multimodal support
+    ├── factory.py            # MultimodalPreHookFactory (NoOp when disabled)
+    ├── hooks.py              # MultimodalPreHook (describe + save + inject)
+    ├── tools.py              # AnalyzeAttachmentsTool (SystemTool)
+    └── storage/              # Pluggable attachment stores
+        ├── base.py            # AttachmentStore ABC, AttachmentData
+        ├── storage_manager.py # AttachmentStorageManager (high-level API)
+        ├── in_memory.py       # InMemoryAttachmentStore
+        ├── redis.py           # RedisAttachmentStore
+        ├── dynamodb.py        # DynamoDBAttachmentStore
+        └── session_cache.py   # SessionNonVolatileCacheAttachmentStore (legacy)
 ```
 
 ## Execution Flow
@@ -182,11 +249,30 @@ User Input
         → AgentRequestText(text=prompt)
         → Runtime.run(agent, session, requests)
             → async with session:                    # acquire lock, set context
-            → PreHooks (agent hooks, then system)    # guardrails, RAG, etc.
+            → PreHooks (agent hooks, then system)    # guardrails, multimodal, RAG, etc.
             → agent.runner.run(agent, session, requests)  # framework execution
             → PostHooks (system, then agent hooks)   # output guardrails
             → session_store.store(session)           # persist state
             → clear volatile cache                   # cleanup
         → AgentReply
     → response text
+```
+
+### Multimodal Execution Flow
+
+When multimodal is enabled and the request contains images/files:
+
+```
+User Input (text + image/file)
+    → Runtime.run(agent, session, requests)
+        → MultimodalPreHook.on_run()
+            → Describe attachments via vision LLM (LiteLLM)
+            → Save binary data to storage backend
+            → Replace requests: drop images/files, inject metadata into text
+        → agent.runner.run(agent, session, modified_requests)
+            → Agent sees text with attachment IDs + descriptions
+            → Agent may call analyze_attachments(ids, prompt) for details
+                → Retrieves binary from storage, calls LLM, returns analysis text
+        → PostHooks
+    → AgentReply (no binary data in conversation history)
 ```
