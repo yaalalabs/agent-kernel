@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import logging
@@ -8,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
+from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentInstagramRequestHandler(RESTRequestHandler):
@@ -35,6 +37,7 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         self._app_secret = Config.get().instagram.app_secret
         self._instagram_account_id = Config.get().instagram.instagram_account_id
         self._api_version = Config.get().instagram.api_version or "v21.0"
+        self._max_file_size = Config.get().api.max_file_size
         # Use graph.instagram.com for Business Login for Instagram (without Facebook)
         self._base_url = f"https://graph.instagram.com/{self._api_version}"
         if not all([self._access_token, self._verify_token]):
@@ -151,7 +154,8 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         sender_id = messaging_event.get("sender", {}).get("id")
         message = messaging_event.get("message", {})
         message_id = message.get("mid")
-        message_text = message.get("text")
+        message_text = message.get("text", "").strip()
+        attachments = message.get("attachments", [])
 
         if not sender_id or not message_id:
             self._log.warning("Message missing required fields (sender/mid)")
@@ -162,13 +166,13 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
             self._log.debug(f"Skipping echo message {message_id}")
             return
 
-        # Skip messages with attachments that don't have text
-        if not message_text:
-            self._log.warning("Message has no text content")
+        # Skip if no text and no attachments
+        if not message_text and not attachments:
+            self._log.warning("Message has no text content or attachments")
             return
 
-        self._log.debug(f"Processing message {message_id} from {sender_id}: {message_text}")
-        await self._process_agent_message(sender_id, message_text)
+        self._log.debug(f"Processing message {message_id} from {sender_id}: text='{message_text}', attachments={len(attachments)}")
+        await self._process_agent_message(sender_id, message_text, attachments)
 
     async def _handle_postback(self, messaging_event: dict):
         """
@@ -195,12 +199,13 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
         self._log.debug(f"Processing postback from {sender_id}: {message_text}")
         await self._process_agent_message(sender_id, message_text)
 
-    async def _process_agent_message(self, sender_id: str, message_text: str):
+    async def _process_agent_message(self, sender_id: str, message_text: str, attachments: list = None):
         """
         Process a message through the agent and send the response.
 
         :param sender_id: Instagram-scoped user ID
         :param message_text: The message text to process
+        :param attachments: Optional list of attachments
         """
         service = AgentService()
         session_id = sender_id  # Use sender_id as session_id to maintain conversation context
@@ -220,13 +225,35 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
                 await self._send_typing_indicator(sender_id, False)
                 return
 
-            # Run the agent
-            result = await service.run(message_text)
+            # Build requests list with text and attachments
+            requests = []
 
-            if hasattr(result, "raw"):
-                response_text = str(result.raw)
+            # Add text if present
+            if message_text:
+                requests.append(AgentRequestText(text=message_text))
+
+            # Process attachments (images and files)
+            if attachments:
+                for attachment in attachments:
+                    await self._process_attachment(attachment, requests)
+
+            # Run the agent
+            if requests:
+                # Use run_multi for multimodal requests
+                if len(requests) > 1 or any(isinstance(r, (AgentRequestFile, AgentRequestImage)) for r in requests):
+                    result = await service.run_multi(requests=requests)
+                else:
+                    result = await service.run(message_text) if message_text else None
             else:
-                response_text = str(result)
+                result = None
+
+            if result:
+                if hasattr(result, "raw"):
+                    response_text = str(result.raw)
+                else:
+                    response_text = str(result)
+            else:
+                response_text = "Sorry, I could not process your message."
 
             self._log.debug(f"Agent response: {response_text}")
 
@@ -238,6 +265,69 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
             self._log.error(f"Error handling message: {e}\n{traceback.format_exc()}")
             await self._send_typing_indicator(sender_id, False)
             await self._send_message(sender_id, "Sorry, there was an error processing your request.")
+
+    async def _process_attachment(self, attachment: dict, requests: list):
+        """
+        Process an Instagram attachment (image or file).
+
+        :param attachment: Attachment object from message
+        :param requests: List to append the processed request to
+        """
+        attachment_type = attachment.get("type")
+        payload = attachment.get("payload", {})
+        url = payload.get("url")
+
+        if not url:
+            self._log.warning(f"Attachment has no URL: {attachment}")
+            return
+
+        try:
+            # Download the attachment
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=10.0)
+                response.raise_for_status()
+                file_data = response.content
+
+            # Check file size
+            if len(file_data) > self._max_file_size:
+                self._log.warning(
+                    f"Attachment size ({len(file_data) / (1024 * 1024):.2f} MB) exceeds maximum allowed size of {self._max_file_size / (1024 * 1024):.2f} MB"
+                )
+                return
+
+            # Encode to base64
+            file_data_base64 = base64.b64encode(file_data).decode("utf-8")
+
+            # Get MIME type
+            mime_type = response.headers.get("content-type", "application/octet-stream")
+
+            # Extract filename from URL if available
+            filename = url.split("/")[-1].split("?")[0] or f"attachment_{len(requests)}"
+
+            self._log.debug(f"Downloaded {attachment_type} attachment: {filename} (size: {len(file_data)} bytes, type: {mime_type})")
+
+            # Classify based on attachment type and MIME type
+            if attachment_type == "image" or (mime_type and mime_type.startswith("image/")):
+                self._log.debug(f"Adding image: {filename}")
+                requests.append(
+                    AgentRequestImage(
+                        image_data=file_data_base64,
+                        name=filename,
+                        mime_type=mime_type,
+                    )
+                )
+            else:
+                self._log.debug(f"Adding file: {filename}")
+                requests.append(
+                    AgentRequestFile(
+                        file_data=file_data_base64,
+                        name=filename,
+                        mime_type=mime_type,
+                    )
+                )
+
+        except Exception as e:
+            self._log.error(f"Error processing attachment: {e}\n{traceback.format_exc()}")
 
     async def _send_message(self, recipient_id: str, text: str):
         """

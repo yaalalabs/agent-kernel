@@ -63,6 +63,10 @@ export AK_GMAIL__TOKEN_FILE="token.pickle"        # OAuth token storage
 export AK_GMAIL__POLL_INTERVAL="30"               # Polling interval (seconds)
 export AK_GMAIL__LABEL_FILTER="INBOX"             # Gmail label to monitor
 
+# Multimodal Configuration (Optional)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=20        # Keep last N files in session (default: 20)
+
 # Email Signature Customization 
 export AK_CLIENT_NAME="Your Name"                 # Name for signatures
 export AK_GMAIL_SIGN_OFF="Best regards"           # Sign-off format
@@ -202,13 +206,14 @@ def _get_attachments(self, payload: dict):
 
 The Gmail integration supports processing email attachments and passing them to your AI agent for analysis.
 
+When `AK_MULTIMODAL__ENABLED=true` is set, the system remembers attachments across the conversation thread, allowing users to ask follow-up questions about files they previously sent. The `analyze_attachments` tool is automatically attached to your agents at startup.
+
 ### Supported File Types
 
 | Type                       | Extensions                     | MIME Types                                                          |
 | -------------------------- | ------------------------------ | ------------------------------------------------------------------- |
 | **Images**           | .jpg, .jpeg, .png, .gif, .webp | image/jpeg, image/png, image/gif, image/webp                        |
 | **Documents**        | .pdf                           | application/pdf                                                     |
-| **Microsoft Office** | .doc, .docx, .xls, .xlsx       | application/msword, application/vnd.openxmlformats-officedocument.* |
 
 ### How It Works
 
