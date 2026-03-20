@@ -191,6 +191,7 @@
         "dynamodb:",
         "table_name:",
         "agentkernel[",
+        "multimodal",
         "aws"
       ],
       "must_not_contain": [
