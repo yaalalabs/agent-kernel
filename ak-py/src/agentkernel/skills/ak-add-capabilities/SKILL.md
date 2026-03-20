@@ -405,7 +405,14 @@ Enable image and file processing in your agents.
 
 **Basic setup (in-memory storage, good for development):**
 
-1. Update `config.yaml`:
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,multimodal]>=0.2.13",
+]
+```
+
+2. Update `config.yaml`:
 ```yaml
 multimodal:
   enabled: true
@@ -414,7 +421,7 @@ multimodal:
   analysis_model: "gpt-4o"             # Model for detailed analysis via tool
 ```
 
-2. No code changes needed. When enabled:
+3. No further code changes needed. When enabled:
    - A system tool (`analyze_attachments`) is automatically attached to all agents
    - Image/file attachments in requests are processed, described by a vision LLM, and stored in a separate in-memory attachment store (outside the conversation history/session state, non-persistent, in-process)
    - Binary data is kept out of conversation history to prevent memory bloat
