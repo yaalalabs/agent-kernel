@@ -110,12 +110,13 @@ module "response_handler_lambda" {
   function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}"
   description            = "Response handler Lambda for processing SQS messages and storing responses"
   handler                = "response_handler.handler"
-  runtime                = "python3.12"
+  runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.response_handler_lambda_role.arn
-  local_existing_package = var.package_path
+  local_existing_package = "${path.module}/response_handler_dist.zip" # TODO:: has to change based on the Package_type
   create_package         = false
-  package_type           = "Zip"
+  package_type           = "Zip" # TODO:: LocalZip and Image mode has to be supported
+  create_layer = false # to control creation of the Lambda Layer and related resources
 
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90

@@ -5,6 +5,18 @@ variable "package_path" {
   description = "Path to the response handler Lambda deployment package"
 }
 
+variable "module_type" {
+  type        = string
+  description = "Module type"
+  default     = "python"
+}
+
+variable "package_type" {
+  type        = string
+  description = "Lambda deployment package type"
+  default     = "LocalZip"
+}
+
 variable "product_alias" {
   type        = string
   description = "Product alias for resource naming"
@@ -46,7 +58,7 @@ variable "response_store" {
   })
   default = null
   validation {
-    condition = var.response_store == null || contains(["redis", "dynamodb"], var.response_store.database)
+    condition = var.response_store == null ? true : contains(["redis", "dynamodb"], var.response_store.database)
     error_message = "Database must be either 'redis' or 'dynamodb' when response_store is not null."
   }
 }
