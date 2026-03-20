@@ -416,7 +416,7 @@ multimodal:
 
 2. No code changes needed. When enabled:
    - A system tool (`analyze_attachments`) is automatically attached to all agents
-   - Image/file attachments in requests are processed, described by a vision LLM, and stored externally
+   - Image/file attachments in requests are processed, described by a vision LLM, and stored in a separate in-memory attachment store (outside the conversation history/session state, non-persistent, in-process)
    - Binary data is kept out of conversation history to prevent memory bloat
    - Agents see attachment IDs and descriptions in their context
    - Agents can call `analyze_attachments(attachment_ids, prompt)` for detailed analysis
