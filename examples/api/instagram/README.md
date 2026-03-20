@@ -22,6 +22,7 @@ This integration uses the Instagram Graph API (`graph.instagram.com`) directly, 
 Follow the setup guide in [AgentInstagramRequestHandler](../../../ak-py/src/agentkernel/integration/instagram/README.md)
 
 You'll need:
+
 - Access Token (from Business Login - starts with `IGAA...`)
 - App Secret (optional but recommended for webhook signature verification)
 - Verify Token (you create this - any secure random string)
@@ -82,11 +83,13 @@ The server will start on `http://localhost:8000` by default.
 For local testing, expose your server using a tunnel:
 
 ### Using ngrok:
+
 ```bash
 ngrok http 8000
 ```
 
 ### Using pinggy:
+
 ```bash
 ssh -p443 -R0:localhost:8000 a.pinggy.io
 ```
@@ -114,11 +117,102 @@ Copy the HTTPS URL and configure it in your Instagram webhook settings.
 
 ### Test Message Examples
 
-```
+**Text Messages:**
+
+```bash
 Hello
 What services do you offer?
 Can you help me with a question?
 Tell me more about yourself
+```
+
+**Multimodal Messages (with attachments):**
+
+```bash
+"What's in this photo?" [attach image]
+"Can you analyze this document?" [attach PDF]
+"Extract text from this image" [attach screenshot]
+```
+
+### Detailed Multimodal Testing
+
+To test multimodal features using `curl` (simulating webhook events):
+
+**1. Image Attachment:**
+```bash
+curl -X POST "http://localhost:8000/instagram/webhook" \
+     -H "Content-Type: application/json" \
+     -d '{
+  "object": "instagram",
+  "entry": [{
+    "id": "123456789",
+    "time": 1709234567890,
+    "messaging": [{
+      "sender": {"id": "user_123"},
+      "recipient": {"id": "page_123"},
+      "timestamp": 1709234567890,
+      "message": {
+        "mid": "m_123456789",
+        "attachments": [{
+          "type": "image",
+          "payload": {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+          }
+        }]
+      }
+    }]
+  }]
+}'
+```
+
+**2. File Attachment (PDF):**
+```bash
+curl -X POST "http://localhost:8000/instagram/webhook" \
+     -H "Content-Type: application/json" \
+     -d '{
+  "object": "instagram",
+  "entry": [{
+    "id": "123456789",
+    "time": 1709234567890,
+    "messaging": [{
+      "sender": {"id": "user_123"},
+      "recipient": {"id": "page_123"},
+      "timestamp": 1709234567890,
+      "message": {
+        "mid": "m_123456789",
+        "attachments": [{
+          "type": "file",
+          "payload": {
+            "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+          }
+        }]
+      }
+    }]
+  }]
+}'
+```
+
+## Multimodal Features
+
+The integration now supports file and image analysis:
+
+**Supported Attachments:**
+
+- Images (JPEG, PNG, GIF, WebP)
+- Documents (PDF files only)
+- Audio and video files
+
+**File Size Limits:**
+
+- Default: 20 MB per file (configurable)
+- Base64 encoding adds ~33% overhead
+- Check logs for size validation messages
+
+**Configuration:**
+
+```yaml
+api:
+  max_file_size: 20971520  # 20 MB in bytes
 ```
 
 ## API Endpoint
