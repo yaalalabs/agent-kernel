@@ -40,6 +40,29 @@ variable "package_path" {
   type        = string
   description = "Zip package path or Docker image source path"
 }
+variable "scalable_mode" {
+  type        = bool
+  description = "When true, response_handler lambda will be created along with the response "
+  default     = true
+}
+
+variable "execution_mode" {
+  type        = string
+  description = "Execution mode for the deployment. Required when scalable_mode is true, must be null when scalable_mode is false."
+  default     = null
+  validation {
+    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async", "ses_stream", "async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, ses_stream, async, or null."
+  }
+  validation {
+    condition = !var.scalable_mode || var.execution_mode != null
+    error_message = "execution_mode cannot be null when scalable_mode is true."
+  }
+  validation {
+    condition = var.scalable_mode || var.execution_mode == null
+    error_message = "execution_mode must be null when scalable_mode is false."
+  }
+}
 
 variable "event_source_mapping" {
   description = "Event source mapping"
@@ -245,3 +268,47 @@ variable "authorizer" {
 
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
+
+variable "response_handler" {
+  description = "Response handler configuration object"
+  type = object({
+    function_name = optional(string, "response-handler")
+    timeout       = optional(number, 60)
+    memory_size   = optional(number, 256)
+  })
+  default = {}
+}
+
+
+variable "response_store" {
+  description = "Response store configuration object"
+  type = object({
+    database = string
+    redis = optional(object({
+      prefix = optional(string, "ak:response_messages:")
+      url    = optional(string, null)
+      ttl    = number
+    }), null)
+    dynamodb = optional(object({
+      table_name = optional(string, "ak-responses")
+      table_arn = optional(string, null)
+      ttl        = number
+    }), null)
+  })
+  default = null
+  validation {
+    condition = (var.execution_mode == null || var.execution_mode == "async") ? var.response_store == null : true
+    error_message = "response_store must be null when execution_mode is null or 'async'."
+  }
+  validation {
+    condition = (var.execution_mode != null && var.execution_mode != "async") ? var.response_store != null : true
+    error_message = "response_store cannot be null when execution_mode is not null and not 'async'."
+  }
+  validation {
+    condition = var.response_store == null ? true : (
+      (var.response_store.database == "redis" && var.response_store.redis != null && var.response_store.dynamodb == null) ||
+      (var.response_store.database == "dynamodb" && var.response_store.dynamodb != null && var.response_store.redis == null)
+    )
+    error_message = "When response_store is provided: if database='redis', only redis config must be set (dynamodb must be null); if database='dynamodb', only dynamodb config must be set (redis must be null)."
+  }
+}
