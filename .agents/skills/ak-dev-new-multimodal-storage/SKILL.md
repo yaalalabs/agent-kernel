@@ -21,10 +21,13 @@ This guide walks through adding a new attachment storage backend to Agent Kernel
 | Backend | Config value | Features | Extras |
 |---|---|---|---|
 | In-memory | `in_memory` | Ephemeral `ClassVar` dict, zero setup, single-process only | None |
-| Redis | `redis` | Persistent, TTL, connection pooling, distributed | `agentkernel[redis]` |
-| DynamoDB | `dynamodb` | Serverless/AWS, TTL via `expiry_time`, fully managed | `agentkernel[aws]` |
+| Redis | `redis` | Persistent, TTL, connection pooling, distributed | `agentkernel[multimodal,redis]` |
+| DynamoDB | `dynamodb` | Serverless/AWS, TTL via `expiry_time`, fully managed | `agentkernel[multimodal,aws]` |
 | Session cache | `session_cache` | Legacy — stores in session `nv_cache` (causes bloat, not recommended) | None |
 
+> To run multimodal end-to-end (hooks/tools), you typically need `agentkernel[multimodal]`
+> plus the backend-specific extra shown above (for example: `agentkernel[multimodal,redis]`
+> or `agentkernel[multimodal,aws]`).
 ## Architecture Overview
 
 The multimodal storage system uses a simple pluggable pattern:
