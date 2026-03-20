@@ -174,7 +174,9 @@
         "redis:",
         "url:",
         "ttl:",
-        "agentkernel["
+        "agentkernel[",
+        "redis",
+        "multimodal"
       ],
       "must_not_contain": [
         "storage_type: dynamodb"
