@@ -401,21 +401,90 @@ module.post_hook(agent, [DisclaimerPostHook()])
 
 Enable image and file processing in your agents.
 
+**Ask:** Which storage backend — in-memory (default, dev), Redis (production), or DynamoDB (serverless/AWS)?
+
+**Basic setup (in-memory storage, good for development):**
+
 1. Update `config.yaml`:
 ```yaml
 multimodal:
   enabled: true
-  max_attachments: 10
-  description_model: "gpt-4o-mini"     # Model for generating descriptions
-  analysis_model: "gpt-4o"             # Model for detailed analysis
+  max_attachments: 20
+  description_model: "gpt-4o"          # Model for generating brief descriptions
+  analysis_model: "gpt-4o"             # Model for detailed analysis via tool
 ```
 
 2. No code changes needed. When enabled:
    - A system tool (`analyze_attachments`) is automatically attached to all agents
-   - Image/file attachments in requests are processed and stored in session memory
-   - Agents can access attachment descriptions in their context
+   - Image/file attachments in requests are processed, described by a vision LLM, and stored externally
+   - Binary data is kept out of conversation history to prevent memory bloat
+   - Agents see attachment IDs and descriptions in their context
+   - Agents can call `analyze_attachments(attachment_ids, prompt)` for detailed analysis
 
-3. Send multimodal requests via API:
+**For Redis storage (production, persistent, distributed):**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,redis]>=0.2.13",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+multimodal:
+  enabled: true
+  storage_type: redis
+  max_attachments: 20
+  description_model: "gpt-4o"
+  analysis_model: "gpt-4o"
+  redis:
+    url: "redis://localhost:6379"
+    prefix: "ak:attachments:"
+    ttl: 604800                         # Attachment TTL in seconds (7 days)
+```
+
+**For DynamoDB storage (serverless/AWS):**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,aws]>=0.2.13",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+multimodal:
+  enabled: true
+  storage_type: dynamodb
+  max_attachments: 20
+  description_model: "gpt-4o"
+  analysis_model: "gpt-4o"
+  dynamodb:
+    table_name: "ak-attachments"
+    ttl: 604800
+```
+
+3. Create a DynamoDB table with partition key `session_id` (String) and sort key `attachment_id` (String). Enable TTL on `expiry_time` attribute.
+
+**Storage type comparison:**
+
+| Type | Persistence | Multi-process | Setup | Best for |
+|------|-------------|---------------|-------|----------|
+| `in_memory` | Lost on restart | Single process | None | Dev/testing |
+| `redis` | Persistent | Distributed | Redis server | Production |
+| `dynamodb` | Persistent | Distributed | AWS table | Serverless/Lambda |
+
+**How it works:**
+- When a user sends an image or file, a vision LLM generates a brief one-sentence description
+- The binary data is saved to the configured storage backend (not in conversation history)
+- The agent receives the text prompt enriched with attachment IDs and descriptions
+- When the agent needs to inspect an attachment in detail, it calls the `analyze_attachments` tool
+- The tool retrieves the binary from storage, sends it to the analysis LLM, and returns clean text
+
+**Send multimodal requests via API:**
+
 ```bash
 # Base64 image
 curl -X POST http://localhost:8000/run \
@@ -434,6 +503,21 @@ curl -X POST http://localhost:8000/run \
   -F "session_id=test-1" \
   -F "agent=general" \
   -F "file=@document.pdf"
+```
+
+**Environment variables (all storage types):**
+
+```bash
+# Required: LLM API key for vision models
+export OPENAI_API_KEY="sk-..."
+
+# For Redis storage
+export AK_MULTIMODAL__STORAGE_TYPE=redis
+export AK_MULTIMODAL__REDIS__URL="redis://localhost:6379"
+
+# For DynamoDB storage
+export AK_MULTIMODAL__STORAGE_TYPE=dynamodb
+export AK_MULTIMODAL__DYNAMODB__TABLE_NAME="ak-attachments"
 ```
 
 ---
