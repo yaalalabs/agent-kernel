@@ -52,7 +52,6 @@ For image and document support, configure these environment variables:
 ```bash
 export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
 export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
-export AK_MULTIMODAL__ATTACHMENT_TTL=604800     # File lifetime in seconds (default: 604800 = 1 week)
 ```
 
 
