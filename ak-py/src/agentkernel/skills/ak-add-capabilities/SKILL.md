@@ -426,7 +426,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.2.13",
+    "agentkernel[openai,api,redis,multimodal]>=0.2.13",
 ]
 ```
 
