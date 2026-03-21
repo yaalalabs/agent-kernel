@@ -44,7 +44,6 @@ variable "response_handler" {
 variable "response_store" {
   description = "Response store configuration object"
   type = object({
-    database = string
     redis = optional(object({
       prefix = string
       url    = string
@@ -58,8 +57,11 @@ variable "response_store" {
   })
   default = null
   validation {
-    condition = var.response_store == null ? true : contains(["redis", "dynamodb"], var.response_store.database)
-    error_message = "Database must be either 'redis' or 'dynamodb' when response_store is not null."
+    condition = var.response_store == null ? true : (
+      (var.response_store.redis != null && var.response_store.dynamodb == null) ||
+      (var.response_store.dynamodb != null && var.response_store.redis == null)
+    )
+    error_message = "Exactly one of redis or dynamodb must be configured when response_store is provided."
   }
 }
 

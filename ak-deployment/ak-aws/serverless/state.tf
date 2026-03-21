@@ -16,30 +16,39 @@ locals {
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
   create_authorizer          = var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
 
-  # TODO:: check conditions and remove unwanted stuff
+  #TODO:: check conditions and remove unwanted stuff
 
   # Response handler condition checks
-  is_async_mode                  = var.execution_mode == "async"
+  is_async_mode         = var.execution_mode == "async"
+  create_response_store = var.scalable_mode && !local.is_async_mode && var.response_store != null
 
-  # Response store creation conditions
-  create_response_store          = var.scalable_mode && !local.is_async_mode && var.response_store != null
-  create_redis_response_store    = local.create_response_store && var.response_store.redis != null ? var.response_store.redis.url == null : false
-  create_dynamodb_response_store = local.create_response_store && var.response_store.dynamodb != null ? var.response_store.dynamodb.table_arn == null : false
-  has_redis_config             = var.response_store != null ? var.response_store.redis != null : false
-  has_dynamodb_config          = var.response_store != null ? var.response_store.dynamodb != null : false
-  should_use_external_redis    = local.has_redis_config ? var.response_store.redis.url == null : false
-  should_use_external_dynamodb = local.has_dynamodb_config ? var.response_store.dynamodb.table_arn == null : false
+  # Helper conditions for checking if configs exist
+  has_redis_config    = local.create_response_store && var.response_store.redis != null
+  has_dynamodb_config = local.create_response_store && var.response_store.dynamodb != null
 
-  # Computed response store Redis URL
-  response_store_redis_url = local.should_use_external_redis ? module.redis_response_store[0].url : (local.has_redis_config ? var.response_store.redis.url : null)
+  # Response store creation conditions - create new resources only if URL/ARN not provided
+  create_redis_response_store    = local.has_redis_config && var.response_store.redis.url == null
+  create_dynamodb_response_store = local.has_dynamodb_config && var.response_store.dynamodb.table_arn == null
 
-  # Computed response store DynamoDB values
-  response_store_dynamodb_table_name = local.should_use_external_dynamodb ? module.dynamodb_response_store[0].table_name : (local.has_dynamodb_config ? var.response_store.dynamodb.table_name : null)
-  response_store_dynamodb_table_arn  = local.should_use_external_dynamodb ? module.dynamodb_response_store[0].table_arn : (local.has_dynamodb_config ? var.response_store.dynamodb.table_arn : null)
+  # Computed response store values - use created resources or provided values
+  response_store_redis_url = (
+    local.create_redis_response_store 
+    ? module.redis_response_store[0].url 
+    : (local.has_redis_config ? var.response_store.redis.url : null)
+  )
+  response_store_dynamodb_table_name = (
+    local.create_dynamodb_response_store 
+    ? module.dynamodb_response_store[0].table_name 
+    : (local.has_dynamodb_config ? var.response_store.dynamodb.table_name : null)
+  )
+  response_store_dynamodb_table_arn = (
+    local.create_dynamodb_response_store 
+    ? module.dynamodb_response_store[0].table_arn 
+    : (local.has_dynamodb_config ? var.response_store.dynamodb.table_arn : null)
+  )
 
   # Response handler response_store configuration
-  response_handler_response_store = local.is_async_mode || var.response_store == null ? null : {
-    database = var.response_store.database
+  response_handler_response_store = local.create_response_store ? {
     redis = local.has_redis_config ? {
       prefix = var.response_store.redis.prefix
       url    = local.response_store_redis_url
@@ -50,7 +59,7 @@ locals {
       table_arn  = local.response_store_dynamodb_table_arn
       ttl        = var.response_store.dynamodb.ttl
     } : null
-  }
+  } : null
 
   # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["authorizer_function_name", "authorizer_handler_path", "authorizer_package_type", "authorizer_package_path", "authorizer_module_name"]))

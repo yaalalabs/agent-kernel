@@ -283,7 +283,6 @@ variable "response_handler" {
 variable "response_store" {
   description = "Response store configuration object"
   type = object({
-    database = string
     redis = optional(object({
       prefix = optional(string, "ak:response_messages:")
       url    = optional(string, null)
@@ -306,9 +305,9 @@ variable "response_store" {
   }
   validation {
     condition = var.response_store == null ? true : (
-      (var.response_store.database == "redis" && var.response_store.redis != null && var.response_store.dynamodb == null) ||
-      (var.response_store.database == "dynamodb" && var.response_store.dynamodb != null && var.response_store.redis == null)
+      (var.response_store.redis != null && var.response_store.dynamodb == null) ||
+      (var.response_store.dynamodb != null && var.response_store.redis == null)
     )
-    error_message = "When response_store is provided: if database='redis', only redis config must be set (dynamodb must be null); if database='dynamodb', only dynamodb config must be set (redis must be null)."
+    error_message = "Exactly one of redis or dynamodb must be configured when response_store is provided."
   }
 }
