@@ -127,13 +127,13 @@ module "response_handler_lambda" {
   environment_variables = merge(
     var.environment_variables,
     local.redis_response_store != null ? {
-      AK_RESPONSE_STORE__REDIS__URL = local.redis_response_store.url
-      AK_RESPONSE_STORE__REDIS__PREFIX = local.redis_response_store.prefix
-      AK_RESPONSE_STORE__REDIS__TTL = tostring(local.redis_response_store.ttl)
+      AK_EXECUTION__RESPONSE_STORE__REDIS__URL = local.redis_response_store.url
+      AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX = local.redis_response_store.prefix
+      AK_EXECUTION__RESPONSE_STORE__REDIS__TTL = tostring(local.redis_response_store.ttl)
     } : {},
     local.dynamodb_response_store != null ? {
-      AK_RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
-      AK_RESPONSE_STORE__DYNAMODB__TTL = tostring(local.dynamodb_response_store.ttl)
+      AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
+      AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL = tostring(local.dynamodb_response_store.ttl)
     } : {}
   )
 
