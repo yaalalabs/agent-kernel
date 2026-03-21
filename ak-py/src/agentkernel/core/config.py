@@ -1,8 +1,9 @@
 import importlib.metadata
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
 
 
@@ -162,6 +163,31 @@ class _GuardrailConfig(BaseModel):
     output: _GuardrailParamConfig = Field(description="Output Guardrail configuration", default_factory=_GuardrailParamConfig)
 
 
+class _ResponseStoreConfig(BaseModel):
+    redis: Optional[_RedisConfig] = None
+    dynamodb: Optional[_DynamoDBConfig] = None
+
+    @model_validator(mode='after')
+    def validate_mutual_exclusivity(self) -> '_ResponseStoreConfig':
+        """Validate that only one response store type is configured."""
+        if self.redis is not None and self.dynamodb is not None:
+            raise ValueError("Only one of 'redis' or 'dynamodb' can be configured for response_store, not both")
+        return self
+
+
+class _ExecutionConfig(BaseModel):
+    mode: ExecutionMode = Field(
+        default=None,
+        description="Execution mode: rest_sync for synchronous REST, ses_stream for Server-Sent Events streaming, async for asynchronous processing",
+    )
+    source_queue_url: Optional[str] = Field(default=None, description="Source SQS queue URL for async execution mode")
+    destination_queue_url: Optional[str] = Field(default=None, description="Destination SQS queue URL for async execution mode")
+    response_store: Optional[_ResponseStoreConfig] = Field(
+        default=None,
+        description="Response storage configuration for async execution mode",
+    )
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -184,6 +210,7 @@ class AKConfig(YamlBaseSettingsModified):
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
+    execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

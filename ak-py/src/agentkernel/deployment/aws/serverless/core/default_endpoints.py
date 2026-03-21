@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import traceback
 import uuid
 from typing import Any, Callable, Dict, Optional
@@ -12,6 +11,7 @@ import boto3
 from ....common.chat_service import ChatService
 from ...response_store.handler import ResponseDBHandler
 from .....core.model import ExecutionMode
+from .....core.config import AKConfig
 
 
 class DefaultEndpointsHandler:
@@ -19,13 +19,14 @@ class DefaultEndpointsHandler:
 
     _log = logging.getLogger("ak.aws.lambda.default_endpoints")
 
-    _exec_mode = os.getenv("EXECUTION_MODE")
-    # _source_queue_url = os.getenv("SOURCE_QUEUE_URL") # no need polling queue for this as we are only putting messages to queue
-    _destination_queue_url = os.getenv("DESTINATION_QUEUE_URL") # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
+    _config = AKConfig.get()
+    _exec_mode = _config.execution.mode
+    # _source_queue_url is not needed as we are only putting messages to queue
+    _destination_queue_url = _config.execution.destination_queue_url  # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
 
     _default_chat_path = "default_chat_path"
     _default_chat_method = "POST"
-    _default_user_polling_method = "GET" if _exec_mode == ExecutionMode.REST_ASYNC.value else None
+    _default_user_polling_method = "GET" if _exec_mode == ExecutionMode.REST_ASYNC else None
 
     _sqs = boto3.client("sqs")
     _response_store = ResponseDBHandler().get_store()
@@ -58,7 +59,7 @@ class DefaultEndpointsHandler:
                 }
             }
 
-        if cls._exec_mode == ExecutionMode.REST_SYNC.value:
+        if cls._exec_mode == ExecutionMode.REST_SYNC:
             cls._log.info("Initialized REST_SYNC endpoint.")
             return {
                 cls._default_chat_path: {
@@ -66,7 +67,7 @@ class DefaultEndpointsHandler:
                 }
             }
 
-        if cls._exec_mode == ExecutionMode.REST_ASYNC.value:
+        if cls._exec_mode == ExecutionMode.REST_ASYNC:
             cls._log.info("Initialized REST_ASYNC endpoints.")
             return {
                 cls._default_chat_path: {
@@ -75,7 +76,7 @@ class DefaultEndpointsHandler:
                 }
             }
 
-        if cls._exec_mode == ExecutionMode.STREAM.value:
+        if cls._exec_mode == ExecutionMode.STREAM:
             cls._log.info("Initialized STREAM endpoint.")
             return {
                 cls._default_chat_path: {cls._default_chat_method: cls._handle_stream}

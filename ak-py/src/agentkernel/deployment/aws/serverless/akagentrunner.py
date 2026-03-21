@@ -1,17 +1,18 @@
 import logging
 import json
-import os
 
 import boto3
 
 from ...common.chat_service import ChatService
+from ....core.config import AKConfig
 from .core.sqs_consumer import LambdaSQSConsumer
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
     
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = ChatService()
-    _destination_queue_url = os.getenv("DESTINATION_QUEUE_URL")
+    _config = AKConfig.get()
+    _destination_queue_url = _config.execution.destination_queue_url
     _sqs_client = boto3.client("sqs")
 
     @classmethod
