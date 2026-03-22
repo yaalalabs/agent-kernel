@@ -418,7 +418,7 @@ module "serverless_agents" {
     handler_path          = "lambda.handler"
     package_path          = "../auth_deployment/auth_dist.zip"
     package_type          = "S3Zip"  # or "LocalZip" or "Image"
-    module_name           = var.authorizer_module_name
+    module_name           = "auth"
     
     # Optional authorizer settings
     # result_ttl_in_seconds = 0

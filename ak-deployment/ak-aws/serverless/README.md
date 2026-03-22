@@ -395,7 +395,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 
 Resources follow consistent naming:
 - Lambda Function: `{product_alias}-{env_alias}-{module_name}-{function_name}`
-- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer_module_name}-{authorizer_function_name}`
+- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer.module_name}-{authorizer.function_name}`
 - API Gateway: `{product_alias}-{env_alias}-{module_name}-api`
 - CloudWatch Logs: `/aws/lambda/{function_name}`
 
