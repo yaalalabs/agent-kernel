@@ -14,6 +14,8 @@ locals {
   redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
   dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+  dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
+  dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   create_authorizer          = var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
 
   #TODO:: check conditions and remove unwanted stuff
@@ -111,7 +113,7 @@ locals {
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.2.13"
+  version              = "0.2.14"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -125,7 +127,7 @@ module "vpc" {
 module "source_storage" {
   count                = (var.package_type == "S3Zip") ? 1 : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
-  version              = "0.2.13"
+  version              = "0.2.14"
   region               = var.region
   env_alias            = var.env_alias
   is_production        = var.is_production
@@ -137,7 +139,7 @@ module "source_storage" {
 module "source_package" {
   count            = (var.package_type == "S3Zip") ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.2.13"
+  version          = "0.2.14"
   env_alias        = var.env_alias
   region           = var.region
   module_name      = var.module_name
@@ -173,7 +175,7 @@ module "authorizer" {
 module "docker_image" {
   count         = (var.package_type == "Image") ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.2.13"
+  version       = "0.2.14"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -182,7 +184,7 @@ module "docker_image" {
 
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.2.13"
+  version       = "0.2.14"
   count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -194,7 +196,7 @@ module "redis" {
 
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.2.13"
+  version = "0.2.14"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -277,4 +279,22 @@ module "response_handler" {
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
   depends_on = [null_resource.build_response_handler]
+}
+
+module "dynamodb_multimodal_memory" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.13"
+  count   = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "attachment_id", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "attachment_id"
+  ttl_enabled        = true
+  ttl_attribute_name = "expiry_time"
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "mm-attachments"
 }

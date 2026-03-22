@@ -175,6 +175,12 @@ variable "create_dynamodb_memory_table" {
   default     = false
 }
 
+variable "create_dynamodb_multimodal_memory_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the Agent multimodal memory"
+  default     = false
+}
+
 variable "private_subnet_cidrs" {
   type = list(string)
   description = "CIDR blocks for the private subnets"

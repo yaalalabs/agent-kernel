@@ -33,6 +33,16 @@ export AK_TELEGRAM__WEBHOOK_SECRET="your_secure_random_string"
 export OPENAI_API_KEY="your_openai_api_key"
 ```
 
+### Multimodal Configuration
+
+For image and document support, configure these environment variables:
+
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=20        # Keep last N files in session (default: 20)
+```
+
+
 ### 3. Create Configuration File
 
 Create `config.yaml`:
@@ -59,24 +69,29 @@ For local development with Agent Kernel source:
 
 ## Run
 
-Start the server:
-
 ```bash
 uv run server.py
 ```
 
-The server will start on `http://0.0.0.0:8000` by default.
+**Features:**
+
+- Uses Agent Kernel telegram handler with an OpenAI agent
+- Built-in image and document analysis
+- Session memory for multi-turn conversations
+- Simple, straightforward setup
 
 ## Expose Local Server
 
 For local testing, expose your server using a tunnel:
 
 ### Using ngrok:
+
 ```bash
 ngrok http 8000
 ```
 
 ### Using pinggy:
+
 ```bash
 ssh -p443 -R0:localhost:8000 a.pinggy.io
 ```
@@ -86,6 +101,7 @@ Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
 ## Configure Telegram Webhook
 
 ### Option 1: Using curl
+
 ```bash
 curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -H "Content-Type: application/json" \
@@ -96,6 +112,7 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
 ```
 
 ### Option 2: Using Python script
+
 ```python
 import requests
 
@@ -119,6 +136,59 @@ print(response.json())
 curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 ```
 
+## Multimodal Features
+
+This integration supports images and documents:
+
+### Supported File Types
+
+| Type                | Format          | Use Case               |
+| ------------------- | --------------- | ---------------------- |
+| **Images**    | JPEG, PNG, WebP | Analysis, vision tasks |
+| **Documents** | PDF, DOCX, TXT  | Content analysis, Q&A  |
+| **Text**      | Plain messages  | Standard conversations |
+
+### Using Multimodal
+
+1. **Text Only** - Send a regular message
+
+   ```bash
+   What is the capital of France?
+   ```
+2. **Image Analysis** - Send an image with caption
+
+   ```bash
+   [Send image] What is in this image?
+   ```
+3. **Document Q&A** - Send a PDF with question
+
+   ```bash
+   [Send PDF] Summarize this document
+   ```
+4. **Follow-up Questions** - Ask about previous context
+
+   ```bash
+   [Send image first]
+   User: What is this? → Bot analyzes
+   User: Can you identify the parts? → Bot remembers image and answers
+   ```
+
+### Session Memory
+
+The bot maintains conversation history:
+
+- Each Telegram chat has its own session
+- Previous messages and context are remembered
+- Images/PDFs from earlier in conversation can be referenced
+- Session persists until bot restart
+
+### Multimodal Limitations
+
+- File size: Max 20MB (configurable via `max_file_size`)
+- Timeout: Requests take longer (30-60 seconds for large files)
+- Context: Session cleared on server restart
+- Supported models: OpenAI GPT-4o or compatible
+
 ## Testing
 
 1. Open Telegram and find your bot (by username you set in BotFather)
@@ -129,9 +199,28 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
    - Respond with AI-generated message
 5. Check server logs to see the request/response flow
 
+### Test Multimodal Examples
+
+```bash
+# Test 1: Image Analysis
+1. Send an image of a dog
+2. User: "What animal is this?"
+3. Expected: Bot identifies it as a dog
+
+# Test 2: Document Analysis  
+1. Send a PDF document
+2. User: "Summarize the main points"
+3. Expected: Bot reads and summarizes the document
+
+# Test 3: Follow-up Context
+1. Send an image
+2. User: "What is this?" → Bot responds
+3. User: "What colors are dominant?" → Bot remembers the image
+```
+
 ### Test Message Examples
 
-```
+```bash
 /start
 Hello
 What can you help me with?
@@ -142,6 +231,7 @@ Can you answer technical questions?
 ## Bot Commands
 
 Built-in commands:
+
 - `/start` - Start conversation with the bot
 - `/help` - Show help message
 
@@ -171,7 +261,7 @@ class CustomTelegramHandler(AgentTelegramRequestHandler):
 support_agent = OpenAIAgent(
     name="support",
     handoff_description="Customer support agent",
-    instructions="Provide helpful customer support. Be concise for Telegram."
+    instructions="Provide helpful customer support. Be concise for Telegram.",
 )
 
 sales_agent = OpenAIAgent(
@@ -183,6 +273,8 @@ sales_agent = OpenAIAgent(
 # Initialize with multiple agents
 OpenAIModule([support_agent, sales_agent])
 ```
+
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to all agents by Agent Kernel at startup. You do not need to add it manually.
 
 ### Send Inline Keyboards
 
@@ -238,11 +330,9 @@ await self._send_message(
 - Ensure `AK_TELEGRAM__WEBHOOK_SECRET` matches what you set in webhook
 - Remove secret token temporarily for testing: `unset AK_TELEGRAM__WEBHOOK_SECRET`
 
-
 ## Resources
 
 - [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
 - [BotFather Commands](https://core.telegram.org/bots#botfather-commands)
 - [Telegram Bot Examples](https://core.telegram.org/bots/samples)
 - [Agent Kernel Documentation](../../../docs/)
-

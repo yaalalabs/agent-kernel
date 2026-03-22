@@ -1,4 +1,4 @@
-from typing import Any, Literal, Union
+from typing import Any, Callable, Literal, Union
 from enum import Enum
 
 from pydantic import BaseModel
@@ -114,3 +114,8 @@ class ExecutionMode(str, Enum):
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
+
+class SystemTool(BaseModel):
+    name: str
+    description: str
+    func: Callable

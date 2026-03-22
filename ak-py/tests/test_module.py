@@ -40,6 +40,12 @@ class KernelWrappedAgent(Agent):
     def get_description(self):
         pass
 
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
 
 class SimpleModule(Module):
 

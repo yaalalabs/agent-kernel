@@ -5,7 +5,7 @@ description = "Demo of CrewAI based agents with authentication running in Agent 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[crewai,api,redis,auth]>=0.2.13"
+    "agentkernel[crewai,api,redis,auth]>=0.2.14"
 ]
 
 [dependency-groups]

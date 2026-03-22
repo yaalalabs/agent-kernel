@@ -33,6 +33,12 @@ class MockAgent(Agent):
     def get_a2a_card(self) -> Any:
         return None
 
+    def override_system_prompt(self, prompt: str) -> None:
+        pass
+
+    def attach_tool(self, tool: Any) -> None:
+        pass
+
 
 def _make_adk_tool_context(state: dict[str, Any] | None = None) -> ADKToolContext:
     """Build a mock ADK ToolContext whose .state returns the given dict."""

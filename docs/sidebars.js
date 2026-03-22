@@ -117,6 +117,7 @@ const sidebars = {
       items: [
         'advanced/traceability',
         'advanced/multi-agent',
+        'advanced/multimodal',
         {
           type: 'category',
           label: 'Guardrails',

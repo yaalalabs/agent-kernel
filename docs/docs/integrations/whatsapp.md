@@ -20,13 +20,20 @@ The `AgentWhatsAppRequestHandler` class handles conversations with agents via Wh
 
 - **Text Messages**: Standard text messages
 - **Interactive Messages**: Button and list replies
-- **Media Messages**: Image, documents
+- **Media Messages**: Images and documents (PDF files only)
 
-:::info Current Limitation
-Currently, passed images and files are not added to the chat history. So all questions have to be asked with the caption sent along with the attachments. Follow up questions, which require re-analysis of the file/image cannot be answered by the LLM.
+### Multimodal Configuration
 
-Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/api/rest-api.md) on how to handle this properly without exhausting the token limits.
-:::
+For enhanced attachment processing with memory and context, configure these environment variables:
+
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session
+```
+
+When `AK_MULTIMODAL__ENABLED=true` is set, the system remembers attachments across the conversation thread, allowing users to ask follow-up questions about files they previously sent.
+
+> **Note:** When multimodal is enabled, the `analyze_attachments` tool is automatically attached to your agents at startup.
 
 ### Message Handling
 
