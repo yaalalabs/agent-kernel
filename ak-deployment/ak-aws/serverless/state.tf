@@ -267,7 +267,7 @@ module "response_handler" {
   response_handler = var.response_handler
   response_store   = local.response_handler_response_store
   environment_variables = {
-    AK_EXECUTION_MODE = var.execution_mode
+    AK_EXECUTION__MODE = var.execution_mode
   }
 
   # Pass local values
