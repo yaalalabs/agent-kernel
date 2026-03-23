@@ -237,6 +237,7 @@ async def _post_result(text: str):
 
 # Tests
 @pytest.mark.asyncio
+@pytest.mark.skipif(SHOULD_SKIP, reason=SKIP_REASON)
 async def test_health(http_client):
     """Smoke test: verify the server starts and /health returns ok."""
     response = await http_client.send("/health", method="get")

@@ -85,6 +85,7 @@ class _SlackConfig(BaseModel):
         default="",
         description="The message to send as an acknowledgement when a Slack message is received",
     )
+    test_mode: bool = Field(default=False, description="Enable mock testing mode for Slack integration")
 
 
 class _WhatsAppConfig(BaseModel):

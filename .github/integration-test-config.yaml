@@ -25,13 +25,14 @@ nightly:
     - type: api
       path: examples/api/gmail
     - type: api
+      path: examples/api/teams
+    - type: api
       path: examples/api/multimodal/dynamodb
       requires_aws: true
     - type: api
       path: examples/api/multimodal/redis
       requires_redis: true
-    - type: api
-      path: examples/api/teams
+    
 
 weekly:
   # Tests that run once a week
