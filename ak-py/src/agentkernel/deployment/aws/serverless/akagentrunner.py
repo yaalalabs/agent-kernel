@@ -12,7 +12,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = ChatService()
     _config = AKConfig.get()
-    _destination_queue_url = _config.execution.destination_queue_url
+    _output_queue_url = _config.execution.output_queue_url
     _sqs_client = boto3.client("sqs")
 
     @classmethod
@@ -46,7 +46,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :return: None.
         """
         cls._sqs_client.send_message(
-            QueueUrl=cls._destination_queue_url,
+            QueueUrl=cls._output_queue_url,
             **queue_input_message,
         )
 
@@ -75,12 +75,12 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             error_message_body = cls._construct_error_message_body(error_msg="Session ID mismatch")
             queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body,)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._destination_queue_url}'")
+            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._output_queue_url}'")
             return
         agent_response = cls._chat_service.process_chat_request(body=body)
         queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=agent_response,)
         cls._send_to_output_queue(queue_input_message=queue_input_message)
-        cls._log.info(f"Sent Response message to Output Queue: '{cls._destination_queue_url}'")
+        cls._log.info(f"Sent Response message to Output Queue: '{cls._output_queue_url}'")
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
@@ -94,8 +94,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             error_message_body = cls._construct_error_message_body(error_msg="Failed to process message. Retried {cls.max_receive_count} times")
             queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body,)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._destination_queue_url}'")
+            cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._output_queue_url}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries
             # Catching the error here so that this message will not be returned as batchItemFailures for another retry. 
-            cls._log.info(f"Failed sending permenant failure message to Output Queue '{cls._destination_queue_url}' due to error: '{str(e)}'")
+            cls._log.info(f"Failed sending permenant failure message to Output Queue '{cls._output_queue_url}' due to error: '{str(e)}'")

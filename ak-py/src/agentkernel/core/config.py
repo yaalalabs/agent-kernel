@@ -217,8 +217,8 @@ class _ExecutionConfig(BaseModel):
         default=None,
         description="Execution mode: rest_sync for synchronous REST, ses_stream for Server-Sent Events streaming, async for asynchronous processing",
     )
-    source_queue_url: Optional[str] = Field(default=None, description="Source SQS queue URL for async execution mode")
-    destination_queue_url: Optional[str] = Field(default=None, description="Destination SQS queue URL for async execution mode")
+    input_queue_url: Optional[str] = Field(default=None, description="Input SQS queue URL for async execution mode")
+    output_queue_url: Optional[str] = Field(default=None, description="Output SQS queue URL for async execution mode")
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",

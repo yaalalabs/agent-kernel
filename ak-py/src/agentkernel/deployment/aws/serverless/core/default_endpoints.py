@@ -21,8 +21,7 @@ class DefaultEndpointsHandler:
 
     _config = AKConfig.get()
     _exec_mode = _config.execution.mode
-    # _source_queue_url is not needed as we are only putting messages to queue
-    _destination_queue_url = _config.execution.destination_queue_url  # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
+    _input_queue_url = _config.execution.input_queue_url  # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
 
     _default_chat_path = "default_chat_path"
     _default_chat_method = "POST"
@@ -51,7 +50,7 @@ class DefaultEndpointsHandler:
         :return: Dictionary mapping paths → HTTP methods → handler functions
         """
 
-        if not cls._destination_queue_url:
+        if not cls._input_queue_url:
             cls._log.warning("Queues not configured; using direct chat endpoint.")
             return {
                 cls._default_chat_path: {
@@ -143,7 +142,7 @@ class DefaultEndpointsHandler:
         session_id = payload["session_id"]
 
         response = cls._sqs.send_message(
-            QueueUrl=cls._destination_queue_url,
+            QueueUrl=cls._input_queue_url,
             MessageBody=json.dumps(payload),
             MessageGroupId=session_id,
             MessageDeduplicationId=str(uuid.uuid4()),
