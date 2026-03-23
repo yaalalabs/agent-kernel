@@ -122,6 +122,7 @@ class _TelegramConfig(BaseModel):
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
     webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
+    api_base_url: str = Field(default="https://api.telegram.org", description="Telegram API base URL")
 
 
 class _GmailConfig(BaseModel):
