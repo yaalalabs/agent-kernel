@@ -54,6 +54,8 @@ e2e:
     - type: api
       path: examples/api/gmail
     - type: api
+      path: examples/api/teams
+    - type: api
       path: examples/api/a2a/multi
     - type: api
       path: examples/api/mcp/multi
