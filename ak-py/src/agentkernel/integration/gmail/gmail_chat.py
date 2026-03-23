@@ -58,8 +58,9 @@ class AgentGmailRequestHandler:
         self._client_secret = os.environ.get("AK_GMAIL__CLIENT_SECRET")
         self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
         if not (self._client_id and self._client_secret):
-            self._log.error("Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET.")
-            raise ValueError("Incomplete Gmail configuration.")
+            self._log.warning(
+                "Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET if you do not have a token.pickle file."
+            )
 
         # Email filtering configuration (optional)
         self._sender_filter = os.environ.get("AK_GMAIL__SENDER_FILTER")  # Comma-separated list of allowed senders
