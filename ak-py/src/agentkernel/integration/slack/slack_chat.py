@@ -26,6 +26,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         self._log = logging.getLogger("ak.api.slack")
         self._slack_agent = Config.get().slack.agent if Config.get().slack.agent != "" else None
         self._slack_agent_acknowledgement = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
+        self._slack_test_mode = Config.get().slack.test_mode
         self._max_file_size = Config.get().api.max_file_size
         self._bot_id = None
 
@@ -117,10 +118,14 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
             response_for_first_bot_message = None
             if self._slack_agent_acknowledgement is not None:
+                if self._slack_test_mode:
+                    ack_text = f"{self._slack_agent_acknowledgement} - {text} :rolling-loader:"
+                else:
+                    ack_text = f"Hi <@{user}>, {self._slack_agent_acknowledgement} :rolling-loader:"
                 response_for_first_bot_message = await say(
                     channel=channel,
                     thread_ts=thread_ts,
-                    text=f"Hi <@{user}>, {self._slack_agent_acknowledgement} :rolling-loader:",
+                    text=ack_text,
                 )
             service.select(session_id=thread_ts, name=self._slack_agent)
             if not service.agent:
@@ -159,7 +164,11 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             if response_for_first_bot_message is not None:
                 new_ts = response_for_first_bot_message["ts"]
                 ch = response_for_first_bot_message["channel"]
-                await say.client.chat_update(channel=ch, ts=new_ts, text=f"Hi <@{user}>,")
+                if self._slack_test_mode:
+                    update_text = f"{self._slack_agent_acknowledgement} - {text}"
+                else:
+                    update_text = f"Hi <@{user}>,"
+                await say.client.chat_update(channel=ch, ts=new_ts, text=update_text)
             else:
                 new_ts = thread_ts
                 ch = channel

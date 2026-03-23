@@ -25,8 +25,6 @@ on:
         required: false
       OPENAI_API_KEY:
         required: false
-      WALLED_API_KEY:
-        required: false
       SLACK_BOT_TOKEN:
         required: false
       SLACK_SIGNING_SECRET:
@@ -172,9 +170,9 @@ jobs:
       - name: Run test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          WALLED_API_KEY: ${{ secrets.WALLED_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          AK_TEST_SLACK_CHANNEL_ID: ${{ secrets.AK_TEST_SLACK_CHANNEL_ID }}
         run: |
           python .github/scripts/run_single_test.py \
             --type ${{ matrix.type }} \

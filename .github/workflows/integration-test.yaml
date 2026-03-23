@@ -106,6 +106,7 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          AK_TEST_SLACK_CHANNEL_ID: ${{ secrets.AK_TEST_SLACK_CHANNEL_ID }}
         run: |
           # Deploy
           python .github/scripts/run_single_test.py \
@@ -159,7 +160,7 @@ jobs:
           key: ak-py-${{ github.sha }}
 
       - name: Configure AWS credentials
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.requires_aws == true
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
@@ -175,12 +176,49 @@ jobs:
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
         run: python3 scripts/deploy/inject_dependencies.py
 
+      - name: Restore Gmail token
+        if: matrix.path == 'examples/api/gmail'
+        run: echo "${{ secrets.AK_GMAIL_TOKEN_PICKLE_B64 }}" | base64 -d > examples/api/gmail/token.pickle
+
       - name: Run Test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          # Slack
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          AK_TEST_SLACK_CHANNEL_ID: ${{ secrets.AK_TEST_SLACK_CHANNEL_ID }}
+          # Telegram
+          AK_TELEGRAM__BOT_TOKEN: ${{ secrets.AK_TELEGRAM__BOT_TOKEN }}
+          AK_TELEGRAM__WEBHOOK_SECRET: ${{ secrets.AK_TELEGRAM__WEBHOOK_SECRET }}
+          AK_TEST_TELEGRAM_CHAT_ID: ${{ secrets.AK_TEST_TELEGRAM_CHAT_ID }}
+          # WhatsApp
+          AK_WHATSAPP__ACCESS_TOKEN: ${{ secrets.AK_WHATSAPP__ACCESS_TOKEN }}
+          AK_WHATSAPP__PHONE_NUMBER_ID: ${{ secrets.AK_WHATSAPP__PHONE_NUMBER_ID }}
+          AK_WHATSAPP__VERIFY_TOKEN: ${{ secrets.AK_WHATSAPP__VERIFY_TOKEN }}
+          AK_TEST_WHATSAPP_TO_NUMBER: ${{ secrets.AK_TEST_WHATSAPP_TO_NUMBER }}
+          # Messenger
+          AK_MESSENGER__ACCESS_TOKEN: ${{ secrets.AK_MESSENGER__ACCESS_TOKEN }}
+          AK_MESSENGER__VERIFY_TOKEN: ${{ secrets.AK_MESSENGER__VERIFY_TOKEN }}
+          AK_MESSENGER__APP_SECRET: ${{ secrets.AK_MESSENGER__APP_SECRET }}
+          AK_TEST_MESSENGER_USER_ID: ${{ secrets.AK_TEST_MESSENGER_USER_ID }}
+          AK_MESSENGER__PAGE_ID: ${{ secrets.AK_MESSENGER__PAGE_ID }}
+          # Instagram
+          AK_INSTAGRAM__ACCESS_TOKEN: ${{ secrets.AK_INSTAGRAM__ACCESS_TOKEN }}
+          AK_INSTAGRAM__VERIFY_TOKEN: ${{ secrets.AK_INSTAGRAM__VERIFY_TOKEN }}
+          AK_INSTAGRAM__APP_SECRET: ${{ secrets.AK_INSTAGRAM__APP_SECRET }}
+          AK_TEST_INSTAGRAM_USER_ID: ${{ secrets.AK_TEST_INSTAGRAM_USER_ID }}
+          AK_INSTAGRAM__PAGE_ID: ${{ secrets.AK_INSTAGRAM__PAGE_ID }}
+          # Gmail
+          AK_TEST_GMAIL_ADDRESS: ${{ secrets.AK_TEST_GMAIL_ADDRESS }}
+          AK_GMAIL__CLIENT_ID: ${{ secrets.AK_GMAIL__CLIENT_ID }}
+          AK_GMAIL__CLIENT_SECRET: ${{ secrets.AK_GMAIL__CLIENT_SECRET }}
+          # Teams
+          AK_TEAMS__APP_ID: ${{ secrets.AK_TEAMS__APP_ID }}
+          AK_TEAMS__APP_PASSWORD: ${{ secrets.AK_TEAMS__APP_PASSWORD }}
+          AK_TEAMS__TENANT_ID: ${{ secrets.AK_TEAMS__TENANT_ID }}
+          AK_TEST_TEAMS_SERVICE_URL: ${{ secrets.AK_TEST_TEAMS_SERVICE_URL }}
+          AK_TEST_TEAMS_CONVERSATION_ID: ${{ secrets.AK_TEST_TEAMS_CONVERSATION_ID }}
         run: |
           # Deploy (for AWS types)
           if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then

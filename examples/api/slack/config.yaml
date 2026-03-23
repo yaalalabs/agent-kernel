@@ -4,4 +4,5 @@ library_version: "0.1.0"
 
 # Slack integration settings
 slack:
-  agent_acknowledgement: "I'm processing your request"
+  agent_acknowledgement: "Integration test processing"
+  test_mode: true

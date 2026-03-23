@@ -36,7 +36,10 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._app_secret = Config.get().whatsapp.app_secret
         self._phone_number_id = Config.get().whatsapp.phone_number_id
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
-        self._base_url = f"https://graph.facebook.com/{self._api_version}"
+        import os
+
+        base_url_env = os.getenv("AK_WHATSAPP__API_BASE_URL")
+        self._base_url = f"{base_url_env or Config.get().whatsapp.api_base_url}/{self._api_version}"
         self._max_file_size = Config.get().api.max_file_size
         if not all([self._access_token, self._phone_number_id, self._verify_token]):
             self._log.error("WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token.")
@@ -310,7 +313,13 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         :param text: Message text
         :param reply_to_message_id: Optional message ID to reply to
         """
-        url = f"{self._base_url}/{self._phone_number_id}/messages"
+        import os
+
+        base_url_env = os.environ.get("AK_WHATSAPP__API_BASE_URL", "").strip()
+        if not base_url_env:
+            base_url_env = Config.get().whatsapp.api_base_url
+        base_url = f"{base_url_env}/{self._api_version}"
+        url = f"{base_url}/{self._phone_number_id}/messages"
 
         headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
 
