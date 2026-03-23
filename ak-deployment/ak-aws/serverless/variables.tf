@@ -278,17 +278,87 @@ data "aws_caller_identity" "current" {}
 variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
-    function_name = optional(string, "response-handler")
-    timeout       = optional(number, 60)
-    memory_size   = optional(number, 256)
+    function_name         = optional(string, "response-handler")
+    timeout               = optional(number, 60)
+    memory_size           = optional(number, 256)
+    handler_path          = optional(string, "response_handler.handler")
+    layers                = optional(list(string), [])
+    environment_variables = optional(map(string), {})
   })
   default = {}
+}
+
+variable "agent_runner" {
+  description = "Agent runner configuration object"
+  type = object({
+    function_name         = optional(string, "agent-runner")
+    timeout               = optional(number, 300)
+    memory_size           = optional(number, 512)
+    handler_path          = optional(string, "agent_runner.handler")
+    package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
+    layers                = optional(list(string), [])
+    environment_variables = optional(map(string), {})
+  })
+  default = {}
+}
+
+variable "queue_config" {
+  description = "SQS queues configuration object"
+  type = object({
+    # Queue names
+    input_queue_name                = optional(string, null)
+    output_queue_name               = optional(string, null)
+    
+    # Input queue configuration
+    input_queue_visibility_timeout  = optional(number, null)
+    input_queue_max_receive_count   = optional(number, null)
+    input_queue_message_retention_seconds = optional(number, null)
+    input_queue_max_message_size    = optional(number, null)
+    input_queue_receive_wait_time_seconds = optional(number, null)
+    input_queue_delay_seconds       = optional(number, null)
+    input_queue_create_dlq          = optional(bool, null)
+    input_queue_dlq_message_retention_seconds = optional(number, null)
+    
+    # Output queue configuration
+    output_queue_visibility_timeout = optional(number, null)
+    output_queue_max_receive_count  = optional(number, null)
+    output_queue_message_retention_seconds = optional(number, null)
+    output_queue_max_message_size   = optional(number, null)
+    output_queue_receive_wait_time_seconds = optional(number, null)
+    output_queue_delay_seconds      = optional(number, null)
+    output_queue_create_dlq         = optional(bool, null)
+    output_queue_dlq_message_retention_seconds = optional(number, null)
+    
+    # Common queue configuration
+    fifo_queue                      = optional(bool, null)
+    sqs_managed_sse_enabled         = optional(bool, null)
+    kms_master_key_id               = optional(string, null)
+    kms_data_key_reuse_period_seconds = optional(number, null)
+    
+    # FIFO-specific configuration (only used when fifo_queue = true)
+    content_based_deduplication     = optional(bool, null)
+    fifo_throughput_limit           = optional(string, null)
+    deduplication_scope             = optional(string, null)
+    
+    # Access control
+    enable_producer_access          = optional(bool, null)
+    producer_arns                   = optional(list(string), null)
+    enable_consumer_access          = optional(bool, null)
+    consumer_role_arns              = optional(list(string), null)
+    
+    # Lambda event source mapping configuration
+    batch_size                      = optional(number, 10)
+    maximum_batching_window_in_seconds = optional(number, 5)
+  })
+  default = null
 }
 
 
 variable "response_store" {
   description = "Response store configuration object"
   type = object({
+    suffix = optional(string, null)
     redis = optional(object({
       prefix = optional(string, "ak:response_messages:")
       url    = optional(string, null)

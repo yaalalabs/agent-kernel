@@ -94,6 +94,32 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb_multimodal_describe_a
   policy_arn = aws_iam_policy.lambda_dynamodb_multimodal_describe_policy[0].arn
 }
 
+# SQS permissions for RequestHandler Lambda (conditional on scalable_mode)
+resource "aws_iam_policy" "lambda_sqs_policy" {
+  count = var.scalable_mode ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-sqs"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = local.input_queue_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_sqs_attachment" {
+  count      = var.scalable_mode ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_sqs_policy[0].arn
+}
+
 data "aws_s3_object" "source_code" {
   count  = (var.package_type == "S3Zip") ? 1 : 0
   bucket = module.source_storage[0].source_storage_s3_bucket
@@ -197,6 +223,9 @@ module "lambda_deployment" {
     } : {},
       local.dynamodb_multimodal_memory_table_arn != null ? {
       AK_MULTIMODAL__DYNAMODB__TABLE_NAME = local.dynamodb_multimodal_memory_table_name
+    } : {},
+      var.scalable_mode ? {
+      AK_EXECUTION__INPUT_QUEUE_URL = local.input_queue_url
     } : {}
   )
   event_source_mapping = var.event_source_mapping

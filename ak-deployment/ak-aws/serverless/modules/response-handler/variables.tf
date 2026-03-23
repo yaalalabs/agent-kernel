@@ -35,9 +35,12 @@ variable "module_name" {
 variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
-    function_name = optional(string, "response-handler")
-    timeout       = optional(number, 60)
-    memory_size   = optional(number, 256)
+    function_name         = optional(string, "response-handler")
+    timeout               = optional(number, 60)
+    memory_size           = optional(number, 256)
+    handler_path          = optional(string, "response_handler.handler")
+    layers                = optional(list(string), [])
+    environment_variables = optional(map(string), {})
   })
 }
 
@@ -65,10 +68,13 @@ variable "response_store" {
   }
 }
 
-variable "environment_variables" {
-  type        = map(string)
-  description = "Environment variables for the Lambda function"
-  default     = {}
+variable "queue_config" {
+  description = "Queue configuration object"
+  type = object({
+    output_queue_arn                       = string
+    batch_size                             = optional(number, 10)
+    maximum_batching_window_in_seconds     = optional(number, 5)
+  })
 }
 
 # Local variables that need to be passed from parent module

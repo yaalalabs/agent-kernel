@@ -1,4 +1,3 @@
-# Response Handler Lambda Configuration
 locals {
   subnet_ids                   = var.subnet_ids
   lambda_kms_key_arn          = var.lambda_kms_key_arn
@@ -8,6 +7,14 @@ locals {
   response_handler_function_name = var.response_handler.function_name
   response_handler_timeout       = var.response_handler.timeout
   response_handler_memory_size   = var.response_handler.memory_size
+  response_handler_handler_path  = var.response_handler.handler_path
+  response_handler_layers        = var.response_handler.layers
+  response_handler_env_vars      = var.response_handler.environment_variables
+  
+  # Queue configuration
+  output_queue_arn                       = var.queue_config.output_queue_arn
+  batch_size                             = var.queue_config.batch_size
+  maximum_batching_window_in_seconds     = var.queue_config.maximum_batching_window_in_seconds
   
   # Response store configuration (null in async mode)
   redis_response_store = var.response_store != null ? var.response_store.redis : null
@@ -38,7 +45,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# VPC execution policy (if using VPC)
+# VPC execution policy
 resource "aws_iam_role_policy_attachment" "response_handler_vpc_execution" {
   role       = aws_iam_role.response_handler_lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
@@ -59,7 +66,7 @@ resource "aws_iam_policy" "response_handler_sqs_policy" {
           "sqs:GetQueueAttributes",
           "sqs:ChangeMessageVisibility"
         ]
-        Resource = "*"
+        Resource = local.output_queue_arn
       }
     ]
   })
@@ -108,14 +115,15 @@ module "response_handler_lambda" {
 
   function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}"
   description            = "Response handler Lambda for processing SQS messages and storing responses"
-  handler                = "response_handler.handler"
+  handler                = local.response_handler_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.response_handler_lambda_role.arn
-  local_existing_package = "${path.module}/response_handler_dist.zip" # TODO:: has to change based on the Package_type
+  local_existing_package = var.package_path
   create_package         = false
-  package_type           = "Zip" # TODO:: LocalZip and Image mode has to be supported
-  create_layer = false # to control creation of the Lambda Layer and related resources
+  package_type           = var.package_type == "Image" ? "Image" : "Zip"
+  create_layer           = false
+  layers                 = local.response_handler_layers
 
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90
@@ -125,7 +133,7 @@ module "response_handler_lambda" {
   vpc_security_group_ids = var.security_group_id != "" ? [var.security_group_id] : []
 
   environment_variables = merge(
-    var.environment_variables,
+    local.response_handler_env_vars,
     local.redis_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__REDIS__URL = local.redis_response_store.url
       AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX = local.redis_response_store.prefix
@@ -142,5 +150,18 @@ module "response_handler_lambda" {
 
   kms_key_arn                = local.lambda_kms_key_arn
   cloudwatch_logs_kms_key_id = local.cloudwatch_kms_key_arn
+}
+
+# SQS Event Source Mapping for Output Queue
+resource "aws_lambda_event_source_mapping" "response_handler_output_queue" {
+  event_source_arn = local.output_queue_arn
+  function_name    = module.response_handler_lambda.lambda_function_name
+  batch_size       = local.batch_size
+  
+  # Optional: Configure maximum batching window
+  maximum_batching_window_in_seconds = local.maximum_batching_window_in_seconds
+  
+  # Optional: Configure partial batch failure handling
+  function_response_types = ["ReportBatchItemFailures"]
 }
 

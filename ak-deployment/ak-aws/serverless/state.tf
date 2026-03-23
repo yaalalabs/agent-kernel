@@ -35,17 +35,17 @@ locals {
   # Computed response store values - use created resources or provided values
   response_store_redis_url = (
     local.create_redis_response_store 
-    ? module.redis_response_store[0].url 
+    ? module.response_stores[0].redis_url 
     : (local.has_redis_config ? var.response_store.redis.url : null)
   )
   response_store_dynamodb_table_name = (
     local.create_dynamodb_response_store 
-    ? module.dynamodb_response_store[0].table_name 
+    ? module.response_stores[0].dynamodb_table_name 
     : (local.has_dynamodb_config ? var.response_store.dynamodb.table_name : null)
   )
   response_store_dynamodb_table_arn = (
     local.create_dynamodb_response_store 
-    ? module.dynamodb_response_store[0].table_arn 
+    ? module.response_stores[0].dynamodb_table_arn 
     : (local.has_dynamodb_config ? var.response_store.dynamodb.table_arn : null)
   )
 
@@ -67,6 +67,16 @@ locals {
   authorizer_required_vars_text = join(", ", compact(["authorizer_function_name", "authorizer_handler_path", "authorizer_package_type", "authorizer_package_path", "authorizer_module_name"]))
   authorizer_status_message     = local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text)
 
+  # Queue configuration with defaults
+  queue_config = var.queue_config != null ? var.queue_config : {}
+
+  # Input queue
+  input_queue_url = var.scalable_mode ? module.queues[0].input_queue_url : null
+  input_queue_arn = var.scalable_mode ? module.queues[0].input_queue_arn : null
+  
+  # Output queue
+  output_queue_url = var.scalable_mode ? module.queues[0].output_queue_url : null
+  output_queue_arn = var.scalable_mode ? module.queues[0].output_queue_arn : null
 
   chat_endpoint = [
     {
@@ -212,35 +222,39 @@ module "dynamodb_memory" {
   ttl_attribute_name = "expiry_time"
 }
 
-module "redis_response_store" {
-  source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.2.13"
-  count         = local.create_redis_response_store ? 1 : 0
-  env_alias     = var.env_alias
-  module_name   = "${var.module_name}-response-store"
+# SQS Queues Module (conditional on scalable_mode)
+module "queues" {
+  count  = var.scalable_mode ? 1 : 0
+  source = "./modules/queues"
+
   product_alias = var.product_alias
-  vpc_cidr      = local.vpc_cidr
-  vpc_id        = local.vpc_id
-  subnet_ids    = local.subnet_ids
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  tags          = var.tags
+
+  queue_config = local.queue_config
 }
 
-module "dynamodb_response_store" {
-  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.2.13"
-  count   = local.create_dynamodb_response_store ? 1 : 0
-  attributes = [
-    { name = "request_id", type = "S" },
-    { name = "timestamp", type = "N" },
-  ]
-  hash_key           = "request_id"
-  range_key          = "timestamp"
-  ttl_enabled        = true
-  env_alias          = var.env_alias
-  module_name        = "${var.module_name}-response-store"
-  product_alias      = var.product_alias
-  table_name         = var.response_store.dynamodb.table_name
-  ttl_attribute_name = "expiry_time"
+# Response Stores Module (conditional on scalable_mode and execution_mode != "async")
+module "response_stores" {
+  count  = local.create_response_store ? 1 : 0
+  source = "./modules/response_stores"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+
+  create_redis    = local.create_redis_response_store
+  create_dynamodb = local.create_dynamodb_response_store
+  
+  dynamodb_table_name = local.has_dynamodb_config ? var.response_store.dynamodb.table_name : "ak-responses"
+  response_store_suffix = var.response_store != null ? var.response_store.suffix : null
+  
+  vpc_id     = local.vpc_id
+  vpc_cidr   = local.vpc_cidr
+  subnet_ids = local.subnet_ids
 }
+
 # Build response handler package
 resource "null_resource" "build_response_handler" {
   count = var.scalable_mode ? 1 : 0
@@ -254,6 +268,41 @@ resource "null_resource" "build_response_handler" {
   }
 }
 
+# Agent Runner Module (conditional on scalable_mode)
+module "agent_runner" {
+  count  = var.scalable_mode ? 1 : 0
+  source = "./modules/agent-runner"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  module_type   = var.module_type
+  
+  agent_runner = merge(var.agent_runner, {
+    package_path          = var.package_path
+    package_type          = var.package_type
+    layers                = var.layers
+    environment_variables = merge(var.environment_variables, {
+      AK_EXECUTION__MODE = var.execution_mode
+    })
+  })
+
+  queue_config = {
+    input_queue_arn                        = local.input_queue_arn
+    output_queue_arn                       = local.output_queue_arn
+    output_queue_url                       = local.output_queue_url
+    batch_size                             = var.queue_config != null ? var.queue_config.batch_size : 10
+    maximum_batching_window_in_seconds     = var.queue_config != null ? var.queue_config.maximum_batching_window_in_seconds : 5
+  }
+
+  subnet_ids             = local.subnet_ids
+  security_group_id      = aws_security_group.lambda.id
+  lambda_kms_key_arn     = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+
+  depends_on = [module.queues]
+}
+
 module "response_handler" {
   count  = var.scalable_mode ? 1 : 0
   source = "./modules/response-handler"
@@ -261,15 +310,23 @@ module "response_handler" {
   # version = "0.2.13"
 
   # Pass through all the required variables
-  package_path     = var.package_path
-  package_type     = var.package_type
+  package_path = var.package_path
+  package_type = var.package_type
+  
   product_alias    = var.product_alias
   env_alias        = var.env_alias
   module_name      = var.module_name
-  response_handler = var.response_handler
+  response_handler = merge(var.response_handler, {
+    environment_variables = {
+      AK_EXECUTION__MODE = var.execution_mode
+    }
+  })
   response_store   = local.response_handler_response_store
-  environment_variables = {
-    AK_EXECUTION__MODE = var.execution_mode
+  
+  queue_config = {
+    output_queue_arn                       = local.output_queue_arn
+    batch_size                             = var.queue_config != null ? var.queue_config.batch_size : 10
+    maximum_batching_window_in_seconds     = var.queue_config != null ? var.queue_config.maximum_batching_window_in_seconds : 5
   }
 
   # Pass local values
@@ -278,7 +335,7 @@ module "response_handler" {
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
-  depends_on = [null_resource.build_response_handler]
+  depends_on = [null_resource.build_response_handler, module.queues, module.response_stores]
 }
 
 module "dynamodb_multimodal_memory" {
