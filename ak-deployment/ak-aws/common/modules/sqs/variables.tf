@@ -52,6 +52,18 @@ variable "visibility_timeout_seconds" {
   description = "Visibility timeout for messages"
 }
 
+variable "receive_wait_time_seconds" {
+  type        = number
+  default     = 0
+  description = "The time for which a ReceiveMessage call will wait for a message to arrive (long polling)"
+}
+
+variable "delay_seconds" {
+  type        = number
+  default     = 0
+  description = "The time in seconds that the delivery of all messages in the queue will be delayed"
+}
+
 variable "max_receive_count" {
   type        = number
   default     = 5
@@ -68,6 +80,19 @@ variable "fifo_throughput_limit" {
   type        = string
   default     = "perQueueGroup"
   description = "FIFO throughput limit: 'perQueueGroup' or 'perQueue'"
+}
+
+# Queue type configuration
+variable "fifo_queue" {
+  type        = bool
+  default     = true
+  description = "Whether to create a FIFO queue (true) or standard queue (false)"
+}
+
+variable "create_dlq" {
+  type        = bool
+  default     = true
+  description = "Whether to create a dead letter queue"
 }
 
 variable "content_based_deduplication" {
