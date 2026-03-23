@@ -110,9 +110,7 @@ async def _get_incoming_auth_token() -> str:
     )
     result = msal_app.acquire_token_for_client(scopes=[f"{APP_ID}/.default"])
     if "access_token" not in result:
-        raise RuntimeError(
-            f"Failed to acquire BF auth token: {result.get('error_description', result)}"
-        )
+        raise RuntimeError(f"Failed to acquire BF auth token: {result.get('error_description', result)}")
     return result["access_token"]
 
 
@@ -126,13 +124,9 @@ async def _get_connector_token() -> str:
         authority=f"https://login.microsoftonline.com/{TENANT_ID}",
         client_credential=APP_PASSWORD,
     )
-    result = msal_app.acquire_token_for_client(
-        scopes=["https://api.botframework.com/.default"]
-    )
+    result = msal_app.acquire_token_for_client(scopes=["https://api.botframework.com/.default"])
     if "access_token" not in result:
-        raise RuntimeError(
-            f"Failed to acquire connector token: {result.get('error_description', result)}"
-        )
+        raise RuntimeError(f"Failed to acquire connector token: {result.get('error_description', result)}")
     return result["access_token"]
 
 
@@ -158,9 +152,7 @@ async def _create_teams_conversation(connector_token: str) -> str:
             },
         )
         if resp.status_code not in (200, 201):
-            raise RuntimeError(
-                f"Failed to create Teams conversation: {resp.status_code} - {resp.text}"
-            )
+            raise RuntimeError(f"Failed to create Teams conversation: {resp.status_code} - {resp.text}")
         data = resp.json()
         return data.get("id", "")
 
@@ -174,9 +166,7 @@ async def _send_message_to_teams(text: str) -> bool:
     if not REAL_TEAMS_SERVICE_URL or not _real_conversation_id:
         return False
 
-    url = (
-        f"{REAL_TEAMS_SERVICE_URL}/v3/conversations/{_real_conversation_id}/activities"
-    )
+    url = f"{REAL_TEAMS_SERVICE_URL}/v3/conversations/{_real_conversation_id}/activities"
     activity = {
         "type": "message",
         "text": text,
@@ -223,11 +213,7 @@ async def _proxy_handler(request):
 
     # Always return 200 to the Bot Framework adapter first (so the server never crashes).
     # Then forward to the real Teams service asynchronously if configured.
-    if (
-        REAL_TEAMS_SERVICE_URL
-        and _real_conversation_id
-        and data.get("type") == "message"
-    ):
+    if REAL_TEAMS_SERVICE_URL and _real_conversation_id and data.get("type") == "message":
         # Rewrite the conversation ID and forward to the real Teams service
         fwd_data = dict(data)
         if "conversation" in fwd_data:
@@ -245,9 +231,7 @@ async def _proxy_handler(request):
                 "Authorization": f"Bearer {connector_token}",
             }
             async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    real_url, json=fwd_data, headers=fwd_headers, timeout=30.0
-                )
+                resp = await client.post(real_url, json=fwd_data, headers=fwd_headers, timeout=30.0)
                 if resp.status_code in (200, 201):
                     try:
                         captured_real_responses.append(resp.json())
@@ -263,9 +247,7 @@ async def _start_proxy_server():
     """Start local HTTP server to intercept bot's outgoing replies."""
     app = web.Application()
     app.router.add_post("/v3/conversations/{conv_id}/activities", _proxy_handler)
-    app.router.add_post(
-        "/v3/conversations/{conv_id}/activities/{reply_id}", _proxy_handler
-    )
+    app.router.add_post("/v3/conversations/{conv_id}/activities/{reply_id}", _proxy_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "localhost", PROXY_PORT)
@@ -303,10 +285,7 @@ async def server_process():
     async with httpx.AsyncClient(timeout=3.0) as client:
         while time.time() - start < max_wait:
             if proc.poll() is not None:
-                pytest.fail(
-                    f"Server process exited with code {proc.returncode} "
-                    "before becoming ready."
-                )
+                pytest.fail(f"Server process exited with code {proc.returncode} " "before becoming ready.")
             try:
                 resp = await client.get(f"{SERVER_URL}/health")
                 if resp.status_code == 200:
@@ -372,16 +351,12 @@ async def test_teams_integration(server_process):
         elif REAL_TEAMS_SERVICE_URL and REAL_TEAMS_USER_AAD_ID:
             try:
                 connector_token = await _get_connector_token()
-                _real_conversation_id = await _create_teams_conversation(
-                    connector_token
-                )
+                _real_conversation_id = await _create_teams_conversation(connector_token)
             except Exception:
                 _real_conversation_id = ""
 
         # 4. Send the question to Teams first (so the user sees it in their chat)
-        sent = await _send_message_to_teams(
-            f"Integration Test Question:\n{TEST_QUESTION}"
-        )
+        sent = await _send_message_to_teams(f"Integration Test Question:\n{TEST_QUESTION}")
         if sent:
             await asyncio.sleep(2)
 
@@ -427,9 +402,7 @@ async def test_teams_integration(server_process):
             )
 
         if resp.status_code not in (200, 202):
-            pytest.fail(
-                f"Server rejected Teams activity: {resp.status_code} - {resp.text}"
-            )
+            pytest.fail(f"Server rejected Teams activity: {resp.status_code} - {resp.text}")
 
         # 7. Wait for bot to process and send the reply
         await asyncio.sleep(BOT_REPLY_WAIT)
@@ -446,9 +419,7 @@ async def test_teams_integration(server_process):
         error_detail = ""
 
         try:
-            Test.compare(
-                reply_text, EXPECTED_ANSWER, user_input=TEST_QUESTION, threshold=70
-            )
+            Test.compare(reply_text, EXPECTED_ANSWER, user_input=TEST_QUESTION, threshold=70)
             test_passed = True
         except AssertionError as e:
             error_detail = str(e)[:200]

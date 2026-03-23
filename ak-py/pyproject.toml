@@ -97,6 +97,11 @@ gmail = [
     "google-auth-httplib2>=0.2.0",
     "google-api-python-client>=2.0.0",
 ]
+teams = [
+    "msal>=1.26.0",
+    "botbuilder-core>=4.15.0",
+    "httpx>=0.27.0"
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.2.0",
