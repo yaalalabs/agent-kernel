@@ -219,6 +219,7 @@ class _ExecutionConfig(BaseModel):
     )
     input_queue_url: Optional[str] = Field(default=None, description="Input SQS queue URL for async execution mode")
     output_queue_url: Optional[str] = Field(default=None, description="Output SQS queue URL for async execution mode")
+    websocket_connection_table: Optional[str] = Field(default=None, description="DynamoDB table name for storing WebSocket connections")
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",

@@ -6,6 +6,9 @@ import os
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from .core import DefaultEndpointsHandler
+from .core.default_ws_endpoints import DefaultWebsocketRouteHandler
+from ...core.config import AKConfig
+from ...core.model import ExecutionMode
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -29,9 +32,22 @@ class LambdaRouter:
             self._default_chat_method,
             self._default_user_polling_method,
         ) = DefaultEndpointsHandler.get_default_endpoint_info()
-        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = (
-            DefaultEndpointsHandler.get_routes()
-        )
+        
+        # Get execution mode from config
+        config = AKConfig.get()
+        execution_mode = config.execution.mode if config.execution else ExecutionMode.REST_SYNC
+        
+        # Initialize routes based on execution mode
+        if execution_mode == ExecutionMode.ASYNC:
+            self._routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = (
+                DefaultWebsocketRouteHandler.get_routes()
+            )
+        else:
+            self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = (
+                DefaultEndpointsHandler.get_routes()
+            )
+        
+        self._execution_mode = execution_mode
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -92,7 +108,20 @@ class LambdaRouter:
 
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
-        Dispatch incoming API Gateway event to the appropriate registered handler.
+        Dispatch incoming event to the appropriate handler based on execution mode.
+        :param event: Event dictionary containing request information
+        :param context: AWS Lambda context object
+        :return: Formatted response dictionary or None if no route matches
+        :raises ValueError: If no registered route matches the request
+        """
+        if self._execution_mode == ExecutionMode.ASYNC:
+            return self._dispatch_ws_route(event, context)
+        else:
+            return self._dispatch_rest_endpoint(event, context)
+
+    def _dispatch_rest_endpoint(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Dispatch incoming API Gateway REST event to the appropriate registered handler.
         :param event: API Gateway event dictionary containing request information
         :param context: AWS Lambda context object
         :return: Formatted API Gateway response dictionary or None if no route matches
@@ -133,6 +162,31 @@ class LambdaRouter:
             )
         result = handler(event, context)
         self._log.debug(f"Lambda function result: {result}")
+        return result
+
+    def _dispatch_ws_route(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Dispatch incoming WebSocket event to the appropriate registered handler.
+        :param event: WebSocket event dictionary containing request information
+        :param context: AWS Lambda context object
+        :return: Formatted WebSocket response dictionary or None if no route matches
+        :raises ValueError: If no registered route matches the request
+        """
+        # For WebSocket events, the route is determined by the event type
+        route_key = event.get("requestContext", {}).get("routeKey", "$default")
+        self._log.info(f"WebSocket route key: {route_key}")
+
+        handler = self._routes.get(route_key)
+        if not handler:
+            self._log.warning(
+                f"No registered WebSocket route found for route key -> '{route_key}'"
+            )
+            raise ValueError(
+                f"No registered WebSocket route found for route key -> '{route_key}'"
+            )
+        
+        result = handler(event, context)
+        self._log.debug(f"WebSocket Lambda function result: {result}")
         return result
 
 
