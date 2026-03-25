@@ -8,15 +8,50 @@ variable "env_alias" {
   description = "Environment alias for resource naming"
 }
 
-variable "module_name" {
+variable "agent_runner_module_name" {
   type        = string
-  description = "Module name for resource naming"
+  description = "Module name for agent runner resource naming"
+}
+
+variable "region" {
+  type        = string
+  description = "Region"
 }
 
 variable "module_type" {
   type        = string
   description = "Module type (python or nodejs)"
   default     = "python"
+}
+
+variable "source_bucket" {
+  type        = string
+  description = "S3 bucket used to store the agent runner source package"
+  default     = null
+}
+
+variable "docker_image_uri" {
+  type        = string
+  description = "Docker image URI for Image package type"
+  default     = null
+}
+
+variable "is_production" {
+  description = "Is production"
+  type        = bool
+  default     = false
+}
+
+variable "lambda_signer_profile_name" {
+  type        = string
+  description = "AWS Signer profile name"
+  default     = "sample_profile"
+}
+
+variable "lambda_signing_config_arn" {
+  type        = string
+  description = "ARN of the Lambda code signing configuration"
+  default     = null
 }
 
 variable "agent_runner" {

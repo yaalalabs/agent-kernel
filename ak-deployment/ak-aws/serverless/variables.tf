@@ -30,6 +30,12 @@ variable "module_name" {
   description = "Module name"
 }
 
+variable "agent_runner_module_name" {
+  description = "Optional module name override for agent-runner artifact and resource naming"
+  type        = string
+  default     = null
+}
+
 variable "is_production" {
   description = "Is production"
   type        = bool

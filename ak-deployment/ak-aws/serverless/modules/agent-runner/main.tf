@@ -1,4 +1,6 @@
 locals {
+  package_file_name = "source_code.zip"
+
   agent_runner_function_name = var.agent_runner.function_name
   agent_runner_function_description = var.agent_runner.function_description
   agent_runner_timeout       = var.agent_runner.timeout
@@ -16,9 +18,44 @@ locals {
   queue_batching_window      = var.queue_config.maximum_batching_window_in_seconds
 }
 
+data "aws_s3_object" "source_code" {
+  count  = var.agent_runner.package_type == "S3Zip" ? 1 : 0
+  bucket = var.source_bucket
+  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.agent_runner_module_name}/lambda/${local.package_file_name}"
+}
+
+resource "aws_signer_signing_job" "agent_runner_lambda_signing_job" {
+  count = var.is_production && var.agent_runner.package_type == "S3Zip" ? 1 : 0
+
+  profile_name = var.lambda_signer_profile_name
+  source {
+    s3 {
+      bucket  = data.aws_s3_object.source_code[0].bucket
+      key     = data.aws_s3_object.source_code[0].key
+      version = data.aws_s3_object.source_code[0].version_id
+    }
+  }
+  destination {
+    s3 {
+      bucket = data.aws_s3_object.source_code[0].bucket
+      prefix = "${data.aws_s3_object.source_code[0].key}/signed/${data.aws_s3_object.source_code[0].version_id}"
+    }
+  }
+  ignore_signing_job_failure = false
+}
+
+data "aws_s3_object" "signed_component_code" {
+  count = var.is_production && var.agent_runner.package_type == "S3Zip" ? 1 : 0
+
+  bucket = aws_signer_signing_job.agent_runner_lambda_signing_job[0].signed_object[0].s3[0].bucket
+  key    = aws_signer_signing_job.agent_runner_lambda_signing_job[0].signed_object[0].s3[0].key
+
+  depends_on = [aws_signer_signing_job.agent_runner_lambda_signing_job[0]]
+}
+
 # IAM Role for Agent Runner Lambda
 resource "aws_iam_role" "agent_runner_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.agent_runner_function_name}-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-lambda-role"
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -48,7 +85,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_vpc_execution" {
 
 # SQS permissions for agent runner (receive/delete from input queue & send to output queue)
 resource "aws_iam_policy" "agent_runner_sqs_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.agent_runner_function_name}-sqs"
+  name = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-sqs"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -85,17 +122,26 @@ module "agent_runner_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.agent_runner_function_name}"
+  function_name          = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}"
   description            = local.agent_runner_function_description
   handler                = local.agent_runner_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.agent_runner_lambda_role.arn
-  local_existing_package = local.agent_runner_package_path
+  image_uri              = var.agent_runner.package_type == "Image" ? var.docker_image_uri : null
+  local_existing_package = var.agent_runner.package_type == "LocalZip" ? local.agent_runner_package_path : null
   create_package         = false
   package_type           = local.agent_runner_package_type == "Image" ? "Image" : "Zip"
   create_layer           = false
   layers                 = local.agent_runner_layers
+
+  s3_existing_package = var.agent_runner.package_type == "S3Zip" ? {
+    bucket     = var.is_production ? data.aws_s3_object.signed_component_code[0].bucket : data.aws_s3_object.source_code[0].bucket
+    key        = var.is_production ? data.aws_s3_object.signed_component_code[0].key : data.aws_s3_object.source_code[0].key
+    version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
+  } : {}
+
+  code_signing_config_arn = (var.agent_runner.package_type == "S3Zip" && var.is_production) ? var.lambda_signing_config_arn : null
 
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90

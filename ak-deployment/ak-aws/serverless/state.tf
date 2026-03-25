@@ -24,6 +24,7 @@ locals {
   request_handler_package_path          = var.package_path
   response_handler_source_package_path  = var.package_path
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
+  agent_runner_artifact_module_name     = coalesce(var.agent_runner_module_name, "${var.module_name}-agent-runner")
 
   #TODO:: check conditions and remove unwanted stuff
 
@@ -207,6 +208,41 @@ module "docker_image" {
   source_path   = var.package_path
 }
 
+module "agent_runner_source_storage" {
+  count                = (var.agent_runner.package_type == "S3Zip") ? 1 : 0
+  source               = "yaalalabs/ak-common/aws//modules/s3"
+  version              = "0.2.14"
+  region               = var.region
+  env_alias            = var.env_alias
+  is_production        = var.is_production
+  product_alias        = var.product_alias
+  product_display_name = var.product_display_name
+  s3_kms_key_id        = ""
+}
+
+module "agent_runner_source_package" {
+  count            = (var.agent_runner.package_type == "S3Zip") ? 1 : 0
+  source           = "yaalalabs/ak-common/aws//modules/lambda-package"
+  version          = "0.2.14"
+  env_alias        = var.env_alias
+  region           = var.region
+  module_name      = local.agent_runner_artifact_module_name
+  package_dir_path = local.agent_runner_package_path
+  product_alias    = var.product_alias
+  s3_bucket        = module.agent_runner_source_storage[0].source_storage_s3_bucket
+  depends_on       = [module.agent_runner_source_storage]
+}
+
+module "agent_runner_docker_image" {
+  count         = (var.agent_runner.package_type == "Image") ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.2.14"
+  env_alias     = var.env_alias
+  module_name   = local.agent_runner_artifact_module_name
+  product_alias = var.product_alias
+  source_path   = local.agent_runner_package_path
+}
+
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
   version       = "0.2.14"
@@ -370,7 +406,7 @@ module "agent_runner" {
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
-  module_name   = var.module_name
+  region        = var.region
   module_type   = var.module_type
 
   agent_runner = merge(var.agent_runner, {
@@ -381,6 +417,13 @@ module "agent_runner" {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
+
+  agent_runner_module_name   = local.agent_runner_artifact_module_name
+  source_bucket              = var.agent_runner.package_type == "S3Zip" ? module.agent_runner_source_storage[0].source_storage_s3_bucket : null
+  docker_image_uri           = var.agent_runner.package_type == "Image" ? module.agent_runner_docker_image[0].docker_image_uri : null
+  is_production              = var.is_production
+  lambda_signer_profile_name = local.lambda_signer_profile_name
+  lambda_signing_config_arn  = local.lambda_signing_config_arn
 
   queue_config = {
     input_queue_arn                    = local.input_queue_arn
