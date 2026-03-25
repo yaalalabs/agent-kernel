@@ -19,11 +19,11 @@ module "dynamodb_response_store" {
   count   = var.create_dynamodb ? 1 : 0
   
   attributes = [
-    { name = "request_id", type = "S" },
-    { name = "timestamp", type = "N" },
+    { name = "session_id", type = "S" },
+    { name = "message_id", type = "S" },
   ]
-  hash_key           = "request_id"
-  range_key          = "timestamp"
+  hash_key           = "session_id"
+  range_key          = "message_id"
   ttl_enabled        = true
   env_alias          = var.env_alias
   module_name        = "${var.module_name}-${coalesce(var.response_store_suffix, "response-store")}"

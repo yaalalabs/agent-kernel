@@ -1,4 +1,5 @@
 import boto3
+from boto3.dynamodb.conditions import Key
 
 from ...common.response_store import ResponseStore
 
@@ -15,8 +16,7 @@ class DynamoDBResponseStore(ResponseStore):
 
     def get_messages(self, session_id: str) -> list[dict]:
         response = self.table.query(
-            KeyConditionExpression="session_id = :sid",
-            ExpressionAttributeValues={":sid": session_id}
+            KeyConditionExpression=Key("session_id").eq(session_id)
         )
 
         return response.get("Items", [])
@@ -31,8 +31,7 @@ class DynamoDBResponseStore(ResponseStore):
 
     def delete_session(self, session_id: str) -> None:
         response = self.table.query(
-            KeyConditionExpression="session_id = :sid",
-            ExpressionAttributeValues={":sid": session_id}
+            KeyConditionExpression=Key("session_id").eq(session_id)
         )
 
         with self.table.batch_writer() as batch:
