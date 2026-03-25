@@ -21,7 +21,7 @@ class DefaultEndpointsHandler:
 
     _config = AKConfig.get()
     _exec_mode = _config.execution.mode
-    _input_queue_url = _config.execution.input_queue_url  # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
+    _input_queue_url = _config.execution.queues.input_queue_url  # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
 
     _default_chat_path = "default_chat_path"
     _default_chat_method = "POST"

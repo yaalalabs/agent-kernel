@@ -106,7 +106,7 @@ module "agent_runner_lambda" {
   environment_variables = merge(
     local.agent_runner_env_vars,
     {
-      AK_EXECUTION__OUTPUT_QUEUE_URL = local.queue_output_url
+      AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL = local.queue_output_url
     }
   )
 

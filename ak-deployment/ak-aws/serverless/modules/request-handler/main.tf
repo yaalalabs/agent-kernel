@@ -309,7 +309,7 @@ module "lambda_deployment" {
       AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
     } : {},
       var.scalable_mode ? {
-      AK_EXECUTION__INPUT_QUEUE_URL = var.input_queue_url
+      AK_EXECUTION__QUEUES__INPUT_QUEUE_URL = var.input_queue_url
     } : {},
       var.websocket_connections_table_name != null ? {
       AK_EXECUTION__WEBSOCKET_CONNECTION_TABLE = var.websocket_connections_table_name

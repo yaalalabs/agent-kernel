@@ -12,7 +12,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = ChatService()
     _config = AKConfig.get()
-    _output_queue_url = _config.execution.output_queue_url
+    _output_queue_url = _config.execution.queues.output_queue_url
     _sqs_client = boto3.client("sqs")
 
     @classmethod

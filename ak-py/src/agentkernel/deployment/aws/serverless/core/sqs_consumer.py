@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+from .....core.config import AKConfig
 
 
 class LambdaSQSConsumer:
@@ -8,7 +9,7 @@ class LambdaSQSConsumer:
     Subclasses should override `process_message` to implement business logic.
     """
 
-    max_receive_count: int = 3 # TODO:: ADD AKCOnfig value
+    max_receive_count: int = AKConfig.get().execution.queues.consumer_max_receive_count # gives the max_receive_count - 1 value form config (min would be 1)
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -29,7 +30,7 @@ class LambdaSQSConsumer:
 
             try:
                 # Check if the message has been retired a lot
-                if receive_count >= cls.max_receive_count:
+                if receive_count > cls.max_receive_count:
                     # Treated as permanently failed, skip business logic, this message could be sent to a DLQ or logged
                     cls.on_permanent_failure(record)
                     continue

@@ -19,7 +19,7 @@ class DefaultWebsocketRouteHandler:
     _ws_manager = WebSocketManager("ak.aws.lambda.default_ws_endpoints")
 
     _config = AKConfig.get()
-    _input_queue_url = _config.execution.input_queue_url
+    _input_queue_url = _config.execution.queues.input_queue_url
 
     # WebSocket route constants
     _connect_route = "$connect"
