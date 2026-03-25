@@ -35,6 +35,11 @@ variable "package_path" {
   description = "Zip package path or Docker image source path"
 }
 
+variable "source_bucket" {
+  type        = string
+  description = "S3 bucket used to store the request handler source package"
+}
+
 variable "scalable_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "

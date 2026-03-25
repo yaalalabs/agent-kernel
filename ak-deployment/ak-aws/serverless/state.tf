@@ -108,6 +108,31 @@ locals {
   agent_invoke_url                 = local.is_async_mode ? "${module.websocket_api_gateway[0].websocket_stage_invoke_url}/chat" : module.api_gateway[0].agent_invoke_url
 }
 
+module "request_handler_source_storage" {
+  count                = (var.package_type == "S3Zip") ? 1 : 0
+  source               = "yaalalabs/ak-common/aws//modules/s3"
+  version              = "0.2.14"
+  region               = var.region
+  env_alias            = var.env_alias
+  is_production        = var.is_production
+  product_alias        = var.product_alias
+  product_display_name = var.product_display_name
+  s3_kms_key_id        = ""
+}
+
+module "request_handler_source_package" {
+  count            = (var.package_type == "S3Zip") ? 1 : 0
+  source           = "yaalalabs/ak-common/aws//modules/lambda-package"
+  version          = "0.2.14"
+  env_alias        = var.env_alias
+  region           = var.region
+  module_name      = var.module_name
+  package_dir_path = var.package_path
+  product_alias    = var.product_alias
+  s3_bucket        = module.request_handler_source_storage[0].source_storage_s3_bucket
+  depends_on       = [module.request_handler_source_storage]
+}
+
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
   version              = "0.2.14"
@@ -317,6 +342,7 @@ module "request_handler" {
   api_base_path                           = var.api_base_path
   vpc_id                                  = local.vpc_id
   subnet_ids                              = local.subnet_ids
+  source_bucket                            = var.package_type == "S3Zip" ? module.request_handler_source_storage[0].source_storage_s3_bucket : null
   create_dynamodb_memory_table            = var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
   dynamodb_memory_table_arn               = local.dynamodb_memory_table_arn
@@ -333,6 +359,8 @@ module "request_handler" {
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
   websocket_connections_table_name        = local.websocket_connections_table_name
   websocket_connections_table_arn         = local.websocket_connections_table_arn
+
+  depends_on = [module.request_handler_source_package]
 }
 
 # Agent Runner Module (conditional on scalable_mode)

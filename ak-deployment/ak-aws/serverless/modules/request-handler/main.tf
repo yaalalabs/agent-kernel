@@ -2,31 +2,6 @@ locals {
   package_file_name = "source_code.zip"
 }
 
-module "source_storage" {
-  count                = (var.package_type == "S3Zip") ? 1 : 0
-  source               = "yaalalabs/ak-common/aws//modules/s3"
-  version              = "0.2.14"
-  region               = var.region
-  env_alias            = var.env_alias
-  is_production        = var.is_production
-  product_alias        = var.product_alias
-  product_display_name = var.product_display_name
-  s3_kms_key_id        = ""
-}
-
-module "source_package" {
-  count            = (var.package_type == "S3Zip") ? 1 : 0
-  source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.2.14"
-  env_alias        = var.env_alias
-  region           = var.region
-  module_name      = var.module_name
-  package_dir_path = var.package_path
-  product_alias    = var.product_alias
-  s3_bucket        = module.source_storage[0].source_storage_s3_bucket
-  depends_on       = [module.source_storage]
-}
-
 resource "aws_iam_role" "lambda_role" {
   name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
   assume_role_policy = jsonencode({
@@ -206,9 +181,8 @@ resource "aws_iam_role_policy_attachment" "lambda_apigateway_management_attachme
 
 data "aws_s3_object" "source_code" {
   count  = (var.package_type == "S3Zip") ? 1 : 0
-  bucket = module.source_storage[0].source_storage_s3_bucket
+  bucket = var.source_bucket
   key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.module_name}/lambda/${local.package_file_name}"
-  depends_on = [module.source_package]
 }
 
 resource "aws_signer_signing_job" "handler_lambda_signing_job" {
@@ -217,14 +191,14 @@ resource "aws_signer_signing_job" "handler_lambda_signing_job" {
   profile_name = var.lambda_signer_profile_name
   source {
     s3 {
-      bucket  = module.source_storage[0].source_storage_s3_bucket
+      bucket  = var.source_bucket
       key     = data.aws_s3_object.source_code[0].key
       version = data.aws_s3_object.source_code[0].version_id
     }
   }
   destination {
     s3 {
-      bucket = module.source_storage[0].source_storage_s3_bucket
+      bucket = var.source_bucket
       prefix = "${data.aws_s3_object.source_code[0].key}/signed/${data.aws_s3_object.source_code[0].version_id}"
     }
   }
