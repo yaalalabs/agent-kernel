@@ -36,6 +36,7 @@ variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
     function_name         = optional(string, "response-handler")
+    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
     timeout               = optional(number, 30)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")

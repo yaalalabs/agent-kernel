@@ -23,6 +23,7 @@ variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
     function_name         = optional(string, "agent-runner")
+    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
     timeout               = optional(number, 30)
     memory_size           = optional(number, 512)
     package_path          = string

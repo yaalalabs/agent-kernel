@@ -21,6 +21,9 @@ locals {
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   create_authorizer                     = var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  request_handler_package_path          = var.package_path
+  response_handler_source_package_path  = var.package_path
+  agent_runner_package_path             = try(var.agent_runner.package_path, null)
 
   #TODO:: check conditions and remove unwanted stuff
 
@@ -279,11 +282,11 @@ module "response_stores" {
 resource "null_resource" "build_response_handler" {
   count = var.scalable_mode ? 1 : 0
   triggers = { # will trigger the script (script running is done in local-exec) if package_path OR the build_response_handler.sh script changes
-    package_path = var.package_path
+    package_path = local.response_handler_source_package_path
     script_hash  = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
   }
   provisioner "local-exec" {
-    command     = "./build_response_handler.sh --package-path ${var.package_path}"
+    command     = "./build_response_handler.sh --package-path ${local.response_handler_source_package_path}"
     working_dir = "${path.module}/modules/response-handler"
   }
 }
@@ -298,7 +301,7 @@ module "request_handler" {
   module_type                             = var.module_type
   module_name                             = var.module_name
   is_production                           = var.is_production
-  package_path                            = var.package_path
+  package_path                            = local.request_handler_package_path
   scalable_mode                           = var.scalable_mode
   event_source_mapping                    = var.event_source_mapping
   environment_variables                   = var.environment_variables
@@ -343,10 +346,10 @@ module "agent_runner" {
   module_type   = var.module_type
 
   agent_runner = merge(var.agent_runner, {
-    package_path = var.package_path
-    package_type = var.package_type
-    layers       = var.layers
-    environment_variables = merge(var.environment_variables, {
+    package_path = local.agent_runner_package_path
+    package_type = coalesce(try(var.agent_runner.package_type, null), var.package_type)
+    layers       = coalesce(try(var.agent_runner.layers, null), [])
+    environment_variables = merge(coalesce(try(var.agent_runner.environment_variables, null), {}), {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
@@ -374,16 +377,16 @@ module "response_handler" {
   # version = "0.2.13"
 
   # Pass through all the required variables
-  package_path = var.package_path
-  package_type = var.package_type
+  package_path = local.response_handler_source_package_path
+  package_type = "Zip"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
   module_name   = var.module_name
   response_handler = merge(var.response_handler, {
-    environment_variables = {
+    environment_variables = merge(coalesce(try(var.response_handler.environment_variables, null), {}), {
       AK_EXECUTION__MODE = var.execution_mode
-    }
+    })
   })
   response_store = local.response_handler_response_store
 

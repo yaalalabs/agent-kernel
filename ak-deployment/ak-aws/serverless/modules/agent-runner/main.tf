@@ -1,5 +1,6 @@
 locals {
   agent_runner_function_name = var.agent_runner.function_name
+  agent_runner_function_description = var.agent_runner.function_description
   agent_runner_timeout       = var.agent_runner.timeout
   agent_runner_memory_size   = var.agent_runner.memory_size
   agent_runner_package_path  = var.agent_runner.package_path
@@ -85,7 +86,7 @@ module "agent_runner_lambda" {
   version = "8.0.1"
 
   function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.agent_runner_function_name}"
-  description            = "Agent runner Lambda for processing input queue messages"
+  description            = local.agent_runner_function_description
   handler                = local.agent_runner_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false

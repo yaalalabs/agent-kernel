@@ -5,6 +5,7 @@ locals {
   
   # Response handler configuration
   response_handler_function_name = var.response_handler.function_name
+  response_handler_function_description = var.response_handler.function_description
   response_handler_timeout       = var.response_handler.timeout
   response_handler_memory_size   = var.response_handler.memory_size
   response_handler_handler_path  = var.response_handler.handler_path
@@ -173,14 +174,14 @@ module "response_handler_lambda" {
   version = "8.0.1"
 
   function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}"
-  description            = "Response handler Lambda for processing SQS messages and storing responses"
+  description            = local.response_handler_function_description
   handler                = local.response_handler_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.response_handler_lambda_role.arn
-  local_existing_package = var.package_path
+  local_existing_package = "${path.module}/response_handler_dist.zip"
   create_package         = false
-  package_type           = var.package_type == "Image" ? "Image" : "Zip"
+  package_type           = "Zip"
   create_layer           = false
   layers                 = local.response_handler_layers
 

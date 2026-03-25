@@ -279,6 +279,7 @@ variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
     function_name         = optional(string, "response-handler")
+    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
     timeout               = optional(number, 60)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
@@ -292,6 +293,7 @@ variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
     function_name         = optional(string, "agent-runner")
+    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
     timeout               = optional(number, 300)
     memory_size           = optional(number, 512)
     handler_path          = optional(string, "agent_runner.handler")
@@ -301,6 +303,10 @@ variable "agent_runner" {
     environment_variables = optional(map(string), {})
   })
   default = {}
+  validation {
+    condition     = !var.scalable_mode || try(var.agent_runner.package_path, null) != null
+    error_message = "agent_runner.package_path must be set when scalable_mode is true."
+  }
 }
 
 variable "queue_config" {
