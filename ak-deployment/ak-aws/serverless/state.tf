@@ -74,6 +74,9 @@ locals {
   # Queue configuration with defaults
   queue_config = var.queue_config != null ? var.queue_config : {}
 
+  input_queue_visibility_timeout  = try(local.queue_config.input_queue_visibility_timeout, null)
+  output_queue_visibility_timeout = try(local.queue_config.output_queue_visibility_timeout, null)
+
   # Input queue
   input_queue_url = var.scalable_mode ? module.queues[0].input_queue_url : null
   input_queue_arn = var.scalable_mode ? module.queues[0].input_queue_arn : null
@@ -225,6 +228,21 @@ module "dynamodb_multimodal_memory" {
 }
 
 # SQS Queues Module (conditional on scalable_mode)
+check "queue_visibility_timeouts" {
+  assert {
+    condition = var.scalable_mode ? (
+      local.input_queue_visibility_timeout >= var.agent_runner.timeout &&
+      local.output_queue_visibility_timeout >= var.response_handler.timeout
+    ) : true
+    error_message = format(
+      "[IMPORTANT] Invalid queue visibility timeout configuration: input queue visibility timeout (%d) must be >= agent runner timeout (%d), and output queue visibility timeout (%d) must be >= response handler timeout (%d).",
+      local.input_queue_visibility_timeout,
+      var.agent_runner.timeout,
+      local.output_queue_visibility_timeout,
+      var.response_handler.timeout,
+    )
+  }
+}
 module "queues" {
   count  = var.scalable_mode ? 1 : 0
   source = "./modules/queues"
