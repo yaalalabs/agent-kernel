@@ -406,24 +406,36 @@ module "response_handler" {
 }
 
 # WebSocket Connections Table Module (conditional on async execution mode)
+# Split the legacy name so the shared DynamoDB module preserves the current table name.
 module "websocket_connections_table" {
   count  = local.is_async_mode ? 1 : 0
-  source = "./modules/websocket-connections-table"
+  source = "../common/modules/dynamodb"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
+  module_name   = "websocket"
+  table_name    = "connections"
   tags          = var.tags
 
-  # WebSocket table configuration
-  table_name           = var.websocket_config.table_name
-  billing_mode         = var.websocket_config.billing_mode
-  hash_key             = var.websocket_config.hash_key
-  range_key            = var.websocket_config.range_key
-  gsi_name             = var.websocket_config.gsi_name
-  gsi_hash_key         = var.websocket_config.gsi_hash_key
-  gsi_projection_type  = var.websocket_config.gsi_projection_type
-  ttl_attribute_name   = var.websocket_config.ttl_attribute_name
-  ttl_enabled          = var.websocket_config.ttl_enabled
+  attributes = [
+    { name = var.websocket_config.hash_key, type = "S" },
+    { name = var.websocket_config.range_key, type = "S" },
+  ]
+  hash_key = var.websocket_config.hash_key
+  range_key = var.websocket_config.range_key
+
+  billing_mode = var.websocket_config.billing_mode
+
+  global_secondary_indexes = [
+    {
+      name            = var.websocket_config.gsi_name
+      hash_key        = var.websocket_config.gsi_hash_key
+      projection_type = var.websocket_config.gsi_projection_type
+    }
+  ]
+
+  ttl_attribute_name = var.websocket_config.ttl_attribute_name
+  ttl_enabled        = var.websocket_config.ttl_enabled
 }
 
 # WebSocket API Gateway Module (conditional on async execution mode)
