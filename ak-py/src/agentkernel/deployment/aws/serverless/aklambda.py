@@ -35,10 +35,10 @@ class LambdaRouter:
         
         # Get execution mode from config
         config = AKConfig.get()
-        execution_mode = config.execution.mode if config.execution else ExecutionMode.REST_SYNC
-        
+        self._execution_mode = config.execution.mode if config.execution else ExecutionMode.REST_SYNC
+
         # Initialize routes based on execution mode
-        if execution_mode == ExecutionMode.ASYNC:
+        if self._execution_mode == ExecutionMode.ASYNC:
             self._routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = (
                 DefaultWebsocketRouteHandler.get_routes()
             )
@@ -46,8 +46,6 @@ class LambdaRouter:
             self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = (
                 DefaultEndpointsHandler.get_routes()
             )
-        
-        self._execution_mode = execution_mode
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -65,22 +63,21 @@ class LambdaRouter:
     def _normalize_method(method: Optional[str]) -> str:
         return (method or "GET").upper()
 
-    def register(
-        self, path: str, method: str = "GET"
-    ) -> Callable[[Callable], Callable]:
+    def register(self, path: str, method: str = None) -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a handler for a given HTTP path and method.
         :param path: URL path for the route
         :param method: HTTP method (defaults to "GET")
         :return: Decorator function that registers the handler and returns it unchanged.
         """
+        if self._execution_mode == ExecutionMode.ASYNC: # TODO:: to be implemented in ASYNC mode in the future
+            raise NotImplementedError("Custom route registration is not supported in ASYNC execution mode.")
+        
         norm_path = self._normalize_path(path)
         norm_method = self._normalize_method(method)
 
         def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
-            self._log.info(
-                f"Registering route {norm_method} {norm_path} -> {func.__name__}"
-            )
+            self._log.info(f"Registering route {norm_method} {norm_path} -> {func.__name__}")
 
             methods = self._routes.setdefault(norm_path, {})
             if norm_method in methods:

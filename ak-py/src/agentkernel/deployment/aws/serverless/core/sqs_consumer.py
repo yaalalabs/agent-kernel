@@ -8,7 +8,7 @@ class LambdaSQSConsumer:
     Subclasses should override `process_message` to implement business logic.
     """
 
-    max_receive_count: int = 3 # TODO::
+    max_receive_count: int = 3 # TODO:: ADD AKCOnfig value
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
