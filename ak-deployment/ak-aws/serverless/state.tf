@@ -93,4 +93,348 @@ locals {
     local.chat_endpoint,
     var.gateway_endpoints
   )
+
+  # WebSocket configuration (conditional on async execution mode)
+  websocket_connections_table_name = local.is_async_mode ? module.websocket_connections_table[0].table_name : null
+  websocket_connections_table_arn  = local.is_async_mode ? module.websocket_connections_table[0].table_arn : null
+  websocket_api_endpoint           = local.is_async_mode ? module.websocket_api_gateway[0].websocket_stage_invoke_url : null
+  websocket_api_domain_name        = local.is_async_mode ? replace(module.websocket_api_gateway[0].websocket_api_endpoint, "wss://", "") : null
+  agent_invoke_url                 = local.is_async_mode ? "${module.websocket_api_gateway[0].websocket_stage_invoke_url}/chat" : module.api_gateway[0].agent_invoke_url
+}
+
+module "vpc" {
+  source               = "yaalalabs/ak-common/aws//modules/vpc"
+  version              = "0.2.14"
+  count                = var.vpc_id == null ? 1 : 0
+  vpc_cidr             = var.vpc_cidr
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  tags                 = var.tags
+}
+
+
+module "authorizer" {
+  count                      = local.create_authorizer ? 1 : 0
+  source                     = "yaalalabs/ak-common/aws//modules/authorizer"
+  version                    = "0.2.13"
+  region                     = var.region
+  product_alias              = var.product_alias
+  env_alias                  = var.env_alias
+  authorizer_info            = var.authorizer
+  module_type                = var.module_type
+  timeout                    = var.timeout
+  memory_size                = var.memory_size
+  layers                     = var.layers
+  tags                       = var.tags
+  vpc_id                     = local.vpc_id
+  subnet_ids                 = local.subnet_ids
+  security_group_ids         = [module.request_handler.lambda_security_group_id]
+  is_production              = var.is_production
+  lambda_kms_key_arn         = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
+  lambda_signer_profile_name = local.lambda_signer_profile_name
+  lambda_signing_config_arn  = local.lambda_signing_config_arn
+}
+
+# API Gateway Module (conditional - only create when NOT in async mode)
+module "api_gateway" {
+  count  = local.is_async_mode ? 0 : 1
+  source = "./modules/api-gateway"
+
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  product_display_name = var.product_display_name
+  api_base_path        = var.api_base_path
+  api_version          = var.api_version
+  agent_endpoint       = var.agent_endpoint
+  tags                 = var.tags
+
+  lambda_function_invoke_arn = module.request_handler.lambda_function_invoke_arn
+  lambda_function_name       = module.request_handler.lambda_function_name
+
+  endpoints = local.complete_gateway_endpoints
+
+  authorizer                            = var.authorizer
+  authorizer_lambda_function_invoke_arn = local.create_authorizer ? module.authorizer[0].lambda_function_invoke_arn : ""
+  create_authorizer                     = local.create_authorizer
+
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+
+  depends_on = [module.request_handler]
+}
+
+module "docker_image" {
+  count         = (var.package_type == "Image") ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.2.14"
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  source_path   = var.package_path
+}
+
+module "redis" {
+  source        = "yaalalabs/ak-common/aws//modules/redis"
+  version       = "0.2.14"
+  count         = var.create_redis_cluster == true ? 1 : 0
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  vpc_cidr      = local.vpc_cidr
+  vpc_id        = local.vpc_id
+  subnet_ids    = local.subnet_ids
+}
+
+module "dynamodb_memory" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.14"
+  count   = var.create_dynamodb_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "key", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "key"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "session_store"
+  ttl_attribute_name = "expiry_time"
+}
+
+module "dynamodb_multimodal_memory" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.13"
+  count   = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "attachment_id", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "attachment_id"
+  ttl_enabled        = true
+  ttl_attribute_name = "expiry_time"
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "mm-attachments"
+}
+
+# SQS Queues Module (conditional on scalable_mode)
+module "queues" {
+  count  = var.scalable_mode ? 1 : 0
+  source = "./modules/queues"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  tags          = var.tags
+
+  queue_config = local.queue_config
+}
+
+# Response Stores Module (conditional on scalable_mode and execution_mode != "async")
+module "response_stores" {
+  count  = local.create_response_store ? 1 : 0
+  source = "./modules/response-stores"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+
+  create_redis    = local.create_redis_response_store
+  create_dynamodb = local.create_dynamodb_response_store
+
+  dynamodb_table_name   = local.has_dynamodb_config ? var.response_store.dynamodb.table_name : "ak-responses"
+  response_store_suffix = var.response_store != null ? var.response_store.suffix : null
+
+  vpc_id     = local.vpc_id
+  vpc_cidr   = local.vpc_cidr
+  subnet_ids = local.subnet_ids
+}
+
+# Build response handler package
+resource "null_resource" "build_response_handler" {
+  count = var.scalable_mode ? 1 : 0
+  triggers = { # will trigger the script (script running is done in local-exec) if package_path OR the build_response_handler.sh script changes
+    package_path = var.package_path
+    script_hash  = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
+  }
+  provisioner "local-exec" {
+    command     = "./build_response_handler.sh --package-path ${var.package_path}"
+    working_dir = "${path.module}/modules/response-handler"
+  }
+}
+
+# Request Handler Lambda Module
+module "request_handler" {
+  source = "./modules/request-handler"
+  region                                  = var.region
+  product_alias                           = var.product_alias
+  product_display_name                    = var.product_display_name
+  env_alias                               = var.env_alias
+  module_type                             = var.module_type
+  module_name                             = var.module_name
+  is_production                           = var.is_production
+  package_path                            = var.package_path
+  scalable_mode                           = var.scalable_mode
+  event_source_mapping                    = var.event_source_mapping
+  environment_variables                   = var.environment_variables
+  timeout                                 = var.timeout
+  memory_size                             = var.memory_size
+  function_name                           = var.function_name
+  function_description                    = var.function_description
+  handler_path                            = var.handler_path
+  package_type                            = var.package_type
+  layers                                  = var.layers
+  api_version                             = var.api_version
+  agent_endpoint                          = var.agent_endpoint
+  api_base_path                           = var.api_base_path
+  vpc_id                                  = local.vpc_id
+  subnet_ids                              = local.subnet_ids
+  create_dynamodb_memory_table            = var.create_dynamodb_memory_table
+  create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
+  dynamodb_memory_table_arn               = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name              = local.dynamodb_memory_table_name
+  dynamodb_multimodal_memory_table_arn    = local.dynamodb_multimodal_memory_table_arn
+  dynamodb_multimodal_memory_table_name   = local.dynamodb_multimodal_memory_table_name
+  input_queue_arn                         = local.input_queue_arn
+  input_queue_url                         = local.input_queue_url
+  redis_url                               = local.redis_url
+  lambda_signer_profile_name              = local.lambda_signer_profile_name
+  lambda_signing_config_arn               = local.lambda_signing_config_arn
+  docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
+  lambda_kms_key_arn                      = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
+  websocket_connections_table_name        = local.websocket_connections_table_name
+  websocket_connections_table_arn         = local.websocket_connections_table_arn
+}
+
+# Agent Runner Module (conditional on scalable_mode)
+module "agent_runner" {
+  count  = var.scalable_mode ? 1 : 0
+  source = "./modules/agent-runner"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  module_type   = var.module_type
+
+  agent_runner = merge(var.agent_runner, {
+    package_path = var.package_path
+    package_type = var.package_type
+    layers       = var.layers
+    environment_variables = merge(var.environment_variables, {
+      AK_EXECUTION__MODE = var.execution_mode
+    })
+  })
+
+  queue_config = {
+    input_queue_arn                    = local.input_queue_arn
+    output_queue_arn                   = local.output_queue_arn
+    output_queue_url                   = local.output_queue_url
+    batch_size                         = var.queue_config != null ? var.queue_config.batch_size : 10
+    maximum_batching_window_in_seconds = var.queue_config != null ? var.queue_config.maximum_batching_window_in_seconds : 5
+  }
+
+  subnet_ids             = local.subnet_ids
+  security_group_id      = module.request_handler.lambda_security_group_id
+  lambda_kms_key_arn     = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+
+  depends_on = [module.queues]
+}
+
+module "response_handler" {
+  count  = var.scalable_mode ? 1 : 0
+  source = "./modules/response-handler"
+  # source = "yaalalabs/ak-serverless/aws//modules/response-handler"
+  # version = "0.2.13"
+
+  # Pass through all the required variables
+  package_path = var.package_path
+  package_type = var.package_type
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  response_handler = merge(var.response_handler, {
+    environment_variables = {
+      AK_EXECUTION__MODE = var.execution_mode
+    }
+  })
+  response_store = local.response_handler_response_store
+
+  queue_config = {
+    output_queue_arn                   = local.output_queue_arn
+    batch_size                         = var.queue_config != null ? var.queue_config.batch_size : 10
+    maximum_batching_window_in_seconds = var.queue_config != null ? var.queue_config.maximum_batching_window_in_seconds : 5
+  }
+
+  # Pass local values
+  subnet_ids             = local.subnet_ids
+  security_group_id      = module.request_handler.lambda_security_group_id
+  lambda_kms_key_arn     = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+  websocket_connections_table_name = local.websocket_connections_table_name
+  websocket_connections_table_arn  = local.websocket_connections_table_arn
+  websocket_api_domain_name        = local.websocket_api_domain_name
+
+  depends_on = [null_resource.build_response_handler, module.queues, module.response_stores]
+}
+
+# WebSocket Connections Table Module (conditional on async execution mode)
+module "websocket_connections_table" {
+  count  = local.is_async_mode ? 1 : 0
+  source = "./modules/websocket-connections-table"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  tags          = var.tags
+
+  # WebSocket table configuration
+  table_name           = var.websocket_config.table_name
+  billing_mode         = var.websocket_config.billing_mode
+  hash_key             = var.websocket_config.hash_key
+  range_key            = var.websocket_config.range_key
+  gsi_name             = var.websocket_config.gsi_name
+  gsi_hash_key         = var.websocket_config.gsi_hash_key
+  gsi_projection_type  = var.websocket_config.gsi_projection_type
+  ttl_attribute_name   = var.websocket_config.ttl_attribute_name
+  ttl_enabled          = var.websocket_config.ttl_enabled
+}
+
+# WebSocket API Gateway Module (conditional on async execution mode)
+module "websocket_api_gateway" {
+  count  = local.is_async_mode ? 1 : 0
+  source = "./modules/websocket-api-gateway"
+
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  product_display_name = var.product_display_name
+  tags                 = var.tags
+
+  lambda_function_invoke_arn = module.request_handler.lambda_function_invoke_arn
+  lambda_function_name       = module.request_handler.lambda_function_name
+
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+
+  # WebSocket API configuration
+  api_name_suffix               = var.websocket_config.api_name_suffix
+  route_selection_expression    = var.websocket_config.route_selection_expression
+  stage_name                   = var.websocket_config.stage_name
+  auto_deploy                  = var.websocket_config.auto_deploy
+  logging_level                = var.websocket_config.logging_level
+  data_trace_enabled           = var.websocket_config.data_trace_enabled
+  detailed_metrics_enabled     = var.websocket_config.detailed_metrics_enabled
+  log_retention_days           = var.websocket_config.log_retention_days
+  throttling_burst_limit       = var.websocket_config.throttling_burst_limit
+  throttling_rate_limit        = var.websocket_config.throttling_rate_limit
+
+  depends_on = [module.request_handler]
 }

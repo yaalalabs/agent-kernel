@@ -209,3 +209,15 @@ variable "product_display_name" {
   description = "Product display name"
   default     = null
 }
+
+variable "websocket_connections_table_name" {
+  type        = string
+  description = "Name of the WebSocket connections DynamoDB table"
+  default     = null
+}
+
+variable "websocket_connections_table_arn" {
+  type        = string
+  description = "ARN of the WebSocket connections DynamoDB table"
+  default     = null
+}

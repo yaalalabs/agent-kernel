@@ -108,6 +108,65 @@ resource "aws_iam_role_policy_attachment" "response_handler_dynamodb_attachment"
   policy_arn = aws_iam_policy.response_handler_dynamodb_policy[0].arn
 }
 
+# WebSocket connections table permissions (conditional on websocket_connections_table_arn)
+resource "aws_iam_policy" "response_handler_websocket_connections_policy" {
+  count = var.websocket_connections_table_arn != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}-websocket-connections"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          var.websocket_connections_table_arn,
+          "${var.websocket_connections_table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "response_handler_websocket_connections_attachment" {
+  count      = var.websocket_connections_table_arn != null ? 1 : 0
+  role       = aws_iam_role.response_handler_lambda_role.name
+  policy_arn = aws_iam_policy.response_handler_websocket_connections_policy[0].arn
+}
+
+# API Gateway Management API permissions for WebSocket (conditional on websocket_connections_table_arn)
+resource "aws_iam_policy" "response_handler_apigateway_management_policy" {
+  count = var.websocket_connections_table_arn != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}-apigateway-management"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "execute-api:ManageConnections"
+        ]
+        Resource = "arn:aws:execute-api:*:*:*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "response_handler_apigateway_management_attachment" {
+  count      = var.websocket_connections_table_arn != null ? 1 : 0
+  role       = aws_iam_role.response_handler_lambda_role.name
+  policy_arn = aws_iam_policy.response_handler_apigateway_management_policy[0].arn
+}
+
 # Response Handler Lambda Function
 module "response_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
@@ -142,6 +201,9 @@ module "response_handler_lambda" {
     local.dynamodb_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL = tostring(local.dynamodb_response_store.ttl)
+    } : {},
+    var.websocket_connections_table_name != null ? {
+      AK_EXECUTION__WEBSOCKET_CONNECTION_TABLE = var.websocket_connections_table_name
     } : {}
   )
 
@@ -158,10 +220,10 @@ resource "aws_lambda_event_source_mapping" "response_handler_output_queue" {
   function_name    = module.response_handler_lambda.lambda_function_name
   batch_size       = local.batch_size
   
-  # Optional: Configure maximum batching window
+  # Configuring maximum batching window
   maximum_batching_window_in_seconds = local.maximum_batching_window_in_seconds
   
-  # Optional: Configure partial batch failure handling
+  # Configuring partial batch failure handling
   function_response_types = ["ReportBatchItemFailures"]
 }
 

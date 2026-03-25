@@ -387,3 +387,52 @@ variable "response_store" {
     error_message = "Exactly one of redis or dynamodb must be configured when response_store is provided."
   }
 }
+
+variable "websocket_config" {
+  description = "WebSocket API configuration object"
+  type = object({
+    # API Gateway settings
+    api_name_suffix               = optional(string, "websocket-api")
+    route_selection_expression    = optional(string, "$request.body.action")
+    stage_name                   = optional(string, "prod")
+    auto_deploy                  = optional(bool, true)
+    
+    # Logging and monitoring
+    logging_level                = optional(string, "INFO")
+    data_trace_enabled           = optional(bool, true)
+    detailed_metrics_enabled     = optional(bool, true)
+    log_retention_days           = optional(number, 14)
+    
+    # Throttling
+    throttling_burst_limit       = optional(number, 5000)
+    throttling_rate_limit        = optional(number, 2000)
+    
+    # DynamoDB table settings
+    table_name                   = optional(string, "websocket-connections")
+    billing_mode                 = optional(string, "PAY_PER_REQUEST")
+    hash_key                     = optional(string, "session_id")
+    range_key                    = optional(string, "connection_id")
+    
+    # GSI settings
+    gsi_name                     = optional(string, "connection_id-index")
+    gsi_hash_key                 = optional(string, "connection_id")
+    gsi_projection_type          = optional(string, "ALL")
+    
+    # TTL settings
+    ttl_attribute_name           = optional(string, "ttl")
+    ttl_enabled                  = optional(bool, true)
+  })
+  default = {}
+  validation {
+    condition = contains(["INFO", "ERROR", "OFF"], var.websocket_config.logging_level)
+    error_message = "websocket_config.logging_level must be one of: INFO, ERROR, OFF."
+  }
+  validation {
+    condition = contains(["PAY_PER_REQUEST", "PROVISIONED"], var.websocket_config.billing_mode)
+    error_message = "websocket_config.billing_mode must be either PAY_PER_REQUEST or PROVISIONED."
+  }
+  validation {
+    condition = contains(["ALL", "KEYS_ONLY", "INCLUDE"], var.websocket_config.gsi_projection_type)
+    error_message = "websocket_config.gsi_projection_type must be one of: ALL, KEYS_ONLY, INCLUDE."
+  }
+}
