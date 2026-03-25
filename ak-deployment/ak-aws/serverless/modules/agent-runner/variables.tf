@@ -23,7 +23,7 @@ variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
     function_name         = optional(string, "agent-runner")
-    timeout               = optional(number, 300)
+    timeout               = optional(number, 30)
     memory_size           = optional(number, 512)
     package_path          = string
     package_type          = optional(string, "LocalZip")

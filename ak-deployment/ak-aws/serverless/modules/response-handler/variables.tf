@@ -36,7 +36,7 @@ variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
     function_name         = optional(string, "response-handler")
-    timeout               = optional(number, 60)
+    timeout               = optional(number, 30)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
     layers                = optional(list(string), [])
