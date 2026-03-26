@@ -7,8 +7,8 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from .core import DefaultEndpointsHandler
 from .core.default_ws_endpoints import DefaultWebsocketRouteHandler
-from ...core.config import AKConfig
-from ...core.model import ExecutionMode
+from ....core.config import AKConfig
+from ....core.model import ExecutionMode
 
 logging.basicConfig(
     level=logging.DEBUG,

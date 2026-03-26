@@ -4,7 +4,7 @@ import traceback
 
 import azure.functions as func
 
-from agentkernel.deployment.core.chat_service import ChatService
+from agentkernel.deployment.common.chat_service import ChatService
 
 
 class AzureFunctions:
