@@ -204,13 +204,6 @@ class _ResponseStoreConfig(BaseModel):
     redis: Optional[_RedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
 
-    @model_validator(mode='after')
-    def validate_mutual_exclusivity(self) -> '_ResponseStoreConfig':
-        """Validate that only one response store type is configured."""
-        if self.redis is not None and self.dynamodb is not None:
-            raise ValueError("Only one of 'redis' or 'dynamodb' can be configured for response_store, not both")
-        return self
-
 
 class _QueuesConfig(BaseModel):
     input_queue_url: Optional[str] = Field(default=None, description="Input SQS queue URL for async execution mode")
