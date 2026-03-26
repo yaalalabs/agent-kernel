@@ -33,41 +33,41 @@ locals {
   create_response_store = var.scalable_mode && !local.is_async_mode && var.response_store != null
 
   # Helper conditions for checking if configs exist
-  has_redis_config    = local.create_response_store && var.response_store.redis != null
-  has_dynamodb_config = local.create_response_store && var.response_store.dynamodb != null
+  has_redis_config    = local.create_response_store && try(var.response_store.redis != null, false)
+  has_dynamodb_config = local.create_response_store && try(var.response_store.dynamodb != null, false)
 
   # Response store creation conditions - create new resources only if URL/ARN not provided
-  create_redis_response_store    = local.has_redis_config && var.response_store.redis.url == null
-  create_dynamodb_response_store = local.has_dynamodb_config && var.response_store.dynamodb.table_arn == null
+  create_redis_response_store = local.has_redis_config && coalesce(try(var.response_store.redis.url, null), null) == null
+  create_dynamodb_response_store = local.has_dynamodb_config && coalesce(try(var.response_store.dynamodb.table_arn, null), null) == null
 
   # Computed response store values - use created resources or provided values
-  response_store_redis_url = (
-    local.create_redis_response_store
-    ? module.response_stores[0].redis_url
-    : (local.has_redis_config ? var.response_store.redis.url : null)
+  response_store_redis_url = coalesce(
+    local.create_redis_response_store ? module.response_stores[0].redis_url : null,
+    try(var.response_store.redis.url, null),
+    null
   )
-  response_store_dynamodb_table_name = (
-    local.create_dynamodb_response_store
-    ? module.response_stores[0].dynamodb_table_name
-    : (local.has_dynamodb_config ? var.response_store.dynamodb.table_name : null)
+  response_store_dynamodb_table_name = coalesce(
+    local.create_dynamodb_response_store ? module.response_stores[0].dynamodb_table_name : null,
+    try(var.response_store.dynamodb.table_name, null),
+    null
   )
-  response_store_dynamodb_table_arn = (
-    local.create_dynamodb_response_store
-    ? module.response_stores[0].dynamodb_table_arn
-    : (local.has_dynamodb_config ? var.response_store.dynamodb.table_arn : null)
+  response_store_dynamodb_table_arn = coalesce(
+    local.create_dynamodb_response_store ? module.response_stores[0].dynamodb_table_arn : null,
+    try(var.response_store.dynamodb.table_arn, null),
+    null
   )
 
   # Response handler response_store configuration
   response_handler_response_store = local.create_response_store ? {
     redis = local.has_redis_config ? {
-      prefix = var.response_store.redis.prefix
+      prefix = coalesce(try(var.response_store.redis.prefix, null), "ak:response_messages:")
       url    = local.response_store_redis_url
-      ttl    = var.response_store.redis.ttl
+      ttl    = try(var.response_store.redis.ttl, null)
     } : null
     dynamodb = local.has_dynamodb_config ? {
       table_name = local.response_store_dynamodb_table_name
       table_arn  = local.response_store_dynamodb_table_arn
-      ttl        = var.response_store.dynamodb.ttl
+      ttl        = try(var.response_store.dynamodb.ttl, null)
     } : null
   } : null
 

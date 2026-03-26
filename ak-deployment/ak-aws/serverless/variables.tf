@@ -278,9 +278,6 @@ variable "authorizer" {
 }
 
 
-data "aws_ecr_authorization_token" "token" {}
-data "aws_caller_identity" "current" {}
-
 variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
