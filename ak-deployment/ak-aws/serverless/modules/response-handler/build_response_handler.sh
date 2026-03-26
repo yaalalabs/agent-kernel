@@ -89,31 +89,53 @@ mkdir -p "$OUTPUT_DIR"
 # Step 2: Extract agentkernel from main package
 print_info "Step 2: Extracting agentkernel from main package..."
 
-if [ ! -d "$MAIN_PACKAGE_PATH" ]; then
-    print_error "Main package directory not found at: $MAIN_PACKAGE_PATH"
+PACKAGE_DIR=""
+EXTRACT_TEMP_DIR=""
+
+if [ -f "$MAIN_PACKAGE_PATH" ]; then
+    # Assume this is a zip archive (e.g., from LocalZip/S3Zip workflows)
+    print_info "Main package is a file, attempting to extract from zip: $MAIN_PACKAGE_PATH"
+    if [[ "$MAIN_PACKAGE_PATH" != *.zip ]]; then
+        print_warning "Main package file does not have .zip extension, attempting extraction anyway."
+    fi
+
+    if ! command -v unzip >/dev/null 2>&1; then
+        print_error "unzip command not found; required to extract response handler package from zip"
+        exit 1
+    fi
+
+    EXTRACT_TEMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$EXTRACT_TEMP_DIR"' EXIT
+
+    print_info "Extracting zip to temporary directory: $EXTRACT_TEMP_DIR"
+    unzip -q "$MAIN_PACKAGE_PATH" -d "$EXTRACT_TEMP_DIR"
+    PACKAGE_DIR="$EXTRACT_TEMP_DIR"
+elif [ -d "$MAIN_PACKAGE_PATH" ]; then
+    # Directory (e.g., image build output with data folder)
+    PACKAGE_DIR="$MAIN_PACKAGE_PATH"
+else
+    print_error "Main package path not found as file or directory: $MAIN_PACKAGE_PATH"
     exit 1
 fi
 
-# Check if data folder exists
-DATA_DIR="$MAIN_PACKAGE_PATH/data"
-if [ ! -d "$DATA_DIR" ]; then
-    print_error "data folder not found at: $DATA_DIR"
-    print_info "Contents of package directory:"
-    ls -la "$MAIN_PACKAGE_PATH"
-    exit 1
-fi
-
-# Check if agentkernel exists in the data folder
-if [ ! -d "$DATA_DIR/agentkernel" ]; then
-    print_error "agentkernel folder not found in $DATA_DIR"
-    print_info "Contents of data directory:"
-    ls -la "$DATA_DIR"
+# Prefer agentkernel under data/ (Image package layout), fallback to root path (Zip layout)
+if [ -d "$PACKAGE_DIR/data/agentkernel" ]; then
+    AGENTKERNEL_SRC="$PACKAGE_DIR/data/agentkernel"
+    print_info "Found agentkernel in data folder: $AGENTKERNEL_SRC"
+elif [ -d "$PACKAGE_DIR/agentkernel" ]; then
+    AGENTKERNEL_SRC="$PACKAGE_DIR/agentkernel"
+    print_info "Found agentkernel in package root: $AGENTKERNEL_SRC"
+else
+    print_error "agentkernel folder not found in expected package locations."
+    print_info "Searched paths: $PACKAGE_DIR/data/agentkernel and $PACKAGE_DIR/agentkernel"
+    print_info "Listing PACKAGE_DIR contents:"
+    ls -la "$PACKAGE_DIR"
     exit 1
 fi
 
 # Copy agentkernel to output directory
-print_info "Copying agentkernel from $DATA_DIR to output directory..."
-cp -r "$DATA_DIR/agentkernel" "$OUTPUT_DIR/"
+print_info "Copying agentkernel from $AGENTKERNEL_SRC to output directory..."
+cp -r "$AGENTKERNEL_SRC" "$OUTPUT_DIR/"
 
 # Step 3: Install minimal dependencies
 print_info "Step 3: Installing minimal dependencies (pydantic, boto3)..."
