@@ -10,12 +10,82 @@ locals {
   agent_runner_handler_path  = var.agent_runner.handler_path
   agent_runner_layers        = var.agent_runner.layers
   agent_runner_env_vars      = var.agent_runner.environment_variables
+  agent_runner_create_dynamodb_memory_table            = var.agent_runner.create_dynamodb_memory_table
+  agent_runner_create_dynamodb_multimodal_memory_table = var.agent_runner.create_dynamodb_multimodal_memory_table
+  agent_runner_redis_url                               = var.agent_runner.redis_url
+  agent_runner_dynamodb_memory_table_arn               = var.agent_runner.dynamodb_memory_table_arn
+  agent_runner_dynamodb_memory_table_name              = var.agent_runner.dynamodb_memory_table_name
+  agent_runner_dynamodb_multimodal_memory_table_arn    = var.agent_runner.dynamodb_multimodal_memory_table_arn
+  agent_runner_dynamodb_multimodal_memory_table_name   = var.agent_runner.dynamodb_multimodal_memory_table_name
   
   queue_input_arn            = var.queue_config.input_queue_arn
   queue_output_arn           = var.queue_config.output_queue_arn
   queue_output_url           = var.queue_config.output_queue_url
   queue_batch_size           = var.queue_config.batch_size
   queue_batching_window      = var.queue_config.maximum_batching_window_in_seconds
+}
+
+resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
+  count = local.agent_runner_create_dynamodb_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-dynamodb"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = var.dynamodb_memory_table_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachment" {
+  count      = local.agent_runner_create_dynamodb_memory_table == true ? 1 : 0
+  role       = aws_iam_role.agent_runner_lambda_role.name
+  policy_arn = aws_iam_policy.agent_runner_dynamodb_memory_policy[0].arn
+}
+
+resource "aws_iam_policy" "agent_runner_dynamodb_multimodal_policy" {
+  count = local.agent_runner_create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-ddb-mm"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          var.dynamodb_multimodal_memory_table_arn,
+          "${var.dynamodb_multimodal_memory_table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_multimodal_attachment" {
+  count      = local.agent_runner_create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  role       = aws_iam_role.agent_runner_lambda_role.name
+  policy_arn = aws_iam_policy.agent_runner_dynamodb_multimodal_policy[0].arn
 }
 
 data "aws_s3_object" "source_code" {
@@ -152,6 +222,15 @@ module "agent_runner_lambda" {
 
   environment_variables = merge(
     local.agent_runner_env_vars,
+    local.agent_runner_redis_url != null ? {
+      AK_SESSION__REDIS__URL = local.agent_runner_redis_url
+    } : {},
+    local.agent_runner_dynamodb_memory_table_arn != null ? {
+      AK_SESSION__DYNAMODB__TABLE_NAME = local.agent_runner_dynamodb_memory_table_name
+    } : {},
+    local.agent_runner_dynamodb_multimodal_memory_table_arn != null ? {
+      AK_MULTIMODAL__DYNAMODB__TABLE_NAME = local.agent_runner_dynamodb_multimodal_memory_table_name
+    } : {},
     {
       AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL = local.queue_output_url
     }

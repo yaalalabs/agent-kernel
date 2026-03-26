@@ -25,50 +25,17 @@ locals {
   response_handler_source_package_path  = var.package_path
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(var.agent_runner_module_name, "${var.module_name}-agent-runner")
-
-  #TODO:: check conditions and remove unwanted stuff
-
-  # Response handler condition checks
-  is_async_mode         = var.execution_mode == "async"
-  create_response_store = var.scalable_mode && !local.is_async_mode && var.response_store != null
-
-  # Helper conditions for checking if configs exist
-  has_redis_config    = local.create_response_store && try(var.response_store.redis != null, false)
-  has_dynamodb_config = local.create_response_store && try(var.response_store.dynamodb != null, false)
-
-  # Response store creation conditions - create new resources only if URL/ARN not provided
-  create_redis_response_store = local.has_redis_config && coalesce(try(var.response_store.redis.url, null), null) == null
-  create_dynamodb_response_store = local.has_dynamodb_config && coalesce(try(var.response_store.dynamodb.table_arn, null), null) == null
-
-  # Computed response store values - use created resources or provided values
-  response_store_redis_url = coalesce(
-    local.create_redis_response_store ? module.response_stores[0].redis_url : null,
-    try(var.response_store.redis.url, null),
-    null
-  )
-  response_store_dynamodb_table_name = coalesce(
-    local.create_dynamodb_response_store ? module.response_stores[0].dynamodb_table_name : null,
-    try(var.response_store.dynamodb.table_name, null),
-    null
-  )
-  response_store_dynamodb_table_arn = coalesce(
-    local.create_dynamodb_response_store ? module.response_stores[0].dynamodb_table_arn : null,
-    try(var.response_store.dynamodb.table_arn, null),
-    null
-  )
-
-  # Response handler response_store configuration
-  response_handler_response_store = local.create_response_store ? {
-    redis = local.has_redis_config ? {
-      prefix = coalesce(try(var.response_store.redis.prefix, null), "ak:response_messages:")
-      url    = local.response_store_redis_url
-      ttl    = try(var.response_store.redis.ttl, null)
-    } : null
-    dynamodb = local.has_dynamodb_config ? {
-      table_name = local.response_store_dynamodb_table_name
-      table_arn  = local.response_store_dynamodb_table_arn
-      ttl        = try(var.response_store.dynamodb.ttl, null)
-    } : null
+  # Response store wiring
+  is_async_mode                   = var.execution_mode == "async"
+  response_store_redis_url        = var.create_redis_response_store ? local.redis_url : null
+  response_store_dynamodb_table_name = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_name : null
+  response_store_dynamodb_table_arn  = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_arn : null
+  response_handler_response_store_redis = var.create_redis_response_store ? {
+    url = local.response_store_redis_url
+  } : null
+  response_handler_response_store_dynamodb = var.create_dynamodb_response_store ? {
+    table_name = local.response_store_dynamodb_table_name
+    table_arn  = local.response_store_dynamodb_table_arn
   } : null
 
   # Authorizer status message for logging
@@ -246,7 +213,7 @@ module "agent_runner_docker_image" {
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
   version       = "0.2.14"
-  count         = var.create_redis_cluster == true ? 1 : 0
+  count         = (var.create_redis_cluster == true || var.create_redis_response_store == true) ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -319,24 +286,25 @@ module "queues" {
   queue_config = local.queue_config
 }
 
-# Response Stores Module (conditional on scalable_mode and execution_mode != "async")
-module "response_stores" {
-  count  = local.create_response_store ? 1 : 0
-  source = "./modules/response-stores"
+# DynamoDB response store module
+module "dynamodb_response_store" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.2.14"
+  count   = var.create_dynamodb_response_store ? 1 : 0
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "message_id", type = "S" },
+  ]
 
-  create_redis    = local.create_redis_response_store
-  create_dynamodb = local.create_dynamodb_response_store
-
-  dynamodb_table_name   = local.has_dynamodb_config ? var.response_store.dynamodb.table_name : "ak-responses"
-  response_store_suffix = var.response_store != null ? var.response_store.suffix : null
-
-  vpc_id     = local.vpc_id
-  vpc_cidr   = local.vpc_cidr
-  subnet_ids = local.subnet_ids
+  hash_key           = "session_id"
+  range_key          = "message_id"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = "${var.module_name}-response-store"
+  product_alias      = var.product_alias
+  table_name         = "ak-responses"
+  ttl_attribute_name = "expiry_time"
 }
 
 # Build response handler package
@@ -378,16 +346,16 @@ module "request_handler" {
   api_base_path                           = var.api_base_path
   vpc_id                                  = local.vpc_id
   subnet_ids                              = local.subnet_ids
-  source_bucket                            = var.package_type == "S3Zip" ? module.request_handler_source_storage[0].source_storage_s3_bucket : null
-  create_dynamodb_memory_table            = var.create_dynamodb_memory_table
-  create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
-  dynamodb_memory_table_arn               = local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name              = local.dynamodb_memory_table_name
-  dynamodb_multimodal_memory_table_arn    = local.dynamodb_multimodal_memory_table_arn
-  dynamodb_multimodal_memory_table_name   = local.dynamodb_multimodal_memory_table_name
+  source_bucket                           = var.package_type == "S3Zip" ? module.request_handler_source_storage[0].source_storage_s3_bucket : null
+  create_dynamodb_memory_table            = var.scalable_mode ? false : var.create_dynamodb_memory_table
+  create_dynamodb_multimodal_memory_table  = var.scalable_mode ? false : var.create_dynamodb_multimodal_memory_table
+  redis_url                               = var.scalable_mode ? null : local.redis_url
+  dynamodb_memory_table_arn               = var.scalable_mode ? null : local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name              = var.scalable_mode ? null : local.dynamodb_memory_table_name
+  dynamodb_multimodal_memory_table_arn    = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_arn
+  dynamodb_multimodal_memory_table_name   = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
-  redis_url                               = local.redis_url
   lambda_signer_profile_name              = local.lambda_signer_profile_name
   lambda_signing_config_arn               = local.lambda_signing_config_arn
   docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
@@ -416,6 +384,13 @@ module "agent_runner" {
     environment_variables = merge(coalesce(try(var.agent_runner.environment_variables, null), {}), {
       AK_EXECUTION__MODE = var.execution_mode
     })
+    create_dynamodb_memory_table            = var.create_dynamodb_memory_table
+    create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
+    redis_url                               = local.redis_url
+    dynamodb_memory_table_arn               = local.dynamodb_memory_table_arn
+    dynamodb_memory_table_name              = local.dynamodb_memory_table_name
+    dynamodb_multimodal_memory_table_arn    = local.dynamodb_multimodal_memory_table_arn
+    dynamodb_multimodal_memory_table_name   = local.dynamodb_multimodal_memory_table_name
   })
 
   agent_runner_module_name   = local.agent_runner_artifact_module_name
@@ -459,7 +434,8 @@ module "response_handler" {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
-  response_store = local.response_handler_response_store
+  response_store_redis = local.response_handler_response_store_redis
+  response_store_dynamodb = local.response_handler_response_store_dynamodb
 
   queue_config = {
     output_queue_arn                   = local.output_queue_arn
@@ -476,7 +452,7 @@ module "response_handler" {
   websocket_connections_table_arn  = local.websocket_connections_table_arn
   websocket_api_domain_name        = local.websocket_api_domain_name
 
-  depends_on = [null_resource.build_response_handler, module.queues, module.response_stores]
+  depends_on = [null_resource.build_response_handler, module.queues, module.dynamodb_response_store]
 }
 
 # WebSocket Connections Table Module (conditional on async execution mode)

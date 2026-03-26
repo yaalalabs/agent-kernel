@@ -181,6 +181,22 @@ variable "create_dynamodb_memory_table" {
   default     = false
 }
 
+variable "create_redis_response_store" {
+  type        = bool
+  description = "Create or reuse Redis for response storage"
+  default     = false
+}
+
+variable "create_dynamodb_response_store" {
+  type        = bool
+  description = "Create a DynamoDB table for response storage"
+  default     = false
+  validation {
+    condition     = !(var.create_redis_response_store && var.create_dynamodb_response_store)
+    error_message = "create_redis_response_store and create_dynamodb_response_store cannot both be true."
+  }
+}
+
 variable "create_dynamodb_multimodal_memory_table" {
   type        = bool
   description = "Create a dynamodb table to store the Agent multimodal memory"
@@ -363,39 +379,6 @@ variable "queue_config" {
   default = null
 }
 
-
-variable "response_store" {
-  description = "Response store configuration object"
-  type = object({
-    suffix = optional(string, null)
-    redis = optional(object({
-      prefix = optional(string, "ak:response_messages:")
-      url    = optional(string, null)
-      ttl    = number
-    }), null)
-    dynamodb = optional(object({
-      table_name = optional(string, "ak-responses")
-      table_arn = optional(string, null)
-      ttl        = number
-    }), null)
-  })
-  default = null
-  validation {
-    condition = (var.execution_mode == null || var.execution_mode == "async") ? var.response_store == null : true
-    error_message = "response_store must be null when execution_mode is null or 'async'."
-  }
-  validation {
-    condition = (var.execution_mode != null && var.execution_mode != "async") ? var.response_store != null : true
-    error_message = "response_store cannot be null when execution_mode is not null and not 'async'."
-  }
-  validation {
-    condition = var.response_store == null ? true : (
-      (var.response_store.redis != null && var.response_store.dynamodb == null) ||
-      (var.response_store.dynamodb != null && var.response_store.redis == null)
-    )
-    error_message = "Exactly one of redis or dynamodb must be configured when response_store is provided."
-  }
-}
 
 variable "websocket_config" {
   description = "WebSocket API configuration object"

@@ -17,9 +17,9 @@ locals {
   batch_size                             = var.queue_config.batch_size
   maximum_batching_window_in_seconds     = var.queue_config.maximum_batching_window_in_seconds
   
-  # Response store configuration (null in async mode)
-  redis_response_store = var.response_store != null ? var.response_store.redis : null
-  dynamodb_response_store = var.response_store != null ? var.response_store.dynamodb : null
+  # Response store configuration
+  redis_response_store    = var.response_store_redis
+  dynamodb_response_store = var.response_store_dynamodb
 }
 
 # IAM Role for Response Handler Lambda
@@ -196,12 +196,9 @@ module "response_handler_lambda" {
     local.response_handler_env_vars,
     local.redis_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__REDIS__URL = local.redis_response_store.url
-      AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX = local.redis_response_store.prefix
-      AK_EXECUTION__RESPONSE_STORE__REDIS__TTL = tostring(local.redis_response_store.ttl)
     } : {},
     local.dynamodb_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
-      AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL = tostring(local.dynamodb_response_store.ttl)
     } : {},
     var.websocket_connections_table_name != null ? {
       AK_EXECUTION__WEBSOCKET_CONNECTION_TABLE = var.websocket_connections_table_name

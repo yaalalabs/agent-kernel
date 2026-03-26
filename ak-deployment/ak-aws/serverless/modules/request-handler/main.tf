@@ -269,13 +269,13 @@ module "lambda_deployment" {
   } : {}
 
   environment_variables = merge(var.environment_variables, {
-    API_BASE_PATH = var.api_base_path
-    API_VERSION = var.api_version
-    AGENT_ENDPOINT = var.agent_endpoint
-  },
-    var.redis_url != null ? {
-    AK_SESSION__REDIS__URL = var.redis_url
-  } : {},
+      API_BASE_PATH = var.api_base_path
+      API_VERSION = var.api_version
+      AGENT_ENDPOINT = var.agent_endpoint
+    },
+      var.redis_url != null ? {
+      AK_SESSION__REDIS__URL = var.redis_url
+    } : {},
       var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},

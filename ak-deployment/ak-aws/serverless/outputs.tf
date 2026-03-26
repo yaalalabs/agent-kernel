@@ -108,21 +108,6 @@ output "output_queue_name" {
   value       = var.scalable_mode ? module.queues[0].output_queue_name : null
 }
 
-# Database outputs (conditional based on scalable_mode and execution_mode)
-output "redis_response_store_url" {
-  description = "URL of the Redis response store"
-  value       = local.create_response_store ? module.response_stores[0].redis_url : null
-}
-
-output "dynamodb_response_store_table_name" {
-  description = "Name of the DynamoDB response store table"
-  value       = local.create_response_store ? module.response_stores[0].dynamodb_table_name : null
-}
-
-output "dynamodb_response_store_table_arn" {
-  description = "ARN of the DynamoDB response store table"
-  value       = local.create_response_store ? module.response_stores[0].dynamodb_table_arn : null
-}
 
 # WebSocket API Gateway outputs (conditional based on async execution mode)
 output "websocket_api_id" {

@@ -36,6 +36,48 @@ variable "docker_image_uri" {
   default     = null
 }
 
+variable "create_dynamodb_memory_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the Agent memory"
+  default     = false
+}
+
+variable "create_dynamodb_multimodal_memory_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the Agent multimodal memory"
+  default     = false
+}
+
+variable "dynamodb_memory_table_arn" {
+  type        = string
+  description = "ARN of the DynamoDB memory table"
+  default     = null
+}
+
+variable "dynamodb_memory_table_name" {
+  type        = string
+  description = "Name of the DynamoDB memory table"
+  default     = null
+}
+
+variable "dynamodb_multimodal_memory_table_arn" {
+  type        = string
+  description = "ARN of the DynamoDB multimodal memory table"
+  default     = null
+}
+
+variable "dynamodb_multimodal_memory_table_name" {
+  type        = string
+  description = "Name of the DynamoDB multimodal memory table"
+  default     = null
+}
+
+variable "redis_url" {
+  type        = string
+  description = "URL of the Redis cluster"
+  default     = null
+}
+
 variable "is_production" {
   description = "Is production"
   type        = bool
@@ -66,6 +108,13 @@ variable "agent_runner" {
     handler_path          = optional(string, "agent_runner.handler")
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
+    create_dynamodb_memory_table            = optional(bool, false)
+    create_dynamodb_multimodal_memory_table = optional(bool, false)
+    redis_url                               = optional(string, null)
+    dynamodb_memory_table_arn               = optional(string, null)
+    dynamodb_memory_table_name              = optional(string, null)
+    dynamodb_multimodal_memory_table_arn    = optional(string, null)
+    dynamodb_multimodal_memory_table_name   = optional(string, null)
   })
 }
 

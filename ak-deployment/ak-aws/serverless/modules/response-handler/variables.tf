@@ -45,28 +45,21 @@ variable "response_handler" {
   })
 }
 
-variable "response_store" {
-  description = "Response store configuration object"
+variable "response_store_redis" {
+  description = "Redis configuration for response storage"
   type = object({
-    redis = optional(object({
-      prefix = string
-      url    = string
-      ttl    = number
-    }), null)
-    dynamodb = optional(object({
-      table_name = string
-      table_arn = string
-      ttl        = number
-    }), null)
+    url = string
   })
   default = null
-  validation {
-    condition = var.response_store == null ? true : (
-      (var.response_store.redis != null && var.response_store.dynamodb == null) ||
-      (var.response_store.dynamodb != null && var.response_store.redis == null)
-    )
-    error_message = "Exactly one of redis or dynamodb must be configured when response_store is provided."
-  }
+}
+
+variable "response_store_dynamodb" {
+  description = "DynamoDB configuration for response storage"
+  type = object({
+    table_name = string
+    table_arn  = string
+  })
+  default = null
 }
 
 variable "queue_config" {
