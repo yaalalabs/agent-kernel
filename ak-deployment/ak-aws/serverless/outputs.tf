@@ -45,67 +45,67 @@ output "api_gateway_cloudwatch_log_group_name" {
   value       = local.is_async_mode ? null : module.api_gateway[0].api_gateway_cloudwatch_log_group_name
 }
 
-# Response Handler outputs
+# Response Handler outputs (conditional based on scalable_mode)
 output "response_handler_lambda_function_arn" {
   description = "ARN of the response handler Lambda function"
-  value       = module.response_handler[0].response_handler_lambda_function_arn
+  value       = var.scalable_mode ? module.response_handler[0].response_handler_lambda_function_arn : null
 }
 
 output "response_handler_lambda_function_name" {
   description = "Name of the response handler Lambda function"
-  value       = module.response_handler[0].response_handler_lambda_function_name
+  value       = var.scalable_mode ? module.response_handler[0].response_handler_lambda_function_name : null
 }
 
 output "response_handler_lambda_function_invoke_arn" {
   description = "Invoke ARN of the response handler Lambda function"
-  value       = module.response_handler[0].response_handler_lambda_function_invoke_arn
+  value       = var.scalable_mode ? module.response_handler[0].response_handler_lambda_function_invoke_arn : null
 }
 
-# Agent Runner outputs
+# Agent Runner outputs (conditional based on scalable_mode)
 output "agent_runner_lambda_function_arn" {
   description = "ARN of the agent runner Lambda function"
-  value       = module.agent_runner[0].agent_runner_lambda_function_arn
+  value       = var.scalable_mode ? module.agent_runner[0].agent_runner_lambda_function_arn : null
 }
 
 output "agent_runner_lambda_function_name" {
   description = "Name of the agent runner Lambda function"
-  value       = module.agent_runner[0].agent_runner_lambda_function_name
+  value       = var.scalable_mode ? module.agent_runner[0].agent_runner_lambda_function_name : null
 }
 
 output "agent_runner_lambda_function_invoke_arn" {
   description = "Invoke ARN of the agent runner Lambda function"
-  value       = module.agent_runner[0].agent_runner_lambda_function_invoke_arn
+  value       = var.scalable_mode ? module.agent_runner[0].agent_runner_lambda_function_invoke_arn : null
 }
 
-# SQS Queues outputs
+# SQS Queues outputs (conditional based on scalable_mode)
 output "input_queue_arn" {
   description = "ARN of the input SQS queue"
-  value       = module.queues[0].input_queue_arn
+  value       = var.scalable_mode ? module.queues[0].input_queue_arn : null
 }
 
 output "input_queue_url" {
   description = "URL of the input SQS queue"
-  value       = module.queues[0].input_queue_url
+  value       = var.scalable_mode ? module.queues[0].input_queue_url : null
 }
 
 output "input_queue_name" {
   description = "Name of the input SQS queue"
-  value       = module.queues[0].input_queue_name
+  value       = var.scalable_mode ? module.queues[0].input_queue_name : null
 }
 
 output "output_queue_arn" {
   description = "ARN of the output SQS queue"
-  value       = module.queues[0].output_queue_arn
+  value       = var.scalable_mode ? module.queues[0].output_queue_arn : null
 }
 
 output "output_queue_url" {
   description = "URL of the output SQS queue"
-  value       = module.queues[0].output_queue_url
+  value       = var.scalable_mode ? module.queues[0].output_queue_url : null
 }
 
 output "output_queue_name" {
   description = "Name of the output SQS queue"
-  value       = module.queues[0].output_queue_name
+  value       = var.scalable_mode ? module.queues[0].output_queue_name : null
 }
 
 

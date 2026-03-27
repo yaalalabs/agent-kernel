@@ -33,8 +33,70 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment"
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-# SQS permissions for RequestHandler Lambda
+resource "aws_iam_policy" "lambda_dynamodb_describe_policy" {
+  count = var.create_dynamodb_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-dynamodb"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ],
+        Resource = var.dynamodb_memory_table_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb_describe_attachment" {
+  count      = var.create_dynamodb_memory_table == true ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_dynamodb_describe_policy[0].arn
+}
+
+resource "aws_iam_policy" "lambda_dynamodb_multimodal_describe_policy" {
+  count = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-ddb-mm"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ],
+        Resource = [
+          var.dynamodb_multimodal_memory_table_arn,
+          "${var.dynamodb_multimodal_memory_table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb_multimodal_describe_attachment" {
+  count      = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_dynamodb_multimodal_describe_policy[0].arn
+}
+
+# SQS permissions for RequestHandler Lambda (conditional on scalable_mode)
 resource "aws_iam_policy" "lambda_sqs_policy" {
+  count = var.scalable_mode ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-sqs"
   
   policy = jsonencode({
@@ -53,6 +115,7 @@ resource "aws_iam_policy" "lambda_sqs_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_sqs_attachment" {
+  count      = var.scalable_mode ? 1 : 0
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.lambda_sqs_policy[0].arn
 }
@@ -210,14 +273,24 @@ module "lambda_deployment" {
       API_VERSION = var.api_version
       AGENT_ENDPOINT = var.agent_endpoint
     },
-    {
+      var.redis_url != null ? {
+      AK_SESSION__REDIS__URL = var.redis_url
+    } : {},
+      var.dynamodb_memory_table_arn != null ? {
+      AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
+    } : {},
+      var.dynamodb_multimodal_memory_table_arn != null ? {
+      AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
+    } : {},
+      var.scalable_mode ? {
       AK_EXECUTION__QUEUES__INPUT_QUEUE_URL = var.input_queue_url
-    },
+    } : {},
       var.websocket_connections_table_name != null ? {
       AK_EXECUTION__WEBSOCKET_CONNECTION_TABLE = var.websocket_connections_table_name
     } : {}
   )
-  
+  event_source_mapping = var.event_source_mapping
+
   timeout     = var.timeout
   memory_size = var.memory_size
 
