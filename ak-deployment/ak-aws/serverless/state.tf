@@ -49,12 +49,12 @@ locals {
   output_queue_visibility_timeout = try(local.queue_config.output_queue_visibility_timeout, null)
 
   # Input queue
-  input_queue_url = var.scalable_mode ? module.queues[0].input_queue_url : null
-  input_queue_arn = var.scalable_mode ? module.queues[0].input_queue_arn : null
+  input_queue_url = module.queues[0].input_queue_url
+  input_queue_arn = module.queues[0].input_queue_arn
 
   # Output queue
-  output_queue_url = var.scalable_mode ? module.queues[0].output_queue_url : null
-  output_queue_arn = var.scalable_mode ? module.queues[0].output_queue_arn : null
+  output_queue_url = module.queues[0].output_queue_url
+  output_queue_arn = module.queues[0].output_queue_arn
 
   # Endpoint configuration for API Gateway module
   chat_endpoint = [
@@ -258,13 +258,13 @@ module "dynamodb_multimodal_memory" {
   table_name         = "mm-attachments"
 }
 
-# SQS Queues Module (conditional on scalable_mode)
+# SQS Queues Module
 check "queue_visibility_timeouts" {
   assert {
-    condition = var.scalable_mode ? (
+    condition = (
       local.input_queue_visibility_timeout >= var.agent_runner.timeout &&
       local.output_queue_visibility_timeout >= var.response_handler.timeout
-    ) : true
+    )
     error_message = format(
       "[IMPORTANT] Invalid queue visibility timeout configuration: input queue visibility timeout (%d) must be >= agent runner timeout (%d), and output queue visibility timeout (%d) must be >= response handler timeout (%d).",
       local.input_queue_visibility_timeout,
@@ -275,7 +275,6 @@ check "queue_visibility_timeouts" {
   }
 }
 module "queues" {
-  count  = var.scalable_mode ? 1 : 0
   source = "./modules/queues"
 
   product_alias = var.product_alias
@@ -309,7 +308,6 @@ module "dynamodb_response_store" {
 
 # Build response handler package
 resource "null_resource" "build_response_handler" {
-  count = var.scalable_mode ? 1 : 0
   triggers = { # will trigger the script (script running is done in local-exec) if package_path OR the build_response_handler.sh script changes
     package_path = local.response_handler_source_package_path
     script_hash  = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
@@ -331,8 +329,6 @@ module "request_handler" {
   module_name                             = var.module_name
   is_production                           = var.is_production
   package_path                            = local.request_handler_package_path
-  scalable_mode                           = var.scalable_mode
-  event_source_mapping                    = var.event_source_mapping
   environment_variables                   = var.environment_variables
   timeout                                 = var.timeout
   memory_size                             = var.memory_size
@@ -347,13 +343,6 @@ module "request_handler" {
   vpc_id                                  = local.vpc_id
   subnet_ids                              = local.subnet_ids
   source_bucket                           = var.package_type == "S3Zip" ? module.request_handler_source_storage[0].source_storage_s3_bucket : null
-  create_dynamodb_memory_table            = var.scalable_mode ? false : var.create_dynamodb_memory_table
-  create_dynamodb_multimodal_memory_table  = var.scalable_mode ? false : var.create_dynamodb_multimodal_memory_table
-  redis_url                               = var.scalable_mode ? null : local.redis_url
-  dynamodb_memory_table_arn               = var.scalable_mode ? null : local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name              = var.scalable_mode ? null : local.dynamodb_memory_table_name
-  dynamodb_multimodal_memory_table_arn    = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_arn
-  dynamodb_multimodal_memory_table_name   = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
   lambda_signer_profile_name              = local.lambda_signer_profile_name
@@ -367,9 +356,8 @@ module "request_handler" {
   depends_on = [module.request_handler_source_package]
 }
 
-# Agent Runner Module (conditional on scalable_mode)
+# Agent Runner Module
 module "agent_runner" {
-  count  = var.scalable_mode ? 1 : 0
   source = "./modules/agent-runner"
 
   product_alias = var.product_alias
@@ -417,7 +405,6 @@ module "agent_runner" {
 }
 
 module "response_handler" {
-  count  = var.scalable_mode ? 1 : 0
   source = "./modules/response-handler"
   # source = "yaalalabs/ak-serverless/aws//modules/response-handler"
   # version = "0.2.13"

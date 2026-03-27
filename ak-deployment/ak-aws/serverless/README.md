@@ -311,8 +311,7 @@ module "websocket_api" {
   package_type = "LocalZip"
   package_path = "${path.module}/dist/function.zip"
   
-  # Enable scalable mode with async execution
-  scalable_mode   = true
+  # Async execution
   execution_mode  = "async"
   
   # WebSocket configuration

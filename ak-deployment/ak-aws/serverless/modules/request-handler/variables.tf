@@ -40,18 +40,6 @@ variable "source_bucket" {
   description = "S3 bucket used to store the request handler source package"
 }
 
-variable "scalable_mode" {
-  type        = bool
-  description = "When true, response_handler lambda will be created along with the response "
-  default     = true
-}
-
-variable "event_source_mapping" {
-  description = "Event source mapping"
-  type        = any
-  default = []
-}
-
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
@@ -125,42 +113,6 @@ variable "subnet_ids" {
   description = "Subnet IDs for VPC deployment"
 }
 
-variable "create_dynamodb_memory_table" {
-  type        = bool
-  description = "Create a dynamodb table to store the Agent memory"
-  default     = false
-}
-
-variable "create_dynamodb_multimodal_memory_table" {
-  type        = bool
-  description = "Create a dynamodb table to store the Agent multimodal memory"
-  default     = false
-}
-
-variable "dynamodb_memory_table_arn" {
-  type        = string
-  description = "ARN of the DynamoDB memory table"
-  default     = null
-}
-
-variable "dynamodb_memory_table_name" {
-  type        = string
-  description = "Name of the DynamoDB memory table"
-  default     = null
-}
-
-variable "dynamodb_multimodal_memory_table_arn" {
-  type        = string
-  description = "ARN of the DynamoDB multimodal memory table"
-  default     = null
-}
-
-variable "dynamodb_multimodal_memory_table_name" {
-  type        = string
-  description = "Name of the DynamoDB multimodal memory table"
-  default     = null
-}
-
 variable "input_queue_arn" {
   type        = string
   description = "ARN of the input SQS queue"
@@ -170,12 +122,6 @@ variable "input_queue_arn" {
 variable "input_queue_url" {
   type        = string
   description = "URL of the input SQS queue"
-  default     = null
-}
-
-variable "redis_url" {
-  type        = string
-  description = "URL of the Redis cluster"
   default     = null
 }
 

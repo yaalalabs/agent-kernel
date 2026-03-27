@@ -46,34 +46,14 @@ variable "package_path" {
   type        = string
   description = "Zip package path or Docker image source path"
 }
-variable "scalable_mode" {
-  type        = bool
-  description = "When true, response_handler lambda will be created along with the response "
-  default     = true
-}
-
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Required when scalable_mode is true, must be null when scalable_mode is false."
-  default     = null
+  description = "Execution mode for the deployment (must be one of rest_sync, rest_async, ses_stream or async)."
+  default     = "rest_sync"
   validation {
-    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async", "ses_stream", "async"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async, ses_stream, async, or null."
+    condition = contains(["rest_sync", "rest_async", "ses_stream", "async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, ses_stream, async."
   }
-  validation {
-    condition = !var.scalable_mode || var.execution_mode != null
-    error_message = "execution_mode cannot be null when scalable_mode is true."
-  }
-  validation {
-    condition = var.scalable_mode || var.execution_mode == null
-    error_message = "execution_mode must be null when scalable_mode is false."
-  }
-}
-
-variable "event_source_mapping" {
-  description = "Event source mapping"
-  type        = any
-  default = []
 }
 
 variable "environment_variables" {
@@ -323,8 +303,8 @@ variable "agent_runner" {
   })
   default = {}
   validation {
-    condition     = !var.scalable_mode || try(var.agent_runner.package_path, null) != null
-    error_message = "agent_runner.package_path must be set when scalable_mode is true."
+    condition     = try(var.agent_runner.package_path, null) != null
+    error_message = "agent_runner.package_path must be set."
   }
 }
 
