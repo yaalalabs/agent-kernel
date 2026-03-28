@@ -38,7 +38,7 @@ module "sqs_queue" {
   # Redrive policy for DLQ
   redrive_policy = var.create_dlq ? {
     maxReceiveCount = var.max_receive_count
-  } : null
+  } : {}
 
   # Producer access policy
   create_queue_policy = var.enable_producer_access
