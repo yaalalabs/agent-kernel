@@ -210,4 +210,4 @@ class WSResponseHandler(LambdaSQSConsumer):
             cls._log.error(f"Failed to send permanent failure message via WebSocket: {str(e)}")
 
 
-handler = handler = WSResponseHandler.handle if AKConfig.get().execution.mode == ExecutionMode.ASYNC else RESTResponseHandler.handle
+handler = WSResponseHandler.handle if AKConfig.get().execution.mode == ExecutionMode.ASYNC else RESTResponseHandler.handle
