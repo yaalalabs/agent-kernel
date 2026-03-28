@@ -261,7 +261,7 @@ resource "aws_lambda_permission" "allow_apigw_authorizer" {
   count       = var.create_authorizer ? 1 : 0
   statement_id = "AllowAPIGatewayInvokeAuthorizer"
   action      = "lambda:InvokeFunction"
-  function_name = var.authorizer.function_name
+  function_name = var.authorizer_lambda_function_name
   principal   = "apigateway.amazonaws.com"
 
   # REST API

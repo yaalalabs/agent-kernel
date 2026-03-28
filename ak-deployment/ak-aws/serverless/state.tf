@@ -164,6 +164,7 @@ module "api_gateway" {
   endpoints = local.complete_gateway_endpoints
 
   authorizer                            = var.authorizer
+  authorizer_lambda_function_name       = local.create_authorizer ? module.authorizer[0].lambda_function_name : ""
   authorizer_lambda_function_invoke_arn = local.create_authorizer ? module.authorizer[0].lambda_function_invoke_arn : ""
   create_authorizer                     = local.create_authorizer
 

@@ -80,6 +80,12 @@ variable "authorizer_lambda_function_invoke_arn" {
   default     = ""
 }
 
+variable "authorizer_lambda_function_name" {
+  type        = string
+  description = "Name of the authorizer Lambda function"
+  default     = ""
+}
+
 variable "create_authorizer" {
   type        = bool
   description = "Whether to create the authorizer"
