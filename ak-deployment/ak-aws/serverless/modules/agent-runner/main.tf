@@ -8,15 +8,10 @@ locals {
   agent_runner_package_path  = var.agent_runner.package_path
   agent_runner_package_type  = var.agent_runner.package_type
   agent_runner_handler_path  = var.agent_runner.handler_path
+  agent_runner_module_name   = var.agent_runner.module_name
   agent_runner_layers        = var.agent_runner.layers
   agent_runner_env_vars      = var.agent_runner.environment_variables
-  agent_runner_create_dynamodb_memory_table            = var.agent_runner.create_dynamodb_memory_table
-  agent_runner_create_dynamodb_multimodal_memory_table = var.agent_runner.create_dynamodb_multimodal_memory_table
-  agent_runner_redis_url                               = var.agent_runner.redis_url
-  agent_runner_dynamodb_memory_table_arn               = var.agent_runner.dynamodb_memory_table_arn
-  agent_runner_dynamodb_memory_table_name              = var.agent_runner.dynamodb_memory_table_name
-  agent_runner_dynamodb_multimodal_memory_table_arn    = var.agent_runner.dynamodb_multimodal_memory_table_arn
-  agent_runner_dynamodb_multimodal_memory_table_name   = var.agent_runner.dynamodb_multimodal_memory_table_name
+  # Removed passthrough locals; use var.* directly in resources and modules
   
   queue_input_arn            = var.queue_config.input_queue_arn
   queue_output_arn           = var.queue_config.output_queue_arn
@@ -26,8 +21,8 @@ locals {
 }
 
 resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
-  count = local.agent_runner_create_dynamodb_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-dynamodb"
+  count = var.create_dynamodb_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-dynamodb"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -43,21 +38,21 @@ resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = var.dynamodb_memory_table_arn
+          Resource = var.dynamodb_memory_table_arn
       }
     ]
   })
 }
 
 resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachment" {
-  count      = local.agent_runner_create_dynamodb_memory_table == true ? 1 : 0
+  count      = var.create_dynamodb_memory_table == true ? 1 : 0
   role       = aws_iam_role.agent_runner_lambda_role.name
   policy_arn = aws_iam_policy.agent_runner_dynamodb_memory_policy[0].arn
 }
 
 resource "aws_iam_policy" "agent_runner_dynamodb_multimodal_policy" {
-  count = local.agent_runner_create_dynamodb_multimodal_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-ddb-mm"
+  count = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-ddb-mm"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -73,17 +68,17 @@ resource "aws_iam_policy" "agent_runner_dynamodb_multimodal_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = [
-          var.dynamodb_multimodal_memory_table_arn,
-          "${var.dynamodb_multimodal_memory_table_arn}/index/*"
-        ]
+          Resource = [
+            var.dynamodb_multimodal_memory_table_arn,
+            "${var.dynamodb_multimodal_memory_table_arn}/index/*"
+          ]
       }
     ]
   })
 }
 
 resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_multimodal_attachment" {
-  count      = local.agent_runner_create_dynamodb_multimodal_memory_table == true ? 1 : 0
+  count      = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
   role       = aws_iam_role.agent_runner_lambda_role.name
   policy_arn = aws_iam_policy.agent_runner_dynamodb_multimodal_policy[0].arn
 }
@@ -91,7 +86,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_multimodal_atta
 data "aws_s3_object" "source_code" {
   count  = var.agent_runner.package_type == "S3Zip" ? 1 : 0
   bucket = var.source_bucket
-  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.agent_runner_module_name}/lambda/${local.package_file_name}"
+  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${local.agent_runner_module_name}/lambda/${local.package_file_name}"
 }
 
 resource "aws_signer_signing_job" "agent_runner_lambda_signing_job" {
@@ -125,7 +120,7 @@ data "aws_s3_object" "signed_component_code" {
 
 # IAM Role for Agent Runner Lambda
 resource "aws_iam_role" "agent_runner_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-lambda-role"
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -155,7 +150,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_vpc_execution" {
 
 # SQS permissions for agent runner (receive/delete from input queue & send to output queue)
 resource "aws_iam_policy" "agent_runner_sqs_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}-sqs"
+  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-sqs"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -192,7 +187,7 @@ module "agent_runner_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${var.agent_runner_module_name}-${local.agent_runner_function_name}"
+  function_name          = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}"
   description            = local.agent_runner_function_description
   handler                = local.agent_runner_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
@@ -222,15 +217,15 @@ module "agent_runner_lambda" {
 
   environment_variables = merge(
     local.agent_runner_env_vars,
-    local.agent_runner_redis_url != null ? {
-      AK_SESSION__REDIS__URL = local.agent_runner_redis_url
-    } : {},
-    local.agent_runner_dynamodb_memory_table_arn != null ? {
-      AK_SESSION__DYNAMODB__TABLE_NAME = local.agent_runner_dynamodb_memory_table_name
-    } : {},
-    local.agent_runner_dynamodb_multimodal_memory_table_arn != null ? {
-      AK_MULTIMODAL__DYNAMODB__TABLE_NAME = local.agent_runner_dynamodb_multimodal_memory_table_name
-    } : {},
+      var.redis_url != null ? {
+        AK_SESSION__REDIS__URL = var.redis_url
+      } : {},
+      var.dynamodb_memory_table_arn != null ? {
+        AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
+      } : {},
+      var.dynamodb_multimodal_memory_table_arn != null ? {
+        AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
+      } : {},
     {
       AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL = local.queue_output_url
     }

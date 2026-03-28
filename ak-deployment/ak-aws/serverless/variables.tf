@@ -30,12 +30,6 @@ variable "module_name" {
   description = "Module name"
 }
 
-variable "agent_runner_module_name" {
-  description = "Optional module name override for agent-runner artifact and resource naming"
-  type        = string
-  default     = null
-}
-
 variable "is_production" {
   description = "Is production"
   type        = bool
@@ -316,6 +310,7 @@ variable "agent_runner" {
     timeout               = optional(number, 300)
     memory_size           = optional(number, 512)
     handler_path          = optional(string, "agent_runner.handler")
+    module_name           = optional(string, null)
     package_path          = optional(string, null)
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])

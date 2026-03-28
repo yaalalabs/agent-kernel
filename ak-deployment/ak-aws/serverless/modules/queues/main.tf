@@ -18,7 +18,7 @@ module "input_queue" {
   receive_wait_time_seconds    = coalesce(var.queue_config.input_queue_receive_wait_time_seconds, 20)
   delay_seconds               = coalesce(var.queue_config.input_queue_delay_seconds, 0)
   max_receive_count           = coalesce(var.queue_config.input_queue_max_receive_count, 5)
-  create_dlq                  = coalesce(var.queue_config.input_queue_create_dlq, true)
+  create_dlq                  = coalesce(var.queue_config.input_queue_create_dlq, false)
   dlq_message_retention_seconds = coalesce(var.queue_config.input_queue_dlq_message_retention_seconds, 1209600)
 
   # FIFO-specific configuration
@@ -62,7 +62,7 @@ module "output_queue" {
   receive_wait_time_seconds    = coalesce(var.queue_config.output_queue_receive_wait_time_seconds, 20)
   delay_seconds               = coalesce(var.queue_config.output_queue_delay_seconds, 0)
   max_receive_count           = coalesce(var.queue_config.output_queue_max_receive_count, 5)
-  create_dlq                  = coalesce(var.queue_config.output_queue_create_dlq, true)
+  create_dlq                  = coalesce(var.queue_config.output_queue_create_dlq, false)
   dlq_message_retention_seconds = coalesce(var.queue_config.output_queue_dlq_message_retention_seconds, 1209600)
 
   # FIFO-specific configuration

@@ -8,11 +8,6 @@ variable "env_alias" {
   description = "Environment alias for resource naming"
 }
 
-variable "agent_runner_module_name" {
-  type        = string
-  description = "Module name for agent runner resource naming"
-}
-
 variable "region" {
   type        = string
   description = "Region"
@@ -106,15 +101,9 @@ variable "agent_runner" {
     package_path          = string
     package_type          = optional(string, "LocalZip")
     handler_path          = optional(string, "agent_runner.handler")
+    module_name           = optional(string, null)
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
-    create_dynamodb_memory_table            = optional(bool, false)
-    create_dynamodb_multimodal_memory_table = optional(bool, false)
-    redis_url                               = optional(string, null)
-    dynamodb_memory_table_arn               = optional(string, null)
-    dynamodb_memory_table_name              = optional(string, null)
-    dynamodb_multimodal_memory_table_arn    = optional(string, null)
-    dynamodb_multimodal_memory_table_name   = optional(string, null)
   })
 }
 

@@ -24,7 +24,7 @@ locals {
   request_handler_package_path          = var.package_path
   response_handler_source_package_path  = var.package_path
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
-  agent_runner_artifact_module_name     = coalesce(var.agent_runner_module_name, "${var.module_name}-agent-runner")
+  agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
   # Response store wiring
   is_async_mode                   = var.execution_mode == "async"
   response_store_redis_url        = var.create_redis_response_store ? local.redis_url : null
@@ -42,11 +42,9 @@ locals {
   authorizer_required_vars_text = join(", ", compact(["authorizer_function_name", "authorizer_handler_path", "authorizer_package_type", "authorizer_package_path", "authorizer_module_name"]))
   authorizer_status_message     = local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text)
 
-  # Queue configuration with defaults
-  queue_config = var.queue_config != null ? var.queue_config : {}
 
-  input_queue_visibility_timeout  = try(local.queue_config.input_queue_visibility_timeout, null)
-  output_queue_visibility_timeout = try(local.queue_config.output_queue_visibility_timeout, null)
+  input_queue_visibility_timeout  = var.queue_config.input_queue_visibility_timeout
+  output_queue_visibility_timeout = var.queue_config.output_queue_visibility_timeout
 
   # Input queue
   input_queue_url = var.scalable_mode ? module.queues[0].input_queue_url : null
@@ -283,7 +281,7 @@ module "queues" {
   module_name   = var.module_name
   tags          = var.tags
 
-  queue_config = local.queue_config
+  queue_config = var.queue_config
 }
 
 # DynamoDB response store module
@@ -378,22 +376,15 @@ module "agent_runner" {
   module_type   = var.module_type
 
   agent_runner = merge(var.agent_runner, {
+    module_name = local.agent_runner_artifact_module_name
     package_path = local.agent_runner_package_path
     package_type = coalesce(try(var.agent_runner.package_type, null), var.package_type)
     layers       = coalesce(try(var.agent_runner.layers, null), [])
     environment_variables = merge(coalesce(try(var.agent_runner.environment_variables, null), {}), {
       AK_EXECUTION__MODE = var.execution_mode
     })
-    create_dynamodb_memory_table            = var.create_dynamodb_memory_table
-    create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
-    redis_url                               = local.redis_url
-    dynamodb_memory_table_arn               = local.dynamodb_memory_table_arn
-    dynamodb_memory_table_name              = local.dynamodb_memory_table_name
-    dynamodb_multimodal_memory_table_arn    = local.dynamodb_multimodal_memory_table_arn
-    dynamodb_multimodal_memory_table_name   = local.dynamodb_multimodal_memory_table_name
   })
 
-  agent_runner_module_name   = local.agent_runner_artifact_module_name
   source_bucket              = var.agent_runner.package_type == "S3Zip" ? module.agent_runner_source_storage[0].source_storage_s3_bucket : null
   docker_image_uri           = var.agent_runner.package_type == "Image" ? module.agent_runner_docker_image[0].docker_image_uri : null
   is_production              = var.is_production
@@ -404,8 +395,8 @@ module "agent_runner" {
     input_queue_arn                    = local.input_queue_arn
     output_queue_arn                   = local.output_queue_arn
     output_queue_url                   = local.output_queue_url
-    batch_size                         = var.queue_config != null ? var.queue_config.batch_size : 10
-    maximum_batching_window_in_seconds = var.queue_config != null ? var.queue_config.maximum_batching_window_in_seconds : 5
+    batch_size                         = var.queue_config.batch_size
+    maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
   }
 
   subnet_ids             = local.subnet_ids
@@ -439,8 +430,8 @@ module "response_handler" {
 
   queue_config = {
     output_queue_arn                   = local.output_queue_arn
-    batch_size                         = var.queue_config != null ? var.queue_config.batch_size : 10
-    maximum_batching_window_in_seconds = var.queue_config != null ? var.queue_config.maximum_batching_window_in_seconds : 5
+    batch_size                         = var.queue_config.batch_size
+    maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
   }
 
   # Pass local values

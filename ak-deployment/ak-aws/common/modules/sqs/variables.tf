@@ -91,7 +91,7 @@ variable "fifo_queue" {
 
 variable "create_dlq" {
   type        = bool
-  default     = true
+  default     = false
   description = "Whether to create a dead letter queue"
 }
 
