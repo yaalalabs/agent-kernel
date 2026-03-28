@@ -370,6 +370,7 @@ module "request_handler" {
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
   websocket_connections_table_name        = local.websocket_connections_table_name
   websocket_connections_table_arn         = local.websocket_connections_table_arn
+  enable_websocket_permissions            = local.is_async_mode
 
   depends_on = [module.request_handler_source_package]
 }
@@ -450,6 +451,7 @@ module "response_handler" {
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
   websocket_connections_table_name = local.websocket_connections_table_name
   websocket_connections_table_arn  = local.websocket_connections_table_arn
+  enable_websocket_permissions      = local.is_async_mode
   websocket_api_domain_name        = local.websocket_api_domain_name
 
   depends_on = [null_resource.build_response_handler, module.queues, module.dynamodb_response_store]

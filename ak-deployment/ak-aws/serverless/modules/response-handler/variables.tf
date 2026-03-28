@@ -108,6 +108,12 @@ variable "websocket_connections_table_arn" {
   default     = null
 }
 
+variable "enable_websocket_permissions" {
+  type        = bool
+  description = "Whether to create WebSocket-related IAM permissions"
+  default     = false
+}
+
 variable "websocket_api_domain_name" {
   type        = string
   description = "Domain name of the WebSocket API"

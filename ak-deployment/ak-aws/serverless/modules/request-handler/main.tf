@@ -122,7 +122,7 @@ resource "aws_iam_role_policy_attachment" "lambda_sqs_attachment" {
 
 # WebSocket connections table permissions (conditional on websocket_connections_table_arn)
 resource "aws_iam_policy" "lambda_websocket_connections_policy" {
-  count = var.websocket_connections_table_arn != null ? 1 : 0
+  count = var.enable_websocket_permissions ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-websocket-connections"
   
   policy = jsonencode({
@@ -149,14 +149,14 @@ resource "aws_iam_policy" "lambda_websocket_connections_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_websocket_connections_attachment" {
-  count      = var.websocket_connections_table_arn != null ? 1 : 0
+  count      = var.enable_websocket_permissions ? 1 : 0
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.lambda_websocket_connections_policy[0].arn
 }
 
 # API Gateway Management API permissions for WebSocket (conditional on websocket_connections_table_arn)
 resource "aws_iam_policy" "lambda_apigateway_management_policy" {
-  count = var.websocket_connections_table_arn != null ? 1 : 0
+  count = var.enable_websocket_permissions ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-apigateway-management"
   
   policy = jsonencode({
@@ -174,7 +174,7 @@ resource "aws_iam_policy" "lambda_apigateway_management_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_apigateway_management_attachment" {
-  count      = var.websocket_connections_table_arn != null ? 1 : 0
+  count      = var.enable_websocket_permissions ? 1 : 0
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.lambda_apigateway_management_policy[0].arn
 }

@@ -226,3 +226,9 @@ variable "websocket_connections_table_arn" {
   description = "ARN of the WebSocket connections DynamoDB table"
   default     = null
 }
+
+variable "enable_websocket_permissions" {
+  type        = bool
+  description = "Whether to create WebSocket-related IAM permissions"
+  default     = false
+}
