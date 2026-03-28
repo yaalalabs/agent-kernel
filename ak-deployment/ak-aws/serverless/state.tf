@@ -55,12 +55,21 @@ locals {
   output_queue_arn = var.scalable_mode ? module.queues[0].output_queue_arn : null
 
   # Endpoint configuration for API Gateway module
-  chat_endpoint = [
-    {
-      path   = var.agent_endpoint
-      method = "POST"
-    }
-  ]
+  chat_endpoint = concat(
+    [
+      {
+        path   = var.agent_endpoint
+        method = "POST"
+      }
+    ],
+    var.execution_mode == "rest_async" ? [
+      {
+        path   = var.agent_endpoint
+        method = "GET"
+      }
+    ] : []
+  )
+
   complete_gateway_endpoints = concat(
     local.chat_endpoint,
     var.gateway_endpoints
