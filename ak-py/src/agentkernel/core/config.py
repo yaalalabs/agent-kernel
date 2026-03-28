@@ -1,7 +1,7 @@
 import importlib.metadata
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -200,8 +200,12 @@ class _GuardrailConfig(BaseModel):
     output: _GuardrailParamConfig = Field(description="Output Guardrail configuration", default_factory=_GuardrailParamConfig)
 
 
+class _ResponseStoreRedisConfig(_RedisConfig):
+    prefix: str = Field(default="ak:responses:", description="Key prefix for Redis response storage")
+
+
 class _ResponseStoreConfig(BaseModel):
-    redis: Optional[_RedisConfig] = None
+    redis: Optional[_ResponseStoreRedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
 
 

@@ -9,7 +9,8 @@ class RedisResponseStore(ResponseStore):
     def __init__(self, host: str, port: int = 6379,
                  username: str | None = None,
                  password: str | None = None,
-                 ssl: bool = True):
+                 ssl: bool = True,
+                 prefix: str = "ak:responses:"):
 
         self.client = redis.Redis(
             host=host,
@@ -19,21 +20,22 @@ class RedisResponseStore(ResponseStore):
             ssl=ssl,
             decode_responses=True,
         )
+        self.prefix = prefix
+
+    def _key(self, session_id: str) -> str:
+        return f"{self.prefix}{session_id}"
 
     def add_message(self, message: dict) -> None:
         session_id = message["session_id"]
-        key = f"response:session:{session_id}" # TODO:: have to get from AKConfig prefix 
-        self.client.rpush(key, json.dumps(message))
+        self.client.rpush(self._key(session_id), json.dumps(message))
 
     def get_messages(self, session_id: str) -> list[dict]:
-        key = f"response:session:{session_id}"
-
-        messages = self.client.lrange(key, 0, -1) # 0 to -1 means all items
+        messages = self.client.lrange(self._key(session_id), 0, -1) # 0 to -1 means all items
 
         return [json.loads(m) for m in messages]
 
     def delete_message(self, session_id: str, message_id: str) -> None:
-        key = f"response:session:{session_id}"
+        key = self._key(session_id)
 
         messages = self.client.lrange(key, 0, -1)
 
@@ -45,6 +47,4 @@ class RedisResponseStore(ResponseStore):
                 break
 
     def delete_session(self, session_id: str) -> None:
-        key = f"response:session:{session_id}"
-
-        self.client.delete(key)
+        self.client.delete(self._key(session_id))

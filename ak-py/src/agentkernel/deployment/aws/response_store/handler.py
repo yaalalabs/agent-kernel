@@ -26,7 +26,8 @@ class ResponseDBHandler:
             
             self.store = RedisResponseStore(
                 host=redis_config.url,
-                ssl=use_ssl
+                ssl=use_ssl,
+                prefix=redis_config.prefix,
             )
         
         # Check for DynamoDB configuration
