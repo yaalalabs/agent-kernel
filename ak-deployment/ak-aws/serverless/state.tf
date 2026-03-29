@@ -25,34 +25,38 @@ locals {
   response_handler_package_path         = abspath(var.package_path)
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
-  # Response store wiring
-  is_async_mode                   = var.execution_mode == "async"
-  response_store_redis_url        = var.create_redis_response_store ? local.redis_url : null
-  response_store_dynamodb_table_name = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_name : null
-  response_store_dynamodb_table_arn  = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_arn : null
-  response_handler_response_store_redis = var.create_redis_response_store ? {
-    url = local.response_store_redis_url
-  } : null
-  response_handler_response_store_dynamodb = var.create_dynamodb_response_store ? {
+
+  is_async_mode                         = var.execution_mode == "async"
+
+  # DynamoDB response store configuration
+  create_dynamodb_response_store_enabled = !local.is_async_mode && var.create_dynamodb_response_store
+  response_store_dynamodb_table_name     = local.create_dynamodb_response_store_enabled ? module.dynamodb_response_store[0].table_name : null
+  response_store_dynamodb_table_arn      = local.create_dynamodb_response_store_enabled ? module.dynamodb_response_store[0].table_arn : null
+  response_handler_response_store_dynamodb = local.create_dynamodb_response_store_enabled ? {
     table_name = local.response_store_dynamodb_table_name
     table_arn  = local.response_store_dynamodb_table_arn
+  } : null
+
+  # Redis response store configuration
+  create_redis_response_store_enabled = !local.is_async_mode && var.create_redis_response_store
+  response_store_redis_url              = local.create_redis_response_store_enabled ? local.redis_url : null
+  response_handler_response_store_redis = local.create_redis_response_store_enabled ? {
+    url = local.response_store_redis_url
   } : null
 
   # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["authorizer_function_name", "authorizer_handler_path", "authorizer_package_type", "authorizer_package_path", "authorizer_module_name"]))
   authorizer_status_message     = local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text)
 
-
-  input_queue_visibility_timeout  = var.queue_config.input_queue_visibility_timeout
-  output_queue_visibility_timeout = var.queue_config.output_queue_visibility_timeout
-
   # Input queue
   input_queue_url = var.scalable_mode ? module.queues[0].input_queue_url : null
   input_queue_arn = var.scalable_mode ? module.queues[0].input_queue_arn : null
+  input_queue_visibility_timeout  = var.queue_config.input_queue_visibility_timeout
 
   # Output queue
   output_queue_url = var.scalable_mode ? module.queues[0].output_queue_url : null
   output_queue_arn = var.scalable_mode ? module.queues[0].output_queue_arn : null
+  output_queue_visibility_timeout = var.queue_config.output_queue_visibility_timeout
 
   # Endpoint configuration for API Gateway module
   chat_endpoint = concat(
@@ -221,7 +225,7 @@ module "agent_runner_docker_image" {
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
   version       = "0.2.14"
-  count         = (var.create_redis_cluster == true || var.create_redis_response_store == true) ? 1 : 0
+  count         = (var.create_redis_cluster == true || local.create_redis_response_store_enabled) ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -298,7 +302,7 @@ module "queues" {
 module "dynamodb_response_store" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
   version = "0.2.14"
-  count   = var.create_dynamodb_response_store ? 1 : 0
+  count   = local.create_dynamodb_response_store_enabled ? 1 : 0
 
   attributes = [
     { name = "session_id", type = "S" },
@@ -432,32 +436,10 @@ module "agent_runner" {
 module "response_handler" {
   count  = var.scalable_mode ? 1 : 0
   source = "./modules/response-handler"
-  # source = "yaalalabs/ak-serverless/aws//modules/response-handler"
-  # version = "0.2.13"
 
-  # Pass through all the required variables
   package_path = local.response_handler_package_path
   package_type = "Zip"
   cloudwatch_logs_retention_in_days = coalesce(try(var.response_handler.cloudwatch_logs_retention_in_days, null), 90)
-
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  response_handler = merge(var.response_handler, {
-    environment_variables = merge(coalesce(try(var.response_handler.environment_variables, null), {}), {
-      AK_EXECUTION__MODE = var.execution_mode
-    })
-  })
-  response_store_redis = local.response_handler_response_store_redis
-  response_store_dynamodb = local.response_handler_response_store_dynamodb
-
-  queue_config = {
-    output_queue_arn                   = local.output_queue_arn
-    batch_size                         = var.queue_config.batch_size
-    maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
-  }
-
-  # Pass local values
   subnet_ids             = local.subnet_ids
   security_group_id      = module.request_handler.lambda_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
@@ -467,11 +449,28 @@ module "response_handler" {
   enable_websocket_permissions      = local.is_async_mode
   websocket_api_domain_name        = local.websocket_api_domain_name
 
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  response_handler = merge(var.response_handler, {
+    environment_variables = merge(coalesce(try(var.response_handler.environment_variables, null), {}), {
+      AK_EXECUTION__MODE = var.execution_mode
+    })
+  })
+
+  queue_config = {
+    output_queue_arn                   = local.output_queue_arn
+    batch_size                         = var.queue_config.batch_size
+    maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
+  }
+
+  response_store_redis = local.response_handler_response_store_redis
+  response_store_dynamodb = local.response_handler_response_store_dynamodb
+
   depends_on = [null_resource.build_response_handler, module.queues, module.dynamodb_response_store]
 }
 
 # WebSocket Connections Table Module (conditional on async execution mode)
-# Split the legacy name so the shared DynamoDB module preserves the current table name.
 module "websocket_connections_table" {
   count  = local.is_async_mode ? 1 : 0
   source = "../common/modules/dynamodb"
