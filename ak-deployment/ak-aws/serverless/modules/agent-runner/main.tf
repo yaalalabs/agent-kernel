@@ -209,7 +209,7 @@ module "agent_runner_lambda" {
   code_signing_config_arn = (var.agent_runner.package_type == "S3Zip" && var.is_production) ? var.lambda_signing_config_arn : null
 
   use_existing_cloudwatch_log_group = false
-  cloudwatch_logs_retention_in_days = 90
+  cloudwatch_logs_retention_in_days = var.cloudwatch_logs_retention_in_days
   attach_cloudwatch_logs_policy     = true
 
   vpc_subnet_ids         = var.subnet_ids

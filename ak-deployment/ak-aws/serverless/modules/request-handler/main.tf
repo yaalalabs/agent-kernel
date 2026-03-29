@@ -251,7 +251,7 @@ module "lambda_deployment" {
   layers                 = var.layers
 
   use_existing_cloudwatch_log_group = false
-  cloudwatch_logs_retention_in_days = 90
+  cloudwatch_logs_retention_in_days = var.cloudwatch_logs_retention_in_days
   attach_cloudwatch_logs_policy     = true
   attach_dead_letter_policy         = false
   attach_network_policy             = false

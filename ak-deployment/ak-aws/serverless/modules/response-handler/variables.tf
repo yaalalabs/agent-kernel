@@ -5,6 +5,12 @@ variable "package_path" {
   description = "Path to the response handler Lambda deployment package"
 }
 
+variable "cloudwatch_logs_retention_in_days" {
+  type        = number
+  description = "CloudWatch log retention period in days"
+  default     = 90
+}
+
 variable "module_type" {
   type        = string
   description = "Module type"

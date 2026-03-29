@@ -25,6 +25,12 @@ variable "source_bucket" {
   default     = null
 }
 
+variable "cloudwatch_logs_retention_in_days" {
+  type        = number
+  description = "CloudWatch log retention period in days"
+  default     = 90
+}
+
 variable "docker_image_uri" {
   type        = string
   description = "Docker image URI for Image package type"

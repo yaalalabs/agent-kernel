@@ -40,6 +40,12 @@ variable "package_path" {
   type        = string
   description = "Zip package path or Docker image source path"
 }
+
+variable "cloudwatch_logs_retention_in_days" {
+  type        = number
+  description = "CloudWatch log retention period in days for the request handler Lambda"
+  default     = 90
+}
 variable "scalable_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
@@ -297,6 +303,7 @@ variable "response_handler" {
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
     layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables = optional(map(string), {})
   })
   default = {}
@@ -314,6 +321,7 @@ variable "agent_runner" {
     package_path          = optional(string, null)
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables = optional(map(string), {})
   })
   default = {}

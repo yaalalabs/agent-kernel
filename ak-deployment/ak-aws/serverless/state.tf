@@ -348,6 +348,7 @@ module "request_handler" {
   module_name                             = var.module_name
   is_production                           = var.is_production
   package_path                            = local.request_handler_package_path
+  cloudwatch_logs_retention_in_days       = var.cloudwatch_logs_retention_in_days
   scalable_mode                           = var.scalable_mode
   event_source_mapping                    = var.event_source_mapping
   environment_variables                   = var.environment_variables
@@ -410,6 +411,7 @@ module "agent_runner" {
   is_production              = var.is_production
   lambda_signer_profile_name = local.lambda_signer_profile_name
   lambda_signing_config_arn  = local.lambda_signing_config_arn
+  cloudwatch_logs_retention_in_days = coalesce(try(var.agent_runner.cloudwatch_logs_retention_in_days, null), 90)
 
   queue_config = {
     input_queue_arn                    = local.input_queue_arn
@@ -436,6 +438,7 @@ module "response_handler" {
   # Pass through all the required variables
   package_path = local.response_handler_package_path
   package_type = "Zip"
+  cloudwatch_logs_retention_in_days = coalesce(try(var.response_handler.cloudwatch_logs_retention_in_days, null), 90)
 
   product_alias = var.product_alias
   env_alias     = var.env_alias

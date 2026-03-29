@@ -1,6 +1,9 @@
 locals {
   queue_name = var.fifo_queue ? "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}.fifo" : "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}"
   dlq_name   = var.fifo_queue ? "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}-dlq.fifo" : "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}-dlq"
+
+  producer_policy_enabled = var.enable_producer_access && length(var.producer_arns) > 0
+  consumer_policy_enabled = var.enable_consumer_access && length(var.consumer_role_arns) > 0
 }
 
 data "aws_caller_identity" "current" {}
@@ -41,8 +44,8 @@ module "sqs_queue" {
   } : {}
 
   # Producer access policy
-  create_queue_policy = var.enable_producer_access
-  queue_policy_statements = var.enable_producer_access ? {
+  create_queue_policy = local.producer_policy_enabled
+  queue_policy_statements = local.producer_policy_enabled ? {
     AllowProducerSendMessage = {
       sid    = "AllowProducerSendMessage"
       effect = "Allow"
@@ -65,7 +68,7 @@ module "sqs_queue" {
 
 # Consumer access policy (separate from main queue policy)
 data "aws_iam_policy_document" "consumer_access" {
-  count = var.enable_consumer_access ? 1 : 0
+  count = local.consumer_policy_enabled ? 1 : 0
 
   statement {
     sid    = "AllowConsumerReceiveMessage"
@@ -89,7 +92,7 @@ data "aws_iam_policy_document" "consumer_access" {
 
 # Apply consumer policy to main queue
 resource "aws_sqs_queue_policy" "consumer_policy" {
-  count     = var.enable_consumer_access ? 1 : 0
+  count     = local.consumer_policy_enabled ? 1 : 0
   queue_url = module.sqs_queue.queue_url
   policy    = data.aws_iam_policy_document.consumer_access[0].json
 }
