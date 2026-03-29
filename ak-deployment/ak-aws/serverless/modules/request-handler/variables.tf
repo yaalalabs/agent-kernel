@@ -185,6 +185,18 @@ variable "redis_url" {
   default     = null
 }
 
+variable "response_store_redis" {
+  type        = any
+  description = "Redis response store configuration"
+  default     = null
+}
+
+variable "response_store_dynamodb" {
+  type        = any
+  description = "DynamoDB response store configuration"
+  default     = null
+}
+
 variable "lambda_signer_profile_name" {
   type        = string
   description = "AWS Signer profile name"

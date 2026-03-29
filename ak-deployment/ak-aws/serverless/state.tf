@@ -378,6 +378,8 @@ module "request_handler" {
   dynamodb_multimodal_memory_table_name   = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
+  response_store_redis                    = local.response_handler_response_store_redis
+  response_store_dynamodb                 = local.response_handler_response_store_dynamodb
   lambda_signer_profile_name              = local.lambda_signer_profile_name
   lambda_signing_config_arn               = local.lambda_signing_config_arn
   docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
