@@ -27,7 +27,7 @@ graph LR
 - AWS CLI configured
 - AWS credentials with Lambda/API Gateway permissions
 - Agent Kernel with AWS extras: `pip install agentkernel[aws]`
-- For authentication: `pip install agentkernel[api,aws]`
+- For authentication: `pip install agentkernel[aws,auth]`
 
 ## Deployment
 
@@ -42,7 +42,7 @@ pip install agentkernel[aws,openai]
 
 **Authorizer Lambda Package:**
 ```bash
-pip install agentkernel[api,aws]
+pip install agentkernel[aws,auth]
 ```
 
 **Example Deployment Scripts:**
@@ -57,7 +57,7 @@ uv pip install --force-reinstall --target=dist/data agentkernel[openai,redis]
 For the authorizer Lambda function (`auth_deployment/create_auth_package.sh`):
 ```bash
 # Install authorizer dependencies
-uv pip install --force-reinstall --no-deps agentkernel[api,aws] --target=auth_dist
+uv pip install --force-reinstall --no-deps agentkernel[aws,auth] --target=auth_dist
 ```
 
 ### 2. Configure
@@ -385,8 +385,7 @@ You need to create a separate auth lambda logic by extending the `AuthValidator`
 
 ```python
 from typing import Optional
-from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
-from agentkernel.aws import APIGatewayAuthorizer
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult, APIGatewayAuthorizer
 import jwt
 
 class CustomAuthTokenValidator(AuthValidator):
@@ -500,9 +499,9 @@ create_auth_deployment_package() {
     rm -rf dist_auth dist_auth.zip
     mkdir -p dist_auth
     if [[ ${1-} != "local" ]]; then
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
+      uv pip install --force-reinstall --no-deps agentkernel[aws,auth] --target=dist_auth
     else
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+      uv pip install --force-reinstall --no-deps agentkernel[aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
     fi
     uv pip install --group auth --target=dist_auth
     cp -r lambda_auth.py dist_auth/

@@ -11,4 +11,5 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
+from .awsauthorizer import APIGatewayAuthorizer, APIGatewayRequestAuthorizerEvent, Headers
 from .handler import AuthValidator, ValidationContext, ValidationResult
