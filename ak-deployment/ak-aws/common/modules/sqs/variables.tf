@@ -6,7 +6,9 @@ variable "product_alias" {
 }
 
 variable "region" {
-  description = "AWS region"
+  type        = string
+  default     = null
+  description = "Region where the resource(s) will be managed. Defaults to the Region set in the provider configuration"
 }
 
 variable "env_alias" {
@@ -36,32 +38,32 @@ variable "is_production" {
 
 variable "max_message_size" {
   type        = number
-  default     = 262144
-  description = "Maximum message size in bytes (default: 256KB)"
+  default     = null
+  description = "The limit of how many bytes a message can contain before Amazon SQS rejects it. An integer from 1024 bytes (1 KiB) up to 1048576 bytes (1024 KiB)."
 }
 
 variable "message_retention_seconds" {
   type        = number
-  default     = 3600
-  description = "How long messages remain in the queue (default: 1 hour)"
+  default     = null
+  description = "The number of seconds Amazon SQS retains a message. Integer representing seconds, from 60 (1 minute) to 1209600 (14 days)"
 }
 
 variable "visibility_timeout_seconds" {
   type        = number
-  default     = 60
-  description = "Visibility timeout for messages"
+  default     = null
+  description = "The visibility timeout for the queue. An integer from 0 to 43200 (12 hours)"
 }
 
 variable "receive_wait_time_seconds" {
   type        = number
-  default     = 0
-  description = "The time for which a ReceiveMessage call will wait for a message to arrive (long polling)"
+  default     = null
+  description = "The time for which a ReceiveMessage call will wait for a message to arrive (long polling) before returning. An integer from 0 to 20 (seconds)"
 }
 
 variable "delay_seconds" {
   type        = number
-  default     = 0
-  description = "The time in seconds that the delivery of all messages in the queue will be delayed"
+  default     = null
+  description = "The time in seconds that the delivery of all messages in the queue will be delayed. An integer from 0 to 900 (15 minutes)"
 }
 
 variable "max_receive_count" {
@@ -72,64 +74,64 @@ variable "max_receive_count" {
 
 variable "dlq_message_retention_seconds" {
   type        = number
-  default     = 3600
-  description = "How long messages remain in DLQ (default: 1 hour)"
+  default     = null
+  description = "The number of seconds Amazon SQS retains a message in the dead letter queue. Integer representing seconds, from 60 (1 minute) to 1209600 (14 days)"
 }
 
 variable "fifo_throughput_limit" {
   type        = string
-  default     = "perQueueGroup"
-  description = "FIFO throughput limit: 'perQueueGroup' or 'perQueue'"
+  default     = null
+  description = "Specifies whether the FIFO queue throughput quota applies to the entire queue or per message group"
 }
 
 # Queue type configuration
 variable "fifo_queue" {
   type        = bool
-  default     = true
-  description = "Whether to create a FIFO queue (true) or standard queue (false)"
+  default     = false
+  description = "Boolean designating a FIFO queue"
 }
 
 variable "create_dlq" {
   type        = bool
   default     = false
-  description = "Whether to create a dead letter queue"
+  description = "Determines whether to create SQS dead letter queue"
 }
 
 variable "content_based_deduplication" {
   type        = bool
-  default     = false
-  description = "Enable content-based deduplication. For chat systems, set to false and use explicit MessageDeduplicationId in your application instead. With content-based dedup, identical messages within 5 minutes are rejected"
+  default     = null
+  description = "Enables content-based deduplication for FIFO queues"
 }
 
 variable "deduplication_scope" {
   type        = string
-  default     = "messageGroup"
-  description = "Deduplication scope: 'queue' (deduplication across entire queue) or 'messageGroup' (deduplication per message group). Use 'messageGroup' for chat systems where MessageGroupId=thread_id"
+  default     = null
+  description = "Specifies whether message deduplication occurs at the message group or queue level"
 }
 
 # Encryption configuration
 variable "sqs_managed_sse_enabled" {
   type        = bool
   default     = true
-  description = "Enable SQS-managed server-side encryption (SSE). When true, KMS variables are ignored. Set to false only if using customer-managed KMS encryption"
+  description = "Boolean to enable server-side encryption (SSE) of message content with SQS-owned encryption keys"
 }
 
 variable "kms_master_key_id" {
   type        = string
   default     = null
-  description = "Required only when sqs_managed_sse_enabled = false. The ARN or ID of a customer-managed KMS key for Amazon SQS encryption"
+  description = "The ID of an AWS-managed customer master key (CMK) for Amazon SQS or a custom CMK"
 }
 
 variable "kms_data_key_reuse_period_seconds" {
   type        = number
   default     = null
-  description = "Required only when sqs_managed_sse_enabled = false. The length of time in seconds for which Amazon SQS can reuse a data key (60-86400)"
+  description = "The length of time, in seconds, for which Amazon SQS can reuse a data key to encrypt or decrypt messages before calling AWS KMS again. An integer representing seconds, between 60 seconds (1 minute) and 86,400 seconds (24 hours)"
 }
 
 variable "tags" {
   type        = map(string)
   default     = {}
-  description = "A map of tags to add"
+  description = "A mapping of tags to assign to all resources"
 }
 
 # Producer configuration
