@@ -29,25 +29,25 @@ variable "queue_config" {
     # Input queue configuration
     input_queue_visibility_timeout  = optional(number, 60)
     input_queue_max_receive_count   = optional(number, 5)
-    input_queue_message_retention_seconds = optional(number, 1209600)
+    input_queue_message_retention_seconds = optional(number, 3600)
     input_queue_max_message_size    = optional(number, 262144)
-    input_queue_receive_wait_time_seconds = optional(number, 20)
+    input_queue_receive_wait_time_seconds = optional(number, 0)
     input_queue_delay_seconds       = optional(number, 0)
-    input_queue_create_dlq          = optional(bool, true)
-    input_queue_dlq_message_retention_seconds = optional(number, 1209600)
+    input_queue_create_dlq          = optional(bool, false)
+    input_queue_dlq_message_retention_seconds = optional(number, 3600)
     
     # Output queue configuration
     output_queue_visibility_timeout = optional(number, 60)
     output_queue_max_receive_count  = optional(number, 5)
-    output_queue_message_retention_seconds = optional(number, 1209600)
+    output_queue_message_retention_seconds = optional(number, 3600)
     output_queue_max_message_size   = optional(number, 262144)
-    output_queue_receive_wait_time_seconds = optional(number, 20)
+    output_queue_receive_wait_time_seconds = optional(number, 0)
     output_queue_delay_seconds      = optional(number, 0)
-    output_queue_create_dlq         = optional(bool, true)
-    output_queue_dlq_message_retention_seconds = optional(number, 1209600)
+    output_queue_create_dlq         = optional(bool, false)
+    output_queue_dlq_message_retention_seconds = optional(number, 3600)
     
     # Common queue configuration
-    fifo_queue                      = optional(bool, false)
+    fifo_queue                      = optional(bool, true)
     sqs_managed_sse_enabled         = optional(bool, true)
     kms_master_key_id               = optional(string, null)
     kms_data_key_reuse_period_seconds = optional(number, null)
@@ -58,9 +58,9 @@ variable "queue_config" {
     deduplication_scope             = optional(string, "messageGroup")
     
     # Access control
-    enable_producer_access          = optional(bool, false)
+    enable_producer_access          = optional(bool, true)
     producer_arns                   = optional(list(string), [])
-    enable_consumer_access          = optional(bool, false)
+    enable_consumer_access          = optional(bool, true)
     consumer_role_arns              = optional(list(string), [])
   })
   default = {}
