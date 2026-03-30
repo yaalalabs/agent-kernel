@@ -405,9 +405,9 @@ module "agent_runner" {
   agent_runner = merge(var.agent_runner, {
     module_name = local.agent_runner_artifact_module_name
     package_path = local.agent_runner_package_path
-    package_type = coalesce(try(var.agent_runner.package_type, null), var.package_type)
-    layers       = coalesce(try(var.agent_runner.layers, null), [])
-    environment_variables = merge(coalesce(try(var.agent_runner.environment_variables, null), {}), {
+    package_type = try(var.agent_runner.package_type, null)
+    layers       = try(var.agent_runner.layers, null)
+    environment_variables = merge(try(var.agent_runner.environment_variables, null), {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
@@ -417,7 +417,7 @@ module "agent_runner" {
   is_production              = var.is_production
   lambda_signer_profile_name = local.lambda_signer_profile_name
   lambda_signing_config_arn  = local.lambda_signing_config_arn
-  cloudwatch_logs_retention_in_days = coalesce(try(var.agent_runner.cloudwatch_logs_retention_in_days, null), 90)
+  cloudwatch_logs_retention_in_days = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
 
   queue_config = {
     input_queue_arn                    = local.input_queue_arn
@@ -441,7 +441,7 @@ module "response_handler" {
 
   package_path = local.response_handler_package_path
   package_type = "Zip"
-  cloudwatch_logs_retention_in_days = coalesce(try(var.response_handler.cloudwatch_logs_retention_in_days, null), 90)
+  cloudwatch_logs_retention_in_days = try(var.response_handler.cloudwatch_logs_retention_in_days, null)
   subnet_ids             = local.subnet_ids
   security_group_id      = module.request_handler.lambda_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
@@ -455,7 +455,7 @@ module "response_handler" {
   env_alias     = var.env_alias
   module_name   = var.module_name
   response_handler = merge(var.response_handler, {
-    environment_variables = merge(coalesce(try(var.response_handler.environment_variables, null), {}), {
+    environment_variables = merge(try(var.response_handler.environment_variables, null), {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
