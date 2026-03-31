@@ -94,6 +94,40 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb_multimodal_describe_a
   policy_arn = aws_iam_policy.lambda_dynamodb_multimodal_describe_policy[0].arn
 }
 
+# Response store DynamoDB permissions
+resource "aws_iam_policy" "lambda_response_store_dynamodb_policy" {
+  count = var.response_store_dynamodb != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-response-store-ddb"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          var.response_store_dynamodb.table_arn,
+          "${var.response_store_dynamodb.table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_response_store_dynamodb_attachment" {
+  count      = var.response_store_dynamodb != null ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_response_store_dynamodb_policy[0].arn
+}
+
 # SQS permissions for RequestHandler Lambda (conditional on scalable_mode)
 resource "aws_iam_policy" "lambda_sqs_policy" {
   count = var.scalable_mode ? 1 : 0
