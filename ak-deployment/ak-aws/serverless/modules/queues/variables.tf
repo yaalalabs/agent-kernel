@@ -29,22 +29,22 @@ variable "queue_config" {
     # Input queue configuration
     input_queue_visibility_timeout  = optional(number, 60) # Visibility timeout for messages
     input_queue_max_receive_count   = optional(number, 5) # Number of times a message can be received before being sent to DLQ
-    input_queue_message_retention_seconds = optional(number, 3600) # How long messages remain in the queue (default: 1 hour)
+    input_queue_message_retention_seconds = optional(number, 1800) # How long messages remain in the queue (default: 1 hour)
     input_queue_max_message_size    = optional(number, 262144) # Maximum message size in bytes (default: 256KB)
     input_queue_receive_wait_time_seconds = optional(number, 0) # The time for which a ReceiveMessage call will wait for a message to arrive (long polling)
     input_queue_delay_seconds       = optional(number, 0) # The time in seconds that the delivery of all messages in the queue will be delayed
     input_queue_create_dlq          = optional(bool, false) # Whether to create a dead letter queue
-    input_queue_dlq_message_retention_seconds = optional(number, 3600) # How long messages remain in DLQ (default: 1 hour)
+    input_queue_dlq_message_retention_seconds = optional(number, 1800) # How long messages remain in DLQ (default: 1 hour)
     
     # Output queue configuration
     output_queue_visibility_timeout = optional(number, 60) # Visibility timeout for messages
     output_queue_max_receive_count  = optional(number, 5) # Number of times a message can be received before being sent to DLQ
-    output_queue_message_retention_seconds = optional(number, 3600) # How long messages remain in the queue (default: 1 hour)
+    output_queue_message_retention_seconds = optional(number, 1800) # How long messages remain in the queue (default: 1 hour)
     output_queue_max_message_size   = optional(number, 262144) # Maximum message size in bytes (default: 256KB)
     output_queue_receive_wait_time_seconds = optional(number, 0) # The time for which a ReceiveMessage call will wait for a message to arrive (long polling)
     output_queue_delay_seconds      = optional(number, 0) # The time in seconds that the delivery of all messages in the queue will be delayed
     output_queue_create_dlq         = optional(bool, false) # Whether to create a dead letter queue
-    output_queue_dlq_message_retention_seconds = optional(number, 3600) # How long messages remain in DLQ (default: 1 hour)
+    output_queue_dlq_message_retention_seconds = optional(number, 1800) # How long messages remain in DLQ (default: 1 hour)
     
     # Common queue configuration
     fifo_queue                      = optional(bool, true) # Whether to create a FIFO queue (true) or standard queue (false)
