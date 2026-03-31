@@ -26,7 +26,7 @@ locals {
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
 
-  is_async_mode                         = var.execution_mode == "async"
+  is_async_mode = var.execution_mode == "async"
 
   # DynamoDB response store configuration
   create_dynamodb_response_store_enabled = !local.is_async_mode && var.create_dynamodb_response_store
@@ -39,7 +39,7 @@ locals {
 
   # Redis response store configuration
   create_redis_response_store_enabled = !local.is_async_mode && var.create_redis_response_store
-  response_store_redis_url              = local.create_redis_response_store_enabled ? local.redis_url : null
+  response_store_redis_url            = local.create_redis_response_store_enabled ? local.redis_url : null
   response_handler_response_store_redis = local.create_redis_response_store_enabled ? {
     url = local.response_store_redis_url
   } : null
@@ -49,13 +49,13 @@ locals {
   authorizer_status_message     = local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text)
 
   # Input queue
-  input_queue_url = var.scalable_mode ? module.queues[0].input_queue_url : null
-  input_queue_arn = var.scalable_mode ? module.queues[0].input_queue_arn : null
-  input_queue_visibility_timeout  = var.queue_config.input_queue_visibility_timeout
+  input_queue_url                = var.scalable_mode ? module.queues[0].input_queue_url : null
+  input_queue_arn                = var.scalable_mode ? module.queues[0].input_queue_arn : null
+  input_queue_visibility_timeout = var.queue_config.input_queue_visibility_timeout
 
   # Output queue
-  output_queue_url = var.scalable_mode ? module.queues[0].output_queue_url : null
-  output_queue_arn = var.scalable_mode ? module.queues[0].output_queue_arn : null
+  output_queue_url                = var.scalable_mode ? module.queues[0].output_queue_url : null
+  output_queue_arn                = var.scalable_mode ? module.queues[0].output_queue_arn : null
   output_queue_visibility_timeout = var.queue_config.output_queue_visibility_timeout
 
   # Endpoint configuration for API Gateway module
@@ -336,14 +336,14 @@ resource "null_resource" "build_response_handler" {
     script_hash  = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
   }
   provisioner "local-exec" {
-    command = "chmod +x build_response_handler.sh && ./build_response_handler.sh --package-path \"${local.response_handler_package_path}\""
+    command     = "chmod +x build_response_handler.sh && ./build_response_handler.sh --package-path \"${local.response_handler_package_path}\""
     working_dir = "${path.module}/modules/response-handler"
   }
 }
 
 # Request Handler Lambda Module
 module "request_handler" {
-  source = "./modules/request-handler"
+  source                                  = "./modules/request-handler"
   region                                  = var.region
   product_alias                           = var.product_alias
   product_display_name                    = var.product_display_name
@@ -370,7 +370,7 @@ module "request_handler" {
   subnet_ids                              = local.subnet_ids
   source_bucket                           = var.package_type == "S3Zip" ? module.request_handler_source_storage[0].source_storage_s3_bucket : null
   create_dynamodb_memory_table            = var.scalable_mode ? false : var.create_dynamodb_memory_table
-  create_dynamodb_multimodal_memory_table  = var.scalable_mode ? false : var.create_dynamodb_multimodal_memory_table
+  create_dynamodb_multimodal_memory_table = var.scalable_mode ? false : var.create_dynamodb_multimodal_memory_table
   redis_url                               = var.scalable_mode ? null : local.redis_url
   dynamodb_memory_table_arn               = var.scalable_mode ? null : local.dynamodb_memory_table_arn
   dynamodb_memory_table_name              = var.scalable_mode ? null : local.dynamodb_memory_table_name
@@ -403,7 +403,7 @@ module "agent_runner" {
   module_type   = var.module_type
 
   agent_runner = merge(var.agent_runner, {
-    module_name = local.agent_runner_artifact_module_name
+    module_name  = local.agent_runner_artifact_module_name
     package_path = local.agent_runner_package_path
     package_type = try(var.agent_runner.package_type, null)
     layers       = try(var.agent_runner.layers, null)
@@ -412,11 +412,11 @@ module "agent_runner" {
     })
   })
 
-  source_bucket              = var.agent_runner.package_type == "S3Zip" ? module.agent_runner_source_storage[0].source_storage_s3_bucket : null
-  docker_image_uri           = var.agent_runner.package_type == "Image" ? module.agent_runner_docker_image[0].docker_image_uri : null
-  is_production              = var.is_production
-  lambda_signer_profile_name = local.lambda_signer_profile_name
-  lambda_signing_config_arn  = local.lambda_signing_config_arn
+  source_bucket                     = var.agent_runner.package_type == "S3Zip" ? module.agent_runner_source_storage[0].source_storage_s3_bucket : null
+  docker_image_uri                  = var.agent_runner.package_type == "Image" ? module.agent_runner_docker_image[0].docker_image_uri : null
+  is_production                     = var.is_production
+  lambda_signer_profile_name        = local.lambda_signer_profile_name
+  lambda_signing_config_arn         = local.lambda_signing_config_arn
   cloudwatch_logs_retention_in_days = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
 
   queue_config = {
@@ -439,17 +439,17 @@ module "response_handler" {
   count  = var.scalable_mode ? 1 : 0
   source = "./modules/response-handler"
 
-  package_path = local.response_handler_package_path
-  package_type = "Zip"
+  package_path                      = local.response_handler_package_path
+  package_type                      = "Zip"
   cloudwatch_logs_retention_in_days = try(var.response_handler.cloudwatch_logs_retention_in_days, null)
-  subnet_ids             = local.subnet_ids
-  security_group_id      = module.request_handler.lambda_security_group_id
-  lambda_kms_key_arn     = local.lambda_kms_key_arn
-  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
-  websocket_connections_table_name = local.websocket_connections_table_name
-  websocket_connections_table_arn  = local.websocket_connections_table_arn
+  subnet_ids                        = local.subnet_ids
+  security_group_id                 = module.request_handler.lambda_security_group_id
+  lambda_kms_key_arn                = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn            = local.cloudwatch_kms_key_arn
+  websocket_connections_table_name  = local.websocket_connections_table_name
+  websocket_connections_table_arn   = local.websocket_connections_table_arn
   enable_websocket_permissions      = local.is_async_mode
-  websocket_api_domain_name        = local.websocket_api_domain_name
+  websocket_api_domain_name         = local.websocket_api_domain_name
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -466,7 +466,7 @@ module "response_handler" {
     maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
   }
 
-  response_store_redis = local.response_handler_response_store_redis
+  response_store_redis    = local.response_handler_response_store_redis
   response_store_dynamodb = local.response_handler_response_store_dynamodb
 
   depends_on = [null_resource.build_response_handler, module.queues, module.dynamodb_response_store]
@@ -487,7 +487,7 @@ module "websocket_connections_table" {
     { name = var.websocket_config.hash_key, type = "S" },
     { name = var.websocket_config.range_key, type = "S" },
   ]
-  hash_key = var.websocket_config.hash_key
+  hash_key  = var.websocket_config.hash_key
   range_key = var.websocket_config.range_key
 
   billing_mode = var.websocket_config.billing_mode
@@ -521,16 +521,16 @@ module "websocket_api_gateway" {
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
   # WebSocket API configuration
-  api_name_suffix               = var.websocket_config.api_name_suffix
-  route_selection_expression    = var.websocket_config.route_selection_expression
-  stage_name                   = var.websocket_config.stage_name
-  auto_deploy                  = var.websocket_config.auto_deploy
-  logging_level                = var.websocket_config.logging_level
-  data_trace_enabled           = var.websocket_config.data_trace_enabled
-  detailed_metrics_enabled     = var.websocket_config.detailed_metrics_enabled
-  log_retention_days           = var.websocket_config.log_retention_days
-  throttling_burst_limit       = var.websocket_config.throttling_burst_limit
-  throttling_rate_limit        = var.websocket_config.throttling_rate_limit
+  api_name_suffix            = var.websocket_config.api_name_suffix
+  route_selection_expression = var.websocket_config.route_selection_expression
+  stage_name                 = var.websocket_config.stage_name
+  auto_deploy                = var.websocket_config.auto_deploy
+  logging_level              = var.websocket_config.logging_level
+  data_trace_enabled         = var.websocket_config.data_trace_enabled
+  detailed_metrics_enabled   = var.websocket_config.detailed_metrics_enabled
+  log_retention_days         = var.websocket_config.log_retention_days
+  throttling_burst_limit     = var.websocket_config.throttling_burst_limit
+  throttling_rate_limit      = var.websocket_config.throttling_rate_limit
 
   depends_on = [module.request_handler]
 }
