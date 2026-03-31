@@ -36,12 +36,13 @@ AK's Python libraries provide developers with comprehensive tools to:
 3. **Hierarchies, Collaboration and Teamwork**
    - Build collections of agents that can collaborate to achieve shared goals and define topologies & hierarchies by leveraging supported agentic frameworks
 
-4. **Context and Memory Management**
+4. **Context, Memory, and Knowledge Bases**
    - Handle agent memory efficiently, with in-built support for memory management.
    - It currently offers in-memory and Redis-based storage.
    - Cloud-native adapters are available for:
       - DynamoDB (AWS)
       - Cosmos DB (Azure)
+   - Pluggable knowledge base backends (vector stores and graph databases) let agents store and retrieve long-term knowledge via a unified `KnowledgeBase` interface.
    - Developers can customize memory management based on their preferences.
 
 5. **Traceability and Accountability**

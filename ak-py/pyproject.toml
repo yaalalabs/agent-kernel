@@ -57,6 +57,12 @@ azure = [
 redis = [
     "redis>=7.1.0",
 ]
+
+knowledgebase =[
+    "neo4j>=5.0.0",
+    "chromadb>=0.4.0",
+]
+
 openai = [
     "openai-agents>=0.6.5",
     "openinference-instrumentation-openai-agents>=1.4.0",

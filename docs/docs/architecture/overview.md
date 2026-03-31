@@ -132,3 +132,4 @@ sequenceDiagram
 - [Execution Flow](./execution-flow)
 - [Session Management](/docs/core-concepts/session) - Detailed session configuration
 - [Memory Management](./memory-management) - Advanced memory features
+- [Knowledge Bases](./knowledge-bases) - knowledge backends and KB routing

@@ -1,50 +1,66 @@
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, List, Mapping, MutableMapping
+from types import TracebackType
+from typing import Any, Iterable, List, Mapping
+
+Record = Mapping[str, Any]
 
 
-KnowledgeRecord = MutableMapping[str, Any]
-SearchRecord = Mapping[str, Any]
-
-
-class AbstractKnowledgeBase(ABC):
+class KnowledgeBase(ABC):
     """
-    Generic, backend-agnostic knowledge base contract.
+    Backend-agnostic contract for all knowledge base implementations.
 
-    Implementations only need to provide:
-    - `add_records(records, **kwargs)`
-    - `search_records(query, limit, **kwargs)`
+    To add a new backend, subclass this and implement:
+      - connect()
+      - add_records()
+      - search_records()
+      - schema()  ← classmethod, tells the agent what this backend stores and how
 
-    Optional capabilities can be overridden as needed (`delete_records`, `clear`, `close`).
     """
+
+    def __init__(self):
+        self._dynamic_schema = {}
+
+    @property
+    @abstractmethod
+    def backend_name(self) -> str:
+        """Unique name for this backend, used in tool calls and schemas."""
+
+    def add_schema(self, schema_config: dict) -> "KnowledgeBase":
+        self._dynamic_schema.update(schema_config)
+        return self
+
+    def schema(self) -> Mapping[str, Any]:
+        """Returns the schema to the Agent."""
+        if not self._dynamic_schema:
+            raise ValueError(f"Schema for '{self.backend_name}' has not been set! " "Call .add_schema() before passing to the Agent.")
+
+        final_schema = {"backend": self.backend_name}
+        final_schema.update(self._dynamic_schema)
+        return final_schema
 
     @abstractmethod
-    def add_records(self, records: Iterable[KnowledgeRecord], **kwargs) -> None:
-        """Add one or many normalized records into the knowledge backend."""
+    def connect(self, **kwargs) -> None:
+        """Establish the backend connection."""
 
     @abstractmethod
-    def search_records(self, query: str, limit: int = 3, **kwargs) -> List[SearchRecord]:
-        """Search records by query string and return normalized search results."""
-    
-    def add(self, records: Iterable[KnowledgeRecord], **kwargs) -> None:
-        """Backward-compatible alias for adding records."""
-        self.add_records(records, **kwargs)
+    def write(self, records: Iterable[Record], **kwargs) -> None:
+        """Persist one or more records into the backend."""
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[SearchRecord]:
-        """Backward-compatible alias for searching records."""
-        return self.search_records(query, limit=limit, **kwargs)
+    @abstractmethod
+    def read(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+        """Return the most relevant records for a query."""
 
-    def add_one(self, record: KnowledgeRecord, **kwargs) -> None:
-        """Convenience helper for backends that ingest one record at a time."""
-        self.add_records([record], **kwargs)
-
-    def delete_records(self, **kwargs) -> int:
-        """Optional capability: delete records and return the number deleted."""
-        raise NotImplementedError(f"{self.__class__.__name__} does not implement delete_records().")
-
-    def clear(self) -> None:
-        """Optional capability: clear backend content."""
-        raise NotImplementedError(f"{self.__class__.__name__} does not implement clear().")
+    def format_results(self, rows: List[Record]) -> str:
+        """Format search results into a readable string for the agent."""
+        if not rows:
+            return "No relevant knowledge found."
+        return "\n".join(f"- {r.get('text', '')} (source: {r.get('metadata', {}).get('source', 'N/A')})" for r in rows)
 
     def close(self) -> None:
-        """Optional cleanup hook for backends that hold resources."""
-        return None
+        """Optional cleanup hook for backends that hold external resources."""
+        print(f"[KB][{self.backend_name}] close() default no-op", flush=True)
+
+    @abstractmethod
+    def get_description(self) -> str:
+        """Return a human-readable description of this backend's purpose and capabilities."""
+        pass

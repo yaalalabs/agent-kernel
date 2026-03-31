@@ -320,6 +320,19 @@ if __name__ == "__main__":
 # - Execute agent logic via Runners
 ```
 
+## Knowledge Bases
+
+Sessions and caches help with short- to medium-term conversational context, but many applications also need durable, cross-session knowledge (for example: product manuals, user or asset profiles, or a domain knowledge graph).
+
+Agent Kernel’s **Knowledge Base** support provides a unified way to connect multiple storage backends (vector stores and graph databases) and expose them to agents as tools.
+
+Key pieces:
+- `KnowledgeBase`: backend-agnostic interface implemented by concrete backends (ChromaDB, Neo4j).
+- `KnowledgeBuilder`: composes backends and generates tool callables such as `get_schemas`, `read_kb`, `write_kb`, and `get_all_kb_descriptions`.
+- **KB Router** pattern: a “router agent” inspects backend schemas/descriptions, then decides which backend to query for each read/write.
+
+For a concrete end-to-end example, see `examples/cli/knowledgebase/openai`.
+
 ## Next Steps
 
 Dive deeper into each core concept:
@@ -338,6 +351,7 @@ Or explore specific use cases:
 - [Deployment](../deployment/overview) - Production deployment options
 - [Session Management](./session) - Session configuration and lifecycle
 - [Memory Management](../architecture/memory-management) - Advanced memory features and caching
+- [Knowledge Bases](../architecture/knowledge-bases) -  knowledge backends and KB routing
 
 ---
 
