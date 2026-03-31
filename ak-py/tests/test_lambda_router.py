@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from agentkernel.deployment.aws import LambdaRouter
+from agentkernel.deployment.aws.serverless.aklambda import LambdaRouter
 
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
 
