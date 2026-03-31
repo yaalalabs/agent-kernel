@@ -205,6 +205,23 @@ class DefaultEndpointsHandler:
         return cls._handle_request(event, cls._send_to_queue)
 
     @classmethod
+    def _handle_rest_sync(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        """
+        Send request to queue and immediately fetch response.
+        :param event: API Gateway event
+        :param context: Lambda context
+        :return: Queue status and response data
+        """
+        def sync_operation(payload: Dict[str, Any]) -> Dict[str, Any]:
+            cls._log.info(f"Performing REST_SYNC operation for payload: '{payload}'")
+            queue_result = cls._send_to_queue(payload)
+            cls._log.info(f"Message sent to queue: {queue_result}")
+            db_result = cls._get_messages(payload)
+            cls._log.info(f"Fetched messages from database: {db_result}")
+            return db_result
+        return cls._handle_request(event, sync_operation)
+
+    @classmethod
     def _handle_async_poll(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Poll database for messages (async mode).
@@ -219,49 +236,10 @@ class DefaultEndpointsHandler:
         )
 
     @classmethod
-    def _handle_rest_sync(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """
-        Send request to queue and immediately fetch response.
-        :param event: API Gateway event
-        :param context: Lambda context
-        :return: Queue status and response data
-        """
-
-        def sync_operation(payload: Dict[str, Any]) -> Dict[str, Any]:
-            queue_result = cls._send_to_queue(payload)
-            db_result = cls._get_messages(payload)
-            return {"queue_status": queue_result, "response": db_result}
-
-        return cls._handle_request(event, sync_operation)
-
-    @classmethod
     def _handle_stream(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        # TODO:: double check this implementation with AWS docs
-        """
-        Handle streaming request.
-        :param event: API Gateway event
-        :param context: Lambda context
-        :return: Streaming-style response
-        """
-
-        def stream_operation(payload: Dict[str, Any]) -> Dict[str, Any]:
-            queue_result = cls._send_to_queue(payload)
-            db_result = cls._get_messages(payload)
-            return {"queue_status": queue_result, "response": db_result}
-
-        headers = {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        }
-        return cls._handle_request(event, stream_operation, headers=headers)
-
-    def _handle_async_request(self):
-        # you should get the message from websocket coneection
-        # send it to queue
-        # TODO:: Implement response fetching logic
-        # return as websocket message
-        pass
+        # TODO:: will be done later
+        """Handle streaming request."""
+        raise NotImplementedError("Streaming endpoint not implemented yet.")
 
     @classmethod
     def _handle_agent_chat(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
