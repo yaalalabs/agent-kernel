@@ -1,7 +1,8 @@
 from typing import Optional
 
 import jwt
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult, APIGatewayAuthorizer
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.aws import APIGatewayAuthorizer
 
 
 class CustomAuthTokenValidator(AuthValidator):

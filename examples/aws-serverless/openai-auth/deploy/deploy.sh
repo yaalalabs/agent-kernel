@@ -28,9 +28,9 @@ create_auth_deployment_package() {
     rm -rf dist_auth dist_auth.zip
     mkdir -p dist_auth
     if [[ ${1-} != "local" ]]; then
-      uv pip install --force-reinstall --no-deps agentkernel[aws,auth] --target=dist_auth
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
     else
-      uv pip install --force-reinstall --no-deps agentkernel[aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
     fi
     uv pip install --group auth --target=dist_auth
     cp -r lambda_auth.py dist_auth/
