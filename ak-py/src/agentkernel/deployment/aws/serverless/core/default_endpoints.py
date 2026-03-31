@@ -19,17 +19,45 @@ class DefaultEndpointsHandler:
 
     _log = logging.getLogger("ak.aws.lambda.default_endpoints")
 
-    _config = AKConfig.get()
-    _exec_mode = _config.execution.mode
-    _input_queue_url = _config.execution.queues.input_queue_url  # this would be the Input Queue URL, as this class will be used by the Request Handler lambda
-
     _default_chat_path = "default_chat_path"
     _default_chat_method = "POST"
-    _default_user_polling_method = "GET" if _exec_mode == ExecutionMode.REST_ASYNC else None
+    _sqs = None
+    _response_store = None
+    _chat_service = None
 
-    _sqs = boto3.client("sqs")
-    _response_store = ResponseDBHandler().get_store()
-    _chat_service = ChatService()
+    @classmethod
+    def _get_config(cls):
+        return AKConfig.get()
+
+    @classmethod
+    def _get_execution_mode(cls):
+        return cls._get_config().execution.mode
+
+    @classmethod
+    def _get_input_queue_url(cls):
+        return cls._get_config().execution.queues.input_queue_url
+
+    @classmethod
+    def _get_default_user_polling_method(cls):
+        return "GET" if cls._get_execution_mode() == ExecutionMode.REST_ASYNC else None
+
+    @classmethod
+    def _get_sqs_client(cls):
+        if cls._sqs is None:
+            cls._sqs = boto3.client("sqs")
+        return cls._sqs
+
+    @classmethod
+    def _get_response_store(cls):
+        if cls._response_store is None:
+            cls._response_store = ResponseDBHandler().get_store()
+        return cls._response_store
+
+    @classmethod
+    def _get_chat_service(cls):
+        if cls._chat_service is None:
+            cls._chat_service = ChatService()
+        return cls._chat_service
 
     @classmethod
     def get_default_endpoint_info(cls):
@@ -40,7 +68,7 @@ class DefaultEndpointsHandler:
         return (
             cls._default_chat_path,
             cls._default_chat_method,
-            cls._default_user_polling_method,
+            cls._get_default_user_polling_method(),
         )
 
     @classmethod
@@ -50,7 +78,10 @@ class DefaultEndpointsHandler:
         :return: Dictionary mapping paths → HTTP methods → handler functions
         """
 
-        if not cls._input_queue_url:
+        input_queue_url = cls._get_input_queue_url()
+        exec_mode = cls._get_execution_mode()
+
+        if not input_queue_url:
             cls._log.warning("Queues not configured; using direct chat endpoint.")
             return {
                 cls._default_chat_path: {
@@ -58,7 +89,7 @@ class DefaultEndpointsHandler:
                 }
             }
 
-        if cls._exec_mode == ExecutionMode.REST_SYNC:
+        if exec_mode == ExecutionMode.REST_SYNC:
             cls._log.info("Initialized REST_SYNC endpoint.")
             return {
                 cls._default_chat_path: {
@@ -66,22 +97,22 @@ class DefaultEndpointsHandler:
                 }
             }
 
-        if cls._exec_mode == ExecutionMode.REST_ASYNC:
+        if exec_mode == ExecutionMode.REST_ASYNC:
             cls._log.info("Initialized REST_ASYNC endpoints.")
             return {
                 cls._default_chat_path: {
                     cls._default_chat_method: cls._handle_async_submit,
-                    cls._default_user_polling_method: cls._handle_async_poll,
+                    cls._get_default_user_polling_method(): cls._handle_async_poll,
                 }
             }
 
-        if cls._exec_mode == ExecutionMode.STREAM:
+        if exec_mode == ExecutionMode.STREAM:
             cls._log.info("Initialized STREAM endpoint.")
             return {
                 cls._default_chat_path: {cls._default_chat_method: cls._handle_stream}
             }
 
-        raise ValueError(f"Unsupported EXECUTION_MODE: {cls._exec_mode}")
+        raise ValueError(f"Unsupported EXECUTION_MODE: {exec_mode}")
 
     @classmethod
     def _handle_request(
@@ -141,8 +172,8 @@ class DefaultEndpointsHandler:
 
         session_id = payload["session_id"]
 
-        response = cls._sqs.send_message(
-            QueueUrl=cls._input_queue_url,
+        response = cls._get_sqs_client().send_message(
+            QueueUrl=cls._get_input_queue_url(),
             MessageBody=json.dumps(payload),
             MessageGroupId=session_id,
             MessageDeduplicationId=str(uuid.uuid4()),
@@ -158,7 +189,7 @@ class DefaultEndpointsHandler:
         :return: Session response messages
         """
         session_id = payload["session_id"]
-        messages = cls._response_store.get_messages(session_id)
+        messages = cls._get_response_store().get_messages(session_id)
         return {"session_id": session_id, "messages": messages}
 
     @classmethod
@@ -243,7 +274,7 @@ class DefaultEndpointsHandler:
 
         try:
             body = cls._parse_body(event)
-            response = cls._chat_service.process_chat_request(body)
+            response = cls._get_chat_service().process_chat_request(body)
 
             response_body = {"session_id": response["session_id"]}
 

@@ -10,10 +10,24 @@ from .core.sqs_consumer import LambdaSQSConsumer
 class ServerlessAgentRunner(LambdaSQSConsumer):
     
     _log = logging.getLogger("ak.aws.agentrunner")
-    _chat_service = ChatService()
-    _config = AKConfig.get()
-    _output_queue_url = _config.execution.queues.output_queue_url
-    _sqs_client = boto3.client("sqs")
+    _chat_service = None
+    _sqs_client = None
+
+    @classmethod
+    def _get_chat_service(cls) -> ChatService:
+        if cls._chat_service is None:
+            cls._chat_service = ChatService()
+        return cls._chat_service
+
+    @classmethod
+    def _get_output_queue_url(cls) -> str:
+        return AKConfig.get().execution.queues.output_queue_url
+
+    @classmethod
+    def _get_sqs_client(cls):
+        if cls._sqs_client is None:
+            cls._sqs_client = boto3.client("sqs")
+        return cls._sqs_client
 
     @classmethod
     def _construct_queue_input_message(cls, raw_queue_message: dict, queue_input_message_body: dict) -> dict:
@@ -45,8 +59,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param queue_input_message: Message payload (``dict``) as constructed by
         :return: None.
         """
-        cls._sqs_client.send_message(
-            QueueUrl=cls._output_queue_url,
+        cls._get_sqs_client().send_message(
+            QueueUrl=cls._get_output_queue_url(),
             **queue_input_message,
         )
 
@@ -75,12 +89,12 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             error_message_body = cls._construct_error_message_body(error_msg="Session ID mismatch")
             queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body,)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._output_queue_url}'")
+            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._get_output_queue_url()}'")
             return
-        agent_response = cls._chat_service.process_chat_request(body=body)
+        agent_response = cls._get_chat_service().process_chat_request(body=body)
         queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=agent_response,)
         cls._send_to_output_queue(queue_input_message=queue_input_message)
-        cls._log.info(f"Sent Response message to Output Queue: '{cls._output_queue_url}'")
+        cls._log.info(f"Sent Response message to Output Queue: '{cls._get_output_queue_url()}'")
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
@@ -94,8 +108,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             error_message_body = cls._construct_error_message_body(error_msg="Failed to process message. Retried {cls.max_receive_count} times")
             queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body,)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._output_queue_url}'")
+            cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._get_output_queue_url()}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries
             # Catching the error here so that this message will not be returned as batchItemFailures for another retry. 
-            cls._log.info(f"Failed sending permenant failure message to Output Queue '{cls._output_queue_url}' due to error: '{str(e)}'")
+            cls._log.info(f"Failed sending permenant failure message to Output Queue '{cls._get_output_queue_url()}' due to error: '{str(e)}'")

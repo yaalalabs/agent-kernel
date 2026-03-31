@@ -5,8 +5,6 @@ import logging
 import os
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from .core import DefaultEndpointsHandler
-from .core.default_ws_endpoints import DefaultWebsocketRouteHandler
 from ....core.config import AKConfig
 from ....core.model import ExecutionMode
 
@@ -27,25 +25,32 @@ class LambdaRouter:
 
     def __init__(self):
         self._log = logging.getLogger("ak.aws.lambda.router")
-        (
-            self._default_chat_path,
-            self._default_chat_method,
-            self._default_user_polling_method,
-        ) = DefaultEndpointsHandler.get_default_endpoint_info()
-        
-        # Get execution mode from config
-        config = AKConfig.get()
-        self._execution_mode = config.execution.mode if config.execution else ExecutionMode.REST_SYNC
+        self._default_chat_path = "default_chat_path"
+        self._default_chat_method = "POST"
+        self._default_user_polling_method = None
 
-        # Initialize routes based on execution mode
+        config = AKConfig.get()
+        self._execution_mode = (
+            config.execution.mode if config.execution else ExecutionMode.REST_SYNC
+        )
+
         if self._execution_mode == ExecutionMode.ASYNC:
+            from .core.default_ws_endpoints import DefaultWebsocketRouteHandler
+
             self._routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = (
                 DefaultWebsocketRouteHandler.get_routes()
             )
         else:
-            self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = (
-                DefaultEndpointsHandler.get_routes()
-            )
+            from .core import DefaultEndpointsHandler
+
+            (
+                self._default_chat_path,
+                self._default_chat_method,
+                self._default_user_polling_method,
+            ) = DefaultEndpointsHandler.get_default_endpoint_info()
+            self._routes: Dict[
+                str, Dict[str, Callable[[Dict[str, Any], Any], Any]]
+            ] = DefaultEndpointsHandler.get_routes()
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -194,7 +199,13 @@ class Lambda:
     """
 
     _log = logging.getLogger("ak.aws.lambda")
-    _router = LambdaRouter()
+    _router: Optional[LambdaRouter] = None
+
+    @classmethod
+    def _get_router(cls) -> LambdaRouter:
+        if cls._router is None:
+            cls._router = LambdaRouter()
+        return cls._router
 
     @classmethod
     def register(cls, path: str, method: str = "GET") -> Callable[[Callable], Callable]:
@@ -204,7 +215,7 @@ class Lambda:
         :param method: HTTP method (defaults to "GET", case-insensitive)
         :return: Decorator function that registers the handler and returns it unchanged.
         """
-        return cls._router.register(path, method)
+        return cls._get_router().register(path, method)
 
     @staticmethod
     def _wrap_response(result: Any) -> Dict[str, Any]:
@@ -233,10 +244,11 @@ class Lambda:
         :return: API Gateway response dictionary with status code and body
         """
         cls._log.info("Agent Kernel Agent Lambda Handler started")
-        cls._log.info(f"Registered Routes: {cls._router._routes}")
         # Attempting to dispatch to custom routes
         try:
-            result = cls._router.dispatch(event, context)
+            router = cls._get_router()
+            cls._log.info(f"Registered Routes: {router._routes}")
+            result = router.dispatch(event, context)
             return cls._wrap_response(result)
         except Exception as e:
             # Exception in custom route handler/Lambda function raise 500
