@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ValidationError
 
-from .handler import AuthValidator, ValidationContext, ValidationResult
+from ....auth.handler import AuthValidator, ValidationContext, ValidationResult
 
 
 class Headers(BaseModel):
@@ -47,12 +47,15 @@ class APIGatewayAuthorizer:
                 context=result.claims,
             )
         except ValidationError as e:
+            # Missing or malformed headers/Authorization
             self._log.info(f"Event validation failed: {e}")
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
         except ValueError as e:
+            # Token extraction failed
             self._log.info(f"Token extraction failed: {e}")
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
         except Exception as e:
+            # Catch-all for unexpected errors during validation
             self._log.info(f"Unexpected error in authorizer: {e}", exc_info=True)
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
 
@@ -84,6 +87,7 @@ class APIGatewayAuthorizer:
             },
         }
         if context:
+            # API Gateway requires context values to be strings
             policy["context"] = {k: str(v) for k, v in context.items()}
         return policy
 
