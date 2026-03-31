@@ -117,4 +117,3 @@ if __name__ == "__main__":
         CLI.main()
     finally:
         g_db.close()
-      
