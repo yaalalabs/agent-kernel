@@ -119,7 +119,7 @@ class DefaultEndpointsHandler:
         cls,
         event: Dict[str, Any],
         operation: Callable[[Dict[str, Any]], Dict[str, Any]],
-        error_message: str = "Missing required field",
+        key_error_msg: str = "Missing required field",
         headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
@@ -142,15 +142,15 @@ class DefaultEndpointsHandler:
 
             return response
 
-        except KeyError as e:
+        except KeyError:
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": f"{error_message}: {str(e)}"}),
+                "body": json.dumps({"error": f"{key_error_msg}"}),
             }
 
         except Exception as e:
             cls._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
-            return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+            return {"statusCode": 500, "body": json.dumps({"error": "An unexpected error occurred"})}
 
     @classmethod
     def _parse_body(cls, event: Dict[str, Any]) -> Dict[str, Any]:
@@ -232,7 +232,7 @@ class DefaultEndpointsHandler:
         return cls._handle_request(
             event,
             cls._get_messages,
-            error_message="session_id is required",
+            key_error_msg="session_id is required",
         )
 
     @classmethod
