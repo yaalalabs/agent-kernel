@@ -159,7 +159,45 @@
         "multimodal:",
         "enabled: true",
         "description_model:",
-        "analysis_model:"
+        "analysis_model:",
+        "analyze_attachments"
+      ]
+    },
+    {
+      "id": "cap-multimodal-redis",
+      "name": "Enable multimodal with Redis storage",
+      "input": "Enable multimodal with Redis storage backend",
+      "expected_outputs": [
+        "multimodal:",
+        "enabled: true",
+        "storage_type: redis",
+        "redis:",
+        "url:",
+        "ttl:",
+        "agentkernel[",
+        "redis",
+        "multimodal"
+      ],
+      "must_not_contain": [
+        "storage_type: dynamodb"
+      ]
+    },
+    {
+      "id": "cap-multimodal-dynamodb",
+      "name": "Enable multimodal with DynamoDB storage",
+      "input": "Enable multimodal with DynamoDB storage for my serverless deployment",
+      "expected_outputs": [
+        "multimodal:",
+        "enabled: true",
+        "storage_type: dynamodb",
+        "dynamodb:",
+        "table_name:",
+        "agentkernel[",
+        "multimodal",
+        "aws"
+      ],
+      "must_not_contain": [
+        "storage_type: redis"
       ]
     }
   ]
