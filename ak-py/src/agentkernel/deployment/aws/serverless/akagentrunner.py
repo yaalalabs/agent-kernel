@@ -1,10 +1,11 @@
-import logging
 import json
+import logging
 
 import boto3
 
 from ...common.chat_service import ChatService
 from ....core.config import AKConfig
+from ..core.model import SQSQueueInputMessage
 from .core.sqs_consumer import LambdaSQSConsumer
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
@@ -34,14 +35,18 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         Construct the SQS message payload for the response queue.
         :param raw_queue_message: Original SQS message (``dict``) received by the Lambdafunction.
-        :param queue_input_message_body: JSON-serializable body (``dict``) to be sent tothe response queue.
+        :param queue_input_message_body: JSON-serializable body (``dict``) to be sent to the response queue.
         :return: Dictionary (``dict``) of parameters for ``boto3`` ``send_message`` (excluding ``QueueUrl``).
         """
-        return {
-            "MessageGroupId": raw_queue_message["attributes"]["MessageGroupId"],
-            "MessageDeduplicationId": raw_queue_message["attributes"]["MessageDeduplicationId"],
-            "MessageBody": json.dumps(queue_input_message_body),
-        }
+        attributes = raw_queue_message["attributes"]
+        queue_input_message_body["request_id"] = cls._parse_body(raw_queue_message)["request_id"]
+        queue_input_message = SQSQueueInputMessage(
+            MessageGroupId=attributes["MessageGroupId"],
+            MessageDeduplicationId=attributes["MessageDeduplicationId"],
+            MessageBody=json.dumps(queue_input_message_body),
+        ).model_dump(exclude_none=True)
+        cls._log.info(f"Constructed queue input message: {queue_input_message}")
+        return queue_input_message
 
     @classmethod
     def _construct_error_message_body(cls, error_msg: str) -> dict:
@@ -87,7 +92,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         if session_id != message_group_id:
             cls._log.info(f"Session ID mismatch: message body session_id {session_id} does not match MessageGroupId {message_group_id}")
             error_message_body = cls._construct_error_message_body(error_msg="Session ID mismatch")
-            queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body,)
+            queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
             cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._get_output_queue_url()}'")
             return
@@ -106,8 +111,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times. Sending error message to Output Queue`")
         try:
-            error_message_body = cls._construct_error_message_body(error_msg="Failed to process message. Retried {cls.max_receive_count} times")
-            queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body,)
+            error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
+            queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
             cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._get_output_queue_url()}'")
         except Exception as e:
