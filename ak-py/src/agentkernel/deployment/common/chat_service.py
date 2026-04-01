@@ -79,7 +79,7 @@ class ChatService:
                     )
 
             # Pack additional properties into AgentRequestAny
-            known_fields = {"prompt", "agent", "session_id", "images", "files"}
+            known_fields = {"request_id", "user_id", "prompt", "agent", "session_id", "images", "files"}
             for key, value in body.items():
                 if key in known_fields:
                     continue
