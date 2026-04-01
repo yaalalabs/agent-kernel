@@ -205,6 +205,8 @@ class _ResponseStoreRedisConfig(_RedisConfig):
 
 
 class _ResponseStoreConfig(BaseModel):
+    retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
+    delay: float = Field(default=5, description="Delay in seconds between response store retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
 
