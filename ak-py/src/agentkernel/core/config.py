@@ -199,9 +199,6 @@ class _GuardrailConfig(BaseModel):
     output: _GuardrailParamConfig = Field(description="Output Guardrail configuration", default_factory=_GuardrailParamConfig)
 
 
-
-
-
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(

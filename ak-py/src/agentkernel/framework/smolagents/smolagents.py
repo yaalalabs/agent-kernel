@@ -122,7 +122,7 @@ class SmolagentsAgent(BaseAgent):
             elif isinstance(self.agent.tools, list):
                 if w not in self.agent.tools:
                     self.agent.tools.append(w)
-                    
+
         # Smolagents caches the tool descriptions in the system prompt at init. We must rebuild it.
         if hasattr(self.agent, "initialize_system_prompt"):
             try:
