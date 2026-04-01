@@ -13,6 +13,7 @@ from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBui
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...trace import Trace
 
 FRAMEWORK = "smolagents"
 
@@ -136,7 +137,10 @@ class SmolagentsAgent(BaseAgent):
         from a2a.types import AgentSkill
 
         skills = []
-        for tool in getattr(self.agent, "tools", []):
+        raw_tools = getattr(self.agent, "tools", [])
+        tools_list = raw_tools.values() if isinstance(raw_tools, dict) else raw_tools
+
+        for tool in tools_list:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=getattr(tool, "description", ""), tags=[]))
         return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills)
 
@@ -148,6 +152,8 @@ class SmolagentsModule(Module):
         super().__init__()
         if runner is not None:
             self.runner = runner
+        elif AKConfig.get().trace.enabled:
+            self.runner = Trace.get().smolagents()
         else:
             self.runner = SmolagentsRunner()
         self.load(agents)

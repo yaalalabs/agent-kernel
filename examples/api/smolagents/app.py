@@ -4,11 +4,7 @@ from agentkernel.api import RESTAPI
 from agentkernel.core import ToolContext
 from agentkernel.smolagents import SmolagentsModule, SmolagentsToolBuilder
 
-try:
-    from smolagents import CodeAgent, InferenceClientModel, ToolCallingAgent
-except ImportError as e:
-    print(f"Failed to import smolagents: {e}")
-    exit(1)
+from smolagents import CodeAgent, InferenceClientModel
 
 
 def get_weather(city: str) -> str:
