@@ -355,7 +355,6 @@ module "request_handler" {
   cloudwatch_logs_retention_in_days       = var.cloudwatch_logs_retention_in_days
   scalable_mode                           = var.scalable_mode
   event_source_mapping                    = var.event_source_mapping
-  environment_variables                   = var.environment_variables
   timeout                                 = var.timeout
   memory_size                             = var.memory_size
   function_name                           = var.function_name
@@ -388,6 +387,9 @@ module "request_handler" {
   websocket_connections_table_name        = local.websocket_connections_table_name
   websocket_connections_table_arn         = local.websocket_connections_table_arn
   enable_websocket_permissions            = local.is_async_mode
+  environment_variables = merge(try(var.agent_runner.environment_variables, null), {
+    AK_EXECUTION__MODE = var.execution_mode
+  })
 
   depends_on = [module.request_handler_source_package]
 }
