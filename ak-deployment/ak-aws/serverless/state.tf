@@ -331,9 +331,9 @@ module "dynamodb_response_store" {
 # Build response handler package
 resource "null_resource" "build_response_handler" {
   count = var.scalable_mode ? 1 : 0
-  triggers = { # always retrigger the build on terraform apply
-    always_run  = timestamp()
-    script_hash = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
+  triggers = { # will trigger the script (script running is done in local-exec) if package_path OR the build_response_handler.sh script changes
+    package_path = local.response_handler_package_path
+    script_hash  = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
   }
   provisioner "local-exec" {
     command     = "chmod +x build_response_handler.sh && ./build_response_handler.sh --package-path \"${local.response_handler_package_path}\""
