@@ -25,9 +25,10 @@ class ResponseDBHandler:
             use_ssl = redis_config.url.startswith("rediss://")
             
             self.store = RedisResponseStore(
-                host=redis_config.url,
-                ssl=use_ssl,
+                url=redis_config.url,
+                use_ssl=use_ssl,
                 prefix=redis_config.prefix,
+                ttl=redis_config.ttl,
             )
         
         # Check for DynamoDB configuration
@@ -38,7 +39,8 @@ class ResponseDBHandler:
             
             self.store = DynamoDBResponseStore(
                 table_name=dynamodb_config.table_name,
-                region=None  # Will use default AWS region from environment/IAM role
+                region=None,  # Will use default AWS region from environment/IAM role
+                ttl=dynamodb_config.ttl,
             )
         
         else:
