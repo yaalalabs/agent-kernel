@@ -138,18 +138,31 @@ print_info "Copying agentkernel from $AGENTKERNEL_SRC to output directory..."
 cp -r "$AGENTKERNEL_SRC" "$OUTPUT_DIR/"
 
 # Step 3: Install minimal dependencies
-print_info "Step 3: Installing minimal dependencies (pydantic, boto3, PyYAML)..."
+print_info "Step 3: Installing minimal dependencies..."
+
+DEPENDENCIES=(
+    boto3
+    pydantic
+    pydantic-settings
+    PyYAML
+    singleton-type
+)
+
+print_info "Dependencies to install:"
+for dep in "${DEPENDENCIES[@]}"; do
+    echo "  - $dep"
+done
 
 # Check if uv is available
 if command -v uv >/dev/null 2>&1; then
     print_info "Using uv to install dependencies..."
-    uv pip install --target="$OUTPUT_DIR" pydantic boto3 PyYAML
+    uv pip install --target="$OUTPUT_DIR" "${DEPENDENCIES[@]}"
 else
     print_warning "uv not found, falling back to pip..."
     if command -v pip3 >/dev/null 2>&1; then
-        pip3 install --target="$OUTPUT_DIR" pydantic boto3 PyYAML
+        pip3 install --target="$OUTPUT_DIR" "${DEPENDENCIES[@]}"
     elif command -v pip >/dev/null 2>&1; then
-        pip install --target="$OUTPUT_DIR" pydantic boto3 PyYAML
+        pip install --target="$OUTPUT_DIR" "${DEPENDENCIES[@]}"
     else
         print_error "Neither uv nor pip found. Please install one of them."
         exit 1
