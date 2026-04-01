@@ -15,6 +15,7 @@ from agentkernel.core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    BaseRequest
 )
 
 from ..core import AgentService, Config
@@ -67,12 +68,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         name: str
         mime_type: Optional[str] = None
 
-    class RunRequest(BaseModel):
+    class RunRequest(BaseRequest):
         model_config = ConfigDict(extra="allow")
 
-        prompt: str
-        agent: Optional[str] = None
-        session_id: Optional[str] = None
         files: Optional[List["AgentRESTRequestHandler.FileData"]] = None
         images: Optional[List["AgentRESTRequestHandler.ImageData"]] = None
 

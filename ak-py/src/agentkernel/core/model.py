@@ -1,7 +1,7 @@
-from typing import Any, Callable, Literal, Union
+from typing import Any, Callable, Literal, Union, Optional
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AgentRequestText(BaseModel):
@@ -119,3 +119,12 @@ class SystemTool(BaseModel):
     name: str
     description: str
     func: Callable
+
+class BaseRequest(BaseModel):
+    request_id: Optional[str] = None
+    user_id: Optional[str] = None # TODO:: will be needed for websockets implementation
+    prompt: str
+    agent: Optional[str] = None
+    session_id: Optional[str] = None
+    model_config = ConfigDict(extra="allow")
+
