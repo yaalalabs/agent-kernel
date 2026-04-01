@@ -251,14 +251,27 @@ class DefaultEndpointsHandler:
         """
 
         try:
-            body = cls._parse_body(event).model_dump(exclude_none=True)
-            return cls._get_chat_service().process_chat_request(body)
+            body = cls._parse_body(event)
+            response = cls._get_chat_service().process_chat_request(body)
+
+            response_body = {"session_id": response["session_id"]}
+
+            if response["statusCode"] == 200:
+                response_body["result"] = response.get("result")
+            else:
+                response_body["error"] = response.get("error")
+
+            return {
+                "statusCode": response["statusCode"],
+                "body": json.dumps(response_body),
+            }
 
         except Exception as e:
             cls._log.error(f"Chat error: {e}\n{traceback.format_exc()}")
 
             return {
                 "statusCode": 500,
-                "error": "Error processing request", 
-                "session_id": None
+                "body": json.dumps(
+                    {"error": "Error processing request", "session_id": None}
+                ),
             }

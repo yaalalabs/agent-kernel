@@ -222,19 +222,18 @@ class Lambda:
         """
         Normalize various handler return types into API Gateway compatible responses.
         :param result: Handler return value (dict, tuple, str, or list)
-        :return: API Gateway compatible response dictionary with statusCode and result
+        :return: API Gateway compatible response dictionary with statusCode and body
         """
-        if isinstance(result, dict) and "statusCode" in result:
+        if isinstance(result, dict) and "statusCode" in result and "body" in result:
             return result  # already well-formed
         if isinstance(result, tuple) and len(result) == 2:
             status, body = result
-            status = int(status)
             if isinstance(body, (dict, list)):
-                body = json.dumps(body)
-            return {"statusCode": status, "result": str(body)} if 200 <= status < 300 else {"statusCode": status, "error": str(body)}
+                return {"statusCode": int(status), "body": json.dumps(body)}
+            return {"statusCode": int(status), "body": str(body)}
         if isinstance(result, (dict, list)):
-            return {"statusCode": 200, "result": json.dumps(result)}
-        return {"statusCode": 200, "result": str(result)}
+            return {"statusCode": 200, "body": json.dumps(result)}
+        return {"statusCode": 200, "body": str(result)}
 
     @classmethod
     def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
