@@ -26,16 +26,15 @@ class RESTResponseHandler(LambdaSQSConsumer):
         :param body: Optional message body string. If not provided, uses record["body"]
         :return: Message dictionary for storage
         """
-        message_id = record.get("messageId")
         session_id = record.get("attributes", {}).get("MessageGroupId")
         message_body = body if body is not None else record.get("body")
-
+        message_body = json.loads(message_body)
+        request_id = message_body.get("request_id")
         message = {
             "session_id": session_id,
-            "message_id": message_id,
-            "message_body": message_body
+            "request_id": request_id,
+            "body": message_body
         }
-
         return message
     
     @classmethod
@@ -51,7 +50,7 @@ class RESTResponseHandler(LambdaSQSConsumer):
         message = cls._construct_message_for_store(record)
         cls._response_store.add_message(message)
 
-        cls._log.info(f"Stored message for session_id: {message['session_id']}")
+        cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
     
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
@@ -66,14 +65,23 @@ class RESTResponseHandler(LambdaSQSConsumer):
 
         try:
             # Store an error message in the response store
+            original_body = record.get("body")
+            if isinstance(original_body, str):
+                try:
+                    original_body = json.loads(original_body)
+                except json.JSONDecodeError:
+                    original_body = {}
+
+            request_id = original_body.get("request_id") if isinstance(original_body, dict) else None
             error_body = json.dumps({
-                "error": f"Failed to process message after {cls.max_receive_count} retries"
+                "error": f"Failed to process message after {cls.max_receive_count} retries",
+                "request_id": request_id,
             })
 
             message = cls._construct_message_for_store(record, body=error_body)
             cls._response_store.add_message(message)
 
-            cls._log.info(f"Stored permanent failure message for session_id: {message['session_id']}")
+            cls._log.info(f"Stored permanent failure message for session_id: {message['session_id']}, request_id: {message['request_id']}")
         except Exception as e:
             # Catch the error to prevent this message from being returned as batchItemFailures for another retry
             cls._log.error(f"Failed to store permanent failure message due to error: {str(e)}")
@@ -142,7 +150,7 @@ class WSResponseHandler(LambdaSQSConsumer):
             ws_message = cls._ws_manager.create_websocket_message(
                 message_type="response",
                 session_id=session_id,
-                message_id=record.get("messageId"),
+                request_id=message_data.get("request_id"),
                 body=message_data,
                 timestamp=message_data.get("timestamp")
             )
@@ -174,36 +182,35 @@ class WSResponseHandler(LambdaSQSConsumer):
         cls._log.error(f"Permanent WebSocket failure: {record}: Retried message {cls.max_receive_count} times")
         
         try:
-            # Extract session_id
-            session_id = record.get("attributes", {}).get("MessageGroupId")
-            if not session_id:
-                message_data = cls._parse_message_body(record)
-                session_id = message_data.get("session_id")
+            message_data = cls._parse_message_body(record)
+            session_id = message_data.get("session_id")
             
-            if session_id:
-                # Extract WebSocket connection details
-                message_data = cls._parse_message_body(record)
-                domain_name, stage = cls._ws_manager.get_websocket_details_from_message(message_data)
+            if not session_id:
+                raise ValueError("Missing session_id in message for permanent failure handling")
+
+            # Extract WebSocket connection details
+            message_data = cls._parse_message_body(record)
+            domain_name, stage = cls._ws_manager.get_websocket_details_from_message(message_data)
+            
+            if domain_name:
+                # Create error message
+                error_message = cls._ws_manager.create_websocket_message(
+                    message_type="error",
+                    session_id=session_id,
+                    request_id=message_data.get("request_id"),
+                    body=f"Failed to process message after {cls.max_receive_count} retries"
+                )
                 
-                if domain_name:
-                    # Create error message
-                    error_message = cls._ws_manager.create_websocket_message(
-                        message_type="error",
-                        session_id=session_id,
-                        message_id=record.get("messageId"),
-                        body=f"Failed to process message after {cls.max_receive_count} retries"
-                    )
-                    
-                    success, _, _ = cls._ws_manager.send_message_to_all_session_connections(
-                        session_id, error_message, domain_name, stage
-                    )
-                    
-                    if success:
-                        cls._log.info(f"Sent permanent failure message via WebSocket for session_id: {session_id}")
-                    else:
-                        cls._log.error(f"Failed to send permanent failure message for session_id: {session_id}")
+                success, _, _ = cls._ws_manager.send_message_to_all_session_connections(
+                    session_id, error_message, domain_name, stage
+                )
+                
+                if success:
+                    cls._log.info(f"Sent permanent failure message via WebSocket for session_id: {session_id}")
                 else:
-                    cls._log.error("Cannot send WebSocket error message: missing domain_name")
+                    cls._log.error(f"Failed to send permanent failure message for session_id: {session_id}")
+            else:
+                cls._log.error("Cannot send WebSocket error message: missing domain_name")
             
         except Exception as e:
             # Catch the error to prevent this message from being returned as batchItemFailures for another retry
