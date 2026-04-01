@@ -305,21 +305,20 @@ module "dynamodb_response_store" {
   count   = local.create_dynamodb_response_store_enabled ? 1 : 0
 
   attributes = [
+    { name = "request_id", type = "S" },
     { name = "session_id", type = "S" },
-    { name = "message_id", type = "S" },
   ]
 
   global_secondary_indexes = [
     {
-      name            = "message_id-index"
-      hash_key        = "message_id"
-      range_key       = "session_id"
+      name            = "session_id-index"
+      hash_key        = "session_id"
+      range_key       = "request_id"
       projection_type = "ALL"
     },
   ]
 
-  hash_key           = "session_id"
-  range_key          = "message_id"
+  hash_key           = "request_id"
   ttl_enabled        = true
   env_alias          = var.env_alias
   module_name        = "${var.module_name}-response-store"
