@@ -62,7 +62,7 @@ These skills are bundled with the `agentkernel` PyPI package and help you build 
 
 ### ak-init
 
-Interactively scaffold a new Agent Kernel project. Covers all four supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
+Interactively scaffold a new Agent Kernel project. Covers all four supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
 
 **Example prompts:**
 - *"Create a new agent project using CrewAI for AWS Lambda"*
@@ -119,7 +119,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
 | `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow — everything needed to understand the codebase |
-| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK) — subclass creation, dependency wiring, exports, tests |
+| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, and Smolagents) — subclass creation, dependency wiring, exports, tests |
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail) — handler class, webhook routes, message parsing, config |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI) — input/output guardrails, factory registration, configuration |
 | `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry) — `BaseTrace` interface, traced runners, factory wiring |

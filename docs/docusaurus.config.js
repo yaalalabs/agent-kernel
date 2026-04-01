@@ -50,7 +50,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. Works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or your own servers with zero platform code.',
+        content: 'Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. Works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK, and Smolagents, and Smolagents — and can run agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or your own servers with zero platform code.',
       },
     },
     {
@@ -92,7 +92,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:description',
-        content: 'Open-source, framework-agnostic, multi-cloud AI agent runtime. Build, test, and deploy production AI agents to AWS or Azure in days — not months. Works with OpenAI, LangGraph, CrewAI, and Google ADK.',
+        content: 'Open-source, framework-agnostic, multi-cloud AI agent runtime. Build, test, and deploy production AI agents to AWS or Azure in days — not months. Works with OpenAI, LangGraph, CrewAI, Google ADK, and Smolagents, and Smolagents.',
       },
     },
     {
@@ -155,7 +155,7 @@ const config = {
         '@type': 'SoftwareApplication',
         name: 'Agent Kernel',
         applicationCategory: 'DeveloperApplication',
-        description: 'Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy AI agents to AWS or Azure in days instead of months. Works with OpenAI, LangGraph, CrewAI, and Google ADK — run multiple frameworks simultaneously in a single runtime.',
+        description: 'Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy AI agents to AWS or Azure in days instead of months. Works with OpenAI, LangGraph, CrewAI, Google ADK, and Smolagents, and Smolagents — run multiple frameworks simultaneously in a single runtime.',
         operatingSystem: 'Linux, macOS, Windows',
         offers: {
           '@type': 'Offer',
@@ -168,9 +168,9 @@ const config = {
           url: 'https://www.yaalalabs.com',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent Kernel, agentkernel, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK',
+        keywords: 'Agent Kernel, agentkernel, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, and Smolagents',
         featureList: [
-          'Framework-agnostic runtime — OpenAI Agents, LangGraph, CrewAI, Google ADK',
+          'Framework-agnostic runtime — OpenAI Agents, LangGraph, CrewAI, Google ADK, and Smolagents, and Smolagents',
           'Multi-framework simultaneous execution in a single runtime',
           'Multi-cloud deployment — AWS Lambda, ECS, Azure Functions, Container Apps',
           'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail integrations',
@@ -309,7 +309,7 @@ const config = {
       metadata: [
         {
           name: 'description',
-          content: 'Agent Kernel: The open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months. Built-in messaging integrations, session management, testing framework, guardrails, and observability.',
+          content: 'Agent Kernel: The open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, or Smolagents to AWS or Azure — in days, not months. Built-in messaging integrations, session management, testing framework, guardrails, and observability.',
         },
         {
           property: 'og:image',

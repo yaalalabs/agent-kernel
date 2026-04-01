@@ -131,3 +131,11 @@ class OpenLLMetry(BaseTrace):
         from .adk import OpenLLMetryADKRunner
 
         return OpenLLMetryADKRunner()
+
+    def smolagents(self) -> Runner:
+        """
+        Returns a fallback unmodified SmolagentsRunner since tracing is not yet implemented natively.
+        """
+        from ...smolagents import SmolagentsRunner
+
+        return SmolagentsRunner()

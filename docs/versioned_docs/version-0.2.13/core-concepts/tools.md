@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Tools
 
-Tools allow agents to perform actions and access external data. Agent Kernel provides a **framework-agnostic** way of writing tool functions that work across all supported frameworks — OpenAI Agents SDK, CrewAI, LangGraph, and Google ADK.
+Tools allow agents to perform actions and access external data. Agent Kernel provides a **framework-agnostic** way of writing tool functions that work across all supported frameworks — OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents.
 
 ## Overview
 

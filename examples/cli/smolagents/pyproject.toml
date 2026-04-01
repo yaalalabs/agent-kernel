@@ -1,0 +1,35 @@
+[project]
+name = "cli-smolagents"
+version = "0.1.0"
+description = "Demo of smolagents CodeAgent running in Agent Kernel with a CLI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli]>=0.2.14",
+    "smolagents",
+]
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.2.14",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

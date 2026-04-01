@@ -13,7 +13,7 @@ slug: /
 
 ## What is Agent Kernel?
 
-Agent Kernel is an **open-source runtime** that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code. Built-in integrations for Slack, WhatsApp, and more mean your agents can reach users instantly.
+Agent Kernel is an **open-source runtime** that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK, and Smolagents, and Smolagents — and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code. Built-in integrations for Slack, WhatsApp, and more mean your agents can reach users instantly.
 
 **Think of it like Express.js for web servers, or Spring Boot for Java microservices** — but for AI agents. It gives you the scaffolding, execution environment, session management, and deployment infrastructure so you can focus on writing the logic that matters.
 

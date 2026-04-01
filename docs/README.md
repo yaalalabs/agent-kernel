@@ -164,7 +164,7 @@ Edit `sidebars.js` to change:
 1. **Getting Started**: Introduction, installation, quick start
 2. **Core Concepts**: Agent, Runner, Session, Module, Runtime
 3. **Architecture**: System design, execution flow, memory management
-4. **Framework Integration**: OpenAI, CrewAI, LangGraph, Google ADK
+4. **Framework Integration**: OpenAI, CrewAI, LangGraph, Google ADK, and Smolagents
 5. **Deployment**: Local, AWS Serverless, AWS Containerized
 6. **API & Integration**: REST API, MCP, A2A
 7. **Testing**: CLI testing, automated testing

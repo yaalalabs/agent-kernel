@@ -42,6 +42,9 @@ langgraph = [
     "langchain_community~=0.4.1",
     "litellm~=1.74.9"
 ]
+smolagents = [
+    "smolagents>=1.0.0",
+]
 cli = [
 
 ]

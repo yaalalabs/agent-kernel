@@ -10,7 +10,7 @@ Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
-- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK
+- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents
 - **Multi-Cloud Deployment**: Deploy to AWS (Lambda, ECS/Fargate) or Azure (Functions, Container Apps) with the same code
 - **Session Management**: Built-in session abstraction with multi-cloud storage (Redis, DynamoDB, Cosmos DB)
 - **Flexible Deployment**: Interactive CLI, REST API, serverless (AWS Lambda, Azure Functions), containerized (AWS ECS, Azure Container Apps)
