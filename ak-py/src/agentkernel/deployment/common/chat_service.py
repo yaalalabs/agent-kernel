@@ -23,7 +23,7 @@ class ChatService:
         self._log = logging.getLogger("ak.deployment.chat_service")
         # self.service = AgentService is done in the process_chat_request() function
 
-    def process_chat_request(self, body: Dict[str, Any]) -> Dict[str, Any]:
+    def process_chat_request(self, body: Dict[str, Any]) -> tuple[int, Dict[str, Any]]:
         """
         Process agent chat request with common logic.
 
@@ -96,30 +96,27 @@ class ChatService:
             result = self._run_agent_service(requests)
             self._log.debug(f"Result: {result}")
 
-            return {
-                "statusCode": 200,
+            return (200, {
                 "result": (
                     str(result)
                     if isinstance(result, (AgentReplyText, AgentReplyImage))
                     else "Non textual result received"
                 ),  # sending image is not supported at the moment
                 "session_id": self.service.get_response_session_id(session_id),
-            }
+            })
 
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return {
-                "statusCode": 400,
+            return (400, {
                 "error": str(ve),
                 "session_id": self.service.get_response_session_id(None),
-            }
+            })
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return {
-                "statusCode": 500,
+            return (500, {
                 "error": str(e),
                 "session_id": self.service.get_response_session_id(None),
-            }
+            })
 
     def _run_agent_service(self, requests: List[Any]) -> Any:
         """

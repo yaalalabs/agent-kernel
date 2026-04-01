@@ -251,19 +251,12 @@ class DefaultEndpointsHandler:
         """
 
         try:
-            body = cls._parse_body(event)
-            response = cls._get_chat_service().process_chat_request(body)
-
-            response_body = {"session_id": response["session_id"]}
-
-            if response["statusCode"] == 200:
-                response_body["result"] = response.get("result")
-            else:
-                response_body["error"] = response.get("error")
+            body = cls._parse_body(event).model_dump(exclude_none=True)
+            status_code, res_body = cls._get_chat_service().process_chat_request(body) 
 
             return {
-                "statusCode": response["statusCode"],
-                "body": json.dumps(response_body),
+                "statusCode": status_code,
+                "body": json.dumps(res_body),
             }
 
         except Exception as e:

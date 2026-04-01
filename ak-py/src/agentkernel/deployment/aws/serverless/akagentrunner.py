@@ -91,8 +91,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             cls._send_to_output_queue(queue_input_message=queue_input_message)
             cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._get_output_queue_url()}'")
             return
-        agent_response = cls._get_chat_service().process_chat_request(body=body)
-        queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=agent_response,)
+        _, agent_response = cls._get_chat_service().process_chat_request(body=body)
+        cls._log.info(f"Chat service response: '{agent_response}'")
+        queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=agent_response)
         cls._send_to_output_queue(queue_input_message=queue_input_message)
         cls._log.info(f"Sent Response message to Output Queue: '{cls._get_output_queue_url()}'")
 

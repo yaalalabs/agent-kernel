@@ -34,18 +34,11 @@ class AzureFunctions:
                 raise ValueError("Invalid JSON in request body")
 
             # Process chat request using common service
-            response = cls._chat_service.process_chat_request(body)
-
-            # Format response for Azure Functions
-            response_body = {"session_id": response["session_id"]}
-            if response["statusCode"] == 200:
-                response_body["result"] = response.get("result")
-            else:
-                response_body["error"] = response.get("error")
+            status_code, res_body = cls._get_chat_service().process_chat_request(body) 
 
             return func.HttpResponse(
-                body=json.dumps(response_body),
-                status_code=response["statusCode"],
+                body=json.dumps(res_body),
+                status_code=status_code,
                 mimetype="application/json",
             )
 
