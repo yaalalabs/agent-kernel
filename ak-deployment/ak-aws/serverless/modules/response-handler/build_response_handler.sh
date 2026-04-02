@@ -146,6 +146,7 @@ DEPENDENCIES=(
     pydantic-settings
     PyYAML
     singleton-type
+    redis
 )
 
 print_info "Dependencies to install:"

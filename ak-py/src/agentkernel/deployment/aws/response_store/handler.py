@@ -21,12 +21,9 @@ class ResponseDBHandler:
             from .redis import RedisResponseStore
 
             redis_config = response_store_config.redis
-            # Determine if SSL should be used based on URL scheme
-            use_ssl = redis_config.url.startswith("rediss://")
-            
+
             self.store = RedisResponseStore(
                 url=redis_config.url,
-                use_ssl=use_ssl,
                 prefix=redis_config.prefix,
                 ttl=redis_config.ttl,
             )
