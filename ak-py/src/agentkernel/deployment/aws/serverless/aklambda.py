@@ -5,9 +5,6 @@ import logging
 import os
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from ....core.config import AKConfig
-from ....core.model import ExecutionMode
-
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -29,28 +26,16 @@ class LambdaRouter:
         self._default_chat_method = "POST"
         self._default_user_polling_method = None
 
-        config = AKConfig.get()
-        self._execution_mode = (
-            config.execution.mode if config.execution else ExecutionMode.REST_SYNC
-        )
+        from .core import DefaultEndpointsHandler
 
-        if self._execution_mode == ExecutionMode.ASYNC:
-            from .core.default_ws_endpoints import DefaultWebsocketRouteHandler
-
-            self._routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = (
-                DefaultWebsocketRouteHandler.get_routes()
-            )
-        else:
-            from .core import DefaultEndpointsHandler
-
-            (
-                self._default_chat_path,
-                self._default_chat_method,
-                self._default_user_polling_method,
-            ) = DefaultEndpointsHandler.get_default_endpoint_info()
-            self._routes: Dict[
-                str, Dict[str, Callable[[Dict[str, Any], Any], Any]]
-            ] = DefaultEndpointsHandler.get_routes()
+        (
+            self._default_chat_path,
+            self._default_chat_method,
+            self._default_user_polling_method,
+        ) = DefaultEndpointsHandler.get_default_endpoint_info()
+        self._routes: Dict[
+            str, Dict[str, Callable[[Dict[str, Any], Any], Any]]
+        ] = DefaultEndpointsHandler.get_routes()
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -75,9 +60,6 @@ class LambdaRouter:
         :param method: HTTP method (defaults to "GET")
         :return: Decorator function that registers the handler and returns it unchanged.
         """
-        if self._execution_mode == ExecutionMode.ASYNC: # TODO:: to be implemented in ASYNC mode in the future
-            raise NotImplementedError("Custom route registration is not supported in ASYNC execution mode.")
-        
         norm_path = self._normalize_path(path)
         norm_method = self._normalize_method(method)
 
@@ -110,16 +92,13 @@ class LambdaRouter:
 
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
-        Dispatch incoming event to the appropriate handler based on execution mode.
+        Dispatch incoming event to the appropriate registered handler.
         :param event: Event dictionary containing request information
         :param context: AWS Lambda context object
         :return: Formatted response dictionary or None if no route matches
         :raises ValueError: If no registered route matches the request
         """
-        if self._execution_mode == ExecutionMode.ASYNC:
-            return self._dispatch_ws_route(event, context)
-        else:
-            return self._dispatch_rest_endpoint(event, context)
+        return self._dispatch_rest_endpoint(event, context)
 
     def _dispatch_rest_endpoint(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
@@ -165,32 +144,6 @@ class LambdaRouter:
         result = handler(event, context)
         self._log.debug(f"Lambda function result: {result}")
         return result
-
-    def _dispatch_ws_route(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
-        """
-        Dispatch incoming WebSocket event to the appropriate registered handler.
-        :param event: WebSocket event dictionary containing request information
-        :param context: AWS Lambda context object
-        :return: Formatted WebSocket response dictionary or None if no route matches
-        :raises ValueError: If no registered route matches the request
-        """
-        # For WebSocket events, the route is determined by the event type
-        route_key = event.get("requestContext", {}).get("routeKey", "$default")
-        self._log.info(f"WebSocket route key: {route_key}")
-
-        handler = self._routes.get(route_key)
-        if not handler:
-            self._log.warning(
-                f"No registered WebSocket route found for route key -> '{route_key}'"
-            )
-            raise ValueError(
-                f"No registered WebSocket route found for route key -> '{route_key}'"
-            )
-        
-        result = handler(event, context)
-        self._log.debug(f"WebSocket Lambda function result: {result}")
-        return result
-
 
 class Lambda:
     """
