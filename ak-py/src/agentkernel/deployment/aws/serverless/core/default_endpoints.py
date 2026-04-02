@@ -10,8 +10,9 @@ import boto3
 
 from ....common.chat_service import ChatService
 from ...response_store.handler import ResponseDBHandler
-from .....core.model import ExecutionMode
+from .....core.model import ExecutionMode, BaseRequest
 from .....core.config import AKConfig
+from ...core.model import SQSQueueInputMessage
 
 
 class DefaultEndpointsHandler:
@@ -118,79 +119,104 @@ class DefaultEndpointsHandler:
     def _handle_request(
         cls,
         event: Dict[str, Any],
-        operation: Callable[[Dict[str, Any]], Dict[str, Any]],
-        key_error_msg: str = "Missing required field",
+        operation: Callable[[BaseRequest], Dict[str, Any]],
         headers: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Execute operation with standard request parsing and error handling.
         :param event: API Gateway event
         :param operation: Function executed with parsed payload
-        :param error_message: Error message if required field missing
         :param headers: Optional response headers
         :return: API Gateway formatted response
         """
-
+        request_id = None
         try:
-            payload = cls._parse_body(event)
-            result = operation(payload)
+            request = cls._parse_body(event)
+            request_id = request.request_id
+            result = operation(request)
+            return (200, result) # (statusCode, body) will be handled in aklambda.py
 
-            response = {"statusCode": 200, "body": json.dumps(result)}
-
-            if headers:
-                response["headers"] = headers
-
-            return response
-
-        except KeyError:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": f"{key_error_msg}"}),
-            }
-
+        # Log and hide unexpected failures behind a generic 500 response.
         except Exception as e:
             cls._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
-            return {"statusCode": 500, "body": json.dumps({"error": "An unexpected error occurred"})}
+            return (500, cls._build_failure_body(request_id)) # (statusCode, body) will be handled in aklambda.py
 
     @classmethod
-    def _parse_body(cls, event: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_failure_body(cls, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
+        error_body = {"error": message or  "An unexpected error occurred"}
+        if status is not None:
+            error_body["status"] = status
+        if request_id is not None:
+            error_body["request_id"] = request_id
+        return error_body
+
+    @classmethod
+    def _parse_body(cls, event: Dict[str, Any]) -> BaseRequest:
         """
         Parse request body from API Gateway event.
         :param event: API Gateway event
         :return: Parsed JSON payload
         """
         body = event.get("body")
-        return json.loads(body) if isinstance(body, str) else (body or {})
+        body_dict = json.loads(body) if isinstance(body, str) else (body or {})
+        if not body_dict.get("request_id"):
+            body_dict["request_id"] = str(uuid.uuid4())
+        return BaseRequest(**body_dict)
 
     @classmethod
-    def _send_to_queue(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _send_to_queue(cls, payload: BaseRequest) -> Dict[str, Any]:
         """
         Send request payload to SQS queue.
         :param payload: Request payload containing session_id
         :return: Queue submission status
         """
-
-        session_id = payload["session_id"]
-
+        session_id = payload.session_id
+        if not session_id:
+            raise ValueError("session_id is required")
         response = cls._get_sqs_client().send_message(
             QueueUrl=cls._get_input_queue_url(),
-            MessageBody=json.dumps(payload),
-            MessageGroupId=session_id,
-            MessageDeduplicationId=str(uuid.uuid4()),
+            **SQSQueueInputMessage(
+                MessageGroupId=session_id,
+                MessageDeduplicationId=str(uuid.uuid4()),
+                MessageBody=json.dumps(payload.model_dump()),
+            ).model_dump(exclude_none=True),
         )
-
-        return {"status": "queued", "message_id": response.get("MessageId")}
+        return response
 
     @classmethod
-    def _get_messages(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _get_message(cls, payload: BaseRequest) -> Dict[str, Any]:
         """
         Fetch messages from response database.
-        :param payload: Request payload containing session_id
-        :return: Session response messages
+        :param payload: Request payload containing request_id
+        :return: Message for request
         """
-        session_id = payload["session_id"]
-        messages = cls._get_response_store().get_messages(session_id)
-        return {"session_id": session_id, "messages": messages}
+        request_id = payload.request_id
+        if not request_id:
+            raise ValueError("request_id is required")
+        return cls._get_response_store().get_message_with_retry(request_id=request_id, get_and_delete=True)
+
+    @classmethod
+    def _handle_rest_sync(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        """
+        Send request to queue and immediately fetch response.
+        :param event: API Gateway event
+        :param context: Lambda context
+        :return: Queue status and response data
+        """
+        def sync_operation(payload: BaseRequest) -> Dict[str, Any]:
+            request_id = payload.request_id
+            cls._log.info(f"Performing REST_SYNC operation for payload: '{payload}'")
+            queue_result = cls._send_to_queue(payload)
+            cls._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
+
+            message = cls._get_message(payload)
+            cls._log.info(f"Fetched message from database: {message}")
+            message = message if message else cls._build_failure_body(request_id=request_id, status="NOT_FOUND", message=f"No response message found for request_id: '{request_id}'. Try increasing the retry_count or delay in the response store configuration.")
+            cls._log.info(f"Returning response for REST_SYNC operation: '{message}'")
+
+            return message
+
+        return cls._handle_request(event, sync_operation)
 
     @classmethod
     def _handle_async_submit(
@@ -202,24 +228,17 @@ class DefaultEndpointsHandler:
         :param context: Lambda context
         :return: Queue submission response
         """
-        return cls._handle_request(event, cls._send_to_queue)
-
-    @classmethod
-    def _handle_rest_sync(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """
-        Send request to queue and immediately fetch response.
-        :param event: API Gateway event
-        :param context: Lambda context
-        :return: Queue status and response data
-        """
-        def sync_operation(payload: Dict[str, Any]) -> Dict[str, Any]:
-            cls._log.info(f"Performing REST_SYNC operation for payload: '{payload}'")
+        def submit_operation(payload: BaseRequest) -> Dict[str, Any]:
+            cls._log.info(f"Performing REST_ASYNC submit operation for payload: '{payload}'")
             queue_result = cls._send_to_queue(payload)
-            cls._log.info(f"Message sent to queue: {queue_result}")
-            db_result = cls._get_messages(payload)
-            cls._log.info(f"Fetched messages from database: {db_result}")
-            return db_result
-        return cls._handle_request(event, sync_operation)
+            
+            cls._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
+            response_body = {"status": "ACCEPTED", "request_id": payload.request_id, "session_id": payload.session_id}
+
+            cls._log.info(f"Returning response for REST_ASYNC submit operation: '{response_body}'")
+            return response_body
+
+        return cls._handle_request(event, submit_operation)
 
     @classmethod
     def _handle_async_poll(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -227,13 +246,20 @@ class DefaultEndpointsHandler:
         Poll database for messages (async mode).
         :param event: API Gateway event
         :param context: Lambda context
-        :return: Messages for session
+        :return: Message for request
         """
-        return cls._handle_request(
-            event,
-            cls._get_messages,
-            key_error_msg="session_id is required",
-        )
+        def poll_operation(payload: BaseRequest) -> Dict[str, Any]:
+            cls._log.info(f"Performing REST_ASYNC poll operation for payload: '{payload}'")
+
+            request_id = payload.request_id
+            message = cls._get_message(payload)
+            cls._log.info(f"Fetched message from database: {message}")
+            response_body = message if message else cls._build_failure_body(request_id=request_id, status="NOT_FOUND", message=f"No response message found for request_id: '{request_id}'. Try increasing the retry_count or delay in the response store configuration.")
+
+            cls._log.info(f"Returning response for REST_ASYNC poll operation: '{response_body}'")
+            return response_body
+
+        return cls._handle_request(event, poll_operation)
 
     @classmethod
     def _handle_stream(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
