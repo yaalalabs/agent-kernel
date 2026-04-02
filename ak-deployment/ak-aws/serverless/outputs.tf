@@ -22,27 +22,27 @@ output "agent_invoke_url" {
 
 output "api_gateway_id" {
   description = "API Gateway REST API ID"
-  value       = local.is_async_mode ? null : module.api_gateway[0].api_gateway_rest_api_id
+  value       = module.api_gateway[0].api_gateway_rest_api_id
 }
 
 output "api_gateway_stage_name" {
   description = "API Gateway stage name"
-  value       = local.is_async_mode ? null : module.api_gateway[0].api_gateway_stage_name
+  value       = module.api_gateway[0].api_gateway_stage_name
 }
 
 output "api_gateway_execution_arn" {
   description = "Execution ARN of the API Gateway REST API"
-  value       = local.is_async_mode ? null : module.api_gateway[0].api_gateway_execution_arn
+  value       = module.api_gateway[0].api_gateway_execution_arn
 }
 
 output "api_gateway_cloudwatch_log_group_arn" {
   description = "ARN of the CloudWatch log group for API Gateway"
-  value       = local.is_async_mode ? null : module.api_gateway[0].api_gateway_cloudwatch_log_group_arn
+  value       = module.api_gateway[0].api_gateway_cloudwatch_log_group_arn
 }
 
 output "api_gateway_cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for API Gateway"
-  value       = local.is_async_mode ? null : module.api_gateway[0].api_gateway_cloudwatch_log_group_name
+  value       = module.api_gateway[0].api_gateway_cloudwatch_log_group_name
 }
 
 # Response Handler outputs (conditional based on scalable_mode)
@@ -108,29 +108,3 @@ output "output_queue_name" {
   value       = var.scalable_mode ? module.queues[0].output_queue_name : null
 }
 
-
-# WebSocket API Gateway outputs (conditional based on async execution mode)
-output "websocket_api_id" {
-  description = "ID of the WebSocket API"
-  value       = local.is_async_mode ? module.websocket_api_gateway[0].websocket_api_id : null
-}
-
-output "websocket_api_endpoint" {
-  description = "WebSocket API endpoint URL"
-  value       = local.is_async_mode ? module.websocket_api_gateway[0].websocket_api_endpoint : null
-}
-
-output "websocket_stage_invoke_url" {
-  description = "Invoke URL of the WebSocket API stage"
-  value       = local.is_async_mode ? module.websocket_api_gateway[0].websocket_stage_invoke_url : null
-}
-
-output "websocket_connections_table_name" {
-  description = "Name of the WebSocket connections DynamoDB table"
-  value       = local.is_async_mode ? module.websocket_connections_table[0].table_name : null
-}
-
-output "websocket_connections_table_arn" {
-  description = "ARN of the WebSocket connections DynamoDB table"
-  value       = local.is_async_mode ? module.websocket_connections_table[0].table_arn : null
-}

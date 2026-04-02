@@ -101,27 +101,3 @@ variable "cloudwatch_kms_key_arn" {
   description = "KMS key ARN for CloudWatch logs encryption"
   default     = null
 }
-
-variable "websocket_connections_table_name" {
-  type        = string
-  description = "Name of the WebSocket connections DynamoDB table"
-  default     = null
-}
-
-variable "websocket_connections_table_arn" {
-  type        = string
-  description = "ARN of the WebSocket connections DynamoDB table"
-  default     = null
-}
-
-variable "enable_websocket_permissions" {
-  type        = bool
-  description = "Whether to create WebSocket-related IAM permissions"
-  default     = false
-}
-
-variable "websocket_api_domain_name" {
-  type        = string
-  description = "Domain name of the WebSocket API"
-  default     = null
-}

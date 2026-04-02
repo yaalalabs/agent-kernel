@@ -291,74 +291,6 @@ module "serverless_api_auth" {
 }
 ```
 
-### With WebSocket API (Async Mode)
-
-```hcl
-module "websocket_api" {
-  source = "yaalalabs/ak-serverless/aws"
-
-  region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  product_display_name = "WebSocket Chat API"
-  
-  module_name          = "chat"
-  function_name        = "handler"
-  function_description = "WebSocket chat handler"
-  handler_path         = "app.lambda_handler"
-  module_type          = "python"
-  
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
-  
-  # Enable scalable mode with async execution
-  scalable_mode   = true
-  execution_mode  = "async"
-  
-  # WebSocket configuration
-  websocket_config = {
-    api_name_suffix               = "chat-websocket"
-    route_selection_expression    = "$request.body.action"
-    stage_name                   = "prod"
-    auto_deploy                  = true
-    
-    # Logging and monitoring
-    logging_level                = "INFO"
-    data_trace_enabled           = true
-    detailed_metrics_enabled     = true
-    log_retention_days           = 30
-    
-    # Throttling
-    throttling_burst_limit       = 10000
-    throttling_rate_limit        = 5000
-    
-    # DynamoDB table settings
-    table_name                   = "chat-connections"
-    billing_mode                 = "PAY_PER_REQUEST"
-    hash_key                     = "session_id"
-    range_key                    = "connection_id"
-    
-    # GSI settings
-    gsi_name                     = "connection_id-index"
-    gsi_hash_key                 = "connection_id"
-    gsi_projection_type          = "ALL"
-    
-    # TTL settings
-    ttl_attribute_name           = "ttl"
-    ttl_enabled                  = true
-  }
-  
-  timeout     = 30
-  memory_size = 512
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    LOG_LEVEL   = "info"
-  }
-}
-```
-
-
 ## 📥 Inputs
 
 | Name | Description | Type | Default | Required |
@@ -385,7 +317,6 @@ module "websocket_api" {
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
-| `websocket_config` | WebSocket API configuration object (see table below) | `object` | `{}` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
 
@@ -402,30 +333,6 @@ module "websocket_api" {
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
 
-### WebSocket Configuration Object Structure
-
-| Field | Description | Type | Default | Required |
-|-------|-------------|------|---------|----------|
-| `api_name_suffix` | Suffix for the WebSocket API name | `string` | `"websocket-api"` | no |
-| `route_selection_expression` | Route selection expression for WebSocket API | `string` | `"$request.body.action"` | no |
-| `stage_name` | WebSocket API stage name | `string` | `"prod"` | no |
-| `auto_deploy` | Enable auto deploy for WebSocket API stage | `bool` | `true` | no |
-| `logging_level` | Logging level for WebSocket API (`INFO`, `ERROR`, `OFF`) | `string` | `"INFO"` | no |
-| `data_trace_enabled` | Enable data trace for WebSocket API | `bool` | `true` | no |
-| `detailed_metrics_enabled` | Enable detailed metrics for WebSocket API | `bool` | `true` | no |
-| `log_retention_days` | CloudWatch log retention in days | `number` | `14` | no |
-| `throttling_burst_limit` | Throttling burst limit for WebSocket API | `number` | `5000` | no |
-| `throttling_rate_limit` | Throttling rate limit for WebSocket API | `number` | `2000` | no |
-| `table_name` | DynamoDB table name for WebSocket connections | `string` | `"websocket-connections"` | no |
-| `billing_mode` | DynamoDB billing mode (`PAY_PER_REQUEST`, `PROVISIONED`) | `string` | `"PAY_PER_REQUEST"` | no |
-| `hash_key` | Hash key for the DynamoDB table | `string` | `"session_id"` | no |
-| `range_key` | Range key for the DynamoDB table | `string` | `"connection_id"` | no |
-| `gsi_name` | Name of the Global Secondary Index | `string` | `"connection_id-index"` | no |
-| `gsi_hash_key` | Hash key for the Global Secondary Index | `string` | `"connection_id"` | no |
-| `gsi_projection_type` | Projection type for GSI (`ALL`, `KEYS_ONLY`, `INCLUDE`) | `string` | `"ALL"` | no |
-| `ttl_attribute_name` | TTL attribute name for automatic cleanup | `string` | `"ttl"` | no |
-| `ttl_enabled` | Enable TTL for automatic cleanup of stale connections | `bool` | `true` | no |
-
 ## 📤 Outputs
 
 | Name | Description | Example |
@@ -433,7 +340,7 @@ module "websocket_api" {
 | `lambda_function_arn` | ARN of the Lambda function | `arn:aws:lambda:us-west-2:123456789012:function:myapp-prod-api-handler` |
 | `lambda_function_name` | Name of the Lambda function | `myapp-prod-api-handler` |
 | `lambda_function_invoke_arn` | Invoke ARN for API Gateway integration | `arn:aws:apigateway:us-west-2:lambda:path/2015-03-31/functions/...` |
-| `agent_invoke_url` | Agent chat invoke URL. Uses the REST API endpoint in sync modes and the WebSocket chat URL in async mode | `https://abc123.execute-api.us-west-2.amazonaws.com/agents/api/v1/chat` |
+| `agent_invoke_url` | Agent chat invoke URL | `https://abc123.execute-api.us-west-2.amazonaws.com/agents/api/v1/chat` |
 | `api_gateway_id` | API Gateway REST API ID | `abc123defg` |
 | `api_gateway_stage_name` | API Gateway stage name | `agents` |
 | `dynamodb_memory_table_arn` | DynamoDB table ARN (if enabled) | `arn:aws:dynamodb:us-west-2:123456789012:table/myapp-prod-api-session_store` |

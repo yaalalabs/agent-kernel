@@ -35,15 +35,15 @@ variable "package_path" {
   description = "Zip package path or Docker image source path"
 }
 
-variable "cloudwatch_logs_retention_in_days" {
-  type        = number
-  description = "CloudWatch log retention period in days"
-  default     = 90
-}
-
 variable "source_bucket" {
   type        = string
   description = "S3 bucket used to store the request handler source package"
+}
+
+variable "cloudwatch_logs_retention_in_days" {
+  type        = number
+  description = "CloudWatch log retention period in days for the request handler Lambda"
+  default     = 90
 }
 
 variable "scalable_mode" {
@@ -231,22 +231,4 @@ variable "product_display_name" {
   type        = string
   description = "Product display name"
   default     = null
-}
-
-variable "websocket_connections_table_name" {
-  type        = string
-  description = "Name of the WebSocket connections DynamoDB table"
-  default     = null
-}
-
-variable "websocket_connections_table_arn" {
-  type        = string
-  description = "ARN of the WebSocket connections DynamoDB table"
-  default     = null
-}
-
-variable "enable_websocket_permissions" {
-  type        = bool
-  description = "Whether to create WebSocket-related IAM permissions"
-  default     = false
 }

@@ -26,10 +26,8 @@ locals {
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
 
-  is_async_mode = var.execution_mode == "async"
-
   # DynamoDB response store configuration
-  create_dynamodb_response_store_enabled = !local.is_async_mode && var.create_dynamodb_response_store
+  create_dynamodb_response_store_enabled = var.create_dynamodb_response_store
   response_store_dynamodb_table_name     = local.create_dynamodb_response_store_enabled ? module.dynamodb_response_store[0].table_name : null
   response_store_dynamodb_table_arn      = local.create_dynamodb_response_store_enabled ? module.dynamodb_response_store[0].table_arn : null
   response_handler_response_store_dynamodb = local.create_dynamodb_response_store_enabled ? {
@@ -38,7 +36,7 @@ locals {
   } : null
 
   # Redis response store configuration
-  create_redis_response_store_enabled = !local.is_async_mode && var.create_redis_response_store
+  create_redis_response_store_enabled = var.create_redis_response_store
   response_store_redis_url            = local.create_redis_response_store_enabled ? local.redis_url : null
   response_handler_response_store_redis = local.create_redis_response_store_enabled ? {
     url = local.response_store_redis_url
@@ -79,12 +77,7 @@ locals {
     var.gateway_endpoints
   )
 
-  # WebSocket configuration (conditional on async execution mode)
-  websocket_connections_table_name = local.is_async_mode ? module.websocket_connections_table[0].table_name : null
-  websocket_connections_table_arn  = local.is_async_mode ? module.websocket_connections_table[0].table_arn : null
-  websocket_api_endpoint           = local.is_async_mode ? module.websocket_api_gateway[0].websocket_stage_invoke_url : null
-  websocket_api_domain_name        = local.is_async_mode ? replace(module.websocket_api_gateway[0].websocket_api_endpoint, "wss://", "") : null
-  agent_invoke_url                 = local.is_async_mode ? "${module.websocket_api_gateway[0].websocket_stage_invoke_url}/chat" : module.api_gateway[0].agent_invoke_url
+  agent_invoke_url = module.api_gateway[0].agent_invoke_url
 }
 
 module "request_handler_source_storage" {
@@ -148,9 +141,8 @@ module "authorizer" {
   lambda_signing_config_arn  = local.lambda_signing_config_arn
 }
 
-# API Gateway Module (conditional - only create when NOT in async mode)
 module "api_gateway" {
-  count  = local.is_async_mode ? 0 : 1
+  count  = 1
   source = "./modules/api-gateway"
 
   region               = var.region
@@ -383,9 +375,6 @@ module "request_handler" {
   docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
   lambda_kms_key_arn                      = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
-  websocket_connections_table_name        = local.websocket_connections_table_name
-  websocket_connections_table_arn         = local.websocket_connections_table_arn
-  enable_websocket_permissions            = local.is_async_mode
   environment_variables = merge(try(var.agent_runner.environment_variables, null), {
     AK_EXECUTION__MODE = var.execution_mode
   })
@@ -447,10 +436,6 @@ module "response_handler" {
   security_group_id                 = module.request_handler.lambda_security_group_id
   lambda_kms_key_arn                = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn            = local.cloudwatch_kms_key_arn
-  websocket_connections_table_name  = local.websocket_connections_table_name
-  websocket_connections_table_arn   = local.websocket_connections_table_arn
-  enable_websocket_permissions      = local.is_async_mode
-  websocket_api_domain_name         = local.websocket_api_domain_name
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -473,65 +458,3 @@ module "response_handler" {
   depends_on = [null_resource.build_response_handler, module.queues, module.dynamodb_response_store]
 }
 
-# WebSocket Connections Table Module (conditional on async execution mode)
-module "websocket_connections_table" {
-  count  = local.is_async_mode ? 1 : 0
-  source = "../common/modules/dynamodb"
-
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = "websocket"
-  table_name    = "connections"
-  tags          = var.tags
-
-  attributes = [
-    { name = var.websocket_config.hash_key, type = "S" },
-    { name = var.websocket_config.range_key, type = "S" },
-  ]
-  hash_key  = var.websocket_config.hash_key
-  range_key = var.websocket_config.range_key
-
-  billing_mode = var.websocket_config.billing_mode
-
-  global_secondary_indexes = [
-    {
-      name            = var.websocket_config.gsi_name
-      hash_key        = var.websocket_config.gsi_hash_key
-      projection_type = var.websocket_config.gsi_projection_type
-    }
-  ]
-
-  ttl_attribute_name = var.websocket_config.ttl_attribute_name
-  ttl_enabled        = var.websocket_config.ttl_enabled
-}
-
-# WebSocket API Gateway Module (conditional on async execution mode)
-module "websocket_api_gateway" {
-  count  = local.is_async_mode ? 1 : 0
-  source = "./modules/websocket-api-gateway"
-
-  region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  product_display_name = var.product_display_name
-  tags                 = var.tags
-
-  lambda_function_invoke_arn = module.request_handler.lambda_function_invoke_arn
-  lambda_function_name       = module.request_handler.lambda_function_name
-
-  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
-
-  # WebSocket API configuration
-  api_name_suffix            = var.websocket_config.api_name_suffix
-  route_selection_expression = var.websocket_config.route_selection_expression
-  stage_name                 = var.websocket_config.stage_name
-  auto_deploy                = var.websocket_config.auto_deploy
-  logging_level              = var.websocket_config.logging_level
-  data_trace_enabled         = var.websocket_config.data_trace_enabled
-  detailed_metrics_enabled   = var.websocket_config.detailed_metrics_enabled
-  log_retention_days         = var.websocket_config.log_retention_days
-  throttling_burst_limit     = var.websocket_config.throttling_burst_limit
-  throttling_rate_limit      = var.websocket_config.throttling_rate_limit
-
-  depends_on = [module.request_handler]
-}
