@@ -164,7 +164,6 @@ class WebSocketManager:
             if not self._connection_table:
                 raise ValueError("websocket_connection_table not configured")
             
-            # Try GSI first (if available)
             try:
                 response = self._connection_table.query(
                     IndexName="connection_id-index",
@@ -379,7 +378,7 @@ class WebSocketManager:
         return domain_name, stage
     
     def create_websocket_message(self, message_type: str, session_id: str, 
-                                message_id: Optional[str] = None, 
+                                request_id: Optional[str] = None, 
                                 body: Optional[Any] = None, 
                                 timestamp: Optional[str] = None,
                                 **kwargs) -> Dict[str, Any]:
@@ -388,7 +387,7 @@ class WebSocketManager:
         
         :param message_type: Type of message (e.g., 'response', 'error', 'queued')
         :param session_id: Session ID
-        :param message_id: Optional message ID
+        :param request_id: Optional request ID
         :param body: Optional message body
         :param timestamp: Optional timestamp
         :param kwargs: Additional fields to include in message
@@ -399,8 +398,8 @@ class WebSocketManager:
             "session_id": session_id
         }
         
-        if message_id is not None:
-            message["message_id"] = message_id
+        if request_id is not None:
+            message["request_id"] = request_id
         if body is not None:
             message["body"] = body
         if timestamp is not None:
