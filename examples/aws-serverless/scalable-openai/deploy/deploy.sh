@@ -52,10 +52,27 @@ create_agent_runner_deployment_package() {
     cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
 }
 
+
+echo "Creating response handler deployment package..."
+create_response_handler_deployment_package() {
+    pushd ../
+    rm -rf dist_response_handler dist_response_handler.zip
+    mkdir -p dist_response_handler
+    uv export --no-hashes > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_response_handler
+    else
+      uv pip install --force-reinstall --target=dist_response_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
+    fi
+    cp -r lambda_response_handler.py config.yaml dist_response_handler/
+    cd dist_response_handler && zip -r ../dist_response_handler.zip .
+    popd || exit 1
+}
+
 create_auth_deployment_package $1
 create_request_handler_deployment_package $1
 create_agent_runner_deployment_package $1
-
+create_response_handler_deployment_package $1
 
 terraform init
 terraform apply
