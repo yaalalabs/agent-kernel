@@ -22,7 +22,7 @@ locals {
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   create_authorizer                     = var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
   request_handler_package_path          = var.package_path
-  response_handler_package_path         = abspath(var.package_path)
+  response_handler_package_path         = try(var.response_handler.package_path, null)
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
 
@@ -319,19 +319,6 @@ module "dynamodb_response_store" {
   ttl_attribute_name = "expiry_time"
 }
 
-# Build response handler package
-resource "null_resource" "build_response_handler" {
-  count = var.scalable_mode ? 1 : 0
-  triggers = { # will trigger the script (script running is done in local-exec) if package_path OR the build_response_handler.sh script changes
-    package_path = local.response_handler_package_path
-    script_hash  = filemd5("${path.module}/modules/response-handler/build_response_handler.sh")
-  }
-  provisioner "local-exec" {
-    command     = "chmod +x build_response_handler.sh && ./build_response_handler.sh --package-path \"${local.response_handler_package_path}\""
-    working_dir = "${path.module}/modules/response-handler"
-  }
-}
-
 # Request Handler Lambda Module
 module "request_handler" {
   source                                  = "./modules/request-handler"
@@ -455,6 +442,6 @@ module "response_handler" {
   response_store_redis    = local.response_handler_response_store_redis
   response_store_dynamodb = local.response_handler_response_store_dynamodb
 
-  depends_on = [null_resource.build_response_handler, module.queues, module.dynamodb_response_store]
+  depends_on = [module.queues, module.dynamodb_response_store]
 }
 

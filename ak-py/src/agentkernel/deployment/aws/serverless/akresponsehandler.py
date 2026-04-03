@@ -1,21 +1,27 @@
 import logging
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-from agentkernel.deployment.aws.serverless.core.sqs_consumer import LambdaSQSConsumer
-from agentkernel.deployment.aws.response_store.handler import ResponseDBHandler
+from .core.sqs_consumer import LambdaSQSConsumer
+from ..response_store import ResponseDBHandler
 
 
-class RESTResponseHandler(LambdaSQSConsumer):
+class ResponseHandler(LambdaSQSConsumer):
     """
     Lambda SQS consumer that processes response messages and stores them in the configured response store.
     """
     
     _log = logging.getLogger("ak.aws.responsehandler")
-    _response_store = ResponseDBHandler().get_store()
+    _response_store = None
+
+    @classmethod
+    def _get_response_store(cls):
+        if cls._response_store is None:
+            cls._response_store = ResponseDBHandler().get_store()
+        return cls._response_store
     
     @classmethod
-    def _construct_message_for_store(cls, record: Dict[str, Any], body: str = None) -> Dict[str, Any]:
+    def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[str] = None) -> Dict[str, Any]:
         """
         Construct the message object to be stored in the response store.
 
@@ -45,7 +51,7 @@ class RESTResponseHandler(LambdaSQSConsumer):
         cls._log.info(f"Processing message: {record}")
 
         message = cls._construct_message_for_store(record)
-        cls._response_store.add_message(message)
+        cls._get_response_store().add_message(message)
 
         cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
     
@@ -76,12 +82,9 @@ class RESTResponseHandler(LambdaSQSConsumer):
             })
 
             message = cls._construct_message_for_store(record, body=error_body)
-            cls._response_store.add_message(message)
+            cls._get_response_store().add_message(message)
 
             cls._log.info(f"Stored permanent failure message for session_id: {message['session_id']}, request_id: {message['request_id']}")
         except Exception as e:
             # Catch the error to prevent this message from being returned as batchItemFailures for another retry
             cls._log.error(f"Failed to store permanent failure message due to error: {str(e)}")
-
-
-handler = RESTResponseHandler.handle

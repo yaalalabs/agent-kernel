@@ -302,11 +302,16 @@ variable "response_handler" {
     timeout               = optional(number, 60)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
+    package_path          = optional(string, null)
     layers                = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables = optional(map(string), {})
   })
   default = {}
+  validation {
+    condition     = !var.scalable_mode || try(var.response_handler.package_path, null) != null
+    error_message = "response_handler.package_path must be set when scalable_mode is true."
+  }
 }
 
 variable "agent_runner" {

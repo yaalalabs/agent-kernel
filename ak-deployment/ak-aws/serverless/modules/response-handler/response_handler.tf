@@ -120,7 +120,7 @@ module "response_handler_lambda" {
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.response_handler_lambda_role.arn
-  local_existing_package = "${path.module}/response_handler_dist.zip"
+  local_existing_package = var.package_path
   create_package         = false
   package_type           = "Zip"
   create_layer           = false
