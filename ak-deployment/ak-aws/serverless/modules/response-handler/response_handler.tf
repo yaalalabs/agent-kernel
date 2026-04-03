@@ -141,6 +141,9 @@ module "response_handler_lambda" {
     local.dynamodb_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
     } : {}
+    , {
+      AK_EXECUTION__QUEUES__OUTPUT_QUEUE_MAX_RECEIVE_COUNT = tostring(var.queue_config.output_queue_max_receive_count)
+    }
   )
 
   timeout     = local.response_handler_timeout

@@ -401,6 +401,7 @@ module "agent_runner" {
     input_queue_arn                    = local.input_queue_arn
     output_queue_arn                   = local.output_queue_arn
     output_queue_url                   = local.output_queue_url
+    input_queue_max_receive_count      = var.queue_config.input_queue_max_receive_count
     batch_size                         = var.queue_config.batch_size
     maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
   }
@@ -436,6 +437,7 @@ module "response_handler" {
 
   queue_config = {
     output_queue_arn                   = local.output_queue_arn
+    output_queue_max_receive_count     = var.queue_config.output_queue_max_receive_count
     batch_size                         = var.queue_config.batch_size
     maximum_batching_window_in_seconds = var.queue_config.maximum_batching_window_in_seconds
   }

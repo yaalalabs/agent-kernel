@@ -116,11 +116,12 @@ variable "agent_runner" {
 variable "queue_config" {
   description = "Queue configuration object"
   type = object({
-    input_queue_arn                        = string
-    output_queue_arn                       = string
-    output_queue_url                       = string
-    batch_size                             = optional(number, 10)
-    maximum_batching_window_in_seconds     = optional(number, 5)
+    input_queue_arn                    = string
+    output_queue_arn                   = string
+    output_queue_url                   = string
+    input_queue_max_receive_count      = optional(number, 5)
+    batch_size                         = optional(number, 10)
+    maximum_batching_window_in_seconds = optional(number, 5)
   })
 }
 

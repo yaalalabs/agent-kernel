@@ -71,9 +71,10 @@ variable "response_store_dynamodb" {
 variable "queue_config" {
   description = "Queue configuration object"
   type = object({
-    output_queue_arn                       = string
-    batch_size                             = optional(number, 10)
-    maximum_batching_window_in_seconds     = optional(number, 5)
+    output_queue_arn                   = string
+    output_queue_max_receive_count     = optional(number, 5)
+    batch_size                         = optional(number, 10)
+    maximum_batching_window_in_seconds = optional(number, 5)
   })
 }
 
