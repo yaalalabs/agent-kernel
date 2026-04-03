@@ -20,7 +20,7 @@ module "serverless_agents" {
 
   # Execution mode - using rest_async for scalable processing
   scalable_mode = true
-  execution_mode = "rest_async"
+  execution_mode = "rest_sync"
 
   # Redis Cluster Config
   create_redis_cluster = true
