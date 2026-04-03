@@ -340,48 +340,48 @@ variable "queue_config" {
   description = "SQS queues configuration object. When omitted, the object defaults are used."
   type = object({
     # Queue names
-    input_queue_name                = optional(string, null)
-    output_queue_name               = optional(string, null)
-    
+    input_queue_name  = optional(string, "input-queue")
+    output_queue_name = optional(string, "output-queue")
+
     # Input queue configuration
-    input_queue_visibility_timeout  = optional(number, null)
-    input_queue_max_receive_count   = optional(number, null)
-    input_queue_message_retention_seconds = optional(number, null)
-    input_queue_max_message_size    = optional(number, null)
-    input_queue_receive_wait_time_seconds = optional(number, null)
-    input_queue_delay_seconds       = optional(number, null)
-    input_queue_create_dlq          = optional(bool, null)
-    input_queue_dlq_message_retention_seconds = optional(number, null)
-    
+    input_queue_visibility_timeout            = optional(number, 60)
+    input_queue_max_receive_count             = optional(number, 5)
+    input_queue_message_retention_seconds     = optional(number, 1800)
+    input_queue_max_message_size              = optional(number, 262144)
+    input_queue_receive_wait_time_seconds     = optional(number, 0)
+    input_queue_delay_seconds                 = optional(number, 0)
+    input_queue_create_dlq                    = optional(bool, false)
+    input_queue_dlq_message_retention_seconds = optional(number, 1800)
+
     # Output queue configuration
-    output_queue_visibility_timeout = optional(number, null)
-    output_queue_max_receive_count  = optional(number, null)
-    output_queue_message_retention_seconds = optional(number, null)
-    output_queue_max_message_size   = optional(number, null)
-    output_queue_receive_wait_time_seconds = optional(number, null)
-    output_queue_delay_seconds      = optional(number, null)
-    output_queue_create_dlq         = optional(bool, null)
-    output_queue_dlq_message_retention_seconds = optional(number, null)
-    
+    output_queue_visibility_timeout            = optional(number, 60)
+    output_queue_max_receive_count             = optional(number, 5)
+    output_queue_message_retention_seconds     = optional(number, 1800)
+    output_queue_max_message_size              = optional(number, 262144)
+    output_queue_receive_wait_time_seconds     = optional(number, 0)
+    output_queue_delay_seconds                 = optional(number, 0)
+    output_queue_create_dlq                    = optional(bool, false)
+    output_queue_dlq_message_retention_seconds = optional(number, 1800)
+
     # Common queue configuration
-    fifo_queue                      = optional(bool, null)
-    sqs_managed_sse_enabled         = optional(bool, null)
-    kms_master_key_id               = optional(string, null)
+    fifo_queue                        = optional(bool, true)
+    sqs_managed_sse_enabled           = optional(bool, true)
+    kms_master_key_id                 = optional(string, null)
     kms_data_key_reuse_period_seconds = optional(number, null)
-    
+
     # FIFO-specific configuration (only used when fifo_queue = true)
-    content_based_deduplication     = optional(bool, null)
-    fifo_throughput_limit           = optional(string, null)
-    deduplication_scope             = optional(string, null)
-    
+    content_based_deduplication = optional(bool, false)
+    fifo_throughput_limit       = optional(string, "perMessageGroupId")
+    deduplication_scope         = optional(string, "messageGroup")
+
     # Access control
-    enable_producer_access          = optional(bool, null)
-    producer_arns                   = optional(list(string), null)
-    enable_consumer_access          = optional(bool, null)
-    consumer_role_arns              = optional(list(string), null)
-    
+    enable_producer_access = optional(bool, true)
+    producer_arns          = optional(list(string), [])
+    enable_consumer_access = optional(bool, true)
+    consumer_role_arns     = optional(list(string), [])
+
     # Lambda event source mapping configuration
-    batch_size                      = optional(number, 10)
+    batch_size                         = optional(number, 10)
     maximum_batching_window_in_seconds = optional(number, 0) # The maximum time (in seconds) Lambda will wait to gather messages into a batch before triggering the Lambda function
   })
   default = {}
@@ -390,5 +390,3 @@ variable "queue_config" {
     error_message = "queue_config must NOT be null when scalable_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
   }
 }
-
-
