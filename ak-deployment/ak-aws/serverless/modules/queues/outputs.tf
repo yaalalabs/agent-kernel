@@ -24,11 +24,6 @@ output "input_dlq_url" {
   value       = module.input_queue.dlq_url
 }
 
-output "input_queue_visibility_timeout" {
-  description = "Visibility timeout of the input queue"
-  value       = var.queue_config.input_queue_visibility_timeout
-}
-
 # Output Queue Outputs
 output "output_queue_arn" {
   description = "ARN of the output queue"
@@ -53,9 +48,4 @@ output "output_dlq_arn" {
 output "output_dlq_url" {
   description = "URL of the output dead letter queue"
   value       = module.output_queue.dlq_url
-}
-
-output "output_queue_visibility_timeout" {
-  description = "Visibility timeout of the output queue"
-  value       = var.queue_config.output_queue_visibility_timeout
 }

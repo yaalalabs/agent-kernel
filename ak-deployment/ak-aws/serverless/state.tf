@@ -278,14 +278,14 @@ module "queues" {
 check "queue_visibility_timeouts" {
   assert {
     condition = var.scalable_mode ? (
-      try(module.queues[0].input_queue_visibility_timeout, 0) >= var.agent_runner.timeout &&
-      try(module.queues[0].output_queue_visibility_timeout, 0) >= var.response_handler.timeout
+      var.queue_config.input_queue_visibility_timeout >= var.agent_runner.timeout &&
+      var.queue_config.output_queue_visibility_timeout >= var.response_handler.timeout
     ) : true
     error_message = format(
       "[IMPORTANT] Invalid queue visibility timeout configuration: input queue visibility timeout (%d) must be >= agent runner timeout (%d), and output queue visibility timeout (%d) must be >= response handler timeout (%d).",
-      try(module.queues[0].input_queue_visibility_timeout, 0),
+      var.queue_config.input_queue_visibility_timeout,
       var.agent_runner.timeout,
-      try(module.queues[0].output_queue_visibility_timeout, 0),
+      var.queue_config.output_queue_visibility_timeout,
       var.response_handler.timeout,
     )
   }
