@@ -118,7 +118,7 @@ class LambdaRouter:
             converted_event_path = (
                 self._default_chat_path
                 if event_path == env_agent_endpoint
-                and method == self._default_chat_method
+                and method in [self._default_chat_method, self._default_user_polling_method]
                 else event_path.removeprefix(env_base_path)
             )
         else:
