@@ -2,6 +2,7 @@ import logging
 import json
 from typing import Dict, Any, Optional
 
+from ....core.config import AKConfig
 from .core.sqs_consumer import LambdaSQSConsumer
 from ..response_store import ResponseDBHandler
 
@@ -13,6 +14,7 @@ class ResponseHandler(LambdaSQSConsumer):
     
     _log = logging.getLogger("ak.aws.responsehandler")
     _response_store = None
+    max_receive_count: int = AKConfig.get().execution.queues.output_queue_consumer_max_receive_count
 
     @classmethod
     def _get_response_store(cls):

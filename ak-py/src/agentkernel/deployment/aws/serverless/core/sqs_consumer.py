@@ -1,5 +1,4 @@
 from typing import Dict, Any, List
-from .....core.config import AKConfig
 
 
 class LambdaSQSConsumer:
@@ -9,7 +8,7 @@ class LambdaSQSConsumer:
     Subclasses should override `process_message` to implement business logic.
     """
 
-    max_receive_count: int = AKConfig.get().execution.queues.consumer_max_receive_count # gives the max_receive_count - 1 value form config (min would be 1)
+    max_receive_count: int = 3 # Fallback value, actual configurable values are defined in the subclasses
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
