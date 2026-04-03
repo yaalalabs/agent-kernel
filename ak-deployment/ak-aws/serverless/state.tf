@@ -49,12 +49,12 @@ locals {
   # Input queue
   input_queue_url                = var.scalable_mode ? module.queues[0].input_queue_url : null
   input_queue_arn                = var.scalable_mode ? module.queues[0].input_queue_arn : null
-  input_queue_visibility_timeout = var.queue_config.input_queue_visibility_timeout
+  input_queue_visibility_timeout = var.scalable_mode ? var.queue_config.input_queue_visibility_timeout : null
 
   # Output queue
   output_queue_url                = var.scalable_mode ? module.queues[0].output_queue_url : null
   output_queue_arn                = var.scalable_mode ? module.queues[0].output_queue_arn : null
-  output_queue_visibility_timeout = var.queue_config.output_queue_visibility_timeout
+  output_queue_visibility_timeout = var.scalable_mode ? var.queue_config.output_queue_visibility_timeout : null
 
   # Endpoint configuration for API Gateway module
   chat_endpoint = concat(
@@ -262,22 +262,6 @@ module "dynamodb_multimodal_memory" {
   table_name         = "mm-attachments"
 }
 
-# SQS Queues Module (conditional on scalable_mode)
-check "queue_visibility_timeouts" {
-  assert {
-    condition = var.scalable_mode ? (
-      local.input_queue_visibility_timeout >= var.agent_runner.timeout &&
-      local.output_queue_visibility_timeout >= var.response_handler.timeout
-    ) : true
-    error_message = format(
-      "[IMPORTANT] Invalid queue visibility timeout configuration: input queue visibility timeout (%d) must be >= agent runner timeout (%d), and output queue visibility timeout (%d) must be >= response handler timeout (%d).",
-      local.input_queue_visibility_timeout,
-      var.agent_runner.timeout,
-      local.output_queue_visibility_timeout,
-      var.response_handler.timeout,
-    )
-  }
-}
 module "queues" {
   count  = var.scalable_mode ? 1 : 0
   source = "./modules/queues"
@@ -288,6 +272,23 @@ module "queues" {
   tags          = var.tags
 
   queue_config = var.queue_config
+}
+
+# SQS Queues Module (conditional on scalable_mode)
+check "queue_visibility_timeouts" {
+  assert {
+    condition = var.scalable_mode ? (
+      try(module.queues[0].input_queue_visibility_timeout, 0) >= var.agent_runner.timeout &&
+      try(module.queues[0].output_queue_visibility_timeout, 0) >= var.response_handler.timeout
+    ) : true
+    error_message = format(
+      "[IMPORTANT] Invalid queue visibility timeout configuration: input queue visibility timeout (%d) must be >= agent runner timeout (%d), and output queue visibility timeout (%d) must be >= response handler timeout (%d).",
+      try(module.queues[0].input_queue_visibility_timeout, 0),
+      var.agent_runner.timeout,
+      try(module.queues[0].output_queue_visibility_timeout, 0),
+      var.response_handler.timeout,
+    )
+  }
 }
 
 # DynamoDB response store module

@@ -49,7 +49,7 @@ variable "cloudwatch_logs_retention_in_days" {
 variable "scalable_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
-  default     = true
+  default     = false
 }
 
 variable "execution_mode" {
@@ -337,7 +337,7 @@ variable "agent_runner" {
 }
 
 variable "queue_config" {
-  description = "SQS queues configuration object"
+  description = "SQS queues configuration object. When omitted, the object defaults are used."
   type = object({
     # Queue names
     input_queue_name                = optional(string, null)
@@ -384,7 +384,11 @@ variable "queue_config" {
     batch_size                      = optional(number, 10)
     maximum_batching_window_in_seconds = optional(number, 5)
   })
-  default = null
+  default = {}
+  validation {
+    condition     = !var.scalable_mode || var.queue_config != null
+    error_message = "queue_config must NOT be null when scalable_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
+  }
 }
 
 
