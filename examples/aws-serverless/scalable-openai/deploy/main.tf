@@ -1,16 +1,17 @@
 # Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
-  source = "../../../../ak-deployment/ak-aws/serverless"
+  source = "yaalalabs/ak-serverless/aws"
+  version = "0.2.14"
 
   # Basic configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
-  function_name        = "openai-scalable-request-handler"
-  handler_path         = "lambda_request_handler.handler"
+  function_name        = "request-handler"
   module_name          = var.module_name
-  package_path         = "../dist_request_handler"
-  package_type         = "Image"
+  handler_path         = "lambda_request_handler.handler"
+  package_path         = "../dist_request_handler.zip"
+  package_type         = "LocalZip"
   memory_size          = 256
   timeout              = 30
   product_display_name = "AK OpenAI Scalable Serverless Example"
@@ -18,11 +19,15 @@ module "serverless_agents" {
   is_production        = var.is_production
 
   # Execution mode - using rest_async for scalable processing
+  scalable_mode = true
   execution_mode = "rest_async"
 
-  # Storage configuration
+  # Redis Cluster Config
   create_redis_cluster = true
-  create_redis_response_store = true
+
+  # Response Store Config 
+  # create_redis_response_store = true
+  create_dynamodb_response_store = true
 
   # API Gateway configuration
   api_version    = "v1"
@@ -48,9 +53,10 @@ module "serverless_agents" {
 
   # Agent runner configuration
   agent_runner = {
-    function_name         = "openai-scalable-agent-runner"
+    module_name           = "agent-runner"
+    function_name         = "ar-func"
     function_description  = "Agent runner for processing OpenAI requests"
-    timeout               = 300
+    timeout               = 45
     memory_size           = 512
     handler_path          = "lambda_agent_runner.handler"
     package_path          = "../dist_agent_runner"
@@ -62,39 +68,42 @@ module "serverless_agents" {
 
   # Response handler configuration
   response_handler = {
-    function_name         = "openai-scalable-response-handler"
+    function_name         = "response-handler"
     function_description  = "Response handler for processing completed requests"
-    timeout               = 60
+    timeout               = 45
     memory_size           = 256
-    handler_path          = "response_handler.handler"
+    handler_path          = "lambda_response_handler.handler"
+    package_path          = "../dist_response_handler.zip"
   }
 
   # Queue configuration for scalable processing
   queue_config = {
     # Input queue settings
-    input_queue_visibility_timeout = 330  # Should be >= agent_runner timeout + buffer
-    input_queue_max_receive_count   = 3
-    input_queue_create_dlq          = true
+    input_queue_visibility_timeout = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
+    # input_queue_max_receive_count   = 3 # only needed when input_queue_create_dlq is true
+    input_queue_create_dlq          = false
+    input_queue_message_retention_seconds = 300
     
     # Output queue settings  
-    output_queue_visibility_timeout = 90  # Should be >= response_handler timeout + buffer
-    output_queue_max_receive_count   = 3
-    output_queue_create_dlq          = true
+    output_queue_visibility_timeout = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
+    # output_queue_max_receive_count   = 3 # Only needed when output_queue_create_dlq is true
+    output_queue_create_dlq          = false 
+    output_queue_message_retention_seconds = 300
     
     # Processing settings
-    batch_size                         = 1
+    batch_size                         = 10
     maximum_batching_window_in_seconds = 0
   }
 
   # API Gateway Authorizer
   authorizer = {
-    description           = "API Gateway Lambda Authorizer"
-    function_name         = "openai-scalable-auth"
+    # description           = "API Gateway Lambda Authorizer"
+    function_name         = "auth-handler"
     handler_path          = "lambda_auth.handler"
     package_path          = "../dist_auth.zip"
     package_type          = "LocalZip"
     module_name           = "auth-scalable"
-    result_ttl_in_seconds = 0
+    # result_ttl_in_seconds = 0
     environment_variables = {
       "SOME_OTHER_KEY" = "Some Other Value"
     }
