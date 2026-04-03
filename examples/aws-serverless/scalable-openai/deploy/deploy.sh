@@ -1,22 +1,37 @@
 #!/bin/bash
 set -e # exit if any command in this script fails
 
-# Create request handler lambda deployment package
+# Create auth deployment package
+echo "Creating auth deployment package..."
+create_auth_deployment_package() {
+    pushd ../
+    rm -rf dist_auth dist_auth.zip
+    mkdir -p dist_auth
+    if [[ ${1-} != "local" ]]; then
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
+    else
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+    fi
+    uv pip install --group auth --target=dist_auth
+    cp -r lambda_auth.py dist_auth/
+    cd dist_auth && zip -r ../dist_auth.zip .
+    popd || exit 1
+}
+
 echo "Creating request handler deployment package..."
 create_request_handler_deployment_package() {
     pushd ../
-    rm -rf dist_request_handler
-    mkdir -p dist_request_handler/data
+    rm -rf dist_request_handler dist_request_handler.zip
+    mkdir -p dist_request_handler
     uv export --no-hashes > requirements.txt
     if [[ ${1-} != "local" ]]; then
-      uv pip install -r requirements.txt --target=dist_request_handler/data
+      uv pip install -r requirements.txt --target=dist_request_handler
     else
-      uv pip install -r requirements.txt --target=dist_request_handler/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist_request_handler/data --find-links ../../../ak-py/dist agentkernel[openai,redis,auth] || true
+      uv pip install --force-reinstall --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[auth,aws,redis] || true
     fi
-    cp -r lambda_request_handler.py config.yaml dist_request_handler/data
+    cp -r lambda_request_handler.py config.yaml dist_request_handler/
+    cd dist_request_handler && zip -r ../dist_request_handler.zip .
     popd || exit 1
-    cp Dockerfile.request_handler ../dist_request_handler/Dockerfile
 }
 
 # Create agent runner lambda deployment package
@@ -37,27 +52,10 @@ create_agent_runner_deployment_package() {
     cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
 }
 
+create_auth_deployment_package $1
 create_request_handler_deployment_package $1
 create_agent_runner_deployment_package $1
 
-# Create auth deployment package
-echo "Creating auth deployment package..."
-create_auth_deployment_package() {
-    pushd ../
-    rm -rf dist_auth dist_auth.zip
-    mkdir -p dist_auth
-    if [[ ${1-} != "local" ]]; then
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
-    else
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
-    fi
-    uv pip install --group auth --target=dist_auth
-    cp -r lambda_auth.py dist_auth/
-    cd dist_auth && zip -r ../dist_auth.zip .
-    popd || exit 1
-}
-
-create_auth_deployment_package $1
 
 terraform init
 terraform apply
