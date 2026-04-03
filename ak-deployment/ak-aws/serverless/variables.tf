@@ -382,7 +382,7 @@ variable "queue_config" {
     
     # Lambda event source mapping configuration
     batch_size                      = optional(number, 10)
-    maximum_batching_window_in_seconds = optional(number, 0)
+    maximum_batching_window_in_seconds = optional(number, 0) # The maximum time (in seconds) Lambda will wait to gather messages into a batch before triggering the Lambda function
   })
   default = {}
   validation {
