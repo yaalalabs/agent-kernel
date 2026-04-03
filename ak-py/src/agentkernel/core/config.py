@@ -203,12 +203,18 @@ class _GuardrailConfig(BaseModel):
 class _ResponseStoreRedisConfig(_RedisConfig):
     prefix: str = Field(default="ak:responses:", description="Key prefix for Redis response storage")
 
+class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
+    table_name: Optional[str] = Field(
+        default=None,
+        description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'"
+    )
+
 
 class _ResponseStoreConfig(BaseModel):
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
-    dynamodb: Optional[_DynamoDBConfig] = None
+    dynamodb: Optional[_ResponseStoreDynamoDBConfig] = None
 
 
 class _QueuesConfig(BaseModel):
