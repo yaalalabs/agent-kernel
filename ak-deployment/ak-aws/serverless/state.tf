@@ -363,7 +363,7 @@ module "request_handler" {
   docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
   lambda_kms_key_arn                      = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
-  environment_variables = merge(try(var.agent_runner.environment_variables, null), {
+  environment_variables = merge(try(var.environment_variables, null), {
     AK_EXECUTION__MODE = var.execution_mode
   })
 
