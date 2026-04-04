@@ -1,18 +1,16 @@
 import json
 import logging
 
-import boto3
-
 from ...common.chat_service import ChatService
 from ....core.config import AKConfig
-from ..core.model import SQSQueueInputMessage
+from ..core.sqs_handler import SQSHandler
 from .core.sqs_consumer import LambdaSQSConsumer
+
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
     
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = None
-    _sqs_client = None
     max_receive_count: int = AKConfig.get().execution.queues.input_queue_consumer_max_receive_count
 
     @classmethod
@@ -26,12 +24,6 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         return AKConfig.get().execution.queues.output_queue_url
 
     @classmethod
-    def _get_sqs_client(cls):
-        if cls._sqs_client is None:
-            cls._sqs_client = boto3.client("sqs")
-        return cls._sqs_client
-
-    @classmethod
     def _construct_queue_input_message(cls, raw_queue_message: dict, queue_input_message_body: dict) -> dict:
         """
         Construct the SQS message payload for the response queue.
@@ -40,12 +32,14 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :return: Dictionary (``dict``) of parameters for ``boto3`` ``send_message`` (excluding ``QueueUrl``).
         """
         attributes = raw_queue_message["attributes"]
-        queue_input_message_body["request_id"] = cls._parse_body(raw_queue_message)["request_id"]
-        queue_input_message = SQSQueueInputMessage(
-            MessageGroupId=attributes["MessageGroupId"],
-            MessageDeduplicationId=attributes["MessageDeduplicationId"],
-            MessageBody=json.dumps(queue_input_message_body),
-        ).model_dump(exclude_none=True)
+        request_body = cls._parse_body(raw_queue_message)
+        request_id = request_body["request_id"]
+        queue_input_message_body["request_id"] = request_id
+        queue_input_message = SQSHandler.build_send_message_kwargs(
+            message_body=queue_input_message_body,
+            message_group_id=attributes["MessageGroupId"],
+            message_deduplication_id=attributes.get("MessageDeduplicationId"),
+        )
         cls._log.info(f"Constructed queue input message: {queue_input_message}")
         return queue_input_message
 
@@ -65,10 +59,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param queue_input_message: Message payload (``dict``) as constructed by
         :return: None.
         """
-        cls._get_sqs_client().send_message(
-            QueueUrl=cls._get_output_queue_url(),
-            **queue_input_message,
-        )
+        SQSHandler.send_prepared_message(queue_url=cls._get_output_queue_url(), message_kwargs=queue_input_message)
 
     @classmethod
     def _parse_body(cls, record: dict) -> dict:

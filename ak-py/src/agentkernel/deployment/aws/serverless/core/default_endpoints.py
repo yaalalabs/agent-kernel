@@ -6,13 +6,11 @@ import traceback
 import uuid
 from typing import Any, Callable, Dict, Optional
 
-import boto3
-
 from ....common.chat_service import ChatService
 from ...core.response_store import ResponseDBHandler
+from ...core.sqs_handler import SQSHandler
 from .....core.model import ExecutionMode, BaseRequest
 from .....core.config import AKConfig
-from ...core.model import SQSQueueInputMessage
 
 
 class DefaultEndpointsHandler:
@@ -22,7 +20,6 @@ class DefaultEndpointsHandler:
 
     _default_chat_path = "default_chat_path"
     _default_chat_method = "POST"
-    _sqs = None
     _response_store = None
     _chat_service = None
 
@@ -41,12 +38,6 @@ class DefaultEndpointsHandler:
     @classmethod
     def _get_default_user_polling_method(cls):
         return "GET" if cls._get_execution_mode() == ExecutionMode.REST_ASYNC else None
-
-    @classmethod
-    def _get_sqs_client(cls):
-        if cls._sqs is None:
-            cls._sqs = boto3.client("sqs")
-        return cls._sqs
 
     @classmethod
     def _get_response_store(cls):
@@ -173,13 +164,11 @@ class DefaultEndpointsHandler:
         session_id = payload.session_id
         if not session_id:
             raise ValueError("session_id is required")
-        response = cls._get_sqs_client().send_message(
-            QueueUrl=cls._get_input_queue_url(),
-            **SQSQueueInputMessage(
-                MessageGroupId=session_id,
-                MessageDeduplicationId=str(uuid.uuid4()),
-                MessageBody=json.dumps(payload.model_dump()),
-            ).model_dump(exclude_none=True),
+        response = SQSHandler.send_message(
+            queue_url=cls._get_input_queue_url(),
+            message_body=payload,
+            message_group_id=session_id,
+            message_deduplication_id=str(uuid.uuid4()),
         )
         return response
 
