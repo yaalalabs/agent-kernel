@@ -251,12 +251,6 @@ class DefaultEndpointsHandler:
         return cls._handle_request(event, poll_operation)
 
     @classmethod
-    def _handle_stream(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        # TODO:: will be done later
-        """Handle streaming request."""
-        raise NotImplementedError("Streaming endpoint not implemented yet.")
-
-    @classmethod
     def _handle_agent_chat(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Process chat request directly without queue.
