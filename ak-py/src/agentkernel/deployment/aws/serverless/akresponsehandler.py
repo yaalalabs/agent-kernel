@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 
 from ....core.config import AKConfig
 from .core.sqs_consumer import LambdaSQSConsumer
-from ..response_store import ResponseDBHandler
+from ..core.response_store import ResponseDBHandler
 
 
 class ResponseHandler(LambdaSQSConsumer):

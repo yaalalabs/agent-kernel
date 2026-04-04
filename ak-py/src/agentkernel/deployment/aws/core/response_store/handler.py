@@ -1,5 +1,5 @@
-from ...common.response_store import ResponseStore
-from ....core.config import AKConfig
+from ....common.response_store import ResponseStore
+from .....core.config import AKConfig
 
 
 class ResponseDBHandler:

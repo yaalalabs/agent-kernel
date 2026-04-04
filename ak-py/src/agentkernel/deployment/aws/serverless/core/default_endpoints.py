@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional
 import boto3
 
 from ....common.chat_service import ChatService
-from ...response_store.handler import ResponseDBHandler
+from ...core.response_store import ResponseDBHandler
 from .....core.model import ExecutionMode, BaseRequest
 from .....core.config import AKConfig
 from ...core.model import SQSQueueInputMessage

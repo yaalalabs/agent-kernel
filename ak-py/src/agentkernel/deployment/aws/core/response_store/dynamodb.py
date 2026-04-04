@@ -2,7 +2,7 @@ import time
 
 import boto3
 
-from ...common.response_store import ResponseStore
+from ....common.response_store import ResponseStore
 
 
 class DynamoDBResponseStore(ResponseStore):

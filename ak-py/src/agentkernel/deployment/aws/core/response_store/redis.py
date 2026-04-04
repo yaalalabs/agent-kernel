@@ -1,7 +1,7 @@
 import json
 import redis
 
-from ...common.response_store import ResponseStore
+from ....common.response_store import ResponseStore
 
 
 class RedisResponseStore(ResponseStore):
