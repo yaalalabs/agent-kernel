@@ -158,8 +158,11 @@ class BaseRequest(BaseModel):
                 body = {
                     key: value
                     for key, value in payload.items()
-                    if key not in {"request_id", "user_id"}
+                    if key not in {"request_id", "user_id", "body"}
                 }
+
+            if not body:
+                return cls(request_id=request_id, user_id=user_id)
 
             if not isinstance(body, BaseRunRequest):
                 body = BaseRunRequest.model_validate(body)

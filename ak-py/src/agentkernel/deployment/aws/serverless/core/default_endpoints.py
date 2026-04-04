@@ -231,7 +231,7 @@ class DefaultEndpointsHandler:
             queue_result = cls._send_to_queue(payload)
             
             cls._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
-            response_body = {"status": "ACCEPTED", "request_id": payload.request_id, "session_id": payload.session_id}
+            response_body = {"status": "ACCEPTED", "request_id": payload.request_id}
 
             cls._log.info(f"Returning response for REST_ASYNC submit operation: '{response_body}'")
             return response_body
