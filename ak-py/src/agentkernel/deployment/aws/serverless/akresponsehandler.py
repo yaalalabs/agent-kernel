@@ -3,6 +3,7 @@ import json
 from typing import Dict, Any, Optional
 
 from ....core.config import AKConfig
+from ..core.sqs_handler import SQSHandler
 from .core.sqs_consumer import LambdaSQSConsumer
 from ..core.response_store import ResponseDBHandler
 
@@ -23,18 +24,23 @@ class ResponseHandler(LambdaSQSConsumer):
         return cls._response_store
     
     @classmethod
-    def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[str] = None) -> Dict[str, Any]:
+    def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[Any] = None) -> Dict[str, Any]:
         """
         Construct the message object to be stored in the response store.
 
         :param record: SQS record
-        :param body: Optional message body string. If not provided, uses record["body"]
+        :param body: Optional message body payload. If not provided, uses record["body"]
         :return: Message dictionary for storage
         """
-        session_id = record.get("attributes", {}).get("MessageGroupId")
+        session_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
         message_body = body if body is not None else record.get("body")
-        message_body = json.loads(message_body)
-        request_id = message_body.get("request_id")
+        if isinstance(message_body, str):
+            message_body = json.loads(message_body)
+
+        message_attributes = SQSHandler.get_message_custom_attributes(record)
+        request_id = message_attributes.get("request_id")
+        if not request_id:
+            raise ValueError("request_id is required in SQS message attributes")
         message = {
             "session_id": session_id,
             "request_id": request_id,
@@ -70,17 +76,9 @@ class ResponseHandler(LambdaSQSConsumer):
 
         try:
             # Store an error message in the response store
-            original_body = record.get("body")
-            if isinstance(original_body, str):
-                try:
-                    original_body = json.loads(original_body)
-                except json.JSONDecodeError:
-                    original_body = {}
-
-            request_id = original_body.get("request_id") if isinstance(original_body, dict) else None
             error_body = json.dumps({
                 "error": f"Failed to process message after {cls.max_receive_count} retries",
-                "request_id": request_id,
+                "request_id": SQSHandler.get_message_custom_attributes(record).get("request_id"),
             })
 
             message = cls._construct_message_for_store(record, body=error_body)

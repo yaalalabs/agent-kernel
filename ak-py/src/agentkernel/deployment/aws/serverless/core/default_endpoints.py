@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import traceback
-import uuid
 from typing import Any, Callable, Dict, Optional
 
 from ....common.chat_service import ChatService
@@ -107,6 +106,26 @@ class DefaultEndpointsHandler:
         raise ValueError(f"Unsupported EXECUTION_MODE: {exec_mode}")
 
     @classmethod
+    def _parse_body(cls, event: Dict[str, Any]) -> BaseRequest:
+        """
+        Parse request body from API Gateway event.
+        :param event: API Gateway event
+        :return: Parsed JSON payload
+        """
+        body = event.get("body")
+        body_dict = json.loads(body) if isinstance(body, str) else (body or {})
+        return BaseRequest.from_payload(body_dict)
+    
+    @classmethod
+    def _build_failure_body(cls, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
+        error_body = {"error": message or  "An unexpected error occurred"}
+        if status is not None:
+            error_body["status"] = status
+        if request_id is not None:
+            error_body["request_id"] = request_id
+        return error_body
+
+    @classmethod
     def _handle_request(
         cls,
         event: Dict[str, Any],
@@ -133,42 +152,32 @@ class DefaultEndpointsHandler:
             return (500, cls._build_failure_body(request_id)) # (statusCode, body) will be handled in aklambda.py
 
     @classmethod
-    def _build_failure_body(cls, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
-        error_body = {"error": message or  "An unexpected error occurred"}
-        if status is not None:
-            error_body["status"] = status
-        if request_id is not None:
-            error_body["request_id"] = request_id
-        return error_body
-
-    @classmethod
-    def _parse_body(cls, event: Dict[str, Any]) -> BaseRequest:
-        """
-        Parse request body from API Gateway event.
-        :param event: API Gateway event
-        :return: Parsed JSON payload
-        """
-        body = event.get("body")
-        body_dict = json.loads(body) if isinstance(body, str) else (body or {})
-        if not body_dict.get("request_id"):
-            body_dict["request_id"] = str(uuid.uuid4())
-        return BaseRequest(**body_dict)
-
-    @classmethod
     def _send_to_queue(cls, payload: BaseRequest) -> Dict[str, Any]:
         """
         Send request payload to SQS queue.
-        :param payload: Request payload containing session_id
+        :param payload: Request payload containing a request_id and nested run body
         :return: Queue submission status
         """
-        session_id = payload.session_id
+        request_body = payload.body
+        if request_body is None:
+            raise ValueError("body is required")
+        if not payload.request_id:
+            raise ValueError("request_id is required")
+
+        session_id = request_body.session_id
         if not session_id:
             raise ValueError("session_id is required")
+
+        message_attributes = [SQSHandler.CustomAttribute(name="request_id", value=payload.request_id, datatype=SQSHandler.AttributeDataType.STRING)]
+        if payload.user_id is not None:
+            message_attributes.append(SQSHandler.CustomAttribute(name="user_id", value=payload.user_id, datatype=SQSHandler.AttributeDataType.STRING))
+
         response = SQSHandler.send_message(
             queue_url=cls._get_input_queue_url(),
-            message_body=payload,
+            message_body=request_body,
             message_group_id=session_id,
-            message_deduplication_id=str(uuid.uuid4()),
+            message_deduplication_id=payload.request_id,
+            message_attributes=message_attributes,
         )
         return response
 
@@ -260,8 +269,10 @@ class DefaultEndpointsHandler:
         """
 
         try:
-            body = cls._parse_body(event).model_dump(exclude_none=True)
-            status_code, res_body = cls._get_chat_service().process_chat_request(body) 
+            request = cls._parse_body(event)
+            if request.body is None:
+                raise ValueError("body is required")
+            status_code, res_body = cls._get_chat_service().process_chat_request(request.body.model_dump(exclude_none=True))
 
             return {
                 "statusCode": status_code,

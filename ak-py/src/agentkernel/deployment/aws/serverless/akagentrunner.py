@@ -31,14 +31,20 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param queue_input_message_body: JSON-serializable body (``dict``) to be sent to the response queue.
         :return: Dictionary (``dict``) of parameters for ``boto3`` ``send_message`` (excluding ``QueueUrl``).
         """
-        attributes = raw_queue_message["attributes"]
-        request_body = cls._parse_body(raw_queue_message)
-        request_id = request_body["request_id"]
-        queue_input_message_body["request_id"] = request_id
+        attributes = SQSHandler.get_message_system_attributes(raw_queue_message)
+        message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
+        request_id = message_attributes.get("request_id")
+        user_id = message_attributes.get("user_id")
+        if not request_id:
+            raise ValueError("request_id is required")
+        message_attributes = [SQSHandler.CustomAttribute(name="request_id", value=request_id, datatype=SQSHandler.AttributeDataType.STRING)]
+        if user_id is not None:
+            message_attributes.append(SQSHandler.CustomAttribute(name="user_id", value=user_id, datatype=SQSHandler.AttributeDataType.STRING))
         queue_input_message = SQSHandler.build_send_message_kwargs(
             message_body=queue_input_message_body,
             message_group_id=attributes["MessageGroupId"],
             message_deduplication_id=attributes.get("MessageDeduplicationId"),
+            message_attributes=message_attributes,
         )
         cls._log.info(f"Constructed queue input message: {queue_input_message}")
         return queue_input_message
@@ -80,7 +86,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
         session_id = body.get("session_id")
-        message_group_id = record.get("attributes").get("MessageGroupId")
+        message_group_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
         if session_id != message_group_id:
             cls._log.info(f"Session ID mismatch: message body session_id {session_id} does not match MessageGroupId {message_group_id}")
             error_message_body = cls._construct_error_message_body(error_msg="Session ID mismatch")

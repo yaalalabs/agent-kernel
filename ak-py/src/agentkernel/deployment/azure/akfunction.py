@@ -33,6 +33,9 @@ class AzureFunctions:
                 cls._log.error(f"Failed to parse JSON: {e}")
                 raise ValueError("Invalid JSON in request body")
 
+            if isinstance(body, dict) and body.get("body") is not None:
+                body = body["body"]
+
             # Process chat request using common service
             status_code, res_body = cls._get_chat_service().process_chat_request(body) 
 
