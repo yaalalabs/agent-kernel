@@ -276,6 +276,6 @@ resource "aws_api_gateway_authorizer" "lambda_authorizer" {
   authorizer_uri = var.authorizer_lambda_function_invoke_arn
 
   type                           = "REQUEST"
-  identity_source                = "method.request.header.Authorization,context.resourcePath"
+  identity_source                = "method.request.header.Authorization,context.resourcePath,context.httpMethod"
   authorizer_result_ttl_in_seconds = var.authorizer.result_ttl_in_seconds
 }
