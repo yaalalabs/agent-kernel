@@ -105,6 +105,38 @@ class SQSHandler:
 			built_message_attributes[custom_attribute.name] = cls._build_message_attribute(custom_attribute)
 		return built_message_attributes
 
+	@staticmethod
+	def get_message_system_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
+		"""Return the SQS system attributes from a raw Lambda queue record.
+
+		:param raw_queue_message_record: Raw SQS record from Lambda containing the ``attributes`` block.
+		:return: A shallow copy of the record's system ``attributes`` mapping.
+		"""
+		return dict(raw_queue_message_record.get("attributes", {}) or {})
+
+	@staticmethod
+	def get_message_custom_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
+		"""Return the custom SQS message attributes from a raw Lambda queue record.
+
+		:param raw_queue_message_record: Raw SQS record from Lambda containing ``messageAttributes``.
+		:return: A dictionary mapping custom attribute names to their scalar values.
+		"""
+		message_attributes = raw_queue_message_record.get("messageAttributes", {}) or {}
+		flattened_attributes: Dict[str, Any] = {}
+		for attribute_name, attribute in message_attributes.items():
+			if isinstance(attribute, Mapping):
+				attribute_value = (
+					attribute.get("stringValue")
+					or attribute.get("StringValue")
+					or attribute.get("binaryValue")
+					or attribute.get("BinaryValue")
+				)
+			else:
+				attribute_value = attribute
+			if attribute_value is not None:
+				flattened_attributes[attribute_name] = attribute_value
+		return flattened_attributes
+
 	@classmethod
 	def build_send_message_kwargs(
 		cls,
