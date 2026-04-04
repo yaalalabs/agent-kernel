@@ -254,7 +254,7 @@ class DefaultEndpointsHandler:
             request_id = payload.request_id
             message = cls._get_message(payload)
             cls._log.info(f"Fetched message from database: {message}")
-            response_body = message if message else cls._build_failure_body(request_id=request_id, status="NOT_FOUND", message=f"No response message found for request_id: '{request_id}'. Try increasing the retry_count or delay in the response store configuration.")
+            response_body = message if message else cls._build_failure_body(request_id=request_id, status="NOT_FOUND", message=f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.")
 
             cls._log.info(f"Returning response for REST_ASYNC poll operation: '{response_body}'")
             return response_body
