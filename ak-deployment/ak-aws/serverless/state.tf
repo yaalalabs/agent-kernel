@@ -396,6 +396,12 @@ module "agent_runner" {
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
   cloudwatch_logs_retention_in_days = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
+  create_dynamodb_memory_table      = var.create_dynamodb_memory_table
+  create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
+  dynamodb_memory_table_arn         = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name        = local.dynamodb_memory_table_name
+  dynamodb_multimodal_memory_table_arn  = local.dynamodb_multimodal_memory_table_arn
+  dynamodb_multimodal_memory_table_name = local.dynamodb_multimodal_memory_table_name
 
   queue_config = {
     input_queue_arn                    = local.input_queue_arn
