@@ -347,23 +347,23 @@ variable "queue_config" {
 
     # Input queue configuration
     input_queue_visibility_timeout            = optional(number, 60)
-    input_queue_max_receive_count             = optional(number, 5)
-    input_queue_message_retention_seconds     = optional(number, 1800)
+    input_queue_max_receive_count             = optional(number, 3)
+    input_queue_message_retention_seconds     = optional(number, 300)
     input_queue_max_message_size              = optional(number, 262144)
     input_queue_receive_wait_time_seconds     = optional(number, 0)
     input_queue_delay_seconds                 = optional(number, 0)
     input_queue_create_dlq                    = optional(bool, false)
-    input_queue_dlq_message_retention_seconds = optional(number, 1800)
+    input_queue_dlq_message_retention_seconds = optional(number, 300)
 
     # Output queue configuration
     output_queue_visibility_timeout            = optional(number, 60)
-    output_queue_max_receive_count             = optional(number, 5)
-    output_queue_message_retention_seconds     = optional(number, 1800)
+    output_queue_max_receive_count             = optional(number, 3)
+    output_queue_message_retention_seconds     = optional(number, 300)
     output_queue_max_message_size              = optional(number, 262144)
     output_queue_receive_wait_time_seconds     = optional(number, 0)
     output_queue_delay_seconds                 = optional(number, 0)
     output_queue_create_dlq                    = optional(bool, false)
-    output_queue_dlq_message_retention_seconds = optional(number, 1800)
+    output_queue_dlq_message_retention_seconds = optional(number, 300)
 
     # Common queue configuration
     fifo_queue                        = optional(bool, true)
