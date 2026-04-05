@@ -10,6 +10,11 @@ output "lambda_function_invoke_arn" {
   value = module.request_handler.lambda_function_invoke_arn
 }
 
+output "lambda_role_arn" {
+  description = "ARN of the request-handler Lambda execution role"
+  value       = module.request_handler.lambda_role_arn
+}
+
 output "authorizer_status" {
   description = "Status message indicating whether the authorizer Lambda will be created"
   value       = local.authorizer_status_message
@@ -61,6 +66,11 @@ output "response_handler_lambda_function_invoke_arn" {
   value       = var.scalable_mode ? module.response_handler[0].response_handler_lambda_function_invoke_arn : null
 }
 
+output "response_handler_lambda_role_arn" {
+  description = "ARN of the response handler Lambda execution role"
+  value       = var.scalable_mode ? module.response_handler[0].response_handler_lambda_role_arn : null
+}
+
 # Agent Runner outputs (conditional based on scalable_mode)
 output "agent_runner_lambda_function_arn" {
   description = "ARN of the agent runner Lambda function"
@@ -75,6 +85,11 @@ output "agent_runner_lambda_function_name" {
 output "agent_runner_lambda_function_invoke_arn" {
   description = "Invoke ARN of the agent runner Lambda function"
   value       = var.scalable_mode ? module.agent_runner[0].agent_runner_lambda_function_invoke_arn : null
+}
+
+output "agent_runner_lambda_role_arn" {
+  description = "ARN of the agent runner Lambda execution role"
+  value       = var.scalable_mode ? module.agent_runner[0].agent_runner_lambda_role_arn : null
 }
 
 # SQS Queues outputs (conditional based on scalable_mode)
