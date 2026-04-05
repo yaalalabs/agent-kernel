@@ -185,12 +185,14 @@ variable "create_redis_response_store" {
   type        = bool
   description = "Create or reuse Redis for response storage"
   default     = false
+  nullable    = false
 }
 
 variable "create_dynamodb_response_store" {
   type        = bool
   description = "Create a DynamoDB table for response storage"
   default     = false
+  nullable    = false
   validation {
     condition     = !(var.create_redis_response_store && var.create_dynamodb_response_store)
     error_message = "create_redis_response_store and create_dynamodb_response_store cannot both be true."
