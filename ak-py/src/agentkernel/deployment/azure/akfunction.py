@@ -37,7 +37,7 @@ class AzureFunctions:
                 body = body["body"]
 
             # Process chat request using common service
-            status_code, res_body = cls._get_chat_service().process_chat_request(body) 
+            status_code, res_body = cls._get_chat_service().process_chat_request(body)
 
             return func.HttpResponse(
                 body=json.dumps(res_body),
@@ -48,10 +48,12 @@ class AzureFunctions:
         except ValueError as ve:
             cls._log.error(f"ValueError processing request: {ve}\n{traceback.format_exc()}")
             return func.HttpResponse(
-                body=json.dumps({
-                    "error": str(ve),
-                    "session_id": None,
-                }),
+                body=json.dumps(
+                    {
+                        "error": str(ve),
+                        "session_id": None,
+                    }
+                ),
                 status_code=400,
                 mimetype="application/json",
             )
@@ -59,10 +61,12 @@ class AzureFunctions:
         except Exception as e:
             cls._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
             return func.HttpResponse(
-                body=json.dumps({
-                    "error": str(e),
-                    "session_id": None,
-                }),
+                body=json.dumps(
+                    {
+                        "error": str(e),
+                        "session_id": None,
+                    }
+                ),
                 status_code=500,
                 mimetype="application/json",
             )

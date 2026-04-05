@@ -203,10 +203,11 @@ class _GuardrailConfig(BaseModel):
 class _ResponseStoreRedisConfig(_RedisConfig):
     prefix: str = Field(default="ak:responses:", description="Key prefix for Redis response storage")
 
+
 class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
     table_name: Optional[str] = Field(
         default=None,
-        description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'"
+        description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'",
     )
 
 
@@ -220,8 +221,13 @@ class _ResponseStoreConfig(BaseModel):
 class _QueuesConfig(BaseModel):
     input_queue_url: Optional[str] = Field(default=None, description="Input SQS queue URL for async execution mode")
     output_queue_url: Optional[str] = Field(default=None, description="Output SQS queue URL for async execution mode")
-    input_queue_max_receive_count: int = Field(default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed")
-    output_queue_max_receive_count: int = Field(default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed")
+    input_queue_max_receive_count: int = Field(
+        default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
+    )
+    output_queue_max_receive_count: int = Field(
+        default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
+    )
+
     @property
     def input_queue_consumer_max_receive_count(self) -> int:
         """Return input queue max_receive_count minus 1."""
@@ -231,6 +237,7 @@ class _QueuesConfig(BaseModel):
     def output_queue_consumer_max_receive_count(self) -> int:
         """Return output queue max_receive_count minus 1."""
         return max(1, self.output_queue_max_receive_count - 1)
+
 
 class _ExecutionConfig(BaseModel):
     mode: ExecutionMode = Field(

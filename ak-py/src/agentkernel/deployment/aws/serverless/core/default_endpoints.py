@@ -5,11 +5,11 @@ import logging
 import traceback
 from typing import Any, Callable, Dict, Optional
 
+from .....core.config import AKConfig
+from .....core.model import BaseRequest, ExecutionMode
 from ....common.chat_service import ChatService
 from ...core.response_store import ResponseDBHandler
 from ...core.sqs_handler import SQSHandler
-from .....core.model import ExecutionMode, BaseRequest
-from .....core.config import AKConfig
 
 
 class DefaultEndpointsHandler:
@@ -74,19 +74,11 @@ class DefaultEndpointsHandler:
 
         if not input_queue_url:
             cls._log.warning("Queues not configured; using direct chat endpoint.")
-            return {
-                cls._default_chat_path: {
-                    cls._default_chat_method: cls._handle_agent_chat
-                }
-            }
+            return {cls._default_chat_path: {cls._default_chat_method: cls._handle_agent_chat}}
 
         if exec_mode == ExecutionMode.REST_SYNC:
             cls._log.info("Initialized REST_SYNC endpoint.")
-            return {
-                cls._default_chat_path: {
-                    cls._default_chat_method: cls._handle_rest_sync
-                }
-            }
+            return {cls._default_chat_path: {cls._default_chat_method: cls._handle_rest_sync}}
 
         if exec_mode == ExecutionMode.REST_ASYNC:
             cls._log.info("Initialized REST_ASYNC endpoints.")
@@ -99,9 +91,7 @@ class DefaultEndpointsHandler:
 
         if exec_mode == ExecutionMode.STREAM:
             cls._log.info("Initialized STREAM endpoint.")
-            return {
-                cls._default_chat_path: {cls._default_chat_method: cls._handle_stream}
-            }
+            return {cls._default_chat_path: {cls._default_chat_method: cls._handle_stream}}
 
         raise ValueError(f"Unsupported EXECUTION_MODE: {exec_mode}")
 
@@ -115,10 +105,10 @@ class DefaultEndpointsHandler:
         body = event.get("body")
         body_dict = json.loads(body) if isinstance(body, str) else (body or {})
         return BaseRequest.from_payload(body_dict)
-    
+
     @classmethod
     def _build_failure_body(cls, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
-        error_body = {"error": message or  "An unexpected error occurred"}
+        error_body = {"error": message or "An unexpected error occurred"}
         if status is not None:
             error_body["status"] = status
         if request_id is not None:
@@ -144,12 +134,12 @@ class DefaultEndpointsHandler:
             request = cls._parse_body(event)
             request_id = request.request_id
             result = operation(request)
-            return (200, result) # (statusCode, body) will be handled in aklambda.py
+            return (200, result)  # (statusCode, body) will be handled in aklambda.py
 
         # Log and hide unexpected failures behind a generic 500 response.
         except Exception as e:
             cls._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
-            return (500, cls._build_failure_body(request_id)) # (statusCode, body) will be handled in aklambda.py
+            return (500, cls._build_failure_body(request_id))  # (statusCode, body) will be handled in aklambda.py
 
     @classmethod
     def _send_to_queue(cls, payload: BaseRequest) -> Dict[str, Any]:
@@ -201,6 +191,7 @@ class DefaultEndpointsHandler:
         :param context: Lambda context
         :return: Queue status and response data
         """
+
         def sync_operation(payload: BaseRequest) -> Dict[str, Any]:
             request_id = payload.request_id
             cls._log.info(f"Performing REST_SYNC operation for payload: '{payload}'")
@@ -209,7 +200,15 @@ class DefaultEndpointsHandler:
 
             message = cls._get_message(payload)
             cls._log.info(f"Fetched message from database: {message}")
-            message = message if message else cls._build_failure_body(request_id=request_id, status="NOT_FOUND", message=f"No response message found for request_id: '{request_id}'. Try increasing the retry_count or delay in the response store configuration.")
+            message = (
+                message
+                if message
+                else cls._build_failure_body(
+                    request_id=request_id,
+                    status="NOT_FOUND",
+                    message=f"No response message found for request_id: '{request_id}'. Try increasing the retry_count or delay in the response store configuration.",
+                )
+            )
             cls._log.info(f"Returning response for REST_SYNC operation: '{message}'")
 
             return message
@@ -217,19 +216,18 @@ class DefaultEndpointsHandler:
         return cls._handle_request(event, sync_operation)
 
     @classmethod
-    def _handle_async_submit(
-        cls, event: Dict[str, Any], context: Any
-    ) -> Dict[str, Any]:
+    def _handle_async_submit(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Submit message to queue (async mode).
         :param event: API Gateway event
         :param context: Lambda context
         :return: Queue submission response
         """
+
         def submit_operation(payload: BaseRequest) -> Dict[str, Any]:
             cls._log.info(f"Performing REST_ASYNC submit operation for payload: '{payload}'")
             queue_result = cls._send_to_queue(payload)
-            
+
             cls._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
             response_body = {"status": "ACCEPTED", "request_id": payload.request_id}
 
@@ -246,13 +244,22 @@ class DefaultEndpointsHandler:
         :param context: Lambda context
         :return: Message for request
         """
+
         def poll_operation(payload: BaseRequest) -> Dict[str, Any]:
             cls._log.info(f"Performing REST_ASYNC poll operation for payload: '{payload}'")
 
             request_id = payload.request_id
             message = cls._get_message(payload)
             cls._log.info(f"Fetched message from database: {message}")
-            response_body = message if message else cls._build_failure_body(request_id=request_id, status="NOT_FOUND", message=f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.")
+            response_body = (
+                message
+                if message
+                else cls._build_failure_body(
+                    request_id=request_id,
+                    status="NOT_FOUND",
+                    message=f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.",
+                )
+            )
 
             cls._log.info(f"Returning response for REST_ASYNC poll operation: '{response_body}'")
             return response_body
@@ -284,7 +291,5 @@ class DefaultEndpointsHandler:
 
             return {
                 "statusCode": 500,
-                "body": json.dumps(
-                    {"error": "Error processing request", "session_id": None}
-                ),
+                "body": json.dumps({"error": "Error processing request", "session_id": None}),
             }

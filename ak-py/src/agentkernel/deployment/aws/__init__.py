@@ -11,4 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .serverless import Lambda, APIGatewayAuthorizer, ServerlessAgentRunner, ResponseHandler
+from .serverless import APIGatewayAuthorizer, Lambda, ResponseHandler, ServerlessAgentRunner

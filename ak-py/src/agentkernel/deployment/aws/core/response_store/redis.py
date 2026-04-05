@@ -1,4 +1,5 @@
 import json
+
 import redis
 
 from ....common.response_store import ResponseStore
@@ -33,7 +34,7 @@ class RedisResponseStore(ResponseStore):
         message = json.loads(raw_message)
         if get_and_delete:
             self.delete_message(request_id)
-        return message['body']
+        return message["body"]
 
     def delete_message(self, request_id: str) -> None:
         self._log.debug("Deleting Redis response message for request_id=%s", request_id)

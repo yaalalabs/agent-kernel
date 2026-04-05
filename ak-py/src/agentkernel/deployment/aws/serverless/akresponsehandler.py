@@ -1,18 +1,18 @@
-import logging
 import json
-from typing import Dict, Any, Optional
+import logging
+from typing import Any, Dict, Optional
 
 from ....core.config import AKConfig
+from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
 from .core.sqs_consumer import LambdaSQSConsumer
-from ..core.response_store import ResponseDBHandler
 
 
 class ResponseHandler(LambdaSQSConsumer):
     """
     Lambda SQS consumer that processes response messages and stores them in the configured response store.
     """
-    
+
     _log = logging.getLogger("ak.aws.responsehandler")
     _response_store = None
     max_receive_count: int = AKConfig.get().execution.queues.output_queue_consumer_max_receive_count
@@ -22,7 +22,7 @@ class ResponseHandler(LambdaSQSConsumer):
         if cls._response_store is None:
             cls._response_store = ResponseDBHandler().get_store()
         return cls._response_store
-    
+
     @classmethod
     def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[Any] = None) -> Dict[str, Any]:
         """
@@ -41,13 +41,9 @@ class ResponseHandler(LambdaSQSConsumer):
         request_id = message_attributes.get("request_id")
         if not request_id:
             raise ValueError("request_id is required in SQS message attributes")
-        message = {
-            "session_id": session_id,
-            "request_id": request_id,
-            "body": message_body
-        }
+        message = {"session_id": session_id, "request_id": request_id, "body": message_body}
         return message
-    
+
     @classmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
@@ -62,7 +58,7 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._get_response_store().add_message(message)
 
         cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
-    
+
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
         """
@@ -76,10 +72,12 @@ class ResponseHandler(LambdaSQSConsumer):
 
         try:
             # Store an error message in the response store
-            error_body = json.dumps({
-                "error": f"Failed to process message after {cls.max_receive_count} retries",
-                "request_id": SQSHandler.get_message_custom_attributes(record).get("request_id"),
-            })
+            error_body = json.dumps(
+                {
+                    "error": f"Failed to process message after {cls.max_receive_count} retries",
+                    "request_id": SQSHandler.get_message_custom_attributes(record).get("request_id"),
+                }
+            )
 
             message = cls._construct_message_for_store(record, body=error_body)
             cls._get_response_store().add_message(message)

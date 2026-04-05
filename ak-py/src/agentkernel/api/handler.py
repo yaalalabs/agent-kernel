@@ -15,7 +15,7 @@ from agentkernel.core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
-    BaseRunRequest
+    BaseRunRequest,
 )
 
 from ..core import AgentService, Config

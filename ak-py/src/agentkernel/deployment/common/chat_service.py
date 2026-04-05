@@ -96,27 +96,34 @@ class ChatService:
             result = self._run_agent_service(requests)
             self._log.debug(f"Result: {result}")
 
-            return (200, {
-                "result": (
-                    str(result)
-                    if isinstance(result, (AgentReplyText, AgentReplyImage))
-                    else "Non textual result received"
-                ),  # sending image is not supported at the moment
-                "session_id": self.service.get_response_session_id(session_id),
-            })
+            return (
+                200,
+                {
+                    "result": (
+                        str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
+                    ),  # sending image is not supported at the moment
+                    "session_id": self.service.get_response_session_id(session_id),
+                },
+            )
 
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return (400, {
-                "error": str(ve),
-                "session_id": self.service.get_response_session_id(None),
-            })
+            return (
+                400,
+                {
+                    "error": str(ve),
+                    "session_id": self.service.get_response_session_id(None),
+                },
+            )
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return (500, {
-                "error": str(e),
-                "session_id": self.service.get_response_session_id(None),
-            })
+            return (
+                500,
+                {
+                    "error": str(e),
+                    "session_id": self.service.get_response_session_id(None),
+                },
+            )
 
     def _run_agent_service(self, requests: List[Any]) -> Any:
         """

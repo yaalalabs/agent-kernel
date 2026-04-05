@@ -33,9 +33,7 @@ class LambdaRouter:
             self._default_chat_method,
             self._default_user_polling_method,
         ) = DefaultEndpointsHandler.get_default_endpoint_info()
-        self._routes: Dict[
-            str, Dict[str, Callable[[Dict[str, Any], Any], Any]]
-        ] = DefaultEndpointsHandler.get_routes()
+        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = DefaultEndpointsHandler.get_routes()
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -68,9 +66,7 @@ class LambdaRouter:
 
             methods = self._routes.setdefault(norm_path, {})
             if norm_method in methods:
-                self._log.warning(
-                    f"Route {norm_method} {norm_path} already exists. Skipping."
-                )
+                self._log.warning(f"Route {norm_method} {norm_path} already exists. Skipping.")
                 return func
             methods[norm_method] = func
             return func
@@ -117,33 +113,23 @@ class LambdaRouter:
         if env_base_path and env_agent_endpoint:
             converted_event_path = (
                 self._default_chat_path
-                if event_path == env_agent_endpoint
-                and method in [self._default_chat_method, self._default_user_polling_method]
+                if event_path == env_agent_endpoint and method in [self._default_chat_method, self._default_user_polling_method]
                 else event_path.removeprefix(env_base_path)
             )
         else:
-            self._log.warning(
-                "Environment variables not provided; using default agent handler"
-            )
-            method = (
-                self._default_user_polling_method
-                if method == self._default_user_polling_method
-                else self._default_chat_method
-            )
+            self._log.warning("Environment variables not provided; using default agent handler")
+            method = self._default_user_polling_method if method == self._default_user_polling_method else self._default_chat_method
 
         self._log.info(f"Converted event path: {converted_event_path}")
         methods = self._routes.get(converted_event_path, {})
         handler = methods.get(method)
         if not methods or not handler:
-            self._log.warning(
-                f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'"
-            )
-            raise ValueError(
-                f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'"
-            )
+            self._log.warning(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
+            raise ValueError(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
         result = handler(event, context)
         self._log.debug(f"Lambda function result: {result}")
         return result
+
 
 class Lambda:
     """

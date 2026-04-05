@@ -1,6 +1,6 @@
 import uuid
-from typing import Any, Callable, Literal, Union, Optional
 from enum import Enum
+from typing import Any, Callable, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -107,19 +107,23 @@ class AgentReplyImage(BaseModel):
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
 type AgentReply = Union[AgentReplyText, AgentReplyImage]
 
+
 class ExecutionMode(str, Enum):
     """
     Execution mode enumeration for Lambda function behavior.
     """
+
     REST_SYNC = "rest_sync"
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
 
+
 class SystemTool(BaseModel):
     name: str
     description: str
     func: Callable
+
 
 class BaseRunRequest(BaseModel):
     prompt: str
@@ -149,17 +153,9 @@ class BaseRequest(BaseModel):
             if "body" in payload and payload["body"] is not None:
                 body = payload["body"]
                 if isinstance(body, dict):
-                    body = {
-                        key: value
-                        for key, value in body.items()
-                        if key not in {"request_id", "user_id"}
-                    }
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id"}}
             else:
-                body = {
-                    key: value
-                    for key, value in payload.items()
-                    if key not in {"request_id", "user_id", "body"}
-                }
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "body"}}
 
             if not body:
                 return cls(request_id=request_id, user_id=user_id)
@@ -170,4 +166,3 @@ class BaseRequest(BaseModel):
             return cls(request_id=request_id, user_id=user_id, body=body)
 
         raise TypeError(f"Unsupported payload type for BaseRequest: {type(payload)!r}")
-

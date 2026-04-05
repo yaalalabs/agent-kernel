@@ -1,14 +1,14 @@
 import json
 import logging
 
-from ...common.chat_service import ChatService
 from ....core.config import AKConfig
+from ...common.chat_service import ChatService
 from ..core.sqs_handler import SQSHandler
 from .core.sqs_consumer import LambdaSQSConsumer
 
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
-    
+
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = None
     max_receive_count: int = AKConfig.get().execution.queues.input_queue_consumer_max_receive_count
@@ -115,5 +115,5 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._get_output_queue_url()}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries
-            # Catching the error here so that this message will not be returned as batchItemFailures for another retry. 
+            # Catching the error here so that this message will not be returned as batchItemFailures for another retry.
             cls._log.info(f"Failed sending permenant failure message to Output Queue '{cls._get_output_queue_url()}' due to error: '{str(e)}'")
