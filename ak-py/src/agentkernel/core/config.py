@@ -235,7 +235,7 @@ class _QueuesConfig(BaseModel):
 class _ExecutionConfig(BaseModel):
     mode: ExecutionMode = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, ses_stream for Server-Sent Events streaming, async for asynchronous processing",
+        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST",
     )
     queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
     # websocket_connection_table: Optional[str] = Field(default=None, description="DynamoDB table name for storing WebSocket connections")
