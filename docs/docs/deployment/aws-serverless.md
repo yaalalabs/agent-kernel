@@ -12,15 +12,22 @@ Deploy agents to AWS Lambda for auto-scaling, serverless execution.
 graph LR
     A[User] --> B[API Gateway]
     B --> C[Lambda Authorizer]
-    C --> D[Lambda Function]
-    D --> E[Agent Kernel Runtime]
-    E --> F[Your Agent]
-    D --> G[Redis/ElastiCache]
-    D --> H[DynamoDB]
+    B --> D[Request Handler Lambda]
+    D --> E[SQS Input Queue]
+    E --> F[Agent Runner Lambda]
+    F --> G[SQS Output Queue]
+    G --> H[Response Handler Lambda]
+    H --> I[Response Store]
+    F --> J[Session Store]
+    F --> K[Your Agent]
     
     style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
     style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
+
+The request handler receives the incoming API request, the agent runner executes the agent logic, and the response handler persists outbound messages to the configured response store. In queue-backed modes, the three-lambda split keeps request ingestion, execution, and response persistence independent.
 
 ## Prerequisites
 
@@ -85,71 +92,379 @@ OpenAIModule([agent])
 handler = Lambda.handler
 ```
 
+The AWS Lambda entrypoint accepts both payload shapes, but the rest of this guide uses `BaseRunRequest` examples for request bodies.
+
+Supported payloads:
+
+```json
+{
+  "prompt": "Hello agent",
+  "agent": "assistant",
+  "session_id": "user-123"
+}
+```
+
+```json
+{
+  "request_id": "req-123",
+  "user_id": "user-123",
+  "body": {
+    "prompt": "Hello agent",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }
+}
+```
+
 ## API Endpoints
 
-After deployment (Assuming the following URL):
+After deployment, the default chat route is:
 
-```
-POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat
+```text
+https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat
 ```
 
-**With Authentication:**
-If you configure a Lambda authorizer, include the Authorization header:
+The payload examples below use `BaseRunRequest` unless noted otherwise.
+
+### `rest_sync`
+
+`rest_sync` sends the request to SQS and waits for the matching response.
+
+**Request**
 
 ```bash
 curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-token" \
   -d '{
+    "prompt": "Hello!",
     "agent": "assistant",
-    "message": "Hello!",
     "session_id": "user-123"
   }'
 ```
 
-**Without Authentication:**
-```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent": "assistant",
-    "message": "Hello!",
-    "session_id": "user-123"
-  }'
-```
-
-Body:
+**Response**
 
 ```json
 {
-  "agent": "assistant",
-  "message": "Hello!",
+  "result": "Agent response here",
   "session_id": "user-123"
 }
 ```
 
-### Custom endpoints (multiple handlers)
+### `rest_async`
 
-You can attach additional API Gateway routes to the same Lambda by registering handlers per path and method:
+`rest_async` uses two requests: one to submit the work, and a second GET request to poll for the response using the returned `request_id`.
+
+**1. Submit request**
+
+```bash
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Hello!",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }'
+```
+
+**Submit response**
+
+```json
+{
+  "status": "ACCEPTED",
+  "request_id": "req-123"
+}
+```
+
+**2. Poll for the response**
+
+```bash
+curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "req-123"
+  }'
+```
+
+**Poll response**
+
+```json
+{
+  "result": "Agent response here",
+  "session_id": "user-123"
+}
+```
+
+If the response is not available yet, the poll endpoint returns a `NOT_FOUND` body with the same `request_id` so clients can retry.
+
+## Execution Modes and Response Store
+
+The AWS serverless runtime currently supports these execution modes:
+
+- `rest_sync` - POST request to SQS, then wait for the matching response in the response store
+- `rest_async` - POST request to SQS, then poll later with GET and the same `request_id`
+
+When you use queue-backed execution, configure the `execution` block:
+
+- `execution.mode` - selects the runtime mode
+- `execution.queues.input_queue_url` - input SQS queue for agent requests
+- `execution.queues.output_queue_url` - output SQS queue for agent responses
+- `execution.queues.input_queue_max_receive_count` - input queue receive retry threshold
+- `execution.queues.output_queue_max_receive_count` - output queue receive retry threshold
+- `execution.response_store.retry_count` - number of response-store lookup attempts
+- `execution.response_store.delay` - delay in seconds between lookup attempts
+- `execution.response_store.redis.url` - Redis URL for response storage
+- `execution.response_store.redis.prefix` - Redis key prefix for response storage, default `ak:responses:`
+- `execution.response_store.redis.ttl` - Redis TTL in seconds
+- `execution.response_store.dynamodb.table_name` - DynamoDB table name for response storage
+- `execution.response_store.dynamodb.ttl` - DynamoDB TTL in seconds
+
+The response store is configured as a single object with one selected backend:
+
+```json
+{
+  "execution": {
+    "mode": "rest_async",
+    "queues": {
+      "input_queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"
+    },
+    "response_store": {
+      "retry_count": 5,
+      "delay": 5,
+      "redis": {
+        "url": "redis://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 3600
+      }
+    }
+  }
+}
+```
+
+Use either `response_store.redis` or `response_store.dynamodb`; the runtime selects whichever backend is configured.
+
+The response handler reads `request_id` from SQS message attributes and stores each response by request ID. For Redis, the message body is stored under the configured key prefix; for DynamoDB, the message is stored in the configured table. The `request_id` and optional `user_id` are carried as SQS message attributes, while the nested `body` is used as the message payload.
+
+Example environment variables:
+
+```bash
+export AK_EXECUTION__MODE=rest_async
+export AK_EXECUTION__QUEUES__INPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
+export AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
+export AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__QUEUES__OUTPUT_QUEUE_MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
+export AK_EXECUTION__RESPONSE_STORE__DELAY=5
+```
+
+## Lambda Handlers
+
+If scalable mode is disabled, only the request handler is needed. If scalable mode is enabled, you need all three Lambda handlers: request handler, agent runner, and response handler.
+
+### Authorizer Lambda
+
+The authorizer is optional in both scalable and non-scalable deployments. Add it only when you want API Gateway authentication.
+
+```python
+from typing import Optional
+
+import jwt
+from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.aws import APIGatewayAuthorizer
+
+
+class CustomAuthTokenValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        payload = jwt.decode(token, options={"verify_signature": False})
+        email = payload.get("email", "")
+        return ValidationResult(is_valid=email == "test@test.com")
+
+
+handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
+```
+
+### 1. Request Handler
+
+Use this handler for the default chat path. The same Lambda can also expose custom routes by registering additional handlers.
+
+```python
+from agents import Agent as OpenAIAgent
+from agentkernel.aws import Lambda
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(name="assistant", ...)
+OpenAIModule([agent])
+
+handler = Lambda.handler
+```
+
+Custom endpoints example:
 
 ```python
 import json
 from agentkernel.aws import Lambda
 
+
 @Lambda.register("/app", method="GET")
 def custom_app_handler(event, context):
-    return {"response": "Hello! from AK 'app'"}
+    return {"receivedEventPayload": dict(event), "response": "Hello! from AK 'app'"}
+
 
 @Lambda.register("/app_info", method="POST")
 def custom_app_info_handler(event, context):
     payload = json.loads(event.get("body") or "{}")
-    return {"request": payload, "response": "Hello! from AK 'app_info'"}
+    return {"receivedEventPayload": dict(event), "request": payload, "response": "Hello! from AK 'app_info'"}
+
+
+handler = Lambda.handler
 ```
 
-> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
+See [examples/aws-serverless/scalable-openai/lambda_request_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_request_handler.py) for the reference implementation.
+
+### 2. Agent Runner
+
+This Lambda receives the queued request, runs the agent logic, and sends the result to the output queue.
+
+```python
+from agents import Agent
+from agentkernel.aws import ServerlessAgentRunner
+from agentkernel.openai import OpenAIModule
+
+math_agent = Agent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Explain your reasoning at each step and include examples. If prompted for anything else you refuse to answer.",
+)
+
+history_agent = Agent(
+    name="history",
+    handoff_description="Specialist agent for historical questions",
+    instructions="You provide assistance with historical queries. Explain important events and context clearly.",
+)
+
+triage_agent = Agent(
+    name="triage",
+    instructions="You determine which agent to use based on the user's question.",
+    handoffs=[history_agent, math_agent],
+)
+
+OpenAIModule([triage_agent, math_agent, history_agent])
+
+handler = ServerlessAgentRunner.handle
+```
+
+See [examples/aws-serverless/scalable-openai/lambda_agent_runner.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_agent_runner.py) for the reference implementation.
+
+### 3. Response Handler
+
+This Lambda reads the response from the output queue and stores it in the configured response store.
+
+```python
+from agentkernel.aws import ResponseHandler
 
 
-### Lambda environment variables
+handler = ResponseHandler.handle
+```
+
+See [examples/aws-serverless/scalable-openai/lambda_response_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_response_handler.py) for the reference implementation.
+
+## Lambda Package Creation
+
+The deployment script creates the Lambda artifacts before Terraform runs.
+
+### Request Handler Package
+
+```bash
+create_request_handler_deployment_package() {
+    pushd ../
+    rm -rf dist_request_handler dist_request_handler.zip
+    mkdir -p dist_request_handler
+    uv export --no-hashes > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_request_handler
+    else
+      uv pip install --force-reinstall --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
+    fi
+    cp -r lambda_request_handler.py config.yaml dist_request_handler/
+    cd dist_request_handler && zip -r ../dist_request_handler.zip .
+    popd || exit 1
+}
+```
+
+This creates `dist_request_handler.zip`.
+
+### Agent Runner Package
+
+```bash
+create_agent_runner_deployment_package() {
+    pushd ../
+    rm -rf dist_agent_runner
+    mkdir -p dist_agent_runner/data
+    uv export --no-hashes > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_agent_runner/data
+    else
+      uv pip install -r requirements.txt --target=dist_agent_runner/data --find-links ../../../ak-py/dist
+      uv pip install --force-reinstall --target=dist_agent_runner/data --find-links ../../../ak-py/dist agentkernel[aws,openai,redis] || true
+    fi
+    cp -r lambda_agent_runner.py config.yaml dist_agent_runner/data
+    popd || exit 1
+    cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
+}
+```
+
+This creates the `dist_agent_runner/` folder.
+
+### Response Handler Package
+
+```bash
+create_response_handler_deployment_package() {
+    pushd ../
+    rm -rf dist_response_handler dist_response_handler.zip
+    mkdir -p dist_response_handler
+    uv export --no-hashes > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_response_handler
+    else
+      uv pip install --force-reinstall --target=dist_response_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
+    fi
+    cp -r lambda_response_handler.py config.yaml dist_response_handler/
+    cd dist_response_handler && zip -r ../dist_response_handler.zip .
+    popd || exit 1
+}
+```
+
+This creates `dist_response_handler.zip`.
+
+### Optional Authorizer Package
+
+If you enable authentication, build a separate authorizer package as well.
+
+```bash
+create_auth_deployment_package() {
+    pushd ../
+    rm -rf dist_auth dist_auth.zip
+    mkdir -p dist_auth
+    if [[ ${1-} != "local" ]]; then
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
+    else
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+    fi
+    uv pip install --group auth --target=dist_auth
+    cp -r lambda_auth.py dist_auth/
+    cd dist_auth && zip -r ../dist_auth.zip .
+    popd || exit 1
+}
+```
+
+This creates `dist_auth.zip`.
+
+The example deployment script runs all package builders before Terraform applies the infrastructure.
+
+## Lambda Environment Variables
 
 The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
 
@@ -160,6 +475,8 @@ The Lambda router automatically reads the following environment variables to cor
 These environment variables are automatically configured by the Terraform module based on the `api_base_path`, `api_version`, and `agent_endpoint` variables in your Terraform configuration.
 
 > **NOTE:** If you wrap our Lambda with your own API Gateway and deployment method, you are responsible for setting these environment variables. If they are not provided, only the default chat handler may work and custom routes may not resolve as expected.
+
+> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda handler function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
 
 ## Cost Optimization
 
@@ -285,7 +602,7 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 - **Point-in-time recovery (PITR)** - Restore to any second in last 35 days
 
 :::tip
-For detailed DynamoDB session configuration and best practices, see the [Session Management](/docs/core-concepts/session#dynamodb-storage) documentation.
+For detailed DynamoDB session configuration and best practices, see the [Session Management](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/core-concepts/session.md) documentation.
 :::
 - **Continuous backups** - Automatic and continuous
 - **99.999% availability SLA** - Five nines uptime
@@ -319,7 +636,7 @@ For detailed DynamoDB session configuration and best practices, see the [Session
 - ⚠️ Higher latency (cold starts)
 - ⚠️ 15-minute execution limit
 
-[Learn more about fault tolerance →](../core-concepts/fault-tolerance)
+[Learn more about fault tolerance →](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/core-concepts/fault-tolerance.md)
 
 ## Session Storage
 
@@ -356,169 +673,6 @@ export AK_SESSION__REDIS__URL=redis://elasticache-endpoint:6379
 - Shared cache across functions
 
 **Note:** Redis requires VPC configuration for Lambda, which can impact cold start times.
-
-## API Gateway Authentication (Optional)
-
-Authentication is completely optional. If you want to secure your API Gateway endpoints, you can configure Lambda authorizers. The serverless module supports custom token validation:
-
-### When Authentication is Enabled
-
-Authentication infrastructure will only be created if you define an `authorizer` object with all required fields mentioned below in your `main.tf` file:
-
-**Required Fields**:
-- `function_name` - Name for the authorizer Lambda function
-- `handler_path` - Path to the authorizer Lambda handler (e.g., `auth.handler`)
-- `package_type` - Deployment type (`Image`, `LocalZip`, or `S3Zip`)
-- `package_path` - Path to authorizer deployment package
-- `module_name` - Authorizer module name
-
-**Optional Fields**:
-- `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
-- `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
-- `environment_variables` - Environment variables for authorizer
-
-If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your endpoints will be publicly accessible.
-
-### Auth Lambda Handler
-
-You need to create a separate auth lambda logic by extending the `AuthValidator` class:
-
-```python
-from typing import Optional
-from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
-from agentkernel.aws import APIGatewayAuthorizer
-import jwt
-
-class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        print("Payload", payload)
-        email = payload.get("email", "")
-        if email == "test@test.com":
-            return ValidationResult(is_valid=True)
-        return ValidationResult(is_valid=False)
-
-# APIGatewayAuthorizer defines the auth lambda handler
-handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
-```
-
-### Terraform Configuration
-
-To enable authentication, configure the authorizer in your `main.tf` by defining the `authorizer` object:
-
-```hcl
-module "serverless_agents" {
-  # ... other configuration
-  
-  # Defining API Gateway Authorizer (optional - only creates if all required variables are defined)
-  authorizer = {
-    description           = "API Gateway Lambda Authorizer"
-    function_name         = "gtwy-auth"
-    handler_path          = "lambda.handler"
-    package_path          = "../auth_deployment/auth_dist.zip"
-    package_type          = "S3Zip"  # or "LocalZip" or "Image"
-    module_name           = var.authorizer_module_name
-    
-    # Optional authorizer settings
-    # result_ttl_in_seconds = 0
-    # environment_variables = {
-    #   "SOME_OTHER_KEY" = "Some Other Value"
-    # }
-  }
-}
-```
-
-**Required Authorizer Fields (for auth infrastructure creation):**
-- `function_name` - Name for the authorizer Lambda function
-- `handler_path` - Path to the authorizer handler (e.g., `lambda.handler`)
-- `package_type` - Package type (`LocalZip`, `S3Zip`, or `Image`)
-- `package_path` - Path to authorizer package (required for all package types)
-- `module_name` - Authorizer module name (required for all package types, especially S3Zip)
-
-**Optional Authorizer Fields:**
-- `description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")
-- `result_ttl_in_seconds` - Cache TTL for authorizer results (default: 150)
-- `environment_variables` - Environment variables for authorizer Lambda
-
-### Deployment Packages
-
-You need two separate deployment packages:
-
-1. **Main Lambda Package** - Contains your agent logic and backend code
-2. **Auth Lambda Package** - Contains only the authentication logic (if enabled)
-
-**File Structure Example:**
-```
-your-project/
-├── lambda.py              # Main agent handler
-├── lambda_auth.py         # Authorizer handler
-├── build.sh               # Build script for dependencies
-├── config.yaml            # Configuration file
-├── requirements.txt       # Generated dependencies
-├── pyproject.toml         # Python project configuration
-├── deploy/
-│   ├── deploy.sh          # Deployment script
-│   ├── main.tf           # Terraform configuration
-│   ├── variables.tf      # Terraform variables
-│   ├── outputs.tf        # Terraform outputs
-│   └── terraform.tfvars  # Terraform variable values
-├── dist/                 # Main Lambda package directory
-├── dist_auth/            # Authorizer package directory
-└── dist_auth.zip         # Authorizer package zip file
-```
-
-**Creating the Deployment Packages:**
-The deployment script automatically creates both packages:
-
-```bash
-#!/bin/bash
-set -e # exit if any command in this script fails
-
-# Create main lambda deployment package
-echo "Creating main deployment package..."
-create_deployment_package() {
-    pushd ../
-    rm -rf dist
-    mkdir -p dist/data
-    uv export --no-hashes > requirements.txt
-    if [[ ${1-} != "local" ]]; then
-      uv pip install -r requirements.txt --target=dist/data
-    else
-      uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,redis,auth] || true
-    fi
-    cp -r lambda.py config.yaml dist/data
-    popd || exit 1
-    cp Dockerfile ../dist/
-}
-
-# Create auth deployment package
-echo "Creating auth deployment package..."
-create_auth_deployment_package() {
-    pushd ../
-    rm -rf dist_auth dist_auth.zip
-    mkdir -p dist_auth
-    if [[ ${1-} != "local" ]]; then
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
-    else
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
-    fi
-    uv pip install --group auth --target=dist_auth
-    cp -r lambda_auth.py dist_auth/
-    cd dist_auth && zip -r ../dist_auth.zip .
-    popd || exit 1
-}
-
-create_deployment_package $1
-create_auth_deployment_package $1
-
-# Deploy with Terraform
-terraform init
-terraform apply
-```
-
-The auth package script should run automatically when executing `./deploy.sh`. You can customize the script paths and structure, but you must provide two separate packages to the Terraform configuration via the `package_path` (for main Lambda) and `authorizer.package_path` (for auth Lambda) variables.
 
 ## Monitoring
 
