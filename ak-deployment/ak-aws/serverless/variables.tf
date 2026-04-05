@@ -57,8 +57,8 @@ variable "execution_mode" {
   description = "Execution mode for the deployment. Required when scalable_mode is true, must be null when scalable_mode is false."
   default     = null
   validation {
-    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async", "ses_stream"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async, ses_stream, or null."
+    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async or null."
   }
   validation {
     condition = !var.scalable_mode || var.execution_mode != null
