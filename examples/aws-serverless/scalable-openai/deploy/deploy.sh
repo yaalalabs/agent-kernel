@@ -1,23 +1,6 @@
 #!/bin/bash
 set -e # exit if any command in this script fails
 
-# Create auth deployment package
-echo "Creating auth deployment package..."
-create_auth_deployment_package() {
-    pushd ../
-    rm -rf dist_auth dist_auth.zip
-    mkdir -p dist_auth
-    if [[ ${1-} != "local" ]]; then
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
-    else
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
-    fi
-    uv pip install --group auth --target=dist_auth
-    cp -r lambda_auth.py dist_auth/
-    cd dist_auth && zip -r ../dist_auth.zip .
-    popd || exit 1
-}
-
 echo "Creating request handler deployment package..."
 create_request_handler_deployment_package() {
     pushd ../
@@ -27,7 +10,7 @@ create_request_handler_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_request_handler
     else
-      uv pip install --force-reinstall --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[auth,aws,redis] || true
+      uv pip install --force-reinstall --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
     fi
     cp -r lambda_request_handler.py config.yaml dist_request_handler/
     cd dist_request_handler && zip -r ../dist_request_handler.zip .
@@ -45,7 +28,7 @@ create_agent_runner_deployment_package() {
       uv pip install -r requirements.txt --target=dist_agent_runner/data
     else
       uv pip install -r requirements.txt --target=dist_agent_runner/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist_agent_runner/data --find-links ../../../ak-py/dist agentkernel[openai,redis,auth] || true
+      uv pip install --force-reinstall --target=dist_agent_runner/data --find-links ../../../ak-py/dist agentkernel[aws,openai,redis] || true
     fi
     cp -r lambda_agent_runner.py config.yaml dist_agent_runner/data
     popd || exit 1
@@ -69,7 +52,6 @@ create_response_handler_deployment_package() {
     popd || exit 1
 }
 
-create_auth_deployment_package $1
 create_request_handler_deployment_package $1
 create_agent_runner_deployment_package $1
 create_response_handler_deployment_package $1

@@ -65,14 +65,66 @@ This example uses `rest_async` execution mode, which provides:
 
 After deployment, you can test the scalable agent:
 
-1. **Synchronous-style requests** (returns immediately with response):
+### REST_SYNC Mode:
+1. **Submit the request**:
    ```bash
    curl -X POST https://your-api-gateway-url/api/v1/chat \
      -H "Content-Type: application/json" \
-     -d '{"message": "Hello, how are you?"}'
+     -d '{"prompt": "Hello, how are you?", "agent": "triage", "session_id": "user-123"}'
+   ```
+
+   Response:
+   ```json
+   {
+     "result": "Agent response here",
+     "session_id": "user-123"
+   }
    ```
 
 2. **Custom endpoints**:
+   ```bash
+   # Health check
+   curl -X GET https://your-api-gateway-url/api/v1/app
+   
+   # App info
+   curl -X POST https://your-api-gateway-url/api/v1/app_info \
+     -H "Content-Type: application/json" \
+     -d '{"query": "status"}'
+   ```
+
+### REST_ASYNC Mode
+
+1. **Submit the request**:
+   ```bash
+   curl -X POST https://your-api-gateway-url/api/v1/chat \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "Hello, how are you?", "agent": "triage", "session_id": "user-123"}'
+   ```
+
+   Response:
+   ```json
+   {
+     "status": "ACCEPTED",
+     "request_id": "req-123"
+   }
+   ```
+
+2. **Poll for the response**:
+   ```bash
+   curl -X GET https://your-api-gateway-url/api/v1/chat \
+     -H "Content-Type: application/json" \
+     -d '{"request_id": "req-123"}'
+   ```
+
+   Response:
+   ```json
+   {
+     "result": "Agent response here",
+     "session_id": "user-123"
+   }
+   ```
+
+3. **Custom endpoints**:
    ```bash
    # Health check
    curl -X GET https://your-api-gateway-url/api/v1/app

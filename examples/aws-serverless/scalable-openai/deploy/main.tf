@@ -13,20 +13,20 @@ module "serverless_agents" {
   package_path         = "../dist_request_handler.zip"
   package_type         = "LocalZip"
   memory_size          = 256
-  timeout              = 30
+  timeout              = 45
   product_display_name = "AK OpenAI Scalable Serverless Example"
   region               = var.region
   is_production        = var.is_production
 
-  # Execution mode - using rest_async for scalable processing
+  # Execution mode - using for scalable processing
   scalable_mode = true
-  execution_mode = "rest_sync"
+  execution_mode = "rest_sync" # rest_sync or rest_async
 
-  # Redis Cluster Config
+  # Memory DB Config
   create_redis_cluster = true
 
   # Response Store Config 
-  # create_redis_response_store = true
+  # create_redis_response_store = true # if True, it will use the memory Redis cluster for response store or may create.
   create_dynamodb_response_store = true
 
   # API Gateway configuration
@@ -80,32 +80,18 @@ module "serverless_agents" {
   queue_config = {
     # Input queue settings
     input_queue_visibility_timeout = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
-    # input_queue_max_receive_count   = 3 # only needed when input_queue_create_dlq is true
+    input_queue_max_receive_count   = 3 
     input_queue_create_dlq          = false
     input_queue_message_retention_seconds = 300
     
     # Output queue settings  
     output_queue_visibility_timeout = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
-    # output_queue_max_receive_count   = 3 # Only needed when output_queue_create_dlq is true
+    output_queue_max_receive_count   = 3
     output_queue_create_dlq          = false 
     output_queue_message_retention_seconds = 300
     
     # Processing settings
     batch_size                         = 10
     maximum_batching_window_in_seconds = 0
-  }
-
-  # API Gateway Authorizer
-  authorizer = {
-    # description           = "API Gateway Lambda Authorizer"
-    function_name         = "auth-handler"
-    handler_path          = "lambda_auth.handler"
-    package_path          = "../dist_auth.zip"
-    package_type          = "LocalZip"
-    module_name           = "auth-scalable"
-    # result_ttl_in_seconds = 0
-    environment_variables = {
-      "SOME_OTHER_KEY" = "Some Other Value"
-    }
   }
 } 
