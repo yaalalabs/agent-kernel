@@ -108,51 +108,74 @@ def _restore_registry_source(source_value: str, file_path: Path, workspace_root:
     return None
 
 
+def _rewrite_module_block(
+    block_lines: List[str],
+    file_path: Path,
+    workspace_root: Path,
+    mode: str,
+) -> Tuple[List[str], bool]:
+    rewritten_lines = list(block_lines)
+    source_changed = False
+
+    for index, line in enumerate(block_lines):
+        source_match = re.match(r'^(\s*source\s*=\s*")([^"]+)(".*)$', line)
+        if not source_match:
+            continue
+
+        source_value = source_match.group(2)
+        if mode == 'inject':
+            replacement_source = _localize_registry_source(source_value, file_path, workspace_root)
+        else:
+            replacement_source = _restore_registry_source(source_value, file_path, workspace_root)
+
+        if replacement_source and replacement_source != source_value:
+            rewritten_lines[index] = f'{source_match.group(1)}{replacement_source}{source_match.group(3)}'
+            source_changed = True
+
+    if not source_changed:
+        return rewritten_lines, False
+
+    for index, line in enumerate(rewritten_lines):
+        version_match = re.match(r'^(\s*)(version\s*=\s*"[^"]+")(\s*.*)$', line)
+        commented_version_match = re.match(r'^(\s*)#\s*(version\s*=\s*"[^"]+")(\s*# Commented for local development.*)?$', line)
+
+        if mode == 'inject' and version_match and not line.lstrip().startswith('#'):
+            rewritten_lines[index] = f'{version_match.group(1)}# {version_match.group(2)}  # Commented for local development{version_match.group(3)}'
+        elif mode == 'revert' and commented_version_match:
+            rewritten_lines[index] = f'{commented_version_match.group(1)}{commented_version_match.group(2)}{commented_version_match.group(3) or ""}'
+
+    return rewritten_lines, True
+
+
 def _rewrite_tf_file(file_path: Path, workspace_root: Path, mode: str) -> bool:
     content = file_path.read_text()
     original_content = content
 
     lines = content.split('\n')
     modified_lines = []
-    pending_version_comment = False
 
-    for index, line in enumerate(lines):
-        source_match = re.match(r'^(\s*source\s*=\s*")([^"]+)(".*)$', line)
-        if source_match:
-            source_value = source_match.group(2)
-            if mode == 'inject':
-                replacement_source = _localize_registry_source(source_value, file_path, workspace_root)
-            else:
-                replacement_source = _restore_registry_source(source_value, file_path, workspace_root)
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        module_start = re.match(r'^\s*module\s+"[^"]+"\s*{\s*(?:#.*)?$', line)
 
-                if replacement_source:
-                    commented_version_ahead = False
-                    for next_line in lines[index + 1:]:
-                        if not next_line.strip():
-                            continue
-                        commented_version_ahead = bool(re.match(r'^\s*#\s*version\s*=\s*"[^"]+"\s*(?:# Commented for local development.*)?$', next_line))
-                        break
+        if not module_start:
+            modified_lines.append(line)
+            index += 1
+            continue
 
-                    if not commented_version_ahead:
-                        replacement_source = None
+        block_lines = [line]
+        brace_depth = line.count('{') - line.count('}')
+        index += 1
 
-            if replacement_source and replacement_source != source_value:
-                line = f'{source_match.group(1)}{replacement_source}{source_match.group(3)}'
-                pending_version_comment = True
+        while index < len(lines) and brace_depth > 0:
+            block_line = lines[index]
+            block_lines.append(block_line)
+            brace_depth += block_line.count('{') - block_line.count('}')
+            index += 1
 
-        version_match = re.match(r'^(\s*)(version\s*=\s*"[^"]+")(\s*.*)$', line)
-        commented_version_match = re.match(r'^(\s*)#\s*(version\s*=\s*"[^"]+")(\s*# Commented for local development.*)?$', line)
-        if pending_version_comment and version_match and mode == 'inject':
-            if not line.lstrip().startswith('#'):
-                line = f'{version_match.group(1)}# {version_match.group(2)}  # Commented for local development{version_match.group(3)}'
-            pending_version_comment = False
-        elif pending_version_comment and commented_version_match and mode == 'revert':
-            line = f'{commented_version_match.group(1)}{commented_version_match.group(2)}'
-            pending_version_comment = False
-        elif not re.match(r'^\s*$', line):
-            pending_version_comment = False
-
-        modified_lines.append(line)
+        rewritten_block, _ = _rewrite_module_block(block_lines, file_path, workspace_root, mode)
+        modified_lines.extend(rewritten_block)
 
     content = '\n'.join(modified_lines)
     if content != original_content:
