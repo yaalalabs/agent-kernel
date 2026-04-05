@@ -400,6 +400,7 @@ module "agent_runner" {
   dynamodb_memory_table_name        = local.dynamodb_memory_table_name
   dynamodb_multimodal_memory_table_arn  = local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name = local.dynamodb_multimodal_memory_table_name
+  redis_url                         = local.redis_url
 
   queue_config = {
     input_queue_arn                    = local.input_queue_arn
