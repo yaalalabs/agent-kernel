@@ -85,7 +85,7 @@ variable "environment_variables" {
 variable "timeout" {
   description = "Lambda timeout"
   type        = number
-  default     = 30
+  default     = 45
 }
 
 variable "memory_size" {
@@ -301,7 +301,7 @@ variable "response_handler" {
   type = object({
     function_name         = optional(string, "response-handler")
     function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
-    timeout               = optional(number, 60)
+    timeout               = optional(number, 45)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
     package_path          = optional(string, null)
@@ -321,7 +321,7 @@ variable "agent_runner" {
   type = object({
     function_name         = optional(string, "agent-runner")
     function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
-    timeout               = optional(number, 300)
+    timeout               = optional(number, 45)
     memory_size           = optional(number, 512)
     handler_path          = optional(string, "agent_runner.handler")
     module_name           = optional(string, null)
