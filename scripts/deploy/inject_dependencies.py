@@ -5,7 +5,7 @@ Inject dependencies into AWS and Azure example projects.
 This script:
 1. Injects backend.tf files for Terraform state management
 2. Modifies main.tf files to use local module sources instead of registry modules
-3. Modifies state.tf files in module directories to use local common modules
+3. Updates registry-based module references in all Terraform files under ak-deployment
 4. Can revert all changes back to registry modules
 
 The modifications are intended for local development and CI/CD use.
@@ -16,15 +16,150 @@ import re
 import yaml
 import argparse
 from pathlib import Path
-from typing import List, Dict, Set, Tuple
+from typing import List, Dict, Optional, Set, Tuple
 
 
-MODULE_PATHS = [
-    'ak-deployment/ak-aws/serverless',
-    'ak-deployment/ak-aws/containerized',
-    'ak-deployment/ak-azure/serverless',
-    'ak-deployment/ak-azure/containerized'
+DEPLOYMENT_ROOTS = [
+    'ak-deployment/ak-aws',
+    'ak-deployment/ak-azure'
 ]
+
+REGISTRY_TO_LOCAL_ROOTS = {
+    'yaalalabs/ak-serverless/aws': 'ak-deployment/ak-aws/serverless',
+    'yaalalabs/ak-containerized/aws': 'ak-deployment/ak-aws/containerized',
+    'yaalalabs/ak-serverless/azurerm': 'ak-deployment/ak-azure/serverless',
+    'yaalalabs/ak-containerized/azurerm': 'ak-deployment/ak-azure/containerized',
+}
+
+REGISTRY_PREFIX_RE = r'^(?:app\.terraform\.io/|registry\.terraform\.io/)?'
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _project_type_to_local_root(workspace_root: Path, project_type: str) -> Optional[Path]:
+    if project_type == 'aws-serverless':
+        return workspace_root / 'ak-deployment' / 'ak-aws' / 'serverless'
+    if project_type == 'aws-containerized':
+        return workspace_root / 'ak-deployment' / 'ak-aws' / 'containerized'
+    if project_type == 'azure-serverless':
+        return workspace_root / 'ak-deployment' / 'ak-azure' / 'serverless'
+    if project_type == 'azure-containerized':
+        return workspace_root / 'ak-deployment' / 'ak-azure' / 'containerized'
+    return None
+
+
+def _deployment_tf_files(workspace_root: Path) -> List[Path]:
+    tf_files: List[Path] = []
+    for root in DEPLOYMENT_ROOTS:
+        root_path = workspace_root / root
+        if not root_path.exists():
+            continue
+
+        for tf_file in root_path.rglob('*.tf'):
+            if '.terraform' in tf_file.parts:
+                continue
+            tf_files.append(tf_file)
+
+    return sorted(tf_files)
+
+
+def _localize_registry_source(source_value: str, file_path: Path, workspace_root: Path) -> Optional[str]:
+    stripped_source = re.sub(REGISTRY_PREFIX_RE, '', source_value)
+
+    if stripped_source in REGISTRY_TO_LOCAL_ROOTS:
+        target_root = workspace_root / REGISTRY_TO_LOCAL_ROOTS[stripped_source]
+        return os.path.relpath(target_root, file_path.parent)
+
+    common_match = re.match(r'^yaalalabs/ak-common/(aws|azurerm|azure)//modules/([^"\s]+)$', stripped_source)
+    if common_match:
+        provider = 'azurerm' if common_match.group(1) in {'azurerm', 'azure'} else 'aws'
+        cloud_dir = 'ak-azure' if provider == 'azurerm' else 'ak-aws'
+        target_root = workspace_root / 'ak-deployment' / cloud_dir / 'common' / 'modules' / common_match.group(2)
+        return os.path.relpath(target_root, file_path.parent)
+
+    return None
+
+
+def _restore_registry_source(source_value: str, file_path: Path, workspace_root: Path) -> Optional[str]:
+    current_path = (file_path.parent / source_value).resolve()
+
+    for project_type, registry_source in (
+        ('aws-serverless', 'yaalalabs/ak-serverless/aws'),
+        ('aws-containerized', 'yaalalabs/ak-containerized/aws'),
+        ('azure-serverless', 'yaalalabs/ak-serverless/azurerm'),
+        ('azure-containerized', 'yaalalabs/ak-containerized/azurerm'),
+    ):
+        target_root = _project_type_to_local_root(workspace_root, project_type)
+        if target_root is not None and current_path == target_root.resolve():
+            return registry_source
+
+    for provider, registry_provider in (('aws', 'aws'), ('azurerm', 'azurerm')):
+        cloud_dir = 'ak-azure' if provider == 'azurerm' else 'ak-aws'
+        common_root = workspace_root / 'ak-deployment' / cloud_dir / 'common' / 'modules'
+        if _is_within(current_path, common_root.resolve()):
+            return f'yaalalabs/ak-common/{registry_provider}//modules/{current_path.name}'
+
+    return None
+
+
+def _rewrite_tf_file(file_path: Path, workspace_root: Path, mode: str) -> bool:
+    content = file_path.read_text()
+    original_content = content
+
+    lines = content.split('\n')
+    modified_lines = []
+    pending_version_comment = False
+
+    for index, line in enumerate(lines):
+        source_match = re.match(r'^(\s*source\s*=\s*")([^"]+)(".*)$', line)
+        if source_match:
+            source_value = source_match.group(2)
+            if mode == 'inject':
+                replacement_source = _localize_registry_source(source_value, file_path, workspace_root)
+            else:
+                replacement_source = _restore_registry_source(source_value, file_path, workspace_root)
+
+                if replacement_source:
+                    commented_version_ahead = False
+                    for next_line in lines[index + 1:]:
+                        if not next_line.strip():
+                            continue
+                        commented_version_ahead = bool(re.match(r'^\s*#\s*version\s*=\s*"[^"]+"\s*(?:# Commented for local development.*)?$', next_line))
+                        break
+
+                    if not commented_version_ahead:
+                        replacement_source = None
+
+            if replacement_source and replacement_source != source_value:
+                line = f'{source_match.group(1)}{replacement_source}{source_match.group(3)}'
+                pending_version_comment = True
+
+        version_match = re.match(r'^(\s*)(version\s*=\s*"[^"]+")(\s*.*)$', line)
+        commented_version_match = re.match(r'^(\s*)#\s*(version\s*=\s*"[^"]+")(\s*# Commented for local development.*)?$', line)
+        if pending_version_comment and version_match and mode == 'inject':
+            if not line.lstrip().startswith('#'):
+                line = f'{version_match.group(1)}# {version_match.group(2)}  # Commented for local development{version_match.group(3)}'
+            pending_version_comment = False
+        elif pending_version_comment and commented_version_match and mode == 'revert':
+            line = f'{commented_version_match.group(1)}{commented_version_match.group(2)}'
+            pending_version_comment = False
+        elif not re.match(r'^\s*$', line):
+            pending_version_comment = False
+
+        modified_lines.append(line)
+
+    content = '\n'.join(modified_lines)
+    if content != original_content:
+        file_path.write_text(content)
+        return True
+
+    return False
 
 
 def load_config(config_path: str) -> Dict:
@@ -372,6 +507,7 @@ def revert_dependencies(
     """
     main_count = 0
     state_count = 0
+    workspace_root_path = Path(workspace_root)
     
     # Revert example main.tf files
     for project_path, deploy_dir, project_type in sorted(projects):
@@ -388,17 +524,14 @@ def revert_dependencies(
             print(f"✅ Reverted main.tf -> {main_tf_path}")
             main_count += 1
     
-    # Revert module state.tf files
-    for module_path in MODULE_PATHS:
-        full_module_path = os.path.join(workspace_root, module_path)
-        state_tf_path = os.path.join(full_module_path, "state.tf")
-        
-        if revert_state_tf(state_tf_path, module_path):
-            print(f"✅ Reverted state.tf -> {state_tf_path}")
+    # Revert registry-backed Terraform references in nested module files as well
+    for tf_file in _deployment_tf_files(workspace_root_path):
+        if _rewrite_tf_file(tf_file, workspace_root_path, 'revert'):
+            print(f"✅ Reverted Terraform refs -> {tf_file}")
             state_count += 1
     
     print(f"\n✨ Successfully reverted main.tf in {main_count} projects")
-    print(f"✨ Successfully reverted state.tf in {state_count} modules")
+    print(f"✨ Successfully reverted Terraform refs in {state_count} files")
 
 
 def inject_dependencies(
@@ -421,6 +554,7 @@ def inject_dependencies(
     backend_count = 0
     main_count = 0
     state_count = 0
+    workspace_root_path = Path(workspace_root)
     
     # Process example projects
     for project_path, deploy_dir, project_type in sorted(projects):
@@ -446,18 +580,15 @@ def inject_dependencies(
             print(f"✅ Modified main.tf -> {main_tf_path}")
             main_count += 1
     
-    # 3. Modify module state.tf files
-    for module_path in MODULE_PATHS:
-        full_module_path = os.path.join(workspace_root, module_path)
-        state_tf_path = os.path.join(full_module_path, "state.tf")
-        
-        if modify_state_tf(state_tf_path, module_path):
-            print(f"✅ Modified state.tf -> {state_tf_path}")
+    # 3. Modify registry-backed Terraform references in nested module files as well
+    for tf_file in _deployment_tf_files(workspace_root_path):
+        if _rewrite_tf_file(tf_file, workspace_root_path, 'inject'):
+            print(f"✅ Modified Terraform refs -> {tf_file}")
             state_count += 1
     
     print(f"\n✨ Successfully injected backend.tf into {backend_count} projects")
     print(f"✨ Successfully modified main.tf in {main_count} projects")
-    print(f"✨ Successfully modified state.tf in {state_count} modules")
+    print(f"✨ Successfully modified Terraform refs in {state_count} files")
 
 
 def inject_files(
