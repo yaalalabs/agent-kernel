@@ -1,6 +1,7 @@
 # Input Queue
 module "input_queue" {
-  source = "../../../common/modules/sqs"
+  source               = "yaalalabs/ak-common/aws//modules/sqs"
+  version              = "0.2.14"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -44,7 +45,8 @@ module "input_queue" {
 
 # Output Queue
 module "output_queue" {
-  source = "../../../common/modules/sqs"
+  source               = "yaalalabs/ak-common/aws//modules/sqs"
+  version              = "0.2.14"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
