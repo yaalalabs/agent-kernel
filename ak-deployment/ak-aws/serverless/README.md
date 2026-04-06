@@ -489,7 +489,7 @@ When `scalable_mode = true`, the module adds an asynchronous queue-driven path a
 
 **Execution modes**:
 - `rest_sync`: synchronous REST requests
-- `rest_async`: chat path will have a POST and GET method, POST method woulfd be to send the request, GET method is to get the response for that request (by `request_id`) via polling 
+- `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling 
 
 **Operational rules**:
 - Input queue visibility timeout must be greater than or equal to the agent runner timeout
