@@ -1,4 +1,4 @@
-from typing import Any, Literal, Union
+from typing import Any, Callable, Literal, Union
 
 from pydantic import BaseModel
 
@@ -104,3 +104,9 @@ class AgentReplyImage(BaseModel):
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
 type AgentReply = Union[AgentReplyText, AgentReplyImage]
+
+
+class SystemTool(BaseModel):
+    name: str
+    description: str
+    func: Callable

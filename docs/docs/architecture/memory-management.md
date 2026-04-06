@@ -181,18 +181,22 @@ class MyHook(PreHook):
         return requests
 ```
 
-#### Method 2: From Global Runtime
+#### Method 2: From Current Session or Runtime
 
-When you don't have session access (e.g., in tools):
+When you don't have direct session access (e.g., in tools):
 
 ```python
-from agentkernel import AuxiliaryCache
-from agentkernel.core.memory import KeyValueCache
+from agentkernel import Session, Runtime
+from agentkernel.core.util.key_value_cache import KeyValueCache
 
 def my_tool():
-    # Get caches from global runtime
-    v_cache: KeyValueCache = AuxiliaryCache.get_volatile_cache()
-    nv_cache: KeyValueCache = AuxiliaryCache.get_non_volatile_cache()
+    # Get caches from the current session
+    session = Session.current()
+    v_cache: KeyValueCache = session.get_volatile_cache()
+    nv_cache: KeyValueCache = session.get_non_volatile_cache()
+    
+    # Or load a session by ID from the runtime
+    # session = Runtime.current().sessions().load(session_id)
     
     # Use the caches
     context = v_cache.get("rag_context")
@@ -333,9 +337,9 @@ class DataPreprocessorHook(PreHook):
 
 # In tool: Access cached data
 def my_analysis_tool():
-    from agentkernel import AuxiliaryCache
+    from agentkernel import Session
     
-    v_cache = AuxiliaryCache.get_volatile_cache()
+    v_cache = Session.current().get_volatile_cache()
     data = v_cache.get("preprocessed_data")
     
     # Use preprocessed data without reprocessing

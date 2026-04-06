@@ -55,6 +55,10 @@ export AK_GMAIL__POLL_INTERVAL="30"                # Default: 30 seconds
 export AK_GMAIL__AGENT="general"                   # Agent name to handle emails
 export AK_GMAIL__LABEL_FILTER="INBOX"              # Gmail label to monitor
 
+# Multimodal Configuration (Optional)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=20        # Keep last N files in session (default: 20)
+
 # Email Signature Customization
 export AK_CLIENT_NAME="Your Name"                  # Name to sign replies with
 export AK_GMAIL_SIGN_OFF="Best regards"            # Sign-off format (e.g., "Sincerely", "Kind regards")
@@ -121,7 +125,7 @@ gmail:
 - **Email Threading**: Replies maintain conversation thread with full context
 - **Thread Support**: Each Gmail thread maintains a separate conversation session
 - **Image Attachments**: JPEG, PNG, GIF, WebP images are extracted and sent to agents
-- **File Attachments**: PDF, Word, Excel documents are extracted and sent to agents
+- **File Attachments**: PDF documents are extracted and sent to agents
 - **Custom Signatures**: Configurable email signatures with name and sign-off format
 
 ### Supported Attachment Types
@@ -136,8 +140,6 @@ gmail:
 **Documents:**
 
 - PDF (.pdf) - `application/pdf`
-- Microsoft Word (.doc, .docx)
-- Microsoft Excel (.xls, .xlsx)
 
 Attachments are automatically:
 

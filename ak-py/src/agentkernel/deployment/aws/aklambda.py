@@ -7,7 +7,14 @@ import os
 import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from agentkernel.core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import (
+    AgentReplyImage,
+    AgentReplyText,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+)
 
 from ...core import AgentService
 
@@ -142,8 +149,44 @@ class LambdaRouter:
             else:
                 raise ValueError("No prompt provided in the request")
 
+            # Process images (JPEG, PNG, WebP, etc.)
+            if body.get("images"):
+                for image in body["images"]:
+                    image_data = image.get("image_data", "")
+                    mime_type = image.get("mime_type", None)
+                    name = image.get("name", "unknown")
+                    if not image_data.startswith(("http://", "https://", "data:", "s3://")) and not mime_type:
+                        raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
+                    self._log.debug(f"Adding image: {name}")
+                    requests.append(
+                        AgentRequestImage(
+                            image_data=image_data,
+                            name=name,
+                            mime_type=mime_type,
+                        )
+                    )
+
+            # Process file attachments (documents, PDFs, CSVs, etc.)
+            if body.get("files"):
+                for file in body["files"]:
+                    file_data = file.get("file_data", "")
+                    mime_type = file.get("mime_type", None)
+                    name = file.get("name", "unknown")
+                    if not file_data.startswith(("http://", "https://", "data:", "s3://")) and not mime_type:
+                        raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
+                    self._log.debug(f"Adding file attachment: {name}")
+                    requests.append(
+                        AgentRequestFile(
+                            file_data=file_data,
+                            name=name,
+                            mime_type=mime_type,
+                        )
+                    )
+
+            # Pack additional properties into AgentRequestAny
+            known_fields = {"prompt", "agent", "session_id", "images", "files"}
             for key, value in body.items():
-                if key in ["prompt", "agent", "session_id"]:
+                if key in known_fields:
                     continue
                 self._log.info(f"Adding additional context: {key}={value}")
                 requests.append(AgentRequestAny(name=key, content=value))

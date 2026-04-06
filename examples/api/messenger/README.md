@@ -33,6 +33,10 @@ export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v24.0. Only ch
 
 # OpenAI API Key for the agent
 export OPENAI_API_KEY="your_openai_api_key"
+
+# Multimodal Configuration (Optional)
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
 ```
 
 ### 3. Create Configuration File
