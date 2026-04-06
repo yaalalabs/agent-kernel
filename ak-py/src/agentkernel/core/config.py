@@ -207,7 +207,7 @@ class _ResponseStoreRedisConfig(_RedisConfig):
 class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
     table_name: Optional[str] = Field(
         default=None,
-        description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'",
+        description="DynamoDB table name for session storage.",
     )
 
 

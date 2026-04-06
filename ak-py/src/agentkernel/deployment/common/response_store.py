@@ -17,7 +17,7 @@ class ResponseStore(ABC):
         """
         Store a response message.
 
-        :param message: Message dictionary containing request_id, session_id, message_body
+        :param message: message containing request_id, session_id, body
         :return: None
         """
         pass
@@ -29,7 +29,7 @@ class ResponseStore(ABC):
 
         :param request_id: Request ID
         :param get_and_delete: Delete the message after retrieval when True
-        :return: Message dictionary or None if not found
+        :return: message record as dict or None if not found
         """
         pass
 
@@ -38,7 +38,7 @@ class ResponseStore(ABC):
         Wait until a message exists for a request ID and retrieve it.
         :param request_id: Request ID
         :param get_and_delete: Delete the message after retrieval when True
-        :return: Message dictionary or None if not found
+        :return: message record as dict or None if not found
         """
         response_store_config = AKConfig.get().execution.response_store
         retry_count = response_store_config.retry_count
