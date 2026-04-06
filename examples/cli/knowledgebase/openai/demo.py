@@ -6,9 +6,6 @@ from agentkernel.knowledgebase.starburst_kb import StarburstManager
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agents import Agent
 
-# ---------------------------------------------------------------------------
-# ChromaDB — semantic vector store for unstructured text
-# ---------------------------------------------------------------------------
 v_db = ChromaManager(
     persist_path="./Scratches/my_chroma_db",
     name="ChromaDB",
@@ -31,9 +28,6 @@ v_db = ChromaManager(
     },
 })
 
-# ---------------------------------------------------------------------------
-# Neo4jDB — graph database for entities and relationships
-# ---------------------------------------------------------------------------
 g_db = Neo4jManager(
     name="Neo4jDB",
     description=(
@@ -73,9 +67,6 @@ g_db = Neo4jManager(
     },
 })
 
-# ---------------------------------------------------------------------------
-# StarburstDB — MongoDB via Starburst Galaxy (mongocluster)
-# ---------------------------------------------------------------------------
 s_db = StarburstManager(
     name="StarburstDB",
     host="johnpraveenyl-mongocluster.trino.galaxy.starburst.io",
@@ -110,9 +101,6 @@ s_db = StarburstManager(
 })
 
 
-# ---------------------------------------------------------------------------
-# StarburstDB_Sheets — Google Sheets via Starburst Galaxy (free-cluster)
-# ---------------------------------------------------------------------------
 s2_db = StarburstManager(
     name="StarburstDB_Sheets",
     host="johnpraveenyl-free-cluster.trino.galaxy.starburst.io",
@@ -146,15 +134,9 @@ s2_db = StarburstManager(
     },
 })
 
-# ---------------------------------------------------------------------------
-# Knowledge builder — wires all backends together
-# ---------------------------------------------------------------------------
 knowledgeBuilder = KnowledgeBuilder([v_db, g_db, s_db, s2_db])
 
 
-# ---------------------------------------------------------------------------
-# Agent
-# ---------------------------------------------------------------------------
 def build_agent(description: str) -> Agent:
     instructions = f"""{description}
 
