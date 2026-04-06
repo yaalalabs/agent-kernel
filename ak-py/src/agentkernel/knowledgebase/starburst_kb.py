@@ -65,14 +65,10 @@ class StarburstManager(KnowledgeBase):
         self.schema = schema
         self.table_name = table_name
         self.name = name
-        self.description = description or (
-            f"Starburst Galaxy read-only backend. "
-            f"Query target: {catalog}.{schema}.{table_name}"
-        )
+        self.description = description or (f"Starburst Galaxy read-only backend. " f"Query target: {catalog}.{schema}.{table_name}")
 
         self.connection = None
         self.connect()
-
 
     @property
     def backend_name(self) -> str:
@@ -81,7 +77,8 @@ class StarburstManager(KnowledgeBase):
     def connect(self, **kwargs) -> None:
         """Open a connection to Starburst Galaxy."""
         missing = [
-            k for k, v in {
+            k
+            for k, v in {
                 "host": self.host,
                 "user": self.user,
                 "password": self.password,
@@ -108,10 +105,7 @@ class StarburstManager(KnowledgeBase):
             auth=trino.auth.BasicAuthentication(self.user, self.password),
             request_timeout=60,
         )
-        logger.info(
-            f"[KB][{self.name}] Connected → {self.host} "
-            f"| {self.catalog}.{self.schema}.{self.table_name}"
-        )
+        logger.info(f"[KB][{self.name}] Connected → {self.host} " f"| {self.catalog}.{self.schema}.{self.table_name}")
 
     def close(self) -> None:
         """Release the Starburst connection."""
@@ -129,8 +123,6 @@ class StarburstManager(KnowledgeBase):
 
     def get_description(self) -> str:
         return f"{self.backend_name}: {self.description}"
-
-  
 
     def read(self, query: str = "", limit: int = 5, **kwargs) -> List[Mapping[str, Any]]:
         """
@@ -163,7 +155,6 @@ class StarburstManager(KnowledgeBase):
             sql = f"{sql} LIMIT {limit}"
 
         return self._execute(sql, retried=False)
-
 
     def _execute(self, sql: str, retried: bool) -> List[Mapping[str, Any]]:
         """
