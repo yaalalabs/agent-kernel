@@ -2,6 +2,7 @@ from agentkernel.cli import CLI
 from agentkernel.knowledgebase.chroma_kb import ChromaManager
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.knowledgebase.neo4j_kb import Neo4jManager
+from agentkernel.knowledgebase.starburst_kb import StarburstManager
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agents import Agent
 
@@ -68,7 +69,54 @@ g_db = Neo4jManager(
     }
 )
 
-knowledgeBuilder = KnowledgeBuilder([v_db, g_db])
+# Starburst settings (edit these directly; no shell export required)
+STARBURST_CATALOG = "kb_mongo"
+STARBURST_SHEET_ID = "1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY"
+STARBURST_TABLE_LOCATION = "kb_mongo.my_company_kb.clients"
+
+# ---------------------------------------------------------------------------
+# Starburst Galaxy — read-only federated SQL backend
+# Give the agent catalog + schema + table so it can write correct SQL itself.
+# ---------------------------------------------------------------------------
+s_db = StarburstManager(
+    name="StarburstDB",
+    catalog="kb_mongo",          # your Galaxy catalog name
+    schema="my_company_kb",      # the schema (MongoDB database name) inside that catalog
+    table_name="clients",        # the table / collection the agent will query
+    description=(
+        "Starburst Galaxy read-only backend connected to MongoDB via Trino. "
+        "Use this to query structured data about clients. "
+        "Fully-qualified table: kb_mongo.my_company_kb.clients. "
+        "Always write SQL as: SELECT <columns> FROM kb_mongo.my_company_kb.clients WHERE ... LIMIT <n>"
+    ),
+).add_schema({
+    "description": (
+        "Starburst Galaxy read-only SQL backend (MongoDB via Trino). "
+        "The agent must generate a valid SQL query using the table info below."
+    ),
+    "table": {
+        "catalog":    "kb_mongo",
+        "schema":     "my_company_kb",
+        "table_name": "clients",
+        "full_path":  "kb_mongo.my_company_kb.clients",
+    },
+    "read_payload": {
+        "query": "A valid SQL statement — SELECT / SHOW / DESCRIBE only.",
+        "limit": "int — max rows (default: 5). Appended automatically if omitted from SQL.",
+    },
+    "query_guide": {
+        "basic":     "SELECT * FROM kb_mongo.my_company_kb.clients LIMIT 5",
+        "filtered":  "SELECT * FROM kb_mongo.my_company_kb.clients WHERE name = 'Alice' LIMIT 5",
+        "inspect":   "DESCRIBE kb_mongo.my_company_kb.clients",
+        "list":      "SHOW TABLES FROM kb_mongo.my_company_kb",
+    },
+    "constraints": {
+        "write_supported": False,
+        "allowed_sql":     ["SELECT", "SHOW", "DESCRIBE"],
+        "note":            "Always use the full path kb_mongo.my_company_kb.clients in every query.",
+    },
+})
+knowledgeBuilder = KnowledgeBuilder([v_db, g_db, s_db])
 
 
 def build_agent(description: str) -> Agent:
@@ -83,10 +131,10 @@ def build_agent(description: str) -> Agent:
 
 CRITICAL ROUTING RULES — FOLLOW EXACTLY:
 1. START: Call `get_schemas()` immediately to understand all available backends.
-2.understand the database descrtiption using get_all_kb_descriptions() and use that to decide which backend to use for each query. For example, if the query is about finding a relationship between two entities, use Neo4j. If it's about recalling a fact or piece of text, use ChromaDB.
-3. ANALYZE: For reads → use `read_kb()`. For writes → use `write_kb()`. For structured/graph data → prefer graphdb. For text/semantic → prefer chromadb.
+2. UNDERSTAND: Use `get_all_kb_descriptions()` to decide which backend to use. Example: entities/relationships → Neo4j; text/semantic recall → ChromaDB; structured SQL tables + sheets → StarburstDB.
+3. ANALYZE: For reads → use `read_kb()`. For writes → use `write_kb()` except StarburstDB (strictly read-only). StarburstDB auto-detects: natural language → sheet search; explicit SQL (qualified table) → direct query; unqualified SQL → tries to qualify then falls back.
 4. ACTION: Pick ONE backend explicitly based on the data type. NEVER ask which backend to use — decide and execute.
-5. EXECUTE: Call the tool with complete parameters. For Neo4j, include Cypher queries when storing entities/relationships.
+5. EXECUTE: Call the tool with complete parameters. For Neo4j, include Cypher queries when storing. For StarburstDB, let it auto-detect.
 6. RESPOND: Report results clearly. If no results found, say "No data found for [query]" and offer alternatives.
 7. NEVER: Loop, retry the same failed query, or issue repeated write attempts after a read failure.
 
