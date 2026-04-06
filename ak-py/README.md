@@ -178,7 +178,7 @@ OpenAIModule([assistant])
 handler = Lambda.handler
 ```
 
-**Note that this is just the simple serverelss version. A more advanced servereless deployment mode, which uses queues for scalability, is also available. For queue-backed execution modes and response-store configuration, see the [AWS Serverless Deployment](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/aws-serverless.md) guide.**
+**Note that this is just the simple serverless version. A more advanced serverless deployment mode, which uses queues for scalability, is also available. For queue-backed execution modes and response-store configuration, see the [AWS Serverless Deployment](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/aws-serverless.md) guide.**
 
 The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, Agent Kernel generates a `request_id` and normalizes it before processing. 
 

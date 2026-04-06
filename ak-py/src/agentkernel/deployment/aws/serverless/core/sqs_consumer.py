@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, List
 
 
@@ -9,6 +10,7 @@ class LambdaSQSConsumer:
     """
 
     max_receive_count: int = 3  # Fallback value, actual configurable values are defined in the subclasses
+    _log = logging.getLogger("ak.aws.lambdasqsconsumer")
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -37,7 +39,8 @@ class LambdaSQSConsumer:
                 # Normal processing path
                 cls.process_message(record)
 
-            except Exception:
+            except Exception as exc:
+                cls._log.info(f"Sending message as batchItemFailure '{message_id}': '{exc}'")
                 # On failure, tell Lambda to return this message to the queue
                 failures.append({"itemIdentifier": message_id})
 

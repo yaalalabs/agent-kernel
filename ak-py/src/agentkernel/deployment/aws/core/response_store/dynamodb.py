@@ -7,7 +7,7 @@ from ....common.response_store import ResponseStore
 
 class DynamoDBResponseStore(ResponseStore):
 
-    def __init__(self, table_name: str, region: str, ttl: int = 0):
+    def __init__(self, table_name: str, region: str = None, ttl: int = 0):
 
         self._log.debug("Initializing DynamoDBResponseStore with table_name=%s region=%s ttl=%s", table_name, region, ttl)
 

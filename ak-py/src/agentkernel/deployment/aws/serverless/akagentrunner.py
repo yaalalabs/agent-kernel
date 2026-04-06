@@ -27,7 +27,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def _construct_queue_input_message(cls, raw_queue_message: dict, queue_input_message_body: dict) -> dict:
         """
         Construct the SQS message payload for the response queue.
-        :param raw_queue_message: Original SQS message (``dict``) received by the Lambdafunction.
+        :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function.
         :param queue_input_message_body: JSON-serializable body (``dict``) to be sent to the response queue.
         :return: Dictionary (``dict``) of parameters for ``boto3`` ``send_message`` (excluding ``QueueUrl``).
         """
@@ -112,8 +112,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
             queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body)
             cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Permentant Failure message to Output Queue: '{cls._get_output_queue_url()}'")
+            cls._log.info(f"Sent Permanent Failure message to Output Queue: '{cls._get_output_queue_url()}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries
             # Catching the error here so that this message will not be returned as batchItemFailures for another retry.
-            cls._log.info(f"Failed sending permenant failure message to Output Queue '{cls._get_output_queue_url()}' due to error: '{str(e)}'")
+            cls._log.info(f"Failed sending permanent failure message to Output Queue '{cls._get_output_queue_url()}' due to error: '{str(e)}'")

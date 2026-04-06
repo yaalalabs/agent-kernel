@@ -30,6 +30,7 @@ class ChatService:
         :param body: Request body containing prompt, agent, session_id, and optional context
         :return: Response dictionary with result/error and session_id
         """
+        self.service = AgentService()
         try:
             prompt = body.get("prompt", None)
             agent = body.get("agent", None)
@@ -85,8 +86,6 @@ class ChatService:
                     continue
                 self._log.info(f"Adding additional context: {key}={value}")
                 requests.append(AgentRequestAny(name=key, content=value))
-
-            self.service = AgentService()
 
             self.service.select(session_id, agent)
             if not self.service.agent:

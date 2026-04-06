@@ -240,7 +240,7 @@ class _QueuesConfig(BaseModel):
 
 
 class _ExecutionConfig(BaseModel):
-    mode: ExecutionMode = Field(
+    mode: Optional[ExecutionMode] = Field(
         default=None,
         description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST",
     )

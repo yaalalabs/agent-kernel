@@ -121,7 +121,7 @@ class DefaultEndpointsHandler:
         event: Dict[str, Any],
         operation: Callable[[BaseRequest], Dict[str, Any]],
         headers: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> tuple[int, Dict[str, Any]]:
         """
         Execute operation with standard request parsing and error handling.
         :param event: API Gateway event
@@ -184,7 +184,7 @@ class DefaultEndpointsHandler:
         return cls._get_response_store().get_message_with_retry(request_id=request_id, get_and_delete=True)
 
     @classmethod
-    def _handle_rest_sync(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def _handle_rest_sync(cls, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Send request to queue and immediately fetch response.
         :param event: API Gateway event
@@ -216,7 +216,7 @@ class DefaultEndpointsHandler:
         return cls._handle_request(event, sync_operation)
 
     @classmethod
-    def _handle_async_submit(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def _handle_async_submit(cls, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Submit message to queue (async mode).
         :param event: API Gateway event
@@ -237,7 +237,7 @@ class DefaultEndpointsHandler:
         return cls._handle_request(event, submit_operation)
 
     @classmethod
-    def _handle_async_poll(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def _handle_async_poll(cls, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Poll database for messages (async mode).
         :param event: API Gateway event
