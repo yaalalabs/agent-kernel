@@ -62,7 +62,7 @@ class _APIConfig(BaseModel):
     port: int = Field(default=8000, description="API port")
     enabled_routes: _RoutesConfig = Field(description="API route flags", default_factory=_RoutesConfig)
     custom_router_prefix: str = Field(default="/custom", description="Custom router prefix")
-    max_file_size: int = Field(default=2097152, description="Maximum file size in bytes (default: 2 MB)")
+    max_file_size: int = Field(default=20971520, description="Maximum file size in bytes (default: 20 MB)")
 
 
 class _A2AConfig(BaseModel):
@@ -131,6 +131,43 @@ class _GmailConfig(BaseModel):
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
 
 
+class _MultimodalStorageRedisConfig(BaseModel):
+    url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
+    ttl: int = Field(default=604800, description="Attachment TTL in seconds")
+    prefix: str = Field(default="ak:attachments:", description="Key prefix for attachment keys")
+
+
+class _MultimodalStorageDynamoDBConfig(BaseModel):
+    table_name: str = Field(default="ak-attachments", description="DynamoDB table name for attachment storage")
+    ttl: int = Field(default=604800, description="Attachment TTL in seconds (0 disables)")
+
+
+class _MultimodalConfig(BaseModel):
+    """Configuration for multimodal attachment memory."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable multimodal memory for images and files.",
+    )
+    storage_type: str = Field(
+        default="in_memory",
+        pattern="^(session_cache|in_memory|redis|dynamodb)$",
+        description="Storage backend for multimodal attachments. Options: session_cache, in_memory, redis, dynamodb",
+    )
+    max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
+    description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
+    description_model: str = Field(
+        default="gpt-4o",
+        description="LiteLLM model used to generate brief descriptions when an attachment is first received (called by the pre-hook)",
+    )
+    analysis_model: str = Field(
+        default="gpt-4o",
+        description="LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment",
+    )
+    redis: Optional[_MultimodalStorageRedisConfig] = None
+    dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -180,6 +217,7 @@ class AKConfig(YamlBaseSettingsModified):
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
     telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
+    multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)

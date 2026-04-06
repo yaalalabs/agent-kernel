@@ -74,9 +74,11 @@ Before you begin, you'll need:
 **Create a Verify Token:**
 
 This is a random string you create yourself for webhook verification. Choose something secure like:
+
 ```bash
 openssl rand -hex 32
 ```
+
 Save this as `AK_INSTAGRAM__VERIFY_TOKEN`
 
 ### 3. Configure Environment Variables
@@ -112,6 +114,7 @@ ssh -p443 -R0:localhost:8000 a.pinggy.io
 **Subscribe to webhook events:**
 
 In the webhook configuration, subscribe to:
+
 - `messages` - To receive user messages
 
 **Enable the webhook:**
@@ -200,25 +203,25 @@ class CustomInstagramHandler(AgentInstagramRequestHandler):
         message = messaging_event.get("message", {})
         message_text = message.get("text", "").strip()
         sender_id = messaging_event.get("sender", {}).get("id")
-        
+      
         # Handle special commands
         if message_text.startswith("/"):
             await self._handle_command(message_text, sender_id)
             return
-        
+      
         # Preprocess messages before sending to agent
         processed_text = self._preprocess_message(message_text)
-        
+      
         # Continue with normal processing
         await super()._handle_message(messaging_event)
-    
+  
     async def _handle_command(self, command: str, sender_id: str):
         """Handle custom commands"""
         await self._send_typing_indicator(sender_id, True)
-        
+      
         if command == "/help":
             help_text = """🤖 Available Commands:
-            
+          
 /help - Show this help message
 /start - Start a new conversation
 
@@ -234,9 +237,9 @@ Just send any message to chat with me!"""
                 sender_id,
                 f"Unknown command. Try /help for available commands."
             )
-        
+      
         await self._send_typing_indicator(sender_id, False)
-    
+  
     def _preprocess_message(self, text: str) -> str:
         """Clean up or enhance user messages"""
         # Expand common abbreviations
@@ -288,15 +291,58 @@ OpenAIModule([sales_agent, support_agent, general_agent])
 ## Supported Message Types
 
 ### Text Messages
+
 Standard text messages are fully supported with automatic context management.
 
 ### Postbacks
+
 Handle button clicks and quick reply selections. Postbacks are processed as text using the button title or payload.
 
+### Multi-Modal: Images and Files 
+
+The integration provides full support for images and file attachments with AI analysis:
+
+**Supported Formats:**
+
+- **Images**: JPEG, PNG, GIF, WebP (detected automatically)
+- **Documents**: PDF files only
+- **Media**: Audio and video files
+
+**How It Works:**
+
+1. **Detection**: When user sends message with attachment, handler identifies type
+2. **Download**: File is downloaded from Instagram's servers
+3. **Validation**: File size checked against limit (default 20 MB)
+4. **Encoding**: File converted to base64 for transmission
+5. **Processing**: Agent receives file and can analyze it
+6. **Response**: Agent provides insights or answers about the content
+
+**File Size Limits:**
+
+- **Default**: 20 MB per file (20,971,520 bytes)
+- **Base64 Overhead**: ~33% increase in size
+- **Effective Size**: ~15 MB usable after base64 encoding
+- **Configurable**: Set `api.max_file_size` in config.yaml
+
+**Example User Interactions:**
+
+```bash
+User: "What's in this photo?" [sends image]
+Agent: [analyzes image] "This appears to be..."
+
+User: "Extract the text from this PDF" [sends PDF]
+Agent: [processes PDF] "The document contains..."
+
+User: "Can you read this note?" [sends image]
+Agent: [uses OCR] "The note says..."
+```
+
 ### Reactions
+
 Message reactions are logged with extensibility for custom handling.
 
 ### Read Receipts
+
 Read receipts are automatically logged for debugging purposes.
 
 ## Character Limits
@@ -320,11 +366,13 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`), not a 
 **Problem:** API calls fail with authentication errors
 
 **This is the most common issue.** It occurs when:
+
 - Using a Facebook Page Access Token instead of Instagram User Access Token
 - Token has expired (tokens are valid for 60 days)
 - Token doesn't have required permissions
 
 **Solutions:**
+
 - Generate a new token from Business Login for Instagram
 - The token should start with `IGAA...`
 - Do NOT use tokens starting with `EAAG...` (Facebook Page tokens)
@@ -335,6 +383,7 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`), not a 
 **Problem:** "Webhook verification failed" error when configuring callback URL
 
 **Solutions:**
+
 - Ensure your verify token in the environment variable exactly matches what you enter in Meta portal
 - Verify your server is running and accessible via HTTPS
 - Check that your webhook URL path is `/instagram/webhook`
@@ -346,6 +395,7 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`), not a 
 **Problem:** Webhook is verified but messages aren't reaching your agent
 
 **Solutions:**
+
 - Check that webhook subscriptions include `messages` and are active
 - Verify Instagram account is a Professional account (Business or Creator)
 - Ensure app has `instagram_business_manage_messages` permission
@@ -357,6 +407,7 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`), not a 
 **Problem:** API returns permission denied errors
 
 **Solutions:**
+
 - Ensure all required permissions are granted:
   - `instagram_business_basic`
   - `instagram_business_manage_messages`
@@ -368,6 +419,7 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`), not a 
 **Problem:** Agent processes messages but responses don't appear in Instagram
 
 **Solutions:**
+
 - Confirm you're using an **Instagram User Access Token** (starts with `IGAA...`)
 - Verify the token has required permissions
 - Check that you're responding within a reasonable time
@@ -389,6 +441,7 @@ logging.basicConfig(
 ```
 
 This will show:
+
 - Incoming webhook requests
 - Signature verification steps
 - Agent processing details
@@ -400,6 +453,7 @@ This will show:
 Instagram enforces rate limits to ensure platform stability:
 
 ### Message Limits
+
 - Rate limits vary by account type and quality score
 - **Best practice**: Implement queuing for high-volume scenarios
 
@@ -413,7 +467,7 @@ class RateLimitedInstagramHandler(AgentInstagramRequestHandler):
     def __init__(self):
         super().__init__()
         self.message_queue = Queue()
-        
+      
     async def _send_message(self, recipient_id: str, text: str):
         # Add delay to respect rate limits
         await asyncio.sleep(0.1)  # 10 messages per second
@@ -427,41 +481,42 @@ class RateLimitedInstagramHandler(AgentInstagramRequestHandler):
 Before deploying to production:
 
 1. ✅ **Complete Meta App Review**
+
    - Request `instagram_business_manage_messages` permission
    - Submit app for review with clear use case documentation
    - Provide test credentials and instructions
    - Typical approval time: 3-5 business days
-
 2. ✅ **Security Measures**
+
    - Use environment variables for all secrets
    - Enable app secret verification (`AK_INSTAGRAM__APP_SECRET`)
    - Implement HTTPS with valid SSL certificate
    - Use secure secret management (AWS Secrets Manager, HashiCorp Vault)
-
 3. ✅ **Infrastructure**
+
    - Deploy behind a reverse proxy (nginx, Apache)
    - Set up load balancing for high traffic
    - Implement health checks and monitoring
    - Configure auto-scaling if using cloud services
-
 4. ✅ **Monitoring & Logging**
+
    - Set up centralized logging (CloudWatch, Datadog, ELK)
    - Configure alerts for errors and anomalies
    - Track conversation metrics and performance
    - Monitor API rate limits
-
 5. ✅ **Error Handling**
+
    - Implement retry logic with exponential backoff
    - Handle network failures gracefully
    - Provide fallback responses for errors
    - Log errors for debugging
-
 6. ✅ **Token Management**
+
    - Instagram User Access Tokens expire in 60 days
    - Implement token refresh before expiration
    - Set up alerts for token expiration
-
 7. ✅ **Compliance**
+
    - Review Meta Platform Policies
    - Ensure GDPR/CCPA compliance for user data
    - Implement data retention policies
@@ -472,38 +527,44 @@ Before deploying to production:
 For production deployments, consider:
 
 **Serverless (AWS Lambda):**
+
 - Cost-effective for low-to-medium traffic
 - Auto-scaling built-in
 - See `examples/aws-serverless` for reference
 
 **Containerized (Docker/Kubernetes):**
+
 - Better for high traffic and complex workflows
 - Full control over environment
 - See `examples/aws-containerized` for reference
 
 **Traditional Server:**
+
 - Simple deployment for small-scale applications
 - Use systemd or supervisor for process management
 - Configure nginx as reverse proxy
 
 ## Instagram vs Messenger vs WhatsApp Comparison
 
-| Feature | Instagram | Facebook Messenger | WhatsApp |
-|---------|-----------|-------------------|----------|
-| **Message Limit** | 1,000 characters | 2,000 characters | 4,096 characters |
-| **User Identifier** | Instagram-Scoped ID | Page-Scoped ID (PSID) | Phone number |
-| **Visual Feedback** | Typing indicators | Typing indicators, seen receipts | Read receipts |
-| **Authentication** | Instagram User Token (IGAA) | Page access token | Phone number ID + token |
-| **Facebook Page Required** | No (with Business Login) | Yes | No |
-| **Account Type** | Professional (Business/Creator) | Facebook Page | WhatsApp Business |
-| **App Review** | Required for production | Required for public access | Required for production |
+| Feature                          | Instagram                       | Facebook Messenger               | WhatsApp                |
+| -------------------------------- | ------------------------------- | -------------------------------- | ----------------------- |
+| **Message Limit**          | 1,000 characters                | 2,000 characters                 | 4,096 characters        |
+| **User Identifier**        | Instagram-Scoped ID             | Page-Scoped ID (PSID)            | Phone number            |
+| **Visual Feedback**        | Typing indicators               | Typing indicators, seen receipts | Read receipts           |
+| **Authentication**         | Instagram User Token (IGAA)     | Page access token                | Phone number ID + token |
+| **Facebook Page Required** | No (with Business Login)        | Yes                              | No                      |
+| **Account Type**           | Professional (Business/Creator) | Facebook Page                    | WhatsApp Business       |
+| **App Review**             | Required for production         | Required for public access       | Required for production |
 
 ## Example Projects
 
 Complete working examples with different configurations:
 
-- **Basic Example**: `examples/api/instagram/server.py`
-- **Integration Guide**: `ak-py/src/agentkernel/integration/instagram/README.md`
+- **Basic Example**: \
+`examples/api/instagram/server.py`\
+`examples/api/instagram/server_adk.py`
+- **Integration Guide**: \
+`ak-py/src/agentkernel/integration/instagram/README.md`
 
 ## Additional Resources
 
@@ -523,4 +584,3 @@ If you encounter issues:
 3. Review the Instagram Platform documentation
 4. Check the [Agent Kernel GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
 5. Visit the [Meta Developer Community](https://developers.facebook.com/community/)
-

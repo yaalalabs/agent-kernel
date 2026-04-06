@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.base import (
@@ -23,6 +23,7 @@ from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.tool import SystemToolFactory
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
@@ -195,6 +196,10 @@ class LangGraphAgent(BaseAgent):
         """
         super().__init__(name, runner)
         self._agent = agent
+        self._tools: list[Any] = []
+        self._system_prompt: str = ""
+        self._attach_system_tools()
+        self._setup_system_prompt()
 
     @property
     def agent(self) -> CompiledStateGraph:
@@ -233,6 +238,24 @@ class LangGraphAgent(BaseAgent):
         # TODO extract description from graph
         return A2ACardBuilder.build(name=self.name, description="", skills=skills)
 
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Satisfies the base Agent contract, but does nothing for LangGraph.
+        LangGraph tools must be bound explicitly via LangGraphToolBuilder.bind()
+        before the CompiledStateGraph is created, because the graph is immutable.
+        """
+        pass
+
+    def override_system_prompt(self, prompt: str) -> None:
+        """
+        Stores the system prompt suffix on the agent wrapper.
+        The runner injects this as a SystemMessage on the first turn of each session,
+        so the LLM receives tool instructions with the correct role.
+        Follows the same pattern as ADK, OpenAI, and CrewAI.
+        """
+        if prompt not in self._system_prompt:
+            self._system_prompt += ("\n" if self._system_prompt else "") + prompt
+
 
 class LangGraphSession:
     """
@@ -244,6 +267,7 @@ class LangGraphSession:
         Initializes a LangGraphSession instance with a pickle-serializable checkpointer.
         """
         self._checkpointer = CheckPointer()
+        self._system_prompt_injected: bool = False
 
     @property
     def checkpointer(self):
@@ -299,9 +323,18 @@ class LangGraphRunner(BaseRunner):
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
             session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-            agent.agent.checkpointer = self._session(session).checkpointer
+            lg_session = self._session(session)
+            agent.agent.checkpointer = lg_session.checkpointer
+
+            messages = []
+            system_prompt = getattr(agent, "_system_prompt", "")
+            if system_prompt and not lg_session._system_prompt_injected:
+                messages.append(SystemMessage(content=system_prompt))
+                lg_session._system_prompt_injected = True
+            messages.append(HumanMessage(content=prompt))
+
             result = await agent.agent.ainvoke(
-                input={"messages": [HumanMessage(content=prompt)]},
+                input={"messages": messages},
                 config=session_config.model_dump(),
             )
             last_message = result["messages"][-1]
@@ -376,13 +409,22 @@ class LangGraphToolBuilder(ToolBuilder):
     def bind(cls, funcs: list[Callable]) -> list[Any]:
         """
         Bind generic tool functions to LangChain StructuredTool instances.
+        Also automatically appends global system tools (such as multimodal attachments).
 
         :param funcs: List of generic tool functions to bind.
         :return: List of LangChain StructuredTool instances.
         :raises TypeError: If any item in funcs is not callable.
         """
+        from ...core.base import Agent
+
+        # Inject system tools (e.g., analyze_attachments)
+        all_funcs = list(funcs)
+        for sys_tool in SystemToolFactory.get_all():
+            if sys_tool.func not in all_funcs:
+                all_funcs.append(sys_tool.func)
+
         tools = []
-        for func in funcs:
+        for func in all_funcs:
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func).__name__}")
 

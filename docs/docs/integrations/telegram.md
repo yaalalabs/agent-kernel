@@ -8,8 +8,8 @@ The `AgentTelegramRequestHandler` provides a seamless bridge between your Agent 
 
 ### How it works:
 
-1. User sends a message to your Telegram bot 
-2. Telegram delivers the message to your webhook endpoint 
+1. User sends a message to your Telegram bot
+2. Telegram delivers the message to your webhook endpoint
 3. Agent Kernel verifies and processes the message
 4. Visual feedback is sent (typing indicator, etc.)
 5. Agent generates a response and sends it back to the user
@@ -45,17 +45,28 @@ export AK_TELEGRAM__BOT_TOKEN="your_bot_token"
 export AK_TELEGRAM__WEBHOOK_SECRET="your_secure_random_string"  # Optional
 export OPENAI_API_KEY="your_openai_api_key"
 ```
+### Multimodal Configuration
+
+For image and document support, configure these environment variables:
+
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
+```
+
 
 ### 4. Expose Local Server
 
 Use a tunneling service for webhook delivery:
 
 **ngrok:**
+
 ```bash
 ngrok http 8000
 ```
 
 **pinggy:**
+
 ```bash
 ssh -p443 -R0:localhost:8000 a.pinggy.io
 ```
@@ -102,15 +113,66 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 
 ## Features
 
-- Text message and command handling  
-- AI-powered responses via Agent Kernel  
-- Typing indicator  
-- Inline keyboards  
-- Markdown formatting  
-- Session management (per chat)  
-- Automatic message splitting for long responses  
+- **Text messages and commands** - Standard messaging with `/start`, `/help`, etc.
+- **Multi-modal support** - Send and analyze images, PDFs, and document files alongside text
+- **Typing indicator** - Visual feedback while processing
+- **Inline keyboards** - Interactive button-based interactions
+- **Markdown formatting** - Rich text formatting in responses
+- **Session management** - Per-chat conversation context with memory
+- **Automatic message splitting** - Long responses split to respect Telegram's 4096 character limit
 
-## Advanced Usage
+## Multi-Modal Support (Images & Documents)
+
+The Telegram integration supports sending images and documents alongside text messages for intelligent analysis:
+
+### Supported File Types
+
+| Type                | Formats                                            | Use Cases                                       |
+| ------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| **Images**          | JPEG, PNG, WebP, GIF                               | Photo analysis, vision tasks, object detection  |
+| **Documents**       | PDF (other text formats are handled as plain text) | Document summarization, Q&A, content extraction |
+| **Text**            | Plain messages                                     | Standard conversations                          |
+
+### How It Works
+
+1. User sends an image or document with optional text caption
+2. Telegram webhook delivers the message to your agent
+3. Agent Kernel downloads and processes the file
+4. A brief description of the file is generated via LLM and the file is saved to the **session cache** (not sent raw to the agent)
+5. The description is injected into the user's message text so the agent understands what was attached
+6. When the agent needs to inspect the file in detail, it calls the `analyze_attachments` tool, which retrieves the file from the session cache
+7. Response is sent back through Telegram
+
+> **Note:** The `analyze_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
+
+### Example Scenarios
+
+**Image Analysis:**
+
+- User sends photo of a receipt: "What's the total?"
+- Bot analyzes image and responds with extracted total
+
+**Document Q&A:**
+
+- User sends PDF and asks: "Summarize key points"
+- Bot reads and summarizes the document
+
+**Follow-up Questions:**
+
+- Message 1: User sends image, asks "What is this?"
+- Bot analyzes and responds
+- Message 2: User asks "What colors are dominant?"
+- Bot remembers the image from previous context and answers
+
+### Session Memory with Context
+
+Each chat maintains conversation history:
+
+- Previous messages are remembered
+- Images/files from earlier messages can be referenced and re-analyzed via `analyze_attachments`
+- Multi-turn conversations with rich context
+- Works seamlessly with OpenAI GPT-4o and compatible models
+- **Session-scoped storage**: Files are stored in each chat's own session cache, isolated per user — one user cannot access another user's attachments
 
 ### Custom Command Handler
 
@@ -126,6 +188,7 @@ class CustomTelegramHandler(AgentTelegramRequestHandler):
         else:
             await super()._handle_command(chat_id, command)
 ```
+
 
 ### Multi-Agent Setup
 
@@ -171,52 +234,12 @@ await self._send_message(
 )
 ```
 
-
 ## Supported Message Types
 
 - Text messages
 - Commands (e.g., /start, /help)
 - Inline keyboards and callback queries
 
-## Troubleshooting
-
-### Webhook Verification Issues
-
-**Problem:** Webhook setup fails or Telegram can't reach your endpoint
-
-**Solutions:**
-- Ensure your bot token is correct
-- Webhook URL must be HTTPS and publicly accessible
-- Check webhook info: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
-- Review server logs for errors
-- Verify agent configuration and OpenAI API key
-
-### No Messages Received
-
-**Problem:** Webhook is set but messages aren't reaching your agent
-
-**Solutions:**
-- Verify your server is running and accessible
-- Check that your webhook URL path is `/telegram/webhook`
-- Review server logs for incoming webhook requests
-
-### Message Sending Failures
-
-**Problem:** Agent processes messages but responses don't appear in Telegram
-
-**Solutions:**
-- Confirm you're using a valid bot token
-- Check for API error codes in logs
-- Ensure you are not exceeding rate limits
-
-### Authentication Errors
-
-**Problem:** "Invalid secret token" or authentication-related errors
-
-**Solutions:**
-- Verify `AK_TELEGRAM__WEBHOOK_SECRET` matches what you set in Telegram
-- Ensure the secret hasn't been changed
-- Check server logs for validation details
 
 ### Enable Debug Logging
 
@@ -234,6 +257,7 @@ logging.basicConfig(
 ## API Rate Limits
 
 Telegram Bot API enforces rate limits:
+
 - **Messages to same chat:** 1 message per second
 - **Bulk messages:** 30 messages per second to different chats
 - **Group messages:** 20 messages per minute per group
@@ -244,11 +268,11 @@ Best practice: Implement queuing for high-volume scenarios.
 
 ### Pre-Launch Checklist
 
-✅ Use environment variables for all secrets \
+✅ Use environment variables for all secrets  
 ✅ Deploy behind a reverse proxy (nginx, Apache) \
 ✅ Set up health checks and monitoring \
 ✅ Implement error handling and retry logic \
-✅ Review Telegram Bot API documentation for compliance 
+✅ Review Telegram Bot API documentation for compliance
 
 ### Deployment Architecture
 
@@ -258,23 +282,25 @@ Best practice: Implement queuing for high-volume scenarios.
 
 ## Telegram vs Messenger Comparison
 
-| Feature                | Telegram                | Facebook Messenger         |
-|------------------------|-------------------------|---------------------------|
-| Message Limit          | 4096 characters         | 2000 characters           |
-| User Identifier        | Chat ID                 | Page-Scoped ID (PSID)     |
-| Visual Feedback        | Typing indicators       | Typing, seen receipts     |
-| Interactive Elements   | Inline keyboards        | Buttons, quick replies    |
-| Authentication         | Bot token + secret      | Page access token + secret|
-| App Review             | Not required            | Required for public access|
-| Rich Media             | Media, basic attachments| Extensive template support|
+| Feature              | Telegram                 | Facebook Messenger         |
+| -------------------- | ------------------------ | -------------------------- |
+| Message Limit        | 4096 characters          | 2000 characters            |
+| User Identifier      | Chat ID                  | Page-Scoped ID (PSID)      |
+| Visual Feedback      | Typing indicators        | Typing, seen receipts      |
+| Interactive Elements | Inline keyboards         | Buttons, quick replies     |
+| Authentication       | Bot token + secret       | Page access token + secret |
+| App Review           | Not required             | Required for public access |
+| Rich Media           | Media, basic attachments | Extensive template support |
 
 ## Example Projects
 
-- Basic Example: `examples/api/telegram/server.py`
+- Basic Example: \
+`examples/api/telegram/server.py`\
+`examples/api/telegram/server_adk.py`
 
 ## References
 
 - [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
 - [BotFather](https://t.me/botfather)
 
-***
+---

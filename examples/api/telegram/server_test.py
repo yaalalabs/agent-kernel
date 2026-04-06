@@ -7,9 +7,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
-pytestmark = pytest.mark.asyncio(
-    loop_scope="session"
-)  # uses a single session for all tests
+pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
 class APITestClient:
@@ -81,9 +79,7 @@ async def test_telegram_webhook(http_client):
     # This will process the message but fail to send response (no valid bot token)
     # The webhook should still return 200 OK to acknowledge receipt
     try:
-        response = await http_client.send(
-            "/telegram/webhook", method="post", body=telegram_update
-        )
+        response = await http_client.send("/telegram/webhook", method="post", body=telegram_update)
         assert response == {"ok": True}
     except httpx.HTTPStatusError:
         # Expected if webhook secret validation fails with test token
