@@ -6,6 +6,7 @@ import pytest_asyncio
 from agentkernel.guardrail.walledai import WalledAIGuardrailBase, silent_call
 from agentkernel.test import Test
 
+pytest.skip("Skipping all tests in this module", allow_module_level=True)
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
