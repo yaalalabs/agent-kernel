@@ -1,8 +1,9 @@
 import logging
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 
-class LambdaSQSConsumer:
+class LambdaSQSConsumer(ABC):
     """
     Base class for AWS Lambda consumers triggered by an SQS Event Source Mapping.
 
@@ -47,6 +48,7 @@ class LambdaSQSConsumer:
         return {"batchItemFailures": failures}
 
     @classmethod
+    @abstractmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
         Process a single SQS message.
@@ -57,6 +59,7 @@ class LambdaSQSConsumer:
         raise NotImplementedError("process_message must be implemented by subclasses")
 
     @classmethod
+    @abstractmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
         """
         Called when a message is treated as permanently failed (retry limit reached).
