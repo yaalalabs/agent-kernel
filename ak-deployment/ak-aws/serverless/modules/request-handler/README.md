@@ -10,7 +10,7 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 - Supports ZIP, S3 ZIP, and container image deployment modes
 - Adds optional DynamoDB and Redis permissions for agent memory and response storage
 - Injects execution and session environment variables when the relevant inputs are present
-- Attaches SQS send permissions when `scalable_mode = true`
+- Attaches SQS send permissions when `queue_mode = true`
 - Passes through event source mapping configuration to the Lambda module
 
 ## Example Wiring
@@ -28,7 +28,7 @@ module "request_handler" {
   handler_path   = "app.lambda_handler"
   package_path   = "${path.module}/dist/request-handler.zip"
 
-  scalable_mode  = true
+  queue_mode  = true
   input_queue_arn = module.queues.input_queue_arn
   input_queue_url = module.queues.input_queue_url
   vpc_id         = module.vpc.vpc_id
@@ -50,7 +50,7 @@ module "request_handler" {
 | `handler_path` | Lambda handler path |
 | `package_path` | Local package path or S3 ZIP URI |
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) |
-| `scalable_mode` | Enables SQS integration and queue-based execution |
+| `queue_mode` | Enables SQS integration and queue-based execution |
 | `event_source_mapping` | Optional event source mapping settings |
 | `environment_variables` | Extra environment variables |
 | `timeout` | Lambda timeout |
@@ -94,5 +94,5 @@ The module adds these environment variables when the corresponding inputs are pr
 
 ## Notes
 
-- When `scalable_mode = true`, the module creates SQS send permissions for the input queue.
+- When `queue_mode = true`, the module creates SQS send permissions for the input queue.
 - When `package_type = "S3Zip"`, the module expects the deployment package to already exist in S3.

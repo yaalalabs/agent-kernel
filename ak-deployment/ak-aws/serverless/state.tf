@@ -45,14 +45,14 @@ locals {
   authorizer_status_message     = local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text)
 
   # Input queue
-  input_queue_url                = var.scalable_mode ? module.queues[0].input_queue_url : null
-  input_queue_arn                = var.scalable_mode ? module.queues[0].input_queue_arn : null
-  input_queue_visibility_timeout = var.scalable_mode ? var.queue_config.input_queue_visibility_timeout : null
+  input_queue_url                = var.queue_mode ? module.queues[0].input_queue_url : null
+  input_queue_arn                = var.queue_mode ? module.queues[0].input_queue_arn : null
+  input_queue_visibility_timeout = var.queue_mode ? var.queue_config.input_queue_visibility_timeout : null
 
   # Output queue
-  output_queue_url                = var.scalable_mode ? module.queues[0].output_queue_url : null
-  output_queue_arn                = var.scalable_mode ? module.queues[0].output_queue_arn : null
-  output_queue_visibility_timeout = var.scalable_mode ? var.queue_config.output_queue_visibility_timeout : null
+  output_queue_url                = var.queue_mode ? module.queues[0].output_queue_url : null
+  output_queue_arn                = var.queue_mode ? module.queues[0].output_queue_arn : null
+  output_queue_visibility_timeout = var.queue_mode ? var.queue_config.output_queue_visibility_timeout : null
 
   # Endpoint configuration for API Gateway module
   chat_endpoint = concat(
@@ -261,7 +261,7 @@ module "dynamodb_multimodal_memory" {
 }
 
 module "queues" {
-  count  = var.scalable_mode ? 1 : 0
+  count  = var.queue_mode ? 1 : 0
   source = "./modules/queues"
 
   product_alias = var.product_alias
@@ -272,10 +272,10 @@ module "queues" {
   queue_config = var.queue_config
 }
 
-# SQS Queues Module (conditional on scalable_mode)
+# SQS Queues Module (conditional on queue_mode)
 check "queue_visibility_timeouts" {
   assert {
-    condition = var.scalable_mode ? (
+    condition = var.queue_mode ? (
       var.queue_config.input_queue_visibility_timeout >= var.agent_runner.timeout &&
       var.queue_config.output_queue_visibility_timeout >= var.response_handler.timeout
     ) : true
@@ -330,7 +330,7 @@ module "request_handler" {
   is_production                           = var.is_production
   package_path                            = local.request_handler_package_path
   cloudwatch_logs_retention_in_days       = var.cloudwatch_logs_retention_in_days
-  scalable_mode                           = var.scalable_mode
+  queue_mode                              = var.queue_mode
   event_source_mapping                    = var.event_source_mapping
   timeout                                 = var.timeout
   memory_size                             = var.memory_size
@@ -345,13 +345,13 @@ module "request_handler" {
   vpc_id                                  = local.vpc_id
   subnet_ids                              = local.subnet_ids
   source_bucket                           = var.package_type == "S3Zip" ? module.request_handler_source_storage[0].source_storage_s3_bucket : null
-  create_dynamodb_memory_table            = var.scalable_mode ? false : var.create_dynamodb_memory_table
-  create_dynamodb_multimodal_memory_table = var.scalable_mode ? false : var.create_dynamodb_multimodal_memory_table
-  redis_url                               = var.scalable_mode ? null : local.redis_url
-  dynamodb_memory_table_arn               = var.scalable_mode ? null : local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name              = var.scalable_mode ? null : local.dynamodb_memory_table_name
-  dynamodb_multimodal_memory_table_arn    = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_arn
-  dynamodb_multimodal_memory_table_name   = var.scalable_mode ? null : local.dynamodb_multimodal_memory_table_name
+  create_dynamodb_memory_table            = var.queue_mode ? false : var.create_dynamodb_memory_table
+  create_dynamodb_multimodal_memory_table = var.queue_mode ? false : var.create_dynamodb_multimodal_memory_table
+  redis_url                               = var.queue_mode ? null : local.redis_url
+  dynamodb_memory_table_arn               = var.queue_mode ? null : local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name              = var.queue_mode ? null : local.dynamodb_memory_table_name
+  dynamodb_multimodal_memory_table_arn    = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_arn
+  dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
   response_store_redis                    = local.response_handler_response_store_redis
@@ -368,9 +368,9 @@ module "request_handler" {
   depends_on = [module.request_handler_source_package]
 }
 
-# Agent Runner Module (conditional on scalable_mode)
+# Agent Runner Module (conditional on queue_mode)
 module "agent_runner" {
-  count  = var.scalable_mode ? 1 : 0
+  count  = var.queue_mode ? 1 : 0
   source = "./modules/agent-runner"
 
   product_alias = var.product_alias
@@ -420,7 +420,7 @@ module "agent_runner" {
 }
 
 module "response_handler" {
-  count  = var.scalable_mode ? 1 : 0
+  count  = var.queue_mode ? 1 : 0
   source = "./modules/response-handler"
 
   package_path                      = local.response_handler_package_path

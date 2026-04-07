@@ -305,7 +305,7 @@ module "serverless_api_auth" {
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `package_path` | Path to Lambda deployment package or S3 URI | `string` | n/a | yes |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
-| `scalable_mode` | Enable SQS-driven async processing with agent runner and response handler Lambdas | `bool` | `false` | no |
+| `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
 | `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async` | `string` | `null` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
@@ -410,7 +410,7 @@ The root `queue_config` object drives the SQS queues created for scalable mode. 
 | `batch_size` | Lambda batch size for queue event source mappings | `number` | `10` | no |
 | `maximum_batching_window_in_seconds` | Maximum batching window for Lambda event source mappings | `number` | `0` | no |
 
-**Note**: When `scalable_mode = true`, the response handler and agent runner package paths must be provided. The queue configuration defaults can be used as-is, or you can override only the queue names and sizing values you need.
+**Note**: When `queue_mode = true`, the response handler and agent runner package paths must be provided. The queue configuration defaults can be used as-is, or you can override only the queue names and sizing values you need.
 
 ## 📤 Outputs
 
@@ -427,20 +427,20 @@ The root `queue_config` object drives the SQS queues created for scalable mode. 
 | `api_gateway_execution_arn` | Execution ARN of the API Gateway REST API |
 | `api_gateway_cloudwatch_log_group_arn` | ARN of the CloudWatch log group for API Gateway |
 | `api_gateway_cloudwatch_log_group_name` | Name of the CloudWatch log group for API Gateway |
-| `response_handler_lambda_function_arn` | ARN of the response handler Lambda function when `scalable_mode = true` |
-| `response_handler_lambda_function_name` | Name of the response handler Lambda function when `scalable_mode = true` |
-| `response_handler_lambda_function_invoke_arn` | Invoke ARN of the response handler Lambda function when `scalable_mode = true` |
-| `response_handler_lambda_role_arn` | ARN of the response handler Lambda execution role when `scalable_mode = true` |
-| `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function when `scalable_mode = true` |
-| `agent_runner_lambda_function_name` | Name of the agent runner Lambda function when `scalable_mode = true` |
-| `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function when `scalable_mode = true` |
-| `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role when `scalable_mode = true` |
-| `input_queue_arn` | ARN of the input SQS queue when `scalable_mode = true` |
-| `input_queue_url` | URL of the input SQS queue when `scalable_mode = true` |
-| `input_queue_name` | Name of the input SQS queue when `scalable_mode = true` |
-| `output_queue_arn` | ARN of the output SQS queue when `scalable_mode = true` |
-| `output_queue_url` | URL of the output SQS queue when `scalable_mode = true` |
-| `output_queue_name` | Name of the output SQS queue when `scalable_mode = true` |
+| `response_handler_lambda_function_arn` | ARN of the response handler Lambda function when `queue_mode = true` |
+| `response_handler_lambda_function_name` | Name of the response handler Lambda function when `queue_mode = true` |
+| `response_handler_lambda_function_invoke_arn` | Invoke ARN of the response handler Lambda function when `queue_mode = true` |
+| `response_handler_lambda_role_arn` | ARN of the response handler Lambda execution role when `queue_mode = true` |
+| `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function when `queue_mode = true` |
+| `agent_runner_lambda_function_name` | Name of the agent runner Lambda function when `queue_mode = true` |
+| `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function when `queue_mode = true` |
+| `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role when `queue_mode = true` |
+| `input_queue_arn` | ARN of the input SQS queue when `queue_mode = true` |
+| `input_queue_url` | URL of the input SQS queue when `queue_mode = true` |
+| `input_queue_name` | Name of the input SQS queue when `queue_mode = true` |
+| `output_queue_arn` | ARN of the output SQS queue when `queue_mode = true` |
+| `output_queue_url` | URL of the output SQS queue when `queue_mode = true` |
+| `output_queue_name` | Name of the output SQS queue when `queue_mode = true` |
 
 ## ✨ Features
 
@@ -479,7 +479,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 
 ### 📦 Scalable Mode Architecture
 
-When `scalable_mode = true`, the module adds an asynchronous queue-driven path alongside the API Gateway entrypoint.
+When `queue_mode = true`, the module adds an asynchronous queue-driven path alongside the API Gateway entrypoint.
 
 **What gets created**:
 - Input and output SQS queues
@@ -712,7 +712,7 @@ module "async_api" {
   package_type = "LocalZip"
   package_path = "${path.module}/dist/function.zip"
 
-  scalable_mode = true
+  queue_mode = true
   execution_mode = "rest_async"
   ...
 

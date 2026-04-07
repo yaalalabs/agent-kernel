@@ -46,7 +46,7 @@ variable "cloudwatch_logs_retention_in_days" {
   default     = 90
 }
 
-variable "scalable_mode" {
+variable "queue_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
   default     = true

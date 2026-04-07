@@ -46,7 +46,7 @@ variable "cloudwatch_logs_retention_in_days" {
   description = "CloudWatch log retention period in days for the request handler Lambda"
   default     = 90
 }
-variable "scalable_mode" {
+variable "queue_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
   default     = false
@@ -54,19 +54,19 @@ variable "scalable_mode" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Required when scalable_mode is true, must be null when scalable_mode is false."
+  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
   default     = null
   validation {
     condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async"], var.execution_mode)
     error_message = "execution_mode must be one of: rest_sync, rest_async or null."
   }
   validation {
-    condition = !var.scalable_mode || var.execution_mode != null
-    error_message = "execution_mode cannot be null when scalable_mode is true."
+    condition = !var.queue_mode || var.execution_mode != null
+    error_message = "execution_mode cannot be null when queue_mode is true."
   }
   validation {
-    condition = var.scalable_mode || var.execution_mode == null
-    error_message = "execution_mode must be null when scalable_mode is false."
+    condition = var.queue_mode || var.execution_mode == null
+    error_message = "execution_mode must be null when queue_mode is false."
   }
 }
 
@@ -311,8 +311,8 @@ variable "response_handler" {
   })
   default = {}
   validation {
-    condition     = !var.scalable_mode || try(var.response_handler.package_path, null) != null
-    error_message = "response_handler.package_path must be set when scalable_mode is true."
+    condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
+    error_message = "response_handler.package_path must be set when queue_mode is true."
   }
 }
 
@@ -333,8 +333,8 @@ variable "agent_runner" {
   })
   default = {}
   validation {
-    condition     = !var.scalable_mode || try(var.agent_runner.package_path, null) != null
-    error_message = "agent_runner.package_path must be set when scalable_mode is true."
+    condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
+    error_message = "agent_runner.package_path must be set when queue_mode is true."
   }
 }
 
@@ -388,7 +388,7 @@ variable "queue_config" {
   })
   default = {}
   validation {
-    condition     = !var.scalable_mode || var.queue_config != null
-    error_message = "queue_config must NOT be null when scalable_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
+    condition     = !var.queue_mode || var.queue_config != null
+    error_message = "queue_config must NOT be null when queue_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
   }
 }

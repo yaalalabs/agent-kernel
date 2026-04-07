@@ -128,9 +128,9 @@ resource "aws_iam_role_policy_attachment" "lambda_response_store_dynamodb_attach
   policy_arn = aws_iam_policy.lambda_response_store_dynamodb_policy[0].arn
 }
 
-# SQS permissions for RequestHandler Lambda (conditional on scalable_mode)
+# SQS permissions for RequestHandler Lambda (conditional on queue_mode)
 resource "aws_iam_policy" "lambda_sqs_policy" {
-  count = var.scalable_mode ? 1 : 0
+  count = var.queue_mode ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-sqs"
   
   policy = jsonencode({
@@ -149,7 +149,7 @@ resource "aws_iam_policy" "lambda_sqs_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_sqs_attachment" {
-  count      = var.scalable_mode ? 1 : 0
+  count      = var.queue_mode ? 1 : 0
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.lambda_sqs_policy[0].arn
 }
