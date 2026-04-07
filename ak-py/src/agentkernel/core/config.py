@@ -225,11 +225,13 @@ class _InputQueueConfig(BaseModel):
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
 
+
 class _OutputQueueConfig(BaseModel):
     url: str = Field(default="", description="Output SQS queue URL for async execution mode")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
+
 
 class _QueuesConfig(BaseModel):
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
