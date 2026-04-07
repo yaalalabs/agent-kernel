@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
 
 
@@ -199,6 +200,57 @@ class _GuardrailConfig(BaseModel):
     output: _GuardrailParamConfig = Field(description="Output Guardrail configuration", default_factory=_GuardrailParamConfig)
 
 
+class _ResponseStoreRedisConfig(_RedisConfig):
+    prefix: str = Field(default="ak:responses:", description="Key prefix for Redis response storage")
+
+
+class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
+    table_name: Optional[str] = Field(
+        default=None,
+        description="DynamoDB table name for session storage.",
+    )
+
+
+class _ResponseStoreConfig(BaseModel):
+    type: str = Field(default=None, pattern="^(redis|dynamodb)$")
+    retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
+    delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
+    redis: Optional[_ResponseStoreRedisConfig] = None
+    dynamodb: Optional[_ResponseStoreDynamoDBConfig] = None
+
+
+class _InputQueueConfig(BaseModel):
+    url: str = Field(default="", description="Input SQS queue URL for async execution mode")
+    max_receive_count: int = Field(
+        default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
+    )
+
+
+class _OutputQueueConfig(BaseModel):
+    url: str = Field(default="", description="Output SQS queue URL for async execution mode")
+    max_receive_count: int = Field(
+        default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
+    )
+
+
+class _QueuesConfig(BaseModel):
+    input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
+    output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
+
+
+class _ExecutionConfig(BaseModel):
+    mode: Optional[ExecutionMode] = Field(
+        default=None,
+        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST",
+    )
+    queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
+    # websocket_connection_table: Optional[str] = Field(default=None, description="DynamoDB table name for storing WebSocket connections")
+    response_store: Optional[_ResponseStoreConfig] = Field(
+        default=None,
+        description="Response storage configuration for async execution mode",
+    )
+
+
 class AKConfig(YamlBaseSettingsModified):
     debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
@@ -222,6 +274,7 @@ class AKConfig(YamlBaseSettingsModified):
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
+    execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

@@ -1,6 +1,8 @@
-from typing import Any, Callable, Literal, Union
+import uuid
+from enum import Enum
+from typing import Any, Callable, Literal, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AgentRequestText(BaseModel):
@@ -106,7 +108,61 @@ type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage,
 type AgentReply = Union[AgentReplyText, AgentReplyImage]
 
 
+class ExecutionMode(str, Enum):
+    """
+    Execution mode enumeration for Lambda function behavior.
+    """
+
+    REST_SYNC = "rest_sync"
+    REST_ASYNC = "rest_async"
+    STREAM = "stream"
+    ASYNC = "async"
+
+
 class SystemTool(BaseModel):
     name: str
     description: str
     func: Callable
+
+
+class BaseRunRequest(BaseModel):
+    prompt: str
+    agent: Optional[str] = None
+    session_id: Optional[str] = None
+    model_config = ConfigDict(extra="allow")
+
+
+class BaseRequest(BaseModel):
+    request_id: Optional[str] = None
+    user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
+    body: Optional[BaseRunRequest] = None
+    model_config = ConfigDict(extra="allow")
+
+    @classmethod
+    def from_payload(cls, payload: "BaseRequest | BaseRunRequest | dict[str, Any]") -> "BaseRequest":
+        if isinstance(payload, cls):
+            return payload
+
+        if isinstance(payload, BaseRunRequest):
+            return cls(request_id=str(uuid.uuid4()), body=payload)
+
+        if isinstance(payload, dict):
+            request_id = payload.get("request_id") or str(uuid.uuid4())
+            user_id = payload.get("user_id")
+
+            if "body" in payload and payload["body"] is not None:
+                body = payload["body"]
+                if isinstance(body, dict):
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id"}}
+            else:
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "body"}}
+
+            if not body:
+                return cls(request_id=request_id, user_id=user_id)
+
+            if not isinstance(body, BaseRunRequest):
+                body = BaseRunRequest.model_validate(body)
+
+            return cls(request_id=request_id, user_id=user_id, body=body)
+
+        raise TypeError(f"Unsupported payload type for BaseRequest: {type(payload)!r}")
