@@ -19,7 +19,7 @@ module "serverless_agents" {
   is_production        = var.is_production
 
   # Execution mode - using for scalable processing
-  scalable_mode = true
+  queue_mode = true # queue_mode # recommended for production
   execution_mode = "rest_sync" # rest_sync or rest_async
 
   # Memory DB Config
