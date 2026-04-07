@@ -32,7 +32,7 @@ class DefaultEndpointsHandler:
 
     @classmethod
     def _get_input_queue_url(cls):
-        return cls._get_config().execution.queues.input_queue_url
+        return cls._get_config().execution.queues.input.url
 
     @classmethod
     def _get_default_user_polling_method(cls):

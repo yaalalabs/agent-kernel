@@ -7,10 +7,12 @@ session:
 execution:
   mode: rest_sync
   queues:
-    # input_queue_url: "https://sqs.<region>.amazonaws.com/<account-id>/<input-queue-name>"
-    # output_queue_url: "https://sqs.<region>.amazonaws.com/<account-id>/<output-queue-name>"
-    input_queue_max_receive_count: 3
-    output_queue_max_receive_count: 3
+    input:
+      # url: "https://sqs.<region>.amazonaws.com/<account-id>/<input-queue-name>"
+      max_receive_count: 3
+    output:
+      # url: "https://sqs.<region>.amazonaws.com/<account-id>/<output-queue-name>"
+      max_receive_count: 3
   response_store:
     type: dynamodb
     retry_count: 5

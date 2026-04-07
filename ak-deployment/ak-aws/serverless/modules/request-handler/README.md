@@ -80,7 +80,7 @@ The module adds these environment variables when the corresponding inputs are pr
 - `AK_MULTIMODAL__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`
-- `AK_EXECUTION__QUEUES__INPUT_QUEUE_URL`
+- `AK_EXECUTION__QUEUES__INPUT__URL`
 
 ## Outputs
 

@@ -219,15 +219,21 @@ class _ResponseStoreConfig(BaseModel):
     dynamodb: Optional[_ResponseStoreDynamoDBConfig] = None
 
 
-class _QueuesConfig(BaseModel):
-    input_queue_url: Optional[str] = Field(default=None, description="Input SQS queue URL for async execution mode")
-    output_queue_url: Optional[str] = Field(default=None, description="Output SQS queue URL for async execution mode")
-    input_queue_max_receive_count: int = Field(
+class _InputQueueConfig(BaseModel):
+    url: str = Field(default="", description="Input SQS queue URL for async execution mode")
+    max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
-    output_queue_max_receive_count: int = Field(
+
+class _OutputQueueConfig(BaseModel):
+    url: str = Field(default="", description="Output SQS queue URL for async execution mode")
+    max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
+
+class _QueuesConfig(BaseModel):
+    input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
+    output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
 
 
 class _ExecutionConfig(BaseModel):

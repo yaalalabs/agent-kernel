@@ -208,10 +208,10 @@ The AWS serverless runtime currently supports these execution modes:
 When you use queue-backed execution, configure the `execution` block:
 
 - `execution.mode` - selects the runtime mode
-- `execution.queues.input_queue_url` - input SQS queue for agent requests
-- `execution.queues.output_queue_url` - output SQS queue for agent responses
-- `execution.queues.input_queue_max_receive_count` - input queue receive retry threshold
-- `execution.queues.output_queue_max_receive_count` - output queue receive retry threshold
+- `execution.queues.input.url` - input SQS queue for agent requests
+- `execution.queues.output.url` - output SQS queue for agent responses
+- `execution.queues.input.max_receive_count` - input queue receive retry threshold
+- `execution.queues.output.max_receive_count` - output queue receive retry threshold
 - `execution.response_store.retry_count` - number of response-store lookup attempts
 - `execution.response_store.delay` - delay in seconds between lookup attempts
 - `execution.response_store.redis.url` - Redis URL for response storage
@@ -227,7 +227,9 @@ The response store is configured as a single object with one selected backend:
   "execution": {
     "mode": "rest_async",
     "queues": {
-      "input_queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"
+      "input": {
+        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"
+      }
     },
     "response_store": {
       "retry_count": 5,
@@ -250,10 +252,10 @@ Example environment variables:
 
 ```bash
 export AK_EXECUTION__MODE=rest_async
-export AK_EXECUTION__QUEUES__INPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
-export AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
-export AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT=3
-export AK_EXECUTION__QUEUES__OUTPUT_QUEUE_MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
+export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
+export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
 export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
 export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
 export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5

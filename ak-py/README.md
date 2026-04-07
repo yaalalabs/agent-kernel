@@ -333,24 +333,24 @@ Configure queue-backed and serverless execution behavior.
   - **Description**: Queue settings used by serverless execution modes
 
   - **Input Queue URL**
-    - **Field**: `execution.queues.input_queue_url`
+    - **Field**: `execution.queues.input.url`
     - **Default**: `None`
-    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT_QUEUE_URL`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__URL`
 
   - **Output Queue URL**
-    - **Field**: `execution.queues.output_queue_url`
+    - **Field**: `execution.queues.output.url`
     - **Default**: `None`
-    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__URL`
 
   - **Input Queue Max Receive Count**
-    - **Field**: `execution.queues.input_queue_max_receive_count`
+    - **Field**: `execution.queues.input.max_receive_count`
     - **Default**: `3`
-    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT`
 
   - **Output Queue Max Receive Count**
-    - **Field**: `execution.queues.output_queue_max_receive_count`
+    - **Field**: `execution.queues.output.max_receive_count`
     - **Default**: `3`
-    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT_QUEUE_MAX_RECEIVE_COUNT`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT`
 
 - **Response Store**
   - **Field**: `execution.response_store`
@@ -875,10 +875,12 @@ session:
 execution:
   mode: rest_sync
   queues:
-    input_queue_url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
-    output_queue_url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
-    input_queue_max_receive_count: 3
-    output_queue_max_receive_count: 3
+    input:
+      url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
+      max_receive_count: 3
+    output:
+      url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
+      max_receive_count: 3
   response_store:
     retry_count: 5
     delay: 5
