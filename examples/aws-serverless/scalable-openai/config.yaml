@@ -12,6 +12,7 @@ execution:
     input_queue_max_receive_count: 3
     output_queue_max_receive_count: 3
   response_store:
+    type: dynamodb
     retry_count: 5
     delay: 5
     # dynamodb:
