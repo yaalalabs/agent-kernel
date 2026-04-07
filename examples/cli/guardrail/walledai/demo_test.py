@@ -65,7 +65,6 @@ async def test_walledai_mask_unmask(debug_false_test_client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Skipping this WalledAI redact masking test")
 async def test_walledai_redact_masking():
     guardrail = WalledAIGuardrailBase()
     test_text = "my name is john"
