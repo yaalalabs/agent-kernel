@@ -13,11 +13,12 @@ locals {
   agent_runner_env_vars      = var.agent_runner.environment_variables
   # Removed passthrough locals; use var.* directly in resources and modules
   
-  queue_input_arn            = var.queue_config.input_queue_arn
-  queue_output_arn           = var.queue_config.output_queue_arn
-  queue_output_url           = var.queue_config.output_queue_url
-  queue_batch_size           = var.queue_config.batch_size
-  queue_batching_window      = var.queue_config.maximum_batching_window_in_seconds
+  queue_input_arn                       = var.queue_config.input_queue_arn
+  queue_output_arn                      = var.queue_config.output_queue_arn
+  queue_output_url                      = var.queue_config.output_queue_url
+  queue_batch_size                      = var.queue_config.batch_size
+  queue_batching_window                 = var.queue_config.maximum_batching_window_in_seconds
+  queue_input_consumer_max_receive_count = max(1, var.queue_config.input_queue_max_receive_count - 1)
 }
 
 resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
@@ -227,7 +228,7 @@ module "agent_runner_lambda" {
         AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
       } : {},
     {
-      AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT  = tostring(var.queue_config.input_queue_max_receive_count)
+      AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT  = tostring(local.queue_input_consumer_max_receive_count)
       AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL = local.queue_output_url
     }
   )

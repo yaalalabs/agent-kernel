@@ -13,9 +13,10 @@ locals {
   response_handler_env_vars      = var.response_handler.environment_variables
   
   # Queue configuration
-  output_queue_arn                       = var.queue_config.output_queue_arn
-  batch_size                             = var.queue_config.batch_size
-  maximum_batching_window_in_seconds     = var.queue_config.maximum_batching_window_in_seconds
+  output_queue_arn                            = var.queue_config.output_queue_arn
+  batch_size                                  = var.queue_config.batch_size
+  maximum_batching_window_in_seconds          = var.queue_config.maximum_batching_window_in_seconds
+  output_queue_consumer_max_receive_count      = max(1, var.queue_config.output_queue_max_receive_count - 1)
   
   # Response store configuration
   redis_response_store    = var.response_store_redis
@@ -142,7 +143,7 @@ module "response_handler_lambda" {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
     } : {}
     , {
-      AK_EXECUTION__QUEUES__OUTPUT_QUEUE_MAX_RECEIVE_COUNT = tostring(var.queue_config.output_queue_max_receive_count)
+      AK_EXECUTION__QUEUES__OUTPUT_QUEUE_MAX_RECEIVE_COUNT = tostring(local.output_queue_consumer_max_receive_count)
     }
   )
 
