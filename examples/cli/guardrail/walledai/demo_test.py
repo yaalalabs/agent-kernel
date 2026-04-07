@@ -6,7 +6,6 @@ import pytest_asyncio
 from agentkernel.guardrail.walledai import WalledAIGuardrailBase, silent_call
 from agentkernel.test import Test
 
-pytest.skip("Skipping all tests in this module", allow_module_level=True)
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
@@ -66,6 +65,7 @@ async def test_walledai_mask_unmask(debug_false_test_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="Skipping this WalledAI redact masking test")
 async def test_walledai_redact_masking():
     guardrail = WalledAIGuardrailBase()
     test_text = "my name is john"
