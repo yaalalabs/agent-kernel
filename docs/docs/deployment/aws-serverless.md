@@ -214,6 +214,7 @@ When you use queue-backed execution, configure the `execution` block:
 - `execution.queues.output.max_receive_count` - output queue receive retry threshold
 - `execution.response_store.retry_count` - number of response-store lookup attempts
 - `execution.response_store.delay` - delay in seconds between lookup attempts
+- `execution.response_store.type` - response-store backend selector configured in `config.yaml` only
 - `execution.response_store.redis.url` - Redis URL for response storage
 - `execution.response_store.redis.prefix` - Redis key prefix for response storage, default `ak:responses:`
 - `execution.response_store.redis.ttl` - Redis TTL in seconds
@@ -232,6 +233,7 @@ The response store is configured as a single object with one selected backend:
       }
     },
     "response_store": {
+      "type": "redis",
       "retry_count": 5,
       "delay": 5,
       "redis": {
@@ -244,7 +246,7 @@ The response store is configured as a single object with one selected backend:
 }
 ```
 
-Use either `response_store.redis` or `response_store.dynamodb`; the runtime selects whichever backend is configured.
+Set `response_store.type` to `redis` or `dynamodb`, then provide the matching backend block.
 
 The response handler reads `request_id` from SQS message attributes and stores each response by request ID. For Redis, the message body is stored under the configured key prefix; for DynamoDB, the message is stored in the configured table. The `request_id` and optional `user_id` are carried as SQS message attributes, while the nested `body` is used as the message payload.
 

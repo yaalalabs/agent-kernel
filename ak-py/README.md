@@ -356,6 +356,10 @@ Configure queue-backed and serverless execution behavior.
   - **Field**: `execution.response_store`
   - **Description**: Response persistence settings used by the serverless response handler
 
+  - **Type**
+    - **Field**: `execution.response_store.type`
+    - **Description**: Response store backend selector configured in `config.yaml`; this value is not exported as an environment variable
+
   - **Retry Count**
     - **Field**: `execution.response_store.retry_count`
     - **Default**: `5`
@@ -882,6 +886,7 @@ execution:
       url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
       max_receive_count: 3
   response_store:
+    type: redis
     retry_count: 5
     delay: 5
     redis: # if this is given, then dynamodb response store part cannot be given
