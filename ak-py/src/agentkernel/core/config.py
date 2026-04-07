@@ -229,16 +229,6 @@ class _QueuesConfig(BaseModel):
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
 
-    @property
-    def input_queue_consumer_max_receive_count(self) -> int:
-        """Return input queue max_receive_count minus 1."""
-        return max(1, self.input_queue_max_receive_count - 1)
-
-    @property
-    def output_queue_consumer_max_receive_count(self) -> int:
-        """Return output queue max_receive_count minus 1."""
-        return max(1, self.output_queue_max_receive_count - 1)
-
 
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(

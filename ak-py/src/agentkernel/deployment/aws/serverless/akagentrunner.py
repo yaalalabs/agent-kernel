@@ -11,7 +11,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = None
-    max_receive_count: int = AKConfig.get().execution.queues.input_queue_consumer_max_receive_count
+    max_receive_count: int = AKConfig.get().execution.queues.input_queue_max_receive_count
 
     @classmethod
     def _get_chat_service(cls) -> ChatService:
