@@ -302,17 +302,17 @@ terraform apply
 
 The auth package script should run automatically when executing `./deploy.sh`. You can customize the script paths and structure, but you must provide two separate packages to the Terraform configuration via the `package_path` (for main Lambda) and `authorizer.package_path` (for auth Lambda) variables.
 
-## Scalable Mode 
+## Queue Mode 
 
 ### Lambda Handlers
 
-**If scalable mode is disabled, only the request handler is needed. If scalable mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler.**
+**If queue mode is disabled, only the request handler is needed. If queue mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler.**
 
 #### 1. Request Handler
 
 We can have our normal lambda handler (without having Agents and Modules) and also expose custom routes by registering additional handlers.
 
-> **IMPORTANT NOTE: Agents must not be written and integrated with Modules (eg: `OpenAIModule`, `CrewAIModule`, etc) in this Lambda when using Scalable Mode. These Agents and Modules must be defined in the Agent Runner when using Scalable Mode**
+> **IMPORTANT NOTE: Agents must not be written and integrated with Modules (eg: `OpenAIModule`, `CrewAIModule`, etc) in this Lambda when using Queue Mode. These Agents and Modules must be defined in the Agent Runner when using Queue Mode**
 
 ```python
 import json

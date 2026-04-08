@@ -1,6 +1,6 @@
 # Request Handler Module
 
-This module creates the request handler Lambda used by the serverless API path. It is responsible for the public request entrypoint and can optionally send work to the input queue when scalable mode is enabled.
+This module creates the request handler Lambda used by the serverless API path. It is responsible for the public request entrypoint and can optionally send work to the input queue when queue mode is enabled.
 
 This is an internal submodule used by the root serverless stack in `state.tf`; the example below shows wiring, not an independent deployment entrypoint.
 
