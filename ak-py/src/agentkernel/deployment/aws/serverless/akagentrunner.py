@@ -4,7 +4,7 @@ import logging
 from ....core.config import AKConfig
 from ...common.chat_service import ChatService
 from ..core.sqs_handler import SQSHandler
-from .core.sqs_consumer import LambdaSQSConsumer
+from .core import LambdaSQSConsumer
 
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
