@@ -1,18 +1,19 @@
 from typing import Any, Callable, List
 
-try:
-    from smolagents import MultiStepAgent
-    from smolagents import tool as smol_tool
-except ImportError:
-    # Ensure it works when smolagents is not installed
-    MultiStepAgent = Any
-    smol_tool = lambda f: f
+from smolagents import MultiStepAgent
+from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import (
+    AgentReply,
+    AgentReplyText,
+    AgentRequest,
+    AgentRequestAny,
+    AgentRequestText,
+)
 from ...trace import Trace
 
 FRAMEWORK = "smolagents"
@@ -22,15 +23,15 @@ class SmolagentsSession:
     """Session class for smolagents based agents."""
 
     def __init__(self):
-        self._items = []
+        self._items: list[Any] = []
 
-    def get_items(self):
+    def get_items(self) -> list[Any]:
         return self._items
 
-    def add_items(self, items):
+    def add_items(self, items: list[Any]) -> None:
         self._items.extend(items)
 
-    def clear(self):
+    def clear(self) -> None:
         self._items.clear()
 
 
@@ -40,7 +41,8 @@ class SmolagentsRunner(Runner):
     def __init__(self):
         super().__init__(FRAMEWORK)
 
-    def _session(self, session: Session) -> SmolagentsSession | None:
+    @staticmethod
+    def _session(session: Session) -> SmolagentsSession | None:
         if session is None:
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, SmolagentsSession())
@@ -85,7 +87,7 @@ class SmolagentsRunner(Runner):
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=f"Error reading smolagents response: {str(e)}", prompt=prompt)
+            return AgentReplyText(text=f"Error during agent execution: {str(e)}", prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
@@ -111,6 +113,12 @@ class SmolagentsAgent(BaseAgent):
         if hasattr(self.agent, "system_prompt") and self.agent.system_prompt:
             if prompt not in self.agent.system_prompt:
                 self.agent.system_prompt += "\n" + prompt
+            return
+
+        # Some smolagents implementations rely on description instead of system_prompt.
+        if hasattr(self.agent, "description") and self.agent.description:
+            if prompt not in self.agent.description:
+                self.agent.description += "\n" + prompt
 
     def attach_tool(self, tool: Any) -> None:
         wrapped = SmolagentsToolBuilder.bind([tool])

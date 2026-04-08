@@ -4,7 +4,7 @@ from agentkernel.cli import CLI
 from agentkernel.core import ToolContext
 from agentkernel.smolagents import SmolagentsModule, SmolagentsToolBuilder
 
-from smolagents import CodeAgent, InferenceClientModel
+from smolagents import LiteLLMModel, ToolCallingAgent
 
 
 def get_weather(city: str) -> str:
@@ -23,30 +23,30 @@ def get_weather(city: str) -> str:
         return f"Cannot find weather for {city}."
 
 
-model = InferenceClientModel(model_id="Qwen/Qwen2.5-Coder-32B-Instruct")
+model = LiteLLMModel(model_id="openai/gpt-4o")
 
-math_agent = CodeAgent(
+math_agent = ToolCallingAgent(
     tools=[],
     model=model,
     name="math",
     description="Specialist agent for math questions. You provide help with math problems.",
 )
 
-general_agent = CodeAgent(
+general_agent = ToolCallingAgent(
     tools=[],
     model=model,
     name="general",
     description="Agent for general questions. You provide assistance with general queries. Give short and direct answers exactly to the question.",
 )
 
-weather_agent = CodeAgent(
+weather_agent = ToolCallingAgent(
     tools=SmolagentsToolBuilder.bind([get_weather]),
     model=model,
     name="weather",
     description="You provide weather information upon request. Use the get_weather tool for all weather-related questions.",
 )
 
-triage_agent = CodeAgent(
+triage_agent = ToolCallingAgent(
     tools=[],
     model=model,
     name="triage",

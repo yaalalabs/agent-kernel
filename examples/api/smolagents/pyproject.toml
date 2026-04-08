@@ -5,7 +5,8 @@ description = "Demo of smolagents CodeAgent running in Agent Kernel with a REST 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api]>=0.2.14",
+    "agentkernel[api,smolagents]>=0.3.0",
+    "python-multipart>=0.0.12",
     "smolagents",
 ]
 [tool.uv]
@@ -13,7 +14,7 @@ package = false
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.14",
+    "agentkernel[test,smolagents]>=0.3.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",

@@ -4,7 +4,11 @@ from agentkernel.framework.smolagents.smolagents import SmolagentsToolBuilder
 
 
 def get_weather(city: str) -> str:
-    """Returns the weather for a given city."""
+    """Returns the weather for a given city.
+
+    Args:
+        city: The target city.
+    """
     return f"Weather in {city}: sunny"
 
 
