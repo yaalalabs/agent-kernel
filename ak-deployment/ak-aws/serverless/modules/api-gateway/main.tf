@@ -1,3 +1,39 @@
+# Locals for endpoint processing
+locals {
+  normalized_endpoints = [
+    for ep in var.endpoints : {
+      parts  = split("/", trim(ep.path, "/"))
+      method = ep.method
+    }
+  ]
+  converted_endpoints = [
+    for ep in local.normalized_endpoints : {
+      mainpath  = ep.parts[0]
+      subpath   = length(ep.parts) > 1 ? ep.parts[1] : ""
+      childpath = length(ep.parts) > 2 ? ep.parts[2] : ""
+      method    = ep.method
+    }
+  ]
+  all_endpoints = {
+    for ep in local.converted_endpoints :
+    "${ep.mainpath}/${ep.subpath != "" ? ep.subpath : "_root"}/${ep.childpath != "" ? ep.childpath : "_root"}/${ep.method}" => ep
+  }
+  mainpaths = {
+    for _, v in local.all_endpoints : v.mainpath => v...
+  }
+  sub_resources = {
+    for _, v in local.all_endpoints :
+    "${v.mainpath}/${v.subpath}" => v...
+    if v.subpath != ""
+  }
+  child_resources = {
+    for _, v in local.all_endpoints :
+    "${v.mainpath}/${v.subpath}/${v.childpath}" => v...
+    if v.subpath != "" && v.childpath != ""
+  }
+}
+
+# API Gateway REST API
 resource "aws_api_gateway_rest_api" "rest_api" {
   name        = "${var.product_alias}-${var.env_alias}-rest-api-${var.region}"
   description = "[${var.env_alias}] ${var.product_display_name} REST API"
@@ -5,6 +41,7 @@ resource "aws_api_gateway_rest_api" "rest_api" {
   tags        = var.tags
 }
 
+# API Gateway Resources
 resource "aws_api_gateway_resource" "api" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   parent_id   = aws_api_gateway_rest_api.rest_api.root_resource_id
@@ -18,7 +55,7 @@ resource "aws_api_gateway_resource" "version" {
 }
 
 resource "aws_api_gateway_resource" "main" {
-  for_each = local.mainpaths
+  for_each    = local.mainpaths
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   parent_id   = aws_api_gateway_resource.version.id
   path_part   = each.key
@@ -32,12 +69,13 @@ resource "aws_api_gateway_resource" "sub" {
 }
 
 resource "aws_api_gateway_resource" "child" {
-  for_each = local.child_resources
+  for_each    = local.child_resources
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   parent_id   = aws_api_gateway_resource.sub["${each.value[0].mainpath}/${each.value[0].subpath}"].id
-  path_part = each.value[0].childpath
+  path_part   = each.value[0].childpath
 }
 
+# API Gateway Methods
 resource "aws_api_gateway_method" "endpoint" {
   for_each = local.all_endpoints
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
@@ -52,11 +90,12 @@ resource "aws_api_gateway_method" "endpoint" {
       ].id :
       aws_api_gateway_resource.main[each.value.mainpath].id
   )
-  http_method  = each.value.method
-  authorization = local.create_authorizer ? "CUSTOM" : "NONE"
-  authorizer_id = local.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
+  http_method   = each.value.method
+  authorization = var.create_authorizer ? "CUSTOM" : "NONE"
+  authorizer_id = var.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
 }
 
+# API Gateway Integrations
 resource "aws_api_gateway_integration" "endpoint" {
   for_each                = local.all_endpoints
   rest_api_id             = aws_api_gateway_rest_api.rest_api.id
@@ -74,16 +113,18 @@ resource "aws_api_gateway_integration" "endpoint" {
   http_method             = aws_api_gateway_method.endpoint[each.key].http_method
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
-  uri                     = module.lambda_deployment.lambda_function_invoke_arn
+  uri                     = var.lambda_function_invoke_arn
 }
 
+# Lambda permission for API Gateway
 resource "aws_lambda_permission" "endpoint" {
   action        = "lambda:InvokeFunction"
-  function_name = module.lambda_deployment.lambda_function_name
+  function_name = var.lambda_function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.rest_api.execution_arn}/*/*"
 }
 
+# API Gateway Deployment
 resource "aws_api_gateway_deployment" "deployment" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   triggers = {
@@ -103,11 +144,14 @@ resource "aws_api_gateway_deployment" "deployment" {
   ]
 }
 
+# CloudWatch Log Group for API Gateway
 resource "aws_cloudwatch_log_group" "api_gateway" {
   name              = "/aws/api-gateway/${var.product_alias}-${var.env_alias}-rest-api"
   retention_in_days = 90
+  kms_key_id        = var.cloudwatch_kms_key_arn
 }
 
+# IAM Role for CloudWatch integration
 resource "aws_iam_role" "cloudwatch" {
   name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-role"
 
@@ -153,6 +197,7 @@ resource "aws_api_gateway_account" "api_gateway" {
   cloudwatch_role_arn = aws_iam_role.cloudwatch.arn
 }
 
+# API Gateway Stage
 resource "aws_api_gateway_stage" "stage" {
   deployment_id = aws_api_gateway_deployment.deployment.id
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
@@ -177,15 +222,15 @@ resource "aws_api_gateway_stage" "stage" {
       status                  = "$context.status"
       responseLength          = "$context.responseLength"
       integrationErrorMessage = "$context.integrationErrorMessage"
-    }
-    )
+    })
   }
 
   depends_on = [aws_api_gateway_account.api_gateway]
 }
 
+# Gateway Response for Unauthorized
 resource "aws_api_gateway_gateway_response" "unauthorized" {
-  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   response_type = "UNAUTHORIZED"
 
   status_code = "401"
@@ -197,8 +242,9 @@ resource "aws_api_gateway_gateway_response" "unauthorized" {
   }
 }
 
+# Gateway Response for Access Denied
 resource "aws_api_gateway_gateway_response" "access_denied" {
-  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   response_type = "ACCESS_DENIED"
 
   status_code = "403"
@@ -210,25 +256,26 @@ resource "aws_api_gateway_gateway_response" "access_denied" {
   }
 }
 
+# Lambda permission for authorizer (conditional)
 resource "aws_lambda_permission" "allow_apigw_authorizer" {
-  count       = local.create_authorizer ? 1 : 0
+  count       = var.create_authorizer ? 1 : 0
   statement_id = "AllowAPIGatewayInvokeAuthorizer"
   action      = "lambda:InvokeFunction"
-  function_name = module.authorizer[0].lambda_function_name
+  function_name = var.authorizer_lambda_function_name
   principal   = "apigateway.amazonaws.com"
 
   # REST API
   source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/authorizers/*"
 }
 
+# API Gateway Authorizer (conditional)
 resource "aws_api_gateway_authorizer" "lambda_authorizer" {
-  count    = local.create_authorizer ? 1 : 0
-  name     = "${var.product_alias}-${var.env_alias}-${var.authorizer.module_name}-${var.authorizer.function_name}"
-  rest_api_id = aws_api_gateway_rest_api.rest_api.id
-  authorizer_uri = module.authorizer[0].lambda_function_invoke_arn
+  count         = var.create_authorizer ? 1 : 0
+  name          = "${var.product_alias}-${var.env_alias}-${var.authorizer.module_name}-${var.authorizer.function_name}"
+  rest_api_id   = aws_api_gateway_rest_api.rest_api.id
+  authorizer_uri = var.authorizer_lambda_function_invoke_arn
 
-  type = "REQUEST"
-  identity_source = "method.request.header.Authorization,context.resourcePath"
+  type                           = "REQUEST"
+  identity_source                = "method.request.header.Authorization,context.resourcePath,context.httpMethod"
   authorizer_result_ttl_in_seconds = var.authorizer.result_ttl_in_seconds
 }
-
