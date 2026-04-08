@@ -1,3 +1,1 @@
 # This core folder will contain the core components of the AWS deployment (for both Serverless & Containerized), such as models, utilities, base classes for services, etc.
-
-from .sqs_handler import SQSHandler
