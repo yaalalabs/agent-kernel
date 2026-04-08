@@ -50,7 +50,7 @@ Want an enterprise agent that handles customer support across Slack and WhatsApp
 
 Six prompts. No documentation. No framework expertise. A production-grade enterprise agent — scaffolded, built, integrated, hardened, deployed, and tested.
 
-Each prompt activates a different Agent Kernel skill. Each skill tells your coding assistant exactly what to do — not in vague terms, but with precise instructions covering every framework Agent Kernel supports: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents.
+Each prompt activates a different Agent Kernel skill. Each skill tells your coding assistant exactly what to do — not in vague terms, but with precise instructions covering every framework Agent Kernel supports: OpenAI Agents SDK, CrewAI, LangGraph, and Google ADK.
 
 ## Everything Agent Kernel Can Do, Packaged as Six Skills
 
@@ -172,7 +172,7 @@ The Agent Kernel repository ships a `.agents/skills/` folder containing seven de
 | Skill | What It Teaches Your Assistant |
 |-------|-------------------------------|
 | **ak-dev-architecture** | Core abstractions, design principles, adapter pattern, execution flow — everything needed to understand the codebase |
-| **ak-dev-new-framework-integration** | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, and Smolagents) |
+| **ak-dev-new-framework-integration** | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK) |
 | **ak-dev-new-messaging-integration** | How to add a new messaging platform (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail) |
 | **ak-dev-new-guardrail-provider** | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI) |
 | **ak-dev-new-tracing-provider** | How to add a new observability backend (beyond Langfuse, OpenLLMetry) |

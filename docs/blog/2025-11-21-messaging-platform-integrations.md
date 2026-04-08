@@ -129,7 +129,7 @@ All messaging integrations share these powerful capabilities:
 ✓ **Real-Time Processing** - Webhook-based message handling with low latency  
 ✓ **Session Management** - Automatic conversation context across messages  
 ✓ **Built-in Security** - Request verification and authentication handled automatically  
-✓ **Framework Agnostic** - Works with LangGraph, OpenAI Agents SDK, CrewAI, Google ADK, and Smolagents, and custom frameworks
+✓ **Framework Agnostic** - Works with LangGraph, OpenAI Agents SDK, CrewAI, Google ADK, and custom frameworks
 
 ## 🚀 Coming Soon: Even More Platforms
 

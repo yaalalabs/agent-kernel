@@ -459,4 +459,4 @@ Upcoming observability features:
 - Comprehensive trace data including LLM calls, tools, and performance
 - Minimal performance impact
 - Self-hosting and custom backend options for data privacy
-- Production-ready for all framework integrations (OpenAI, LangGraph, CrewAI, Google ADK, and Smolagents, and Smolagents)
+- Production-ready for all framework integrations (OpenAI, LangGraph, CrewAI, Google ADK)
