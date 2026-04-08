@@ -19,6 +19,7 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -162,9 +163,10 @@ class OpenAIRunner(BaseRunner):
                 # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
                 reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
 
-            return AgentReplyText(text=str(reply), prompt=prompt)
+            reply_text = "" if reply is None else str(reply)
+            return AgentReplyText(text=reply_text, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=f"Error during agent execution: {str(e)}")
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

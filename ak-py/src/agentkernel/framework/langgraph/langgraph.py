@@ -24,9 +24,30 @@ from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.tool import SystemToolFactory
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
+
+
+def _extract_text_content(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                if item.strip():
+                    text_parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    text_parts.append(text)
+        if text_parts:
+            return " ".join(text_parts)
+    return str(content)
 
 
 class CheckPointer(BaseCheckpointSaver):
@@ -338,7 +359,9 @@ class LangGraphRunner(BaseRunner):
                 config=session_config.model_dump(),
             )
             last_message = result["messages"][-1]
-            return AgentReplyText(text=last_message.content, prompt=prompt)
+            return AgentReplyText(text=_extract_text_content(last_message.content), prompt=prompt)
+        except Exception as e:
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

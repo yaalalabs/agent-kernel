@@ -4,6 +4,20 @@ import readline  # Enables line editing and history features for input() in the 
 
 from ..core import AgentService
 
+
+class _SuppressOtelDetachNoise(logging.Filter):
+    """Hide known OpenTelemetry shutdown noise from console output."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (record.name == "opentelemetry.context" and "Failed to detach context" in record.getMessage())
+
+
+def _configure_external_log_filters() -> None:
+    otel_context_logger = logging.getLogger("opentelemetry.context")
+    if not any(isinstance(f, _SuppressOtelDetachNoise) for f in otel_context_logger.filters):
+        otel_context_logger.addFilter(_SuppressOtelDetachNoise())
+
+
 # Configure logger only to print agent kernel logs
 ak_logger = logging.getLogger("ak")
 ak_logger.setLevel(logging.INFO)
@@ -14,6 +28,8 @@ if not ak_logger.handlers:
     handler.setLevel(logging.INFO)
     handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
     ak_logger.addHandler(handler)
+
+_configure_external_log_filters()
 
 
 class CLI:
@@ -101,7 +117,8 @@ class CLI:
                 raise
             except Exception as e:
                 self._print(f"Error: {e}")
-                ak_logger.error("Exception in CLI run loop", exc_info=True)
+                # Keep CLI output user-friendly by default; full trace is available at DEBUG level.
+                ak_logger.debug("Exception in CLI run loop", exc_info=True)
 
     @classmethod
     def main(cls):
