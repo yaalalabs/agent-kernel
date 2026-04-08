@@ -9,7 +9,8 @@ from typing import List, Optional, Tuple
 
 DEPLOYMENT_ROOTS = [
     'ak-deployment/ak-aws',
-    'ak-deployment/ak-azure'
+    'ak-deployment/ak-azure',
+    'examples'
 ]
 
 REGISTRY_TO_LOCAL_ROOTS = {
