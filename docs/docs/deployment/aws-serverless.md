@@ -109,182 +109,35 @@ from agentkernel.openai import OpenAIModule
 from agentkernel.aws import Lambda
 
 agent = OpenAIAgent(name="assistant", ...)
+
 OpenAIModule([agent])
+
+@Lambda.register("/app", method="GET")
+def custom_app_handler(event, context):
+    return {"receivedEventPayload": dict(event), "response": "Hello! from AK 'app'"}
+
+@Lambda.register("/app_info", method="POST")
+def custom_app_info_handler(event, context):
+    payload = json.loads(event.get("body") or "{}")
+    return {"receivedEventPayload": dict(event), "request": payload, "response": "Hello! from AK 'app_info'"}
 
 handler = Lambda.handler
 ```
 
-The AWS Lambda entrypoint accepts both payload shapes, but the rest of this guide uses `BaseRunRequest` examples for request bodies.
+## Lambda Environment Variables
 
-Supported payloads:
+The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
 
-```json
-{
-  "prompt": "Hello agent",
-  "agent": "assistant",
-  "session_id": "user-123"
-}
-```
+- **API_BASE_PATH** – Base path mapping without leading slash. Example: `api` or `prod`
+- **API_VERSION** – Version segment. Example: `v1`
+- **AGENT_ENDPOINT** – The default chat endpoint segment. Example: `chat`
 
-```json
-{
-  "request_id": "req-123",
-  "user_id": "user-123",
-  "body": {
-    "prompt": "Hello agent",
-    "agent": "assistant",
-    "session_id": "user-123"
-  }
-}
-```
+These environment variables are automatically configured by the Terraform module based on the `api_base_path`, `api_version`, and `agent_endpoint` variables in your Terraform configuration.
 
-## API Endpoints
+> **NOTE:** If you wrap our Lambda with your own API Gateway and deployment method, you are responsible for setting these environment variables. If they are not provided, only the default chat handler may work and custom routes may not resolve as expected.
 
-After deployment, the default chat route is:
+> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda handler function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
 
-```text
-https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat
-```
-
-The payload examples below use `BaseRunRequest` unless noted otherwise.
-
-### `rest_sync`
-
-`rest_sync` sends the request to SQS and waits for the matching response.
-
-**Request**
-
-```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-token" \
-  -d '{
-    "prompt": "Hello!",
-    "agent": "assistant",
-    "session_id": "user-123"
-  }'
-```
-
-**Response**
-
-```json
-{
-  "result": "Agent response here",
-  "session_id": "user-123"
-}
-```
-
-### `rest_async`
-
-`rest_async` uses two requests: one to submit the work, and a second GET request to poll for the response using the returned `request_id`.
-
-**1. Submit request**
-
-```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Hello!",
-    "agent": "assistant",
-    "session_id": "user-123"
-  }'
-```
-
-**Submit response**
-
-```json
-{
-  "status": "ACCEPTED",
-  "request_id": "req-123"
-}
-```
-
-**2. Poll for the response**
-
-```bash
-curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "request_id": "req-123"
-  }'
-```
-
-**Poll response**
-
-```json
-{
-  "result": "Agent response here",
-  "session_id": "user-123"
-}
-```
-
-If the response is not available yet, the poll endpoint returns a `NOT_FOUND` body with the same `request_id` so clients can retry.
-
-## Execution Modes and Response Store
-
-The AWS serverless runtime currently supports these execution modes:
-
-- `rest_sync` - POST request to SQS, then wait for the matching response in the response store
-- `rest_async` - POST request to SQS, then poll later with GET and the same `request_id`
-
-When you use queue-backed execution, configure the `execution` block:
-
-- `execution.mode` - selects the runtime mode
-- `execution.queues.input.url` - input SQS queue for agent requests
-- `execution.queues.output.url` - output SQS queue for agent responses
-- `execution.queues.input.max_receive_count` - input queue receive retry threshold
-- `execution.queues.output.max_receive_count` - output queue receive retry threshold
-- `execution.response_store.retry_count` - number of response-store lookup attempts
-- `execution.response_store.delay` - delay in seconds between lookup attempts
-- `execution.response_store.type` - response-store backend selector configured in `config.yaml` only
-- `execution.response_store.redis.url` - Redis URL for response storage
-- `execution.response_store.redis.prefix` - Redis key prefix for response storage, default `ak:responses:`
-- `execution.response_store.redis.ttl` - Redis TTL in seconds
-- `execution.response_store.dynamodb.table_name` - DynamoDB table name for response storage
-- `execution.response_store.dynamodb.ttl` - DynamoDB TTL in seconds
-
-The response store is configured as a single object with one selected backend:
-
-```json
-{
-  "execution": {
-    "mode": "rest_async",
-    "queues": {
-      "input": {
-        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"
-      }
-    },
-    "response_store": {
-      "type": "redis",
-      "retry_count": 5,
-      "delay": 5,
-      "redis": {
-        "url": "redis://localhost:6379",
-        "prefix": "ak:responses:",
-        "ttl": 3600
-      }
-    }
-  }
-}
-```
-
-Set `response_store.type` to `redis` or `dynamodb`, then provide the matching backend block.
-
-The response handler reads `request_id` from SQS message attributes and stores each response by request ID. For Redis, the message body is stored under the configured key prefix; for DynamoDB, the message is stored in the configured table. The `request_id` and optional `user_id` are carried as SQS message attributes, while the nested `body` is used as the message payload.
-
-Example environment variables:
-
-```bash
-export AK_EXECUTION__MODE=rest_async
-export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
-export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
-export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
-export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
-export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
-export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
-export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
-export AK_EXECUTION__RESPONSE_STORE__DELAY=5
-```
 
 ## API Gateway Authentication (Optional)
 
@@ -449,50 +302,59 @@ terraform apply
 
 The auth package script should run automatically when executing `./deploy.sh`. You can customize the script paths and structure, but you must provide two separate packages to the Terraform configuration via the `package_path` (for main Lambda) and `authorizer.package_path` (for auth Lambda) variables.
 
+## Scalable Mode 
 
-## Lambda Handlers
+### Lambda Handlers
 
-**If scalable mode is disabled, only the request handler is needed. If scalable mode is enabled, you need all three Lambda handlers: request handler, agent runner, and response handler.**
+**If scalable mode is disabled, only the request handler is needed. If scalable mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler.**
 
-### 1. Request Handler
+#### 1. Request Handler
 
-Use this handler for the default chat path. The same Lambda can also expose custom routes by registering additional handlers.
+We can have our normal lambda handler (without having Agents and Modules) and also expose custom routes by registering additional handlers.
 
-```python
-from agents import Agent as OpenAIAgent
-from agentkernel.aws import Lambda
-from agentkernel.openai import OpenAIModule
-
-agent = OpenAIAgent(name="assistant", ...)
-OpenAIModule([agent])
-
-handler = Lambda.handler
-```
-
-Custom endpoints example:
+> **IMPORTANT NOTE: Agents must not be written and integrated with Modules (eg: `OpenAIModule`, `CrewAIModule`, etc) in this Lambda when using Scalable Mode. These Agents and Modules must be defined in the Agent Runner when using Scalable Mode**
 
 ```python
 import json
 from agentkernel.aws import Lambda
 
-
 @Lambda.register("/app", method="GET")
 def custom_app_handler(event, context):
     return {"receivedEventPayload": dict(event), "response": "Hello! from AK 'app'"}
-
 
 @Lambda.register("/app_info", method="POST")
 def custom_app_info_handler(event, context):
     payload = json.loads(event.get("body") or "{}")
     return {"receivedEventPayload": dict(event), "request": payload, "response": "Hello! from AK 'app_info'"}
 
-
 handler = Lambda.handler
+```
+
+The AWS Lambda entrypoint accepts both of the following payload shapes.
+
+```json
+{
+  "prompt": "Hello agent",
+  "agent": "assistant",
+  "session_id": "user-123"
+}
+```
+
+```json
+{
+  "request_id": "req-123",
+  "user_id": "user-123",
+  "body": {
+    "prompt": "Hello agent",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }
+}
 ```
 
 See [examples/aws-serverless/scalable-openai/lambda_request_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_request_handler.py) for the reference implementation.
 
-### 2. Agent Runner
+#### 2. Agent Runner
 
 This Lambda receives the queued request, runs the agent logic, and sends the result to the output queue.
 
@@ -526,7 +388,7 @@ handler = ServerlessAgentRunner.handle
 
 See [examples/aws-serverless/scalable-openai/lambda_agent_runner.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_agent_runner.py) for the reference implementation.
 
-### 3. Response Handler
+#### 3. Response Handler
 
 This Lambda reads the response from the output queue and stores it in the configured response store.
 
@@ -539,11 +401,11 @@ handler = ResponseHandler.handle
 
 See [examples/aws-serverless/scalable-openai/lambda_response_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_response_handler.py) for the reference implementation.
 
-## Lambda Package Creation
+### Lambda Package Creation
 
 The deployment script creates the Lambda artifacts before Terraform runs.
 
-### Request Handler Package
+#### Request Handler Package
 
 ```bash
 create_request_handler_deployment_package() {
@@ -561,10 +423,9 @@ create_request_handler_deployment_package() {
     popd || exit 1
 }
 ```
-
 This creates `dist_request_handler.zip`.
 
-### Agent Runner Package
+#### Agent Runner Package
 
 ```bash
 create_agent_runner_deployment_package() {
@@ -583,10 +444,9 @@ create_agent_runner_deployment_package() {
     cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
 }
 ```
+This creates `dist_agent_runner/`.
 
-This creates the `dist_agent_runner/` folder.
-
-### Response Handler Package
+#### Response Handler Package
 
 ```bash
 create_response_handler_deployment_package() {
@@ -604,24 +464,157 @@ create_response_handler_deployment_package() {
     popd || exit 1
 }
 ```
-
 This creates `dist_response_handler.zip`.
 
 The example deployment script runs all package builders before Terraform applies the infrastructure.
 
-## Lambda Environment Variables
+### API Endpoints
 
-The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
+After deployment, the default chat route is:
 
-- **API_BASE_PATH** – Base path mapping without leading slash. Example: `api` or `prod`
-- **API_VERSION** – Version segment. Example: `v1`
-- **AGENT_ENDPOINT** – The default chat endpoint segment. Example: `chat`
+```text
+https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat
+```
 
-These environment variables are automatically configured by the Terraform module based on the `api_base_path`, `api_version`, and `agent_endpoint` variables in your Terraform configuration.
+The payload examples below use `BaseRunRequest` unless noted otherwise.
 
-> **NOTE:** If you wrap our Lambda with your own API Gateway and deployment method, you are responsible for setting these environment variables. If they are not provided, only the default chat handler may work and custom routes may not resolve as expected.
+#### `rest_sync`
 
-> **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda handler function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
+`rest_sync` sends the request to SQS and waits for the matching response.
+
+**Request**
+
+```bash
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-token" \
+  -d '{
+    "prompt": "Hello!",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }'
+```
+
+**Response**
+
+```json
+{
+  "result": "Agent response here",
+  "session_id": "user-123"
+}
+```
+
+#### `rest_async`
+
+`rest_async` uses two requests: one to submit the work, and a second GET request to poll for the response using the returned `request_id`.
+
+**1. Submit request**
+
+```bash
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Hello!",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }'
+```
+
+**Submit response**
+
+```json
+{
+  "status": "ACCEPTED",
+  "request_id": "req-123"
+}
+```
+
+**2. Poll for the response**
+
+```bash
+curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "req-123"
+  }'
+```
+
+**Poll response**
+
+```json
+{
+  "result": "Agent response here",
+  "session_id": "user-123"
+}
+```
+
+If the response is not available yet, the poll endpoint returns a `NOT_FOUND` body with the same `request_id` so clients can retry.
+
+### Execution Modes and Response Store
+
+The AWS serverless runtime currently supports these execution modes:
+
+- `rest_sync` - POST request to SQS, then wait for the matching response in the response store
+- `rest_async` - POST request to SQS, then poll later with GET and the same `request_id`
+
+When you use queue-backed execution, configure the `execution` block:
+
+- `execution.mode` - selects the runtime mode
+- `execution.queues.input.url` - input SQS queue for agent requests
+- `execution.queues.output.url` - output SQS queue for agent responses
+- `execution.queues.input.max_receive_count` - input queue receive retry threshold
+- `execution.queues.output.max_receive_count` - output queue receive retry threshold
+- `execution.response_store.retry_count` - number of response-store lookup attempts
+- `execution.response_store.delay` - delay in seconds between lookup attempts
+- `execution.response_store.type` - response-store backend selector configured in `config.yaml` only
+- `execution.response_store.redis.url` - Redis URL for response storage
+- `execution.response_store.redis.prefix` - Redis key prefix for response storage, default `ak:responses:`
+- `execution.response_store.redis.ttl` - Redis TTL in seconds
+- `execution.response_store.dynamodb.table_name` - DynamoDB table name for response storage
+- `execution.response_store.dynamodb.ttl` - DynamoDB TTL in seconds
+
+The response store is configured as a single object with one selected backend:
+
+```json
+{
+  "execution": {
+    "mode": "rest_async",
+    "queues": {
+      "input": {
+        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"
+      }
+    },
+    "response_store": {
+      "type": "redis",
+      "retry_count": 5,
+      "delay": 5,
+      "redis": {
+        "url": "redis://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 3600
+      }
+    }
+  }
+}
+```
+
+Set `response_store.type` to `redis` or `dynamodb`, then provide the matching backend block.
+
+The response handler reads `request_id` from SQS message attributes and stores each response by request ID. For Redis, the message body is stored under the configured key prefix; for DynamoDB, the message is stored in the configured table. The `request_id` and optional `user_id` are carried as SQS message attributes, while the nested `body` is used as the message payload.
+
+Example environment variables:
+
+```bash
+export AK_EXECUTION__MODE=rest_async
+export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
+export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
+export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
+export AK_EXECUTION__RESPONSE_STORE__DELAY=5
+```
 
 ## Cost Optimization
 
