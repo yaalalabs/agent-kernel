@@ -286,31 +286,173 @@ export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
 export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 ```
 
-## Lambda Handlers
+## API Gateway Authentication (Optional)
 
-If scalable mode is disabled, only the request handler is needed. If scalable mode is enabled, you need all three Lambda handlers: request handler, agent runner, and response handler.
+Authentication is completely optional. If you want to secure your API Gateway endpoints, you can configure Lambda authorizers. The serverless module supports custom token validation:
 
-### Authorizer Lambda
+### When Authentication is Enabled
 
-The authorizer is optional in both scalable and non-scalable deployments. Add it only when you want API Gateway authentication.
+Authentication infrastructure will only be created if you define an `authorizer` object with all required fields mentioned below in your `main.tf` file:
+
+**Required Fields**:
+- `function_name` - Name for the authorizer Lambda function
+- `handler_path` - Path to the authorizer Lambda handler (e.g., `auth.handler`)
+- `package_type` - Deployment type (`Image`, `LocalZip`, or `S3Zip`)
+- `package_path` - Path to authorizer deployment package
+- `module_name` - Authorizer module name
+
+**Optional Fields**:
+- `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
+- `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
+- `environment_variables` - Environment variables for authorizer
+
+If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your endpoints will be publicly accessible.
+
+### Auth Lambda Handler
+
+You need to create a separate auth lambda logic by extending the `AuthValidator` class:
 
 ```python
 from typing import Optional
-
-import jwt
 from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
-
+import jwt
 
 class CustomAuthTokenValidator(AuthValidator):
     def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        """Validate JWT token and return validation result."""
         payload = jwt.decode(token, options={"verify_signature": False})
+        print("Payload", payload)
         email = payload.get("email", "")
-        return ValidationResult(is_valid=email == "test@test.com")
+        if email == "test@test.com":
+            return ValidationResult(is_valid=True)
+        return ValidationResult(is_valid=False)
 
-
+# APIGatewayAuthorizer defines the auth lambda handler
 handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
 ```
+
+### Terraform Configuration
+
+To enable authentication, configure the authorizer in your `main.tf` by defining the `authorizer` object:
+
+```hcl
+module "serverless_agents" {
+  # ... other configuration
+  
+  # Defining API Gateway Authorizer (optional - only creates if all required variables are defined)
+  authorizer = {
+    description           = "API Gateway Lambda Authorizer"
+    function_name         = "gtwy-auth"
+    handler_path          = "lambda.handler"
+    package_path          = "../auth_deployment/auth_dist.zip"
+    package_type          = "S3Zip"  # or "LocalZip" or "Image"
+    module_name           = "auth"
+    
+    # Optional authorizer settings
+    # result_ttl_in_seconds = 0
+    # environment_variables = {
+    #   "SOME_OTHER_KEY" = "Some Other Value"
+    # }
+  }
+}
+```
+
+**Required Authorizer Fields (for auth infrastructure creation):**
+- `function_name` - Name for the authorizer Lambda function
+- `handler_path` - Path to the authorizer handler (e.g., `lambda.handler`)
+- `package_type` - Package type (`LocalZip`, `S3Zip`, or `Image`)
+- `package_path` - Path to authorizer package (required for all package types)
+- `module_name` - Authorizer module name (required for all package types, especially S3Zip)
+
+**Optional Authorizer Fields:**
+- `description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")
+- `result_ttl_in_seconds` - Cache TTL for authorizer results (default: 150)
+- `environment_variables` - Environment variables for authorizer Lambda
+
+### Deployment Packages
+
+You need two separate deployment packages:
+
+1. **Main Lambda Package** - Contains your agent logic and backend code
+2. **Auth Lambda Package** - Contains only the authentication logic (if enabled)
+
+**File Structure Example:**
+```
+your-project/
+├── lambda.py              # Main agent handler
+├── lambda_auth.py         # Authorizer handler
+├── build.sh               # Build script for dependencies
+├── config.yaml            # Configuration file
+├── requirements.txt       # Generated dependencies
+├── pyproject.toml         # Python project configuration
+├── deploy/
+│   ├── deploy.sh          # Deployment script
+│   ├── main.tf           # Terraform configuration
+│   ├── variables.tf      # Terraform variables
+│   ├── outputs.tf        # Terraform outputs
+│   └── terraform.tfvars  # Terraform variable values
+├── dist/                 # Main Lambda package directory
+├── dist_auth/            # Authorizer package directory
+└── dist_auth.zip         # Authorizer package zip file
+```
+
+**Creating the Deployment Packages:**
+The deployment script automatically creates both packages:
+
+```bash
+#!/bin/bash
+set -e # exit if any command in this script fails
+
+# Create main lambda deployment package
+echo "Creating main deployment package..."
+create_deployment_package() {
+    pushd ../
+    rm -rf dist
+    mkdir -p dist/data
+    uv export --no-hashes > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist/data
+    else
+      uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
+      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,redis,auth] || true
+    fi
+    cp -r lambda.py config.yaml dist/data
+    popd || exit 1
+    cp Dockerfile ../dist/
+}
+
+# Create auth deployment package
+echo "Creating auth deployment package..."
+create_auth_deployment_package() {
+    pushd ../
+    rm -rf dist_auth dist_auth.zip
+    mkdir -p dist_auth
+    if [[ ${1-} != "local" ]]; then
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
+    else
+        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+    fi
+    uv pip install --group auth --target=dist_auth
+    cp -r lambda_auth.py dist_auth/
+    cd dist_auth && zip -r ../dist_auth.zip .
+    popd || exit 1
+}
+
+create_deployment_package $1
+create_auth_deployment_package $1
+
+# Deploy with Terraform
+terraform init
+terraform apply
+```
+
+The auth package script should run automatically when executing `./deploy.sh`. You can customize the script paths and structure, but you must provide two separate packages to the Terraform configuration via the `package_path` (for main Lambda) and `authorizer.package_path` (for auth Lambda) variables.
+
+
+## Lambda Handlers
+
+**If scalable mode is disabled, only the request handler is needed. If scalable mode is enabled, you need all three Lambda handlers: request handler, agent runner, and response handler.**
 
 ### 1. Request Handler
 
@@ -464,29 +606,6 @@ create_response_handler_deployment_package() {
 ```
 
 This creates `dist_response_handler.zip`.
-
-### Optional Authorizer Package
-
-If you enable authentication, build a separate authorizer package as well.
-
-```bash
-create_auth_deployment_package() {
-    pushd ../
-    rm -rf dist_auth dist_auth.zip
-    mkdir -p dist_auth
-    if [[ ${1-} != "local" ]]; then
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
-    else
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
-    fi
-    uv pip install --group auth --target=dist_auth
-    cp -r lambda_auth.py dist_auth/
-    cd dist_auth && zip -r ../dist_auth.zip .
-    popd || exit 1
-}
-```
-
-This creates `dist_auth.zip`.
 
 The example deployment script runs all package builders before Terraform applies the infrastructure.
 
