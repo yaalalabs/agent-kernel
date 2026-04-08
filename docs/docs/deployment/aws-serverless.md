@@ -104,6 +104,7 @@ terraform init && terraform apply
 Your agent code remains the same, just import the Lambda handler:
 
 ```python
+import json
 from agents import Agent as OpenAIAgent
 from agentkernel.openai import OpenAIModule
 from agentkernel.aws import Lambda
@@ -473,7 +474,7 @@ The example deployment script runs all package builders before Terraform applies
 After deployment, the default chat route is:
 
 ```text
-https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat
+https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/chat
 ```
 
 The payload examples below use `BaseRunRequest` unless noted otherwise.
@@ -485,7 +486,7 @@ The payload examples below use `BaseRunRequest` unless noted otherwise.
 **Request**
 
 ```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-token" \
   -d '{
@@ -511,7 +512,7 @@ curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
 **1. Submit request**
 
 ```bash
-curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Hello!",
@@ -532,7 +533,7 @@ curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
 **2. Poll for the response**
 
 ```bash
-curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/chat \
+curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "request_id": "req-123"
