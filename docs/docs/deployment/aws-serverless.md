@@ -8,18 +8,40 @@ Deploy agents to AWS Lambda for auto-scaling, serverless execution.
 
 ## Architecture
 
+### Normal Mode: using request handler for chat processing
 ```mermaid
 graph LR
-    A[User] --> B[API Gateway]
-    B --> C[Lambda Authorizer]
-    B --> D[Request Handler Lambda]
+    A[User] <--> B[API Gateway]
+    B <--> C[Lambda Authorizer]
+    B <--> D[Lambda Function]
+    D --> E[Agent Kernel Runtime]
+    E <--> F[Your Agent]
+    D <--> G[Redis/ElastiCache]
+    D <--> H[DynamoDB]
+    
+    style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+### Queue Based Execution: using queues to improve the scalability (recommended for prod)
+#### REST SYNC and REST ASYNC modes
+```mermaid
+graph LR
+    A[User] <--> B[API Gateway]
+    B <--> C[Lambda Authorizer]
+    B <--> D[Request Handler Lambda]
+    
     D --> E[SQS Input Queue]
     E --> F[Agent Runner Lambda]
+    
     F --> G[SQS Output Queue]
     G --> H[Response Handler Lambda]
+    
     H --> I[Response Store]
-    F --> J[Session Store]
-    F --> K[Your Agent]
+    I --> D
+    
+    F <--> J[Session Store]
+    F <--> K[Your Agent]
     
     style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
     style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
