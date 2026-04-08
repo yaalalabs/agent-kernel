@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from agentkernel.auth.handler import AuthValidator, ValidationResult
-from agentkernel.deployment.aws.akauthorizer import (
+from agentkernel.deployment.aws.serverless.akauthorizer import (
     APIGatewayAuthorizer,
     APIGatewayRequestAuthorizerEvent,
     Headers,

@@ -11,6 +11,7 @@ This module provides a complete serverless deployment solution:
 - 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
 - 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
+- 📦 **Scalable Mode**: SQS-driven async processing with agent runner and response handler functions
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
 
@@ -291,7 +292,6 @@ module "serverless_api_auth" {
 }
 ```
 
-
 ## 📥 Inputs
 
 | Name | Description | Type | Default | Required |
@@ -304,9 +304,12 @@ module "serverless_api_auth" {
 | `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `package_path` | Path to Lambda deployment package or S3 URI | `string` | n/a | yes |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
+| `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
+| `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async` | `string` | `null` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
-| `timeout` | Lambda function timeout in seconds (max 900) | `number` | `30` | no |
+| `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
 | `memory_size` | Lambda function memory size in MB (128-10240) | `number` | `128` | no |
 | `function_name` | Lambda function name suffix | `string` | n/a | yes |
 | `function_description` | Lambda function description | `string` | n/a | yes |
@@ -316,8 +319,13 @@ module "serverless_api_auth" {
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
-| `gateway_endpoints` | List of REST API Gateway endpoints to expose (e.g., `app/test/func`, `app/check`) limitation: only three-level resource creation | `list(object)` | `[]` | no |
+| `api_base_path` | Base path segment for the API | `string` | `"api"` | no |
+| `gateway_endpoints` | List of REST API Gateway endpoints to expose; path values are validated and limited to three resource levels (for example, `app/test/func` or `app/check`) | `list(object)` | `[]` | no |
+| `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
+| `create_redis_response_store` | Create or reuse Redis for response storage | `bool` | `false` | no |
+| `create_dynamodb_response_store` | Create a DynamoDB table for response storage | `bool` | `false` | no |
+| `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
 
@@ -334,19 +342,105 @@ module "serverless_api_auth" {
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
 
+### Response Handler Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `function_name` | Response handler Lambda function name | `string` | `"response-handler"` | no |
+| `function_description` | Response handler Lambda description | `string` | `"Response handler Lambda for processing SQS messages and storing responses"` | no |
+| `timeout` | Response handler Lambda timeout in seconds | `number` | `45` | no |
+| `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
+| `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
+| `package_path` | Response handler deployment package path | `string` | `null` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
+| `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |
+
+### Agent Runner Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `function_name` | Agent runner Lambda function name | `string` | `"agent-runner"` | no |
+| `function_description` | Agent runner Lambda description | `string` | `"Agent runner Lambda for processing input queue messages"` | no |
+| `timeout` | Agent runner Lambda timeout in seconds | `number` | `45` | no |
+| `memory_size` | Agent runner Lambda memory size in MB | `number` | `512` | no |
+| `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
+| `module_name` | Agent runner artifact module name; defaults to the root module name with `-agent-runner` appended when omitted | `string` | `null` | no |
+| `package_path` | Agent runner deployment package path | `string` | `null` | no |
+| `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
+| `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
+
+### Queue Configuration
+
+The root `queue_config` object drives the SQS queues created for scalable mode. All fields are optional and the defaults below match the module behavior.
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `input_queue_name` | Name suffix for the input queue | `string` | `"input-queue"` | no |
+| `output_queue_name` | Name suffix for the output queue | `string` | `"output-queue"` | no |
+| `input_queue_visibility_timeout` | Visibility timeout for the input queue | `number` | `60` | no |
+| `input_queue_max_receive_count` | Maximum receive count before the input queue message is sent to the DLQ | `number` | `3` | no |
+| `input_queue_message_retention_seconds` | Message retention period for the input queue | `number` | `300` | no |
+| `input_queue_max_message_size` | Maximum message size for the input queue in bytes | `number` | `262144` | no |
+| `input_queue_receive_wait_time_seconds` | Long-polling wait time for the input queue | `number` | `0` | no |
+| `input_queue_delay_seconds` | Delivery delay for the input queue | `number` | `0` | no |
+| `input_queue_create_dlq` | Create a dead-letter queue for the input queue | `bool` | `false` | no |
+| `input_queue_dlq_message_retention_seconds` | Message retention period for the input DLQ | `number` | `300` | no |
+| `output_queue_visibility_timeout` | Visibility timeout for the output queue | `number` | `60` | no |
+| `output_queue_max_receive_count` | Maximum receive count before the output queue message is sent to the DLQ | `number` | `3` | no |
+| `output_queue_message_retention_seconds` | Message retention period for the output queue | `number` | `300` | no |
+| `output_queue_max_message_size` | Maximum message size for the output queue in bytes | `number` | `262144` | no |
+| `output_queue_receive_wait_time_seconds` | Long-polling wait time for the output queue | `number` | `0` | no |
+| `output_queue_delay_seconds` | Delivery delay for the output queue | `number` | `0` | no |
+| `output_queue_create_dlq` | Create a dead-letter queue for the output queue | `bool` | `false` | no |
+| `output_queue_dlq_message_retention_seconds` | Message retention period for the output DLQ | `number` | `300` | no |
+| `fifo_queue` | Create FIFO queues instead of standard queues | `bool` | `true` | no |
+| `sqs_managed_sse_enabled` | Use SQS-managed server-side encryption | `bool` | `true` | no |
+| `kms_master_key_id` | Customer-managed KMS key ARN or ID for SQS encryption when managed SSE is disabled | `string` | `null` | no |
+| `kms_data_key_reuse_period_seconds` | Data key reuse period for customer-managed KMS encryption when managed SSE is disabled | `number` | `null` | no |
+| `content_based_deduplication` | Enable content-based deduplication for FIFO queues | `bool` | `false` | no |
+| `fifo_throughput_limit` | FIFO throughput limit (`perMessageGroupId` or `perQueue`) | `string` | `"perMessageGroupId"` | no |
+| `deduplication_scope` | FIFO deduplication scope (`messageGroup` or `queue`) | `string` | `"messageGroup"` | no |
+| `enable_producer_access` | Enable producer access policies for the queues | `bool` | `true` | no |
+| `producer_arns` | ARNs allowed to send messages to the queues | `list(string)` | `[]` | no |
+| `enable_consumer_access` | Enable consumer access policies for the queues | `bool` | `true` | no |
+| `consumer_role_arns` | ARNs allowed to consume messages from the queues | `list(string)` | `[]` | no |
+| `batch_size` | Lambda batch size for queue event source mappings | `number` | `10` | no |
+| `maximum_batching_window_in_seconds` | Maximum batching window for Lambda event source mappings | `number` | `0` | no |
+
+**Note**: When `queue_mode = true`, the response handler and agent runner package paths must be provided. The queue configuration defaults can be used as-is, or you can override only the queue names and sizing values you need.
+
 ## 📤 Outputs
 
-| Name | Description | Example |
-|------|-------------|---------|
-| `lambda_function_arn` | ARN of the Lambda function | `arn:aws:lambda:us-west-2:123456789012:function:myapp-prod-api-handler` |
-| `lambda_function_name` | Name of the Lambda function | `myapp-prod-api-handler` |
-| `lambda_function_invoke_arn` | Invoke ARN for API Gateway integration | `arn:aws:apigateway:us-west-2:lambda:path/2015-03-31/functions/...` |
-| `agent_invoke_url` | Full HTTPS URL to invoke the API endpoint | `https://abc123.execute-api.us-west-2.amazonaws.com/agents/api/v1/chat` |
-| `api_gateway_id` | API Gateway REST API ID | `abc123defg` |
-| `api_gateway_stage_name` | API Gateway stage name | `agents` |
-| `dynamodb_memory_table_arn` | DynamoDB table ARN (if enabled) | `arn:aws:dynamodb:us-west-2:123456789012:table/myapp-prod-api-session_store` |
-| `dynamodb_memory_table_name` | DynamoDB table name (if enabled) | `myapp-prod-api-session_store` |
-| `authorizer_status` | Status message indicating whether the authorizer Lambda will be created | `"Created Authorizer Lambda: All required variables are present"` |
+| Name | Description |
+|------|-------------|
+| `lambda_function_arn` | ARN of the request-handler Lambda function |
+| `lambda_function_name` | Name of the request-handler Lambda function |
+| `lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
+| `lambda_role_arn` | ARN of the request-handler Lambda execution role |
+| `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
+| `agent_invoke_url` | Full invoke URL for the agent endpoint |
+| `api_gateway_id` | API Gateway REST API ID |
+| `api_gateway_stage_name` | API Gateway stage name |
+| `api_gateway_execution_arn` | Execution ARN of the API Gateway REST API |
+| `api_gateway_cloudwatch_log_group_arn` | ARN of the CloudWatch log group for API Gateway |
+| `api_gateway_cloudwatch_log_group_name` | Name of the CloudWatch log group for API Gateway |
+| `response_handler_lambda_function_arn` | ARN of the response handler Lambda function when `queue_mode = true` |
+| `response_handler_lambda_function_name` | Name of the response handler Lambda function when `queue_mode = true` |
+| `response_handler_lambda_function_invoke_arn` | Invoke ARN of the response handler Lambda function when `queue_mode = true` |
+| `response_handler_lambda_role_arn` | ARN of the response handler Lambda execution role when `queue_mode = true` |
+| `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function when `queue_mode = true` |
+| `agent_runner_lambda_function_name` | Name of the agent runner Lambda function when `queue_mode = true` |
+| `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function when `queue_mode = true` |
+| `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role when `queue_mode = true` |
+| `input_queue_arn` | ARN of the input SQS queue when `queue_mode = true` |
+| `input_queue_url` | URL of the input SQS queue when `queue_mode = true` |
+| `input_queue_name` | Name of the input SQS queue when `queue_mode = true` |
+| `output_queue_arn` | ARN of the output SQS queue when `queue_mode = true` |
+| `output_queue_url` | URL of the output SQS queue when `queue_mode = true` |
+| `output_queue_name` | Name of the output SQS queue when `queue_mode = true` |
 
 ## ✨ Features
 
@@ -378,9 +472,46 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 **Features**:
 - REST API Gateway with Lambda proxy integration
 - Stage name: `agents` (production-ready)
+- `gateway_endpoints` path values are validated and the module creates up to three resource levels per endpoint
 - CORS support configurable
 - Custom domain support compatible
 - **Custom Authorizer**: Lambda-based request authorization with configurable TTL
+
+### 📦 Scalable Mode Architecture
+
+When `queue_mode = true`, the module adds an asynchronous queue-driven path alongside the API Gateway entrypoint.
+
+**What gets created**:
+- Input and output SQS queues
+- An agent runner Lambda that consumes the input queue
+- A response handler Lambda that consumes the output queue
+- Event source mappings for both queue consumers
+
+**Execution modes**:
+- `rest_sync`: synchronous REST requests
+- `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling 
+
+**Operational rules**:
+- Input queue visibility timeout must be greater than or equal to the agent runner timeout
+- Output queue visibility timeout must be greater than or equal to the response handler timeout
+- FIFO queues are enabled by default, with explicit deduplication controls available when needed
+
+### 💾 Multi-Storage Support
+
+The module supports the current Agent Kernel storage wiring for both session state and response persistence.
+
+**Available storage options**:
+- Redis session memory via `create_redis_cluster`
+- Redis response storage via `create_redis_response_store`
+- Redis multimodal memory via `create_redis_cluster` and environmental variables *(more details in Agent Kernel Docs in Multimodal section)*
+- DynamoDB session memory via `create_dynamodb_memory_table`
+- DynamoDB multimodal memory via `create_dynamodb_multimodal_memory_table`
+- DynamoDB response storage via `create_dynamodb_response_store`
+
+**Behavior notes**:
+- Redis and DynamoDB response storage are mutually exclusive
+- DynamoDB-backed response storage uses a session-aware table layout with a `session_id` secondary index
+- Multimodal memory is stored separately from the core session store
 
 ### 🔒 Security Features
 
@@ -561,6 +692,61 @@ module "api_v2" {
 }
 ```
 
+### Async Processing with Scalable Mode
+
+```hcl
+module "async_api" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region               = "us-west-2"
+  product_alias        = "myapp"
+  env_alias            = "prod"
+  product_display_name  = "Async API"
+
+  module_name          = "chat"
+  function_name        = "handler"
+  function_description = "Main API handler"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
+
+  package_type = "LocalZip"
+  package_path = "${path.module}/dist/function.zip"
+
+  queue_mode = true
+  execution_mode = "rest_async"
+  ...
+
+  response_handler = {
+    package_path = "${path.module}/dist/response-handler.zip"
+    ...
+  }
+
+  agent_runner = {
+    package_path = "${path.module}/dist/agent-runner.zip"
+    ...
+  }
+
+  queue_config = {
+    input_queue_name  = "chat-input"
+    output_queue_name = "chat-output"
+    ...
+  }
+
+  create_redis_response_store = true
+  create_dynamodb_multimodal_memory_table = true
+
+  api_version    = "v1"
+  agent_endpoint = "chat"
+
+  environment_variables = {
+    ENVIRONMENT = "production"
+  }
+  ...
+}
+```
+
+Swap `create_redis_response_store = true` for `create_dynamodb_response_store = true` if you want DynamoDB-backed response storage instead of Redis.
+
 ## 🔐 Custom Authorizer Configuration
 
 The module supports a Lambda-based API Gateway authorizer for custom authentication and authorization logic.
@@ -574,11 +760,11 @@ authorizer = {
   description           = "API Gateway Lambda Authorizer"  # Optional, defaults to this value
   function_name         = "api-authorizer"                 # Required
   handler_path          = "auth.handler"                   # Required
-  package_path          = "./dist/auth.zip"               # Required
+  package_path          = "./dist/auth.zip"                # Required
   package_type          = "LocalZip"                       # Required
   module_name           = "auth"                           # Required
-  result_ttl_in_seconds = 300                              # Optional, defaults to 150
-  environment_variables = {                                 # Optional, defaults to {}
+  result_ttl_in_seconds = 0                                # Optional, defaults to 150
+  environment_variables = {                                # Optional, defaults to {}
     JWT_SECRET = "your-secret-key"
     API_URL    = "https://api.example.com"
   }
