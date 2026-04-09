@@ -1,0 +1,33 @@
+[project]
+name = "api-teams"
+version = "0.1.0"
+description = "Demo of OpenAI SDK agent running with a Microsoft Teams integration"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[api,openai,teams]>=0.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.3.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+agentkernel = { path = "../../../ak-py", editable = true }
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = true

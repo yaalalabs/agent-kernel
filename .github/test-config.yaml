@@ -22,12 +22,22 @@ e2e:
       path: examples/cli/guardrail/openai
     - type: cli
       path: examples/cli/guardrail/bedrock
+    # - type: cli
+    #   path: examples/cli/guardrail/walledai
     
     # API examples
     - type: api
       path: examples/api/openai
     - type: api
       path: examples/api/adk
+    - type: api
+      path: examples/api/multimodal/openai
+    - type: api
+      path: examples/api/multimodal/adk
+    - type: api
+      path: examples/api/multimodal/crewai
+    - type: api
+      path: examples/api/multimodal/langgraph
     - type: api
       path: examples/api/hooks
     - type: api

@@ -1,0 +1,9 @@
+guardrail:
+  input:
+    enabled: true
+    type: walledai
+    pii: true
+  output:
+    enabled: true
+    type: walledai
+    pii: true

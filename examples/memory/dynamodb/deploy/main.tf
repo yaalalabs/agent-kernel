@@ -1,7 +1,7 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
-  version = "0.2.13"
+  version = "0.3.0"
 
   # Basic lambda configuration
   product_alias                = var.product_alias
@@ -10,7 +10,8 @@ module "serverless_agents" {
   function_name                = "oai-ddb"
   handler_path                 = "lambda.handler"
   module_name                  = var.module_name
-  package_path                 = "../dist.zip"
+  package_path                 = "../dist"
+  package_type                 = "Image"
   memory_size                  = 256
   product_display_name         = "Agent Kernel OpenAI with DynamoDB"
   create_dynamodb_memory_table = true

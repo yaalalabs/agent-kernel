@@ -18,6 +18,7 @@ const sidebars = {
     'intro',
     'installation',
     'quick-start',
+    'agent-skills',
     {
       type: 'category',
       label: 'Core Concepts',
@@ -116,6 +117,7 @@ const sidebars = {
       items: [
         'advanced/traceability',
         'advanced/multi-agent',
+        'advanced/multimodal',
         {
           type: 'category',
           label: 'Guardrails',
@@ -123,6 +125,7 @@ const sidebars = {
             'advanced/guardrails',
             'advanced/guardrails-openai',
             'advanced/guardrails-bedrock',
+            'advanced/guardrails-walledai',
           ],
         },
       ],

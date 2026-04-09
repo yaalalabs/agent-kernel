@@ -41,6 +41,35 @@ variable "package_path" {
   description = "Zip package path or Docker image source path"
 }
 
+variable "cloudwatch_logs_retention_in_days" {
+  type        = number
+  description = "CloudWatch log retention period in days for the request handler Lambda"
+  default     = 90
+}
+variable "queue_mode" {
+  type        = bool
+  description = "When true, response_handler lambda will be created along with the response "
+  default     = false
+}
+
+variable "execution_mode" {
+  type        = string
+  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
+  default     = null
+  validation {
+    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async or null."
+  }
+  validation {
+    condition = !var.queue_mode || var.execution_mode != null
+    error_message = "execution_mode cannot be null when queue_mode is true."
+  }
+  validation {
+    condition = var.queue_mode || var.execution_mode == null
+    error_message = "execution_mode must be null when queue_mode is false."
+  }
+}
+
 variable "event_source_mapping" {
   description = "Event source mapping"
   type        = any
@@ -56,7 +85,7 @@ variable "environment_variables" {
 variable "timeout" {
   description = "Lambda timeout"
   type        = number
-  default     = 30
+  default     = 45
 }
 
 variable "memory_size" {
@@ -152,6 +181,30 @@ variable "create_dynamodb_memory_table" {
   default     = false
 }
 
+variable "create_redis_response_store" {
+  type        = bool
+  description = "Create or reuse Redis for response storage"
+  default     = false
+  nullable    = false
+}
+
+variable "create_dynamodb_response_store" {
+  type        = bool
+  description = "Create a DynamoDB table for response storage"
+  default     = false
+  nullable    = false
+  validation {
+    condition     = !(var.create_redis_response_store && var.create_dynamodb_response_store)
+    error_message = "create_redis_response_store and create_dynamodb_response_store cannot both be true."
+  }
+}
+
+variable "create_dynamodb_multimodal_memory_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the Agent multimodal memory"
+  default     = false
+}
+
 variable "private_subnet_cidrs" {
   type = list(string)
   description = "CIDR blocks for the private subnets"
@@ -179,53 +232,7 @@ variable "gateway_endpoints" {
   }
 }
 
-variable "authorizer_function_name" {
-  type        = string
-  description = "Authorizer Lambda function name"
-  default     = null
-}
 
-variable "authorizer_function_description" {
-  type        = string
-  description = "Authorizer Lambda function description"
-  default     = "API Gateway Lambda Authorizer"
-}
-
-variable "authorizer_handler_path" {
-  type        = string
-  description = "Lambda authorizer handler path"
-  default     = null
-}
-
-variable "authorizer_package_path" {
-  type        = string
-  description = "Authorizer Lambda package path or Docker image source path"
-  default     = null
-}
-
-variable "authorizer_package_type" {
-  type        = string
-  description = "Authorizer Lambda deployment type Image/LocalZip/S3Zip"
-  default     = null
-}
-
-variable "authorizer_module_name" {
-  type        = string
-  description = "Authorizer module name"
-  default     = null
-}
-
-variable "authorizer_environment_variables" {
-  description = "Authorizer Lambda environment variables"
-  type        = map(string)
-  default     = {}
-}
-
-variable "authorizer_result_ttl_in_seconds" {
-  type        = number
-  description = "Authorizer result TTL in seconds"
-  default     = 150
-}
 
 variable "authorizer" {
   description = "Authorizer configuration object"
@@ -243,5 +250,99 @@ variable "authorizer" {
 }
 
 
-data "aws_ecr_authorization_token" "token" {}
-data "aws_caller_identity" "current" {}
+variable "response_handler" {
+  description = "Response handler configuration object"
+  type = object({
+    function_name         = optional(string, "response-handler")
+    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
+    timeout               = optional(number, 45)
+    memory_size           = optional(number, 256)
+    handler_path          = optional(string, "response_handler.handler")
+    package_path          = optional(string, null)
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+  })
+  default = {}
+  validation {
+    condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
+    error_message = "response_handler.package_path must be set when queue_mode is true."
+  }
+}
+
+variable "agent_runner" {
+  description = "Agent runner configuration object"
+  type = object({
+    function_name         = optional(string, "agent-runner")
+    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
+    timeout               = optional(number, 45)
+    memory_size           = optional(number, 512)
+    handler_path          = optional(string, "agent_runner.handler")
+    module_name           = optional(string, null)
+    package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+  })
+  default = {}
+  validation {
+    condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
+    error_message = "agent_runner.package_path must be set when queue_mode is true."
+  }
+}
+
+variable "queue_config" {
+  description = "SQS queues configuration object. When omitted, the object defaults are used."
+  type = object({
+    # Queue names
+    input_queue_name  = optional(string, "input-queue")
+    output_queue_name = optional(string, "output-queue")
+
+    # Input queue configuration
+    input_queue_visibility_timeout            = optional(number, 60)
+    input_queue_max_receive_count             = optional(number, 3)
+    input_queue_message_retention_seconds     = optional(number, 300)
+    input_queue_max_message_size              = optional(number, 262144)
+    input_queue_receive_wait_time_seconds     = optional(number, 0)
+    input_queue_delay_seconds                 = optional(number, 0)
+    input_queue_create_dlq                    = optional(bool, false)
+    input_queue_dlq_message_retention_seconds = optional(number, 300)
+
+    # Output queue configuration
+    output_queue_visibility_timeout            = optional(number, 60)
+    output_queue_max_receive_count             = optional(number, 3)
+    output_queue_message_retention_seconds     = optional(number, 300)
+    output_queue_max_message_size              = optional(number, 262144)
+    output_queue_receive_wait_time_seconds     = optional(number, 0)
+    output_queue_delay_seconds                 = optional(number, 0)
+    output_queue_create_dlq                    = optional(bool, false)
+    output_queue_dlq_message_retention_seconds = optional(number, 300)
+
+    # Common queue configuration
+    fifo_queue                        = optional(bool, true)
+    sqs_managed_sse_enabled           = optional(bool, true)
+    kms_master_key_id                 = optional(string, null)
+    kms_data_key_reuse_period_seconds = optional(number, null)
+
+    # FIFO-specific configuration (only used when fifo_queue = true)
+    content_based_deduplication = optional(bool, false)
+    fifo_throughput_limit       = optional(string, "perMessageGroupId")
+    deduplication_scope         = optional(string, "messageGroup")
+
+    # Access control
+    enable_producer_access = optional(bool, true)
+    producer_arns          = optional(list(string), [])
+    enable_consumer_access = optional(bool, true)
+    consumer_role_arns     = optional(list(string), [])
+
+    # Lambda event source mapping configuration
+    batch_size                         = optional(number, 10)
+    maximum_batching_window_in_seconds = optional(number, 0) # The maximum time (in seconds) Lambda will wait to gather messages into a batch before triggering the Lambda function
+  })
+  default = {}
+  validation {
+    condition     = !var.queue_mode || var.queue_config != null
+    error_message = "queue_config must NOT be null when queue_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
+  }
+}

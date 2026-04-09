@@ -1,0 +1,226 @@
+/*
+  UseCaseJourneyMap — animated before/after timeline comparison.
+  Animation philosophy: purposeful, restrained, premium.
+  Chips are ABOVE the bar so they're never clipped by overflow:hidden during scaleX animation.
+  Bar fill durations deliberately differ (1.4s vs 0.5s) to make the contrast visceral.
+*/
+
+.journeySection {
+  padding: 5rem 0 4rem;
+  position: relative;
+  background: #000;
+}
+
+.header {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto 3rem;
+}
+
+.title {
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ak-text);
+  margin-bottom: 0.75rem;
+}
+
+.gradientText {
+  background: var(--ak-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 1rem;
+  color: var(--ak-text-secondary);
+  margin: 0;
+}
+
+/* ─── Tracks wrapper ─────────────────────────────────────────────────────── */
+
+.tracksWrapper {
+  position: relative;
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+/* SVG bracket overlaid on the left meta column */
+.bracketSvg {
+  position: absolute;
+  left: 188px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 100px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ─── Track row ──────────────────────────────────────────────────────────── */
+
+.trackRow {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.trackMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: right;
+  padding-right: 0.5rem;
+  padding-top: 0.25rem; /* vertically align with chip row */
+}
+
+.trackTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ak-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.trackTime {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.trackTime_traditional { color: #ef4444; }
+.trackTime_with-ak     { color: var(--ak-green); }
+
+/* ─── Track content (chips + bar) ────────────────────────────────────────── */
+
+.trackContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ─── Chips row ──────────────────────────────────────────────────────────── */
+
+.chipsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 24px;
+}
+
+.stepChip {
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.chip_traditional {
+  color: var(--ak-text-muted);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.chip_with-ak {
+  color: var(--ak-blue);
+  background: rgba(79, 125, 247, 0.1);
+  border: 1px solid rgba(79, 125, 247, 0.2);
+}
+
+@keyframes chipFadeIn {
+  from { opacity: 0; transform: scale(0.85) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.chipVisible {
+  animation: chipFadeIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: var(--chip-delay, 0ms);
+}
+
+/* ─── Time saved badge ───────────────────────────────────────────────────── */
+
+.timeSavedBadge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ak-green);
+  opacity: 0;
+  white-space: nowrap;
+}
+
+@keyframes badgePop {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.badgeVisible {
+  animation: badgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: 800ms;
+}
+
+/* ─── Bar ────────────────────────────────────────────────────────────────── */
+
+.trackBarOuter {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden; /* clip the scaled bar */
+}
+
+.trackBar {
+  height: 100%;
+  border-radius: 999px;
+  /* full width within the outer container's percentage context */
+  width: var(--bar-target, 50%);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+@keyframes barFill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.trackBarVisible {
+  animation: barFill var(--bar-duration, 1s) cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--bar-delay, 0ms);
+}
+
+.bar_traditional {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.5), rgba(239, 68, 68, 0.25));
+}
+
+.bar_with-ak {
+  background: linear-gradient(90deg, var(--ak-blue), var(--ak-purple));
+  box-shadow: 0 0 8px rgba(79, 125, 247, 0.3);
+}
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .trackRow {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+
+  .trackMeta {
+    text-align: left;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding-right: 0;
+    padding-top: 0;
+  }
+
+  .bracketSvg {
+    display: none;
+  }
+}

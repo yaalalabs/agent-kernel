@@ -28,6 +28,12 @@ class MockAgent(Agent):
     def get_a2a_card(self) -> Any:
         return None
 
+    def override_system_prompt(self, prompt: str) -> None:
+        pass
+
+    def attach_tool(self, tool: Any) -> None:
+        pass
+
 
 @pytest.fixture
 def mock_runtime():

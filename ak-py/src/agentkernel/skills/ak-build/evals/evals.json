@@ -1,0 +1,177 @@
+{
+  "skill": "ak-build",
+  "description": "Evaluations for the ak-build (add tools, agents, handoffs) skill",
+  "version": "0.2.13",
+  "evals": [
+    {
+      "id": "build-read-project",
+      "name": "Read and summarize existing project",
+      "input": "I want to add a new agent to my project",
+      "expected_outputs": [
+        "Framework:",
+        "Entry point:",
+        "Agents:",
+        "Tools:"
+      ],
+      "description": "The skill must inspect the project before generating code"
+    },
+    {
+      "id": "build-tool-openai",
+      "name": "Add tool to OpenAI project",
+      "input": "Add a weather lookup tool to my OpenAI Agents SDK project",
+      "expected_outputs": [
+        "from agentkernel.core import ToolContext",
+        "ToolContext.get()",
+        "OpenAIToolBuilder.bind([",
+        "def "
+      ],
+      "must_not_contain": [
+        "LangGraphToolBuilder",
+        "CrewAIToolBuilder"
+      ]
+    },
+    {
+      "id": "build-tool-langgraph",
+      "name": "Add tool to LangGraph project",
+      "input": "Add a weather lookup tool to my LangGraph project",
+      "expected_outputs": [
+        "from agentkernel.core import ToolContext",
+        "ToolContext.get()",
+        "LangGraphToolBuilder.bind(["
+      ],
+      "must_not_contain": [
+        "OpenAIToolBuilder"
+      ]
+    },
+    {
+      "id": "build-tool-crewai",
+      "name": "Add tool to CrewAI project",
+      "input": "Add a weather lookup tool to my CrewAI project",
+      "expected_outputs": [
+        "from agentkernel.core import ToolContext",
+        "ToolContext.get()",
+        "CrewAIToolBuilder.bind(["
+      ],
+      "must_not_contain": [
+        "OpenAIToolBuilder"
+      ]
+    },
+    {
+      "id": "build-tool-adk",
+      "name": "Add tool to Google ADK project",
+      "input": "Add a weather lookup tool to my Google ADK project",
+      "expected_outputs": [
+        "from agentkernel.core import ToolContext",
+        "ToolContext.get()",
+        "GoogleADKToolBuilder.bind(["
+      ],
+      "must_not_contain": [
+        "OpenAIToolBuilder"
+      ]
+    },
+    {
+      "id": "build-agent-openai",
+      "name": "Add agent to OpenAI project",
+      "input": "Add a support agent to my OpenAI project that handles customer inquiries",
+      "expected_outputs": [
+        "from agents import Agent",
+        "Agent(", "name=\"support\"",
+        "handoff_description=",
+        "instructions=",
+        "OpenAIModule(["
+      ]
+    },
+    {
+      "id": "build-agent-langgraph",
+      "name": "Add agent to LangGraph project",
+      "input": "Add a support agent to my LangGraph project",
+      "expected_outputs": [
+        "create_react_agent(",
+        "name=\"support\"",
+        "LangGraphModule(["
+      ],
+      "description": "Must include name= parameter to create_react_agent"
+    },
+    {
+      "id": "build-agent-crewai",
+      "name": "Add agent to CrewAI project",
+      "input": "Add a support agent to my CrewAI project",
+      "expected_outputs": [
+        "from crewai import Agent",
+        "role=\"support\"",
+        "verbose=False",
+        "CrewAIModule(["
+      ],
+      "must_not_contain": [
+        "name=\"support\""
+      ],
+      "description": "Must use role= not name= as agent identifier"
+    },
+    {
+      "id": "build-agent-adk",
+      "name": "Add agent to Google ADK project",
+      "input": "Add a support agent to my Google ADK project",
+      "expected_outputs": [
+        "from google.adk.agents import Agent",
+        "LiteLlm(model=",
+        "name=\"support\"",
+        "GoogleADKModule(["
+      ],
+      "description": "Must wrap model in LiteLlm()"
+    },
+    {
+      "id": "build-handoff-openai",
+      "name": "Wire handoff in OpenAI project",
+      "input": "Wire the support agent into the triage agent's handoffs",
+      "expected_outputs": [
+        "handoffs=[",
+        "support_agent"
+      ]
+    },
+    {
+      "id": "build-handoff-langgraph",
+      "name": "Wire handoff in LangGraph project",
+      "input": "Wire the support agent into the supervisor",
+      "expected_outputs": [
+        "create_supervisor(",
+        "agents=[",
+        "support_agent"
+      ]
+    },
+    {
+      "id": "build-handoff-adk",
+      "name": "Wire handoff in Google ADK project",
+      "input": "Wire the support agent into the triage agent",
+      "expected_outputs": [
+        "sub_agents=[",
+        "support_agent",
+        "transfer_to_agent"
+      ]
+    },
+    {
+      "id": "build-gotcha-toolcontext",
+      "name": "ToolContext used correctly",
+      "input": "Add a tool that needs session access",
+      "expected_outputs": [
+        "ToolContext.get()"
+      ],
+      "must_not_contain": [
+        "context: ToolContext",
+        "def my_tool(context,"
+      ],
+      "description": "ToolContext must be retrieved inside the function, never passed as a parameter"
+    },
+    {
+      "id": "build-single-module",
+      "name": "No duplicate Module instantiation",
+      "input": "Add a new agent to a project that already has a Module",
+      "expected_outputs": [
+        "Module(["
+      ],
+      "must_not_contain": [
+        "# Second module"
+      ],
+      "description": "New agents must be added to the existing Module, not a new one"
+    }
+  ]
+}

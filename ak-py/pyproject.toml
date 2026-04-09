@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.2.13"
+version = "0.3.0"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -67,6 +67,9 @@ adk = [
     "litellm~=1.74.3",
     "openinference-instrumentation-google-adk>=0.1.6",
 ]
+walledai = [
+    "walledai>=4.9.3"
+]
 api = [
     "fastapi>=0.118.0",
     "uvicorn>=0.37.0",
@@ -112,6 +115,12 @@ a2a = [
 mcp = [
     "fastmcp>=2.12.4",
 ]
+multimodal = [
+    "litellm>=1.74.9",
+]
+
+[project.scripts]
+ak = "agentkernel.cli.ak:main"
 
 [dependency-groups]
 dev = [

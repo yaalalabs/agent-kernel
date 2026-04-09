@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background: #07080c;
+    font-family: 'Ubuntu Sans', 'Ubuntu', system-ui, sans-serif;
+  }
+
+  .card {
+    position: relative;
+    width: 1200px;
+    height: 630px;
+    background: #07080c;
+    overflow: hidden;
+  }
+
+  /* Grid texture */
+  .grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(79,125,247,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,125,247,0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Glows */
+  .glow-a {
+    position: absolute;
+    top: -160px; left: -100px;
+    width: 620px; height: 620px;
+    background: radial-gradient(ellipse, rgba(79,125,247,0.11) 0%, transparent 65%);
+  }
+  .glow-b {
+    position: absolute;
+    bottom: -180px; right: -100px;
+    width: 560px; height: 560px;
+    background: radial-gradient(ellipse, rgba(139,92,246,0.09) 0%, transparent 65%);
+  }
+
+  /* Thin border */
+  .border {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(79,125,247,0.12);
+    pointer-events: none;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    position: absolute;
+    top: 52px; left: 72px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(79,125,247,0.09);
+    border: 1px solid rgba(79,125,247,0.2);
+    border-radius: 999px;
+    padding: 6px 16px 6px 10px;
+  }
+  .badge-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #4f7df7;
+    box-shadow: 0 0 10px rgba(79,125,247,0.9);
+    flex-shrink: 0;
+  }
+  .badge-text {
+    font-family: 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: #4f7df7;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  /* ── Headline ── */
+  .headline {
+    position: absolute;
+    top: 140px; left: 72px;
+    font-size: 62px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1.06;
+    color: #dfe1f0;
+  }
+  .headline em {
+    font-style: normal;
+    background: linear-gradient(135deg, #4f7df7 10%, #8b5cf6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* ── Subline ── */
+  .subline {
+    position: absolute;
+    top: 380px; left: 72px;
+    width: 520px;
+    font-size: 19px;
+    color: #7a7f99;
+    line-height: 1.5;
+    font-weight: 400;
+  }
+
+  /* ── Icon ── */
+  .icon {
+    position: absolute;
+    right: 100px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .icon-glow {
+    position: absolute;
+    inset: -40px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(79,125,247,0.14) 0%, transparent 68%);
+  }
+  .icon svg { display: block; }
+
+  /* ── Footer ── */
+  .footer {
+    position: absolute;
+    left: 72px; right: 72px;
+    bottom: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  .pill {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 6px 13px;
+    font-family: 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #94a3b8;
+  }
+  .sep {
+    width: 3px; height: 3px;
+    border-radius: 50%;
+    background: #2a2f4a;
+    flex-shrink: 0;
+  }
+  .url {
+    margin-left: auto;
+    font-family: 'DejaVu Sans Mono', 'Liberation Mono', monospace;
+    font-size: 13px;
+    color: #5e627d;
+    letter-spacing: 0.03em;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="grid"></div>
+  <div class="glow-a"></div>
+  <div class="glow-b"></div>
+  <div class="border"></div>
+
+  <!-- Badge -->
+  <div class="badge">
+    <div class="badge-dot"></div>
+    <span class="badge-text">Open Source · Apache 2.0</span>
+  </div>
+
+  <!-- Headline -->
+  <div class="headline">
+    AI Agent Runtime<br>for <em>Production</em>
+  </div>
+
+  <!-- Subline -->
+  <p class="subline">
+    Framework-agnostic. Multi-cloud. Build, test &amp; deploy<br>
+    agents to AWS or Azure in days — not months.
+  </p>
+
+  <!-- Icon -->
+  <div class="icon">
+    <div class="icon-glow"></div>
+    <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g1" x1="30" y1="30" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#4f7df7"/>
+          <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+        <linearGradient id="g2" x1="30" y1="60" x2="170" y2="140" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.6"/>
+        </linearGradient>
+        <linearGradient id="g3" x1="30" y1="90" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#4f7df7" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.28"/>
+        </linearGradient>
+      </defs>
+      <path d="M100 168 L172 134 L172 120 L100 154 L28 120 L28 134 Z" fill="url(#g3)"/>
+      <path d="M100 154 L172 120 L100 86 L28 120 Z" stroke="#8b5cf6" stroke-width="1.2" fill="none" opacity="0.35"/>
+      <path d="M100 138 L172 104 L172 88 L100 122 L28 88 L28 104 Z" fill="url(#g2)"/>
+      <path d="M100 122 L172 88 L100 54 L28 88 Z" stroke="#6d6af7" stroke-width="1.5" fill="none" opacity="0.6"/>
+      <path d="M100 106 L172 72 L172 56 L100 90 L28 56 L28 72 Z" fill="url(#g1)" opacity="0.7"/>
+      <path d="M100 90 L172 56 L100 22 L28 56 Z" stroke="url(#g1)" stroke-width="2" fill="none"/>
+      <path d="M100 40 L120 56 L100 72 L80 56 Z" fill="url(#g1)"/>
+    </svg>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="pill">OpenAI</div>
+    <div class="sep"></div>
+    <div class="pill">LangGraph</div>
+    <div class="sep"></div>
+    <div class="pill">CrewAI</div>
+    <div class="sep"></div>
+    <div class="pill">Google ADK</div>
+    <div class="sep"></div>
+    <div class="pill">AWS · Azure</div>
+    <span class="url">kernel.yaala.ai</span>
+  </div>
+</div>
+</body>
+</html>

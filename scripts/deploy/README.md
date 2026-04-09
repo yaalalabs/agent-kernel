@@ -24,10 +24,11 @@ Python script that performs three key tasks:
    - Replaces `yaalalabs/ak-containerized/aws` with `../../../../ak-deployment/ak-aws/containerized`
    - Comments out `version` lines since they're not needed for local modules
 
-3. **Modifies state.tf for local development**: Replaces Terraform registry common module sources with local relative paths in module directories
-   - In `ak-deployment/ak-aws/serverless/state.tf` and `ak-deployment/ak-aws/containerized/state.tf`
-   - Replaces `yaalalabs/ak-common/aws//modules/*` with `../common/modules/*`
-   - Comments out `version` lines for local module references
+3. **Modifies Terraform files for local development**: Replaces Terraform registry module sources with local relative paths in all `.tf` files under the deployment trees and example projects
+  - Scans `ak-deployment/ak-aws`, `ak-deployment/ak-azure`, and `examples` recursively
+  - Replaces `yaalalabs/ak-common/aws//modules/*` and `yaalalabs/ak-common/azurerm//modules/*` with local relative paths
+  - Handles nested module directories as well as top-level `state.tf` files
+  - Comments out `version` lines for local module references
 
 The script reads `.github/integration-test-config.yaml` to identify AWS projects.
 
@@ -42,9 +43,9 @@ python3 scripts/deploy/inject_dependencies.py
 ```
 
 This will:
-- Inject `backend.tf` into all AWS example projects
+- Inject `backend.tf` into all AWS and Azure example projects listed in the integration config
 - Modify `main.tf` files to use local module sources
-- Modify `state.tf` files in module directories to use local common modules
+- Modify Terraform files under `ak-deployment` to use local common modules and nested module sources
 
 ### Revert to Registry Modules
 
@@ -57,7 +58,7 @@ python3 scripts/deploy/inject_dependencies.py --revert
 This will:
 - Replace local module paths with registry sources
 - Uncomment `version` lines
-- Restore all `main.tf` and `state.tf` files to their original state
+- Restore all modified Terraform files under the deployment trees to their original state
 
 ### Setting Up Backend Infrastructure (Optional)
 
@@ -84,11 +85,10 @@ After running the setup script, update the `backend.tf` file with the same value
 
 - **All modifications are for local development/CI/CD** - They allow testing with local module code instead of published registry versions
 - `backend.tf` files are gitignored and only exist locally after injection
-- `main.tf` and `state.tf` files are tracked in git but modified locally for development - use `--revert` to restore them before committing changes
-- `main.tf` files are tracked in git but can be easily reverted using `--revert` flag
+- Terraform files under `ak-deployment` are tracked in git but modified locally for development - use `--revert` to restore them before committing changes
 - The template uses placeholder values that should be customized per environment
 - Each project gets a unique state key based on its path
-- Module sources use relative paths calculated from the example's deploy directory
+- Module sources use relative paths calculated from the file's location
 
 ## What Gets Modified
 

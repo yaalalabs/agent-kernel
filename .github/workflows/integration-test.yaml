@@ -159,7 +159,7 @@ jobs:
           key: ak-py-${{ github.sha }}
 
       - name: Configure AWS credentials
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.requires_aws == true
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}

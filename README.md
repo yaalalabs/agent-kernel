@@ -1,6 +1,6 @@
-![Agent Kernel Banner](docs/static/img/banner.png)
-
-# Agent Kernel by Yaala Labs
+<p align="center">
+  <img src="docs/static/img/branding/agent-kernel-lockup-dark.svg" alt="Agent Kernel" width="420" />
+</p>
 
 > **[Developer Guide](DEVELOPER_GUIDE.md)**
 
