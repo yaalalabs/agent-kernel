@@ -264,7 +264,7 @@ module "lambda_deployment" {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_dynamodb.table_name
     } : {},
       var.input_queue_url != null ? {
-      AK_EXECUTION__QUEUES__INPUT_QUEUE_URL = var.input_queue_url
+      AK_EXECUTION__QUEUES__INPUT__URL = var.input_queue_url
     } : {}
   )
   event_source_mapping = var.event_source_mapping

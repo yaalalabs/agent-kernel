@@ -228,8 +228,8 @@ module "agent_runner_lambda" {
         AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
       } : {},
     {
-      AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT  = tostring(local.queue_input_consumer_max_receive_count)
-      AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL = local.queue_output_url
+      AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT  = tostring(local.queue_input_consumer_max_receive_count)
+      AK_EXECUTION__QUEUES__OUTPUT__URL = local.queue_output_url
     }
   )
 

@@ -73,7 +73,7 @@ class DefaultEndpointsHandler:
         exec_mode = cls._get_execution_mode()
 
         if not input_queue_url:
-            cls._log.warning("Queues not configured; using direct chat endpoint.")
+            cls._log.info("Queues not configured. Therefore, using Request Handler lambda for chat processing")
             return {cls._default_chat_path: {cls._default_chat_method: cls._handle_agent_chat}}
 
         if exec_mode == ExecutionMode.REST_SYNC:

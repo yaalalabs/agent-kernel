@@ -19,7 +19,7 @@ module "serverless_agents" {
   is_production        = var.is_production
 
   # Execution mode - using for scalable processing
-  queue_mode = true # queue_mode # recommended for production
+  queue_mode = true # recommended for production
   execution_mode = "rest_sync" # rest_sync or rest_async
 
   # Memory DB Config
@@ -30,7 +30,7 @@ module "serverless_agents" {
   create_dynamodb_response_store = true
 
   # API Gateway configuration
-  api_version    = "0.3.0"
+  api_version    = "v1"
   api_base_path  = "api"
   agent_endpoint = "chat"
 
