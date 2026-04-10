@@ -14,7 +14,12 @@ class ChromaManager(KnowledgeBase):
     """
 
     def __init__(
-        self, persist_path: str = "./chroma_db", name: str = "", collection_name: str = "knowledge_base", description: str = "chroma vector database", embedding_function: Optional[any]=None
+        self,
+        persist_path: str = "./chroma_db",
+        name: str = "",
+        collection_name: str = "knowledge_base",
+        description: str = "chroma vector database",
+        embedding_function: Optional[any] = None,
     ):  # pass in a description
         super().__init__()
         self.persist_path = persist_path
@@ -25,7 +30,6 @@ class ChromaManager(KnowledgeBase):
         self.collection_name = collection_name
         self.embedding_function = embedding_function or embedding_functions.DefaultEmbeddingFunction()
         self.connect()
-
 
     @property
     def backend_name(self) -> str:
