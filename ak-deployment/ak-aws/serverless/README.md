@@ -438,9 +438,13 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 | `input_queue_arn` | ARN of the input SQS queue when `queue_mode = true` |
 | `input_queue_url` | URL of the input SQS queue when `queue_mode = true` |
 | `input_queue_name` | Name of the input SQS queue when `queue_mode = true` |
+| `input_dlq_arn` | ARN of the input SQS dead-letter queue when `queue_mode = true` |
+| `input_dlq_url` | URL of the input SQS dead-letter queue when `queue_mode = true` |
 | `output_queue_arn` | ARN of the output SQS queue when `queue_mode = true` |
 | `output_queue_url` | URL of the output SQS queue when `queue_mode = true` |
 | `output_queue_name` | Name of the output SQS queue when `queue_mode = true` |
+| `output_dlq_arn` | ARN of the output SQS dead-letter queue when `queue_mode = true` |
+| `output_dlq_url` | URL of the output SQS dead-letter queue when `queue_mode = true` |
 
 ## ✨ Features
 

@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from ....core.config import AKConfig
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
-from .core.sqs_consumer import LambdaSQSConsumer
+from .core import LambdaSQSConsumer
 
 
 class ResponseHandler(LambdaSQSConsumer):
