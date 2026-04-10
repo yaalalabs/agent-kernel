@@ -108,6 +108,16 @@ output "input_queue_name" {
   value       = var.queue_mode ? module.queues[0].input_queue_name : null
 }
 
+output "input_dlq_arn" {
+  description = "ARN of the input SQS dead-letter queue"
+  value       = var.queue_mode ? module.queues[0].input_dlq_arn : null
+}
+
+output "input_dlq_url" {
+  description = "URL of the input SQS dead-letter queue"
+  value       = var.queue_mode ? module.queues[0].input_dlq_url : null
+}
+
 output "output_queue_arn" {
   description = "ARN of the output SQS queue"
   value       = var.queue_mode ? module.queues[0].output_queue_arn : null
@@ -121,5 +131,15 @@ output "output_queue_url" {
 output "output_queue_name" {
   description = "Name of the output SQS queue"
   value       = var.queue_mode ? module.queues[0].output_queue_name : null
+}
+
+output "output_dlq_arn" {
+  description = "ARN of the output SQS dead-letter queue"
+  value       = var.queue_mode ? module.queues[0].output_dlq_arn : null
+}
+
+output "output_dlq_url" {
+  description = "URL of the output SQS dead-letter queue"
+  value       = var.queue_mode ? module.queues[0].output_dlq_url : null
 }
 
