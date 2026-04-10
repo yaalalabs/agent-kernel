@@ -67,12 +67,12 @@ g_db = Neo4jManager(
             "relationship": "FRIENDS_WITH (exact label only)",
             "read_examples": {
                 "list_friends": "MATCH (p:Person)-[:FRIENDS_WITH]-(f:Person) WHERE toLower(p.name) = toLower($person) RETURN DISTINCT f.name AS friend ORDER BY friend",
-                "check_friendship": "MATCH (a:Person)-[:FRIENDS_WITH]-(b:Person) WHERE toLower(a.name) = toLower($a) AND toLower(b.name) = toLower($b) RETURN COUNT(*) > 0 AS are_friends"
+                "check_friendship": "MATCH (a:Person)-[:FRIENDS_WITH]-(b:Person) WHERE toLower(a.name) = toLower($a) AND toLower(b.name) = toLower($b) RETURN COUNT(*) > 0 AS are_friends",
             },
             "write_examples": {
                 "add_friendship": "MERGE (a:Person {name: $person}) MERGE (b:Person {name: $friend}) MERGE (a)-[:FRIENDS_WITH]->(b)",
-                "verify_friendship": "MATCH (a:Person)-[:FRIENDS_WITH]-(b:Person) WHERE toLower(a.name)=toLower($person) AND toLower(b.name)=toLower($friend) RETURN COUNT(*) > 0 AS added"
-            }
+                "verify_friendship": "MATCH (a:Person)-[:FRIENDS_WITH]-(b:Person) WHERE toLower(a.name)=toLower($person) AND toLower(b.name)=toLower($friend) RETURN COUNT(*) > 0 AS added",
+            },
         },
     }
 )
@@ -137,13 +137,13 @@ s2_db = StarburstManager(
             },
         },
         "query_guide": {
-    "list_all": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) LIMIT 10",
-    "search": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) WHERE LOWER(CAST(topic AS VARCHAR)) LIKE '%rtx%' OR LOWER(CAST(information AS VARCHAR)) LIKE '%rtx%' LIMIT 5",
-    "MANDATORY_QUERY_SYNTAX": (
-        "Every query to this backend MUST use the FROM clause exactly as shown in the examples above. "
-        "No other FROM syntax is valid for this backend."
-    ),
-},
+            "list_all": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) LIMIT 10",
+            "search": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) WHERE LOWER(CAST(topic AS VARCHAR)) LIKE '%rtx%' OR LOWER(CAST(information AS VARCHAR)) LIKE '%rtx%' LIMIT 5",
+            "MANDATORY_QUERY_SYNTAX": (
+                "Every query to this backend MUST use the FROM clause exactly as shown in the examples above. "
+                "No other FROM syntax is valid for this backend."
+            ),
+        },
         "constraints": {
             "write_supported": False,
             "allowed_sql": ["SELECT", "SHOW", "DESCRIBE"],
@@ -194,6 +194,7 @@ EXECUTION PROTOCOL:
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledgeBuilder.build()),
     )
+
 
 AGENT_DESCRIPTION = """
 You are a personal knowledge assistant.
