@@ -157,7 +157,7 @@ knowledgeBuilder = KnowledgeBuilder(
     semantic_map={
         "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY'))",
         "<MONGO_SOURCE>": "kb_mongo.my_company_kb.clients",
-    }
+    },
 )
 
 

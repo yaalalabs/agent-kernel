@@ -7,8 +7,10 @@ from .base import KnowledgeBase
 
 log = logging.getLogger("ak.KnowledgeBuilder")
 
+
 def _resolve_log_level() -> int:
     return logging.DEBUG if AKConfig.get().debug else logging.INFO
+
 
 resolved_log_level = _resolve_log_level()
 log.setLevel(resolved_log_level)
@@ -64,7 +66,7 @@ class KnowledgeBuilder:
             db = self.backends.get(backend)
             if not db:
                 return f"Unknown backend '{backend}'. Available: {list(self.backends.keys())}"
-            
+
             # --- THE MIDDLEWARE INTERCEPTION ---
             resolved_query = self._resolve_placeholders(query)
             if resolved_query != query:
@@ -77,13 +79,7 @@ class KnowledgeBuilder:
                 log.error(f"[read_kb] Execution error on {backend}: {e}")
                 return f"Execution Error: {str(e)}"
 
-        def write_kb(
-            backend: str,
-            text: str = "",
-            source: str = "agent",
-            query: str = "",
-            params_json: str = "{}"
-        ) -> str:
+        def write_kb(backend: str, text: str = "", source: str = "agent", query: str = "", params_json: str = "{}") -> str:
             """
             Persist information into a knowledge base backend.
 
@@ -109,11 +105,11 @@ class KnowledgeBuilder:
             if resolved_query:
                 # Handle legacy mapping INTERNALLY so the Agent doesn't have to think about it
                 metadata["query"] = resolved_query
-                metadata["cypher_query"] = resolved_query 
+                metadata["cypher_query"] = resolved_query
                 try:
                     parsed_params = json.loads(params_json)
                     metadata["params"] = parsed_params
-                    metadata["cypher_params"] = parsed_params # Legacy alias
+                    metadata["cypher_params"] = parsed_params  # Legacy alias
                 except Exception:
                     return "Error: params_json must be a valid JSON object string."
 
