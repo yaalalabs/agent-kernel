@@ -1,5 +1,5 @@
 import hashlib
-from typing import Any, Iterable, List, Mapping
+from typing import Any, Iterable, List, Mapping, Optional
 
 import chromadb
 from chromadb.utils import embedding_functions
@@ -14,7 +14,7 @@ class ChromaManager(KnowledgeBase):
     """
 
     def __init__(
-        self, persist_path: str = "./chroma_db", name: str = "", collection_name: str = "knowledge_base", description: str = "chroma vector database"
+        self, persist_path: str = "./chroma_db", name: str = "", collection_name: str = "knowledge_base", description: str = "chroma vector database", embedding_function: Optional[any]=None
     ):  # pass in a description
         super().__init__()
         self.persist_path = persist_path
@@ -23,7 +23,9 @@ class ChromaManager(KnowledgeBase):
         self.name = name
         self.description = description
         self.collection_name = collection_name
+        self.embedding_function = embedding_function or embedding_functions.DefaultEmbeddingFunction()
         self.connect()
+
 
     @property
     def backend_name(self) -> str:
@@ -33,7 +35,7 @@ class ChromaManager(KnowledgeBase):
         self.client = chromadb.PersistentClient(path=self.persist_path)
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
-            embedding_function=embedding_functions.DefaultEmbeddingFunction(),
+            embedding_function=self.embedding_function,
         )
 
     def write(self, records: Iterable[Mapping[str, Any]], **kwargs) -> None:
