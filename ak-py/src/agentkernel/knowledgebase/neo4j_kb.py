@@ -8,6 +8,8 @@ from neo4j import GraphDatabase
 
 from .base import KnowledgeBase
 
+log = logging.getLogger("ak.Neo4jManager")
+
 
 class Neo4jManager(KnowledgeBase):
     """
@@ -42,8 +44,13 @@ class Neo4jManager(KnowledgeBase):
 
     def connect(self, **kwargs) -> None:
         logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
-        self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
-        self.driver.verify_connectivity()
+        try:
+            self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+            self.driver.verify_connectivity()
+            log.debug("[neo4j.connect] connected uri=%r user=%r database=%r", self.uri, self.user, self.database)
+        except Exception as exc:
+            log.error("[neo4j.connect] failed uri=%r user=%r database=%r error=%s", self.uri, self.user, self.database, str(exc))
+            raise
 
     def close(self) -> None:
         if self.driver is not None:
@@ -52,6 +59,7 @@ class Neo4jManager(KnowledgeBase):
 
     def _run(self, query: str, parameters: Mapping[str, Any] | None = None):
         params = dict(parameters or {})
+        log.debug("[neo4j.run] uri=%r database=%r query=%r params=%r", self.uri, self.database, query, params)
         try:
             if self.database:
                 return self.driver.execute_query(query, parameters_=params, database_=self.database)
@@ -60,8 +68,10 @@ class Neo4jManager(KnowledgeBase):
         # for free tier neo4j instances, the database might not exist until the first write happens. Handle that gracefully.
         except Exception as exc:
             if self.database and "DatabaseNotFound" in str(exc):
+                log.warning("[neo4j.run] database not found, retrying without explicit database. uri=%r database=%r", self.uri, self.database)
                 self.database = None
                 return self.driver.execute_query(query, parameters_=params)
+            log.error("[neo4j.run] failed uri=%r database=%r error=%s", self.uri, self.database, str(exc))
             raise
 
     def write(self, records: Iterable[Mapping[str, Any]], **kwargs) -> None:

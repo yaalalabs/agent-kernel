@@ -212,7 +212,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "knowledgebase", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "knowledgebase", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [

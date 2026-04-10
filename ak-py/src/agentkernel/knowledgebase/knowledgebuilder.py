@@ -111,6 +111,12 @@ class KnowledgeBuilder:
                     parsed_params = json.loads(resolved_params_json)
                     metadata["params"] = parsed_params
                     metadata["cypher_params"] = parsed_params
+                    log.debug(
+                        "[write_kb.query] backend=%r query=%r params=%r",
+                        backend,
+                        resolved_query,
+                        parsed_params,
+                    )
                 except Exception:
                     return "Error: params_json/cypher_params_json must be a valid JSON object string."
 

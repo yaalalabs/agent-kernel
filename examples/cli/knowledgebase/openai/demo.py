@@ -49,28 +49,36 @@ g_db = Neo4jManager(
             "cypher_params_json": "(optional) JSON-stringified params for the Cypher query",
         },
         "read_payload": {
-            "query": "string — natural language question OR a valid Cypher query",
+            "query": "string — a valid Cypher query only",
             "limit": "int — max results",
         },
         "query_generation_guide": {
-            "goal": "Help LLM generate valid Cypher for this KB.",
-            "known_internal_labels": ["MemoryNote", "CypherFact"],
-            "domain_labels_examples": ["Person", "Car", "Company", "Place", "Thing"],
-            "common_properties": ["name", "model", "title", "text", "source"],
-            "relationship_pattern": "(a)-[r]->(b)",
-            "cypher_best_practices": [
-                "Prefer parameterized queries (use $name, $value, etc.).",
-                "Use OPTIONAL MATCH when relationships may not exist.",
+            "rules": [
+                "Use Cypher only for read_kb and write_kb.",
+                "Prefer parameterized queries.",
+                "For list queries, return all matches unless user asks to limit.",
+                "For person-name matching, use case-insensitive comparisons with toLower().",
+                "For friendship checks, use undirected pattern: (a)-[:FRIENDS_WITH]-(b).",
+                "Use the exact relationship type FRIENDS_WITH only. Never use FRIEND, FRIENDSHIP, or FRIEND_OF.",
+                "For add/create friendship writes, use MERGE for both Person nodes and MERGE for the relationship.",
+                "Never use MATCH for both nodes in create flows, because missing nodes cause zero-row writes.",
             ],
-            "write_query_template": (
-                "MERGE (a:Person {name: $person}) " "MERGE (b:Person {name: $friend}) " "MERGE (a)-[:FRIENDS_WITH]->(b)"
-            ),
+            "labels": ["Person", "MemoryNote", "CypherFact"],
+            "relationship": "FRIENDS_WITH (exact label only)",
+            "read_examples": {
+                "list_friends": "MATCH (p:Person)-[:FRIENDS_WITH]-(f:Person) WHERE toLower(p.name) = toLower($person) RETURN DISTINCT f.name AS friend ORDER BY friend",
+                "check_friendship": "MATCH (a:Person)-[:FRIENDS_WITH]-(b:Person) WHERE toLower(a.name) = toLower($a) AND toLower(b.name) = toLower($b) RETURN COUNT(*) > 0 AS are_friends"
+            },
+            "write_examples": {
+                "add_friendship": "MERGE (a:Person {name: $person}) MERGE (b:Person {name: $friend}) MERGE (a)-[:FRIENDS_WITH]->(b)",
+                "verify_friendship": "MATCH (a:Person)-[:FRIENDS_WITH]-(b:Person) WHERE toLower(a.name)=toLower($person) AND toLower(b.name)=toLower($friend) RETURN COUNT(*) > 0 AS added"
+            }
         },
     }
 )
 
 s_db = StarburstManager(
-    name="StarburstDB",
+    name="StarburstDB-mongo",
     host="johnpraveenyl-mongocluster.trino.galaxy.starburst.io",
     catalog="kb_mongo",
     schema="my_company_kb",
@@ -106,12 +114,13 @@ s_db = StarburstManager(
 
 
 s2_db = StarburstManager(
-    name="StarburstDB_Sheets",
+    name="StarburstDB_Sheets google sheets via trino",
     host="johnpraveenyl-free-cluster.trino.galaxy.starburst.io",
     catalog="kb_sheets",
     description=(
         "Starburst Galaxy read-only backend — Google Sheets via Trino. "
         "Contains company knowledge: topics, policies, tech info, department notes."
+        "sheet_id: 1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY"
     ),
 ).add_schema(
     {
@@ -128,10 +137,13 @@ s2_db = StarburstManager(
             },
         },
         "query_guide": {
-            "list_all": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) LIMIT 10",
-            "search": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) WHERE LOWER(CAST(topic AS VARCHAR)) LIKE '%rtx%' OR LOWER(CAST(information AS VARCHAR)) LIKE '%rtx%' LIMIT 5",
-            "RULE": "Always search BOTH topic AND information using OR. Always CAST columns to VARCHAR before LOWER().",
-        },
+    "list_all": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) LIMIT 10",
+    "search": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) WHERE LOWER(CAST(topic AS VARCHAR)) LIKE '%rtx%' OR LOWER(CAST(information AS VARCHAR)) LIKE '%rtx%' LIMIT 5",
+    "MANDATORY_QUERY_SYNTAX": (
+        "Every query to this backend MUST use the FROM clause exactly as shown in the examples above. "
+        "No other FROM syntax is valid for this backend."
+    ),
+},
         "constraints": {
             "write_supported": False,
             "allowed_sql": ["SELECT", "SHOW", "DESCRIBE"],
@@ -146,37 +158,35 @@ knowledgeBuilder = KnowledgeBuilder([v_db, g_db, s_db, s2_db])
 def build_agent(description: str) -> Agent:
     instructions = f"""{description}
 
-CRITICAL ROUTING RULES — FOLLOW EXACTLY:
+EXECUTION PROTOCOL:
 
-1. START: Call get_schemas() ONCE at the beginning. Do not call it again.
+1. SCHEMA FIRST — ONCE ONLY:
+   Call get_schemas() exactly once at the start. Never call it again.
+   The schema is your complete source of truth — backends, purposes, query formats, constraints.
 
-2. ROUTE based on the question:
-   - Client/people data in MongoDB  → StarburstDB
-   - Topics/policies/tech knowledge → StarburstDB_Sheets
-   - Unstructured text/semantic     → ChromaDB
-   - Entities/relationships         → Neo4jDB
+2. ROUTE:
+   Read each backend's description to match the user's intent to the right backend.
 
-3. STARBURST STRICT SQL RULES — NON-NEGOTIABLE:
-   - ALWAYS generate valid SQL before calling read_kb() on any Starburst backend.
-   - NEVER pass plain text or natural language to StarburstDB or StarburstDB_Sheets.
-   - StarburstDB has EXACTLY ONE table: kb_mongo.my_company_kb.clients
-   - StarburstDB_Sheets uses ONLY: TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY'))
-   - NEVER invent or guess table names. Use ONLY the exact paths above.
-   - NEVER create table names from the user's words.
-     Example: user says "yaala labs" → do NOT use table "yaala_labs". Use kb_mongo.my_company_kb.clients with a WHERE LIKE filter.
-   - StarburstDB_Sheets has ONLY 3 columns: topic, information, department. Never use any other column name.
+3. BUILD THE QUERY:
+   Find the query_guide or examples section for your chosen backend in the schema.
+   Construct the full, executable query string by following those templates exactly.
+   Substitute user values into the template. Never pass a key name like 'list_all' — always the real query.
+   CRITICAL: Use ONLY the relationship types, table names, column names, and syntax patterns 
+   found in the schema. Never substitute from general knowledge or common conventions.
 
-4. NO RETRIES:
-   - Each backend gets exactly ONE attempt per user message.
-   - If a query fails, STOP immediately and answer from your own knowledge. Do not retry.
+4. EXECUTE:
+   Call read_kb() or write_kb() with the constructed query string.
+   Wait for the result before responding.
 
-5. WRITES:
-   - ChromaDB and Neo4jDB support write_kb().
-   - StarburstDB and StarburstDB_Sheets are strictly read-only. Never call write_kb() on them.
+5. RESPOND:
+   Answer strictly from the returned data. If empty, say no records were found.
 
-6. RESPOND:
-   - Always give a clear, direct answer.
-   - If no data found in the database, say "No data found for [query]" and answer from your own knowledge.
+6.STARBURST:
+    starburst galaxy read only backend google sheets via trino. Contains company knowledge: topics, policies, tech info, department notes.
+    query syntax is defined strictly in the schema in the query_guide section follow it exactly.
+    only for google sheets(
+    WARNING: Uses special TVF syntax — FROM TABLE(kb_sheets.system.sheet(id => '...')). 
+    get the sheet id from the schema and never deviate from the example query formats.)
 """
     return Agent(
         name="KB_Router_Agent",
@@ -185,16 +195,16 @@ CRITICAL ROUTING RULES — FOLLOW EXACTLY:
         tools=OpenAIToolBuilder.bind(knowledgeBuilder.build()),
     )
 
-
 AGENT_DESCRIPTION = """
 You are a personal knowledge assistant.
 You help users store and retrieve information across multiple databases:
 - Neo4jDB: for entities and relationships (people, companies, places)
 - ChromaDB: for unstructured text and semantic recall
-- StarburstDB: for structured client data in MongoDB
+- StarburstDB-mongo: for structured client data in MongoDB
 - StarburstDB_Sheets: for company knowledge stored in Google Sheets
 
-Always query the right database first. If no data is found, answer from your own knowledge and say so clearly.
+Always route to one backend first, execute the tool call, and return direct results.
+Use schema guidance when available, but never get stuck retrying schema calls.
 """
 
 agent = build_agent(AGENT_DESCRIPTION)
