@@ -85,7 +85,9 @@ s_db = StarburstManager(
     table_name="clients",
     description=(
         "Starburst Galaxy read-only backend — MongoDB via Trino. "
-        "Contains client records. The ONLY valid table is kb_mongo.my_company_kb.clients."
+        "Contains client records. "
+        "Query syntax is defined strictly in the query_guide — follow it exactly."
+        "use the place holder <MONGO_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
     ),
 ).add_schema(
     {
@@ -94,33 +96,34 @@ s_db = StarburstManager(
             "Use this for any question about clients or people stored in MongoDB."
         ),
         "table": {
-            "full_path": "kb_mongo.my_company_kb.clients",
             "columns": ["client_name", "status", "budget"],
-            "IMPORTANT": "This is the ONLY table. NEVER use any other table name.",
+            "IMPORTANT": "This is the ONLY table. NEVER use any other table name. Always use <MONGO_SOURCE> as the FROM target.",
         },
         "query_guide": {
-            "list_all": "SELECT * FROM kb_mongo.my_company_kb.clients LIMIT 10",
-            "search": "SELECT * FROM kb_mongo.my_company_kb.clients WHERE LOWER(name) LIKE '%john%' LIMIT 5",
-            "inspect": "DESCRIBE kb_mongo.my_company_kb.clients",
-            "RULE": "NEVER create a table name from the user's words. ALWAYS use kb_mongo.my_company_kb.clients.",
+            "list_all": "SELECT * FROM <MONGO_SOURCE> LIMIT 10",
+            "search": "SELECT * FROM <MONGO_SOURCE> WHERE LOWER(client_name) LIKE '%keyword%' LIMIT 5",
+            "inspect": "DESCRIBE <MONGO_SOURCE>",
+            "MANDATORY_QUERY_SYNTAX": (
+                "Every query MUST use <MONGO_SOURCE> as the FROM target exactly as shown in the examples. "
+                "No other table name or path is valid for this backend."
+            ),
         },
         "constraints": {
             "write_supported": False,
             "allowed_sql": ["SELECT", "SHOW", "DESCRIBE"],
-            "table_names": ["kb_mongo.my_company_kb.clients"],
         },
     }
 )
 
-
 s2_db = StarburstManager(
-    name="StarburstDB_Sheets google sheets via trino",
+    name="StarburstDB_Sheets",
     host="johnpraveenyl-free-cluster.trino.galaxy.starburst.io",
     catalog="kb_sheets",
     description=(
         "Starburst Galaxy read-only backend — Google Sheets via Trino. "
-        "Contains company knowledge: topics, policies, tech info, department notes."
-        "sheet_id: 1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY"
+        "Contains company knowledge: topics, policies, tech info, department notes. "
+        "Query syntax is defined strictly in the query_guide — follow it exactly."
+        "use the place holder <SHEETS_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
     ),
 ).add_schema(
     {
@@ -129,19 +132,16 @@ s2_db = StarburstManager(
             "Use this for general company knowledge, topics, policies, and tech information."
         ),
         "sources": {
-            "google_sheet": {
-                "sheet_id": "1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY",
-                "use_for": "company knowledge — topics, policies, tech info, department notes",
-                "columns": ["topic", "information", "department"],
-                "IMPORTANT": "ONLY these 3 columns exist: topic, information, department. NEVER use any other column.",
-            },
+            "columns": ["topic", "information", "department"],
+            "IMPORTANT": "ONLY these 3 columns exist: topic, information, department. NEVER use any other column.",
         },
         "query_guide": {
-            "list_all": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) LIMIT 10",
-            "search": "SELECT * FROM TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY')) WHERE LOWER(CAST(topic AS VARCHAR)) LIKE '%rtx%' OR LOWER(CAST(information AS VARCHAR)) LIKE '%rtx%' LIMIT 5",
+            "list_all": "SELECT * FROM <SHEETS_SOURCE> LIMIT 10",
+            "search": "SELECT * FROM <SHEETS_SOURCE> WHERE LOWER(CAST(topic AS VARCHAR)) LIKE '%keyword%' OR LOWER(CAST(information AS VARCHAR)) LIKE '%keyword%' LIMIT 5",
             "MANDATORY_QUERY_SYNTAX": (
-                "Every query to this backend MUST use the FROM clause exactly as shown in the examples above. "
-                "No other FROM syntax is valid for this backend."
+                "Every query MUST use <SHEETS_SOURCE> as the FROM target exactly as shown in the examples. "
+                "No other table name, schema, or path is valid for this backend. "
+                "Always search BOTH topic AND information columns using OR when filtering."
             ),
         },
         "constraints": {
@@ -152,7 +152,13 @@ s2_db = StarburstManager(
     }
 )
 
-knowledgeBuilder = KnowledgeBuilder([v_db, g_db, s_db, s2_db])
+knowledgeBuilder = KnowledgeBuilder(
+    [v_db, g_db, s_db, s2_db],
+    semantic_map={
+        "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY'))",
+        "<MONGO_SOURCE>": "kb_mongo.my_company_kb.clients",
+    }
+)
 
 
 def build_agent(description: str) -> Agent:
@@ -161,32 +167,26 @@ def build_agent(description: str) -> Agent:
 EXECUTION PROTOCOL:
 
 1. SCHEMA FIRST — ONCE ONLY:
-   Call get_schemas() exactly once at the start. Never call it again.
-   The schema is your complete source of truth — backends, purposes, query formats, constraints.
+   Call get_schemas() exactly once at the very start of every session. Never call it again.
+   The schema is your complete source of truth — backends, purposes, query formats, and constraints.
 
 2. ROUTE:
-   Read each backend's description to match the user's intent to the right backend.
+   Read each backend's description to match the user's intent to the correct backend.
 
 3. BUILD THE QUERY:
    Find the query_guide or examples section for your chosen backend in the schema.
-   Construct the full, executable query string by following those templates exactly.
-   Substitute user values into the template. Never pass a key name like 'list_all' — always the real query.
-   CRITICAL: Use ONLY the relationship types, table names, column names, and syntax patterns 
-   found in the schema. Never substitute from general knowledge or common conventions.
+   Construct the full executable query string by following those templates exactly.
+   Substitute user values into the template where needed.
+   Never pass a key name like 'list_all' — always pass the real constructed query string.
+   CRITICAL: Use ONLY the placeholder tokens, column names, relationship types, and syntax patterns
+   defined in the schema. Never substitute from general knowledge or common conventions.
 
 4. EXECUTE:
-   Call read_kb() or write_kb() with the constructed query string.
+   Call read_kb() or write_kb() with the fully constructed query string.
    Wait for the result before responding.
 
 5. RESPOND:
    Answer strictly from the returned data. If empty, say no records were found.
-
-6.STARBURST:
-    starburst galaxy read only backend google sheets via trino. Contains company knowledge: topics, policies, tech info, department notes.
-    query syntax is defined strictly in the schema in the query_guide section follow it exactly.
-    only for google sheets(
-    WARNING: Uses special TVF syntax — FROM TABLE(kb_sheets.system.sheet(id => '...')). 
-    get the sheet id from the schema and never deviate from the example query formats.)
 """
     return Agent(
         name="KB_Router_Agent",
@@ -205,7 +205,6 @@ You help users store and retrieve information across multiple databases:
 - StarburstDB_Sheets: for company knowledge stored in Google Sheets
 
 Always route to one backend first, execute the tool call, and return direct results.
-Use schema guidance when available, but never get stuck retrying schema calls.
 """
 
 agent = build_agent(AGENT_DESCRIPTION)

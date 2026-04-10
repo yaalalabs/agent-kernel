@@ -1,22 +1,14 @@
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..core.config import AKConfig
 from .base import KnowledgeBase
 
 log = logging.getLogger("ak.KnowledgeBuilder")
 
-
 def _resolve_log_level() -> int:
-    """
-    Resolve the logger level from global AK configuration.
-
-    :return: A valid ``logging`` module integer level.
-    :rtype: int
-    """
     return logging.DEBUG if AKConfig.get().debug else logging.INFO
-
 
 resolved_log_level = _resolve_log_level()
 log.setLevel(resolved_log_level)
@@ -31,21 +23,30 @@ log.propagate = False
 
 
 class KnowledgeBuilder:
-    def __init__(self, backends: List[KnowledgeBase]):
+    def __init__(self, backends: List[KnowledgeBase], semantic_map: Optional[Dict[str, str]] = None):
+        """
+        Args:
+            backends: List of instantiated KnowledgeBase objects.
+            semantic_map: Dictionary mapping logical tags (e.g., '<mongo>') to physical identifiers.
+        """
         self.backends: Dict[str, KnowledgeBase] = {b.backend_name: b for b in backends}
+        self.semantic_map = semantic_map or {}
+
+    def _resolve_placeholders(self, text: str) -> str:
+        """Internal helper to safely translate abstract table names."""
+        if not text or not self.semantic_map:
+            return text
+        resolved_text = text
+        for logical_tag, physical_path in self.semantic_map.items():
+            if logical_tag in resolved_text:
+                resolved_text = resolved_text.replace(logical_tag, physical_path)
+        return resolved_text
 
     def build(self):
 
         def get_schemas() -> str:
             """
             Retrieve the schema and metadata for all available knowledge base backends.
-
-            Returns a JSON object describing each backend's capabilities, including descriptions,
-            payload formats, and usage guidelines. Call this first to understand what backends are
-            available and how to use them.
-
-            Returns:
-                str: JSON-formatted schema containing backend names, descriptions, and interface details.
             """
             log.debug(f"[get_schemas] backends={list(self.backends.keys())}")
             return json.dumps({name: backend.schema() for name, backend in self.backends.items()}, indent=2)
@@ -58,84 +59,76 @@ class KnowledgeBuilder:
                 backend: The name of the backend to query (from get_schemas()).
                 query: The search query appropriate for the backend.
                 limit: Maximum number of results to return (default: 3).
-
-            Returns:
-                Formatted search results with content and metadata, or error message if backend not found.
             """
-            log.debug(f"[read_kb] backend={backend!r} query={query!r}")
+            log.debug(f"[read_kb] backend={backend!r} raw_query={query!r}")
             db = self.backends.get(backend)
             if not db:
                 return f"Unknown backend '{backend}'. Available: {list(self.backends.keys())}"
-            return db.format_results(db.read(query, limit=limit))
+            
+            # --- THE MIDDLEWARE INTERCEPTION ---
+            resolved_query = self._resolve_placeholders(query)
+            if resolved_query != query:
+                log.debug(f"[read_kb] Translated query to: {resolved_query!r}")
+
+            try:
+                results = db.read(resolved_query, limit=limit)
+                return db.format_results(results)
+            except Exception as e:
+                log.error(f"[read_kb] Execution error on {backend}: {e}")
+                return f"Execution Error: {str(e)}"
 
         def write_kb(
             backend: str,
             text: str = "",
             source: str = "agent",
             query: str = "",
-            params_json: str = "{}",
-            cypher_query: str = "",
-            cypher_params_json: str = "{}",
+            params_json: str = "{}"
         ) -> str:
             """
             Persist information into a knowledge base backend.
 
             Args:
                 backend: The name of the backend to write to (from get_schemas()).
-                text: Human-readable description of the information (REQUIRED).
-                source: Origin of the information, e.g., 'agent', 'user', 'system' (default: 'agent').
-                query: Optional backend-specific write query (Cypher/SQL/etc.).
+                text: Human-readable description of the information.
+                source: Origin of the information (default: 'agent').
+                query: Optional backend-specific write query (SQL/Cypher).
                 params_json: JSON string of parameters for the query.
-                cypher_query: Backward-compatible alias for Neo4j query.
-                cypher_params_json: Backward-compatible alias for Neo4j params.
-
-            Returns:
-                Success message or error details.
             """
-            resolved_query = query or cypher_query
-            resolved_params_json = params_json if query else cypher_params_json
-
-            log.debug(f"[write_kb] backend={backend!r} has_text={bool(text)} has_query={bool(resolved_query)}", extra={"backend": backend})
+            log.debug(f"[write_kb] backend={backend!r} has_text={bool(text)} has_query={bool(query)}")
             db = self.backends.get(backend)
             if not db:
                 return f"Unknown backend '{backend}'."
 
-            if not text and not resolved_query:
+            if not text and not query:
                 return "Error: provide at least one of 'text' or 'query'."
+
+            # Apply semantic routing to write queries as well
+            resolved_query = self._resolve_placeholders(query)
 
             metadata: dict[str, Any] = {"source": source}
             if resolved_query:
+                # Handle legacy mapping INTERNALLY so the Agent doesn't have to think about it
                 metadata["query"] = resolved_query
-                metadata["cypher_query"] = resolved_query
+                metadata["cypher_query"] = resolved_query 
                 try:
-                    parsed_params = json.loads(resolved_params_json)
+                    parsed_params = json.loads(params_json)
                     metadata["params"] = parsed_params
-                    metadata["cypher_params"] = parsed_params
-                    log.debug(
-                        "[write_kb.query] backend=%r query=%r params=%r",
-                        backend,
-                        resolved_query,
-                        parsed_params,
-                    )
+                    metadata["cypher_params"] = parsed_params # Legacy alias
                 except Exception:
-                    return "Error: params_json/cypher_params_json must be a valid JSON object string."
+                    return "Error: params_json must be a valid JSON object string."
 
-            db.write([{"text": text, "metadata": metadata}])
-            return f"Stored successfully in '{backend}'."
+            try:
+                db.write([{"text": text, "metadata": metadata}])
+                return f"Stored successfully in '{backend}'."
+            except Exception as e:
+                log.error(f"[write_kb] Write error on {backend}: {e}")
+                return f"Failed to write to '{backend}': {str(e)}"
 
         def get_all_kb_descriptions() -> str:
             """
             Retrieve a summary of all knowledge base backends and their descriptions.
-
-            This is a helper method to quickly get an overview of what each backend is for,
-            without needing to parse the full schema. It extracts the 'description' field from
-            each backend's schema and formats it into a readable list.
-
-            Returns:
-                str: A formatted string listing each backend and its description.
             """
             descriptions = []
-
             for name, backend in self.backends.items():
                 try:
                     descriptions.append(backend.get_description())
