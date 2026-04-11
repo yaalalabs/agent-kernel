@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.2.14"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -17,9 +17,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/16/ba/76928c19495fe1d70410e7c92e5e3961096d28056ed5db11ed9401cfff3e/agentkernel-0.2.14.tar.gz", hash = "sha256:3f1d1179016d177ad51bd781b7c2b649d7ade0920926b8925f0fb45b62ab985e", size = 124556, upload-time = "2026-03-11T06:50:25.882Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/67/ff874c93084b8aea7d611e3ba664ac96a51dcf86bf2fb613aa7a7c27d1dd/agentkernel-0.3.1.tar.gz", hash = "sha256:e40af5a67132470e1abe5b8c86ed8aa53b7e389681fa4d4dc3f13cfbda6aad8e", size = 167000, upload-time = "2026-04-11T05:51:44.765Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/cd/a1f856dc5e0c724e59aeab6238d5cc796d182c13c9fa12c10d0ea0108530/agentkernel-0.2.14-py3-none-any.whl", hash = "sha256:d4b4fbb1a390dcd623098b65fa4c0d4483eea8db31f34b11f14ea0ae49766f8d", size = 189365, upload-time = "2026-03-11T06:50:23.55Z" },
+    { url = "https://files.pythonhosted.org/packages/97/23/1580f9c86e22bd6648d01e2dbc7cf2796ed13292f9c0d482f7f2a5509fde/agentkernel-0.3.1-py3-none-any.whl", hash = "sha256:dd8cb586b9f821fbb25ffb57744e7348649357d4876c69460c41ad57d02ef6d8", size = 238346, upload-time = "2026-04-11T05:51:42.68Z" },
 ]
 
 [package.optional-dependencies]
@@ -159,7 +159,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["langgraph", "redis"], specifier = ">=0.2.14" },
+    { name = "agentkernel", extras = ["langgraph", "redis"], specifier = ">=0.3.1" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
     { name = "langchain-openai", specifier = ">=0.3.28" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },
