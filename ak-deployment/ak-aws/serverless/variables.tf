@@ -36,11 +36,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "package_path" {
-  type        = string
-  description = "Zip package path or Docker image source path"
-}
-
 variable "cloudwatch_logs_retention_in_days" {
   type        = number
   description = "CloudWatch log retention period in days for the request handler Lambda"
@@ -117,6 +112,11 @@ variable "function_description" {
 variable "handler_path" {
   description = "Lambda handler path"
   type        = string
+}
+
+variable "package_path" {
+  type        = string
+  description = "Zip package path or Docker image source path"
 }
 
 variable "package_type" {

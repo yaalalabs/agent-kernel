@@ -20,17 +20,26 @@ locals {
   dynamodb_memory_table_name            = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
+  
   request_handler_enabled               = !var.disable_api_gateway
+  request_handler_package_path          = var.package_path
   request_handler_lambda_function_arn   = local.request_handler_enabled ? module.request_handler[0].lambda_function_arn : null
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
   request_handler_lambda_security_group_id = local.request_handler_enabled ? module.request_handler[0].lambda_security_group_id : null
-  create_authorizer                     = !var.disable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
-  request_handler_package_path          = var.package_path
-  response_handler_package_path         = try(var.response_handler.package_path, null)
+  
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
+  agent_runner_logs_retention_in_days   = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
+
+  response_handler_package_path         = try(var.response_handler.package_path, null)
+  response_handler_logs_retention_in_days = try(var.response_handler.cloudwatch_logs_retention_in_days, null)
+
+  create_authorizer                     = !var.disable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  # Authorizer status message for logging
+  authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
+  authorizer_status_message     = var.disable_api_gateway ? "Did NOT create Authorizer Lambda: disable_api_gateway is true." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
 
   # DynamoDB response store configuration
   response_store_dynamodb_table_name     = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_name : null
@@ -39,22 +48,16 @@ locals {
     table_name = local.response_store_dynamodb_table_name
     table_arn  = local.response_store_dynamodb_table_arn
   } : null
-
   # Redis response store configuration
   response_store_redis_url            = var.create_redis_response_store ? local.redis_url : null
   response_handler_response_store_redis = var.create_redis_response_store ? {
     url = local.response_store_redis_url
   } : null
 
-  # Authorizer status message for logging
-  authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
-  authorizer_status_message     = var.disable_api_gateway ? "Did NOT create Authorizer Lambda: disable_api_gateway is true." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
-
   # Input queue
   input_queue_url                = var.queue_mode ? module.queues[0].input_queue_url : null
   input_queue_arn                = var.queue_mode ? module.queues[0].input_queue_arn : null
   input_queue_visibility_timeout = var.queue_mode ? var.queue_config.input_queue_visibility_timeout : null
-
   # Output queue
   output_queue_url                = var.queue_mode ? module.queues[0].output_queue_url : null
   output_queue_arn                = var.queue_mode ? module.queues[0].output_queue_arn : null
@@ -400,7 +403,7 @@ module "agent_runner" {
   is_production                     = var.is_production
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
-  cloudwatch_logs_retention_in_days = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
+  cloudwatch_logs_retention_in_days = local.agent_runner_logs_retention_in_days
   create_dynamodb_memory_table      = var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
   dynamodb_memory_table_arn         = local.dynamodb_memory_table_arn
@@ -419,7 +422,7 @@ module "agent_runner" {
   }
 
   subnet_ids             = local.subnet_ids
-  security_group_id      = local.request_handler_lambda_security_group_id != null ? local.request_handler_lambda_security_group_id : ""
+  security_group_id      = local.request_handler_lambda_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
@@ -432,9 +435,9 @@ module "response_handler" {
 
   package_path                      = local.response_handler_package_path
   package_type                      = "Zip"
-  cloudwatch_logs_retention_in_days = try(var.response_handler.cloudwatch_logs_retention_in_days, null)
+  cloudwatch_logs_retention_in_days = local.response_handler_logs_retention_in_days
   subnet_ids                        = local.subnet_ids
-  security_group_id                 = local.request_handler_lambda_security_group_id != null ? local.request_handler_lambda_security_group_id : ""
+  security_group_id                 = local.request_handler_lambda_security_group_id
   lambda_kms_key_arn                = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn            = local.cloudwatch_kms_key_arn
 
