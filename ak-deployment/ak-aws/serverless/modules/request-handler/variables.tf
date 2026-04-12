@@ -131,6 +131,12 @@ variable "subnet_ids" {
   description = "Subnet IDs for VPC deployment"
 }
 
+variable "security_group_id" {
+  type        = string
+  description = "Shared security group ID used for Lambda VPC networking"
+  default     = ""
+}
+
 variable "create_dynamodb_memory_table" {
   type        = bool
   description = "Create a dynamodb table to store the Agent memory"

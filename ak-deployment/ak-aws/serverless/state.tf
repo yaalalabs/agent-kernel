@@ -15,6 +15,8 @@ locals {
   vpc_id                                = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
   vpc_cidr                              = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
   subnet_ids                            = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  security_group_id                     = aws_security_group.lambda.id
+  security_group_name                   = "${var.product_alias}-${var.env_alias}-lambda-sg"
   redis_url                             = (var.create_redis_cluster == true || var.create_redis_response_store) ? module.redis[0].url : null
   dynamodb_memory_table_arn             = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name            = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
@@ -27,7 +29,6 @@ locals {
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
-  request_handler_lambda_security_group_id = local.request_handler_enabled ? module.request_handler[0].lambda_security_group_id : null
   
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
@@ -87,6 +88,23 @@ locals {
   agent_invoke_url = try(module.api_gateway[0].agent_invoke_url, null)
 }
 
+resource "aws_security_group" "lambda" {
+  name        = local.security_group_name
+  description = "Security group for Lambda functions"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = local.security_group_name
+  }
+}
+
 module "request_handler_source_storage" {
   count                = local.request_handler_enabled ? 0 : ((var.package_type == "S3Zip") ? 1 : 0)
   source               = "yaalalabs/ak-common/aws//modules/s3"
@@ -140,7 +158,7 @@ module "authorizer" {
   tags                       = var.tags
   vpc_id                     = local.vpc_id
   subnet_ids                 = local.subnet_ids
-  security_group_ids         = [local.request_handler_lambda_security_group_id]
+  security_group_ids         = [local.security_group_id]
   is_production              = var.is_production
   lambda_kms_key_arn         = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
@@ -354,6 +372,7 @@ module "request_handler" {
   api_base_path                           = var.api_base_path
   vpc_id                                  = local.vpc_id
   subnet_ids                              = local.subnet_ids
+  security_group_id                       = local.security_group_id
   source_bucket                           = try(module.request_handler_source_storage[0].source_storage_s3_bucket, null)
   create_dynamodb_memory_table            = var.queue_mode ? false : var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.queue_mode ? false : var.create_dynamodb_multimodal_memory_table
@@ -422,7 +441,7 @@ module "agent_runner" {
   }
 
   subnet_ids             = local.subnet_ids
-  security_group_id      = local.request_handler_lambda_security_group_id
+  security_group_id      = local.security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
@@ -437,7 +456,7 @@ module "response_handler" {
   package_type                      = "Zip"
   cloudwatch_logs_retention_in_days = local.response_handler_logs_retention_in_days
   subnet_ids                        = local.subnet_ids
-  security_group_id                 = local.request_handler_lambda_security_group_id
+  security_group_id                 = local.security_group_id
   lambda_kms_key_arn                = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn            = local.cloudwatch_kms_key_arn
 
