@@ -52,6 +52,16 @@ variable "queue_mode" {
   default     = false
 }
 
+variable "disable_api_gateway" {
+  type        = bool
+  description = "When true, the request handler, API Gateway, and authorizer are not created. Only allowed when queue_mode is true."
+  default     = false
+  validation {
+    condition     = !var.disable_api_gateway || var.queue_mode
+    error_message = "disable_api_gateway can only be true when queue_mode is true."
+  }
+}
+
 variable "execution_mode" {
   type        = string
   description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
