@@ -84,7 +84,7 @@ locals {
     var.gateway_endpoints
   )
 
-  agent_invoke_url = module.api_gateway[0].agent_invoke_url
+  agent_invoke_url = try(module.api_gateway[0].agent_invoke_url, null)
 }
 
 module "request_handler_source_storage" {
