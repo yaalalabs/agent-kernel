@@ -1,7 +1,8 @@
 import logging
+import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
-
+from .....core import Runtime
 
 class LambdaSQSConsumer(ABC):
     """
@@ -12,6 +13,37 @@ class LambdaSQSConsumer(ABC):
 
     max_receive_count: int = 3  # Fallback value, actual configurable values are defined in the subclasses
     _log = logging.getLogger("ak.aws.lambdasqsconsumer")
+
+    @classmethod
+    def _parse_body(cls, record: dict) -> dict:
+        """
+        Parse the JSON body from an SQS record.
+        :param record: SQS record (``dict``) passed from the Lambda event.
+        :return: Parsed JSON body (``dict``) from the record.
+        """
+        return json.loads(record["body"])
+
+    @classmethod
+    def _is_message_processed(cls, session_id: str | None, message_id: str | None) -> bool:
+        """
+        Returns True if the message has already been processed for this session.
+        """
+        session = Runtime.current().sessions().load(session_id)
+        nv_cache = session.get_non_volatile_cache()
+        cls._log.info(f"Non-volatile cache for session {session_id}: {nv_cache}")
+        last_message_id = nv_cache.get("last_message_id")
+        if last_message_id == message_id:
+            cls._log.info(f"Message {message_id} has already been processed for session {session_id}. Skipping.")
+            return True
+        return False
+
+    @classmethod
+    def _set_message_processed(cls, session_id: str | None, message_id: str | None) -> None:
+        if not session_id or not message_id:
+            return
+        session = Runtime.current().sessions().load(session_id)
+        session.get_non_volatile_cache().set("last_message_id", message_id)
+        Runtime.current().sessions().store(session)
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -37,8 +69,15 @@ class LambdaSQSConsumer(ABC):
                     cls.on_permanent_failure(record)
                     continue
 
+                body = cls._parse_body(record)
+                
+                if cls._is_message_processed(session_id=body.get("session_id"), message_id=message_id):
+                    continue
+                
                 # Normal processing path
                 cls.process_message(record)
+
+                cls._set_message_processed(session_id=body.get("session_id"), message_id=message_id)
 
             except Exception as exc:
                 cls._log.info(f"Sending message as batchItemFailure '{message_id}': '{exc}'")
