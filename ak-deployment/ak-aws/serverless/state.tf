@@ -173,7 +173,7 @@ module "api_gateway" {
 
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
-  depends_on = var.disable_api_gateway ? [] : [module.request_handler]
+  depends_on = [module.request_handler]
 }
 
 module "docker_image" {
