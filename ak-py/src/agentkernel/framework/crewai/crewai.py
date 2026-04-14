@@ -11,7 +11,7 @@ from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBui
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-from ...core.util.error_util import user_facing_error_message
+from ...core.util.error_util import get_user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "crewai"
@@ -137,7 +137,7 @@ class CrewAIRunner(Runner):
 
             return AgentReplyText(text=reply_text, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(text=get_user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

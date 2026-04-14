@@ -5,17 +5,17 @@ import readline  # Enables line editing and history features for input() in the 
 from ..core import AgentService
 
 
-class _SuppressOtelDetachNoise(logging.Filter):
+class _ContextFilter(logging.Filter):
     """Hide known OpenTelemetry shutdown noise from console output."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         return not (record.name == "opentelemetry.context" and "Failed to detach context" in record.getMessage())
 
-
-def _configure_external_log_filters() -> None:
-    otel_context_logger = logging.getLogger("opentelemetry.context")
-    if not any(isinstance(f, _SuppressOtelDetachNoise) for f in otel_context_logger.filters):
-        otel_context_logger.addFilter(_SuppressOtelDetachNoise())
+    @classmethod
+    def setup(cls) -> None:
+        context_logger = logging.getLogger("opentelemetry.context")
+        if not any(isinstance(f, cls) for f in context_logger.filters):
+            context_logger.addFilter(cls())
 
 
 # Configure logger only to print agent kernel logs
@@ -29,7 +29,7 @@ if not ak_logger.handlers:
     handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
     ak_logger.addHandler(handler)
 
-_configure_external_log_filters()
+_ContextFilter.setup()
 
 
 class CLI:

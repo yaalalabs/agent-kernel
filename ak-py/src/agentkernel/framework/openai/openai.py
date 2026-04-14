@@ -19,7 +19,7 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from ...core.util.error_util import user_facing_error_message
+from ...core.util.error_util import get_user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -166,7 +166,7 @@ class OpenAIRunner(BaseRunner):
             reply_text = "" if reply is None else str(reply)
             return AgentReplyText(text=reply_text, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(text=get_user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
