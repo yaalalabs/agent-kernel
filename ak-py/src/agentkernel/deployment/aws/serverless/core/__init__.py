@@ -1,1 +1,2 @@
 from .default_endpoints import DefaultEndpointsHandler
+from .sqs_consumer import LambdaSQSConsumer

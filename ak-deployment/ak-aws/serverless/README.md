@@ -11,7 +11,7 @@ This module provides a complete serverless deployment solution:
 - 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
 - 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
-- 📦 **Scalable Mode**: SQS-driven async processing with agent runner and response handler functions
+- 📦 **Queue Mode**: SQS-driven async processing with agent runner and response handler functions
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
 
@@ -374,7 +374,7 @@ module "serverless_api_auth" {
 
 ### Queue Configuration
 
-The root `queue_config` object drives the SQS queues created for scalable mode. All fields are optional and the defaults below match the module behavior.
+The root `queue_config` object drives the SQS queues created for queue mode. All fields are optional and the defaults below match the module behavior.
 
 | Field | Description | Type | Default | Required |
 |-------|-------------|------|---------|----------|
@@ -438,9 +438,13 @@ The root `queue_config` object drives the SQS queues created for scalable mode. 
 | `input_queue_arn` | ARN of the input SQS queue when `queue_mode = true` |
 | `input_queue_url` | URL of the input SQS queue when `queue_mode = true` |
 | `input_queue_name` | Name of the input SQS queue when `queue_mode = true` |
+| `input_dlq_arn` | ARN of the input SQS dead-letter queue when `queue_mode = true` |
+| `input_dlq_url` | URL of the input SQS dead-letter queue when `queue_mode = true` |
 | `output_queue_arn` | ARN of the output SQS queue when `queue_mode = true` |
 | `output_queue_url` | URL of the output SQS queue when `queue_mode = true` |
 | `output_queue_name` | Name of the output SQS queue when `queue_mode = true` |
+| `output_dlq_arn` | ARN of the output SQS dead-letter queue when `queue_mode = true` |
+| `output_dlq_url` | URL of the output SQS dead-letter queue when `queue_mode = true` |
 
 ## ✨ Features
 
@@ -477,7 +481,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 - Custom domain support compatible
 - **Custom Authorizer**: Lambda-based request authorization with configurable TTL
 
-### 📦 Scalable Mode Architecture
+### 📦 Queue Mode Architecture
 
 When `queue_mode = true`, the module adds an asynchronous queue-driven path alongside the API Gateway entrypoint.
 
@@ -526,7 +530,7 @@ The module supports the current Agent Kernel storage wiring for both session sta
 
 Resources follow consistent naming:
 - Lambda Function: `{product_alias}-{env_alias}-{module_name}-{function_name}`
-- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer_module_name}-{authorizer_function_name}`
+- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer.module_name}-{authorizer.function_name}`
 - API Gateway: `{product_alias}-{env_alias}-{module_name}-api`
 - CloudWatch Logs: `/aws/lambda/{function_name}`
 
@@ -692,7 +696,7 @@ module "api_v2" {
 }
 ```
 
-### Async Processing with Scalable Mode
+### Async Processing with Queue Mode
 
 ```hcl
 module "async_api" {

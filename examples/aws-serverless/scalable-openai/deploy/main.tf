@@ -1,7 +1,7 @@
 # Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
-  version = "0.3.0"
+  version = "0.3.1"
 
   # Basic configuration
   product_alias        = var.product_alias
@@ -19,7 +19,7 @@ module "serverless_agents" {
   is_production        = var.is_production
 
   # Execution mode - using for scalable processing
-  queue_mode = true # queue_mode # recommended for production
+  queue_mode = true # recommended for production
   execution_mode = "rest_sync" # rest_sync or rest_async
 
   # Memory DB Config
@@ -30,7 +30,7 @@ module "serverless_agents" {
   create_dynamodb_response_store = true
 
   # API Gateway configuration
-  api_version    = "0.3.0"
+  api_version    = "0.3.1"
   api_base_path  = "api"
   agent_endpoint = "chat"
 

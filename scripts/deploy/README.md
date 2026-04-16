@@ -24,8 +24,8 @@ Python script that performs three key tasks:
    - Replaces `yaalalabs/ak-containerized/aws` with `../../../../ak-deployment/ak-aws/containerized`
    - Comments out `version` lines since they're not needed for local modules
 
-3. **Modifies Terraform files for local development**: Replaces Terraform registry module sources with local relative paths in all `.tf` files under the deployment trees
-  - Scans `ak-deployment/ak-aws` and `ak-deployment/ak-azure` recursively
+3. **Modifies Terraform files for local development**: Replaces Terraform registry module sources with local relative paths in all `.tf` files under the deployment trees and example projects
+  - Scans `ak-deployment/ak-aws`, `ak-deployment/ak-azure`, and `examples` recursively
   - Replaces `yaalalabs/ak-common/aws//modules/*` and `yaalalabs/ak-common/azurerm//modules/*` with local relative paths
   - Handles nested module directories as well as top-level `state.tf` files
   - Comments out `version` lines for local module references
