@@ -1,18 +1,18 @@
 output "lambda_function_arn" {
-  value = module.request_handler.lambda_function_arn
+  value = try(module.request_handler[0].lambda_function_arn, "")
 }
 
 output "lambda_function_name" {
-  value = module.request_handler.lambda_function_name
+  value = try(module.request_handler[0].lambda_function_name, "")
 }
 
 output "lambda_function_invoke_arn" {
-  value = module.request_handler.lambda_function_invoke_arn
+  value = try(module.request_handler[0].lambda_function_invoke_arn, "")
 }
 
 output "lambda_role_arn" {
   description = "ARN of the request-handler Lambda execution role"
-  value       = module.request_handler.lambda_role_arn
+  value       = try(module.request_handler[0].lambda_role_arn, "")
 }
 
 output "authorizer_status" {
@@ -27,27 +27,27 @@ output "agent_invoke_url" {
 
 output "api_gateway_id" {
   description = "API Gateway REST API ID"
-  value       = module.api_gateway[0].api_gateway_rest_api_id
+  value       = try(module.api_gateway[0].api_gateway_rest_api_id, "")
 }
 
 output "api_gateway_stage_name" {
   description = "API Gateway stage name"
-  value       = module.api_gateway[0].api_gateway_stage_name
+  value       = try(module.api_gateway[0].api_gateway_stage_name, "")
 }
 
 output "api_gateway_execution_arn" {
   description = "Execution ARN of the API Gateway REST API"
-  value       = module.api_gateway[0].api_gateway_execution_arn
+  value       = try(module.api_gateway[0].api_gateway_execution_arn, "")
 }
 
 output "api_gateway_cloudwatch_log_group_arn" {
   description = "ARN of the CloudWatch log group for API Gateway"
-  value       = module.api_gateway[0].api_gateway_cloudwatch_log_group_arn
+  value       = try(module.api_gateway[0].api_gateway_cloudwatch_log_group_arn, "")
 }
 
 output "api_gateway_cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for API Gateway"
-  value       = module.api_gateway[0].api_gateway_cloudwatch_log_group_name
+  value       = try(module.api_gateway[0].api_gateway_cloudwatch_log_group_name, "")
 }
 
 # Response Handler outputs (conditional based on queue_mode)

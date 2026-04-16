@@ -36,11 +36,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "package_path" {
-  type        = string
-  description = "Zip package path or Docker image source path"
-}
-
 variable "cloudwatch_logs_retention_in_days" {
   type        = number
   description = "CloudWatch log retention period in days for the request handler Lambda"
@@ -50,6 +45,16 @@ variable "queue_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
   default     = false
+}
+
+variable "enable_api_gateway" {
+  type        = bool
+  description = "When false, the request handler, API Gateway, and authorizer are not created. Only allowed when queue_mode is true."
+  default     = true
+  validation {
+    condition     = var.enable_api_gateway || var.queue_mode
+    error_message = "enable_api_gateway can only be false when queue_mode is true."
+  }
 }
 
 variable "execution_mode" {
@@ -107,6 +112,11 @@ variable "function_description" {
 variable "handler_path" {
   description = "Lambda handler path"
   type        = string
+}
+
+variable "package_path" {
+  type        = string
+  description = "Zip package path or Docker image source path"
 }
 
 variable "package_type" {
