@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes  
 from langfuse.langchain import CallbackHandler
 
 from ...core import Session
@@ -25,10 +25,6 @@ class LangFuseLangGraph(LangGraphRunner):
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the LangGraph agent with provided multi modal inputs.
-        :param agent: The LangGraph agent to run.
-        :param session: The session to use for the agent.
-        :param requests: The requests to the agent.
-        :return: The result of the agent's execution.
         """
         prompt = ""
         for req in requests:
@@ -45,16 +41,28 @@ class LangFuseLangGraph(LangGraphRunner):
         if prompt.strip() == "":
             return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-        with self._client.start_as_current_span(name="Agent Kernel LangGraph") as span:
-            session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-            config = session_config.model_dump()
-            config["callbacks"] = [self._callback_handler]
-            agent.agent.checkpointer = self._session(session).checkpointer
-            result = await agent.agent.ainvoke(
-                input={"messages": [HumanMessage(content=prompt)]},
-                config=config,
-            )
-            last_message = result["messages"][-1]
-            span.update_trace(session_id=session.id, input=prompt, output=last_message.content, tags=["agentkernel"])
+        
+        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+            
+          
+            with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
+                
+                session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+                config = session_config.model_dump()
+                
+           
+                config["callbacks"] = [self._callback_handler]
+                agent.agent.checkpointer = self._session(session).checkpointer
+                
+                result = await agent.agent.ainvoke(
+                    input={"messages": [HumanMessage(content=prompt)]},
+                    config=config,
+                )
+                last_message = result["messages"][-1]
+                
+                span.update(
+                    input=prompt, 
+                    output=last_message.content
+                )
 
         return AgentReplyText(text=last_message.content, prompt=prompt)
