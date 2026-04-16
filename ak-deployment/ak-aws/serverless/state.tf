@@ -106,7 +106,7 @@ resource "aws_security_group" "lambda" {
 }
 
 module "request_handler_source_storage" {
-  count                = local.request_handler_enabled ? 0 : ((var.package_type == "S3Zip") ? 1 : 0)
+  count                = local.request_handler_enabled ? ((var.package_type == "S3Zip") ? 1 : 0) : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
   version              = "0.3.1"
   region               = var.region
@@ -118,7 +118,7 @@ module "request_handler_source_storage" {
 }
 
 module "request_handler_source_package" {
-  count            = local.request_handler_enabled ? 0 : ((var.package_type == "S3Zip") ? 1 : 0)
+  count            = local.request_handler_enabled ? ((var.package_type == "S3Zip") ? 1 : 0) : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
   version          = "0.3.1"
   env_alias        = var.env_alias
@@ -195,7 +195,7 @@ module "api_gateway" {
 }
 
 module "docker_image" {
-  count         = local.request_handler_enabled ? 0 : ((var.package_type == "Image") ? 1 : 0)
+  count         = local.request_handler_enabled ? ((var.package_type == "Image") ? 1 : 0) : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.3.1"
   env_alias     = var.env_alias
