@@ -17,7 +17,7 @@ class ErrorUtil:
         return None
 
     @staticmethod
-    def get_user_facing_error_message(error: Exception) -> str:
+    def _format_user_facing_error_message(error: Exception) -> str:
         """
         Normalize framework/model exceptions into concise, single-line user messages.
         """
@@ -41,8 +41,4 @@ class ErrorUtil:
 
 
 def user_facing_error_message(error: Exception) -> str:
-    return ErrorUtil.get_user_facing_error_message(error)
-
-
-def get_user_facing_error_message(error: Exception) -> str:
-    return ErrorUtil.get_user_facing_error_message(error)
+    return ErrorUtil._format_user_facing_error_message(error)

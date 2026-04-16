@@ -31,7 +31,7 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
 from ...core.config import AKConfig
-from ...core.util.error_util import get_user_facing_error_message
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -187,7 +187,7 @@ class GoogleADKRunner(BaseRunner):
 
                 return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=get_user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
 
 
 class GoogleADKAgent(AKBaseAgent):
