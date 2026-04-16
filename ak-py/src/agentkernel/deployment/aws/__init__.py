@@ -13,3 +13,4 @@ except importlib.metadata.PackageNotFoundError:
 
 from .serverless import APIGatewayAuthorizer, Lambda, ResponseHandler, ServerlessAgentRunner
 from .serverless.core import LambdaSQSConsumer
+from .core.sqs_handler import SQSHandler
