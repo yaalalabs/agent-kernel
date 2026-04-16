@@ -42,3 +42,7 @@ class ErrorUtil:
 
 def user_facing_error_message(error: Exception) -> str:
     return ErrorUtil.get_user_facing_error_message(error)
+
+
+def get_user_facing_error_message(error: Exception) -> str:
+    return ErrorUtil.get_user_facing_error_message(error)
