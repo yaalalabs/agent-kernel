@@ -50,6 +50,7 @@ requires-dist = [
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
     { name = "azure-functions", marker = "extra == 'azure'", specifier = ">=1.24.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
+    { name = "chromadb", marker = "extra == 'knowledgebase'", specifier = ">=0.4.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.150.0" },
     { name = "datasets", marker = "extra == 'test'", specifier = ">=2.14.0" },
     { name = "deprecated", specifier = ">=1.2.18" },
@@ -74,6 +75,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.9" },
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.74.9" },
+    { name = "neo4j", marker = "extra == 'knowledgebase'", specifier = ">=5.0.0" },
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.6.5" },
     { name = "openai-guardrails", marker = "extra == 'openai'", specifier = ">=0.2.1" },
@@ -97,10 +99,11 @@ requires-dist = [
     { name = "singleton-type", specifier = ">=0.0.5" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
+    { name = "trino", marker = "extra == 'knowledgebase'", specifier = ">=0.337.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "knowledgebase", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [
