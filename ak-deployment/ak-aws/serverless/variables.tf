@@ -47,13 +47,13 @@ variable "queue_mode" {
   default     = false
 }
 
-variable "disable_api_gateway" {
+variable "enable_api_gateway" {
   type        = bool
-  description = "When true, the request handler, API Gateway, and authorizer are not created. Only allowed when queue_mode is true."
-  default     = false
+  description = "When false, the request handler, API Gateway, and authorizer are not created. Only allowed when queue_mode is true."
+  default     = true
   validation {
-    condition     = !var.disable_api_gateway || var.queue_mode
-    error_message = "disable_api_gateway can only be true when queue_mode is true."
+    condition     = var.enable_api_gateway || var.queue_mode
+    error_message = "enable_api_gateway can only be false when queue_mode is true."
   }
 }
 
