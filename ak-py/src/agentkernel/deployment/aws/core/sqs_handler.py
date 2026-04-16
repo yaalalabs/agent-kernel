@@ -13,7 +13,6 @@ from ....core.config import AKConfig
 class SQSHandler:
     """Shared helper for building and sending SQS messages."""
 
-
     _sqs_client = None
     _config = None
     _input_queue_url = None

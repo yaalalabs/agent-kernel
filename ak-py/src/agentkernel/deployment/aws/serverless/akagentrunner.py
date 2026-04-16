@@ -30,17 +30,17 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
-        
+
         if not request_id:
             raise ValueError("request_id is required")
-        
+
         record_attributes = {
             "message_group_id": attributes["MessageGroupId"],
             "message_deduplication_id": attributes.get("MessageDeduplicationId"),
             "request_id": request_id,
             "user_id": user_id,
         }
-        
+
         cls._log.info(f"Extracted record attributes: {record_attributes}")
         return record_attributes
 
