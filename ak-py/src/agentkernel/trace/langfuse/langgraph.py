@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage
-from langfuse import Langfuse, propagate_attributes  
+from langfuse import Langfuse, propagate_attributes
 from langfuse.langchain import CallbackHandler
 
 from ...core import Session
@@ -41,28 +41,22 @@ class LangFuseLangGraph(LangGraphRunner):
         if prompt.strip() == "":
             return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-        
         with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
-            
-          
+
             with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
-                
+
                 session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
                 config = session_config.model_dump()
-                
-           
+
                 config["callbacks"] = [self._callback_handler]
                 agent.agent.checkpointer = self._session(session).checkpointer
-                
+
                 result = await agent.agent.ainvoke(
                     input={"messages": [HumanMessage(content=prompt)]},
                     config=config,
                 )
                 last_message = result["messages"][-1]
-                
-                span.update(
-                    input=prompt, 
-                    output=last_message.content
-                )
+
+                span.update(input=prompt, output=last_message.content)
 
         return AgentReplyText(text=last_message.content, prompt=prompt)

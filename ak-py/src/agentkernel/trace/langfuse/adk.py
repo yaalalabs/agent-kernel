@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from langfuse import Langfuse , propagate_attributes
+from langfuse import Langfuse, propagate_attributes
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
 from ...core import Session
@@ -26,15 +26,12 @@ class LangFuseADKRunner(GoogleADKRunner):
         """
         Runs the CrewAI agent with provided multi modal inputs.
         """
-        
+
         with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
-    
+
             with self._client.start_as_current_observation(name="Agent Kernel ADK", as_type="span") as span:
-                
+
                 result = await super().run(agent, session, requests)
-                span.update(
-                    input=result.prompt, 
-                    output=str(result)
-                )
+                span.update(input=result.prompt, output=str(result))
 
         return result
