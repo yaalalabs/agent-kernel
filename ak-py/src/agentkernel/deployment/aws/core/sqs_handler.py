@@ -12,7 +12,7 @@ from ....core.config import AKConfig
 
 class SQSHandler:
     """Shared helper for building and sending SQS messages.
-    
+
     When used in a Non-Agent Kernel lambda/machine, the following environment variables
     must be exported:
     - AK_EXECUTION__QUEUES__INPUT__URL
