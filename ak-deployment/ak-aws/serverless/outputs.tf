@@ -15,6 +15,11 @@ output "lambda_role_arn" {
   value       = try(module.request_handler[0].lambda_role_arn, "")
 }
 
+output "lambda_role_name" {
+  description = "Name of the request-handler Lambda execution role"
+  value       = try(module.request_handler[0].lambda_role_name, "")
+}
+
 output "authorizer_status" {
   description = "Status message indicating whether the authorizer Lambda will be created"
   value       = local.authorizer_status_message
@@ -71,6 +76,11 @@ output "response_handler_lambda_role_arn" {
   value       = var.queue_mode ? module.response_handler[0].response_handler_lambda_role_arn : null
 }
 
+output "response_handler_lambda_role_name" {
+  description = "Name of the response handler Lambda execution role"
+  value       = var.queue_mode ? module.response_handler[0].response_handler_lambda_role_name : null
+}
+
 # Agent Runner outputs (conditional based on queue_mode)
 output "agent_runner_lambda_function_arn" {
   description = "ARN of the agent runner Lambda function"
@@ -90,6 +100,11 @@ output "agent_runner_lambda_function_invoke_arn" {
 output "agent_runner_lambda_role_arn" {
   description = "ARN of the agent runner Lambda execution role"
   value       = var.queue_mode ? module.agent_runner[0].agent_runner_lambda_role_arn : null
+}
+
+output "agent_runner_lambda_role_name" {
+  description = "Name of the agent runner Lambda execution role"
+  value       = var.queue_mode ? module.agent_runner[0].agent_runner_lambda_role_name : null
 }
 
 # SQS Queues outputs (conditional based on queue_mode)
