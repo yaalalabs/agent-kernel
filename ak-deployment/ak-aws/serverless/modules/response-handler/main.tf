@@ -29,7 +29,7 @@ locals {
 data "aws_s3_object" "source_code" {
   count  = local.response_handler_package_type == "S3Zip" ? 1 : 0
   bucket = var.source_bucket
-  key    = "${var.product_alias}/${var.env_alias}/${local.response_handler_module_name}/lambda/source_code.zip"
+  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${local.response_handler_module_name}/lambda/source_code.zip"
 }
 
 resource "aws_signer_signing_job" "response_handler_lambda_signing_job" {

@@ -489,6 +489,7 @@ module "response_handler" {
   count  = var.queue_mode ? 1 : 0
   source = "./modules/response-handler"
 
+  region                            = var.region
   cloudwatch_logs_retention_in_days = local.response_handler_logs_retention_in_days
   subnet_ids                        = local.subnet_ids
   security_group_id                 = local.security_group_id

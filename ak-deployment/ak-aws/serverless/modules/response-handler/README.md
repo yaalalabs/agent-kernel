@@ -21,6 +21,7 @@ module "response_handler" {
 
   product_alias = "agent-kernel"
   env_alias     = "dev"
+  region        = "us-east-1"
 
   response_handler = {
     function_name = "response-handler"
@@ -47,6 +48,7 @@ module "response_handler" {
 |------|-------------|
 | `product_alias` | Product alias used in resource names |
 | `env_alias` | Environment alias |
+| `region` | AWS region for S3 path construction |
 | `module_type` | Runtime type, `python` or `nodejs` |
 | `source_bucket` | S3 bucket used for S3 ZIP deployment |
 | `docker_image_uri` | Image URI when `response_handler.package_type = "Image"` |

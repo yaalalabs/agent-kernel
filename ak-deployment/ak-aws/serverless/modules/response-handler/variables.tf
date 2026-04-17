@@ -20,6 +20,11 @@ variable "env_alias" {
   description = "Environment alias for resource naming"
 }
 
+variable "region" {
+  type        = string
+  description = "AWS region for S3 path construction"
+}
+
 variable "source_bucket" {
   type        = string
   description = "S3 bucket used for S3 ZIP deployment"
