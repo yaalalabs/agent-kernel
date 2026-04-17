@@ -24,7 +24,11 @@ class LangFuseOpenAIRunner(OpenAIRunner):
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the CrewAI agent with provided multi modal inputs.
+        Runs the OpenAI agent with provided multi modal inputs.
+        :param agent: The OpenAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: The result of the agent's execution.
         """
 
         with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
