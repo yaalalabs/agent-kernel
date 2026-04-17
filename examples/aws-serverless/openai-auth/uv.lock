@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agentkernel"
-version = "0.3.1"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -13,9 +13,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f0/67/ff874c93084b8aea7d611e3ba664ac96a51dcf86bf2fb613aa7a7c27d1dd/agentkernel-0.3.1.tar.gz", hash = "sha256:e40af5a67132470e1abe5b8c86ed8aa53b7e389681fa4d4dc3f13cfbda6aad8e", size = 167000, upload-time = "2026-04-11T05:51:44.765Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/a1/3573a92f6d36d77e3ac5034f1e4e5dd4afc0140da8f508e12be8df675806/agentkernel-0.3.2.tar.gz", hash = "sha256:304e4314d0c8841885c1a7ce93e43c919a7bce82f0b3a8c0788fb8563ed6de54", size = 167454, upload-time = "2026-04-17T05:39:54.102Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/23/1580f9c86e22bd6648d01e2dbc7cf2796ed13292f9c0d482f7f2a5509fde/agentkernel-0.3.1-py3-none-any.whl", hash = "sha256:dd8cb586b9f821fbb25ffb57744e7348649357d4876c69460c41ad57d02ef6d8", size = 238346, upload-time = "2026-04-11T05:51:42.68Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/3e/3c1693c588280e81ad635b9ac61b93b60dd234ff20adf32b53a33ce0d32b/agentkernel-0.3.2-py3-none-any.whl", hash = "sha256:a421585b124437895ccb86b09ca58836046f9fe713f27c13db8078b333eec5e0", size = 238748, upload-time = "2026-04-17T05:39:52.285Z" },
 ]
 
 [package.optional-dependencies]
@@ -94,11 +94,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.3.1" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.3.2" }]
 
 [package.metadata.requires-dev]
 auth = [
-    { name = "agentkernel", specifier = ">=0.3.1" },
+    { name = "agentkernel", specifier = ">=0.3.2" },
     { name = "annotated-types", specifier = "==0.7.0" },
     { name = "cffi", specifier = "==2.0.0" },
     { name = "cryptography", specifier = "==46.0.4" },
