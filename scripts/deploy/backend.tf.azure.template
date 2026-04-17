@@ -1,0 +1,13 @@
+# OPTIONAL: This file is auto-generated for CI/CD purposes
+# You can safely delete this file if you prefer to use local state
+# or configure your own backend
+
+
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "{resource_group}"
+    storage_account_name = "{storage_account}"
+    container_name       = "{container_name}"
+    key                  = "{state_key}"
+  }
+}
