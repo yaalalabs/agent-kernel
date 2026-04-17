@@ -28,6 +28,7 @@ variable "module_type" {
 variable "module_name" {
   type        = string
   description = "Module name"
+  default     = "agent-kernel"
 }
 
 variable "is_production" {
@@ -102,21 +103,25 @@ variable "memory_size" {
 variable "function_name" {
   description = "Lambda function name"
   type        = string
+  default     = "request-handler"
 }
 
 variable "function_description" {
   description = "Lambda function description"
   type        = string
+  default     = "Agent Kernel request handler Lambda"
 }
 
 variable "handler_path" {
   description = "Lambda handler path"
   type        = string
+  default     = "lambda_request_handler.handler"
 }
 
 variable "package_path" {
   type        = string
   description = "Zip package path or Docker image source path"
+  default     = null
 }
 
 variable "package_type" {
