@@ -6,7 +6,7 @@ CUR_SCRIPT=$(readlink -f ${BASH_SOURCE[0]})
 CUR_SCRIPT_DIR=$(dirname $CUR_SCRIPT)
 CUR_FOLDER=$(basename $CUR_SCRIPT_DIR)
 
-CONFIG_FILE="$CUR_FOLDER/state-config.yaml"
+CONFIG_FILE="$CUR_SCRIPT_DIR/state-config.yaml"
 CLOUD="${1:-aws}"
 
 if ! command -v yq >/dev/null 2>&1; then
