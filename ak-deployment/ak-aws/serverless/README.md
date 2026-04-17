@@ -301,33 +301,41 @@ module "serverless_api_auth" {
 | `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
+| `module_name` | Module name for resource identification (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
-| `package_path` | Path to Lambda deployment package or S3 URI | `string` | n/a | yes |
+| `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
+| `package_path` | Path to Lambda deployment package or S3 URI (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
-| `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async` | `string` | `null` | no |
+| `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async`. Required when queue_mode is true, must be null when queue_mode is false | `string` | `null` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
 | `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
 | `memory_size` | Lambda function memory size in MB (128-10240) | `number` | `128` | no |
-| `function_name` | Lambda function name suffix | `string` | n/a | yes |
-| `function_description` | Lambda function description | `string` | n/a | yes |
-| `handler_path` | Handler path (e.g., `index.handler` or `app.main`) | `string` | n/a | yes |
-| `image_uri` | Container image URI (required for Image package type) | `string` | `null` | no |
+| `function_name` | Lambda function name suffix (required when enable_api_gateway is true) | `string` | `""` | conditional |
+| `function_description` | Lambda function description (required when enable_api_gateway is true) | `string` | `""` | conditional |
+| `handler_path` | Handler path (e.g., `index.handler` or `app.main`) (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `package_type` | Deployment type: `LocalZip`, `S3Zip`, or `Image` | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
-| `api_base_path` | Base path segment for the API | `string` | `"api"` | no |
-| `gateway_endpoints` | List of REST API Gateway endpoints to expose; path values are validated and limited to three resource levels (for example, `app/test/func` or `app/check`) | `list(object)` | `[]` | no |
+| `api_base_path` | Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit | `string` | `"api"` | no |
+| `gateway_endpoints` | List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. Path values are validated and limited to three resource levels (for example, `app/test/func` or `app/check`) | `list(object)` | `[]` | no |
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | `create_redis_response_store` | Create or reuse Redis for response storage | `bool` | `false` | no |
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage | `bool` | `false` | no |
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
+| `response_handler` | Response handler configuration object (see table below) | `object` | `{}` | no |
+| `agent_runner` | Agent runner configuration object (see table below) | `object` | `{}` | no |
+| `queue_config` | SQS queues configuration object (see table below) | `object` | `{}` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+| `vpc_cidr` | CIDR block for the VPC | `string` | `"10.0.0.0/16"` | no |
+| `public_subnet_cidrs` | CIDR blocks for the public subnets | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |
+| `vpc_id` | VPC ID. If not provided, a new one will be created | `string` | `null` | no |
+| `private_subnet_ids` | When using an existing VPC to deploy, private subnet IDs need to be provided | `list(string)` | `null` | no |
+| `private_subnet_cidrs` | CIDR blocks for the private subnets | `list(string)` | `["10.0.3.0/24", "10.0.4.0/24"]` | no |
 
 ### Authorizer Object Structure
 
@@ -351,7 +359,7 @@ module "serverless_api_auth" {
 | `timeout` | Response handler Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
-| `module_name` | Optional module name override for response-handler artifacts | `string` | `null` | no |
+| `module_name` | Response handler module name | `string` | `"response-handler"` | no |
 | `package_path` | Response handler deployment package path | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
@@ -367,7 +375,7 @@ module "serverless_api_auth" {
 | `timeout` | Agent runner Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Agent runner Lambda memory size in MB | `number` | `512` | no |
 | `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
-| `module_name` | Agent runner artifact module name; defaults to the root module name with `-agent-runner` appended when omitted | `string` | `null` | no |
+| `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
 | `package_path` | Agent runner deployment package path | `string` | `null` | no |
 | `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
@@ -410,7 +418,7 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 | `enable_consumer_access` | Enable consumer access policies for the queues | `bool` | `true` | no |
 | `consumer_role_arns` | ARNs allowed to consume messages from the queues | `list(string)` | `[]` | no |
 | `batch_size` | Lambda batch size for queue event source mappings | `number` | `10` | no |
-| `maximum_batching_window_in_seconds` | Maximum batching window for Lambda event source mappings | `number` | `0` | no |
+| `maximum_batching_window_in_seconds` | Maximum time (in seconds) Lambda will wait to gather messages into a batch before triggering the Lambda function | `number` | `0` | no |
 
 **Note**: When `queue_mode = true`, the response handler and agent runner package paths must be provided. The queue configuration defaults can be used as-is, or you can override only the queue names and sizing values you need.
 
@@ -418,35 +426,38 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 | Name | Description |
 |------|-------------|
+| `agent_invoke_url` | Invoke URL for the agent chat endpoint |
+| `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
 | `lambda_function_arn` | ARN of the request-handler Lambda function |
 | `lambda_function_name` | Name of the request-handler Lambda function |
 | `lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
 | `lambda_role_arn` | ARN of the request-handler Lambda execution role |
-| `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
-| `agent_invoke_url` | Full invoke URL for the agent endpoint |
+| `lambda_role_name` | Name of the request-handler Lambda execution role |
 | `api_gateway_id` | API Gateway REST API ID |
 | `api_gateway_stage_name` | API Gateway stage name |
 | `api_gateway_execution_arn` | Execution ARN of the API Gateway REST API |
 | `api_gateway_cloudwatch_log_group_arn` | ARN of the CloudWatch log group for API Gateway |
 | `api_gateway_cloudwatch_log_group_name` | Name of the CloudWatch log group for API Gateway |
-| `response_handler_lambda_function_arn` | ARN of the response handler Lambda function when `queue_mode = true` |
-| `response_handler_lambda_function_name` | Name of the response handler Lambda function when `queue_mode = true` |
-| `response_handler_lambda_function_invoke_arn` | Invoke ARN of the response handler Lambda function when `queue_mode = true` |
-| `response_handler_lambda_role_arn` | ARN of the response handler Lambda execution role when `queue_mode = true` |
-| `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function when `queue_mode = true` |
-| `agent_runner_lambda_function_name` | Name of the agent runner Lambda function when `queue_mode = true` |
-| `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function when `queue_mode = true` |
-| `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role when `queue_mode = true` |
-| `input_queue_arn` | ARN of the input SQS queue when `queue_mode = true` |
-| `input_queue_url` | URL of the input SQS queue when `queue_mode = true` |
-| `input_queue_name` | Name of the input SQS queue when `queue_mode = true` |
-| `input_dlq_arn` | ARN of the input SQS dead-letter queue when `queue_mode = true` |
-| `input_dlq_url` | URL of the input SQS dead-letter queue when `queue_mode = true` |
-| `output_queue_arn` | ARN of the output SQS queue when `queue_mode = true` |
-| `output_queue_url` | URL of the output SQS queue when `queue_mode = true` |
-| `output_queue_name` | Name of the output SQS queue when `queue_mode = true` |
-| `output_dlq_arn` | ARN of the output SQS dead-letter queue when `queue_mode = true` |
-| `output_dlq_url` | URL of the output SQS dead-letter queue when `queue_mode = true` |
+| `response_handler_lambda_function_arn` | ARN of the response handler Lambda function (returns null when `queue_mode = false`) |
+| `response_handler_lambda_function_name` | Name of the response handler Lambda function (returns null when `queue_mode = false`) |
+| `response_handler_lambda_function_invoke_arn` | Invoke ARN of the response handler Lambda function (returns null when `queue_mode = false`) |
+| `response_handler_lambda_role_arn` | ARN of the response handler Lambda execution role (returns null when `queue_mode = false`) |
+| `response_handler_lambda_role_name` | Name of the response handler Lambda execution role (returns null when `queue_mode = false`) |
+| `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function (returns null when `queue_mode = false`) |
+| `agent_runner_lambda_function_name` | Name of the agent runner Lambda function (returns null when `queue_mode = false`) |
+| `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function (returns null when `queue_mode = false`) |
+| `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role (returns null when `queue_mode = false`) |
+| `agent_runner_lambda_role_name` | Name of the agent runner Lambda execution role (returns null when `queue_mode = false`) |
+| `input_queue_arn` | ARN of the input SQS queue (returns null when `queue_mode = false`) |
+| `input_queue_url` | URL of the input SQS queue (returns null when `queue_mode = false`) |
+| `input_queue_name` | Name of the input SQS queue (returns null when `queue_mode = false`) |
+| `input_dlq_arn` | ARN of the input SQS dead-letter queue (returns null when `queue_mode = false`) |
+| `input_dlq_url` | URL of the input SQS dead-letter queue (returns null when `queue_mode = false`) |
+| `output_queue_arn` | ARN of the output SQS queue (returns null when `queue_mode = false`) |
+| `output_queue_url` | URL of the output SQS queue (returns null when `queue_mode = false`) |
+| `output_queue_name` | Name of the output SQS queue (returns null when `queue_mode = false`) |
+| `output_dlq_arn` | ARN of the output SQS dead-letter queue (returns null when `queue_mode = false`) |
+| `output_dlq_url` | URL of the output SQS dead-letter queue (returns null when `queue_mode = false`) |
 
 ## ✨ Features
 

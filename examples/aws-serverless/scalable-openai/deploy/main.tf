@@ -68,7 +68,8 @@ module "serverless_agents" {
 
   # Response handler configuration
   response_handler = {
-    function_name         = "response-handler"
+    function_name         = "res-func"
+    module_name           = "response-handler"
     function_description  = "Response handler for processing completed requests"
     timeout               = 45
     memory_size           = 256

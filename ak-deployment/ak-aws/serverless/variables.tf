@@ -28,6 +28,11 @@ variable "module_type" {
 variable "module_name" {
   type        = string
   description = "Module name"
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.module_name != ""
+    error_message = "module_name must be set to a non-empty value when enable_api_gateway is true."
+  }
 }
 
 variable "is_production" {
@@ -102,21 +107,41 @@ variable "memory_size" {
 variable "function_name" {
   description = "Lambda function name"
   type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.function_name != ""
+    error_message = "function_name must be set to a non-empty value when enable_api_gateway is true."
+  }
 }
 
 variable "function_description" {
   description = "Lambda function description"
   type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.function_description != ""
+    error_message = "function_description must be set to a non-empty value when enable_api_gateway is true."
+  }
 }
 
 variable "handler_path" {
   description = "Lambda handler path"
   type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.handler_path != ""
+    error_message = "handler_path must be set to a non-empty value when enable_api_gateway is true."
+  }
 }
 
 variable "package_path" {
   type        = string
   description = "Zip package path or Docker image source path"
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.package_path != ""
+    error_message = "package_path must be set to a non-empty value when enable_api_gateway is true."
+  }
 }
 
 variable "package_type" {
@@ -268,7 +293,7 @@ variable "response_handler" {
     timeout               = optional(number, 45)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
-    module_name           = optional(string, null)
+    module_name           = optional(string, "response-handler")
     package_path          = optional(string, null)
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
@@ -290,7 +315,7 @@ variable "agent_runner" {
     timeout               = optional(number, 45)
     memory_size           = optional(number, 512)
     handler_path          = optional(string, "agent_runner.handler")
-    module_name           = optional(string, null)
+    module_name           = optional(string, "agent-runner")
     package_path          = optional(string, null)
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])

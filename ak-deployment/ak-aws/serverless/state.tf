@@ -31,12 +31,12 @@ locals {
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
   
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
-  agent_runner_artifact_module_name     = coalesce(try(var.agent_runner.module_name, null), "${var.module_name}-agent-runner")
+  agent_runner_artifact_module_name     = var.agent_runner.module_name
   agent_runner_logs_retention_in_days   = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
 
   response_handler_package_path         = try(var.response_handler.package_path, null)
   response_handler_package_type         = try(var.response_handler.package_type, null)
-  response_handler_artifact_module_name = coalesce(try(var.response_handler.module_name, null), "${var.module_name}-response-handler")
+  response_handler_artifact_module_name = var.response_handler.module_name
   response_handler_logs_retention_in_days = try(var.response_handler.cloudwatch_logs_retention_in_days, null)
 
   create_authorizer                     = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
