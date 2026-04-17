@@ -64,7 +64,7 @@ variable "response_handler" {
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
     module_name           = optional(string, "response-handler")
-    package_path          = string
+    package_path          = optional(string, null)
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
