@@ -5,12 +5,12 @@ description = "Multimodal Agent Kernel example with Redis attachment storage on 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,redis,aws,multimodal]>=0.3.2"
+    "agentkernel[openai,redis,aws,multimodal]>=0.3.3"
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.3.2",
+    "agentkernel[test]>=0.3.3",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
