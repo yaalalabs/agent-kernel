@@ -20,34 +20,29 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         return cls._chat_service
 
     @classmethod
-    def _get_output_queue_url(cls) -> str:
-        return AKConfig.get().execution.queues.output.url
-
-    @classmethod
-    def _construct_queue_input_message(cls, raw_queue_message: dict, queue_input_message_body: dict) -> dict:
+    def _get_record_attributes(cls, raw_queue_message: dict) -> dict:
         """
-        Construct the SQS message payload for the response queue.
+        Extract attributes from the raw SQS message record.
         :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function.
-        :param queue_input_message_body: JSON-serializable body (``dict``) to be sent to the response queue.
-        :return: Dictionary (``dict``) of parameters for ``boto3`` ``send_message`` (excluding ``QueueUrl``).
+        :return: Dictionary (``dict``) containing extracted attributes.
         """
         attributes = SQSHandler.get_message_system_attributes(raw_queue_message)
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
+
         if not request_id:
             raise ValueError("request_id is required")
-        message_attributes = [SQSHandler.CustomAttribute(name="request_id", value=request_id, datatype=SQSHandler.AttributeDataType.STRING)]
-        if user_id is not None:
-            message_attributes.append(SQSHandler.CustomAttribute(name="user_id", value=user_id, datatype=SQSHandler.AttributeDataType.STRING))
-        queue_input_message = SQSHandler.build_send_message_kwargs(
-            message_body=queue_input_message_body,
-            message_group_id=attributes["MessageGroupId"],
-            message_deduplication_id=attributes.get("MessageDeduplicationId"),
-            message_attributes=message_attributes,
-        )
-        cls._log.info(f"Constructed queue input message: {queue_input_message}")
-        return queue_input_message
+
+        record_attributes = {
+            "message_group_id": attributes["MessageGroupId"],
+            "message_deduplication_id": attributes.get("MessageDeduplicationId"),
+            "request_id": request_id,
+            "user_id": user_id,
+        }
+
+        cls._log.info(f"Extracted record attributes: {record_attributes}")
+        return record_attributes
 
     @classmethod
     def _construct_error_message_body(cls, error_msg: str) -> dict:
@@ -59,13 +54,20 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         return {"error": error_msg}
 
     @classmethod
-    def _send_to_output_queue(cls, queue_input_message: dict) -> None:
+    def _send_to_output_queue(cls, message_body: dict, record_attributes: dict) -> None:
         """
-        Send a prepared message to the configured response SQS queue.
-        :param queue_input_message: Message payload (``dict``) as constructed by
+        Send a prepared message to the configured response SQS queue using send_message_to_output_queue.
+        :param message_body: Message body (``dict``) to be sent to the response queue.
+        :param record_attributes: Extracted attributes (``dict``) from the record.
         :return: None.
         """
-        SQSHandler.send_prepared_message(queue_url=cls._get_output_queue_url(), message_kwargs=queue_input_message)
+        SQSHandler.send_message_to_output_queue(
+            message_group_id=record_attributes["message_group_id"],
+            message_deduplication_id=record_attributes["message_deduplication_id"],
+            message_body=message_body,
+            request_id=record_attributes["request_id"],
+            user_id=record_attributes["user_id"],
+        )
 
     @classmethod
     def _parse_body(cls, record: dict) -> dict:
@@ -90,15 +92,15 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         if session_id != message_group_id:
             cls._log.info(f"Session ID mismatch: message body session_id {session_id} does not match MessageGroupId {message_group_id}")
             error_message_body = cls._construct_error_message_body(error_msg="Session ID mismatch")
-            queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body)
-            cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{cls._get_output_queue_url()}'")
+            record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
+            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
             return
         _, agent_response = cls._get_chat_service().process_chat_request(body=body)
         cls._log.info(f"Chat service response: '{agent_response}'")
-        queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=agent_response)
-        cls._send_to_output_queue(queue_input_message=queue_input_message)
-        cls._log.info(f"Sent Response message to Output Queue: '{cls._get_output_queue_url()}'")
+        record_attributes = cls._get_record_attributes(raw_queue_message=record)
+        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes)
+        cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
@@ -110,10 +112,10 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         cls._log.info(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times. Sending error message to Output Queue`")
         try:
             error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
-            queue_input_message = cls._construct_queue_input_message(raw_queue_message=record, queue_input_message_body=error_message_body)
-            cls._send_to_output_queue(queue_input_message=queue_input_message)
-            cls._log.info(f"Sent Permanent Failure message to Output Queue: '{cls._get_output_queue_url()}'")
+            record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
+            cls._log.info(f"Sent Permanent Failure message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries
             # Catching the error here so that this message will not be returned as batchItemFailures for another retry.
-            cls._log.info(f"Failed sending permanent failure message to Output Queue '{cls._get_output_queue_url()}' due to error: '{str(e)}'")
+            cls._log.info(f"Failed sending permanent failure message to Output Queue '{SQSHandler.get_output_queue_url()}' due to error: '{str(e)}'")
