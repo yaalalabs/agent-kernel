@@ -87,15 +87,6 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
-        session_id = body.get("session_id")
-        message_group_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
-        if session_id != message_group_id:
-            cls._log.info(f"Session ID mismatch: message body session_id {session_id} does not match MessageGroupId {message_group_id}")
-            error_message_body = cls._construct_error_message_body(error_msg="Session ID mismatch")
-            record_attributes = cls._get_record_attributes(raw_queue_message=record)
-            cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
-            cls._log.info(f"Sent Session ID Mismatch message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
-            return
         _, agent_response = cls._get_chat_service().process_chat_request(body=body)
         cls._log.info(f"Chat service response: '{agent_response}'")
         record_attributes = cls._get_record_attributes(raw_queue_message=record)
