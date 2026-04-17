@@ -1,6 +1,6 @@
 module "containerd_agent" {
   source              = "yaalalabs/ak-containerized/azurerm"
-  version             = "0.3.1"
+  version             = "0.3.2"
   product_alias       = var.product_alias
   env_alias           = var.env_alias
   module_name         = var.module_name
@@ -13,7 +13,7 @@ module "containerd_agent" {
   container_port              = 8000
   container_health_check_path = "/health"
 
-  api_version             = "0.3.1"
+  api_version             = "0.3.2"
   is_production           = false
   create_redis_cluster    = true
   create_cosmosdb_cluster = false
