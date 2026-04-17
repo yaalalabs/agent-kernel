@@ -73,8 +73,8 @@ module "response_handler" {
 | `timeout` | Response handler Lambda timeout in seconds | `number` | `30` | no |
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
-| `module_name` | Response-handler artifact module name | `string` | n/a | yes |
-| `package_path` | Response handler deployment package path | `string` | `null` | no |
+| `module_name` | Response-handler artifact module name | `string` | `"response-handler"` | no |
+| `package_path` | Response handler deployment package path | `string` | n/a | yes |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |

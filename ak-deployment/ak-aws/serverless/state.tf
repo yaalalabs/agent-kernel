@@ -244,7 +244,7 @@ module "agent_runner_docker_image" {
 module "response_handler_source_storage" {
   count                = var.queue_mode && local.response_handler_package_type == "S3Zip" ? 1 : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
-  version              = "0.3.1"
+  version              = "0.3.3"
   region               = var.region
   env_alias            = var.env_alias
   is_production        = var.is_production
@@ -256,7 +256,7 @@ module "response_handler_source_storage" {
 module "response_handler_source_package" {
   count            = var.queue_mode && local.response_handler_package_type == "S3Zip" ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.3.1"
+  version          = "0.3.3"
   env_alias        = var.env_alias
   region           = var.region
   module_name      = local.response_handler_artifact_module_name
@@ -269,7 +269,7 @@ module "response_handler_source_package" {
 module "response_handler_docker_image" {
   count         = var.queue_mode && local.response_handler_package_type == "Image" ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.3.1"
+  version       = "0.3.3"
   env_alias     = var.env_alias
   module_name   = local.response_handler_artifact_module_name
   product_alias = var.product_alias

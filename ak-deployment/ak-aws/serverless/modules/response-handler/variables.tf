@@ -63,8 +63,8 @@ variable "response_handler" {
     timeout               = optional(number, 30)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
-    module_name           = optional(string, null)
-    package_path          = optional(string, null)
+    module_name           = optional(string, "response-handler")
+    package_path          = string
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
