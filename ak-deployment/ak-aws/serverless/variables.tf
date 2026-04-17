@@ -30,7 +30,7 @@ variable "module_name" {
   description = "Module name"
   default     = ""
   validation {
-    condition     = !var.enable_api_gateway || coalesce(var.module_name, "") != ""
+    condition     = !var.enable_api_gateway || var.module_name != ""
     error_message = "module_name must be set to a non-empty value when enable_api_gateway is true."
   }
 }
@@ -109,7 +109,7 @@ variable "function_name" {
   type        = string
   default     = ""
   validation {
-    condition     = !var.enable_api_gateway || coalesce(var.function_name, "") != ""
+    condition     = !var.enable_api_gateway || var.function_name != ""
     error_message = "function_name must be set to a non-empty value when enable_api_gateway is true."
   }
 }
@@ -119,7 +119,7 @@ variable "function_description" {
   type        = string
   default     = ""
   validation {
-    condition     = !var.enable_api_gateway || coalesce(var.function_description, "") != ""
+    condition     = !var.enable_api_gateway || var.function_description != ""
     error_message = "function_description must be set to a non-empty value when enable_api_gateway is true."
   }
 }
@@ -129,7 +129,7 @@ variable "handler_path" {
   type        = string
   default     = ""
   validation {
-    condition     = !var.enable_api_gateway || coalesce(var.handler_path, "") != ""
+    condition     = !var.enable_api_gateway || var.handler_path != ""
     error_message = "handler_path must be set to a non-empty value when enable_api_gateway is true."
   }
 }
@@ -139,7 +139,7 @@ variable "package_path" {
   description = "Zip package path or Docker image source path"
   default     = ""
   validation {
-    condition     = !var.enable_api_gateway || coalesce(var.package_path, "") != ""
+    condition     = !var.enable_api_gateway || var.package_path != ""
     error_message = "package_path must be set to a non-empty value when enable_api_gateway is true."
   }
 }
