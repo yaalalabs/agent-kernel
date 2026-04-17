@@ -15,7 +15,7 @@ output "response_handler_lambda_function_invoke_arn" {
 
 output "response_handler_lambda_role_arn" {
   description = "ARN of the response handler Lambda execution role"
-  value       = module.response_handler_lambda.lambda_role_arn
+  value       = aws_iam_role.response_handler_lambda_role.arn
 }
 
 output "response_handler_lambda_role_name" {
