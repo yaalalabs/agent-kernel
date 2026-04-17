@@ -301,9 +301,10 @@ module "serverless_api_auth" {
 | `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
+| `module_name` | Module name for resource identification (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
-| `package_path` | Path to Lambda deployment package or S3 URI | `string` | n/a | yes |
+| `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
+| `package_path` | Path to Lambda deployment package or S3 URI (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
 | `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async` | `string` | `null` | no |
@@ -311,10 +312,9 @@ module "serverless_api_auth" {
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
 | `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
 | `memory_size` | Lambda function memory size in MB (128-10240) | `number` | `128` | no |
-| `function_name` | Lambda function name suffix | `string` | n/a | yes |
-| `function_description` | Lambda function description | `string` | n/a | yes |
-| `handler_path` | Handler path (e.g., `index.handler` or `app.main`) | `string` | n/a | yes |
-| `image_uri` | Container image URI (required for Image package type) | `string` | `null` | no |
+| `function_name` | Lambda function name suffix (required when enable_api_gateway is true) | `string` | `""` | conditional |
+| `function_description` | Lambda function description (required when enable_api_gateway is true) | `string` | `""` | conditional |
+| `handler_path` | Handler path (e.g., `index.handler` or `app.main`) (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `package_type` | Deployment type: `LocalZip`, `S3Zip`, or `Image` | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
@@ -328,6 +328,11 @@ module "serverless_api_auth" {
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+| `vpc_cidr` | CIDR block for the VPC | `string` | `"10.0.0.0/16"` | no |
+| `public_subnet_cidrs` | CIDR blocks for the public subnets | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |
+| `vpc_id` | VPC ID. If not provided, a new one will be created | `string` | `null` | no |
+| `private_subnet_ids` | When using an existing VPC to deploy, private subnet IDs need to be provided | `list(string)` | `null` | no |
+| `private_subnet_cidrs` | CIDR blocks for the private subnets | `list(string)` | `["10.0.3.0/24", "10.0.4.0/24"]` | no |
 
 ### Authorizer Object Structure
 
@@ -351,6 +356,7 @@ module "serverless_api_auth" {
 | `timeout` | Response handler Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
+| `module_name` | Response handler module name | `string` | `"response-handler"` | no |
 | `package_path` | Response handler deployment package path | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
