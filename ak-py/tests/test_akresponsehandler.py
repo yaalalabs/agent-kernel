@@ -7,8 +7,7 @@ from agentkernel.deployment.aws.serverless.akresponsehandler import ResponseHand
 
 def test_construct_message_for_store_uses_request_id_from_message_attributes():
     record = {
-        "body": json.dumps({"request_id": "body-request", "result": "ok"}),
-        "attributes": {"MessageGroupId": "session-1"},
+        "body": json.dumps({"session_id": "session-1", "request_id": "body-request", "result": "ok"}),
         "messageAttributes": {
             "request_id": {"StringValue": "attr-request", "DataType": "String"},
         },
@@ -18,13 +17,12 @@ def test_construct_message_for_store_uses_request_id_from_message_attributes():
 
     assert message["session_id"] == "session-1"
     assert message["request_id"] == "attr-request"
-    assert message["body"] == {"request_id": "body-request", "result": "ok"}
+    assert message["body"] == {"session_id": "session-1", "request_id": "body-request", "result": "ok"}
 
 
 def test_construct_message_for_store_rejects_request_id_in_body_only():
     record = {
-        "body": json.dumps({"request_id": "body-request", "result": "ok"}),
-        "attributes": {"MessageGroupId": "session-1"},
+        "body": json.dumps({"session_id": "session-1", "request_id": "body-request", "result": "ok"}),
         "messageAttributes": {},
     }
 
