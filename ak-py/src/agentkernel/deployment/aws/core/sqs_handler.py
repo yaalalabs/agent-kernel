@@ -7,9 +7,22 @@ from typing import Any, Dict, Mapping, Optional
 import boto3
 from pydantic import BaseModel, ConfigDict
 
+from ....core.config import AKConfig
+
 
 class SQSHandler:
-    """Shared helper for building and sending SQS messages."""
+    """Shared helper for building and sending SQS messages.
+
+    When used in a Non-Agent Kernel lambda/environment, the following environment variables
+    must be exported:
+    - AK_EXECUTION__QUEUES__INPUT__URL
+    - AK_EXECUTION__QUEUES__OUTPUT__URL
+    """
+
+    _sqs_client = None
+    _config = None
+    _input_queue_url = None
+    _output_queue_url = None
 
     class AttributeDataType(str, Enum):
         STRING = "String"
@@ -33,10 +46,38 @@ class SQSHandler:
         value: Any
         datatype: "SQSHandler.AttributeDataType"
 
-    _sqs_client = None
+    @classmethod
+    def _get_config(cls):
+        """Return a cached AKConfig instance.
+
+        :return: A lazily created AKConfig instance.
+        """
+        if cls._config is None:
+            cls._config = AKConfig.get()
+        return cls._config
 
     @classmethod
-    def _get_sqs_client(cls):
+    def get_input_queue_url(cls):
+        """Return the cached input queue URL from config.
+
+        :return: The input queue URL string.
+        """
+        if cls._input_queue_url is None:
+            cls._input_queue_url = cls._get_config().execution.queues.input.url
+        return cls._input_queue_url
+
+    @classmethod
+    def get_output_queue_url(cls):
+        """Return the cached output queue URL from config.
+
+        :return: The output queue URL string.
+        """
+        if cls._output_queue_url is None:
+            cls._output_queue_url = cls._get_config().execution.queues.output.url
+        return cls._output_queue_url
+
+    @classmethod
+    def get_sqs_client(cls):
         """Return a cached boto3 SQS client.
 
         :return: A lazily created boto3 SQS client instance.
@@ -196,7 +237,7 @@ class SQSHandler:
             message_attributes=message_attributes,
             **extra_kwargs,
         )
-        return cls._get_sqs_client().send_message(QueueUrl=queue_url, **message_kwargs)
+        return cls.get_sqs_client().send_message(QueueUrl=queue_url, **message_kwargs)
 
     @classmethod
     def send_prepared_message(cls, queue_url: str, message_kwargs: Mapping[str, Any]):
@@ -209,7 +250,93 @@ class SQSHandler:
         :param message_kwargs: A mapping of boto3 send_message keyword arguments.
         :return: The boto3 send_message response.
         """
-        return cls._get_sqs_client().send_message(QueueUrl=queue_url, **dict(message_kwargs))
+        return cls.get_sqs_client().send_message(QueueUrl=queue_url, **dict(message_kwargs))
+
+    @classmethod
+    def send_message_to_input_queue(
+        cls,
+        message_group_id: Optional[str] = None,
+        message_deduplication_id: Optional[str] = None,
+        message_body: Optional[Any] = None,
+        request_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        **extra_kwargs: Any,
+    ):
+        """Send a message to the input queue with standard custom attributes.
+
+        This method handles the common pattern of sending messages to the input queue
+        with request_id and user_id as custom message attributes.
+
+        :param message_group_id: The FIFO message group id, if required.
+        :param message_deduplication_id: The FIFO deduplication id, if required.
+        :param message_body: The payload to send.
+        :param request_id: Optional request ID custom attribute.
+        :param user_id: Optional user ID custom attribute.
+        :param extra_kwargs: Additional send_message keyword arguments to include.
+        :return: The boto3 send_message response.
+        """
+        queue_url = cls.get_input_queue_url()
+        if not queue_url:
+            raise ValueError("Input queue URL is not configured in AKConfig")
+
+        # Build custom message attributes
+        message_attributes = []
+        if request_id is not None:
+            message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
+        if user_id is not None:
+            message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
+
+        return cls.send_message(
+            queue_url=queue_url,
+            message_body=message_body,
+            message_group_id=message_group_id,
+            message_deduplication_id=message_deduplication_id,
+            message_attributes=message_attributes if message_attributes else None,
+            **extra_kwargs,
+        )
+
+    @classmethod
+    def send_message_to_output_queue(
+        cls,
+        message_group_id: Optional[str] = None,
+        message_deduplication_id: Optional[str] = None,
+        message_body: Optional[Any] = None,
+        request_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        **extra_kwargs: Any,
+    ):
+        """Send a message to the output queue with standard custom attributes.
+
+        This method handles the common pattern of sending messages to the output queue
+        with request_id and user_id as custom message attributes.
+
+        :param message_group_id: The FIFO message group id, if required.
+        :param message_deduplication_id: The FIFO deduplication id, if required.
+        :param message_body: The payload to send.
+        :param request_id: Optional request ID custom attribute.
+        :param user_id: Optional user ID custom attribute.
+        :param extra_kwargs: Additional send_message keyword arguments to include.
+        :return: The boto3 send_message response.
+        """
+        queue_url = cls.get_output_queue_url()
+        if not queue_url:
+            raise ValueError("Output queue URL is not configured in AKConfig")
+
+        # Build custom message attributes
+        message_attributes = []
+        if request_id is not None:
+            message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
+        if user_id is not None:
+            message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
+
+        return cls.send_message(
+            queue_url=queue_url,
+            message_body=message_body,
+            message_group_id=message_group_id,
+            message_deduplication_id=message_deduplication_id,
+            message_attributes=message_attributes if message_attributes else None,
+            **extra_kwargs,
+        )
 
 
 # Tell Pydantic to resolve the string annotation for CustomAttribute.datatype after the class is fully defined, which allows us to reference AttributeDataType before it's defined in the class body.
