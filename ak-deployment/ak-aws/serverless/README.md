@@ -361,6 +361,7 @@ module "serverless_api_auth" {
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
 | `module_name` | Response handler module name | `string` | `"response-handler"` | no |
 | `package_path` | Response handler deployment package path | `string` | `null` | no |
+| `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |

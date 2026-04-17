@@ -74,6 +74,7 @@ module "serverless_agents" {
     timeout               = 45
     memory_size           = 256
     handler_path          = "lambda_response_handler.handler"
+    package_type          = "LocalZip"
     package_path          = "../dist_response_handler.zip"
   }
 

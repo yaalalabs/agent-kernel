@@ -295,6 +295,7 @@ variable "response_handler" {
     handler_path          = optional(string, "response_handler.handler")
     module_name           = optional(string, "response-handler")
     package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables = optional(map(string), {})
