@@ -327,8 +327,8 @@ Sessions and caches help with short- to medium-term conversational context, but 
 Agent Kernel’s **Knowledge Base** support provides a unified way to connect multiple storage backends (vector stores and graph databases) and expose them to agents as tools.
 
 Key pieces:
-- `KnowledgeBase`: backend-agnostic interface implemented by concrete backends (ChromaDB, Neo4j).
-- `KnowledgeBuilder`: composes backends and generates tool callables such as `get_schemas`, `read_kb`, `write_kb`, and `get_all_kb_descriptions`.
+- `KnowledgeBase`: backend-agnostic interface implemented by concrete backends (ChromaDB, Neo4j, Starburst/Trino).
+- `KnowledgeBuilder`: composes backends, generates tool callables such as `get_schemas`, `read_kb`, `write_kb`, and `get_all_kb_descriptions`, and can resolve semantic placeholders using `semantic_map`.
 - **KB Router** pattern: a “router agent” inspects backend schemas/descriptions, then decides which backend to query for each read/write.
 
 For a concrete end-to-end example, see `examples/cli/knowledgebase/openai`.

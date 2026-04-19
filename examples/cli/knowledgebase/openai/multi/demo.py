@@ -1,8 +1,8 @@
 from agentkernel.cli import CLI
-from agentkernel.knowledgebase.chroma_kb import ChromaManager
+from agentkernel.knowledgebase.chroma import ChromaManager
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
-from agentkernel.knowledgebase.neo4j_kb import Neo4jManager
-from agentkernel.knowledgebase.starburst_kb import StarburstManager
+from agentkernel.knowledgebase.neo4j import Neo4jManager
+from agentkernel.knowledgebase.starburst import StarburstManager
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agents import Agent
 
@@ -20,12 +20,12 @@ v_db = ChromaManager(
             "and any data best retrieved by meaning rather than exact structure."
         ),
         "store_payload": {
-            "text": "string — the content to store",
-            "source": "string — origin label (default: 'agent')",
+            "text": "string - the content to store",
+            "source": "string - origin label (default: 'agent')",
         },
         "read_payload": {
-            "query": "string — natural language search query",
-            "limit": "int — max results to return",
+            "query": "string - natural language search query",
+            "limit": "int - max results to return",
         },
     }
 )
@@ -43,14 +43,14 @@ g_db = Neo4jManager(
             "Supports raw Cypher queries for precise lookups."
         ),
         "store_payload": {
-            "text": "string — human-readable description of the fact",
-            "source": "string — origin label (default: 'agent')",
+            "text": "string - human-readable description of the fact",
+            "source": "string - origin label (default: 'agent')",
             "cypher_query": "(optional) Cypher string to execute for creating nodes/relationships",
             "cypher_params_json": "(optional) JSON-stringified params for the Cypher query",
         },
         "read_payload": {
-            "query": "string — a valid Cypher query only",
-            "limit": "int — max results",
+            "query": "string - a valid Cypher query only",
+            "limit": "int - max results",
         },
         "query_generation_guide": {
             "rules": [
@@ -79,20 +79,20 @@ g_db = Neo4jManager(
 
 s_db = StarburstManager(
     name="StarburstDB-mongo",
-    host="johnpraveenyl-mongocluster.trino.galaxy.starburst.io",
-    catalog="kb_mongo",
-    schema="my_company_kb",
+    host="name-mongocluster.trino.galaxy.starburst.io",
+    catalog="catalog name",
+    schema="schema name",
     table_name="clients",
     description=(
-        "Starburst Galaxy read-only backend — MongoDB via Trino. "
+        "Starburst Galaxy read-only backend - MongoDB via Trino. "
         "Contains client records. "
-        "Query syntax is defined strictly in the query_guide — follow it exactly."
+        "Query syntax is defined strictly in the query_guide - follow it exactly."
         "use the place holder <MONGO_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
     ),
 ).add_schema(
     {
         "description": (
-            "Starburst Galaxy read-only SQL backend — MongoDB via Trino. "
+            "Starburst Galaxy read-only SQL backend - MongoDB via Trino. "
             "Use this for any question about clients or people stored in MongoDB."
         ),
         "table": {
@@ -117,18 +117,18 @@ s_db = StarburstManager(
 
 s2_db = StarburstManager(
     name="StarburstDB_Sheets",
-    host="johnpraveenyl-free-cluster.trino.galaxy.starburst.io",
-    catalog="kb_sheets",
+    host="name-free-cluster.trino.galaxy.starburst.io",
+    catalog="catalog name",
     description=(
-        "Starburst Galaxy read-only backend — Google Sheets via Trino. "
+        "Starburst Galaxy read-only backend - Google Sheets via Trino. "
         "Contains company knowledge: topics, policies, tech info, department notes. "
-        "Query syntax is defined strictly in the query_guide — follow it exactly."
+        "Query syntax is defined strictly in the query_guide - follow it exactly."
         "use the place holder <SHEETS_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
     ),
 ).add_schema(
     {
         "description": (
-            "Starburst Galaxy read-only backend — Google Sheets via Trino. "
+            "Starburst Galaxy read-only backend - Google Sheets via Trino. "
             "Use this for general company knowledge, topics, policies, and tech information."
         ),
         "sources": {
@@ -155,8 +155,8 @@ s2_db = StarburstManager(
 knowledgeBuilder = KnowledgeBuilder(
     [v_db, g_db, s_db, s2_db],
     semantic_map={
-        "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => '1ND7S86ni14J-0hVYIrBs3zIUPMkKoT0YGmvyLLHhDDY'))",
-        "<MONGO_SOURCE>": "kb_mongo.my_company_kb.clients",
+        "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'put your sheet id here'))",
+        "<MONGO_SOURCE>": "put your MongoDB source path here (eg: mongodb.default.clients)",
     },
 )
 
@@ -166,9 +166,9 @@ def build_agent(description: str) -> Agent:
 
 EXECUTION PROTOCOL:
 
-1. SCHEMA FIRST — ONCE ONLY:
+1. SCHEMA FIRST - ONCE ONLY:
    Call get_schemas() exactly once at the very start of every session. Never call it again.
-   The schema is your complete source of truth — backends, purposes, query formats, and constraints.
+   The schema is your complete source of truth - backends, purposes, query formats, and constraints.
 
 2. ROUTE:
    Read each backend's description to match the user's intent to the correct backend.
@@ -177,8 +177,8 @@ EXECUTION PROTOCOL:
    Find the query_guide or examples section for your chosen backend in the schema.
    Construct the full executable query string by following those templates exactly.
    Substitute user values into the template where needed.
-   Never pass a key name like 'list_all' — always pass the real constructed query string.
-   CRITICAL: Use ONLY the placeholder tokens, column names, relationship types, and syntax patterns
+   Never pass a key name like 'list_all' - always pass the real constructed query string.
+   Use only the placeholder tokens, column names, relationship types, and syntax patterns
    defined in the schema. Never substitute from general knowledge or common conventions.
 
 4. EXECUTE:
@@ -216,3 +216,5 @@ if __name__ == "__main__":
         CLI.main()
     finally:
         g_db.close()
+        s_db.close()
+        s2_db.close()

@@ -42,7 +42,10 @@ AK's Python libraries provide developers with comprehensive tools to:
    - Cloud-native adapters are available for:
       - DynamoDB (AWS)
       - Cosmos DB (Azure)
-   - Pluggable knowledge base backends (vector stores and graph databases) let agents store and retrieve long-term knowledge via a unified `KnowledgeBase` interface.
+   - Pluggable knowledge base backends let agents store and retrieve long-term knowledge via a unified `KnowledgeBase` interface.
+   - Built-in backends include ChromaDB (semantic/vector), Neo4j (graph), and Starburst Galaxy via Trino (read-only SQL).
+   - Starburst integrations support semantic placeholders (for example `<SHEETS_SOURCE>`) resolved at runtime by `KnowledgeBuilder.semantic_map`.
+   - See the full architecture guide: `docs/docs/architecture/knowledge-bases.md`.
    - Developers can customize memory management based on their preferences.
 
 5. **Traceability and Accountability**

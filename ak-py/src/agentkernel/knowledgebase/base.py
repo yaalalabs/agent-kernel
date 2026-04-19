@@ -11,26 +11,58 @@ class KnowledgeBase(ABC):
 
     To add a new backend, subclass this and implement:
       - connect()
-      - add_records()
-      - search_records()
-      - schema()  ← classmethod, tells the agent what this backend stores and how
+      - write()
+      - read()
+      - backend_name
+      - get_description()
 
+    Backends can also receive runtime schema configuration via add_schema().
+    The schema() method is an instance method that returns the configured
+    schema describing what this backend stores and how.
+
+    Backends can also receive runtime schema configuration via add_schema().
+    The schema() method is an instance method that returns the configured
+    schema describing what this backend stores and how.
+
+    Backends can also receive runtime schema configuration via add_schema().
+    The schema() method is an instance method that returns the configured
+    schema describing what this backend stores and how.
     """
 
     def __init__(self):
+        """
+        Initialize base knowledge backend state.
+
+        :return: None.
+        """
         self._dynamic_schema = {}
 
     @property
     @abstractmethod
     def backend_name(self) -> str:
-        """Unique name for this backend, used in tool calls and schemas."""
+        """
+        Return a unique backend name used by tools and schema metadata.
+
+        :return: Backend name.
+        """
 
     def add_schema(self, schema_config: dict) -> "KnowledgeBase":
+        """
+        Merge schema configuration into the dynamic backend schema.
+
+        :param schema_config: Schema configuration dictionary to merge.
+        :return: Current backend instance.
+        """
         self._dynamic_schema.update(schema_config)
         return self
 
     def schema(self) -> Mapping[str, Any]:
-        """Returns the schema to the Agent."""
+        """
+        Return the backend schema exposed to the agent.
+
+        :return: Final schema mapping including backend identity.
+        :raises ValueError: If no schema has been configured.
+        """
         if not self._dynamic_schema:
             raise ValueError(f"Schema for '{self.backend_name}' has not been set! " "Call .add_schema() before passing to the Agent.")
 
@@ -40,27 +72,58 @@ class KnowledgeBase(ABC):
 
     @abstractmethod
     def connect(self, **kwargs) -> None:
-        """Establish the backend connection."""
+        """
+        Establish the backend connection.
+
+        :param kwargs: Backend-specific connection options.
+        :return: None.
+        """
 
     @abstractmethod
     def write(self, records: Iterable[Record], **kwargs) -> None:
-        """Persist one or more records into the backend."""
+        """
+        Persist one or more records into the backend.
+
+        :param records: Records to persist.
+        :param kwargs: Backend-specific write options.
+        :return: None.
+        """
 
     @abstractmethod
     def read(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
-        """Return the most relevant records for a query."""
+        """
+        Return the most relevant records for a query.
+
+        :param query: Backend-specific query string.
+        :param limit: Maximum number of records to return.
+        :param kwargs: Backend-specific read options.
+        :return: List of matched records.
+        """
 
     def format_results(self, rows: List[Record]) -> str:
-        """Format search results into a readable string for the agent."""
+        """
+        Format backend records into a readable string for the agent.
+
+        :param rows: Records returned by a backend read.
+        :return: Human-readable formatted output.
+        """
         if not rows:
             return "No relevant knowledge found."
         return "\n".join(f"- {r.get('text', '')} (source: {r.get('metadata', {}).get('source', 'N/A')})" for r in rows)
 
     def close(self) -> None:
-        """Optional cleanup hook for backends that hold external resources."""
-        print(f"[KB][{self.backend_name}] close() default no-op", flush=True)
+        """
+        Close backend resources if needed.
+
+        :return: None.
+        """
+        pass
 
     @abstractmethod
     def get_description(self) -> str:
-        """Return a human-readable description of this backend's purpose and capabilities."""
+        """
+        Return a human-readable description of backend purpose and capabilities.
+
+        :return: Backend description string.
+        """
         pass

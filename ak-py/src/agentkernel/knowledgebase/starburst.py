@@ -44,16 +44,18 @@ class StarburstManager(KnowledgeBase):
         description: str | None = None,
     ) -> None:
         """
-        Args:
-            host:        Starburst Galaxy cluster hostname (no https://).
-            port:        HTTPS port, almost always 443.
-            user:        Galaxy login email / username.
-            password:    Galaxy password or personal access token.
-            catalog:     Trino catalog name, e.g. "kb_mongo".
-            schema:      Schema inside the catalog, e.g. "my_company_kb".
-            table_name:  Table name, e.g. "clients".
-            name:        Backend identifier used in the agent tool list.
-            description: Human-readable description of this backend.
+        Initialize a read-only Starburst Galaxy backend manager.
+
+        :param host: Starburst Galaxy cluster hostname (without scheme).
+        :param port: HTTPS port used by the cluster, typically ``443``.
+        :param user: Starburst username or login email.
+        :param password: Starburst password or personal access token.
+        :param catalog: Trino catalog name for the target data source.
+        :param schema: Schema name inside the selected catalog.
+        :param table_name: Primary table name exposed in backend metadata.
+        :param name: Backend identifier used by the knowledge router.
+        :param description: Optional human-readable backend description.
+        :return: None.
         """
         super().__init__()
 
@@ -72,10 +74,21 @@ class StarburstManager(KnowledgeBase):
 
     @property
     def backend_name(self) -> str:
-        return self.name
+        """
+        Return the backend identifier used by the tool routing layer.
+
+        :return: Backend name configured during initialization.
+        """
+        return self.name if self.name else "starburst"
 
     def connect(self, **kwargs) -> None:
-        """Open a connection to Starburst Galaxy."""
+        """
+        Open or refresh the authenticated connection to Starburst Galaxy.
+
+        :param kwargs: Reserved for interface compatibility.
+        :return: None.
+        :raises ValueError: If required connection settings are missing.
+        """
         missing = [
             k
             for k, v in {
@@ -108,7 +121,11 @@ class StarburstManager(KnowledgeBase):
         logger.info(f"[KB][{self.name}] Connected → {self.host} " f"| {self.catalog}.{self.schema}.{self.table_name}")
 
     def close(self) -> None:
-        """Release the Starburst connection."""
+        """
+        Close the active Starburst connection.
+
+        :return: None.
+        """
         if self.connection is not None:
             try:
                 self.connection.close()
@@ -118,48 +135,66 @@ class StarburstManager(KnowledgeBase):
                 self.connection = None
 
     def write(self, records: Iterable[Mapping[str, Any]] = None, **kwargs) -> None:
-        """Starburst backend is strictly read-only."""
+        """
+        Reject write attempts because this backend is read-only.
+
+        :param records: Unused write payload.
+        :param kwargs: Reserved for interface compatibility.
+        :return: None.
+        :raises NotImplementedError: Always raised for this backend.
+        """
         raise NotImplementedError(f"[KB][{self.name}] StarburstManager is read-only.")
 
     def get_description(self) -> str:
+        """
+        Return a human-readable backend summary.
+
+        :return: Description string in ``<backend_name>: <description>`` format.
+        """
         return f"{self.backend_name}: {self.description}"
 
     def read(self, query: str = "", limit: int = 5, **kwargs) -> List[Mapping[str, Any]]:
         """
-        Execute an agent-generated SQL query against Starburst Galaxy.
+        Execute a validated read-only SQL query against Starburst Galaxy.
 
-        The agent receives the fully-qualified table path (catalog.schema.table)
-        from the schema and uses it to construct correct SQL. This method simply
-        validates, executes, and normalises the results.
+        Allowed statements are restricted to ``SELECT``, ``SHOW``, and
+        ``DESCRIBE``. If no ``LIMIT`` clause is present, a safe fallback limit is
+        appended before execution.
 
-        Args:
-            query: SQL statement from the agent (SELECT / SHOW / DESCRIBE only).
-            limit: Fallback row cap appended if the agent omits LIMIT.
-
-        Returns:
-            List of {"text": ..., "metadata": {"source": ...}} dicts.
+        :param query: Agent-generated SQL statement.
+        :param limit: Fallback row limit applied when SQL has no LIMIT clause.
+        :param kwargs: Reserved for interface compatibility.
+        :return: Normalized list of records with ``text`` and ``metadata`` keys.
         """
         if not query or not query.strip():
             logger.warning(f"[KB][{self.name}] Empty query received.")
             return []
 
         sql = query.strip().rstrip(";")
+        if not sql:
+            logger.warning(f"[KB][{self.name}] Empty query after normalization.")
+            return []
+
+        statement = sql.upper().split()[0]
 
         # Only allow read-safe statements
-        if not sql.upper().split()[0] in ("SELECT", "SHOW", "DESCRIBE"):
+        if statement not in ("SELECT", "SHOW", "DESCRIBE"):
             logger.error(f"[KB][{self.name}] Rejected non-read SQL: {sql[:80]}")
             return []
 
-        # Append a safe LIMIT if the agent omitted one
-        if "LIMIT" not in sql.upper():
+        # Append a safe LIMIT if the agent omitted one for SELECT statements.
+        if statement == "SELECT" and "LIMIT" not in sql.upper():
             sql = f"{sql} LIMIT {limit}"
 
         return self._execute(sql, retried=False)
 
     def _execute(self, sql: str, retried: bool) -> List[Mapping[str, Any]]:
         """
-        Run the SQL against Starburst Galaxy.
-        Reconnects once automatically on a stale/dropped connection.
+        Execute SQL against Starburst with single-retry reconnect behavior.
+
+        :param sql: SQL statement to execute.
+        :param retried: ``True`` when this invocation is already a retry attempt.
+        :return: Normalized query result rows. Returns an empty list on failure.
         """
         if self.connection is None:
             self.connect()

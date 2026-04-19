@@ -18,6 +18,10 @@ This builds on top of core session and memory concepts:
 
 - `ChromaManager` – ChromaDB vector store for semantic text recall.
 - `Neo4jManager` – Neo4j graph database for entities and relationships.
+- `StarburstManager` – Starburst Galaxy (read-only SQL via Trino) for querying structured data in MongoDB, Google Sheets, PostgreSQL, and other Trino-connected sources.
+
+For Starburst operational details, see Starburst Galaxy documentation:
+- https://docs.starburst.io/starburst-galaxy/
 
 Each backend implements:
 
@@ -33,12 +37,11 @@ Each backend implements:
 All backends live under `agentkernel.knowledgebase`:
 
 ```python
-from agentkernel.knowledgebase import (
-    KnowledgeBase,
-    KnowledgeBuilder,
-    ChromaManager,
-    Neo4jManager,
-)
+from agentkernel.knowledgebase.base import KnowledgeBase
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+from agentkernel.knowledgebase.chroma import ChromaManager
+from agentkernel.knowledgebase.neo4j import Neo4jManager
+from agentkernel.knowledgebase.starburst import StarburstManager
 ```
 
 ## KnowledgeBuilder and Tools
@@ -50,10 +53,14 @@ from agentkernel.knowledgebase import (
 - `write_kb(backend: str, text: str, ..., query: str, params_json: str, ...)` – write to a backend (supports both simple text facts and backend‑specific queries like Cypher).
 - `get_all_kb_descriptions()` – short descriptions of each registered backend.
 
+`KnowledgeBuilder` also supports a `semantic_map` parameter to resolve logical placeholders in agent queries. This is useful for Starburst-style query templates such as `<SHEETS_SOURCE>` and `<MONGO_SOURCE>`.
+
 Example:
 
 ```python
-from agentkernel.knowledgebase import KnowledgeBuilder, ChromaManager, Neo4jManager
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+from agentkernel.knowledgebase.chroma import ChromaManager
+from agentkernel.knowledgebase.neo4j import Neo4jManager
 
 v_db = ChromaManager(name="ChromaDB").add_schema({...})
 g_db = Neo4jManager(name="Neo4jDB").add_schema({...})
@@ -62,6 +69,18 @@ kb_tools = KnowledgeBuilder([v_db, g_db]).build()
 ```
 
 `kb_tools` is a list of plain Python callables that you bind using the framework‑specific `ToolBuilder` (for example, `OpenAIToolBuilder.bind(kb_tools)`).
+
+Example with semantic placeholders:
+
+```python
+kb_tools = KnowledgeBuilder(
+  [v_db, g_db],
+  semantic_map={
+    "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => '...'))",
+    "<MONGO_SOURCE>": "kb_mongo.my_company_kb.clients",
+  },
+).build()
+```
 
 ## KB Router Pattern
 
@@ -72,6 +91,7 @@ The recommended pattern is to build a **“knowledge base router” agent**:
 3. **Routing instructions**: In the agent’s instructions, require it to:
    - Call `get_schemas()` (and/or `get_all_kb_descriptions()`) at the start.
    - Choose a backend based on the question and backend descriptions.
+  - Follow backend query templates exactly (including placeholder tokens where present).
    - Use `read_kb` for queries and `write_kb` for storing new facts.
    - Fall back to its own model knowledge when no relevant KB data exists.
 
@@ -79,18 +99,21 @@ This pattern works the same across all supported agent frameworks (OpenAI Agents
 
 ## Example: OpenAI KB Router
 
-The repository includes a complete example using OpenAI Agents SDK:
+The repository includes OpenAI Agents SDK examples split by backend type:
 
 - **Location**: `examples/cli/knowledgebase/openai`
-- **Backends**:
-  - `ChromaManager` for semantic text.
-  - `Neo4jManager` for graph facts and Cypher queries.
-- **Agent**: `KB_Router_Agent`, created with:
-  - Clear routing rules.
-  - Bound knowledge base tools from `KnowledgeBuilder`.
-  - Instructions to always inspect schemas before choosing a backend.
+- **Demos**:
+  - `chromadb/` - semantic text only.
+  - `neo4j/` - graph facts and Cypher queries.
+  - `starburst/` - SQL backends via Starburst/Trino.
+  - `multi/` - combined router demo with all backends.
+- **Agent**: `KB_Router_Agent`, created with clear routing rules, bound knowledge base tools from `KnowledgeBuilder`, and instructions to always inspect schemas before choosing a backend.
 
-See the example’s `README.md` for step‑by‑step usage and how the router agent is configured.
+See the per-backend READMEs for step-by-step usage and routing behavior:
+- `examples/cli/knowledgebase/openai/chromadb/README.md`
+- `examples/cli/knowledgebase/openai/neo4j/README.md`
+- `examples/cli/knowledgebase/openai/starburst/README.md`
+- `examples/cli/knowledgebase/openai/multi/README.md`
 
 ## When to Use Knowledge Bases vs. Memory
 

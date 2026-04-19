@@ -58,9 +58,13 @@ redis = [
     "redis>=7.1.0",
 ]
 
-knowledgebase =[
+knowledgebase-neo4j = [
     "neo4j>=5.0.0",
+]
+knowledgebase-chromadb = [
     "chromadb>=0.4.0",
+]
+knowledgebase-trino = [
     "trino>=0.337.0",
 ]
 

@@ -9,6 +9,11 @@ log = logging.getLogger("ak.KnowledgeBuilder")
 
 
 def _resolve_log_level() -> int:
+    """
+    Resolve the logger level from runtime configuration.
+
+    :return: Effective logging level.
+    """
     return logging.DEBUG if AKConfig.get().debug else logging.INFO
 
 
@@ -27,15 +32,50 @@ log.propagate = False
 class KnowledgeBuilder:
     def __init__(self, backends: List[KnowledgeBase], semantic_map: Optional[Dict[str, str]] = None):
         """
-        Args:
-            backends: List of instantiated KnowledgeBase objects.
-            semantic_map: Dictionary mapping logical tags (e.g., '<mongo>') to physical identifiers.
+        Initialize a knowledge builder that routes reads and writes to named backends.
+
+        The builder creates a registry from the provided backend instances using each
+        backend's ``backend_name`` as the lookup key. If a semantic map is provided,
+        placeholder tags in incoming queries (for example, ``<orders_table>``) are
+        translated to physical resource names before a backend call is executed.
+
+        Example:
+            >>> kb = KnowledgeBuilder(
+            ...     backends=[neo4j_backend, trino_backend],
+            ...     semantic_map={"<orders_table>": "analytics.sales.orders"},
+            ... )
+
+        :param backends: Instantiated knowledge backends to register. Each backend
+            must expose a unique ``backend_name`` and implement the ``KnowledgeBase``
+            interface methods used by this builder.
+        :param semantic_map: Optional mapping of logical placeholders to physical
+            identifiers used by backend queries. When omitted, no placeholder
+            translation is applied.
+        :return: None.
         """
-        self.backends: Dict[str, KnowledgeBase] = {b.backend_name: b for b in backends}
+        validated_backends: Dict[str, KnowledgeBase] = {}
+
+        for backend in backends:
+            backend_name = backend.backend_name
+
+            if not backend_name:
+                raise ValueError("Knowledge base backend_name must be non-empty.")
+
+            if backend_name in validated_backends:
+                raise ValueError(f"Duplicate knowledge base backend_name: {backend_name!r}")
+
+            validated_backends[backend_name] = backend
+
+        self.backends = validated_backends
         self.semantic_map = semantic_map or {}
 
     def _resolve_placeholders(self, text: str) -> str:
-        """Internal helper to safely translate abstract table names."""
+        """
+        Translate semantic placeholders to backend-specific identifiers.
+
+        :param text: Input text that may contain logical placeholder tags.
+        :return: Text with placeholders resolved when mappings are available.
+        """
         if not text or not self.semantic_map:
             return text
         resolved_text = text
@@ -45,10 +85,17 @@ class KnowledgeBuilder:
         return resolved_text
 
     def build(self):
+        """
+        Build and return callable tools for schema discovery, reads, and writes.
+
+        :return: List of callable tool functions.
+        """
 
         def get_schemas() -> str:
             """
             Retrieve the schema and metadata for all available knowledge base backends.
+
+            :return: JSON string containing backend schema definitions.
             """
             log.debug(f"[get_schemas] backends={list(self.backends.keys())}")
             return json.dumps({name: backend.schema() for name, backend in self.backends.items()}, indent=2)
@@ -57,10 +104,10 @@ class KnowledgeBuilder:
             """
             Query a knowledge base backend for relevant information.
 
-            Args:
-                backend: The name of the backend to query (from get_schemas()).
-                query: The search query appropriate for the backend.
-                limit: Maximum number of results to return (default: 3).
+            :param backend: Backend name to query, as returned by get_schemas().
+            :param query: Backend-specific query text.
+            :param limit: Maximum number of results to return.
+            :return: Formatted query result string or error message.
             """
             log.debug(f"[read_kb] backend={backend!r} raw_query={query!r}")
             db = self.backends.get(backend)
@@ -83,12 +130,12 @@ class KnowledgeBuilder:
             """
             Persist information into a knowledge base backend.
 
-            Args:
-                backend: The name of the backend to write to (from get_schemas()).
-                text: Human-readable description of the information.
-                source: Origin of the information (default: 'agent').
-                query: Optional backend-specific write query (SQL/Cypher).
-                params_json: JSON string of parameters for the query.
+            :param backend: Backend name to write to, as returned by get_schemas().
+            :param text: Human-readable description of the information.
+            :param source: Origin label for the written record.
+            :param query: Optional backend-specific write query (for example SQL or Cypher).
+            :param params_json: JSON object string of query parameters.
+            :return: Success or failure message.
             """
             log.debug(f"[write_kb] backend={backend!r} has_text={bool(text)} has_query={bool(query)}")
             db = self.backends.get(backend)
@@ -123,6 +170,8 @@ class KnowledgeBuilder:
         def get_all_kb_descriptions() -> str:
             """
             Retrieve a summary of all knowledge base backends and their descriptions.
+
+            :return: Newline-delimited descriptions for each configured backend.
             """
             descriptions = []
             for name, backend in self.backends.items():

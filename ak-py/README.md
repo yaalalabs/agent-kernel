@@ -13,6 +13,7 @@ Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK
 - **Multi-Cloud Deployment**: Deploy to AWS (Lambda, ECS/Fargate) or Azure (Functions, Container Apps) with the same code
 - **Session Management**: Built-in session abstraction with multi-cloud storage (Redis, DynamoDB, Cosmos DB)
+- **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
 - **Flexible Deployment**: Interactive CLI, REST API, serverless (AWS Lambda, Azure Functions), containerized (AWS ECS, Azure Container Apps)
 - **Pluggable Architecture**: Easy to extend with custom framework adapters and cloud providers
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -24,6 +25,14 @@ Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer
 
 ```bash
 pip install agentkernel
+```
+
+Install optional knowledge base extras as needed:
+
+```bash
+pip install "agentkernel[knowledgebase-chromadb]"
+pip install "agentkernel[knowledgebase-neo4j]"
+pip install "agentkernel[knowledgebase-trino]"
 ```
 
 **Requirements:**

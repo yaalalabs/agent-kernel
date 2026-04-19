@@ -26,6 +26,17 @@ class Neo4jManager(KnowledgeBase):
         name: str = "",
         description: str | None = None,
     ):
+        """
+        Initialize the Neo4j backend manager.
+
+        :param uri: Neo4j connection URI.
+        :param user: Neo4j username.
+        :param password: Neo4j password.
+        :param database: Optional Neo4j database name.
+        :param name: Logical backend name used by the knowledge builder.
+        :param description: Human-readable backend description.
+        :return: None.
+        """
 
         super().__init__()
 
@@ -40,9 +51,20 @@ class Neo4jManager(KnowledgeBase):
 
     @property
     def backend_name(self) -> str:
-        return self.name
+        """
+        Return the logical backend name.
+
+        :return: Backend name.
+        """
+        return self.name if self.name else "neo4j"
 
     def connect(self, **kwargs) -> None:
+        """
+        Establish a connection to Neo4j and verify connectivity.
+
+        :param kwargs: Additional keyword arguments reserved for interface compatibility.
+        :return: None.
+        """
         logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
         try:
             self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
@@ -53,11 +75,23 @@ class Neo4jManager(KnowledgeBase):
             raise
 
     def close(self) -> None:
+        """
+        Close the active Neo4j driver if one exists.
+
+        :return: None.
+        """
         if self.driver is not None:
             self.driver.close()
             self.driver = None
 
     def _run(self, query: str, parameters: Mapping[str, Any] | None = None):
+        """
+        Execute a Cypher query with optional parameters.
+
+        :param query: Cypher query to execute.
+        :param parameters: Parameters to bind to the query.
+        :return: Tuple returned by the Neo4j driver execute_query call.
+        """
         params = dict(parameters or {})
         log.debug("[neo4j.run] uri=%r database=%r query=%r params=%r", self.uri, self.database, query, params)
         try:
@@ -75,6 +109,13 @@ class Neo4jManager(KnowledgeBase):
             raise
 
     def write(self, records: Iterable[Mapping[str, Any]], **kwargs) -> None:
+        """
+        Persist records to Neo4j using either raw Cypher metadata or note upserts.
+
+        :param records: Iterable of records with text and metadata fields.
+        :param kwargs: Additional keyword arguments reserved for interface compatibility.
+        :return: None.
+        """
         for record in records:
             text = str(record.get("text", "")).strip()
             meta = dict(record.get("metadata", {}))
@@ -90,6 +131,13 @@ class Neo4jManager(KnowledgeBase):
 
     # for unstructured data without a Cypher query, store as a MemoryNote node.
     def _upsert_memory(self, text: str, source: str) -> None:
+        """
+        Upsert an unstructured memory note node.
+
+        :param text: Memory text to persist.
+        :param source: Source label for the memory.
+        :return: None.
+        """
         self._run(
             "MERGE (m:MemoryNote {text: $text, source: $source}) " "ON CREATE SET m.created_at = datetime() " "SET m.updated_at = datetime()",
             {"text": text, "source": source},
@@ -97,6 +145,15 @@ class Neo4jManager(KnowledgeBase):
 
     # for logging cypher-based so we can look up when the agent stored a fact with a specific query + params.
     def _log_cypher_fact(self, text: str, source: str, cypher_query: str, params: Mapping) -> None:
+        """
+        Log metadata for a Cypher-based fact write using a stable fingerprint.
+
+        :param text: Human-readable fact text.
+        :param source: Source label associated with the fact.
+        :param cypher_query: Cypher query used for the write.
+        :param params: Query parameter mapping.
+        :return: None.
+        """
         raw = f"{text}|{source}|{cypher_query}|{json.dumps(params, sort_keys=True)}"
         self._run(
             "MERGE (f:CypherFact {fingerprint: $fp}) "
@@ -114,7 +171,12 @@ class Neo4jManager(KnowledgeBase):
 
     def read(self, query: str, limit: int = 10, **kwargs) -> List[Mapping[str, Any]]:
         """
-        search for query using cypher text generated
+        Execute a Cypher read query and return normalized records.
+
+        :param query: Cypher query to execute.
+        :param limit: Maximum number of records requested by the caller.
+        :param kwargs: Additional keyword arguments reserved for interface compatibility.
+        :return: List of normalized records for the knowledge interface.
         """
 
         records, _, _ = self._run(query)
@@ -125,5 +187,9 @@ class Neo4jManager(KnowledgeBase):
     def get_description(
         self,
     ) -> str:
-        """Provide a human-readable description of this backend for the agent."""
-        return f"{self.backend_name}: {self.description }"
+        """
+        Provide a human-readable description of this backend for the agent.
+
+        :return: Description string in the format '<backend_name>: <description>'.
+        """
+        return f"{self.backend_name}: {self.description}"

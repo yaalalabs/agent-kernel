@@ -1,11 +1,11 @@
 [project]
-name = "cli-openai"
+name = "cli-openai-knowledgebase-neo4j"
 version = "0.1.0"
-description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel with a CLI"
+description = "OpenAI CLI knowledgebase demo using Neo4j backend"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai,knowledgebase]>=0.3.0",
+    "agentkernel[cli,openai,knowledgebase-neo4j]>=0.3.0",
 ]
 
 [dependency-groups]
