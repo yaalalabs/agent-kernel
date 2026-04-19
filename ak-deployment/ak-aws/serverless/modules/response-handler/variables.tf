@@ -1,10 +1,3 @@
-# Response Handler Module Variables
-
-variable "package_path" {
-  type        = string
-  description = "Path to the response handler Lambda deployment package"
-}
-
 variable "cloudwatch_logs_retention_in_days" {
   type        = number
   description = "CloudWatch log retention period in days"
@@ -17,12 +10,6 @@ variable "module_type" {
   default     = "python"
 }
 
-variable "package_type" {
-  type        = string
-  description = "Lambda deployment package type"
-  default     = "LocalZip"
-}
-
 variable "product_alias" {
   type        = string
   description = "Product alias for resource naming"
@@ -33,9 +20,39 @@ variable "env_alias" {
   description = "Environment alias for resource naming"
 }
 
-variable "module_name" {
+variable "region" {
   type        = string
-  description = "Module name for resource naming"
+  description = "AWS region for S3 path construction"
+}
+
+variable "source_bucket" {
+  type        = string
+  description = "S3 bucket used for S3 ZIP deployment"
+  default     = null
+}
+
+variable "docker_image_uri" {
+  type        = string
+  description = "Docker image URI for Image package type"
+  default     = null
+}
+
+variable "is_production" {
+  description = "Is production"
+  type        = bool
+  default     = false
+}
+
+variable "lambda_signer_profile_name" {
+  type        = string
+  description = "AWS Signer profile name"
+  default     = "sample_profile"
+}
+
+variable "lambda_signing_config_arn" {
+  type        = string
+  description = "ARN of the Lambda code signing configuration"
+  default     = null
 }
 
 variable "response_handler" {
@@ -46,6 +63,9 @@ variable "response_handler" {
     timeout               = optional(number, 30)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "response_handler.handler")
+    module_name           = optional(string, "response-handler")
+    package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
   })
