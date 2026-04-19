@@ -5,12 +5,12 @@ description = "Gmail integration example using Agent Kernel"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,gmail]>=0.3.0",
+    "agentkernel[api,openai,gmail]>=0.3.3",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.3.0",
+    "agentkernel[test]>=0.3.3",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",

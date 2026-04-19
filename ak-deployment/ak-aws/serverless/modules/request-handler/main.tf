@@ -191,23 +191,6 @@ data "aws_s3_object" "signed_component_code" {
   ]
 }
 
-resource "aws_security_group" "lambda" {
-  name        = "${var.product_alias}-${var.env_alias}-lambda-sg"
-  description = "Security group for Lambda functions"
-  vpc_id      = var.vpc_id
-
-  egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.product_alias}-${var.env_alias}-lambda-sg"
-  }
-}
-
 module "lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
@@ -234,7 +217,7 @@ module "lambda_deployment" {
   attach_async_event_policy         = false
 
   vpc_subnet_ids          = var.subnet_ids
-  vpc_security_group_ids = [aws_security_group.lambda.id]
+  vpc_security_group_ids = var.security_group_id != "" ? [var.security_group_id] : []
   code_signing_config_arn = (var.package_type == "S3Zip" && var.is_production == true) ? var.lambda_signing_config_arn : null
 
   s3_existing_package = (var.package_type == "S3Zip") ? {
@@ -264,7 +247,7 @@ module "lambda_deployment" {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_dynamodb.table_name
     } : {},
       var.input_queue_url != null ? {
-      AK_EXECUTION__QUEUES__INPUT_QUEUE_URL = var.input_queue_url
+      AK_EXECUTION__QUEUES__INPUT__URL = var.input_queue_url
     } : {}
   )
   event_source_mapping = var.event_source_mapping

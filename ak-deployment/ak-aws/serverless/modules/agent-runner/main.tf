@@ -23,7 +23,7 @@ locals {
 
 resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
   count = var.create_dynamodb_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-dynamodb"
+  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-dynamodb"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -53,7 +53,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachme
 
 resource "aws_iam_policy" "agent_runner_dynamodb_multimodal_policy" {
   count = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-ddb-mm"
+  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-ddb-mm"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -121,7 +121,7 @@ data "aws_s3_object" "signed_component_code" {
 
 # IAM Role for Agent Runner Lambda
 resource "aws_iam_role" "agent_runner_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-lambda-role"
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -151,7 +151,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_vpc_execution" {
 
 # SQS permissions for agent runner (receive/delete from input queue & send to output queue)
 resource "aws_iam_policy" "agent_runner_sqs_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}-sqs"
+  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-sqs"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -188,7 +188,7 @@ module "agent_runner_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${local.agent_runner_function_name}"
+  function_name          = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}"
   description            = local.agent_runner_function_description
   handler                = local.agent_runner_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
@@ -228,8 +228,8 @@ module "agent_runner_lambda" {
         AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
       } : {},
     {
-      AK_EXECUTION__QUEUES__INPUT_QUEUE_MAX_RECEIVE_COUNT  = tostring(local.queue_input_consumer_max_receive_count)
-      AK_EXECUTION__QUEUES__OUTPUT_QUEUE_URL = local.queue_output_url
+      AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT  = tostring(local.queue_input_consumer_max_receive_count)
+      AK_EXECUTION__QUEUES__OUTPUT__URL = local.queue_output_url
     }
   )
 

@@ -31,10 +31,6 @@ class DefaultEndpointsHandler:
         return cls._get_config().execution.mode
 
     @classmethod
-    def _get_input_queue_url(cls):
-        return cls._get_config().execution.queues.input.url
-
-    @classmethod
     def _get_default_user_polling_method(cls):
         return "GET" if cls._get_execution_mode() == ExecutionMode.REST_ASYNC else None
 
@@ -69,11 +65,11 @@ class DefaultEndpointsHandler:
         :return: Dictionary mapping paths → HTTP methods → handler functions
         """
 
-        input_queue_url = cls._get_input_queue_url()
+        input_queue_url = SQSHandler.get_input_queue_url()
         exec_mode = cls._get_execution_mode()
 
         if not input_queue_url:
-            cls._log.warning("Queues not configured; using direct chat endpoint.")
+            cls._log.info("Queues not configured. Therefore, using Request Handler lambda for chat processing")
             return {cls._default_chat_path: {cls._default_chat_method: cls._handle_agent_chat}}
 
         if exec_mode == ExecutionMode.REST_SYNC:
@@ -158,16 +154,12 @@ class DefaultEndpointsHandler:
         if not session_id:
             raise ValueError("session_id is required")
 
-        message_attributes = [SQSHandler.CustomAttribute(name="request_id", value=payload.request_id, datatype=SQSHandler.AttributeDataType.STRING)]
-        if payload.user_id is not None:
-            message_attributes.append(SQSHandler.CustomAttribute(name="user_id", value=payload.user_id, datatype=SQSHandler.AttributeDataType.STRING))
-
-        response = SQSHandler.send_message(
-            queue_url=cls._get_input_queue_url(),
+        response = SQSHandler.send_message_to_input_queue(
             message_body=request_body,
             message_group_id=session_id,
             message_deduplication_id=payload.request_id,
-            message_attributes=message_attributes,
+            request_id=payload.request_id,
+            user_id=payload.user_id,
         )
         return response
 

@@ -1,6 +1,6 @@
 # Request Handler Module
 
-This module creates the request handler Lambda used by the serverless API path. It is responsible for the public request entrypoint and can optionally send work to the input queue when scalable mode is enabled.
+This module creates the request handler Lambda used by the serverless API path. It is responsible for the public request entrypoint and can optionally send work to the input queue when queue mode is enabled.
 
 This is an internal submodule used by the root serverless stack in `state.tf`; the example below shows wiring, not an independent deployment entrypoint.
 
@@ -58,6 +58,7 @@ module "request_handler" {
 | `source_bucket` | S3 bucket used for S3 ZIP deployment |
 | `input_queue_arn` | Input queue ARN used for SQS permissions |
 | `input_queue_url` | Input queue URL injected into the environment |
+| `security_group_id` | Shared Lambda security group ID used for VPC networking |
 | `redis_url` | Redis URL injected into the environment |
 | `response_store_redis` | Redis response store configuration |
 | `response_store_dynamodb` | DynamoDB response store configuration |
@@ -90,7 +91,6 @@ The module adds these environment variables when the corresponding inputs are pr
 | `lambda_function_name` | Name of the request handler Lambda |
 | `lambda_function_invoke_arn` | Invoke ARN of the request handler Lambda |
 | `lambda_role_arn` | IAM role ARN used by the Lambda |
-| `lambda_security_group_id` | Security group ID used by the Lambda |
 
 ## Notes
 

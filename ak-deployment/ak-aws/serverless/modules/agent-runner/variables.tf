@@ -107,7 +107,7 @@ variable "agent_runner" {
     package_path          = string
     package_type          = optional(string, "LocalZip")
     handler_path          = optional(string, "agent_runner.handler")
-    module_name           = optional(string, null)
+    module_name           = optional(string, "agent-runner")
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
   })
