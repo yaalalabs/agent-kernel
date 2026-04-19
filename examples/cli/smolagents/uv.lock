@@ -15,8 +15,8 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.3.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.3"
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -24,12 +24,15 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/d3/f689b5f8692ca72a0963066742d7b730d90a941d86438fa9de109249f7b6/agentkernel-0.3.0.tar.gz", hash = "sha256:3c9156f24b2b30b9e24556f7917eccaa058402b08bd6d6a10f927000e24d2965", size = 166977, upload-time = "2026-04-07T13:46:58.504Z" }
+sdist = { path = "agentkernel-0.3.3.tar.gz" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/21/780195397e2edd3360c73e0192d5a98bbb35acfd36e20eb204b72bbef5d1/agentkernel-0.3.0-py3-none-any.whl", hash = "sha256:b6054174e50d78d9aca183b938c4e83002832dfacd941fa1b07aff6c15771a8d", size = 238310, upload-time = "2026-04-07T13:46:56.879Z" },
+    { path = "agentkernel-0.3.3-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
+smolagents = [
+    { name = "smolagents" },
+]
 test = [
     { name = "datasets" },
     { name = "litellm" },
@@ -318,13 +321,13 @@ name = "cli-smolagents"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel" },
+    { name = "agentkernel", extra = ["smolagents"] },
     { name = "smolagents" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "agentkernel", extra = ["test"] },
+    { name = "agentkernel", extra = ["smolagents", "test"] },
     { name = "black" },
     { name = "isort" },
     { name = "mypy" },
@@ -332,13 +335,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "smolagents"], specifier = ">=0.3.0" },
+    { name = "agentkernel", extras = ["cli", "smolagents"], specifier = ">=0.3.3" },
     { name = "smolagents" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test", "smolagents"], specifier = ">=0.3.0" },
+    { name = "agentkernel", extras = ["test", "smolagents"], specifier = ">=0.3.3" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

@@ -70,12 +70,12 @@ class SmolagentsRunner(Runner):
             if session is not None and hasattr(agent.agent, "memory"):
                 smol_session = self._session(session)
                 saved_steps = smol_session.get_items()
-                if saved_steps:
-                    # Injecting past history directly into the smolagents agent memory
-                    agent.agent.memory.steps = saved_steps.copy()
+                # Always hydrate to avoid cross-session leakage when reset=False.
+                agent.agent.memory.steps = saved_steps.copy()
 
             # Execute the agent
-            reply = agent.agent.run(prompt)
+            # Keep conversation memory across requests; AgentKernel session controls scope.
+            reply = agent.agent.run(prompt, reset=False)
 
             # --- SYNC MEMORY ---
             if session is not None and hasattr(agent.agent, "memory"):
@@ -110,9 +110,21 @@ class SmolagentsAgent(BaseAgent):
         return getattr(self.agent, "system_prompt", getattr(self.agent, "description", "smolagents agent"))
 
     def override_system_prompt(self, prompt: str) -> None:
+        # Newer smolagents versions expose a read-only `system_prompt` and require
+        # mutating prompt_templates["system_prompt"] instead.
+        prompt_templates = getattr(self.agent, "prompt_templates", None)
+        if isinstance(prompt_templates, dict):
+            current = prompt_templates.get("system_prompt") or ""
+            if prompt not in current:
+                prompt_templates["system_prompt"] = f"{current}\n{prompt}" if current else prompt
+            return
+
         if hasattr(self.agent, "system_prompt") and self.agent.system_prompt:
             if prompt not in self.agent.system_prompt:
-                self.agent.system_prompt += "\n" + prompt
+                try:
+                    self.agent.system_prompt += "\n" + prompt
+                except Exception:
+                    pass
             return
 
         # Some smolagents implementations rely on description instead of system_prompt.
