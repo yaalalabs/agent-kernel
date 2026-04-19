@@ -48,6 +48,28 @@ class SmolagentsRunner(Runner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, SmolagentsSession())
 
+    @staticmethod
+    def _has_memory(agent: Any) -> bool:
+        return hasattr(agent.agent, "memory") and hasattr(agent.agent.memory, "steps")
+
+    @classmethod
+    def _hydrate_memory(cls, agent: Any, session: Session) -> None:
+        if session is None or not cls._has_memory(agent):
+            return
+        smol_session = cls._session(session)
+        saved_steps = smol_session.get_items()
+        # Always hydrate when running with reset=False to prevent session bleed.
+        agent.agent.memory.steps = saved_steps.copy()
+
+    @classmethod
+    def _sync_memory(cls, agent: Any, session: Session) -> None:
+        if session is None or not cls._has_memory(agent):
+            return
+        smol_session = cls._session(session)
+        smol_session.clear()
+        # Runtime-managed session backends (e.g., Redis/DynamoDB) handle storage.
+        smol_session.add_items(agent.agent.memory.steps)
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         prompt = ""
         context: ToolContext | None = None
@@ -67,24 +89,14 @@ class SmolagentsRunner(Runner):
             if not prompt.strip():
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-            # --- HYDRATE MEMORY ---
-            if session is not None and hasattr(agent.agent, "memory"):
-                smol_session = self._session(session)
-                saved_steps = smol_session.get_items()
-                # Always hydrate to avoid cross-session leakage when reset=False.
-                agent.agent.memory.steps = saved_steps.copy()
+            # Rehydrate framework memory from the AgentKernel session before execution.
+            self._hydrate_memory(agent, session)
 
-            # Execute the agent
-            # Keep conversation memory across requests; AgentKernel session controls scope.
+            # Preserve conversational continuity across requests.
             reply = agent.agent.run(prompt, reset=False)
 
-            # --- SYNC MEMORY ---
-            if session is not None and hasattr(agent.agent, "memory"):
-                smol_session = self._session(session)
-                smol_session.clear()
-                # Store new accumulated steps into the AgentKernel session cache
-                # The core AgentKernel runtime automatically flushes this into Redis/DynamoDB
-                smol_session.add_items(agent.agent.memory.steps)
+            # Persist updated framework memory back to the AgentKernel session.
+            self._sync_memory(agent, session)
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
@@ -111,8 +123,8 @@ class SmolagentsAgent(BaseAgent):
         return getattr(self.agent, "system_prompt", getattr(self.agent, "description", "smolagents agent"))
 
     def override_system_prompt(self, prompt: str) -> None:
-        # Newer smolagents versions expose a read-only `system_prompt` and require
-        # mutating prompt_templates["system_prompt"] instead.
+        # Newer smolagents versions expose a read-only `system_prompt`.
+        # For those versions, update prompt_templates["system_prompt"] instead.
         prompt_templates = getattr(self.agent, "prompt_templates", None)
         if isinstance(prompt_templates, dict):
             current = prompt_templates.get("system_prompt") or ""
@@ -128,7 +140,7 @@ class SmolagentsAgent(BaseAgent):
                     pass
             return
 
-        # Some smolagents implementations rely on description instead of system_prompt.
+        # Fallback for implementations that use `description` instead of `system_prompt`.
         if hasattr(self.agent, "description") and self.agent.description:
             if prompt not in self.agent.description:
                 self.agent.description += "\n" + prompt
@@ -145,7 +157,8 @@ class SmolagentsAgent(BaseAgent):
                 if w not in self.agent.tools:
                     self.agent.tools.append(w)
 
-        # Smolagents caches the tool descriptions in the system prompt at init. We must rebuild it.
+        # Smolagents caches tool descriptions in the system prompt during init.
+        # Rebuild the prompt cache after attaching tools.
         if hasattr(self.agent, "initialize_system_prompt"):
             try:
                 new_prompt = self.agent.initialize_system_prompt()

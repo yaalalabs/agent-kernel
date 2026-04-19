@@ -34,10 +34,15 @@ Run the CodeAgent demo:
 
     uv run demo_codeagent.py
 
+Run the managed-agents demo (ToolCalling router delegating to CodeAgent and ToolCallingAgent specialists):
+
+    uv run demo_managed_agents.py
+
 ## Role of the ToolCalling Agent and CodeAgent
 
 - Use `demo_toolcalling.py` for normal chat and conversational Q&A.
 - Use `demo_codeagent.py` for task-oriented prompts that benefit from code execution or tool usage.
+- Use `demo_managed_agents.py` to see a mixed setup where a router delegates to specialist agents.
 
 `CodeAgent` is optimized for execution-style reasoning. Open-ended small-talk prompts such as "hi" or
 "hello, how are you?" can cause extra internal steps and may feel like loops. For smoother conversational behavior,
