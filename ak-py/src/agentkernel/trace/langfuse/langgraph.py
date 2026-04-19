@@ -7,6 +7,7 @@ from langfuse.langchain import CallbackHandler
 
 from ...core import Session
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.util.error_util import user_facing_error_message
 from ...framework.langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
 
 
@@ -31,30 +32,37 @@ class LangFuseLangGraph(LangGraphRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        for req in requests:
-            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                continue
-            if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text if prompt else req.text
-            else:
-                return AgentReplyText(
-                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
-                    prompt=prompt,
+        try:
+            for req in requests:
+                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                    continue
+                if isinstance(req, AgentRequestText):
+                    prompt = prompt + "\n" + req.text if prompt else req.text
+                else:
+                    return AgentReplyText(
+                        text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                        prompt=prompt,
+                    )
+
+            if prompt.strip() == "":
+                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+
+            with self._client.start_as_current_span(name="Agent Kernel LangGraph") as span:
+                session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+                config = session_config.model_dump()
+                config["callbacks"] = [self._callback_handler]
+                agent.agent.checkpointer = self._session(session).checkpointer
+                result = await agent.agent.ainvoke(
+                    input={"messages": [HumanMessage(content=prompt)]},
+                    config=config,
                 )
+                last_message = result["messages"][-1]
 
-        if prompt.strip() == "":
-            return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                # Extract text content safely, matching base runner behavior
+                text_content = self._extract_text_content(last_message.content)
+                span.update_trace(session_id=session.id, input=prompt, output=text_content, tags=["agentkernel"])
 
-        with self._client.start_as_current_span(name="Agent Kernel LangGraph") as span:
-            session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-            config = session_config.model_dump()
-            config["callbacks"] = [self._callback_handler]
-            agent.agent.checkpointer = self._session(session).checkpointer
-            result = await agent.agent.ainvoke(
-                input={"messages": [HumanMessage(content=prompt)]},
-                config=config,
-            )
-            last_message = result["messages"][-1]
-            span.update_trace(session_id=session.id, input=prompt, output=last_message.content, tags=["agentkernel"])
-
-        return AgentReplyText(text=last_message.content, prompt=prompt)
+            return AgentReplyText(text=text_content, prompt=prompt)
+        except Exception as e:
+            # Use user-facing error message for consistent error handling
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)

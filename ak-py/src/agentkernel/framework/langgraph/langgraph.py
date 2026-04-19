@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -28,6 +29,7 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
+_logger = logging.getLogger(__name__)
 
 
 class CheckPointer(BaseCheckpointSaver):
@@ -304,7 +306,12 @@ class LangGraphRunner(BaseRunner):
                         text_parts.append(text)
             if text_parts:
                 return " ".join(text_parts)
-        return str(content)
+            # No usable text parts found - log structured content for debugging
+            _logger.debug("No usable text parts extracted from content list: %s", content)
+            return ""
+        # Fallback: log and return empty string instead of str(content)
+        _logger.debug("Unable to extract text from content type %s: %s", type(content).__name__, content)
+        return ""
 
     @staticmethod
     def _session(session: Session) -> Any | None:

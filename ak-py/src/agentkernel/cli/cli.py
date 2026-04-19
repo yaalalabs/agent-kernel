@@ -3,6 +3,7 @@ import logging
 import readline  # Enables line editing and history features for input() in the CLI
 
 from ..core import AgentService
+from ..core.config import AKConfig
 
 
 class _ContextFilter(logging.Filter):
@@ -20,12 +21,12 @@ class _ContextFilter(logging.Filter):
 
 # Configure logger only to print agent kernel logs
 ak_logger = logging.getLogger("ak")
-ak_logger.setLevel(logging.INFO)
+ak_logger.setLevel(logging.DEBUG if AKConfig.get().debug else logging.INFO)
 ak_logger.propagate = False
 
 if not ak_logger.handlers:
     handler = logging.StreamHandler()
-    handler.setLevel(logging.INFO)
+    handler.setLevel(logging.DEBUG if AKConfig.get().debug else logging.INFO)
     handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
     ak_logger.addHandler(handler)
 
