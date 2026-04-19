@@ -7,9 +7,12 @@ This example utilizes `CodeAgent` alongside tools to natively evaluate mathemati
 
 ## Prerequisites
 
-Be sure to set your HuggingFace token as an environment variable (or export it before testing):
+These demos use LiteLLM with `openai/gpt-4o`, so set your OpenAI API key before running:
 
-    export HF_TOKEN="your_huggingface_token_here"
+    export OPENAI_API_KEY="your_openai_api_key_here"
+
+If you switch the model provider, set the corresponding provider credentials (for example, `HF_TOKEN`
+for HuggingFace-hosted models).
 
 ## Installation
 
@@ -21,8 +24,21 @@ Install local dependencies in development mode using:
 
     ./build.sh local
 
-## Running the Demo
+## Running the Demos
 
-Run this demo using the following:
+Run the ToolCalling demo (used by `demo_test.py`):
 
-    uv run demo.py
+    uv run demo_toolcalling.py
+
+Run the CodeAgent demo:
+
+    uv run demo_codeagent.py
+
+## Role of the ToolCalling Agent and CodeAgent
+
+- Use `demo_toolcalling.py` for normal chat and conversational Q&A.
+- Use `demo_codeagent.py` for task-oriented prompts that benefit from code execution or tool usage.
+
+`CodeAgent` is optimized for execution-style reasoning. Open-ended small-talk prompts such as "hi" or
+"hello, how are you?" can cause extra internal steps and may feel like loops. For smoother conversational behavior,
+prefer the ToolCalling demo.

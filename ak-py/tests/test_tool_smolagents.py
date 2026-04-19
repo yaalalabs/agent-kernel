@@ -53,3 +53,28 @@ def test_smolagents_module_runner_init():
     AKConfig.get().trace.enabled = False
     module = SmolagentsModule([])
     assert isinstance(module.runner, SmolagentsRunner)
+
+
+def test_override_system_prompt_uses_prompt_templates_for_readonly_system_prompt():
+    from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsRunner
+
+    class ReadOnlySystemPromptAgent:
+        name = "readonly_code_agent"
+        tools = []
+        description = "A code-agent style wrapper"
+
+        def __init__(self):
+            self.prompt_templates = {"system_prompt": "base"}
+
+        @property
+        def system_prompt(self):
+            return self.prompt_templates["system_prompt"]
+
+        @system_prompt.setter
+        def system_prompt(self, value):
+            raise AttributeError("The 'system_prompt' property is read-only")
+
+    wrapper = SmolagentsAgent("readonly_code_agent", SmolagentsRunner(), ReadOnlySystemPromptAgent())
+    wrapper.override_system_prompt("extra-guidance")
+
+    assert "extra-guidance" in wrapper.agent.prompt_templates["system_prompt"]

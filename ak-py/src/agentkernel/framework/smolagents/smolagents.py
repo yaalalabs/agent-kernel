@@ -1,6 +1,6 @@
 from typing import Any, Callable, List
 
-from smolagents import MultiStepAgent
+from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
 from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
@@ -17,6 +17,7 @@ from ...core.model import (
 from ...trace import Trace
 
 FRAMEWORK = "smolagents"
+SmolagentsSupportedAgent = MultiStepAgent | CodeAgent | ToolCallingAgent
 
 
 class SmolagentsSession:
@@ -96,14 +97,14 @@ class SmolagentsRunner(Runner):
 class SmolagentsAgent(BaseAgent):
     """Agent wrapping for smolagents based agents."""
 
-    def __init__(self, name: str, runner: SmolagentsRunner, agent: MultiStepAgent):
+    def __init__(self, name: str, runner: SmolagentsRunner, agent: SmolagentsSupportedAgent):
         super().__init__(name, runner)
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
 
     @property
-    def agent(self) -> MultiStepAgent:
+    def agent(self) -> SmolagentsSupportedAgent:
         return self._agent
 
     def get_description(self):
@@ -168,7 +169,7 @@ class SmolagentsAgent(BaseAgent):
 class SmolagentsModule(Module):
     """Module for compiling smolagents based agents."""
 
-    def __init__(self, agents: list[MultiStepAgent], runner: SmolagentsRunner = None):
+    def __init__(self, agents: list[SmolagentsSupportedAgent], runner: SmolagentsRunner = None):
         super().__init__()
         if runner is not None:
             self.runner = runner
@@ -178,20 +179,20 @@ class SmolagentsModule(Module):
             self.runner = SmolagentsRunner()
         self.load(agents)
 
-    def _wrap(self, agent: MultiStepAgent, agents: List[MultiStepAgent]) -> BaseAgent:
+    def _wrap(self, agent: SmolagentsSupportedAgent, agents: List[SmolagentsSupportedAgent]) -> BaseAgent:
         name = getattr(agent, "name", "smolagent")
         return SmolagentsAgent(name, self.runner, agent)
 
-    def load(self, agents: list[MultiStepAgent]) -> "SmolagentsModule":
+    def load(self, agents: list[SmolagentsSupportedAgent]) -> "SmolagentsModule":
         super().load(agents)
         return self
 
-    def pre_hook(self, agent: MultiStepAgent, hooks: list[PreHook]) -> "SmolagentsModule":
+    def pre_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PreHook]) -> "SmolagentsModule":
         name = getattr(agent, "name", "smolagent")
         super().get_agent(name).pre_hooks.extend(hooks)
         return self
 
-    def post_hook(self, agent: MultiStepAgent, hooks: list[PostHook]) -> "SmolagentsModule":
+    def post_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PostHook]) -> "SmolagentsModule":
         name = getattr(agent, "name", "smolagent")
         super().get_agent(name).post_hooks.extend(hooks)
         return self

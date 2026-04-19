@@ -7,7 +7,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def test_client():
-    test = Test("demo.py", match_threshold=20)
+    test = Test("demo_toolcalling.py", match_threshold=20)
     await test.start()
     try:
         yield test
