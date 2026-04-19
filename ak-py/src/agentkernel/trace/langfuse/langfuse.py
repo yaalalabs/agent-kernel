@@ -61,8 +61,8 @@ class LangFuse(BaseTrace):
 
     def smolagents(self) -> Runner:
         """
-        Returns a fallback unmodified SmolagentsRunner since tracing is not yet implemented natively.
+        Returns the Langfuse Smolagents runner instance.
         """
-        from ...smolagents import SmolagentsRunner
+        from .smolagents import LangFuseSmolagentsRunner
 
-        return SmolagentsRunner()
+        return LangFuseSmolagentsRunner(self._client)

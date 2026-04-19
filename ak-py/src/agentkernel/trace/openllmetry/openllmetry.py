@@ -134,8 +134,8 @@ class OpenLLMetry(BaseTrace):
 
     def smolagents(self) -> Runner:
         """
-        Returns a fallback unmodified SmolagentsRunner since tracing is not yet implemented natively.
+        Returns the OpenLLMetry Smolagents runner instance.
         """
-        from ...smolagents import SmolagentsRunner
+        from .smolagents import OpenLLMetrySmolagentsRunner
 
-        return SmolagentsRunner()
+        return OpenLLMetrySmolagentsRunner()
