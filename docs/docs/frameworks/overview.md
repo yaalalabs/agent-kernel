@@ -14,6 +14,7 @@ graph LR
     A --> C[CrewAI]
     A --> D[LangGraph]
     A --> E[Google ADK]
+    A --> F[Smolagents]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -26,6 +27,7 @@ graph LR
 | **CrewAI** | Role-based collaboration | Medium | Yes |
 | **LangGraph** | Complex workflows | High | Yes |
 | **Google ADK** | Google ecosystem | Low | Yes |
+| **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 
 ## Choosing a Framework
 
@@ -61,6 +63,14 @@ graph LR
 
 [Learn more →](./google-adk)
 
+### Smolagents
+- Lightweight and composable design
+- ToolCalling and CodeAgent support
+- Managed-agent routing patterns
+- Great for fast experimentation and mixed-agent setups
+
+[Learn more →](./smolagents)
+
 ## Migration Between Frameworks
 
 Agent Kernel makes it easy to migrate:
@@ -95,9 +105,11 @@ def get_weather(city: str) -> str:
 # Same function, any framework
 from agentkernel.openai import OpenAIToolBuilder
 from agentkernel.crewai import CrewAIToolBuilder
+from agentkernel.smolagents import SmolagentsToolBuilder
 
 openai_tools = OpenAIToolBuilder.bind([get_weather])
 crewai_tools = CrewAIToolBuilder.bind([get_weather])
+smolagents_tools = SmolagentsToolBuilder.bind([get_weather])
 ```
 
 [Learn more about Tools →](../core-concepts/tools)
