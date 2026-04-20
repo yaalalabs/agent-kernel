@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.3.0"
+version = "0.3.3"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -25,7 +25,7 @@ auth = [
     "PyJWT>=2.0.0",
 ]
 langfuse = [
-    "langfuse>=3.9.2",
+    "langfuse>=4.2.0",
     "nest-asyncio>=1.6.0",
 ]
 openllmetry = [
