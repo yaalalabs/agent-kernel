@@ -35,6 +35,9 @@ class ErrorUtil:
         if any(token in lowered for token in ["temporarily unavailable", "high demand", "overloaded", "service unavailable"]):
             return "Error: The model is temporarily unavailable. Please try again."
 
+        if "does not exist" in lowered and "model" in lowered:
+            return "Error: Invalid model configuration. Please update the model name and try again."
+
         if message:
             return f"Error: {message}"
 
