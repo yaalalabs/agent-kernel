@@ -89,6 +89,18 @@ variable "memory" {
 
 # Serverless: scale to zero by default (cold starts on first request).
 # Increase min_instance_count to keep instances warm and eliminate cold starts.
+variable "timeout" {
+  type        = number
+  description = "Maximum request timeout in seconds for Cloud Run (max 3600)"
+  default     = 30
+}
+
+variable "backend_deadline" {
+  type        = number
+  description = "API Gateway backend deadline in seconds. Must be <= Cloud Run timeout."
+  default     = 30
+}
+
 variable "min_instance_count" {
   type        = number
   description = "Minimum number of instances (0 = scale to zero / serverless)"
@@ -239,6 +251,12 @@ variable "cors_allow_credentials" {
 
 # Throttling — rate limiting for the API Gateway.
 # Both values must be provided to enable throttling (set null to disable).
+variable "log_retention_days" {
+  type        = number
+  description = "Log retention in days for Cloud Logging. If set, updates the project default log bucket retention."
+  default     = null
+}
+
 variable "throttling_rate_limit" {
   type        = number
   description = "Steady-state request rate limit per second. Set null to disable."

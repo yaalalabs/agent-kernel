@@ -83,6 +83,18 @@ variable "memory" {
   default     = "512Mi"
 }
 
+variable "timeout" {
+  type        = number
+  description = "Maximum request timeout in seconds for Cloud Run (max 3600)"
+  default     = 30
+}
+
+variable "backend_deadline" {
+  type        = number
+  description = "API Gateway backend deadline in seconds. Must be <= Cloud Run timeout."
+  default     = 30
+}
+
 variable "min_instance_count" {
   type        = number
   description = "Minimum number of instances (0 = scale to zero)"
@@ -233,6 +245,12 @@ variable "cors_allow_credentials" {
 # GCP API Gateway supports quota-based throttling via x-google-quota in the OpenAPI spec.
 # For production rate limiting, consider Cloud Armor policies on the load balancer.
 # Both values must be provided to enable throttling (set null to disable).
+variable "log_retention_days" {
+  type        = number
+  description = "Log retention in days for Cloud Logging. If set, updates the project default log bucket retention."
+  default     = null
+}
+
 variable "throttling_rate_limit" {
   type        = number
   description = "Steady-state request rate limit per second. Set null to disable."
@@ -243,4 +261,17 @@ variable "throttling_burst_limit" {
   type        = number
   description = "Burst request limit (token bucket size). Set null to disable."
   default     = null
+}
+
+# JWT Authorizer — GCP equivalent of AWS API Gateway Lambda Authorizer.
+# When set, API Gateway validates the JWT token in every request against the
+# provided JWKS endpoint before forwarding to the Cloud Run service.
+variable "authorizer" {
+  description = "JWT authorizer configuration for API Gateway. When set, all endpoints require a valid JWT."
+  type = object({
+    issuer    = string
+    jwks_uri  = string
+    audiences = list(string)
+  })
+  default = null
 }

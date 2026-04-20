@@ -19,8 +19,6 @@ gcloud config set project YOUR_PROJECT_ID
 
 # Enable APIs
 gcloud services enable compute.googleapis.com
-gcloud services enable cloudfunctions.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
 gcloud services enable run.googleapis.com
 gcloud services enable artifactregistry.googleapis.com
 gcloud services enable apigateway.googleapis.com
@@ -62,8 +60,7 @@ terraform plan \
   -var="product_alias=myapp" \
   -var="env_alias=dev" \
   -var="module_name=chatbot" \
-  -var="function_name=my-agent" \
-  -var="package_path=../../../examples/aws-serverless/openai/dist"
+  -var="package_path=../../../examples/gcp-serverless/openai/dist"
 
 # Deploy
 terraform apply \
@@ -72,8 +69,7 @@ terraform apply \
   -var="product_alias=myapp" \
   -var="env_alias=dev" \
   -var="module_name=chatbot" \
-  -var="function_name=my-agent" \
-  -var="package_path=../../../examples/aws-serverless/openai/dist"
+  -var="package_path=../../../examples/gcp-serverless/openai/dist"
 ```
 
 Or use a tfvars file to avoid repeating vars:
@@ -86,8 +82,7 @@ region         = "us-central1"
 product_alias  = "myapp"
 env_alias      = "dev"
 module_name    = "chatbot"
-function_name  = "my-agent"
-package_path   = "../../../examples/aws-serverless/openai/dist"
+package_path   = "../../../examples/gcp-serverless/openai/dist"
 environment_variables = {
   OPENAI_API_KEY = "sk-your-key-here"
 }
@@ -141,9 +136,9 @@ curl -X POST $(terraform output -raw agent_invoke_url) \
 ## Check Logs
 
 ```bash
-# Cloud Function logs
-gcloud functions logs read myapp-dev-chatbot-function \
-  --region=us-central1 --gen2 --limit=50
+# Cloud Run logs
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="myapp-dev-chatbot-service"' \
+  --limit=50
 
 # API Gateway logs
 gcloud logging read 'resource.type="apigateway.googleapis.com/Gateway"' \
@@ -173,8 +168,10 @@ terraform destroy -var-file="dev.tfvars"
 
 | Output | What it is |
 |--------|------------|
-| function_url | Direct Cloud Function URL |
-| function_name | Cloud Function name (for gcloud commands) |
-| function_service_account | Service account email |
+| service_url | Direct Cloud Run service URL |
+| service_name | Cloud Run service name |
+| service_account_email | Service account email |
 | gateway_url | API Gateway hostname |
+| api_gateway_id | API Gateway ID |
 | agent_invoke_url | Full URL to invoke: https://gateway-url/api/v1/chat |
+| authorizer_status | JWT authorizer configuration status |

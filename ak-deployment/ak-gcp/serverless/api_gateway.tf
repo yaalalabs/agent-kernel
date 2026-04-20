@@ -43,6 +43,7 @@ locals {
       "x-google-backend" = {
         address          = "${local.service_url}${ep.overwrite_path}"
         path_translation = "CONSTANT_ADDRESS"
+        deadline         = var.backend_deadline
       }
     }
     if !ep.is_any
@@ -56,8 +57,9 @@ locals {
     path => {
       "x-google-allow" = "all"
       "x-google-backend" = {
-        address          = "${local.service_url}${ep.overwrite_path}"
+        address          = local.service_url
         path_translation = "APPEND_PATH_TO_ADDRESS"
+        deadline         = var.backend_deadline
       }
       # Expose GET so the gateway registers the path; x-google-allow = "all"
       # makes every HTTP verb accepted (OPTIONS included — no separate CORS entry needed).
@@ -66,8 +68,9 @@ locals {
         operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}"
         responses   = { "200" = { description = "Success" } }
         "x-google-backend" = {
-          address          = "${local.service_url}${ep.overwrite_path}"
+          address          = local.service_url
           path_translation = "APPEND_PATH_TO_ADDRESS"
+          deadline         = var.backend_deadline
         }
       }
     }
@@ -78,7 +81,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        get = merge({ summary = "Route to ${ep.path}", operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        get = merge({ summary = "Route to ${ep.path}", operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -89,7 +92,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        post = merge({ summary = "Route to ${ep.path}", operationId = "post-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        post = merge({ summary = "Route to ${ep.path}", operationId = "post-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -100,7 +103,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        put = merge({ summary = "Route to ${ep.path}", operationId = "put-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        put = merge({ summary = "Route to ${ep.path}", operationId = "put-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -111,7 +114,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        delete = merge({ summary = "Route to ${ep.path}", operationId = "delete-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        delete = merge({ summary = "Route to ${ep.path}", operationId = "delete-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -122,7 +125,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        patch = merge({ summary = "Route to ${ep.path}", operationId = "patch-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        patch = merge({ summary = "Route to ${ep.path}", operationId = "patch-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )

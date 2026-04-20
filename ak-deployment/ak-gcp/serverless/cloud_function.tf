@@ -98,6 +98,8 @@ resource "google_cloud_run_v2_service" "service" {
   template {
     service_account = google_service_account.function_sa.email
 
+    timeout = "${var.timeout}s"
+
     scaling {
       min_instance_count = var.min_instance_count
       max_instance_count = var.max_instance_count
@@ -173,9 +175,21 @@ resource "google_cloud_run_v2_service" "service" {
   ]
 }
 
-# Allow API Gateway (unauthenticated) to invoke the Cloud Run service.
-# The API Gateway is the public entry point; the service itself is
-# restricted to callers coming through the gateway in production setups.
+# Configure log retention on the project's default Cloud Logging bucket.
+# GCP logs to Cloud Logging automatically — this sets how long logs are kept.
+# Equivalent of aws_cloudwatch_log_group retention_in_days in AWS.
+resource "google_logging_project_bucket_config" "default_logs" {
+  count          = var.log_retention_days != null ? 1 : 0
+  project        = var.project_id
+  location       = "global"
+  retention_days = var.log_retention_days
+  bucket_id      = "_Default"
+}
+
+# Allow any caller to invoke the Cloud Run service directly.
+# Note: this makes the Cloud Run URL publicly accessible, bypassing the API Gateway.
+# Authentication is enforced at the API Gateway level (JWT authorizer). For stricter
+# network-level isolation, restrict this to the API Gateway service agent and use VPC controls.
 resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   project  = var.project_id
   location = var.region

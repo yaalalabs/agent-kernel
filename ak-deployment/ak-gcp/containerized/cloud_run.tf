@@ -94,6 +94,8 @@ resource "google_cloud_run_v2_service" "service" {
     # Service account — who the container runs as
     service_account = google_service_account.run_sa.email
 
+    timeout = "${var.timeout}s"
+
     # Scaling — like ECS desired_count + autoscaling
     scaling {
       min_instance_count = var.min_instance_count
@@ -173,6 +175,17 @@ resource "google_cloud_run_v2_service" "service" {
   depends_on = [
     google_project_iam_member.run_logging,
   ]
+}
+
+# Configure log retention on the project's default Cloud Logging bucket.
+# GCP logs to Cloud Logging automatically — this sets how long logs are kept.
+# Equivalent of aws_cloudwatch_log_group retention_in_days in AWS.
+resource "google_logging_project_bucket_config" "default_logs" {
+  count          = var.log_retention_days != null ? 1 : 0
+  project        = var.project_id
+  location       = "global"
+  retention_days = var.log_retention_days
+  bucket_id      = "_Default"
 }
 
 # Make the service publicly accessible

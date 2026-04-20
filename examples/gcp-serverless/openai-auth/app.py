@@ -1,5 +1,3 @@
-import json
-
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent
@@ -30,12 +28,12 @@ router = APIRouter()
 
 
 @router.get("/app")
-def custom_app_handler() -> dict[str, str]:
+def custom_app_handler():
     return {"response": "Hello! from AK 'app'"}
 
 
 @router.post("/app_info")
-def custom_app_info_handler() -> dict[str, str]:
+def custom_app_info_handler():
     return {"response": "Hello! from AK 'app_info'"}
 
 

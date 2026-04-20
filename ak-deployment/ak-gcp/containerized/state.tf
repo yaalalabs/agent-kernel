@@ -67,6 +67,12 @@ locals {
 
   # Merge all endpoints — user endpoints override defaults
   gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
+
+  # Authorizer
+  create_authorizer = var.authorizer != null
+  authorizer_status_message = local.create_authorizer ? (
+    "JWT Authorizer configured (issuer: ${var.authorizer.issuer})"
+  ) : "No authorizer configured — endpoints are publicly accessible"
 }
 
 # VPC — only create if no network_id provided

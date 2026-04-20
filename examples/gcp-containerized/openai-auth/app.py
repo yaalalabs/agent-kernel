@@ -1,5 +1,3 @@
-import json
-
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent
@@ -24,22 +22,22 @@ triage_agent = Agent(
     handoffs=[history_agent, math_agent],
 )
 
-OpenAIModule([triage_agent, math_agent, history_agent])
-
 router = APIRouter()
 
 
 @router.get("/app")
-def custom_app_handler() -> dict[str, str]:
-    return {"response": "Hello! from AK 'app'"}
+def get_app():
+    return {"name": "gcp-containerized-openai-auth", "version": "1.0.0"}
 
 
 @router.post("/app_info")
-def custom_app_info_handler() -> dict[str, str]:
-    return {"response": "Hello! from AK 'app_info'"}
+def post_app_info():
+    return {"info": "Agent Kernel containerized example with GCP JWT authentication"}
 
 
 RESTAPI.add(router)
+
+OpenAIModule([triage_agent, math_agent, history_agent])
 
 
 def main():

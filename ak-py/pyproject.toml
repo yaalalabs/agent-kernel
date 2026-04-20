@@ -97,6 +97,9 @@ gmail = [
     "google-auth-httplib2>=0.2.0",
     "google-api-python-client>=2.0.0",
 ]
+gcp = [
+    "google-cloud-firestore>=2.19.0",
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.2.0",
@@ -114,9 +117,6 @@ a2a = [
 ]
 mcp = [
     "fastmcp>=2.12.4",
-]
-multimodal = [
-    "litellm>=1.74.9",
 ]
 
 [project.scripts]

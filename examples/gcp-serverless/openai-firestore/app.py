@@ -1,5 +1,3 @@
-import json
-
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent
@@ -24,23 +22,18 @@ triage_agent = Agent(
     handoffs=[history_agent, math_agent],
 )
 
-OpenAIModule([triage_agent, math_agent, history_agent])
-
 router = APIRouter()
 
 
 @router.get("/app")
 def custom_app_handler() -> dict[str, str]:
-    return {"response": "Hello! from AK 'app'"}
-
-
-@router.post("/app_info")
-def custom_app_info_handler() -> dict[str, str]:
-    return {"response": "Hello! from AK 'app_info'"}
+    return {"response": "Hello! from AK Firestore example"}
 
 
 RESTAPI.add(router)
 
+OpenAIModule([triage_agent, math_agent, history_agent])
 
-def main():
+
+def main() -> None:
     RESTAPI.run()

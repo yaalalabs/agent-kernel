@@ -1,12 +1,12 @@
 # Agent Kernel - GCP Serverless Module
 
-A Terraform module for deploying serverless applications on GCP, combining Cloud Functions v2 with API Gateway to create production-ready APIs.
+A Terraform module for deploying serverless applications on GCP, combining Cloud Run with API Gateway to create production-ready APIs.
 
 ## 📋 Overview
 
 This module provides a complete serverless deployment solution:
 
-- ⚡ **Cloud Functions v2**: Gen2 functions built on Cloud Run with Docker image or source zip deployment
+- ⚡ **Cloud Run**: Serverless containers that scale to zero — no idle cost, cold starts on first request
 - 🌐 **API Gateway**: OpenAPI-based routing with versioned endpoints
 - 🔄 **Flexible Deployment**: Support for Docker images and source code uploads
 - 🔒 **Security**: Dedicated service account, VPC Connector for private networking
@@ -34,15 +34,11 @@ module "serverless_agent" {
   product_alias = "myapp"
   env_alias     = "prod"
 
-  module_name          = "openai"
-  function_name        = "run"
-  function_description = "OpenAI Agent Function"
+  module_name  = "openai"
+  package_path = "${path.module}/dist"
 
-  package_type = "Image"
-  package_path = "${path.module}/deploy"
-
-  timeout    = 60
-  memory_mb  = 512
+  timeout = 60
+  memory  = "512Mi"
 
   environment_variables = {
     ENVIRONMENT = "production"
@@ -82,10 +78,8 @@ module "serverless_agent" {
   product_alias = "myapp"
   env_alias     = "prod"
 
-  module_name   = "openai"
-  function_name = "run"
-  package_type  = "Image"
-  package_path  = "${path.module}/deploy"
+  module_name  = "openai"
+  package_path = "${path.module}/dist"
 
   # Enable session storage backends
   create_redis_cluster      = true
@@ -109,10 +103,8 @@ module "serverless_agent" {
   product_alias = "myapp"
   env_alias     = "prod"
 
-  module_name   = "openai"
-  function_name = "run"
-  package_type  = "Image"
-  package_path  = "${path.module}/deploy"
+  module_name  = "openai"
+  package_path = "${path.module}/dist"
 
   # Pass existing VPC instead of creating new one
   network_id        = "projects/my-project/global/networks/my-vpc"
@@ -125,27 +117,26 @@ module "serverless_agent" {
 ```mermaid
 graph TD
     Client[Client] --> GW[API Gateway]
-    GW --> CF[Cloud Functions v2]
-    CF --> VC[VPC Connector]
+    GW --> CR[Cloud Run]
+    CR --> VC[VPC Connector]
     VC --> Redis[Memorystore Redis]
     VC --> FS[Firestore]
-    CF --> AR[Artifact Registry]
-    CF --> GCS[Cloud Storage]
+    CR --> AR[Artifact Registry]
 ```
 
 ### How It Works
 
 1. **Client** sends HTTP request to API Gateway
-2. **API Gateway** routes the request based on OpenAPI spec (e.g., `/api/v1/chat` → function)
-3. **Cloud Functions v2** runs your agent code (Docker image or source zip)
-4. Function connects to **Redis** and **Firestore** through VPC Connector (private network)
+2. **API Gateway** routes the request based on OpenAPI spec (e.g., `/api/v1/chat` → service)
+3. **Cloud Run** runs your agent code as a containerized service
+4. Service connects to **Redis** and **Firestore** through VPC Connector (private network)
 5. Response flows back through API Gateway to the client
 
 ### Component Mapping (AWS → GCP)
 
 | AWS Component | GCP Component |
 |--------------|---------------|
-| Lambda | Cloud Functions v2 |
+| Lambda | Cloud Run |
 | API Gateway (REST) | API Gateway (OpenAPI) |
 | IAM Role | Service Account |
 | Security Group + VPC | VPC Connector |
@@ -164,14 +155,13 @@ graph TD
 | product_alias | Product alias for naming | string | - | yes |
 | env_alias | Environment alias | string | - | yes |
 | module_name | Module name | string | - | yes |
-| function_name | Cloud Function name | string | - | yes |
 | package_path | Docker build context path | string | - | yes |
-| package_type | Deployment type (Image/Source) | string | "Image" | no |
-| timeout | Function timeout in seconds | number | 60 | no |
-| memory_mb | Function memory in MB | number | 256 | no |
-| max_instance_count | Max function instances | number | 10 | no |
-| min_instance_count | Min function instances | number | 0 | no |
-| environment_variables | Env vars for the function | map(string) | {} | no |
+| timeout | Cloud Run request timeout in seconds | number | 30 | no |
+| memory | Cloud Run memory allocation (e.g. "512Mi") | string | "512Mi" | no |
+| cpu | Cloud Run CPU allocation (e.g. "1") | string | "1" | no |
+| max_instance_count | Max Cloud Run instances | number | 10 | no |
+| min_instance_count | Min Cloud Run instances (0 = scale to zero) | number | 0 | no |
+| environment_variables | Env vars for the container | map(string) | {} | no |
 | api_version | API version | string | "v1" | no |
 | api_base_path | API base path | string | "api" | no |
 | agent_endpoint | Agent endpoint path | string | "chat" | no |
@@ -184,11 +174,13 @@ graph TD
 
 | Name | Description |
 |------|-------------|
-| function_url | Direct Cloud Function HTTPS URL |
-| function_name | Cloud Function resource name |
-| function_service_account | Service account email |
+| service_url | Direct Cloud Run service URL |
+| service_name | Cloud Run service name |
+| service_account_email | Service account email |
 | gateway_url | API Gateway hostname |
+| api_gateway_id | API Gateway ID |
 | agent_invoke_url | Full agent invocation URL via API Gateway |
+| authorizer_status | JWT authorizer configuration status |
 
 ## 🤝 Contributing
 

@@ -44,6 +44,7 @@ locals {
       "x-google-backend" = {
         address          = "${local.service_url}${ep.overwrite_path}"
         path_translation = "CONSTANT_ADDRESS"
+        deadline         = var.backend_deadline
       }
     }
     if !ep.is_any
@@ -57,8 +58,9 @@ locals {
     path => {
       "x-google-allow" = "all"
       "x-google-backend" = {
-        address          = "${local.service_url}${ep.overwrite_path}"
+        address          = local.service_url
         path_translation = "APPEND_PATH_TO_ADDRESS"
+        deadline         = var.backend_deadline
       }
       # Expose GET so the gateway registers the path; x-google-allow = "all"
       # makes every HTTP verb accepted (OPTIONS included — no separate CORS entry needed).
@@ -67,8 +69,9 @@ locals {
         operationId      = "get-${replace(trim(ep.path, "/"), "/", "-")}"
         responses        = { "200" = { description = "Success" } }
         "x-google-backend" = {
-          address          = "${local.service_url}${ep.overwrite_path}"
+          address          = local.service_url
           path_translation = "APPEND_PATH_TO_ADDRESS"
+          deadline         = var.backend_deadline
         }
       }
     }
@@ -79,7 +82,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        get = merge({ summary = "Route to ${ep.path}", operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        get = merge({ summary = "Route to ${ep.path}", operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -90,7 +93,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        post = merge({ summary = "Route to ${ep.path}", operationId = "post-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        post = merge({ summary = "Route to ${ep.path}", operationId = "post-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -101,7 +104,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        put = merge({ summary = "Route to ${ep.path}", operationId = "put-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        put = merge({ summary = "Route to ${ep.path}", operationId = "put-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -112,7 +115,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        delete = merge({ summary = "Route to ${ep.path}", operationId = "delete-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        delete = merge({ summary = "Route to ${ep.path}", operationId = "delete-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -123,7 +126,7 @@ locals {
     for path, ep in local.openapi_paths_flat :
     path => merge(
       {
-        patch = merge({ summary = "Route to ${ep.path}", operationId = "patch-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS" } }, local._quota_ext)
+        patch = merge({ summary = "Route to ${ep.path}", operationId = "patch-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
       },
       var.enable_cors ? { options = local._options_op[ep.path] } : {}
     )
@@ -183,8 +186,27 @@ locals {
     }
   } : {}
 
-  # Final OpenAPI spec — base merged with optional throttling extension
-  openapi_spec = merge(local.openapi_base, local.openapi_throttling_ext)
+  # Build the final OpenAPI spec as a JSON string.
+  # Security fields (securityDefinitions, security) are conditionally included using
+  # a string-level ternary — Terraform's type system prevents conditional object keys
+  # inside map literals, so we produce two JSON strings and pick one.
+  openapi_spec_json = local.create_authorizer ? jsonencode(merge(
+    local.openapi_base,
+    local.openapi_throttling_ext,
+    {
+      securityDefinitions = {
+        jwt_auth = {
+          authorizationUrl     = ""
+          flow                 = "implicit"
+          type                 = "oauth2"
+          "x-google-issuer"    = var.authorizer.issuer
+          "x-google-jwks_uri"  = var.authorizer.jwks_uri
+          "x-google-audiences" = join(",", var.authorizer.audiences)
+        }
+      }
+      security = [{ jwt_auth = [] }]
+    }
+  )) : jsonencode(merge(local.openapi_base, local.openapi_throttling_ext))
 }
 
 # API Gateway needs an API definition
@@ -201,12 +223,12 @@ resource "google_api_gateway_api_config" "config" {
   project       = var.project_id
   provider      = google-beta
   api           = google_api_gateway_api.api.api_id
-  api_config_id = "${local.prefix}-config-${substr(md5(jsonencode(local.openapi_spec)), 0, 8)}"
+  api_config_id = "${local.prefix}-config-${substr(md5(local.openapi_spec_json), 0, 8)}"
 
   openapi_documents {
     document {
       path     = "openapi.json"
-      contents = base64encode(jsonencode(local.openapi_spec))
+      contents = base64encode(local.openapi_spec_json)
     }
   }
 

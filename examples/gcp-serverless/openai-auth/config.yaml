@@ -1,0 +1,7 @@
+debug: true
+api:
+  port: 8080
+session:
+  type: redis
+  redis:
+    prefix: "ak:openai:auth:example:"
