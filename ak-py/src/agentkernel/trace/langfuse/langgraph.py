@@ -49,9 +49,7 @@ class LangFuseLangGraph(LangGraphRunner):
 
             with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
                 with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
-                    session_config = LangGraphSessionConfigModel(
-                        configurable=LangGraphSessionConfigurable(thread_id=session.id)
-                    )
+                    session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
                     config = session_config.model_dump()
                     config["callbacks"] = [self._callback_handler]
                     agent.agent.checkpointer = self._session(session).checkpointer
