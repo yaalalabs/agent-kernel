@@ -13,6 +13,7 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "agentkernel[test]>=0.3.0"
 ]
 
 [tool.uv]

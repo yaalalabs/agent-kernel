@@ -22,3 +22,8 @@ output "api_url"{
   description = "Complete API URL with base path and version"
   value       = module.FlexFunction.api_url
 }
+
+output "agent_invoke_url" {
+  description = "Complete Agent Invoke URL"
+  value       = "${module.FlexFunction.api_url}/chat"
+}

@@ -15,14 +15,21 @@ class AzureFunctions:
 
     _log = logging.getLogger("ak.azure.functions")
     _log.setLevel(logging.DEBUG)
-    _chat_service = ChatService()
+    _chat_service = None
 
+    @classmethod
+    def _get_chat_service(cls) -> ChatService:
+        if cls._chat_service is None:
+            cls._chat_service = ChatService()
+        return cls._chat_service
+    
     @classmethod
     def handler(cls, req: func.HttpRequest) -> func.HttpResponse:
         """
         Azure Functions HTTP handler to process incoming requests.
         """
         cls._log.info("Agent Kernel Agent Azure Function Handler started")
+        
 
         try:
             # Parse request body
