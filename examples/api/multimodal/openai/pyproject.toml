@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "OpenAI multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,multimodal]>=0.2.14",
+    "agentkernel[api,openai,multimodal]>=0.3.3",
     
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.13",
+    "agentkernel[test]>=0.3.3",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",

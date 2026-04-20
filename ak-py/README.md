@@ -178,6 +178,32 @@ OpenAIModule([assistant])
 handler = Lambda.handler
 ```
 
+**Note that this is just the simple serverless version. A more advanced serverless deployment mode, which uses queues for scalability, is also available. For queue-backed execution modes and response-store configuration, see the [AWS Serverless Deployment](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/aws-serverless.md) guide.**
+
+The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, Agent Kernel generates a `request_id` and normalizes it before processing. 
+
+Accepted payloads:
+
+```json
+{
+  "prompt": "Hello agent",
+  "agent": "assistant",
+  "session_id": "user-123"
+}
+```
+
+```json
+{
+  "request_id": "req-123",
+  "user_id": "user-123",
+  "body": {
+    "prompt": "Hello agent",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }
+}
+```
+
 ### Azure Functions Deployment
 
 Deploy your agents as Azure Functions using the built-in Azure handler.
@@ -199,10 +225,17 @@ handler = AzureFunctions.handler
 
 ```json
 {
-  "prompt": "Hello agent",
-  "agent": "assistant"
+  "request_id": "req-123",
+  "user_id": "user-123",
+  "body": {
+    "prompt": "Hello agent",
+    "agent": "assistant",
+    "session_id": "user-123"
+  }
 }
 ```
+
+Azure Functions also accepts the normalized envelope, and flat run payloads are normalized in the same way before the request reaches the agent runtime.
 
 **Response Format:**
 
@@ -283,6 +316,72 @@ Required when `session.type=redis`:
   - **Default**: `ak:sessions:`
   - **Description**: Key prefix for session storage
   - **Environment Variable**: `AK_SESSION__REDIS__PREFIX`
+
+#### Execution Configuration
+
+Configure queue-backed and serverless execution behavior.
+
+- **Execution Mode**
+  - **Field**: `execution.mode`
+  - **Options**: `rest_sync`, `rest_async`, `stream`, `async`
+  - **Default**: `None`
+  - **Description**: Selects the Lambda execution mode
+  - **Environment Variable**: `AK_EXECUTION__MODE`
+
+- **Queues**
+  - **Field**: `execution.queues`
+  - **Description**: Queue settings used by serverless execution modes
+
+  - **Input Queue URL**
+    - **Field**: `execution.queues.input.url`
+    - **Default**: `None`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__URL`
+
+  - **Output Queue URL**
+    - **Field**: `execution.queues.output.url`
+    - **Default**: `None`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__URL`
+
+  - **Input Queue Max Receive Count**
+    - **Field**: `execution.queues.input.max_receive_count`
+    - **Default**: `3`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT`
+
+  - **Output Queue Max Receive Count**
+    - **Field**: `execution.queues.output.max_receive_count`
+    - **Default**: `3`
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT`
+
+- **Response Store**
+  - **Field**: `execution.response_store`
+  - **Description**: Response persistence settings used by the serverless response handler
+
+  - **Type**
+    - **Field**: `execution.response_store.type`
+    - **Description**: Response store backend selector configured in `config.yaml`; this value is not exported as an environment variable
+
+  - **Retry Count**
+    - **Field**: `execution.response_store.retry_count`
+    - **Default**: `5`
+    - **Description**: Number of lookup attempts when polling for a response
+    - **Environment Variable**: `AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT`
+
+  - **Delay**
+    - **Field**: `execution.response_store.delay`
+    - **Default**: `5`
+    - **Description**: Delay in seconds between response lookup attempts
+    - **Environment Variable**: `AK_EXECUTION__RESPONSE_STORE__DELAY`
+
+  - **Redis Backend**
+    - **Field**: `execution.response_store.redis`
+    - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`, `AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX`, `AK_EXECUTION__RESPONSE_STORE__REDIS__TTL`
+
+  - **DynamoDB Backend**
+    - **Field**: `execution.response_store.dynamodb`
+    - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`, `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL`
+    - **Description**: DynamoDB-backed response storage with table name and TTL
+
+Use either Redis or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as SQS message attributes.
 
 #### API Configuration
 
@@ -777,6 +876,27 @@ session:
     url: redis://localhost:6379
     ttl: 604800
     prefix: "ak:sessions:"
+execution:
+  mode: rest_sync
+  queues:
+    input:
+      url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
+      max_receive_count: 3
+    output:
+      url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
+      max_receive_count: 3
+  response_store:
+    type: redis
+    retry_count: 5
+    delay: 5
+    redis: # if this is given, then dynamodb response store part cannot be given
+      url: redis://localhost:6379
+      prefix: "ak:responses:"
+      ttl: 3600
+    dynamodb: # if this is given, then redis response store part cannot be given
+      table_name: table-name
+      table_arn: table-arn
+      ttl: 3600
 api:
   host: 0.0.0.0
   port: 8000

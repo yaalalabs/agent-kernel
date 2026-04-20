@@ -3,9 +3,8 @@ import os
 
 import pytest
 
-from agentkernel.deployment.aws import LambdaRouter
+from agentkernel.deployment.aws.serverless.aklambda import LambdaRouter
 
-DEFAULT_PATH = "default_agent_registered_path"  # must be same as _default_agent_registered_path in LambdaRouter
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
 
 
@@ -46,7 +45,7 @@ def stub_default(router):  # 'router' here this means it depends on the router f
     def _register(status=200, payload=None):  # registers a function that returns the payload for the default path and method
         if payload is None:
             payload = {"stubbed": True}
-        router._routes[DEFAULT_PATH][DEFAULT_METHOD] = lambda e, c: {
+        router._routes.setdefault(router._default_chat_path, {})[router._default_chat_method] = lambda e, c: {
             "statusCode": status,
             "body": json.dumps(payload),
         }
@@ -62,10 +61,8 @@ def test_register_normalizes_and_routes_with_env_vars(router, monkeypatch):
     event = make_event_with_env_vars(monkeypatch, "/api/v1/foo", method="GET")
     resp = router.dispatch(event, context=None)
 
-    assert resp["statusCode"] == 200
-    body = json.loads(resp["body"])
-    assert body["ok"] is True
-    assert body["path_seen"] == "/api/v1/foo"
+    assert resp["ok"] is True
+    assert resp["path_seen"] == "/api/v1/foo"
 
 
 def test_dispatch_routes_to_default_when_event_is_agent_endpoint_with_env_vars(router, stub_default, monkeypatch):
