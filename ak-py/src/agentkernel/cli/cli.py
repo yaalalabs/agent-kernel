@@ -19,6 +19,17 @@ class _ContextFilter(logging.Filter):
             context_logger.addFilter(cls())
 
 
+class _CLIOutputConfig:
+    """Keep CLI output focused on AgentKernel logs in normal mode."""
+
+    @classmethod
+    def setup(cls) -> None:
+        if AKConfig.get().debug:
+            return
+
+        logging.getLogger().setLevel(logging.CRITICAL)
+
+
 # Configure logger only to print agent kernel logs
 ak_logger = logging.getLogger("ak")
 ak_logger.setLevel(logging.DEBUG if AKConfig.get().debug else logging.INFO)
@@ -31,6 +42,7 @@ if not ak_logger.handlers:
     ak_logger.addHandler(handler)
 
 _ContextFilter.setup()
+_CLIOutputConfig.setup()
 
 
 class CLI:

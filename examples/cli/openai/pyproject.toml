@@ -19,8 +19,7 @@ dev = [
 [tool.uv]
 package = false
 
-[tool.uv.sources]
-agentkernel = { path = "../../../ak-py", editable = true }
+
 
 [tool.isort]
 profile = "black"

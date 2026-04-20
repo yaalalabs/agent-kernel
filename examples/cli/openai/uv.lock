@@ -415,22 +415,11 @@ dev = [
 ]
 
 [package.metadata]
-<<<<<<< HEAD
-requires-dist = [
-    { name = "agentkernel", extras = ["cli", "openai"], editable = "../../../ak-py" },
-    { name = "griffe", specifier = "==1.13.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "agentkernel", extras = ["test"], editable = "../../../ak-py" },
-=======
 requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.3.3" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "agentkernel", extras = ["test"], specifier = ">=0.3.3" },
->>>>>>> develop
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

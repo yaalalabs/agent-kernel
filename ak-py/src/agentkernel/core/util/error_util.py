@@ -31,6 +31,7 @@ class ErrorUtil:
             return "Error: Rate limited by the model provider (429). Please try again."
 
         lowered = message.lower()
+
         if any(token in lowered for token in ["temporarily unavailable", "high demand", "overloaded", "service unavailable"]):
             return "Error: The model is temporarily unavailable. Please try again."
 

@@ -25,3 +25,8 @@ def test_user_facing_error_message_for_high_demand_phrase():
 def test_user_facing_error_message_falls_back_to_cleaned_message():
     error = Exception("  Something   bad\n happened  ")
     assert user_facing_error_message(error) == "Error: Something bad happened"
+
+
+def test_user_facing_error_message_for_model_not_found():
+    error = Exception("Error code: 400 - {'error': {'message': \"The requested model 'gpt-44' does not exist.\", 'code': 'model_not_found'}}")
+    assert user_facing_error_message(error) == "Error: Invalid model configuration. Please update the model name and try again."
