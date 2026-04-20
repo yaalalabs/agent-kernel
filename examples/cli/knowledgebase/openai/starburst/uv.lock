@@ -433,11 +433,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["cli", "openai", "knowledgebase-trino"], specifier = ">=0.3.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["cli", "openai", "knowledgebase-trino"], specifier = ">=0.3.1" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.3.0" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.3.1" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

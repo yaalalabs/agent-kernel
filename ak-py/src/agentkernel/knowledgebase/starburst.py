@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Iterable, List, Mapping
+from typing import Any, Iterable, List, Mapping, Optional
 
 import trino
 import trino.exceptions
@@ -134,7 +134,7 @@ class StarburstManager(KnowledgeBase):
             finally:
                 self.connection = None
 
-    def write(self, records: Iterable[Mapping[str, Any]] = None, **kwargs) -> None:
+    def write(self, records: Optional[Iterable[Mapping[str, Any]]] = None, **kwargs) -> None:
         """
         Reject write attempts because this backend is read-only.
 

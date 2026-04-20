@@ -87,7 +87,7 @@ s_db = StarburstManager(
         "Starburst Galaxy read-only backend - MongoDB via Trino. "
         "Contains client records. "
         "Query syntax is defined strictly in the query_guide - follow it exactly."
-        "use the place holder <MONGO_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
+        "use the placeholder <MONGO_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
     ),
 ).add_schema(
     {
@@ -123,7 +123,7 @@ s2_db = StarburstManager(
         "Starburst Galaxy read-only backend - Google Sheets via Trino. "
         "Contains company knowledge: topics, policies, tech info, department notes. "
         "Query syntax is defined strictly in the query_guide - follow it exactly."
-        "use the place holder <SHEETS_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
+        "use the placeholder <SHEETS_SOURCE> in your queries as defined in the schema. NEVER use any other name, table name or path."
     ),
 ).add_schema(
     {
@@ -152,7 +152,7 @@ s2_db = StarburstManager(
     }
 )
 
-knowledgeBuilder = KnowledgeBuilder(
+knowledge_builder = KnowledgeBuilder(
     [v_db, g_db, s_db, s2_db],
     semantic_map={
         "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'put your sheet id here'))",
@@ -192,7 +192,7 @@ EXECUTION PROTOCOL:
         name="KB_Router_Agent",
         model="gpt-4o-mini",
         instructions=instructions,
-        tools=OpenAIToolBuilder.bind(knowledgeBuilder.build()),
+        tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
     )
 
 

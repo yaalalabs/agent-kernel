@@ -2,31 +2,9 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..core.config import AKConfig
 from .base import KnowledgeBase
 
 log = logging.getLogger("ak.KnowledgeBuilder")
-
-
-def _resolve_log_level() -> int:
-    """
-    Resolve the logger level from runtime configuration.
-
-    :return: Effective logging level.
-    """
-    return logging.DEBUG if AKConfig.get().debug else logging.INFO
-
-
-resolved_log_level = _resolve_log_level()
-log.setLevel(resolved_log_level)
-
-if not log.handlers:
-    handler = logging.StreamHandler()
-    handler.setLevel(resolved_log_level)
-    handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
-    log.addHandler(handler)
-
-log.propagate = False
 
 
 class KnowledgeBuilder:
@@ -38,8 +16,34 @@ class KnowledgeBuilder:
         backend's ``backend_name`` as the lookup key. If a semantic map is provided,
         placeholder tags in incoming queries (for example, ``<orders_table>``) are
         translated to physical resource names before a backend call is executed.
+        This is important because callers can keep using stable, domain-level names
+        while physical table/index/graph names change across environments, tenants,
+        or migrations.
+        For an AI agent, this reduces errors and hallucinations because it can
+        generate queries with simple logical placeholders instead of remembering
+        different catalog, schema, table names, or long physical identifiers.
+        The semantic map then resolves those placeholders to the correct runtime
+        resources.
 
         Example:
+            The agent can issue the same logical query in any environment using
+            semantic placeholders instead of hard-coded table/schema paths:
+            ``SELECT * FROM <MONGO_SOURCE> WHERE status = 'active'``
+            ``SELECT * FROM <SHEETS_SOURCE> LIMIT 10``
+
+            Each KnowledgeBuilder instance has one semantic_map. In practice,
+            you provide different maps per deployment:
+
+            Dev instance:
+            ``semantic_map={"<MONGO_SOURCE>": "mongodb.sandbox.clients", "<SHEETS_SOURCE>": "sheets.dev.kb"}``
+
+            Prod instance:
+            ``semantic_map={"<MONGO_SOURCE>": "mongodb.prod.customers", "<SHEETS_SOURCE>": "sheets.prod.policies"}``
+
+            The agent's query logic stays identical, but resolves to the correct
+            backend resources for that deployment.
+
+        Construction example:
             >>> kb = KnowledgeBuilder(
             ...     backends=[neo4j_backend, trino_backend],
             ...     semantic_map={"<orders_table>": "analytics.sales.orders"},
@@ -155,10 +159,14 @@ class KnowledgeBuilder:
                 metadata["cypher_query"] = resolved_query
                 try:
                     parsed_params = json.loads(params_json)
-                    metadata["params"] = parsed_params
-                    metadata["cypher_params"] = parsed_params  # Legacy alias
                 except Exception:
                     return "Error: params_json must be a valid JSON object string."
+
+                if not isinstance(parsed_params, dict):
+                    return "Error: params_json must be a valid JSON object string."
+
+                metadata["params"] = parsed_params
+                metadata["cypher_params"] = parsed_params  # Legacy alias
 
             try:
                 db.write([{"text": text, "metadata": metadata}])

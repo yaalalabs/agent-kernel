@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from types import TracebackType
 from typing import Any, Iterable, List, Mapping
 
 Record = Mapping[str, Any]
@@ -15,14 +14,6 @@ class KnowledgeBase(ABC):
       - read()
       - backend_name
       - get_description()
-
-    Backends can also receive runtime schema configuration via add_schema().
-    The schema() method is an instance method that returns the configured
-    schema describing what this backend stores and how.
-
-    Backends can also receive runtime schema configuration via add_schema().
-    The schema() method is an instance method that returns the configured
-    schema describing what this backend stores and how.
 
     Backends can also receive runtime schema configuration via add_schema().
     The schema() method is an instance method that returns the configured

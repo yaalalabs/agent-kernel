@@ -28,7 +28,7 @@ v_db = ChromaManager(
     }
 )
 
-knowledgeBuilder = KnowledgeBuilder([v_db])
+knowledge_builder = KnowledgeBuilder([v_db])
 
 
 def build_agent(description: str) -> Agent:
@@ -58,7 +58,7 @@ EXECUTION PROTOCOL:
         name="KB_Router_Agent",
         model="gpt-4o-mini",
         instructions=instructions,
-        tools=OpenAIToolBuilder.bind(knowledgeBuilder.build()),
+        tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
     )
 
 

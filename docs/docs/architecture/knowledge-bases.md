@@ -53,7 +53,11 @@ from agentkernel.knowledgebase.starburst import StarburstManager
 - `write_kb(backend: str, text: str, ..., query: str, params_json: str, ...)` – write to a backend (supports both simple text facts and backend‑specific queries like Cypher).
 - `get_all_kb_descriptions()` – short descriptions of each registered backend.
 
-`KnowledgeBuilder` also supports a `semantic_map` parameter to resolve logical placeholders in agent queries. This is useful for Starburst-style query templates such as `<SHEETS_SOURCE>` and `<MONGO_SOURCE>`.
+Important: `StarburstManager` is read-only. Use `read_kb` for Starburst backends and do not route `write_kb` calls to Starburst.
+
+`KnowledgeBuilder` also supports a `semantic_map` parameter that resolves logical placeholders in agent-generated queries into backend-specific resource names at runtime. This is the key abstraction that keeps agents simple: they reason over stable, human-friendly tokens such as `<SHEETS_SOURCE>` or `<MONGO_SOURCE>` instead of memorizing changing catalog names, schema names, table names, or long physical paths.
+
+In practice, the agent writes a query against the logical placeholder, and `KnowledgeBuilder` performs the translation immediately before the backend executes it. That means the agent can stay portable across environments while each deployment maps the same logical token to its own concrete target.
 
 Example:
 
@@ -68,7 +72,7 @@ g_db = Neo4jManager(name="Neo4jDB").add_schema({...})
 kb_tools = KnowledgeBuilder([v_db, g_db]).build()
 ```
 
-`kb_tools` is a list of plain Python callables that you bind using the framework‑specific `ToolBuilder` (for example, `OpenAIToolBuilder.bind(kb_tools)`).
+`kb_tools` is the output of `KnowledgeBuilder.build()`: a list of plain Python callables such as `get_schemas`, `read_kb`, and `write_kb`. Those callables are not yet agent tools on their own. The framework-specific adapter binds them into the agent runtime. In the OpenAI examples, that happens in one step with `tools=OpenAIToolBuilder.bind(knowledgeBuilder.build())`.
 
 Example with semantic placeholders:
 
@@ -82,18 +86,35 @@ kb_tools = KnowledgeBuilder(
 ).build()
 ```
 
+Example of wiring the KB tools into an agent:
+
+```python
+from agents import Agent
+from agentkernel.openai import OpenAIToolBuilder
+
+kb_router_agent = Agent(
+  name="KB_Router_Agent",
+  instructions="""
+  You have access to multiple knowledge bases.
+  Use get_schemas() to inspect them first, then decide which backend to read from or write to.
+  Use read_kb for retrieval and write_kb for persistence.
+  Starburst is read-only: never call write_kb for Starburst backends.
+  When a placeholder such as <MONGO_SOURCE> appears in a query, keep it unchanged in the prompt;
+  the semantic_map will resolve it to the correct backend target at runtime.
+  """,
+  tools=OpenAIToolBuilder.bind(kb_tools),
+)
+```
+
 ## KB Router Pattern
 
 The recommended pattern is to build a **“knowledge base router” agent**:
 
-1. **Inject tools**: Bind the knowledge base tools into your agent via the appropriate module/adapter.
-2. **Describe backends**: Provide clear descriptions and schema metadata for each backend (what it stores, how to query it, and when to use it).
-3. **Routing instructions**: In the agent’s instructions, require it to:
-   - Call `get_schemas()` (and/or `get_all_kb_descriptions()`) at the start.
-   - Choose a backend based on the question and backend descriptions.
-  - Follow backend query templates exactly (including placeholder tokens where present).
-   - Use `read_kb` for queries and `write_kb` for storing new facts.
-   - Fall back to its own model knowledge when no relevant KB data exists.
+1. **Inject tools**: Bind the knowledge base tools into the agent via the appropriate framework adapter.
+2. **Describe backends**: Provide clear backend descriptions and schemas so the agent can tell what belongs in each store.
+3. **Route explicitly**: In the instructions, tell the agent how to choose between KBs, when to read, and when to write, including backend constraints (for example, Starburst is read-only).
+4. **Keep placeholders logical**: Let the agent use tokens like `<SHEETS_SOURCE>` or `<MONGO_SOURCE>` while `semantic_map` handles the physical translation.
+5. **Prefer a router agent for multi-KB setups**: One agent can inspect schemas and route requests, which reduces hallucination and keeps backend selection deterministic.
 
 This pattern works the same across all supported agent frameworks (OpenAI Agents, LangGraph, CrewAI, Google ADK) because the tools are framework‑agnostic.
 
@@ -107,7 +128,7 @@ The repository includes OpenAI Agents SDK examples split by backend type:
   - `neo4j/` - graph facts and Cypher queries.
   - `starburst/` - SQL backends via Starburst/Trino.
   - `multi/` - combined router demo with all backends.
-- **Agent**: `KB_Router_Agent`, created with clear routing rules, bound knowledge base tools from `KnowledgeBuilder`, and instructions to always inspect schemas before choosing a backend.
+- **Agent**: `KB_Router_Agent`, created with clear routing rules, bound knowledge base tools from `KnowledgeBuilder`, and instructions to inspect schemas before choosing a backend, then route each query to the correct KB.
 
 See the per-backend READMEs for step-by-step usage and routing behavior:
 - `examples/cli/knowledgebase/openai/chromadb/README.md`

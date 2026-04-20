@@ -179,7 +179,15 @@ class Neo4jManager(KnowledgeBase):
         :return: List of normalized records for the knowledge interface.
         """
 
-        records, _, _ = self._run(query)
+        if limit <= 0:
+            return []
+
+        normalized_query = query.strip().rstrip(";")
+        if not normalized_query:
+            return []
+
+        limited_query = f"CALL {{\n{normalized_query}\n}}\nRETURN *\nLIMIT $ak_read_limit"
+        records, _, _ = self._run(limited_query, {"ak_read_limit": int(limit)})
         if records:
             return [{"text": json.dumps(r.data(), default=str), "metadata": {"source": "graph"}} for r in records]
         return []
