@@ -91,7 +91,13 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
-
+      
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -107,6 +113,8 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: |
+          export ARM_SUBSCRIPTION_ID=${{ vars.AZURE_SUBSCRIPTION_ID }}
+          export ARM_USE_OIDC=true
           # Deploy
           python .github/scripts/run_single_test.py \
             --type aws-serverless \
@@ -118,6 +126,19 @@ jobs:
           python .github/scripts/run_single_test.py \
             --type aws-serverless \
             --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action test
+          
+          Python .github/scripts/run_single_test.py \
+            --type azure-containerized \
+            --path examples/azure-containerized/openai-cosmos \
+            --deploy-dir deploy \
+            --action deploy
+          
+          # Test
+          python .github/scripts/run_single_test.py \
+            --type azure-containerized \
+            --path examples/azure-containerized/openai-cosmos \
             --deploy-dir deploy \
             --action test
 
