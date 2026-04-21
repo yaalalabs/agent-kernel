@@ -237,13 +237,13 @@ def main():
     success = False
     
     if args.action == 'deploy':
-        if args.type in ['aws-containerized', 'aws-serverless']:
+        if args.type in ['aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless']:
             success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Deploy action not applicable for type: {args.type}")
             success = True
     elif args.action == 'destroy':
-        if args.type in ['aws-containerized', 'aws-serverless']:
+        if args.type in ['aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless']:
             success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Destroy action not applicable for type: {args.type}")
