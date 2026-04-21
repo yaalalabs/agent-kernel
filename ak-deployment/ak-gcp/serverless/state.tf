@@ -55,7 +55,7 @@ locals {
   mcp_endpoint_path = join("/", compact([local.api_base_segment_with_version, "mcp"]))
   mcp_gateway_map = var.enable_mcp_server ? {
     "ANY ${local.mcp_endpoint_path}" = {
-      path           = "mcp"
+      path           = local.mcp_endpoint_path
       method         = "ANY"
       overwrite_path = "/mcp/"
     }

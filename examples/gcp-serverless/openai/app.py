@@ -1,5 +1,3 @@
-import json
-
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent

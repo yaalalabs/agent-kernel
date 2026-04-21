@@ -51,8 +51,9 @@ module "serverless_agent" {
   agent_endpoint = "chat"
   gateway_endpoints = [
     {
-      path   = "health"
-      method = "GET"
+      path           = "health"
+      method         = "GET"
+      overwrite_path = "/health"
     }
   ]
 

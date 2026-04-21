@@ -25,7 +25,7 @@ output "api_gateway_id" {
 
 output "agent_invoke_url" {
   description = "Full agent invocation URL via API Gateway"
-  value       = "https://${google_api_gateway_gateway.gateway.default_hostname}/${var.api_base_path}/${var.api_version}/${var.agent_endpoint}"
+  value       = "https://${google_api_gateway_gateway.gateway.default_hostname}/${local.api_base_segment}/${var.api_version}/${var.agent_endpoint}"
 }
 
 output "authorizer_status" {
