@@ -12,3 +12,7 @@ output "gateway_endpoints" {
   value = module.containerd_agent.gateway_endpoints
   description = "Gateway endpoints"
 }
+
+output "agent_invoke_url" {
+  value = "${module.containerd_agent.api_base_url}/chat"
+}
