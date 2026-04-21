@@ -116,24 +116,40 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
         run: |
+          # Deploy
+          python .github/scripts/run_single_test.py \
+            --type aws-serverless \
+            --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action deploy
+          
+          # Test
+          python .github/scripts/run_single_test.py \
+            --type aws-serverless \
+            --path examples/aws-serverless/openai \
+            --deploy-dir deploy \
+            --action test
+      - name: Upload test results for AWS OpenAI test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-openai
+          path: |
+            examples/aws-serverless/openai/**/test-results/
+            examples/aws-serverless/openai/**/pytest-report.xml
+          retention-days: 30
+      - name: Deploy and test azure-containerized/openai-cosmos
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        run: |
           export ARM_SUBSCRIPTION_ID=${{ vars.ARM_SUBSCRIPTION_ID }}
           export ARM_USE_OIDC=true
           export ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
           export ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
-          # # Deploy
-          # python .github/scripts/run_single_test.py \
-          #   --type aws-serverless \
-          #   --path examples/aws-serverless/openai \
-          #   --deploy-dir deploy \
-          #   --action deploy
-          
-          # # Test
-          # python .github/scripts/run_single_test.py \
-          #   --type aws-serverless \
-          #   --path examples/aws-serverless/openai \
-          #   --deploy-dir deploy \
-          #   --action test
-          
+          # Deploy
           python .github/scripts/run_single_test.py \
             --type azure-containerized \
             --path examples/azure-containerized/openai-cosmos \
@@ -146,99 +162,95 @@ jobs:
             --path examples/azure-containerized/openai-cosmos \
             --deploy-dir deploy \
             --action test
-
-      - name: Upload test results
+      - name: Upload test results for Azure Container OpenAI test
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-openai
           path: |
-            examples/aws-serverless/openai/**/test-results/
-            examples/aws-serverless/openai/**/pytest-report.xml
             examples/azure-containerized/openai-cosmos/**/test-results/
             examples/azure-containerized/openai-cosmos/**/pytest-report.xml
           retention-days: 30
+  run-tests:
+    needs: [setup, deploy-openai]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # run-tests:
-  #   needs: [setup, deploy-openai]
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     fail-fast: false
-  #     matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
-  #   defaults:
-  #     run:
-  #       shell: bash -e {0}
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: '3.12'
+      - name: Install dependencies
+        run: pip install uv pyyaml
 
-  #     - name: Install dependencies
-  #       run: pip install uv pyyaml
+      - name: Restore ak-py build
+        uses: actions/cache/restore@v4
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
 
-  #     - name: Restore ak-py build
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: ak-py/dist
-  #         key: ak-py-${{ github.sha }}
+      - name: Configure AWS credentials
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.requires_aws == true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-  #     - name: Configure AWS credentials
-  #       if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.requires_aws == true
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
-  #         aws-region: ${{ vars.AWS_REGION }}
+      - name: Setup Terraform
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
 
-  #     - name: Setup Terraform
-  #       if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
-  #       uses: hashicorp/setup-terraform@v3
-  #       with:
-  #         terraform_version: 1.9.5
+      - name: Inject dependencies and retrieve base outputs
+        id: base-infra
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        run: |
+          python3 scripts/deploy/inject_dependencies.py
+          python3 .github/scripts/get_base_outputs.py \
+            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
 
-  #     - name: Inject dependencies and retrieve base outputs
-  #       id: base-infra
-  #       if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
-  #       run: |
-  #         python3 scripts/deploy/inject_dependencies.py
-  #         python3 .github/scripts/get_base_outputs.py \
-  #           --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
-  #           --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
-
-  #     - name: Run Test - ${{ matrix.path }}
-  #       env:
-  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  #         TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-  #         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-  #         SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
-  #       run: |
-  #         # Deploy (for AWS types)
-  #         if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
-  #           python .github/scripts/run_single_test.py \
-  #             --type ${{ matrix.type }} \
-  #             --path ${{ matrix.path }} \
-  #             --deploy-dir ${{ matrix.deploy_dir }} \
-  #             --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
-  #             --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
-  #             --action deploy
-  #         fi
+      - name: Run Test - ${{ matrix.path }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        run: |
+          # Deploy (for AWS types)
+          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
+              --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
+              --action deploy
+          fi
           
-  #         # Test
-  #         python .github/scripts/run_single_test.py \
-  #           --type ${{ matrix.type }} \
-  #           --path ${{ matrix.path }} \
-  #           --deploy-dir ${{ matrix.deploy_dir }} \
-  #           --action test
+          # Test
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --deploy-dir ${{ matrix.deploy_dir }} \
+            --action test
 
-  #     - name: Upload test results
-  #       if: always()
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: test-results-${{ matrix.id }}
-  #         path: |
-  #           ${{ matrix.path }}/**/test-results/
-  #           ${{ matrix.path }}/**/pytest-report.xml
-  #         retention-days: 30
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.id }}
+          path: |
+            ${{ matrix.path }}/**/test-results/
+            ${{ matrix.path }}/**/pytest-report.xml
+          retention-days: 30
