@@ -62,7 +62,7 @@ def validate_config(config_path: str = '.github/integration-test-config.yaml'):
         print(f"  ℹ️  Total tests: {len(tests)}")
         
         seen_paths: Set[str] = set()
-        valid_types = {'api', 'memory', 'aws-containerized', 'aws-serverless' 'azure-containerized' 'azure-serverless'}
+        valid_types = {'api', 'memory', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless'}
         
         for idx, test in enumerate(tests, 1):
             if not isinstance(test, dict):
