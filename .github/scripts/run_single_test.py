@@ -223,7 +223,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
 def main():
     parser = argparse.ArgumentParser(description='Run a single test')
     parser.add_argument('--type', required=True, 
-                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless'])
+                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless'])
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
     parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
