@@ -11,7 +11,7 @@ resource "google_firestore_database" "db" {
   location_id = var.region
   type        = "FIRESTORE_NATIVE"
 
-  deletion_policy             = var.deletion_protection ? "DELETE" : "ABANDON"
+  deletion_policy             = var.deletion_protection ? "ABANDON" : "DELETE"
   point_in_time_recovery_enablement = var.point_in_time_recovery ? "POINT_IN_TIME_RECOVERY_ENABLED" : "POINT_IN_TIME_RECOVERY_DISABLED"
 }
 
@@ -26,20 +26,20 @@ resource "google_firestore_field" "ttl" {
   ttl_config {}
 }
 
-# Index for querying sessions by session_id and key
-# This matches the DynamoDB schema: session_id (hash) + key (range)
-resource "google_firestore_index" "session_lookup" {
+# Index for querying sessions by expiry_time (used for TTL cleanup queries)
+# Document schema: one document per session_id (document ID), with session keys as fields
+resource "google_firestore_index" "session_expiry" {
   project    = var.project_id
   database   = google_firestore_database.db.name
   collection = var.collection_name
 
   fields {
-    field_path = "session_id"
+    field_path = "expiry_time"
     order      = "ASCENDING"
   }
 
   fields {
-    field_path = "key"
+    field_path = "__name__"
     order      = "ASCENDING"
   }
 }

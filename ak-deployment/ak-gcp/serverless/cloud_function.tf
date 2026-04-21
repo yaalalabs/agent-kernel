@@ -156,8 +156,8 @@ resource "google_cloud_run_v2_service" "service" {
             AK_SESSION__REDIS__URL = local.redis_url
           } : {},
           local.firestore_db_name != null ? {
-            AK_SESSION__FIRESTORE__DATABASE = local.firestore_db_name
-            AK_SESSION__FIRESTORE__PROJECT  = var.project_id
+            AK_SESSION__FIRESTORE__COLLECTION_NAME = local.firestore_db_name
+            AK_SESSION__FIRESTORE__PROJECT_ID      = var.project_id
           } : {}
         )
         content {
