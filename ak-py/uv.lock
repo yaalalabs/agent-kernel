@@ -121,12 +121,6 @@ slack = [
 smolagents = [
     { name = "smolagents" },
 ]
-teams = [
-    { name = "botbuilder-core" },
-    { name = "botbuilder-schema" },
-    { name = "httpx" },
-    { name = "msal" },
-]
 telegram = [
     { name = "httpx" },
 ]
@@ -162,8 +156,6 @@ requires-dist = [
     { name = "azure-core", marker = "extra == 'azure'", specifier = ">=1.26.0" },
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
     { name = "azure-functions", marker = "extra == 'azure'", specifier = ">=1.24.0" },
-    { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.17.0" },
-    { name = "botbuilder-schema", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.150.0" },
     { name = "datasets", marker = "extra == 'test'", specifier = ">=2.14.0" },
@@ -179,7 +171,6 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'slack'", specifier = ">=0.27.0" },
-    { name = "httpx", marker = "extra == 'teams'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=1.2.3" },
@@ -190,7 +181,6 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.9" },
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.74.9" },
-    { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.6.5" },
     { name = "openai-guardrails", marker = "extra == 'openai'", specifier = ">=0.2.1" },
@@ -218,7 +208,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "smolagents", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "test", "a2a", "mcp", "multimodal"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "smolagents", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -564,58 +554,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/84/da/d0dfb6d6e6321ae44df0321384c32c322bd07b15740d7422727a1a49fc5d/blis-1.3.3-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:6297e7616c158b305c9a8a4e47ca5fc9b0785194dd96c903b1a1591a7ca21ddf", size = 3011959, upload-time = "2025-11-17T12:28:06.862Z" },
     { url = "https://files.pythonhosted.org/packages/20/c5/2b0b5e556fa0364ed671051ea078a6d6d7b979b1cfef78d64ad3ca5f0c7f/blis-1.3.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:3f966ca74f89f8a33e568b9a1d71992fc9a0d29a423e047f0a212643e21b5458", size = 14232456, upload-time = "2025-11-17T12:28:08.779Z" },
     { url = "https://files.pythonhosted.org/packages/31/07/4cdc81a47bf862c0b06d91f1bc6782064e8b69ac9b5d4ff51d97e4ff03da/blis-1.3.3-cp313-cp313-win_amd64.whl", hash = "sha256:7a0fc4b237a3a453bdc3c7ab48d91439fcd2d013b665c46948d9eaf9c3e45a97", size = 6192624, upload-time = "2025-11-17T12:28:14.197Z" },
-]
-
-[[package]]
-name = "botbuilder-core"
-version = "4.17.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "botbuilder-schema" },
-    { name = "botframework-connector" },
-    { name = "botframework-streaming" },
-    { name = "jsonpickle" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/11/cd231b48525e6b34a11cf211db110a95e901204f141c1633bdcbfe1866f1/botbuilder_core-4.17.1-py3-none-any.whl", hash = "sha256:b0a5eea6ce9759dba0847adeed0587fec83ce069f3b4938eb348bb44becde8d7", size = 116145, upload-time = "2026-01-05T19:49:41.946Z" },
-]
-
-[[package]]
-name = "botbuilder-schema"
-version = "4.17.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "msrest" },
-    { name = "urllib3" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/44/abac81a80ed8aea977afbf8c40c22dec11610bbc1e4bd5bff4a7d7386b94/botbuilder_schema-4.17.1-py2.py3-none-any.whl", hash = "sha256:34da28d721b0635fc41bbe3b368225b9883f527d6f17337f858efe80f74656eb", size = 38196, upload-time = "2026-01-05T19:49:45.501Z" },
-]
-
-[[package]]
-name = "botframework-connector"
-version = "4.17.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "botbuilder-schema" },
-    { name = "msal" },
-    { name = "msrest" },
-    { name = "pyjwt" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/37/6c325f4e6441cba2b3184e6c9a15c3ddc00b5e5aa47966398c3d9836b598/botframework_connector-4.17.1-py2.py3-none-any.whl", hash = "sha256:929d242a242f16c7c637eec7c239a84fd7f5f5bb7f95968407d3a9aa9d7bdf8d", size = 100883, upload-time = "2026-01-05T19:49:48.285Z" },
-]
-
-[[package]]
-name = "botframework-streaming"
-version = "4.17.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "botbuilder-schema" },
-    { name = "botframework-connector" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/67/16b1a40b9bdc6288d90f17a464fca457e1e50cc36f1c25bc6265bcdffefe/botframework_streaming-4.17.1-py3-none-any.whl", hash = "sha256:66ad1cfe24c8c6b1fde8f95131e39e01197158e7e0bab797dfa709b4f905deb3", size = 41951, upload-time = "2026-01-05T19:49:50.245Z" },
 ]
 
 [[package]]
@@ -2371,15 +2309,6 @@ wheels = [
 ]
 
 [[package]]
-name = "jsonpickle"
-version = "3.4.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/eb/d9/05365407d3312653498001adcebe64a14024f7189691b728610209991c46/jsonpickle-3.4.2.tar.gz", hash = "sha256:2efa2778859b6397d5804b0a98d52cd2a7d9a70fcb873bc5a3ca5acca8f499ba", size = 314339, upload-time = "2024-11-06T07:48:25.479Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/a3/e610ae0feba3e7374da08ab6cc9bb76c8bfa84b4e502aa357bda0ef6dcae/jsonpickle-3.4.2-py3-none-any.whl", hash = "sha256:fd6c273278a02b3b66e3405db3dd2f4dbc8f4a4a3123bfcab3045177c6feb9c3", size = 46256, upload-time = "2024-11-06T07:48:22.923Z" },
-]
-
-[[package]]
 name = "jsonpointer"
 version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2926,36 +2855,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e0/47/dd32fa426cc72114383ac549964eecb20ecfd886d1e5ccf5340b55b02f57/mpmath-1.3.0.tar.gz", hash = "sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f", size = 508106, upload-time = "2023-03-07T16:47:11.061Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl", hash = "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c", size = 536198, upload-time = "2023-03-07T16:47:09.197Z" },
-]
-
-[[package]]
-name = "msal"
-version = "1.36.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/de/cb/b02b0f748ac668922364ccb3c3bff5b71628a05f5adfec2ba2a5c3031483/msal-1.36.0.tar.gz", hash = "sha256:3f6a4af2b036b476a4215111c4297b4e6e236ed186cd804faefba23e4990978b", size = 174217, upload-time = "2026-04-09T10:20:33.525Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/d3/414d1f0a5f6f4fe5313c2b002c54e78a3332970feb3f5fed14237aa17064/msal-1.36.0-py3-none-any.whl", hash = "sha256:36ecac30e2ff4322d956029aabce3c82301c29f0acb1ad89b94edcabb0e58ec4", size = 121547, upload-time = "2026-04-09T10:20:32.336Z" },
-]
-
-[[package]]
-name = "msrest"
-version = "0.7.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "azure-core" },
-    { name = "certifi" },
-    { name = "isodate" },
-    { name = "requests" },
-    { name = "requests-oauthlib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/68/77/8397c8fb8fc257d8ea0fa66f8068e073278c65f05acb17dcb22a02bfdc42/msrest-0.7.1.zip", hash = "sha256:6e7661f46f3afd88b75667b7187a92829924446c7ea1d169be8c4bb7eeb788b9", size = 175332, upload-time = "2022-06-13T22:41:25.111Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/cf/f2966a2638144491f8696c27320d5219f48a072715075d168b31d3237720/msrest-0.7.1-py3-none-any.whl", hash = "sha256:21120a810e1233e5e6cc7fe40b474eeb4ec6f757a15d7cf86702c369f9567c32", size = 85384, upload-time = "2022-06-13T22:41:22.42Z" },
 ]
 
 [[package]]
