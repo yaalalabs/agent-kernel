@@ -19,9 +19,6 @@ dev = [
 [tool.uv]
 package = false
 
-[tool.uv.sources]
-agentkernel = { path = "../../../ak-py", editable = true }
-
 [tool.isort]
 profile = "black"
 line_length = 120
@@ -30,4 +27,9 @@ line_length = 120
 python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
-warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
