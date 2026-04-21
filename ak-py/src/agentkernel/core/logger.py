@@ -1,11 +1,13 @@
 import logging
+
 from .config import AKConfig
+
 
 class AKLogger:
     """Agent Kernel logger configuration utility."""
-    
+
     _initialized = False
-    
+
     @staticmethod
     def resolve_level(level: str | int) -> int:
         """Resolve log level from string or int.
@@ -13,7 +15,9 @@ class AKLogger:
         :param level: Log level as string or int.
         :return: Resolved log level as int.
         """
-        return level if isinstance(level, int) else logging._nameToLevel.get(str(level).upper(), logging.WARNING) # using WARNING as fallback value as it is the default value in most cases in python 
+        return (
+            level if isinstance(level, int) else logging._nameToLevel.get(str(level).upper(), logging.WARNING)
+        )  # using WARNING as fallback value as it is the default value in most cases in python
 
     @staticmethod
     def attach_stream_handler(logger: logging.Logger, attach_formatter=False) -> None:
@@ -52,7 +56,7 @@ class AKLogger:
         resolved_level = AKLogger.resolve_level(level)
         ak_logger = logging.getLogger("ak")
         ak_logger.setLevel(resolved_level)
-        ak_logger.propagate = False # stopping the propagation here so that it won't propagate to the root, so loggers like "ak.api" with popagate=True (propagate is True by default, which is the case here) won't propagate to the root, popagation will stop at this level ("ak" level)
+        ak_logger.propagate = False  # stopping the propagation here so that it won't propagate to the root, so loggers like "ak.api" with popagate=True (propagate is True by default, which is the case here) won't propagate to the root, popagation will stop at this level ("ak" level)
         AKLogger.attach_stream_handler(logger=ak_logger, attach_formatter=True)
         AKLogger.set_handlers_level(logger=ak_logger, level=resolved_level)
 
@@ -66,10 +70,10 @@ class AKLogger:
         resolved_level = AKLogger.resolve_level(level)
         root_logger = logging.getLogger()
         root_logger.setLevel(resolved_level)
-        root_logger.propagate = False # the root logger has nowhere to propagate to because it is the root
+        root_logger.propagate = False  # the root logger has nowhere to propagate to because it is the root
         AKLogger.attach_stream_handler(logger=root_logger, attach_formatter=True)
         AKLogger.set_handlers_level(logger=root_logger, level=resolved_level)
-    
+
     @classmethod
     def configure_from_config(cls):
         """Configure loggers from AKConfig settings.

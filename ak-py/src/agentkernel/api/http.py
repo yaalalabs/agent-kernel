@@ -9,6 +9,7 @@ from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
+
 class RESTAPI:
     """
     Handles the initialization and running of the REST API server.

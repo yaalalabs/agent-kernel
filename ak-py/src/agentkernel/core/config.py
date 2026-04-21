@@ -240,7 +240,7 @@ class _QueuesConfig(BaseModel):
 
 class _LogLevelConfig(BaseModel):
     level: Optional[str] = Field(
-        default="WARNING", # WARNING is normally the default value for log levels in python
+        default="WARNING",  # WARNING is normally the default value for log levels in python
         pattern="^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$",
         description="Log level. Options: INFO, DEBUG, ERROR, WARNING, CRITICAL",
     )
