@@ -126,6 +126,13 @@ guardrail:
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
     version: "DRAFT"  # AWS Bedrock guardrail version (Bedrock only)
+
+# Logging configuration
+logging:
+  ak:
+    level: WARNING  # Agent Kernel log level: INFO, DEBUG, ERROR, WARNING, CRITICAL (default: WARNING)
+  system:
+    level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL (default: WARNING)
 ```
 
 ### JSON Configuration
@@ -222,6 +229,14 @@ Alternatively, use `config.json`:
       "type": "openai",
       "model": "gpt-4o-mini",
       "config_path": ""
+    }
+  },
+  "logging": {
+    "ak": {
+      "level": "WARNING"
+    },
+    "system": {
+      "level": "WARNING"
     }
   }
 }
@@ -418,6 +433,16 @@ export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default
 export AK_DEBUG=true
 ```
 
+### Logging Configuration
+
+```bash
+# Agent Kernel logging level
+export AK_LOGGING__AK__LEVEL=INFO  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL' (default: 'WARNING')
+
+# System/root logger level
+export AK_LOGGING__SYSTEM__LEVEL=WARNING  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL' (default: 'WARNING')
+```
+
 
 
 ## Configuration Schema
@@ -527,6 +552,13 @@ guardrail:
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
+
+# Logging configuration
+logging:
+  ak:                           # Agent Kernel logger configuration
+    level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
+  system:                       # System/root logger configuration
+    level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
 ```
 
 ## Configuration Precedence
