@@ -21,39 +21,80 @@ SmolagentsSupportedAgent = MultiStepAgent | CodeAgent | ToolCallingAgent
 
 
 class SmolagentsSession:
-    """Session class for smolagents based agents."""
+    """
+    SmolagentsSession class provides a session store for smolagents based agents.
+    """
 
     def __init__(self):
+        """
+        Initializes a SmolagentsSession instance.
+        """
         self._items: list[Any] = []
 
     def get_items(self) -> list[Any]:
+        """
+        Retrieve all stored session items.
+
+        :return: List of session items.
+        """
         return self._items
 
     def add_items(self, items: list[Any]) -> None:
+        """
+        Append items to the session store.
+
+        :param items: Items to append.
+        """
         self._items.extend(items)
 
     def clear(self) -> None:
+        """
+        Clear all items from the session store.
+        """
         self._items.clear()
 
 
 class SmolagentsRunner(Runner):
-    """Runner for smolagents based agents."""
+    """
+    SmolagentsRunner class provides a runner for smolagents based agents.
+    """
 
     def __init__(self):
+        """
+        Initializes a SmolagentsRunner instance.
+        """
         super().__init__(FRAMEWORK)
 
     @staticmethod
     def _session(session: Session) -> SmolagentsSession | None:
+        """
+        Returns the smolagents session associated with the provided session.
+
+        :param session: The session to retrieve the smolagents session for.
+        :return: SmolagentsSession instance, or None when no session is provided.
+        """
         if session is None:
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, SmolagentsSession())
 
     @staticmethod
     def _has_memory(agent: Any) -> bool:
+        """
+        Check whether the wrapped smolagents agent exposes memory steps.
+
+        :param agent: The wrapped AgentKernel agent.
+        :return: True if memory step storage is available, otherwise False.
+        """
         return hasattr(agent.agent, "memory") and hasattr(agent.agent.memory, "steps")
 
     @classmethod
     def _hydrate_memory(cls, agent: Any, session: Session) -> None:
+        """
+        Restore framework memory from the AgentKernel session before execution.
+
+        :param agent: The wrapped AgentKernel agent.
+        :param session: The AgentKernel session.
+        """
         if session is None or not cls._has_memory(agent):
             return
         smol_session = cls._session(session)
@@ -63,6 +104,12 @@ class SmolagentsRunner(Runner):
 
     @classmethod
     def _sync_memory(cls, agent: Any, session: Session) -> None:
+        """
+        Persist framework memory back to the AgentKernel session after execution.
+
+        :param agent: The wrapped AgentKernel agent.
+        :param session: The AgentKernel session.
+        """
         if session is None or not cls._has_memory(agent):
             return
         smol_session = cls._session(session)
@@ -71,6 +118,14 @@ class SmolagentsRunner(Runner):
         smol_session.add_items(agent.agent.memory.steps)
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """
+        Runs the smolagents agent with text inputs.
+
+        :param agent: The smolagents-backed agent wrapper to run.
+        :param session: The session to use for memory hydration and sync.
+        :param requests: The list of incoming requests.
+        :return: The result of the agent execution.
+        """
         prompt = ""
         context: ToolContext | None = None
         try:
@@ -107,9 +162,18 @@ class SmolagentsRunner(Runner):
 
 
 class SmolagentsAgent(BaseAgent):
-    """Agent wrapping for smolagents based agents."""
+    """
+    SmolagentsAgent class provides an agent wrapping for smolagents based agents.
+    """
 
     def __init__(self, name: str, runner: SmolagentsRunner, agent: SmolagentsSupportedAgent):
+        """
+        Initializes a SmolagentsAgent instance.
+
+        :param name: Name of the agent.
+        :param runner: Runner associated with the agent.
+        :param agent: The smolagents agent instance.
+        """
         super().__init__(name, runner)
         self._agent = agent
         self._attach_system_tools()
@@ -117,12 +181,26 @@ class SmolagentsAgent(BaseAgent):
 
     @property
     def agent(self) -> SmolagentsSupportedAgent:
+        """
+        Returns the underlying smolagents agent instance.
+        """
         return self._agent
 
     def get_description(self):
+        """
+        Returns the description for this agent.
+        """
         return getattr(self.agent, "system_prompt", getattr(self.agent, "description", "smolagents agent"))
 
     def override_system_prompt(self, prompt: str) -> None:
+        """
+        Appends the given prompt text to the smolagents system prompt.
+
+        For versions where system_prompt is read-only, this updates
+        prompt_templates["system_prompt"] instead.
+
+        :param prompt: Prompt text to append.
+        """
         # Newer smolagents versions expose a read-only `system_prompt`.
         # For those versions, update prompt_templates["system_prompt"] instead.
         prompt_templates = getattr(self.agent, "prompt_templates", None)
@@ -146,6 +224,12 @@ class SmolagentsAgent(BaseAgent):
                 self.agent.description += "\n" + prompt
 
     def attach_tool(self, tool: Any) -> None:
+        """
+        Accepts a raw Callable and wraps it with SmolagentsToolBuilder before attaching,
+        so the base Agent._attach_system_tools() can pass raw functions generically.
+
+        :param tool: Raw Python callable or already-wrapped smolagents tool.
+        """
         wrapped = SmolagentsToolBuilder.bind([tool])
         for w in wrapped:
             if not hasattr(self.agent, "tools") or self.agent.tools is None:
@@ -168,6 +252,9 @@ class SmolagentsAgent(BaseAgent):
                 pass
 
     def get_a2a_card(self):
+        """
+        Returns the A2A AgentCard associated with the agent.
+        """
         from a2a.types import AgentSkill
 
         skills = []
@@ -180,9 +267,17 @@ class SmolagentsAgent(BaseAgent):
 
 
 class SmolagentsModule(Module):
-    """Module for compiling smolagents based agents."""
+    """
+    SmolagentsModule class provides a module for smolagents based agents.
+    """
 
     def __init__(self, agents: list[SmolagentsSupportedAgent], runner: SmolagentsRunner = None):
+        """
+        Initializes a SmolagentsModule instance.
+
+        :param agents: List of agents in the module.
+        :param runner: Custom runner associated with the module.
+        """
         super().__init__()
         if runner is not None:
             self.runner = runner
@@ -193,29 +288,68 @@ class SmolagentsModule(Module):
         self.load(agents)
 
     def _wrap(self, agent: SmolagentsSupportedAgent, agents: List[SmolagentsSupportedAgent]) -> BaseAgent:
+        """
+        Wraps the provided agent in a SmolagentsAgent instance.
+
+        :param agent: Agent to wrap.
+        :param agents: List of agents in the module.
+        :return: SmolagentsAgent instance.
+        """
         name = getattr(agent, "name", "smolagent")
         return SmolagentsAgent(name, self.runner, agent)
 
     def load(self, agents: list[SmolagentsSupportedAgent]) -> "SmolagentsModule":
+        """
+        Loads the specified agents into the module by replacing current agents.
+
+        :param agents: List of agents to load.
+        :return: SmolagentsModule instance.
+        """
         super().load(agents)
         return self
 
     def pre_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PreHook]) -> "SmolagentsModule":
+        """
+        Attaches pre-execution hooks to the agent.
+
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of pre-execution hooks to attach.
+        :return: SmolagentsModule instance.
+        """
         name = getattr(agent, "name", "smolagent")
         super().get_agent(name).pre_hooks.extend(hooks)
         return self
 
     def post_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PostHook]) -> "SmolagentsModule":
+        """
+        Attaches post-execution hooks to the agent.
+
+        :param agent: The agent to attach hooks to.
+        :param hooks: List of post-execution hooks to attach.
+        :return: SmolagentsModule instance.
+        """
         name = getattr(agent, "name", "smolagent")
         super().get_agent(name).post_hooks.extend(hooks)
         return self
 
 
 class SmolagentsToolBuilder(ToolBuilder):
-    """Tool builder for smolagents."""
+    """
+    Tool builder for smolagents.
+
+    Wraps generic tool functions into smolagents-compatible tool definitions
+    using the smolagents tool helper.
+    """
 
     @classmethod
     def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to smolagents tool definitions.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of smolagents-compatible tool definitions.
+        :raises TypeError: If any item in funcs is not callable.
+        """
         tools = []
         for func in funcs:
             if not callable(func):
