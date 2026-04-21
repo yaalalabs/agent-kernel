@@ -2,31 +2,64 @@ from agentkernel.core.util.error_util import user_facing_error_message
 
 
 class ErrorWithStatusCode(Exception):
-    def __init__(self, status_code: int, message: str):
+    def __init__(self, status_code: int, message: str = ""):
         super().__init__(message)
         self.status_code = status_code
 
 
-def test_user_facing_error_message_for_503_with_status_attr():
-    error = ErrorWithStatusCode(503, "UNAVAILABLE")
-    assert user_facing_error_message(error) == "Error: The model is temporarily unavailable (503). Please try again."
+class ErrorWithStringCode(Exception):
+    def __init__(self, code: str, message: str = ""):
+        super().__init__(message)
+        self.code = code
 
 
-def test_user_facing_error_message_for_503_in_message():
-    error = Exception("google.genai.errors.ServerError: 503 UNAVAILABLE")
-    assert user_facing_error_message(error) == "Error: The model is temporarily unavailable (503). Please try again."
+class AuthenticationError(Exception):
+    pass
 
 
-def test_user_facing_error_message_for_high_demand_phrase():
-    error = Exception("This model is currently experiencing high demand. Please try again later.")
-    assert user_facing_error_message(error) == "Error: The model is temporarily unavailable. Please try again."
+class BadRequestError(Exception):
+    pass
 
 
-def test_user_facing_error_message_falls_back_to_cleaned_message():
-    error = Exception("  Something   bad\n happened  ")
-    assert user_facing_error_message(error) == "Error: Something bad happened"
+class TimeoutError(Exception):
+    pass
 
 
-def test_user_facing_error_message_for_model_not_found():
-    error = Exception("Error code: 400 - {'error': {'message': \"The requested model 'gpt-44' does not exist.\", 'code': 'model_not_found'}}")
-    assert user_facing_error_message(error) == "Error: Invalid model configuration. Please update the model name and try again."
+class SilentError(Exception):
+    def __str__(self):
+        return ""
+
+
+def test_user_facing_error_message_for_503_status():
+    error = ErrorWithStatusCode(503, "Unavailable")
+    assert user_facing_error_message(error) == "Error: The service is temporarily unavailable. Please try again."
+
+
+def test_user_facing_error_message_for_429_string():
+    error = ErrorWithStringCode("429", "Too Many Requests")
+    assert user_facing_error_message(error) == "Error: Too many requests. Please try again later."
+
+
+def test_user_facing_error_message_for_auth_class():
+    error = AuthenticationError("Secret Key Invalid")
+    assert user_facing_error_message(error) == "Error: Invalid API configuration or credentials."
+
+
+def test_user_facing_error_message_for_timeout():
+    error = TimeoutError("Request timed out")
+    assert user_facing_error_message(error) == "Error: Could not connect to the model provider. Please check your internet."
+
+
+def test_user_facing_error_message_for_bad_request_cli_case():
+    error = BadRequestError("model gpt-4o-mdasda not found")
+    assert user_facing_error_message(error) == "Error: Invalid model or resource not found. Please check your configuration."
+
+
+def test_user_facing_error_message_fallback_cleanup():
+    error = Exception("   Unexpected    system \n failure  ")
+    assert user_facing_error_message(error) == "Error: Unexpected system failure"
+
+
+def test_user_facing_error_message_ultimate_fallback():
+    error = SilentError()
+    assert user_facing_error_message(error) == "An unexpected error occurred: SilentError"
