@@ -77,7 +77,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=1.2.3" },
     { name = "langchain-community", marker = "extra == 'langgraph'", specifier = "~=0.4.1" },
-    { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=3.9.2" },
+    { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=4.2.0" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = "~=1.0.5" },
     { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.74.3" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.9" },
