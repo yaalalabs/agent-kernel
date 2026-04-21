@@ -238,6 +238,19 @@ class _QueuesConfig(BaseModel):
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
 
 
+class _LogLevelConfig(BaseModel):
+    level: Optional[str] = Field(
+        default="WARNING", # WARNING is normally the default value for log levels in python
+        pattern="^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$",
+        description="Log level. Options: INFO, DEBUG, ERROR, WARNING, CRITICAL",
+    )
+
+
+class _LoggingConfig(BaseModel):
+    ak: Optional[_LogLevelConfig] = Field(description="Agent Kernel logging configuration", default_factory=_LogLevelConfig)
+    system: Optional[_LogLevelConfig] = Field(description="System logging configuration", default_factory=_LogLevelConfig)
+
+
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
@@ -275,6 +288,7 @@ class AKConfig(YamlBaseSettingsModified):
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
+    logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod
