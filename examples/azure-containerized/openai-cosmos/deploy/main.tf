@@ -23,13 +23,4 @@ module "containerd_agent" {
   tags = {
     "costcenter" = "agent-kernel"
   }
-
-  gateway_endpoints = [
-    {
-      path           = "chat"
-      method         = "POST"
-      overwrite_path = "/run"
-    }
-  ]
-
 }

@@ -42,11 +42,21 @@ async def http_client():
 @pytest.mark.order(1)
 async def test_history_agent(http_client):
     response = await http_client.send("Who won the 1996 cricket world cup?")
-    Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
+    Test.compare(
+        response,
+        [
+            "The 1996 Cricket World Cup was won by Sri Lanka. They defeated Australia in the final to claim their first ever World Cup title. The final was held on March 17, 1996, in Lahore, Pakistan."
+        ],
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup(http_client):
     response = await http_client.send("Who hosted?")
-    Test.compare(response, ["Sri Lanka, India and Pakistan"])
+    Test.compare(
+        response,
+        [
+            "The 1996 Cricket World Cup was co-hosted by three countries: **India, Pakistan, and Sri Lanka**. Matches were played across all three nations, with the final held in Lahore, Pakistan."
+        ],
+    )
