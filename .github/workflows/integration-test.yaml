@@ -132,7 +132,7 @@ jobs:
           #   --deploy-dir deploy \
           #   --action test
           
-          Python .github/scripts/run_single_test.py \
+          python .github/scripts/run_single_test.py \
             --type azure-containerized \
             --path examples/azure-containerized/openai-cosmos \
             --deploy-dir deploy \
