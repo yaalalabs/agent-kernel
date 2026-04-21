@@ -272,6 +272,12 @@ variable "throttling_burst_limit" {
 # JWT Authorizer — GCP equivalent of AWS API Gateway Lambda Authorizer.
 # When set, API Gateway validates the JWT token in every request against the
 # provided JWKS endpoint before forwarding to the Cloud Run service.
+variable "allow_unauthenticated_invocation" {
+  type        = bool
+  description = "Allow unauthenticated direct invocation of the Cloud Run service URL. Set to false for stricter isolation (grant invoker only to specific principals)."
+  default     = true
+}
+
 variable "authorizer" {
   description = "JWT authorizer configuration for API Gateway. When set, all endpoints require a valid JWT."
   type = object({

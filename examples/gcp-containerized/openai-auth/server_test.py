@@ -17,10 +17,13 @@ AUDIENCE = os.getenv("AK_TEST_AUDIENCE")
 
 def get_google_identity_token() -> str:
     """Get a Google Identity Token using gcloud CLI.
-    Equivalent of: gcloud auth print-identity-token
+    Equivalent of: gcloud auth print-identity-token --audiences=<AUDIENCE>
     """
+    cmd = ["gcloud", "auth", "print-identity-token"]
+    if AUDIENCE:
+        cmd += [f"--audiences={AUDIENCE}"]
     result = subprocess.run(
-        ["gcloud", "auth", "print-identity-token"],
+        cmd,
         capture_output=True,
         text=True,
         check=True,

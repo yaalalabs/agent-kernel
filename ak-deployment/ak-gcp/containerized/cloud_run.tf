@@ -189,10 +189,13 @@ resource "google_logging_project_bucket_config" "default_logs" {
   bucket_id      = "_Default"
 }
 
-# Make the service publicly accessible
-# In AWS you'd configure ALB + Security Group rules
-# In GCP it's just one IAM binding
+# Allow unauthenticated direct invocation of the Cloud Run service URL.
+# When allow_unauthenticated_invocation = true (default), the Cloud Run URL is publicly
+# accessible. Authentication is enforced at the API Gateway level (JWT authorizer).
+# Set allow_unauthenticated_invocation = false for stricter network-level isolation
+# and grant roles/run.invoker only to the API Gateway service agent.
 resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+  count    = var.allow_unauthenticated_invocation ? 1 : 0
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.service.name
