@@ -75,6 +75,9 @@ crewai = [
     { name = "openinference-instrumentation-crewai" },
     { name = "openinference-instrumentation-litellm" },
 ]
+gcp = [
+    { name = "google-cloud-firestore" },
+]
 gmail = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
@@ -99,9 +102,6 @@ mcp = [
 ]
 messenger = [
     { name = "httpx" },
-]
-multimodal = [
-    { name = "litellm" },
 ]
 openai = [
     { name = "openai-agents" },
@@ -164,6 +164,7 @@ requires-dist = [
     { name = "google-auth", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
     { name = "google-auth-httplib2", marker = "extra == 'gmail'", specifier = ">=0.2.0" },
     { name = "google-auth-oauthlib", marker = "extra == 'gmail'", specifier = ">=1.0.0" },
+    { name = "google-cloud-firestore", marker = "extra == 'gcp'", specifier = ">=2.19.0" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
@@ -176,7 +177,6 @@ requires-dist = [
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = "~=1.0.5" },
     { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.74.3" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.74.9" },
-    { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.74.9" },
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.6.5" },
@@ -204,7 +204,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "test", "a2a", "mcp", "multimodal"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "gmail", "gcp", "test", "a2a", "mcp"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1569,6 +1569,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/cd/b33bbc4b096d937abee5ebfad3908b2bdc65acd1582191aa33beaa2b70a5/google_cloud_discoveryengine-0.13.12.tar.gz", hash = "sha256:d6b9f8fadd8ad0d2f4438231c5eb7772a317e9f59cafbcbadc19b5d54c609419", size = 3582382, upload-time = "2025-09-22T16:51:14.052Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/70/607f6011648f603d35e60a16c34aee68a0b39510e4268d4859f3268684f9/google_cloud_discoveryengine-0.13.12-py3-none-any.whl", hash = "sha256:295f8c6df3fb26b90fb82c2cd6fbcf4b477661addcb19a94eea16463a5c4e041", size = 3337248, upload-time = "2025-09-22T16:50:57.375Z" },
+]
+
+[[package]]
+name = "google-cloud-firestore"
+version = "2.27.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "google-cloud-core" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4c/83/bdfd4387fadc5f44de1d0f97b456c648b6f87ec0b1818a9f7f477e6e6eab/google_cloud_firestore-2.27.0.tar.gz", hash = "sha256:5633cb164ef56ca6c73a807822191a56a98f6f10e76978c4f2eb197ae03383d2", size = 649244, upload-time = "2026-04-13T22:55:43.931Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/db/fc72c4279887cc95011f16e70200d021030f0261e6391fa52e3adfaaea25/google_cloud_firestore-2.27.0-py3-none-any.whl", hash = "sha256:cc2ea78bc2d4dcc928016d56802deacfda3c9bbda0a7d691ee73b41a2f1a80d7", size = 429806, upload-time = "2026-04-13T22:55:41.726Z" },
 ]
 
 [[package]]
