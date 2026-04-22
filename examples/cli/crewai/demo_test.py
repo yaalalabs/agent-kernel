@@ -1,13 +1,14 @@
 import os
+import sys
 
 import pytest
 import pytest_asyncio
 from agentkernel.test import Test
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+if os.getenv("CI") == "true":
+    sys.stdout = open(os.devnull, "w")
 
-os.environ["CREWAI_TRACING_ENABLED"] = "false"
-os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"  # Set an environment variable to indicate test mode for CrewAI
+pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
