@@ -3,7 +3,10 @@ import os
 import pytest
 import pytest_asyncio
 
-os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
+os.environ["CREWAI_TRACING_ENABLED"] = "false"
+os.environ["CREWAI_DISABLE_TRACING"] = "true"
+os.environ["CREWAI_DISABLE_TELEMETRY"] = "true"
+os.environ["OTEL_SDK_DISABLED"] = "true"
 os.environ["CI"] = "true"
 
 
