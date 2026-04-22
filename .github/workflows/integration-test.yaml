@@ -138,42 +138,43 @@ jobs:
             examples/aws-serverless/openai/**/test-results/
             examples/aws-serverless/openai/**/pytest-report.xml
           retention-days: 30
-      - name: Deploy and test azure-containerized/openai-cosmos
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
-        run: |
-          export ARM_SUBSCRIPTION_ID=${{ vars.ARM_SUBSCRIPTION_ID }}
-          export ARM_USE_OIDC=true
-          export ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
-          export ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
-          # Deploy
-          python .github/scripts/run_single_test.py \
-            --type azure-containerized \
-            --path examples/azure-containerized/openai-cosmos \
-            --deploy-dir deploy \
-            --action deploy
+      # - name: Deploy and test azure-containerized/openai-cosmos
+      #   env:
+      #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      #     TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      #     SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      #     SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+      #   run: |
+      #     export ARM_SUBSCRIPTION_ID=${{ vars.ARM_SUBSCRIPTION_ID }}
+      #     export ARM_USE_OIDC=true
+      #     export ARM_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+      #     export ARM_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+      #     # Deploy
+      #     python .github/scripts/run_single_test.py \
+      #       --type azure-containerized \
+      #       --path examples/azure-containerized/openai-cosmos \
+      #       --deploy-dir deploy \
+      #       --action deploy
           
-          # Test
-          python .github/scripts/run_single_test.py \
-            --type azure-containerized \
-            --path examples/azure-containerized/openai-cosmos \
-            --deploy-dir deploy \
-            --action test
-      - name: Upload test results for Azure Container OpenAI test
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-openai
-          path: |
-            examples/azure-containerized/openai-cosmos/**/test-results/
-            examples/azure-containerized/openai-cosmos/**/pytest-report.xml
-          retention-days: 30
+      #     # Test
+      #     python .github/scripts/run_single_test.py \
+      #       --type azure-containerized \
+      #       --path examples/azure-containerized/openai-cosmos \
+      #       --deploy-dir deploy \
+      #       --action test
+      # - name: Upload test results for Azure Container OpenAI test
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: test-results-openai
+      #     path: |
+      #       examples/azure-containerized/openai-cosmos/**/test-results/
+      #       examples/azure-containerized/openai-cosmos/**/pytest-report.xml
+      #     retention-days: 30
   run-tests:
     needs: [setup, deploy-openai]
     runs-on: ubuntu-latest
+    environment: ci-tests
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
@@ -181,11 +182,9 @@ jobs:
       run:
         shell: bash -e {0}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -205,8 +204,16 @@ jobs:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      - name: Azure login
+        if: matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
@@ -220,14 +227,21 @@ jobs:
             --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
             --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
 
+      - name: Inject dependencies (Azure)
+        if: matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        run: python3 scripts/deploy/inject_dependencies.py
+
       - name: Run Test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
-          # Deploy (for AWS types)
           if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
             python .github/scripts/run_single_test.py \
               --type ${{ matrix.type }} \
@@ -236,9 +250,42 @@ jobs:
               --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
               --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
               --action deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
+            
+            # Destroy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
+              --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}
+              --action destroy
+
+          elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+            
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
+            
+            # Destroy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action destroy
           fi
-          
-          # Test
+
           python .github/scripts/run_single_test.py \
             --type ${{ matrix.type }} \
             --path ${{ matrix.path }} \

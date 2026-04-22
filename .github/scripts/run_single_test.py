@@ -368,7 +368,7 @@ def main():
             print(f"⚠️  Deploy action not applicable for type: {args.type}")
             success = True
     elif args.action == 'destroy':
-        if args.type in ['aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless']:
+        if args.type in ['aws-containerized', 'aws-serverless']:
             success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
