@@ -27,3 +27,14 @@ output "agent_invoke_url" {
   description = "Complete Agent Invoke URL"
   value       = "${module.FlexFunction.api_url}/chat"
 }
+
+output "vnet_id" {
+  description = "ID of the Virtual Network"
+  value       = module.FlexFunction.vnet_id
+  
+}
+
+output "subnet_ids" {
+  description = "IDs of the subnets"
+  value       = module.FlexFunction.private_subnet_ids
+}

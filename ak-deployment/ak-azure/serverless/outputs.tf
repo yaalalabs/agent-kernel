@@ -28,7 +28,7 @@ output "api_url" {
   value       = var.api_base_path != null && var.api_base_path != "" ? "${azurerm_api_management.apim.gateway_url}/${var.api_base_path}/${var.api_version}" : "${azurerm_api_management.apim.gateway_url}/${var.api_version}"
 }
 
-output "vnet" {
+output "vnet_id" {
   description = "ID of the Virtual Network"
   value       = local.vnet_id
   
@@ -36,7 +36,7 @@ output "vnet" {
 
 output "private_subnet_ids" {
   description = "Private subnet IDs"
-  value       = local.subnet_ids
+  value       = [local.subnet_ids, local.function_subnet_id]
 }
 
 output "storage_account_name" {
