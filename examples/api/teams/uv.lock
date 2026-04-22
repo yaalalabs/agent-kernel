@@ -50,7 +50,7 @@ requires-dist = [
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
     { name = "azure-functions", marker = "extra == 'azure'", specifier = ">=1.24.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
-    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.150.0" },
+    { name = "crewai", marker = "extra == 'crewai'", specifier = "==1.6.1" },
     { name = "datasets", marker = "extra == 'test'", specifier = ">=2.14.0" },
     { name = "deprecated", specifier = ">=1.2.18" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.118.0" },
