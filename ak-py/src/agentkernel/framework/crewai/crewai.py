@@ -51,6 +51,7 @@ class CrewAISession(Storage):
         :return: List of items matching the query.
         """
         self._log.debug(f"search: {query}, {limit}, {score_threshold}")
+        #added content for backward compatibiliy
         return list(map(lambda item: {"content": item["value"], "context": item["value"]}, self._items[:limit]))
 
     def reset(self) -> None:
