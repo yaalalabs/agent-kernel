@@ -86,6 +86,129 @@ def run_containerized_test(path: str) -> bool:
     """Run containerized example test."""
     return run_simple_test(path)
 
+def destroy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str = None, subnet_ids: str = None) -> bool:
+    """Destroy Azure resources."""
+    deploy_path = Path(path) / deploy_dir
+    deploy_script = deploy_path / 'deploy.sh'
+    
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
+    
+    if not deploy_script.exists():
+        print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
+        return True
+    
+    # Set environment variables for non-interactive CI execution
+    env = {}
+    
+    # Inject VNet configuration as environment variables if provided
+    if vnet_id and subnet_ids:
+        env['TF_VAR_vnet_id'] = vnet_id
+        env['TF_VAR_subnet_ids'] = subnet_ids
+        
+        print(f"\n✅ Injecting VNet configuration as environment variables for destroy:")
+        print(f"   TF_VAR_VNET_ID={vnet_id}")
+        print(f"   TF_VAR_SUBNET_IDS={subnet_ids}\n")
+    
+    # Destroy
+    return run_command(
+        ['./deploy.sh', 'destroy'],
+        cwd=str(deploy_path),
+        description=f"Destroying {path}",
+        env=env
+    )
+
+def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str = None, subnet_ids: str = None) -> bool:
+    """Deploy Azure resources only (without running tests)."""
+    deploy_path = Path(path) / deploy_dir
+    deploy_script = deploy_path / 'deploy.sh'
+    
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
+    
+    if not deploy_script.exists():
+        print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
+        return True
+    
+    # Set environment variables for non-interactive CI execution
+    env = {}
+    
+    # Inject VNet configuration as environment variables if provided
+    if vnet_id and subnet_ids:
+        env['TF_VAR_vnet_id'] = vnet_id
+        env['TF_VAR_subnet_ids'] = subnet_ids
+        
+        print(f"\n✅ Injecting VNet configuration as environment variables:")
+        print(f"   TF_VAR_vnet_id={vnet_id}")
+        print(f"   TF_VAR_subnet_ids={subnet_ids}\n")
+    
+    # Initialize terraform if needed
+    if not run_command(
+        ['terraform', 'init', '-upgrade'],
+        cwd=str(deploy_path),
+        description=f"Terraform init for {path}",
+        env=env
+    ):
+        return False
+
+    # Deploy
+    return run_command(
+        ['./deploy.sh', 'local'],
+        cwd=str(deploy_path),
+        description=f"Deploying {path}",
+        env=env
+    )   
+
+def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Test an already deployed Azure resource."""
+    deploy_path = Path(path) / deploy_dir
+    
+    if not deploy_path.exists():
+        print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
+        return True
+    
+    # Get agent_invoke_url terraform output and set AK_TEST_ENDPOINT
+    try:
+        print(f"\n{'='*80}")
+        print(f"Retrieving agent_invoke_url terraform output")
+        print(f"{'='*80}\n")
+        
+        result = subprocess.run(
+            ['terraform', 'output', '-raw', 'agent_invoke_url'],
+            cwd=str(deploy_path),
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        agent_invoke_url = result.stdout.strip()
+        if not agent_invoke_url:
+            print("❌ Failed to retrieve agent_invoke_url: output was empty.")
+            return False
+        print(f"✅ agent_invoke_url: {agent_invoke_url}")
+        
+        # Set as environment variable for test
+        test_env = {'AK_TEST_ENDPOINT': agent_invoke_url}
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
+        return False
+    
+    #remove the config.yaml till the issue with it is being solved
+    
+    delete_config = run_command(
+        ['rm', '-f', 'config.yaml'],
+        cwd=path,
+        description=f"Removing config.yaml for {path}"
+    )
+    
+    # Test
+    return run_command(
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        cwd=path,
+        description=f"Testing {path}",
+        env=test_env
+    )
 
 def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Destroy AWS resources."""
@@ -237,14 +360,18 @@ def main():
     success = False
     
     if args.action == 'deploy':
-        if args.type in ['aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless']:
+        if args.type in ['aws-containerized', 'aws-serverless']:
             success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
+        elif args.type in ['azure-serverless', 'azure-containerized']:
+            success = deploy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Deploy action not applicable for type: {args.type}")
             success = True
     elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless']:
             success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
+        elif args.type in ['azure-serverless', 'azure-containerized']:
+            success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Destroy action not applicable for type: {args.type}")
             success = True
@@ -259,6 +386,11 @@ def main():
             success = run_containerized_test(args.path)
         elif args.type in ['aws-containerized', 'aws-serverless']:
             success = test_aws_deployment(args.path, args.deploy_dir)
+        elif args.type in ['azure-containerized', 'azure-serverless']:
+            success = test_azure_deployment(args.path, args.deploy_dir)
+        else:
+            print(f"  Test action not applicable for type: {args.type}")
+            success = False
     
     if success:
         print(f"\n✅ SUCCESS: {args.path}")
