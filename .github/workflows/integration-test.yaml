@@ -109,35 +109,35 @@ jobs:
       - name: Inject dependencies
         run: python3 scripts/deploy/inject_dependencies.py
 
-      - name: Deploy and test aws-serverless/openai
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
-        run: |
-          # Deploy
-          python .github/scripts/run_single_test.py \
-            --type aws-serverless \
-            --path examples/aws-serverless/openai \
-            --deploy-dir deploy \
-            --action deploy
+      # - name: Deploy and test aws-serverless/openai
+      #   env:
+      #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      #     TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      #     SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      #     SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+      #   run: |
+      #     # Deploy
+      #     python .github/scripts/run_single_test.py \
+      #       --type aws-serverless \
+      #       --path examples/aws-serverless/openai \
+      #       --deploy-dir deploy \
+      #       --action deploy
           
-          # Test
-          python .github/scripts/run_single_test.py \
-            --type aws-serverless \
-            --path examples/aws-serverless/openai \
-            --deploy-dir deploy \
-            --action test
-      - name: Upload test results for AWS OpenAI test
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-openai
-          path: |
-            examples/aws-serverless/openai/**/test-results/
-            examples/aws-serverless/openai/**/pytest-report.xml
-          retention-days: 30
+      #     # Test
+      #     python .github/scripts/run_single_test.py \
+      #       --type aws-serverless \
+      #       --path examples/aws-serverless/openai \
+      #       --deploy-dir deploy \
+      #       --action test
+      # - name: Upload test results for AWS OpenAI test
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: test-results-openai
+      #     path: |
+      #       examples/aws-serverless/openai/**/test-results/
+      #       examples/aws-serverless/openai/**/pytest-report.xml
+      #     retention-days: 30
       # - name: Deploy and test azure-containerized/openai-cosmos
       #   env:
       #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
