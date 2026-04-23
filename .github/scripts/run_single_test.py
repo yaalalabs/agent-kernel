@@ -100,12 +100,15 @@ def destroy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str 
         return True
     
     # Set environment variables for non-interactive CI execution
-    env = {}
+    tf_env = {
+        'TF_INPUT': '0',  # Disable interactive prompts
+        'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
+    }
     
     # Inject VNet configuration as environment variables if provided
     if vnet_id and subnet_ids:
-        env['TF_VAR_vnet_id'] = vnet_id
-        env['TF_VAR_subnet_ids'] = subnet_ids
+        tf_env['TF_VAR_vnet_id'] = vnet_id
+        tf_env['TF_VAR_subnet_ids'] = subnet_ids
         
         print(f"\n✅ Injecting VNet configuration as environment variables for destroy:")
         print(f"   TF_VAR_VNET_ID={vnet_id}")
@@ -116,7 +119,7 @@ def destroy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str 
         ['./deploy.sh', 'destroy'],
         cwd=str(deploy_path),
         description=f"Destroying {path}",
-        env=env
+        env=tf_env
     )
 
 def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str = None, subnet_ids: str = None) -> bool:
@@ -141,8 +144,8 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
     
     # Inject VNet configuration as environment variables if provided
     if vnet_id and subnet_ids:
-        env['TF_VAR_vnet_id'] = vnet_id
-        env['TF_VAR_subnet_ids'] = subnet_ids
+        tf_env['TF_VAR_vnet_id'] = vnet_id
+        tf_env['TF_VAR_subnet_ids'] = subnet_ids
         
         print(f"\n✅ Injecting VNet configuration as environment variables:")
         print(f"   TF_VAR_vnet_id={vnet_id}")
