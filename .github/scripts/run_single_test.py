@@ -133,7 +133,11 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
         return True
     
     # Set environment variables for non-interactive CI execution
-    env = {}
+    tf_env = {
+        'TF_INPUT': '0',  # Disable interactive prompts
+        'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
+    }
+    
     
     # Inject VNet configuration as environment variables if provided
     if vnet_id and subnet_ids:
