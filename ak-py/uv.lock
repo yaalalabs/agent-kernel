@@ -2711,21 +2711,40 @@ wheels = [
 
 [[package]]
 name = "langfuse"
+<<<<<<< HEAD
+version = "4.5.0"
+=======
 version = "4.2.0"
+>>>>>>> develop
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
     { name = "httpx" },
+<<<<<<< HEAD
+    { name = "opentelemetry-api", version = "1.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "opentelemetry-api", version = "1.41.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "opentelemetry-exporter-otlp-proto-http", version = "1.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "opentelemetry-exporter-otlp-proto-http", version = "1.41.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "opentelemetry-sdk", version = "1.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "opentelemetry-sdk", version = "1.41.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+=======
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
+>>>>>>> develop
     { name = "packaging" },
     { name = "pydantic" },
     { name = "wrapt" },
 ]
+<<<<<<< HEAD
+sdist = { url = "https://files.pythonhosted.org/packages/7e/ea/e4a583d39cbbb13bf070a8e8816697874df2e611f2faff5661f6f65c7ac3/langfuse-4.5.0.tar.gz", hash = "sha256:ecb2c3e19098065f64933f8f2b4d8b3a426938ca1c8e9bf7611d6df569adaa3f", size = 279309, upload-time = "2026-04-21T11:30:40.048Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/72/0bb02ab2144d9da38a4c91146661f6147323acdd1d17ce45c3a6f9932410/langfuse-4.5.0-py3-none-any.whl", hash = "sha256:99434f9553fa8711bfc6a2e61dac011af0c771f52d61809d7774b85f3b91c9a7", size = 479214, upload-time = "2026-04-21T11:30:38.573Z" },
+=======
 sdist = { url = "https://files.pythonhosted.org/packages/45/9c/b912a00ffae92ff9955cdd9b74fb839be58f631d4329ae2a8a0376f697f2/langfuse-4.2.0.tar.gz", hash = "sha256:d0bd26d5065cf6a59d7d1093b08d8910e2458dc3da7ed8ccec160db114c18342", size = 275582, upload-time = "2026-04-10T11:55:25.21Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/0a/b84e3e68a690ccfe6d64953c572772c685fcb0915b7f2ee3a87c22e388ab/langfuse-4.2.0-py3-none-any.whl", hash = "sha256:bfd760bf10fd0228f297f6369436620f76d16b589de46393d65706b27e4e4082", size = 475449, upload-time = "2026-04-10T11:55:23.624Z" },
+>>>>>>> develop
 ]
 
 [[package]]
