@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-
+import json
 
 def run_command(command: list[str], cwd: str = None, description: str = "", env: dict = None) -> bool:
     """Run a shell command and return success status."""
@@ -106,14 +106,19 @@ def destroy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str 
     }
     
     # Inject VNet configuration as environment variables if provided
-    if vnet_id and subnet_ids:
+    if vnet_id:
         tf_env['TF_VAR_vnet_id'] = vnet_id
-        tf_env['TF_VAR_subnet_ids'] = subnet_ids
         
         print(f"\n✅ Injecting VNet configuration as environment variables for destroy:")
         print(f"   TF_VAR_VNET_ID={vnet_id}")
-        print(f"   TF_VAR_SUBNET_IDS={subnet_ids}\n")
-    
+        
+    if subnet_ids:
+        try:
+            parsed = json.loads(subnet_ids)
+            tf_env['TF_VAR_subnet_ids'] = json.dumps(parsed)
+        except Exception:
+            print("❌ Invalid subnet JSON")
+            return False
     if not run_command(
         ['terraform', 'init', '-upgrade'],
         cwd=str(deploy_path),
@@ -151,13 +156,18 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
     
     
     # Inject VNet configuration as environment variables if provided
-    if vnet_id and subnet_ids:
+    if vnet_id:
         tf_env['TF_VAR_vnet_id'] = vnet_id
-        tf_env['TF_VAR_subnet_ids'] = subnet_ids
         
         print(f"\n✅ Injecting VNet configuration as environment variables:")
         print(f"   TF_VAR_vnet_id={vnet_id}")
-        print(f"   TF_VAR_subnet_ids={subnet_ids}\n")
+    if subnet_ids:
+        try:
+            parsed = json.loads(subnet_ids)
+            tf_env['TF_VAR_subnet_ids'] = json.dumps(parsed)
+        except Exception:
+            print("❌ Invalid subnet JSON")
+            return False
     
     # Initialize terraform if needed
     if not run_command(
@@ -174,7 +184,7 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
         cwd=str(deploy_path),
         description=f"Deploying {path}",
         env=tf_env
-    )   
+    )
 
 def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     """Test an already deployed Azure resource."""
@@ -246,14 +256,19 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
     }
     
     # Inject VPC configuration as Terraform variables if provided
-    if vpc_id and private_subnet_ids:
+    if vpc_id:
         tf_env['TF_VAR_vpc_id'] = vpc_id
-        tf_env['TF_VAR_private_subnet_ids'] = private_subnet_ids
-        
-        print(f"\n✅ Injecting VPC configuration as Terraform variables for destroy:")
+                
         print(f"   TF_VAR_vpc_id={vpc_id}")
-        print(f"   TF_VAR_private_subnet_ids={private_subnet_ids}\n")
-    
+    if private_subnet_ids:
+        try:
+            parsed = json.loads(private_subnet_ids)
+            tf_env['TF_VAR_private_subnet_ids'] = json.dumps(parsed)
+            print(f"   TF_VAR_private_subnet_ids={json.dumps(parsed)}\n")
+
+        except Exception:
+            print("❌ Invalid subnet JSON")
+            return False
     # Initialize terraform if needed
     if not run_command(
         ['terraform', 'init', '-upgrade'],
@@ -292,14 +307,20 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
     }
     
     # Inject VPC configuration as Terraform variables if provided
-    if vpc_id and private_subnet_ids:
+    if vpc_id:
         tf_env['TF_VAR_vpc_id'] = vpc_id
-        tf_env['TF_VAR_private_subnet_ids'] = private_subnet_ids
         
         print(f"\n✅ Injecting VPC configuration as Terraform variables:")
-        print(f"   TF_VAR_vpc_id={vpc_id}")
-        print(f"   TF_VAR_private_subnet_ids={private_subnet_ids}\n")
-    
+        print(f"   TF_VAR_vpc_id={vpc_id}")    
+    if private_subnet_ids:
+        try:
+            parsed = json.loads(private_subnet_ids)
+            tf_env['TF_VAR_private_subnet_ids'] = json.dumps(parsed)
+            print(f"   TF_VAR_private_subnet_ids={json.dumps(parsed)}\n")
+
+        except Exception:
+            print("❌ Invalid subnet JSON")
+            return False
     # Initialize terraform if needed
     if not run_command(
         ['terraform', 'init', '-upgrade'],
