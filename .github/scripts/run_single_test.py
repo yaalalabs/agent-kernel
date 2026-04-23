@@ -153,7 +153,7 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
         ['terraform', 'init', '-upgrade'],
         cwd=str(deploy_path),
         description=f"Terraform init for {path}",
-        env=env
+        env=tf_env
     ):
         return False
 
@@ -162,7 +162,7 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
         ['./deploy.sh', 'local'],
         cwd=str(deploy_path),
         description=f"Deploying {path}",
-        env=env
+        env=tf_env
     )   
 
 def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
