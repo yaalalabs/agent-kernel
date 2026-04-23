@@ -114,9 +114,17 @@ def destroy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str 
         print(f"   TF_VAR_VNET_ID={vnet_id}")
         print(f"   TF_VAR_SUBNET_IDS={subnet_ids}\n")
     
+    if not run_command(
+        ['terraform', 'init', '-upgrade'],
+        cwd=str(deploy_path),
+        description=f"Terraform init for {path}",
+        env=tf_env
+    ):
+        return False
+    
     # Destroy
     return run_command(
-        ['./deploy.sh', 'destroy'],
+        ['terraform', 'destroy', '-auto-approve'],
         cwd=str(deploy_path),
         description=f"Destroying {path}",
         env=tf_env
@@ -209,6 +217,8 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         description=f"Removing config.yaml for {path}"
     )
     
+    if not delete_config:
+        print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
         ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
