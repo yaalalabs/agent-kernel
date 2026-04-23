@@ -188,7 +188,7 @@ jobs:
               --path ${{ matrix.path }} \
               --deploy-dir ${{ matrix.deploy_dir }} \
               --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
-              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}'' \
+              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
               --action destroy
 
           elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
