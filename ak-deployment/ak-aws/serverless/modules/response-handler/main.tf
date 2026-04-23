@@ -1,16 +1,19 @@
 locals {
-  subnet_ids                   = var.subnet_ids
-  lambda_kms_key_arn          = var.lambda_kms_key_arn
-  cloudwatch_kms_key_arn      = var.cloudwatch_kms_key_arn
+  subnet_ids                    = var.subnet_ids
+  lambda_kms_key_arn            = var.lambda_kms_key_arn
+  cloudwatch_kms_key_arn        = var.cloudwatch_kms_key_arn
   
   # Response handler configuration
-  response_handler_function_name = var.response_handler.function_name
+  response_handler_function_name        = var.response_handler.function_name
   response_handler_function_description = var.response_handler.function_description
-  response_handler_timeout       = var.response_handler.timeout
-  response_handler_memory_size   = var.response_handler.memory_size
-  response_handler_handler_path  = var.response_handler.handler_path
-  response_handler_layers        = var.response_handler.layers
-  response_handler_env_vars      = var.response_handler.environment_variables
+  response_handler_timeout              = var.response_handler.timeout
+  response_handler_memory_size          = var.response_handler.memory_size
+  response_handler_handler_path         = var.response_handler.handler_path
+  response_handler_module_name          = var.response_handler.module_name
+  response_handler_package_path         = try(var.response_handler.package_path, null)
+  response_handler_package_type         = try(var.response_handler.package_type, "LocalZip")
+  response_handler_layers               = var.response_handler.layers
+  response_handler_env_vars             = var.response_handler.environment_variables
   
   # Queue configuration
   output_queue_arn                            = var.queue_config.output_queue_arn
@@ -23,9 +26,44 @@ locals {
   dynamodb_response_store = var.response_store_dynamodb
 }
 
+data "aws_s3_object" "source_code" {
+  count  = local.response_handler_package_type == "S3Zip" ? 1 : 0
+  bucket = var.source_bucket
+  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${local.response_handler_module_name}/lambda/source_code.zip"
+}
+
+resource "aws_signer_signing_job" "response_handler_lambda_signing_job" {
+  count = var.is_production && local.response_handler_package_type == "S3Zip" ? 1 : 0
+
+  profile_name = var.lambda_signer_profile_name
+  source {
+    s3 {
+      bucket  = data.aws_s3_object.source_code[0].bucket
+      key     = data.aws_s3_object.source_code[0].key
+      version = data.aws_s3_object.source_code[0].version_id
+    }
+  }
+  destination {
+    s3 {
+      bucket = data.aws_s3_object.source_code[0].bucket
+      prefix = "${data.aws_s3_object.source_code[0].key}/signed/${data.aws_s3_object.source_code[0].version_id}"
+    }
+  }
+  ignore_signing_job_failure = false
+}
+
+data "aws_s3_object" "signed_component_code" {
+  count = var.is_production && local.response_handler_package_type == "S3Zip" ? 1 : 0
+
+  bucket = aws_signer_signing_job.response_handler_lambda_signing_job[0].signed_object[0].s3[0].bucket
+  key    = aws_signer_signing_job.response_handler_lambda_signing_job[0].signed_object[0].s3[0].key
+
+  depends_on = [aws_signer_signing_job.response_handler_lambda_signing_job[0]]
+}
+
 # IAM Role for Response Handler Lambda
 resource "aws_iam_role" "response_handler_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}-lambda-role"
+  name = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-lambda-role"
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -55,7 +93,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_vpc_execution" {
 
 # SQS permissions for response handler
 resource "aws_iam_policy" "response_handler_sqs_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}-sqs"
+  name = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-sqs"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -82,7 +120,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_sqs_attachment" {
 # DynamoDB permissions (if DynamoDB is used)
 resource "aws_iam_policy" "response_handler_dynamodb_policy" {
   count = local.dynamodb_response_store != null ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}-dynamodb"
+  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-dynamodb"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -115,17 +153,26 @@ module "response_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${local.response_handler_function_name}"
+  function_name          = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}"
   description            = local.response_handler_function_description
   handler                = local.response_handler_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"
   create_role            = false
   lambda_role            = aws_iam_role.response_handler_lambda_role.arn
-  local_existing_package = var.package_path
+  image_uri              = local.response_handler_package_type == "Image" ? var.docker_image_uri : null
+  local_existing_package = local.response_handler_package_type == "LocalZip" ? local.response_handler_package_path : null
   create_package         = false
-  package_type           = "Zip"
+  package_type           = local.response_handler_package_type == "Image" ? "Image" : "Zip"
   create_layer           = false
   layers                 = local.response_handler_layers
+
+  s3_existing_package = local.response_handler_package_type == "S3Zip" ? {
+    bucket     = var.is_production ? data.aws_s3_object.signed_component_code[0].bucket : data.aws_s3_object.source_code[0].bucket
+    key        = var.is_production ? data.aws_s3_object.signed_component_code[0].key : data.aws_s3_object.source_code[0].key
+    version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
+  } : {}
+
+  code_signing_config_arn = (local.response_handler_package_type == "S3Zip" && var.is_production) ? var.lambda_signing_config_arn : null
 
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = var.cloudwatch_logs_retention_in_days

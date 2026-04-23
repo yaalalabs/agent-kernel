@@ -32,10 +32,10 @@ class ResponseHandler(LambdaSQSConsumer):
         :param body: Optional message body payload. If not provided, uses record["body"]
         :return: Message dictionary for storage
         """
-        session_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
         message_body = body if body is not None else record.get("body")
         if isinstance(message_body, str):
             message_body = json.loads(message_body)
+        session_id = message_body.get("session_id")
 
         message_attributes = SQSHandler.get_message_custom_attributes(record)
         request_id = message_attributes.get("request_id")
