@@ -250,6 +250,10 @@ jobs:
               --vpc-id "${{ steps.base-infra.outputs.vpc_id }}" \
               --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
               --action deploy
+            
+            echo "Waiting for resources to stabilize..."
+            sleep 150
+
             python .github/scripts/run_single_test.py \
               --type ${{ matrix.type }} \
               --path ${{ matrix.path }} \
@@ -272,6 +276,9 @@ jobs:
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action deploy
             
+            echo "Waiting for resources to stabilize..."
+            sleep 150
+            
             python .github/scripts/run_single_test.py \
               --type ${{ matrix.type }} \
               --path ${{ matrix.path }} \
@@ -285,13 +292,6 @@ jobs:
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action destroy
           fi
-
-          python .github/scripts/run_single_test.py \
-            --type ${{ matrix.type }} \
-            --path ${{ matrix.path }} \
-            --deploy-dir ${{ matrix.deploy_dir }} \
-            --action test
-
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
