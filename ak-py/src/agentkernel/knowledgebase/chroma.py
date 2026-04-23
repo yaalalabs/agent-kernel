@@ -1,10 +1,13 @@
 import hashlib
+import logging
 from typing import Any, Iterable, List, Mapping, Optional
 
 import chromadb
 from chromadb.utils import embedding_functions
 
 from .base import KnowledgeBase
+
+log = logging.getLogger("ak.ChromaManager")
 
 
 class ChromaManager(KnowledgeBase):
@@ -49,6 +52,7 @@ class ChromaManager(KnowledgeBase):
 
         :return: Configured backend name, or ``chromadb`` when name is empty.
         """
+        log.debug(f"[backend_name] returning backend_name={self.name if self.name else 'chromadb'}")
         return self.name if self.name else "chromadb"
 
     def connect(self, **kwargs) -> None:
@@ -58,11 +62,16 @@ class ChromaManager(KnowledgeBase):
         :param kwargs: Reserved for interface compatibility.
         :return: None.
         """
-        self.client = chromadb.PersistentClient(path=self.persist_path)
-        self.collection = self.client.get_or_create_collection(
-            name=self.collection_name,
-            embedding_function=self.embedding_function,
-        )
+        try:
+            self.client = chromadb.PersistentClient(path=self.persist_path)
+            self.collection = self.client.get_or_create_collection(
+                name=self.collection_name,
+                embedding_function=self.embedding_function,
+            )
+            log.debug(f"[connect] Connected to ChromaDB at {self.persist_path}, collection '{self.collection_name}' ready.")
+        except Exception as e:
+            log.error(f"[connect] Failed to connect to ChromaDB at {self.persist_path}: {e}")
+            raise
 
     def write(self, records: Iterable[Mapping[str, Any]], **kwargs) -> None:
         """

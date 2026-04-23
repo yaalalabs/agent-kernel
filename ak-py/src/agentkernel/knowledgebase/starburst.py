@@ -7,7 +7,7 @@ import trino.exceptions
 
 from .base import KnowledgeBase
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ak.StarburstManager")
 
 STARBURST_HOST = os.getenv("STARBURST_HOST", "")
 STARBURST_USER = os.getenv("STARBURST_USER", "")
@@ -101,12 +101,7 @@ class StarburstManager(KnowledgeBase):
         if missing:
             raise ValueError(f"[KB][{self.name}] Missing config: {', '.join(missing)}")
 
-        if self.connection is not None:
-            try:
-                self.connection.close()
-            except Exception:
-                pass
-            self.connection = None
+        self.close()  # Close existing connection if present
 
         self.connection = trino.dbapi.connect(
             host=self.host,

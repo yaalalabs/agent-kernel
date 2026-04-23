@@ -50,7 +50,7 @@ from agentkernel.knowledgebase.starburst import StarburstManager
 
 - `get_schemas()` – returns JSON with each backend’s schema/metadata.
 - `read_kb(backend: str, query: str, limit: int = 3)` – query a specific backend.
-- `write_kb(backend: str, text: str, ..., query: str, params_json: str, ...)` – write to a backend (supports both simple text facts and backend‑specific queries like Cypher).
+- `write_kb(backend: str, text: str, ..., query: str, params_json: str, ...)` – write to a backend (write semantics are backend-specific).
 - `get_all_kb_descriptions()` – short descriptions of each registered backend.
 
 Important: `StarburstManager` is read-only. Use `read_kb` for Starburst backends and do not route `write_kb` calls to Starburst.
@@ -125,7 +125,7 @@ The repository includes OpenAI Agents SDK examples split by backend type:
 - **Location**: `examples/cli/knowledgebase/openai`
 - **Demos**:
   - `chromadb/` - semantic text only.
-  - `neo4j/` - graph facts and Cypher queries.
+  - `neo4j/` - graph reads/writes using Cypher queries.
   - `starburst/` - SQL backends via Starburst/Trino.
   - `multi/` - combined router demo with all backends.
 - **Agent**: `KB_Router_Agent`, created with clear routing rules, bound knowledge base tools from `KnowledgeBuilder`, and instructions to inspect schemas before choosing a backend, then route each query to the correct KB.

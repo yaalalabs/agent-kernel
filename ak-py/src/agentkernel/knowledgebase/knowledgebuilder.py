@@ -118,7 +118,6 @@ class KnowledgeBuilder:
             if not db:
                 return f"Unknown backend '{backend}'. Available: {list(self.backends.keys())}"
 
-            # --- THE MIDDLEWARE INTERCEPTION ---
             resolved_query = self._resolve_placeholders(query)
             if resolved_query != query:
                 log.debug(f"[read_kb] Translated query to: {resolved_query!r}")
@@ -154,7 +153,6 @@ class KnowledgeBuilder:
 
             metadata: dict[str, Any] = {"source": source}
             if resolved_query:
-                # Handle legacy mapping INTERNALLY so the Agent doesn't have to think about it
                 metadata["query"] = resolved_query
                 metadata["cypher_query"] = resolved_query
                 try:
@@ -166,7 +164,7 @@ class KnowledgeBuilder:
                     return "Error: params_json must be a valid JSON object string."
 
                 metadata["params"] = parsed_params
-                metadata["cypher_params"] = parsed_params  # Legacy alias
+                metadata["cypher_params"] = parsed_params
 
             try:
                 db.write([{"text": text, "metadata": metadata}])

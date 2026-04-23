@@ -65,7 +65,6 @@ class Neo4jManager(KnowledgeBase):
         :param kwargs: Additional keyword arguments reserved for interface compatibility.
         :return: None.
         """
-        logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
         try:
             self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
             self.driver.verify_connectivity()
@@ -117,57 +116,11 @@ class Neo4jManager(KnowledgeBase):
         :return: None.
         """
         for record in records:
-            text = str(record.get("text", "")).strip()
             meta = dict(record.get("metadata", {}))
-            source = meta.get("source", "agent")
             cypher_query = meta.get("cypher_query")
             cypher_params = meta.get("cypher_params") or {}
 
-            if cypher_query:
-                self._run(cypher_query, cypher_params)
-                self._log_cypher_fact(text or "stored_fact", source, cypher_query, cypher_params)
-            elif text:
-                self._upsert_memory(text, source)
-
-    # for unstructured data without a Cypher query, store as a MemoryNote node.
-    def _upsert_memory(self, text: str, source: str) -> None:
-        """
-        Upsert an unstructured memory note node.
-
-        :param text: Memory text to persist.
-        :param source: Source label for the memory.
-        :return: None.
-        """
-        self._run(
-            "MERGE (m:MemoryNote {text: $text, source: $source}) " "ON CREATE SET m.created_at = datetime() " "SET m.updated_at = datetime()",
-            {"text": text, "source": source},
-        )
-
-    # for logging cypher-based so we can look up when the agent stored a fact with a specific query + params.
-    def _log_cypher_fact(self, text: str, source: str, cypher_query: str, params: Mapping) -> None:
-        """
-        Log metadata for a Cypher-based fact write using a stable fingerprint.
-
-        :param text: Human-readable fact text.
-        :param source: Source label associated with the fact.
-        :param cypher_query: Cypher query used for the write.
-        :param params: Query parameter mapping.
-        :return: None.
-        """
-        raw = f"{text}|{source}|{cypher_query}|{json.dumps(params, sort_keys=True)}"
-        self._run(
-            "MERGE (f:CypherFact {fingerprint: $fp}) "
-            "ON CREATE SET f.created_at = datetime() "
-            "SET f.updated_at = datetime(), f.text = $text, f.source = $source, "
-            "    f.cypher_query = $cq, f.cypher_params_json = $cpj",
-            {
-                "fp": hashlib.md5(raw.encode()).hexdigest(),
-                "text": text,
-                "source": source,
-                "cq": cypher_query,
-                "cpj": json.dumps(params, sort_keys=True),
-            },
-        )
+            self._run(cypher_query, cypher_params)
 
     def read(self, query: str, limit: int = 10, **kwargs) -> List[Mapping[str, Any]]:
         """
@@ -186,7 +139,7 @@ class Neo4jManager(KnowledgeBase):
         if not normalized_query:
             return []
 
-        limited_query = f"CALL {{\n{normalized_query}\n}}\nRETURN *\nLIMIT $ak_read_limit"
+        limited_query = f"CALL () {{\n{normalized_query}\n}}\nRETURN *\nLIMIT $ak_read_limit"
         records, _, _ = self._run(limited_query, {"ak_read_limit": int(limit)})
         if records:
             return [{"text": json.dumps(r.data(), default=str), "metadata": {"source": "graph"}} for r in records]

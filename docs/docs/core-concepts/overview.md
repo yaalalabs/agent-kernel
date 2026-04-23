@@ -338,7 +338,7 @@ from agentkernel.knowledgebase import KnowledgeBase
 # Every backend implements:
 # - schema(): metadata about what the backend contains
 # - read(query, limit): retrieve data
-# - write(text, source, query_params): persist data
+# - write(records, **kwargs): persist data
 # - format_results(): present results to agents
 ```
 
@@ -374,7 +374,7 @@ This keeps agents focused on domain logic while the router handles backend selec
 
 When you have multiple knowledge bases, you can provide explicit instructions to your agent about routing decisions. The agent then uses these instructions plus the schema information to intelligently decide:
 - **Which KB to read from** – e.g., "For customer data, query the MongoDB backend. For company policies, query the Sheets backend."
-- **Which KB to write to** – e.g., "Store learned facts in Neo4j. Store unstructured notes in ChromaDB."
+- **Which KB to write to** – e.g., "Store graph relationships in Neo4j using explicit Cypher. Store unstructured notes in ChromaDB."
 
 ```python
 router_agent = CrewAgent(
