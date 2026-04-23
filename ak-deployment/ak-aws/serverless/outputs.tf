@@ -27,7 +27,7 @@ output "authorizer_status" {
 
 output "agent_invoke_url" {
   description = "Invoke URL for the agent chat endpoint"
-  value = "${module.api_gateway[0].aws_api_gateway_stage.stage.invoke_url}/${var.api_base_path}/${var.api_version}/${var.agent_endpoint}"
+  value = "${module.api_gateway[0].agent_invoke_url}"
 }
 
 output "vpc_id" {
