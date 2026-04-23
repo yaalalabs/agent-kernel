@@ -44,31 +44,13 @@ resource "azurerm_storage_container" "function_deployment" {
   container_access_type = "private"
 }
 
-# Upload the function package zip to the container
+# Upload the function package zip to the container, this is to refer later on
 resource "azurerm_storage_blob" "function_package" {
   name                   = "app-${filemd5(var.package_path)}.zip" # versioned name
   storage_account_name   = azurerm_storage_account.function_storage.name
   storage_container_name = azurerm_storage_container.function_deployment.name
   type                   = "Block"
   source                 = var.package_path
-}
-
-data "azurerm_storage_account_blob_container_sas" "deployment_sas" {
-  connection_string = azurerm_storage_account.function_storage.primary_connection_string
-  container_name    = azurerm_storage_container.function_deployment.name
-  https_only        = true
-
-  start  = timestamp()
-  expiry = timeadd(timestamp(), "876000h") # ~100 years
-
-  permissions {
-    read   = true
-    add    = false
-    create = false
-    write  = false
-    delete = false
-    list   = false
-  }
 }
 
 # Give the function app's system identity permission to read the deployment container
@@ -137,7 +119,6 @@ resource "azurerm_function_app_flex_consumption" "function" {
       "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.function_insights.connection_string
       "WEBSITE_VNET_ROUTE_ALL"                = "1"
       "WEBSITE_DNS_SERVER"                    = "168.63.129.16"
-      "WEBSITE_RUN_FROM_PACKAGE"              = "${azurerm_storage_account.function_storage.primary_blob_endpoint}${azurerm_storage_container.function_deployment.name}/${azurerm_storage_blob.function_package.name}${data.azurerm_storage_account_blob_container_sas.deployment_sas.sas}"
     },
     local.redis_url != null ? {
       "AK_SESSION__REDIS__URL" = local.full_redis_url
@@ -168,88 +149,88 @@ resource "azurerm_function_app_flex_consumption" "function" {
   }
 }
 
-# Trigger deployment using Azure CLI (runs after infra is ready)
-# resource "null_resource" "deploy_function_code" {
-#   triggers = {
-#     # Re-run if the zip changes
-#     package_hash = filemd5(var.package_path)
-#   }
+# Trigger deployment using Azure CLI (runs after infra is ready) This is the only supported way to deploy to consumption plan function apps
+resource "null_resource" "deploy_function_code" {
+  triggers = {
+    # Re-run if the zip changes
+    package_hash = filemd5(var.package_path)
+  }
 
-#   provisioner "local-exec" {
-#     command = <<EOT
-#       set -e
+  provisioner "local-exec" {
+    command = <<EOT
+      set -e
 
-#       echo "Waiting for Function App to be in 'Running' state..."
-#       TIMEOUT=300
-#       ELAPSED=0
-#       INTERVAL=10
+      echo "Waiting for Function App to be in 'Running' state..."
+      TIMEOUT=300
+      ELAPSED=0
+      INTERVAL=10
 
-#       while [ $ELAPSED -lt $TIMEOUT ]; do
-#         STATE=$(az functionapp show \
-#           --resource-group ${data.azurerm_resource_group.rg.name} \
-#           --name ${local.function_app_name} \
-#           --query "properties.state" \
-#           -o tsv 2>/dev/null || echo "")
+      while [ $ELAPSED -lt $TIMEOUT ]; do
+        STATE=$(az functionapp show \
+          --resource-group ${data.azurerm_resource_group.rg.name} \
+          --name ${local.function_app_name} \
+          --query "properties.state" \
+          -o tsv 2>/dev/null || echo "")
 
-#         echo "Current state: $STATE"
+        echo "Current state: $STATE"
 
-#         if [ "$STATE" = "Running" ]; then
-#           echo "Function App is running!"
-#           break
-#         fi
+        if [ "$STATE" = "Running" ]; then
+          echo "Function App is running!"
+          break
+        fi
 
-#         sleep $INTERVAL
-#         ELAPSED=$((ELAPSED + INTERVAL))
-#       done
+        sleep $INTERVAL
+        ELAPSED=$((ELAPSED + INTERVAL))
+      done
 
-#       if [ $ELAPSED -ge $TIMEOUT ]; then
-#         echo "Timeout waiting for Function App to be running"
-#         exit 1
-#       fi
+      if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "Timeout waiting for Function App to be running"
+        exit 1
+      fi
 
-#       echo "Deploying function code..."
-#       az functionapp deployment source config-zip \
-#         --resource-group ${data.azurerm_resource_group.rg.name} \
-#         --name ${local.function_app_name} \
-#         --src ${var.package_path}
+      echo "Deploying function code..."
+      az functionapp deployment source config-zip \
+        --resource-group ${data.azurerm_resource_group.rg.name} \
+        --name ${local.function_app_name} \
+        --src ${var.package_path}
 
-#       echo "Waiting for deployment to complete and host keys to be available..."
-#       TIMEOUT=300
-#       ELAPSED=0
-#       INTERVAL=10
+      echo "Waiting for deployment to complete and host keys to be available..."
+      TIMEOUT=300
+      ELAPSED=0
+      INTERVAL=10
 
-#       while [ $ELAPSED -lt $TIMEOUT ]; do
-#         # Try to get the master key - if successful, host keys are ready
-#         MASTER_KEY=$(az functionapp keys list \
-#           --resource-group ${data.azurerm_resource_group.rg.name} \
-#           --name ${local.function_app_name} \
-#           --query "masterKey" \
-#           -o tsv 2>/dev/null || echo "")
+      while [ $ELAPSED -lt $TIMEOUT ]; do
+        # Try to get the master key - if successful, host keys are ready
+        MASTER_KEY=$(az functionapp keys list \
+          --resource-group ${data.azurerm_resource_group.rg.name} \
+          --name ${local.function_app_name} \
+          --query "masterKey" \
+          -o tsv 2>/dev/null || echo "")
 
-#         if [ -n "$MASTER_KEY" ] && [ "$MASTER_KEY" != "null" ] && [ "$MASTER_KEY" != "" ]; then
-#           echo "Host keys are available! Master key retrieved successfully."
-#           break
-#         fi
+        if [ -n "$MASTER_KEY" ] && [ "$MASTER_KEY" != "null" ] && [ "$MASTER_KEY" != "" ]; then
+          echo "Host keys are available! Master key retrieved successfully."
+          break
+        fi
 
-#         echo "Host keys not ready yet (attempt $((ELAPSED/INTERVAL + 1))), waiting..."
-#         sleep $INTERVAL
-#         ELAPSED=$((ELAPSED + INTERVAL))
-#       done
+        echo "Host keys not ready yet (attempt $((ELAPSED/INTERVAL + 1))), waiting..."
+        sleep $INTERVAL
+        ELAPSED=$((ELAPSED + INTERVAL))
+      done
 
-#       if [ $ELAPSED -ge $TIMEOUT ]; then
-#         echo "WARNING: Timeout waiting for host keys to be created"
-#         echo "This might be due to VNet integration or storage account access issues"
-#         echo "Try restarting the function app or checking storage account connectivity"
-#         exit 1
-#       fi
+      if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "WARNING: Timeout waiting for host keys to be created"
+        echo "This might be due to VNet integration or storage account access issues"
+        echo "Try restarting the function app or checking storage account connectivity"
+        exit 1
+      fi
 
-#       echo "Deployment completed successfully!"
-#     EOT
-#   }
+      echo "Deployment completed successfully!"
+    EOT
+  }
 
-#   depends_on = [
-#     azurerm_function_app_flex_consumption.function,
-#     azurerm_storage_blob.function_package,
-#     azurerm_role_assignment.func_storage_blob_contributor
-#   ]
-# }
+  depends_on = [
+    azurerm_function_app_flex_consumption.function,
+    azurerm_storage_blob.function_package,
+    azurerm_role_assignment.func_storage_blob_contributor
+  ]
+}
