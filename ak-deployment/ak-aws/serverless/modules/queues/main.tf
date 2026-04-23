@@ -7,7 +7,7 @@ module "input_queue" {
   env_alias            = var.env_alias
   module_name          = var.module_name
   queue_name           = var.queue_config.input_queue_name
-  region               = data.aws_region.current.name
+  region               = data.aws_region.current.region
   product_display_name = var.product_alias
   is_production        = var.env_alias == "prod"
 
@@ -52,7 +52,7 @@ module "output_queue" {
   env_alias            = var.env_alias
   module_name          = var.module_name
   queue_name           = var.queue_config.output_queue_name
-  region               = data.aws_region.current.name
+  region               = data.aws_region.current.region
   product_display_name = var.product_alias
   is_production        = var.env_alias == "prod"
 
