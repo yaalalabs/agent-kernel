@@ -63,7 +63,7 @@ data "azurerm_function_app_host_keys" "function_keys" {
   name                = azurerm_function_app_flex_consumption.function.name
   resource_group_name = azurerm_function_app_flex_consumption.function.resource_group_name
   
-  depends_on = [azurerm_function_app_flex_consumption.function, null_resource.deploy_function_code]
+  depends_on = [azurerm_function_app_flex_consumption.function]
 }
 
 # Backend for Function App (single backend for all functions)
