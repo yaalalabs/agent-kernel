@@ -18,7 +18,6 @@ def test_bind_returns_list():
     assert len(tools) == 1
 
 
-
 def test_bind_non_callable_string_raises():
     with pytest.raises(TypeError, match="Expected a callable"):
         SmolagentsToolBuilder.bind(["not a function"])
