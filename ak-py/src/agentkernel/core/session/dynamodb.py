@@ -11,62 +11,24 @@ from ..config import AKConfig
 from .base import SessionCache, SessionStore
 from .serde import BinarySerde
 
+from .dynamodb import BaseDynamoDBDriver
 
-class DynamoDBDriver:
+
+class DynamoDBDriver(BaseDynamoDBDriver):
     """
     DynamoDBDriver provides connection management and helpers for a simple
     three-attribute item layout: session_id, key and value (Binary).
     """
 
-    _ddb_resource = None
-    _ddb_table = None
-
     def __init__(self):
-        self._log = logging.getLogger("ak.core.session.dynamodb.driver")
-        cfg = AKConfig.get().session.dynamodb
-        if cfg is None or not cfg.table_name:
-            raise ValueError("AKConfig.session.dynamodb.table_name must be set to use DynamoDBSessionStore")
-        self._table_name = cfg.table_name
-        self._ttl = cfg.ttl
+        cfg = AKConfig().get().session.dynamodb
+        if not cfg or not cfg.table_name:
+            raise ValueError("DynamoDB session table_name must be configured")
+        super().__init__(table_name=cfg.table_name, logger_name="ak.core.session.dynamodb.driver")
 
-    @property
-    def table(self):
-        """
-        Returns the boto3 DynamoDB Table resource, connecting lazily if needed.
-
-        :return: The DynamoDB Table resource for the configured table name.
-        """
-        if self._ddb_table is None:
-            self._connect()
-        return self._ddb_table
-
-    def _connect(self):
-        """
-        Establish a connection to DynamoDB and resolve the configured table.
-
-        Retries a few times with a small delay between attempts. Raises the last
-        encountered exception if all attempts fail.
-        """
-        retries = 3
-        delay = 2
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                self._log.debug("Connecting to DynamoDB resource")
-                self._ddb_resource = boto3.resource("dynamodb")
-                self._ddb_table = self._ddb_resource.Table(self._table_name)
-                # lightweight call to ensure table exists/accessible
-                self._ddb_table.load()
-                self._log.debug("Connected to DynamoDB table %s", self._table_name)
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("DynamoDB connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    time.sleep(delay)
-        if last_err:
-            raise last_err
-
+        self._ttl =cfg.ttl
+    
+    
     def put(self, session_id: str, key: str, value: bytes) -> None:
         """
         Put a single item for the given session and key.

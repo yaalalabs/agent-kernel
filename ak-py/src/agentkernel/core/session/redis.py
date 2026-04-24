@@ -9,63 +9,13 @@ from ..base import Session
 from ..config import AKConfig
 from .base import SessionCache, SessionStore
 from .serde import BinarySerde
+from .redis import BaseRedisDriver
 
 
-class RedisDriver:
-    """
-    RedisUtil provides Redis connection and helper methods for namespaced key/value operations.
-    """
-
-    _redis_client = None
-
+class RedisDriver(BaseRedisDriver):
     def __init__(self):
-        self._log = logging.getLogger("ak.core.session.redis.util")
-        self._url = AKConfig.get().session.redis.url
-        self._prefix = AKConfig.get().session.redis.prefix
-        self._ttl = int(AKConfig.get().session.redis.ttl)
-
-    @property
-    def client(self):
-        """
-        Returns the Redis client instance.
-        """
-        if self._redis_client is None:
-            self._connect()
-        else:
-            try:
-                self._redis_client.ping()
-                self._log.debug("Redis client is alive")
-            except redis.RedisError:
-                self._log.warning("Redis client is not alive, reconnecting")
-                self._connect()
-            except Exception as e:
-                self._log.error(f"Unexpected error while pinging Redis client: {e}")
-                self._log.error(traceback.format_exc())
-        return self._redis_client
-
-    @property
-    def ttl(self):
-        """
-        Returns the configured TTL for Redis keys.
-        """
-        return self._ttl
-
-    def _connect(self):
-        """
-        Connects to Redis using the configured URL or host/port.
-        """
-        retries = 3
-        for attempt in range(retries):
-            try:
-                self._log.debug(f"Connecting to Redis using URL {self._url}")
-                client = redis.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
-                client.ping()
-                self._redis_client = client
-            except redis.RedisError as e:
-                self._log.warning(f"Attempt {attempt + 1} failed: {e}")
-                if attempt == retries - 1:
-                    break
-                time.sleep(2)
+        cfg= AKConfig.get().session.redis
+        super().__init__(url=cfg.url, ttl=cfg.ttl, prefix=cfg.prefix)
 
     def key(self, session_id: str) -> str:
         """

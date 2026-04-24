@@ -11,69 +11,17 @@ import time
 from typing import Optional
 
 from .base import AttachmentStore
+from .redis import BaseRedisDriver
 
 
-class RedisAttachmentDriver:
+class RedisAttachmentDriver(BaseRedisDriver):
     """
     RedisAttachmentDriver provides connection management and helpers for
     raw Redis attachment operations.
     """
 
-    _log = logging.getLogger("ak.core.multimodal.storage.redis.driver")
-    _redis_client = None
-
     def __init__(self, url: str, ttl: int, prefix: str):
-        """
-        Initialize the Redis attachment driver.
-        :param url: Redis connection URL.
-        :param ttl: TTL in seconds for attachment keys (0 = no TTL).
-        :param prefix: Key prefix for attachment keys.
-        """
-        self._url = url
-        self._ttl = ttl
-        self._prefix = prefix
-
-    @property
-    def client(self):
-        """
-        Returns the Redis client instance, connecting lazily if needed.
-        """
-        if self._redis_client is None:
-            self._connect()
-        else:
-            try:
-                self._redis_client.ping()
-            except Exception:
-                self._log.warning("Redis client is not alive, reconnecting")
-                self._connect()
-        return self._redis_client
-
-    @property
-    def ttl(self):
-        return self._ttl
-
-    def _connect(self):
-        """
-        Connects to Redis using the configured URL, with retries.
-        """
-        import redis
-
-        retries = 3
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                self._log.debug("Connecting to Redis at %s", self._url)
-                client = redis.Redis.from_url(self._url, socket_connect_timeout=5)
-                client.ping()
-                self._redis_client = client
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("Redis connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    time.sleep(2)
-        if last_err:
-            raise last_err
+        super().__init__(url=url, ttl=ttl, prefix=prefix)
 
     def key(self, session_id: str, attachment_id: str) -> str:
         return f"{self._prefix}{session_id}:{attachment_id}"

@@ -16,9 +16,10 @@ import time
 from typing import Optional
 
 from .base import AttachmentStore
+from .dynamodb import BaseDynamoDBDriver
 
 
-class DynamoDBAttachmentDriver:
+class DynamoDBAttachmentDriver(BaseDynamoDBDriver):
     """
     DynamoDBAttachmentDriver provides connection management and helpers for
     raw DynamoDB attachment operations.
@@ -32,50 +33,11 @@ class DynamoDBAttachmentDriver:
         :param table_name: DynamoDB table name.
         :param ttl: TTL in seconds for attachment items (0 = no TTL).
         """
-        self._table_name = table_name
+       
         self._ttl = ttl
-        self._table = None
+        super().__init__(table_name=table_name, logger_name="ak.core.multimodal.storage.dynamodb.driver")   
 
-    @property
-    def table(self):
-        """
-        Returns the boto3 DynamoDB Table resource, connecting lazily if needed.
-        :return: The DynamoDB Table resource.
-        """
-        if self._table is None:
-            self._connect()
-        return self._table
-
-    def _connect(self):
-        """
-        Establish a connection to DynamoDB and resolve the configured table.
-
-        Retries a few times with a small delay between attempts. Raises the last
-        encountered exception if all attempts fail.
-        """
-        import boto3
-
-        retries = 3
-        delay = 2
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                self._log.debug("Connecting to DynamoDB resource")
-                resource = boto3.resource("dynamodb")
-                self._table = resource.Table(self._table_name)
-                self._table.load()
-                self._log.debug("Connected to DynamoDB table %s", self._table_name)
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("DynamoDB connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    import time as _time
-
-                    _time.sleep(delay)
-        if last_err:
-            raise last_err
-
+    
     def _expiry_time(self) -> int:
         """Calculate expiry time as Unix epoch seconds."""
         return int(time.time()) + self._ttl if self._ttl > 0 else 0
