@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from .model import (
     AgentReplyImage,
@@ -269,11 +269,12 @@ class ChatService:
         self.rest_api_mode = rest_api_mode
         self._handler = AgentHandler()
 
-    def process_chat_request(self, req: BaseRunRequest) -> tuple[int, Dict[str, Any]]:
+    def process_chat_request(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request synchronously.
 
         :param req: Base run request with prompt, session_id, agent, and attachments
-        :return: Tuple of (status_code, response_dict)
+        :return: When rest_api_mode=False: tuple of (status_code, response_dict).
+                 When rest_api_mode=True: response_dict only.
         """
         session_id = req.session_id
         try:
@@ -289,11 +290,12 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.error(500, e, self._handler.get_response_session_id(None), self.rest_api_mode)
 
-    async def process_chat_request_async(self, req: BaseRunRequest) -> tuple[int, Dict[str, Any]]:
+    async def process_chat_request_async(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request asynchronously.
 
         :param req: Base run request with prompt, session_id, agent, and attachments
-        :return: Tuple of (status_code, response_dict)
+        :return: When rest_api_mode=False: tuple of (status_code, response_dict).
+                 When rest_api_mode=True: response_dict only.
         """
         session_id = req.session_id
         try:
@@ -316,7 +318,7 @@ class ChatService:
         session_id: Optional[str] = None,
         files: Optional[List[Any]] = None,
         images: Optional[List[Any]] = None,
-    ) -> tuple[int, Dict[str, Any]]:
+    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a multipart form request asynchronously.
 
         :param prompt: Text prompt for the agent
@@ -324,7 +326,8 @@ class ChatService:
         :param session_id: Session identifier (required)
         :param files: Optional list of uploaded file objects
         :param images: Optional list of uploaded image objects
-        :return: Tuple of (status_code, response_dict)
+        :return: When rest_api_mode=False: tuple of (status_code, response_dict).
+                 When rest_api_mode=True: response_dict only.
         """
         try:
             if not session_id:
