@@ -9,12 +9,6 @@ from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    force=True,
-)
-
 
 class RESTAPI:
     """

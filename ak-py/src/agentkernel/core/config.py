@@ -238,6 +238,19 @@ class _QueuesConfig(BaseModel):
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
 
 
+class _LogLevelConfig(BaseModel):
+    level: Optional[str] = Field(
+        default=None,
+        pattern="^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$",
+        description="Log level. Options: INFO, DEBUG, ERROR, WARNING, CRITICAL",
+    )
+
+
+class _LoggingConfig(BaseModel):
+    ak: _LogLevelConfig = Field(description="Agent Kernel logging configuration", default_factory=_LogLevelConfig)
+    system: _LogLevelConfig = Field(description="System logging configuration", default_factory=_LogLevelConfig)
+
+
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
@@ -252,7 +265,6 @@ class _ExecutionConfig(BaseModel):
 
 
 class AKConfig(YamlBaseSettingsModified):
-    debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
         default_factory=_SessionStoreConfig,
@@ -275,6 +287,7 @@ class AKConfig(YamlBaseSettingsModified):
     test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
+    logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
     @classmethod

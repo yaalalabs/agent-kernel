@@ -31,7 +31,7 @@ class A2A:
     """
     Card built flag
     """
-    _log = logging.getLogger(__name__)
+    _log = logging.getLogger("ak.a2a")
 
     class Executor(AgentExecutor):
 

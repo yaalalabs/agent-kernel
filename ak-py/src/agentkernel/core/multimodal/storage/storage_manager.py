@@ -13,7 +13,7 @@ from .base import (
     AttachmentStore,
 )
 
-_log = logging.getLogger("ak.core.multimodal.storage")
+_log = logging.getLogger("ak.multimodal.storage")
 
 
 class AttachmentStorageManager:

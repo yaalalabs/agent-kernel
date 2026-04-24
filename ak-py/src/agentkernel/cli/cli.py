@@ -30,16 +30,12 @@ class _CLIOutputConfig:
         logging.getLogger().setLevel(logging.CRITICAL)
 
 
-# Configure logger only to print agent kernel logs
-ak_logger = logging.getLogger("ak")
-ak_logger.setLevel(logging.DEBUG if AKConfig.get().debug else logging.INFO)
-ak_logger.propagate = False
+ak_cli_logger = logging.getLogger("ak.cli")
 
-if not ak_logger.handlers:
+if not ak_cli_logger.handlers:
     handler = logging.StreamHandler()
-    handler.setLevel(logging.DEBUG if AKConfig.get().debug else logging.INFO)
     handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
-    ak_logger.addHandler(handler)
+    ak_cli_logger.addHandler(handler)
 
 _ContextFilter.setup()
 _CLIOutputConfig.setup()
@@ -130,8 +126,7 @@ class CLI:
                 raise
             except Exception as e:
                 self._print(f"Error: {e}")
-                # Keep CLI output user-friendly by default; full trace is available at DEBUG level.
-                ak_logger.debug("Exception in CLI run loop", exc_info=True)
+                ak_cli_logger.error("Exception in CLI run loop", exc_info=True)
 
     @classmethod
     def main(cls):
