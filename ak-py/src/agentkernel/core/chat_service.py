@@ -15,6 +15,7 @@ from .model import (
 )
 from .service import AgentService
 
+
 class RequestBuilder:
     """Constructs AgentRequest object lists from various input sources."""
 
@@ -253,6 +254,7 @@ class ResponseBuilder:
         }
         if rest_api_mode:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=status_code, detail=response_dict)
         return (status_code, response_dict)
 
