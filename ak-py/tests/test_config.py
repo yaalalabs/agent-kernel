@@ -18,9 +18,7 @@ def test_config_defaults_no_file(monkeypatch):
 @pytest.mark.usefixtures("tmp_path")
 def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     # Write YAML file
-    yaml_text = (
-        "session:\n" "  type: redis\n" "  redis:\n" "    url: redis://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:test:'\n"
-    )
+    yaml_text = "session:\n" "  type: redis\n" "  redis:\n" "    url: redis://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:test:'\n"
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml_text)
 
