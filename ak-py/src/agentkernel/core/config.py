@@ -247,8 +247,8 @@ class _LogLevelConfig(BaseModel):
 
 
 class _LoggingConfig(BaseModel):
-    ak: Optional[_LogLevelConfig] = Field(description="Agent Kernel logging configuration", default_factory=_LogLevelConfig)
-    system: Optional[_LogLevelConfig] = Field(description="System logging configuration", default_factory=_LogLevelConfig)
+    ak: _LogLevelConfig = Field(description="Agent Kernel logging configuration", default_factory=_LogLevelConfig)
+    system: _LogLevelConfig = Field(description="System logging configuration", default_factory=_LogLevelConfig)
 
 
 class _ExecutionConfig(BaseModel):
