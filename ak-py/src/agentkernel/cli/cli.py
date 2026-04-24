@@ -96,8 +96,7 @@ class CLI:
                 raise
             except Exception as e:
                 self._print(f"Error: {e}")
-                # Keep CLI output user-friendly by default; full trace is available at DEBUG level.
-                ak_cli_logger.debug("Exception in CLI run loop", exc_info=True)
+                ak_cli_logger.error("Exception in CLI run loop", exc_info=True)
 
     @classmethod
     def main(cls):
