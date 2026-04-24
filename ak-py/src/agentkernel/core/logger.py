@@ -56,7 +56,7 @@ class AKLogger:
         resolved_level = AKLogger.resolve_level(level)
         ak_logger = logging.getLogger("ak")
         ak_logger.setLevel(resolved_level)
-        ak_logger.propagate = False  # stopping the propagation here so that it won't propagate to the root, so loggers like "ak.api" with popagate=True (propagate is True by default, which is the case here) won't propagate to the root, popagation will stop at this level ("ak" level)
+        ak_logger.propagate = False  # stopping the propagation here so that it won't propagate to the root, so loggers like "ak.api" with propagate=True (propagate is True by default, which is the case here) won't propagate to the root, propagation will stop at this level ("ak" level)
         AKLogger.attach_stream_handler(logger=ak_logger, attach_formatter=True)
         AKLogger.set_handlers_level(logger=ak_logger, level=resolved_level)
 
