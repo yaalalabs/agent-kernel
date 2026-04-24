@@ -3,6 +3,7 @@ import base64
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from .config import AKConfig
 from .model import (
     AgentReplyImage,
     AgentReplyText,
@@ -18,7 +19,7 @@ class RequestBuilder:
     """Constructs AgentRequest object lists from various input sources."""
 
     _log = logging.getLogger("ak.chatservice.requestbuilder")
-    _max_file_size = 10 * 1024 * 1024  # 10 MB
+    _max_file_size = AKConfig.get().api.max_file_size  # 10 MB
 
     @staticmethod
     def from_base_request(req: BaseRunRequest) -> List[Any]:
