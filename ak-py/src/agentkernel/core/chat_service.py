@@ -23,6 +23,11 @@ class RequestBuilder:
 
     @staticmethod
     def from_base_request(req: BaseRunRequest) -> List[Any]:
+        """Build agent request list from BaseRunRequest.
+
+        :param req: Base run request containing prompt, images, files, and additional context
+        :return: List of AgentRequest objects for processing
+        """
         requests = [AgentRequestText(text=req.prompt)]
         RequestBuilder._add_images(requests, req.images)
         RequestBuilder._add_files(requests, req.files)
@@ -35,6 +40,13 @@ class RequestBuilder:
         files: Optional[List[Any]] = None,
         images: Optional[List[Any]] = None,
     ) -> List[Any]:
+        """Build agent request list from multipart form data.
+
+        :param prompt: Text prompt for the agent
+        :param files: Optional list of uploaded file objects
+        :param images: Optional list of uploaded image objects
+        :return: List of AgentRequest objects for processing
+        """
         requests = [AgentRequestText(text=prompt)]
         await RequestBuilder._add_multipart_files(requests, files)
         await RequestBuilder._add_multipart_images(requests, images)
@@ -42,6 +54,12 @@ class RequestBuilder:
 
     @staticmethod
     def _add_images(requests: List[Any], images):
+        """Add image requests to the request list.
+
+        :param requests: List to append image requests to
+        :param images: List of image objects with image_data, name, and mime_type
+        :return: None
+        """
         if not images:
             return
         for image in images:
@@ -63,6 +81,12 @@ class RequestBuilder:
 
     @staticmethod
     def _add_files(requests: List[Any], files):
+        """Add file requests to the request list.
+
+        :param requests: List to append file requests to
+        :param files: List of file objects with file_data, name, and mime_type
+        :return: None
+        """
         if not files:
             return
         for file in files:
@@ -84,6 +108,12 @@ class RequestBuilder:
 
     @staticmethod
     def _attach_additional_context(req: BaseRunRequest, requests: List[Any]):
+        """Attach additional context fields from request as AgentRequestAny objects.
+
+        :param req: Base run request containing additional context fields
+        :param requests: List to append context requests to
+        :return: None
+        """
         known_fields = {"request_id", "user_id", "prompt", "agent", "session_id", "images", "files"}
         for key, value in req.model_dump().items():
             if key in known_fields:
@@ -93,6 +123,12 @@ class RequestBuilder:
 
     @staticmethod
     async def _add_multipart_files(requests: List[Any], files: Optional[List[Any]]):
+        """Process and add multipart uploaded files to request list.
+
+        :param requests: List to append file requests to
+        :param files: Optional list of uploaded file objects from multipart form
+        :return: None
+        """
         if not files:
             return
         for file in files:
@@ -113,6 +149,12 @@ class RequestBuilder:
 
     @staticmethod
     async def _add_multipart_images(requests: List[Any], images: Optional[List[Any]]):
+        """Process and add multipart uploaded images to request list.
+
+        :param requests: List to append image requests to
+        :param images: Optional list of uploaded image objects from multipart form
+        :return: None
+        """
         if not images:
             return
         for image in images:
@@ -140,15 +182,31 @@ class AgentHandler:
     _log = logging.getLogger("ak.chatservice.agenthandler")
 
     def __init__(self):
+        """Initialize AgentHandler with no active service.
+
+        :return: None
+        """
         self.service: Optional[AgentService] = None
 
     def initialize(self, session_id: str, agent: Optional[str]):
+        """Initialize AgentService with session and agent selection.
+
+        :param session_id: Session identifier for the agent
+        :param agent: Optional agent name/identifier to select
+        :return: None
+        :raises ValueError: If no agent is available after selection
+        """
         self.service = AgentService()
         self.service.select(session_id, agent)
         if not self.service.agent:
             raise ValueError("No agent available")
 
     def run_sync(self, requests: List[Any]) -> Any:
+        """Run agent requests synchronously.
+
+        :param requests: List of AgentRequest objects to process
+        :return: Agent execution result
+        """
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
@@ -160,9 +218,19 @@ class AgentHandler:
             return asyncio.run(self.service.run_multi(requests=requests))
 
     async def run_async(self, requests: List[Any]) -> Any:
+        """Run agent requests asynchronously.
+
+        :param requests: List of AgentRequest objects to process
+        :return: Agent execution result
+        """
         return await self.service.run_multi(requests=requests)
 
     def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
+        """Get the session ID for the response.
+
+        :param session_id: Original session ID from request
+        :return: Response session ID from service or original if service unavailable
+        """
         return self.service.get_response_session_id(session_id) if self.service else session_id
 
 
@@ -171,6 +239,14 @@ class ResponseBuilder:
 
     @staticmethod
     def success(status_code: int, result: Any, session_id: str, rest_api_mode: bool):
+        """Build success response from agent result.
+
+        :param status_code: HTTP status code for success
+        :param result: Agent execution result
+        :param session_id: Session identifier for the response
+        :param rest_api_mode: If True, return dict only; if False, return tuple
+        :return: Response dict or (status_code, response_dict) tuple
+        """
         response_dict = {
             "result": str(result)
             if isinstance(result, (AgentReplyText, AgentReplyImage))
@@ -181,6 +257,14 @@ class ResponseBuilder:
 
     @staticmethod
     def error(status_code: int, error: Exception, session_id: Optional[str], rest_api_mode: bool):
+        """Build error response from exception.
+
+        :param status_code: HTTP status code for error
+        :param error: Exception that occurred
+        :param session_id: Session identifier for the response
+        :param rest_api_mode: If True, raise HTTPException; if False, return tuple
+        :return: (status_code, response_dict) tuple or raises HTTPException
+        """
         response_dict = {
             "error": str(error),
             "session_id": session_id,
@@ -193,11 +277,21 @@ class ResponseBuilder:
 
 class ChatService:
     def __init__(self, rest_api_mode: bool = False):
+        """Initialize ChatService.
+
+        :param rest_api_mode: If True, use FastAPI error handling; if False, use tuple responses
+        :return: None
+        """
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
         self._handler = AgentHandler()
 
     def process_chat_request(self, req: BaseRunRequest) -> tuple[int, Dict[str, Any]]:
+        """Process a chat request synchronously.
+
+        :param req: Base run request with prompt, session_id, agent, and attachments
+        :return: Tuple of (status_code, response_dict)
+        """
         session_id = req.session_id
         try:
             self._validate(req)
@@ -213,6 +307,11 @@ class ChatService:
             return ResponseBuilder.error(500, e, self._handler.get_response_session_id(None), self.rest_api_mode)
 
     async def process_chat_request_async(self, req: BaseRunRequest) -> tuple[int, Dict[str, Any]]:
+        """Process a chat request asynchronously.
+
+        :param req: Base run request with prompt, session_id, agent, and attachments
+        :return: Tuple of (status_code, response_dict)
+        """
         session_id = req.session_id
         try:
             self._validate(req)
@@ -235,6 +334,15 @@ class ChatService:
         files: Optional[List[Any]] = None,
         images: Optional[List[Any]] = None,
     ) -> tuple[int, Dict[str, Any]]:
+        """Process a multipart form request asynchronously.
+
+        :param prompt: Text prompt for the agent
+        :param agent: Optional agent name/identifier
+        :param session_id: Session identifier (required)
+        :param files: Optional list of uploaded file objects
+        :param images: Optional list of uploaded image objects
+        :return: Tuple of (status_code, response_dict)
+        """
         try:
             if not session_id:
                 raise ValueError("No session_id is provided in the request")
@@ -253,6 +361,12 @@ class ChatService:
 
     @staticmethod
     def _validate(req: BaseRunRequest):
+        """Validate that required fields are present in the request.
+
+        :param req: Base run request to validate
+        :return: None
+        :raises ValueError: If session_id or prompt is missing
+        """
         if req.session_id is None:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
