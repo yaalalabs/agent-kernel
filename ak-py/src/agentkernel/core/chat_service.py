@@ -14,7 +14,6 @@ from .model import (
 )
 from .service import AgentService
 
-
 class RequestBuilder:
     """Constructs AgentRequest object lists from various input sources."""
 
@@ -125,7 +124,7 @@ class RequestBuilder:
             RequestBuilder._log.debug(f"Processing uploaded file: {file.filename}")
             content = await file.read()
             if len(content) > RequestBuilder._max_file_size:
-                raise ValueError(f"File {file.filename} exceeds maximum size " f"({len(content) / (1024 * 1024):.2f} MB)")
+                raise ValueError(f"File {file.filename} exceeds maximum size ({len(content) / (1024 * 1024):.2f} MB)")
             requests.append(
                 AgentRequestFile(
                     file_data=base64.b64encode(content).decode("utf-8"),
@@ -148,7 +147,7 @@ class RequestBuilder:
             RequestBuilder._log.debug(f"Processing uploaded image: {image.filename}")
             content = await image.read()
             if len(content) > RequestBuilder._max_file_size:
-                raise ValueError(f"Image {image.filename} exceeds maximum size " f"({len(content) / (1024 * 1024):.2f} MB)")
+                raise ValueError(f"Image {image.filename} exceeds maximum size ({len(content) / (1024 * 1024):.2f} MB)")
             if image.content_type and not image.content_type.startswith("image/"):
                 raise ValueError(f"Invalid image type: {image.content_type}")
             requests.append(
@@ -253,7 +252,6 @@ class ResponseBuilder:
         }
         if rest_api_mode:
             from fastapi import HTTPException
-
             raise HTTPException(status_code=status_code, detail=response_dict)
         return (status_code, response_dict)
 
@@ -267,7 +265,6 @@ class ChatService:
         """
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
-        self._handler = AgentHandler()
 
     def process_chat_request(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request synchronously.
@@ -277,18 +274,19 @@ class ChatService:
                  When rest_api_mode=True: response_dict only.
         """
         session_id = req.session_id
+        handler = AgentHandler()
         try:
             self._validate(req)
             requests = RequestBuilder.from_base_request(req)
-            self._handler.initialize(session_id, req.agent)
-            result = self._handler.run_sync(requests)
-            return ResponseBuilder.success(200, result, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            handler.initialize(session_id, req.agent)
+            result = handler.run_sync(requests)
+            return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return ResponseBuilder.error(400, ve, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.error(500, e, self._handler.get_response_session_id(None), self.rest_api_mode)
+            return ResponseBuilder.error(500, e, handler.get_response_session_id(None), self.rest_api_mode)
 
     async def process_chat_request_async(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request asynchronously.
@@ -298,18 +296,19 @@ class ChatService:
                  When rest_api_mode=True: response_dict only.
         """
         session_id = req.session_id
+        handler = AgentHandler()
         try:
             self._validate(req)
             requests = RequestBuilder.from_base_request(req)
-            self._handler.initialize(session_id, req.agent)
-            result = await self._handler.run_async(requests)
-            return ResponseBuilder.success(200, result, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            handler.initialize(session_id, req.agent)
+            result = await handler.run_async(requests)
+            return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return ResponseBuilder.error(400, ve, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.error(500, e, self._handler.get_response_session_id(None), self.rest_api_mode)
+            return ResponseBuilder.error(500, e, handler.get_response_session_id(None), self.rest_api_mode)
 
     async def process_multipart_request_async(
         self,
@@ -329,21 +328,22 @@ class ChatService:
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
+        handler = AgentHandler()
         try:
             if not session_id:
                 raise ValueError("No session_id is provided in the request")
             if not prompt:
                 raise ValueError("No prompt provided in the request")
             requests = await RequestBuilder.from_multipart_async(prompt, files, images)
-            self._handler.initialize(session_id, agent)
-            result = await self._handler.run_async(requests)
-            return ResponseBuilder.success(200, result, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            handler.initialize(session_id, agent)
+            result = await handler.run_async(requests)
+            return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
         except ValueError as ve:
             self._log.error(f"ValueError processing multipart request: {ve}")
-            return ResponseBuilder.error(400, ve, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
         except Exception as e:
             self._log.error(f"Error processing multipart request: {e}")
-            return ResponseBuilder.error(500, e, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.error(500, e, handler.get_response_session_id(session_id), self.rest_api_mode)
 
     @staticmethod
     def _validate(req: BaseRunRequest):
