@@ -19,3 +19,8 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 from .core import *
+
+# Auto-configure logging on import if not already configured (handled inside the "configure_from_config()" function)
+from .core.logger import AKLogger
+
+AKLogger.configure_from_config()
