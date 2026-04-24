@@ -14,6 +14,7 @@ log = logging.getLogger("ak.guardrail.walledai")
 
 WALLEDAI_PII_MAPPING_KEY = "walledai_pii_mapping"
 
+
 def silent_call(func, *args, **kwargs):
     """
     Execute a callable while suppressing stdout/stderr output.
