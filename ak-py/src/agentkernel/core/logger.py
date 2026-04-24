@@ -15,9 +15,16 @@ class AKLogger:
         :param level: Log level as string or int.
         :return: Resolved log level as int.
         """
-        return (
-            level if isinstance(level, int) else logging._nameToLevel.get(str(level).upper(), logging.WARNING)
-        )  # using WARNING as fallback value as it is the default value in most cases in python
+        if isinstance(level, int):
+            return level
+
+        level_name = str(level).upper()
+
+        get_mapping = getattr(logging, "getLevelNamesMapping", None)
+        if callable(get_mapping):
+            return get_mapping().get(level_name, logging.WARNING)
+
+        return logging.WARNING
 
     @staticmethod
     def attach_stream_handler(logger: logging.Logger, attach_formatter=False) -> None:
