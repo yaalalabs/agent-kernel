@@ -50,9 +50,7 @@ async def test_teams_handler():
     print("Testing Teams handler...")
     print(f"Mock message: {mock_activity.text}")
     print(f"From: {mock_activity.from_property.name}")
-    print(
-        "\nNote: Full integration test requires Azure Bot credentials and Teams environment."
-    )
+    print("\nNote: Full integration test requires Azure Bot credentials and Teams environment.")
     print("Use 'uv run server.py' with proper credentials for real testing.")
 
 
