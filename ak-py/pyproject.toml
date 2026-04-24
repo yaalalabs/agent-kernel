@@ -32,7 +32,7 @@ openllmetry = [
     "traceloop-sdk>=0.48.0",
 ]
 crewai = [
-    "crewai==1.6.1",
+    "crewai>=0.150.0",
     "openinference-instrumentation-crewai>=0.1.16",
     "openinference-instrumentation-litellm>=0.1.28",
 ]
@@ -156,4 +156,3 @@ target-version = ["py312"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
-
