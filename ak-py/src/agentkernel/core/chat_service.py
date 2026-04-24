@@ -3,7 +3,6 @@ import base64
 import logging
 from typing import Any, Dict, List, Optional
 
-from .service import AgentService
 from .model import (
     AgentReplyImage,
     AgentReplyText,
@@ -13,6 +12,7 @@ from .model import (
     AgentRequestText,
     BaseRunRequest,
 )
+from .service import AgentService
 
 
 class RequestBuilder:
@@ -64,13 +64,8 @@ class RequestBuilder:
             return
         for image in images:
             RequestBuilder._log.debug(f"Adding image: {image.name}")
-            if (
-                not image.image_data.startswith(("http://", "https://", "data:", "s3://"))
-                and not image.mime_type
-            ):
-                raise ValueError(
-                    "mime_type is missing for image input, either in the base64 or explicitly"
-                )
+            if not image.image_data.startswith(("http://", "https://", "data:", "s3://")) and not image.mime_type:
+                raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
             requests.append(
                 AgentRequestImage(
                     image_data=image.image_data,
@@ -91,13 +86,8 @@ class RequestBuilder:
             return
         for file in files:
             RequestBuilder._log.debug(f"Adding file attachment: {file.name}")
-            if (
-                not file.file_data.startswith(("http://", "https://", "data:", "s3://"))
-                and not file.mime_type
-            ):
-                raise ValueError(
-                    "mime_type is missing for file input, either in the base64 or explicitly"
-                )
+            if not file.file_data.startswith(("http://", "https://", "data:", "s3://")) and not file.mime_type:
+                raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
             requests.append(
                 AgentRequestFile(
                     file_data=file.file_data,
@@ -135,10 +125,7 @@ class RequestBuilder:
             RequestBuilder._log.debug(f"Processing uploaded file: {file.filename}")
             content = await file.read()
             if len(content) > RequestBuilder._max_file_size:
-                raise ValueError(
-                    f"File {file.filename} exceeds maximum size "
-                    f"({len(content) / (1024 * 1024):.2f} MB)"
-                )
+                raise ValueError(f"File {file.filename} exceeds maximum size " f"({len(content) / (1024 * 1024):.2f} MB)")
             requests.append(
                 AgentRequestFile(
                     file_data=base64.b64encode(content).decode("utf-8"),
@@ -161,10 +148,7 @@ class RequestBuilder:
             RequestBuilder._log.debug(f"Processing uploaded image: {image.filename}")
             content = await image.read()
             if len(content) > RequestBuilder._max_file_size:
-                raise ValueError(
-                    f"Image {image.filename} exceeds maximum size "
-                    f"({len(content) / (1024 * 1024):.2f} MB)"
-                )
+                raise ValueError(f"Image {image.filename} exceeds maximum size " f"({len(content) / (1024 * 1024):.2f} MB)")
             if image.content_type and not image.content_type.startswith("image/"):
                 raise ValueError(f"Invalid image type: {image.content_type}")
             requests.append(
@@ -248,9 +232,7 @@ class ResponseBuilder:
         :return: Response dict or (status_code, response_dict) tuple
         """
         response_dict = {
-            "result": str(result)
-            if isinstance(result, (AgentReplyText, AgentReplyImage))
-            else "Non textual result received",
+            "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received",
             "session_id": session_id,
         }
         return response_dict if rest_api_mode else (status_code, response_dict)
@@ -271,6 +253,7 @@ class ResponseBuilder:
         }
         if rest_api_mode:
             from fastapi import HTTPException
+
             raise HTTPException(status_code=status_code, detail=response_dict)
         return (status_code, response_dict)
 

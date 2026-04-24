@@ -4,8 +4,8 @@ import traceback
 
 import azure.functions as func
 
-from ...core.model import BaseRunRequest
 from ...core.chat_service import ChatService
+from ...core.model import BaseRunRequest
 
 
 class AzureFunctions:

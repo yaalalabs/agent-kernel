@@ -1,6 +1,6 @@
 import uuid
 from enum import Enum
-from typing import Any, Callable, Literal, Optional, Union, List
+from typing import Any, Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -124,8 +124,10 @@ class SystemTool(BaseModel):
     description: str
     func: Callable
 
+
 class FileData(BaseModel):
     """Represents a file attachment"""
+
     file_data: str  # base64 encoded string or URL
     name: str
     mime_type: Optional[str] = None
@@ -133,6 +135,7 @@ class FileData(BaseModel):
 
 class ImageData(BaseModel):
     """Represents an image attachment"""
+
     image_data: str  # base64 encoded string
     name: str
     mime_type: Optional[str] = None

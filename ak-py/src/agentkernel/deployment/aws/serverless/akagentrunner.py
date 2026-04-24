@@ -1,8 +1,8 @@
 import json
 import logging
 
-from ....core.config import AKConfig
 from ....core.chat_service import ChatService
+from ....core.config import AKConfig
 from ....core.model import BaseRunRequest
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
