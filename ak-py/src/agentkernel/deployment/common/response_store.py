@@ -10,7 +10,7 @@ class ResponseStore(ABC):
     Abstract base class for response message storage systems.
     """
 
-    _log = __import__("logging").getLogger("ak.deployment.response_handler")
+    _log = __import__("logging").getLogger("ak.deployment.response_store")
 
     @abstractmethod
     def add_message(self, message: Dict) -> None:
