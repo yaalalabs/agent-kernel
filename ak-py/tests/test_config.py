@@ -5,12 +5,10 @@ from agentkernel.core.config import AKConfig
 
 def test_config_defaults_no_file(monkeypatch):
     # Ensure no env interference
-    monkeypatch.delenv("AK_DEBUG", raising=False)
     monkeypatch.delenv("AK_SESSION_TYPE", raising=False)
 
     cfg = AKConfig.get()
     cfg.__init__()  # Reload
-    assert cfg.debug is False
     assert cfg.session.type == "in_memory"
 
     # Defaults for nested redis should be None
@@ -21,7 +19,7 @@ def test_config_defaults_no_file(monkeypatch):
 def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     # Write YAML file
     yaml_text = (
-        "debug: true\n" "session:\n" "  type: redis\n" "  redis:\n" "    url: redis://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:test:'\n"
+        "session:\n" "  type: redis\n" "  redis:\n" "    url: redis://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:test:'\n"
     )
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml_text)
@@ -37,12 +35,8 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     cfg_2 = AKConfig()  # object which loads yaml file and env settings
 
     # defaults from cfg_1
-    assert cfg_1.debug is False
     assert cfg_1.session.type == "in_memory"
     assert cfg_1.session.redis is None
-
-    # File value
-    assert cfg_2.debug is True
 
     # file values overridden by env
     assert cfg_2.session.type == "in_memory"
@@ -55,8 +49,6 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
 
     # Reload and check default object again
     cfg_1.__init__()
-    # File value
-    assert cfg_1.debug is True
 
     # File values overridden by env
     assert cfg_1.session.type == "in_memory"
@@ -73,7 +65,6 @@ def test_nested_env_cases(monkeypatch):
 
     cfg = AKConfig()
     # All values should remain defaults
-    assert cfg.debug is False
     assert cfg.session.type == "in_memory"
     assert cfg.session.redis is None
     assert cfg.api.custom_router_prefix == "/custom"
@@ -101,7 +92,6 @@ def test_nested_env_cases(monkeypatch):
     monkeypatch.setenv("AK_API__ENABLED_ROUTES__AGENTS", "false")  # Default is true. Should be valid
 
     cfg = AKConfig()
-    assert cfg.debug is False  # Should remain default
     assert cfg.session.type == "redis"
     assert cfg.session.redis is not None
     assert cfg.session.redis.ttl == 1000  # from double underscore env
