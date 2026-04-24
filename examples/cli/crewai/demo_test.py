@@ -8,7 +8,7 @@ from agentkernel.test import Test
 if os.getenv("CI") == "true":
     sys.stdout = open(os.devnull, "w")
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")  #uses a single session for all tests
+pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
