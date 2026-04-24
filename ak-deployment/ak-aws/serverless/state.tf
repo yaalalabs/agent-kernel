@@ -153,9 +153,6 @@ module "authorizer" {
   env_alias                  = var.env_alias
   authorizer_info            = var.authorizer
   module_type                = var.module_type
-  timeout                    = var.authorizer.timeout
-  memory_size                = var.authorizer.memory_size
-  layers                     = var.authorizer.layers
   tags                       = var.tags
   vpc_id                     = local.vpc_id
   subnet_ids                 = local.subnet_ids
