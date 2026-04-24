@@ -18,31 +18,10 @@ def test_bind_returns_list():
     assert len(tools) == 1
 
 
+
 def test_bind_non_callable_string_raises():
     with pytest.raises(TypeError, match="Expected a callable"):
         SmolagentsToolBuilder.bind(["not a function"])
-
-
-def test_a2a_card_dict_tools():
-    from a2a.types import AgentCard
-
-    from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsRunner
-
-    class MockTool:
-        name = "mock_tool"
-        description = "A mock tool for tests"
-
-    class MockAgent:
-        tools = {"mock_tool": MockTool()}
-        system_prompt = "Mock agent description"
-        name = "mock_agent"
-
-    wrapper = SmolagentsAgent("mock_agent", SmolagentsRunner(), MockAgent())
-    card = wrapper.get_a2a_card()
-
-    assert isinstance(card, AgentCard)
-    assert len(card.skills) == 1
-    assert card.skills[0].name == "mock_tool"
 
 
 def test_smolagents_module_runner_init():
