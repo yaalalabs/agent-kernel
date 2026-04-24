@@ -265,7 +265,6 @@ class _ExecutionConfig(BaseModel):
 
 
 class AKConfig(YamlBaseSettingsModified):
-    debug: bool = Field(default=False, description="Enable debug mode")
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
         default_factory=_SessionStoreConfig,
