@@ -14,29 +14,6 @@ log = logging.getLogger("ak.guardrail.walledai")
 
 WALLEDAI_PII_MAPPING_KEY = "walledai_pii_mapping"
 
-
-def _resolve_log_level() -> int:
-    """
-    Resolve the logger level from global AK configuration.
-
-    :return: A valid ``logging`` module integer level.
-    :rtype: int
-    """
-    return logging.DEBUG if AKConfig.get().debug else logging.INFO
-
-
-resolved_log_level = _resolve_log_level()
-log.setLevel(resolved_log_level)
-
-if not log.handlers:
-    handler = logging.StreamHandler()
-    handler.setLevel(resolved_log_level)
-    handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
-    log.addHandler(handler)
-
-log.propagate = False
-
-
 def silent_call(func, *args, **kwargs):
     """
     Execute a callable while suppressing stdout/stderr output.
