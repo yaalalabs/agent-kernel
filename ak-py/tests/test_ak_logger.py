@@ -1,9 +1,10 @@
 import logging
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from agentkernel.core.logger import AKLogger
+import pytest
+
 from agentkernel.core.config import AKConfig
+from agentkernel.core.logger import AKLogger
 
 
 class TestResolveLevel:
@@ -50,12 +51,12 @@ class TestAttachStreamHandler:
         """Test that attach_stream_handler removes existing handlers."""
         logger = logging.getLogger("test_logger")
         logger.handlers.clear()
-        
+
         # Add a handler
         existing_handler = logging.StreamHandler()
         logger.addHandler(existing_handler)
         assert len(logger.handlers) == 1
-        
+
         # Attach new handler should remove existing
         AKLogger.attach_stream_handler(logger, attach_formatter=False)
         assert len(logger.handlers) == 1
@@ -65,12 +66,12 @@ class TestAttachStreamHandler:
         """Test that attach_stream_handler closes existing handlers."""
         logger = logging.getLogger("test_logger_close")
         logger.handlers.clear()
-        
+
         # Add a handler with close tracking
         existing_handler = logging.StreamHandler()
         existing_handler.close = MagicMock()
         logger.addHandler(existing_handler)
-        
+
         AKLogger.attach_stream_handler(logger, attach_formatter=False)
         existing_handler.close.assert_called_once()
 
@@ -78,7 +79,7 @@ class TestAttachStreamHandler:
         """Test that attach_stream_handler adds a StreamHandler."""
         logger = logging.getLogger("test_logger_add")
         logger.handlers.clear()
-        
+
         AKLogger.attach_stream_handler(logger, attach_formatter=False)
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0], logging.StreamHandler)
@@ -87,7 +88,7 @@ class TestAttachStreamHandler:
         """Test that attach_stream_handler adds formatter when requested."""
         logger = logging.getLogger("test_logger_formatter")
         logger.handlers.clear()
-        
+
         AKLogger.attach_stream_handler(logger, attach_formatter=True)
         assert len(logger.handlers) == 1
         assert logger.handlers[0].formatter is not None
@@ -97,7 +98,7 @@ class TestAttachStreamHandler:
         """Test that attach_stream_handler does not add formatter when not requested."""
         logger = logging.getLogger("test_logger_no_formatter")
         logger.handlers.clear()
-        
+
         AKLogger.attach_stream_handler(logger, attach_formatter=False)
         assert len(logger.handlers) == 1
         assert logger.handlers[0].formatter is None
@@ -110,10 +111,10 @@ class TestSetHandlersLevel:
         """Test setting level on logger with single handler."""
         logger = logging.getLogger("test_single_handler")
         logger.handlers.clear()
-        
+
         handler = logging.StreamHandler()
         logger.addHandler(handler)
-        
+
         AKLogger.set_handlers_level(logger, logging.ERROR)
         assert handler.level == logging.ERROR
 
@@ -121,14 +122,14 @@ class TestSetHandlersLevel:
         """Test setting level on logger with multiple handlers."""
         logger = logging.getLogger("test_multiple_handlers")
         logger.handlers.clear()
-        
+
         handler1 = logging.StreamHandler()
         handler2 = logging.StreamHandler()
         handler3 = logging.StreamHandler()
         logger.addHandler(handler1)
         logger.addHandler(handler2)
         logger.addHandler(handler3)
-        
+
         AKLogger.set_handlers_level(logger, logging.DEBUG)
         assert handler1.level == logging.DEBUG
         assert handler2.level == logging.DEBUG
@@ -138,7 +139,7 @@ class TestSetHandlersLevel:
         """Test setting level on logger with no handlers (should not error)."""
         logger = logging.getLogger("test_no_handlers")
         logger.handlers.clear()
-        
+
         # Should not raise an error
         AKLogger.set_handlers_level(logger, logging.INFO)
 
@@ -150,10 +151,10 @@ class TestSetAKLogLevel:
         """Test that set_ak_log_level sets the ak logger level."""
         logger = logging.getLogger("ak")
         original_level = logger.level
-        
+
         AKLogger.set_ak_log_level("ERROR")
         assert logger.level == logging.ERROR
-        
+
         # Restore
         logger.setLevel(original_level)
 
@@ -161,10 +162,10 @@ class TestSetAKLogLevel:
         """Test that set_ak_log_level sets propagate to False."""
         logger = logging.getLogger("ak")
         original_propagate = logger.propagate
-        
+
         AKLogger.set_ak_log_level("INFO")
         assert logger.propagate is False
-        
+
         # Restore
         logger.propagate = original_propagate
 
@@ -172,12 +173,12 @@ class TestSetAKLogLevel:
         """Test that set_ak_log_level attaches a stream handler."""
         logger = logging.getLogger("ak")
         original_handlers = logger.handlers.copy()
-        
+
         logger.handlers.clear()
         AKLogger.set_ak_log_level("DEBUG")
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0], logging.StreamHandler)
-        
+
         # Restore
         logger.handlers.clear()
         for handler in original_handlers:
@@ -187,10 +188,10 @@ class TestSetAKLogLevel:
         """Test that set_ak_log_level sets handler level."""
         logger = logging.getLogger("ak")
         logger.handlers.clear()
-        
+
         AKLogger.set_ak_log_level("WARNING")
         assert logger.handlers[0].level == logging.WARNING
-        
+
         logger.handlers.clear()
 
 
@@ -201,10 +202,10 @@ class TestSetSystemLogLevel:
         """Test that set_system_log_level sets the root logger level."""
         logger = logging.getLogger()
         original_level = logger.level
-        
+
         AKLogger.set_system_log_level("ERROR")
         assert logger.level == logging.ERROR
-        
+
         # Restore
         logger.setLevel(original_level)
 
@@ -212,10 +213,10 @@ class TestSetSystemLogLevel:
         """Test that set_system_log_level sets propagate to False."""
         logger = logging.getLogger()
         original_propagate = logger.propagate
-        
+
         AKLogger.set_system_log_level("INFO")
         assert logger.propagate is False
-        
+
         # Restore
         logger.propagate = original_propagate
 
@@ -223,12 +224,12 @@ class TestSetSystemLogLevel:
         """Test that set_system_log_level attaches a stream handler."""
         logger = logging.getLogger()
         original_handlers = logger.handlers.copy()
-        
+
         logger.handlers.clear()
         AKLogger.set_system_log_level("DEBUG")
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0], logging.StreamHandler)
-        
+
         # Restore
         logger.handlers.clear()
         for handler in original_handlers:
@@ -238,10 +239,10 @@ class TestSetSystemLogLevel:
         """Test that set_system_log_level sets handler level."""
         logger = logging.getLogger()
         logger.handlers.clear()
-        
+
         AKLogger.set_system_log_level("WARNING")
         assert logger.handlers[0].level == logging.WARNING
-        
+
         logger.handlers.clear()
 
 
@@ -256,109 +257,109 @@ class TestConfigureFromConfig:
         """Reset initialization state after each test."""
         AKLogger._initialized = False
 
-    @patch.object(AKConfig, 'get')
+    @patch.object(AKConfig, "get")
     def test_configure_from_config_idempotent(self, mock_config_get):
         """Test that configure_from_config is idempotent - only runs once."""
         mock_config = MagicMock()
         mock_config.logging.ak.level = "INFO"
         mock_config.logging.system.level = "DEBUG"
         mock_config_get.return_value = mock_config
-        
+
         # First call should configure
         AKLogger.configure_from_config()
         assert AKLogger._initialized is True
-        
+
         # Reset mock to track if it's called again
         mock_config_get.reset_mock()
-        
+
         # Second call should return early without reconfiguring
         AKLogger.configure_from_config()
         mock_config_get.assert_not_called()
 
-    @patch.object(AKConfig, 'get')
+    @patch.object(AKConfig, "get")
     def test_configure_from_config_honors_ak_level(self, mock_config_get):
         """Test that configure_from_config honors configured AK log level."""
         mock_config = MagicMock()
         mock_config.logging.ak.level = "ERROR"
         mock_config.logging.system.level = None
         mock_config_get.return_value = mock_config
-        
+
         logger = logging.getLogger("ak")
         original_level = logger.level
         logger.handlers.clear()
-        
+
         AKLogger.configure_from_config()
         assert logger.level == logging.ERROR
-        
+
         # Restore
         logger.setLevel(original_level)
         logger.handlers.clear()
 
-    @patch.object(AKConfig, 'get')
+    @patch.object(AKConfig, "get")
     def test_configure_from_config_honors_system_level(self, mock_config_get):
         """Test that configure_from_config honors configured system log level."""
         mock_config = MagicMock()
         mock_config.logging.ak.level = None
         mock_config.logging.system.level = "DEBUG"
         mock_config_get.return_value = mock_config
-        
+
         logger = logging.getLogger()
         original_level = logger.level
         logger.handlers.clear()
-        
+
         AKLogger.configure_from_config()
         assert logger.level == logging.DEBUG
-        
+
         # Restore
         logger.setLevel(original_level)
         logger.handlers.clear()
 
-    @patch.object(AKConfig, 'get')
+    @patch.object(AKConfig, "get")
     def test_configure_from_config_both_levels(self, mock_config_get):
         """Test that configure_from_config configures both loggers when both levels set."""
         mock_config = MagicMock()
         mock_config.logging.ak.level = "WARNING"
         mock_config.logging.system.level = "ERROR"
         mock_config_get.return_value = mock_config
-        
+
         ak_logger = logging.getLogger("ak")
         root_logger = logging.getLogger()
-        
+
         ak_original = ak_logger.level
         root_original = root_logger.level
         ak_logger.handlers.clear()
         root_logger.handlers.clear()
-        
+
         AKLogger.configure_from_config()
         assert ak_logger.level == logging.WARNING
         assert root_logger.level == logging.ERROR
-        
+
         # Restore
         ak_logger.setLevel(ak_original)
         root_logger.setLevel(root_original)
         ak_logger.handlers.clear()
         root_logger.handlers.clear()
 
-    @patch.object(AKConfig, 'get')
+    @patch.object(AKConfig, "get")
     def test_configure_from_config_none_levels(self, mock_config_get):
         """Test that configure_from_config handles None levels gracefully."""
         mock_config = MagicMock()
         mock_config.logging.ak.level = None
         mock_config.logging.system.level = None
         mock_config_get.return_value = mock_config
-        
+
         # Should not raise an error
         AKLogger.configure_from_config()
         assert AKLogger._initialized is True
 
-    @patch.object(AKConfig, 'get')
+    @patch.object(AKConfig, "get")
     def test_configure_from_config_sets_initialized_flag(self, mock_config_get):
         """Test that configure_from_config sets the initialized flag."""
         mock_config = MagicMock()
         mock_config.logging.ak.level = "INFO"
         mock_config.logging.system.level = None
         mock_config_get.return_value = mock_config
-        
+
         assert AKLogger._initialized is False
         AKLogger.configure_from_config()
         assert AKLogger._initialized is True
@@ -371,19 +372,19 @@ class TestGlobalLoggingSideEffects:
         """Test that configuring AK logger doesn't affect root logger."""
         root_logger = logging.getLogger()
         ak_logger = logging.getLogger("ak")
-        
+
         root_original_level = root_logger.level
         root_original_handlers = root_logger.handlers.copy()
         ak_original_level = ak_logger.level
         ak_logger.handlers.clear()
-        
+
         # Configure AK logger
         AKLogger.set_ak_log_level("DEBUG")
-        
+
         # Root logger should be unchanged
         assert root_logger.level == root_original_level
         assert len(root_logger.handlers) == len(root_original_handlers)
-        
+
         # Restore
         ak_logger.setLevel(ak_original_level)
         ak_logger.handlers.clear()
@@ -392,19 +393,19 @@ class TestGlobalLoggingSideEffects:
         """Test that configuring root logger doesn't affect AK logger."""
         root_logger = logging.getLogger()
         ak_logger = logging.getLogger("ak")
-        
+
         root_original_level = root_logger.level
         root_logger.handlers.clear()
         ak_original_level = ak_logger.level
         ak_original_handlers = ak_logger.handlers.copy()
-        
+
         # Configure root logger
         AKLogger.set_system_log_level("DEBUG")
-        
+
         # AK logger should be unchanged
         assert ak_logger.level == ak_original_level
         assert len(ak_logger.handlers) == len(ak_original_handlers)
-        
+
         # Restore
         root_logger.setLevel(root_original_level)
         root_logger.handlers.clear()
@@ -412,23 +413,23 @@ class TestGlobalLoggingSideEffects:
     def test_multiple_configure_calls_safe(self):
         """Test that multiple configure calls are safe after reset."""
         AKLogger._initialized = False
-        
-        with patch.object(AKConfig, 'get') as mock_config_get:
+
+        with patch.object(AKConfig, "get") as mock_config_get:
             mock_config = MagicMock()
             mock_config.logging.ak.level = "INFO"
             mock_config.logging.system.level = None
             mock_config_get.return_value = mock_config
-            
+
             # First call
             AKLogger.configure_from_config()
             assert AKLogger._initialized is True
-            
+
             # Reset and call again
             AKLogger._initialized = False
             AKLogger.configure_from_config()
             assert AKLogger._initialized is True
-            
+
             # Should have called config.get() twice
             assert mock_config_get.call_count == 2
-        
+
         AKLogger._initialized = False

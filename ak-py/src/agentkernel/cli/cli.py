@@ -11,6 +11,7 @@ if not ak_cli_logger.handlers:
     handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
     ak_cli_logger.addHandler(handler)
 
+
 class CLI:
     """
     CLI class provides a command-line interface for interacting with agents.
