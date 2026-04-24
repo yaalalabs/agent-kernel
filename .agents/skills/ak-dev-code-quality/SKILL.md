@@ -220,6 +220,6 @@ The following log levels are supported (in order of verbosity):
 
 - **DEBUG**: Detailed information for diagnosing problems
 - **INFO**: General information about program execution
-- **WARNING**: Something unexpected happened (default)
+- **WARNING**: Something unexpected happened
 - **ERROR**: Due to a more serious problem, the software has not been able to perform some function
 - **CRITICAL**: A serious error, indicating that the program itself may be unable to continue running

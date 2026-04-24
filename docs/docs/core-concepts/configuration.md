@@ -127,12 +127,13 @@ guardrail:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
     version: "DRAFT"  # AWS Bedrock guardrail version (Bedrock only)
 
-# Logging configuration
+# Logging configuration (optional)
+# If omitted, default loggers will not be overridden
 logging:
   ak:
-    level: WARNING  # Agent Kernel log level: INFO, DEBUG, ERROR, WARNING, CRITICAL (default: WARNING)
+    level: WARNING  # Agent Kernel log level: INFO, DEBUG, ERROR, WARNING, CRITICAL
   system:
-    level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL (default: WARNING)
+    level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
 
 ### JSON Configuration
@@ -231,7 +232,7 @@ Alternatively, use `config.json`:
       "config_path": ""
     }
   },
-  "logging": {
+  "logging": {  // Optional - if omitted, default loggers will not be overridden
     "ak": {
       "level": "WARNING"
     },
@@ -433,15 +434,17 @@ export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default
 export AK_DEBUG=true
 ```
 
-### Logging Configuration
+### Logging Configuration (Optional)
 
 ```bash
 # Agent Kernel logging level
-export AK_LOGGING__AK__LEVEL=INFO  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL' (default: 'WARNING')
+export AK_LOGGING__AK__LEVEL=INFO  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL'
 
 # System/root logger level
-export AK_LOGGING__SYSTEM__LEVEL=WARNING  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL' (default: 'WARNING')
+export AK_LOGGING__SYSTEM__LEVEL=WARNING  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL'
 ```
+
+If the `logging` section is omitted from the configuration, default loggers will not be overridden.
 
 
 
@@ -553,7 +556,8 @@ guardrail:
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
-# Logging configuration
+# Logging configuration (optional)
+# If omitted, default loggers will not be overridden
 logging:
   ak:                           # Agent Kernel logger configuration
     level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
