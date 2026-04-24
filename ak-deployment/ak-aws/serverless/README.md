@@ -36,25 +36,25 @@ module "python_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "My Application API"
-  
-  module_name          = "api"
-  function_name        = "handler"
-  function_description = "Main API handler"
-  handler_path         = "app.lambda_handler"
+
   module_type          = "python"
-  
-  package_type         = "LocalZip"
-  package_path         = "${path.module}/dist/function.zip"
-  
-  timeout              = 30
-  memory_size          = 512
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    LOG_LEVEL   = "info"
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Main API handler"
+    handler_path         = "app.lambda_handler"
+    module_name           = "api"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    timeout              = 30
+    memory_size          = 512
+    environment_variables = {
+      ENVIRONMENT = "production"
+      LOG_LEVEL   = "info"
+    }
   }
-  
-    # API Gateway
+
+  # API Gateway
   api_version    = "v1"
   api_base_path  = "api"
   agent_endpoint = "chat"
@@ -67,7 +67,7 @@ module "python_api" {
          path           = "data",
          method         = "POST",
       }
-  ] 
+  ]
 
   tags = {
     Environment = "production"
@@ -98,25 +98,24 @@ module "nodejs_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Node.js API"
-  
-  module_name          = "chat"
-  function_name        = "handler"
-  function_description = "Chat API endpoint"
-  handler_path         = "index.handler"
+
   module_type          = "nodejs"
-  
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
-  
-  layers = [aws_lambda_layer_version.dependencies.arn]
-  
-  timeout     = 60
-  memory_size = 1024
-  
-  environment_variables = {
-    NODE_ENV = "production"
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Chat API endpoint"
+    handler_path         = "index.handler"
+    module_name           = "chat"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    layers               = [aws_lambda_layer_version.dependencies.arn]
+    timeout              = 60
+    memory_size          = 1024
+    environment_variables = {
+      NODE_ENV = "production"
+    }
   }
-  
+
   api_version    = "v2"
   agent_endpoint = "chat"
 }
@@ -144,23 +143,23 @@ module "container_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Container API"
-  
-  module_name          = "api"
-  function_name        = "processor"
-  function_description = "Containerized API handler"
-  handler_path         = "app.handler"  # Used for metadata only
+
   module_type          = "python"
-  
-  package_type = "Image"
-  image_uri    = module.container_image.docker_image_uri
-  
-  timeout     = 120
-  memory_size = 2048
-  
-  environment_variables = {
-    WORKERS = "4"
+
+  request_handler = {
+    function_name        = "processor"
+    function_description = "Containerized API handler"
+    handler_path         = "app.handler"  # Used for metadata only
+    module_name           = "api"
+    package_type         = "Image"
+    package_path         = "${path.module}/src"
+    timeout              = 120
+    memory_size          = 2048
+    environment_variables = {
+      WORKERS = "4"
+    }
   }
-  
+
   api_version    = "v1"
   agent_endpoint = "process"
 }
@@ -189,20 +188,21 @@ module "secure_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Secure API"
-  
-  module_name          = "api"
-  function_name        = "handler"
-  function_description = "Production API with code signing"
-  handler_path         = "app.handler"
+
   module_type          = "python"
-  
-  package_type  = "S3Zip"
-  package_path  = "s3://${module.lambda_package.s3_bucket}/${module.lambda_package.s3_key}"
-  is_production = true  # Enables code signing
-  
-  timeout     = 30
-  memory_size = 256
-  
+  is_production        = true  # Enables code signing
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Production API with code signing"
+    handler_path         = "app.handler"
+    module_name           = "api"
+    package_type         = "S3Zip"
+    package_path         = "s3://${module.lambda_package.s3_bucket}/${module.lambda_package.s3_key}"
+    timeout              = 30
+    memory_size          = 256
+  }
+
   api_version    = "v1"
   agent_endpoint = "api"
 }
@@ -218,27 +218,27 @@ module "serverless_api_dynamodb" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Serverless API with DynamoDB"
-  
-  module_name          = "chat"
-  function_name        = "handler"
-  function_description = "Chat API with DynamoDB session storage"
-  handler_path         = "app.lambda_handler"
+
   module_type          = "python"
-  
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
-  
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Chat API with DynamoDB session storage"
+    handler_path         = "app.lambda_handler"
+    module_name           = "chat"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    timeout              = 30
+    memory_size          = 512
+    environment_variables = {
+      ENVIRONMENT = "production"
+      # DynamoDB table name automatically injected as AK_SESSION__DYNAMODB__TABLE_NAME
+    }
+  }
+
   # Enable DynamoDB for session storage
   create_dynamodb_memory_table = true
-  
-  timeout     = 30
-  memory_size = 512
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    # DynamoDB table name automatically injected as AK_SESSION__DYNAMODB__TABLE_NAME
-  }
-  
+
   api_version    = "v1"
   agent_endpoint = "chat"
 }
@@ -254,16 +254,24 @@ module "serverless_api_auth" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Serverless API with Authorizer"
-  
-  module_name          = "api"
-  function_name        = "handler"
-  function_description = "Main API handler"
-  handler_path         = "app.lambda_handler"
+
   module_type          = "python"
-  
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
-  
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Main API handler"
+    handler_path         = "app.lambda_handler"
+    module_name           = "api"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    timeout              = 30
+    memory_size          = 512
+    environment_variables = {
+      ENVIRONMENT = "production"
+      LOG_LEVEL   = "info"
+    }
+  }
+
   # Authorizer configuration
   authorizer = {
     description           = "API Gateway Lambda Authorizer"
@@ -278,17 +286,9 @@ module "serverless_api_auth" {
       API_URL    = "https://api.example.com"
     }
   }
-  
-  timeout     = 30
-  memory_size = 512
-  
+
   api_version    = "v1"
   agent_endpoint = "chat"
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    LOG_LEVEL   = "info"
-  }
 }
 ```
 
@@ -301,22 +301,11 @@ module "serverless_api_auth" {
 | `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification (required when enable_api_gateway is true) | `string` | `""` | conditional |
+| `module_name` | Module name for resource naming (used for other resources, not request handler) | `string` | `""` | no |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
-| `package_path` | Path to Lambda deployment package or S3 URI (required when enable_api_gateway is true) | `string` | `""` | conditional |
-| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
 | `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async`. Required when queue_mode is true, must be null when queue_mode is false | `string` | `null` | no |
-| `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
-| `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
-| `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
-| `memory_size` | Lambda function memory size in MB (128-10240) | `number` | `128` | no |
-| `function_name` | Lambda function name suffix (required when enable_api_gateway is true) | `string` | `""` | conditional |
-| `function_description` | Lambda function description (required when enable_api_gateway is true) | `string` | `""` | conditional |
-| `handler_path` | Handler path (e.g., `index.handler` or `app.main`) (required when enable_api_gateway is true) | `string` | `""` | conditional |
-| `package_type` | Deployment type: `LocalZip`, `S3Zip`, or `Image` | `string` | `"LocalZip"` | no |
-| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `api_base_path` | Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit | `string` | `"api"` | no |
@@ -327,6 +316,7 @@ module "serverless_api_auth" {
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage | `bool` | `false` | no |
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
+| `request_handler` | Request handler configuration object (see table below) | `object` | `{}` | no |
 | `response_handler` | Response handler configuration object (see table below) | `object` | `{}` | no |
 | `agent_runner` | Agent runner configuration object (see table below) | `object` | `{}` | no |
 | `queue_config` | SQS queues configuration object (see table below) | `object` | `{}` | no |
@@ -348,7 +338,27 @@ module "serverless_api_auth" {
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
 | `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `timeout` | Authorizer Lambda timeout in seconds | `number` | `45` | no |
+| `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
+
+### Request Handler Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `function_name` | Request handler Lambda function name | `string` | `"request-handler"` | no |
+| `function_description` | Request handler Lambda description | `string` | `"Request handler Lambda for processing API Gateway requests"` | no |
+| `timeout` | Request handler Lambda timeout in seconds | `number` | `45` | no |
+| `memory_size` | Request handler Lambda memory size in MB | `number` | `128` | no |
+| `handler_path` | Request handler Lambda handler path | `string` | `"request_handler.handler"` | no |
+| `module_name` | Request handler module name | `string` | `"request-handler"` | no |
+| `package_path` | Request handler deployment package path | `string` | `null` | no |
+| `package_type` | Request handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
+| `environment_variables` | Environment variables for the request handler | `map(string)` | `{}` | no |
+| `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 
 ### Response Handler Object Structure
 
@@ -720,18 +730,22 @@ module "async_api" {
   env_alias            = "prod"
   product_display_name  = "Async API"
 
-  module_name          = "chat"
-  function_name        = "handler"
-  function_description = "Main API handler"
-  handler_path         = "app.lambda_handler"
   module_type          = "python"
 
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Main API handler"
+    handler_path         = "app.lambda_handler"
+    module_name           = "chat"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    environment_variables = {
+      ENVIRONMENT = "production"
+    }
+  }
 
   queue_mode = true
   execution_mode = "rest_async"
-  ...
 
   response_handler = {
     package_path = "${path.module}/dist/response-handler.zip"
@@ -754,11 +768,6 @@ module "async_api" {
 
   api_version    = "v1"
   agent_endpoint = "chat"
-
-  environment_variables = {
-    ENVIRONMENT = "production"
-  }
-  ...
 }
 ```
 

@@ -41,11 +41,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "cloudwatch_logs_retention_in_days" {
-  type        = number
-  description = "CloudWatch log retention period in days for the request handler Lambda"
-  default     = 90
-}
 variable "queue_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
@@ -78,82 +73,6 @@ variable "execution_mode" {
     condition = var.queue_mode || var.execution_mode == null
     error_message = "execution_mode must be null when queue_mode is false."
   }
-}
-
-variable "event_source_mapping" {
-  description = "Event source mapping"
-  type        = any
-  default = []
-}
-
-variable "environment_variables" {
-  description = "Environment variables"
-  type        = any
-  default = {}
-}
-
-variable "timeout" {
-  description = "Lambda timeout"
-  type        = number
-  default     = 45
-}
-
-variable "memory_size" {
-  description = "Lambda memory size"
-  type        = number
-  default     = 128
-}
-
-variable "function_name" {
-  description = "Lambda function name"
-  type        = string
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.function_name != ""
-    error_message = "function_name must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "function_description" {
-  description = "Lambda function description"
-  type        = string
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.function_description != ""
-    error_message = "function_description must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "handler_path" {
-  description = "Lambda handler path"
-  type        = string
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.handler_path != ""
-    error_message = "handler_path must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "package_path" {
-  type        = string
-  description = "Zip package path or Docker image source path"
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.package_path != ""
-    error_message = "package_path must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "package_type" {
-  description = "Lambda deployment type Image/LocalZip/S3Zip"
-  type        = string
-  default     = "LocalZip"
-}
-
-variable "layers" {
-  description = "Lambda layers"
-  type = list(string)
-  default = []
 }
 
 variable "api_version" {
@@ -279,9 +198,35 @@ variable "authorizer" {
     package_type          = string
     module_name           = string
     result_ttl_in_seconds = optional(number, 150)
+    timeout               = optional(number, 45)
+    memory_size           = optional(number, 128)
+    layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
   })
   default = null
+}
+
+variable "request_handler" {
+  description = "Request handler configuration object"
+  type = object({
+    function_name         = optional(string, "request-handler")
+    function_description   = optional(string, "Request handler Lambda for processing API Gateway requests")
+    timeout               = optional(number, 45)
+    memory_size           = optional(number, 128)
+    handler_path          = optional(string, "request_handler.handler")
+    module_name           = optional(string, "request-handler")
+    package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+    event_source_mapping  = optional(any, [])
+  })
+  default = {}
+  validation {
+    condition     = !var.enable_api_gateway || try(var.request_handler.package_path, null) != null
+    error_message = "request_handler.package_path must be set when enable_api_gateway is true."
+  }
 }
 
 

@@ -24,7 +24,6 @@ locals {
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   
   request_handler_enabled               = var.enable_api_gateway
-  request_handler_package_path          = var.package_path
   request_handler_lambda_function_arn   = local.request_handler_enabled ? module.request_handler[0].lambda_function_arn : null
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
@@ -108,7 +107,7 @@ resource "aws_security_group" "lambda" {
 }
 
 module "request_handler_source_storage" {
-  count                = local.request_handler_enabled ? ((var.package_type == "S3Zip") ? 1 : 0) : 0
+  count                = local.request_handler_enabled ? ((var.request_handler.package_type == "S3Zip") ? 1 : 0) : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
   version              = "0.3.3"
   region               = var.region
@@ -120,13 +119,13 @@ module "request_handler_source_storage" {
 }
 
 module "request_handler_source_package" {
-  count            = local.request_handler_enabled ? ((var.package_type == "S3Zip") ? 1 : 0) : 0
+  count            = local.request_handler_enabled ? ((var.request_handler.package_type == "S3Zip") ? 1 : 0) : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
   version          = "0.3.3"
   env_alias        = var.env_alias
   region           = var.region
-  module_name      = var.module_name
-  package_dir_path = var.package_path
+  module_name      = var.request_handler.module_name
+  package_dir_path = var.request_handler.package_path
   product_alias    = var.product_alias
   s3_bucket        = module.request_handler_source_storage[0].source_storage_s3_bucket
   depends_on       = [module.request_handler_source_storage]
@@ -154,9 +153,9 @@ module "authorizer" {
   env_alias                  = var.env_alias
   authorizer_info            = var.authorizer
   module_type                = var.module_type
-  timeout                    = var.timeout
-  memory_size                = var.memory_size
-  layers                     = var.layers
+  timeout                    = var.authorizer.timeout
+  memory_size                = var.authorizer.memory_size
+  layers                     = var.authorizer.layers
   tags                       = var.tags
   vpc_id                     = local.vpc_id
   subnet_ids                 = local.subnet_ids
@@ -197,13 +196,13 @@ module "api_gateway" {
 }
 
 module "docker_image" {
-  count         = local.request_handler_enabled ? ((var.package_type == "Image") ? 1 : 0) : 0
+  count         = local.request_handler_enabled ? ((var.request_handler.package_type == "Image") ? 1 : 0) : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.3.3"
   env_alias     = var.env_alias
-  module_name   = var.module_name
+  module_name   = var.request_handler.module_name
   product_alias = var.product_alias
-  source_path   = var.package_path
+  source_path   = var.request_handler.package_path
 }
 
 module "agent_runner_source_storage" {
@@ -391,25 +390,31 @@ module "request_handler" {
   product_display_name                    = var.product_display_name
   env_alias                               = var.env_alias
   module_type                             = var.module_type
-  module_name                             = var.module_name
-  is_production                           = var.is_production
-  package_path                            = local.request_handler_package_path
-  cloudwatch_logs_retention_in_days       = var.cloudwatch_logs_retention_in_days
-  queue_mode                              = var.queue_mode
-  event_source_mapping                    = var.event_source_mapping
-  timeout                                 = var.timeout
-  memory_size                             = var.memory_size
-  function_name                           = var.function_name
-  function_description                    = var.function_description
-  handler_path                            = var.handler_path
-  package_type                            = var.package_type
-  layers                                  = var.layers
+  module_name                             = var.request_handler.module_name
   api_version                             = var.api_version
   agent_endpoint                          = var.agent_endpoint
   api_base_path                           = var.api_base_path
   vpc_id                                  = local.vpc_id
   subnet_ids                              = local.subnet_ids
   security_group_id                       = local.security_group_id
+  lambda_signer_profile_name              = local.lambda_signer_profile_name
+  lambda_signing_config_arn               = local.lambda_signing_config_arn
+  lambda_kms_key_arn                      = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
+  is_production                           = var.is_production
+  response_store_redis                    = local.response_handler_response_store_redis
+  response_store_dynamodb                 = local.response_handler_response_store_dynamodb
+  package_path                            = var.request_handler.package_path
+  cloudwatch_logs_retention_in_days       = var.request_handler.cloudwatch_logs_retention_in_days
+  queue_mode                              = var.queue_mode
+  event_source_mapping                    = var.request_handler.event_source_mapping
+  timeout                                 = var.request_handler.timeout
+  memory_size                             = var.request_handler.memory_size
+  function_name                           = var.request_handler.function_name
+  function_description                    = var.request_handler.function_description
+  handler_path                            = var.request_handler.handler_path
+  package_type                            = var.request_handler.package_type
+  layers                                  = var.request_handler.layers
   source_bucket                           = try(module.request_handler_source_storage[0].source_storage_s3_bucket, null)
   create_dynamodb_memory_table            = var.queue_mode ? false : var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.queue_mode ? false : var.create_dynamodb_multimodal_memory_table
@@ -420,14 +425,8 @@ module "request_handler" {
   dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
-  response_store_redis                    = local.response_handler_response_store_redis
-  response_store_dynamodb                 = local.response_handler_response_store_dynamodb
-  lambda_signer_profile_name              = local.lambda_signer_profile_name
-  lambda_signing_config_arn               = local.lambda_signing_config_arn
-  docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
-  lambda_kms_key_arn                      = local.lambda_kms_key_arn
-  cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
-  environment_variables = merge(try(var.environment_variables, null), {
+  docker_image_uri                        = var.request_handler.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
+  environment_variables = merge(var.request_handler.environment_variables, {
     AK_EXECUTION__MODE = var.execution_mode
   })
 
