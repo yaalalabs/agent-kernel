@@ -2,7 +2,8 @@ import json
 import logging
 
 from ....core.config import AKConfig
-from ...common.chat_service import ChatService
+from ....core.chat_service import ChatService
+from ....core.model import BaseRunRequest
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
 
@@ -70,13 +71,13 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         )
 
     @classmethod
-    def _parse_body(cls, record: dict) -> dict:
+    def _parse_body(cls, record: dict) -> BaseRunRequest:
         """
         Parse the JSON body from an SQS record.
         :param record: SQS record (``dict``) passed from the Lambda event.
-        :return: Parsed JSON body (``dict``) from the record.
+        :return: Parsed JSON body as ``BaseRunRequest`` from the record.
         """
-        return json.loads(record["body"])
+        return BaseRunRequest.model_validate(json.loads(record["body"]))
 
     @classmethod
     def process_message(cls, record: dict) -> None:
@@ -87,7 +88,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
-        _, agent_response = cls._get_chat_service().process_chat_request(body=body)
+        _, agent_response = cls._get_chat_service().process_chat_request(req=body)
         cls._log.info(f"Chat service response: '{agent_response}'")
         record_attributes = cls._get_record_attributes(raw_queue_message=record)
         cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes)

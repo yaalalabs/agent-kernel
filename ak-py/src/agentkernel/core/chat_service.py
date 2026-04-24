@@ -1,0 +1,259 @@
+import asyncio
+import base64
+import logging
+from typing import Any, Dict, List, Optional
+
+from .service import AgentService
+from .model import (
+    AgentReplyImage,
+    AgentReplyText,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+    BaseRunRequest,
+)
+
+
+class RequestBuilder:
+    """Constructs AgentRequest object lists from various input sources."""
+
+    _log = logging.getLogger("ak.chatservice.requestbuilder")
+    _max_file_size = 10 * 1024 * 1024  # 10 MB
+
+    @staticmethod
+    def from_base_request(req: BaseRunRequest) -> List[Any]:
+        requests = [AgentRequestText(text=req.prompt)]
+        RequestBuilder._add_images(requests, req.images)
+        RequestBuilder._add_files(requests, req.files)
+        RequestBuilder._attach_additional_context(req, requests)
+        return requests
+
+    @staticmethod
+    async def from_multipart_async(
+        prompt: str,
+        files: Optional[List[Any]] = None,
+        images: Optional[List[Any]] = None,
+    ) -> List[Any]:
+        requests = [AgentRequestText(text=prompt)]
+        await RequestBuilder._add_multipart_files(requests, files)
+        await RequestBuilder._add_multipart_images(requests, images)
+        return requests
+
+    @staticmethod
+    def _add_images(requests: List[Any], images):
+        if not images:
+            return
+        for image in images:
+            RequestBuilder._log.debug(f"Adding image: {image.name}")
+            if (
+                not image.image_data.startswith(("http://", "https://", "data:", "s3://"))
+                and not image.mime_type
+            ):
+                raise ValueError(
+                    "mime_type is missing for image input, either in the base64 or explicitly"
+                )
+            requests.append(
+                AgentRequestImage(
+                    image_data=image.image_data,
+                    name=image.name,
+                    mime_type=image.mime_type,
+                )
+            )
+
+    @staticmethod
+    def _add_files(requests: List[Any], files):
+        if not files:
+            return
+        for file in files:
+            RequestBuilder._log.debug(f"Adding file attachment: {file.name}")
+            if (
+                not file.file_data.startswith(("http://", "https://", "data:", "s3://"))
+                and not file.mime_type
+            ):
+                raise ValueError(
+                    "mime_type is missing for file input, either in the base64 or explicitly"
+                )
+            requests.append(
+                AgentRequestFile(
+                    file_data=file.file_data,
+                    name=file.name,
+                    mime_type=file.mime_type,
+                )
+            )
+
+    @staticmethod
+    def _attach_additional_context(req: BaseRunRequest, requests: List[Any]):
+        known_fields = {"request_id", "user_id", "prompt", "agent", "session_id", "images", "files"}
+        for key, value in req.model_dump().items():
+            if key in known_fields:
+                continue
+            RequestBuilder._log.info(f"Adding additional context: {key}={value}")
+            requests.append(AgentRequestAny(name=key, content=value))
+
+    @staticmethod
+    async def _add_multipart_files(requests: List[Any], files: Optional[List[Any]]):
+        if not files:
+            return
+        for file in files:
+            RequestBuilder._log.debug(f"Processing uploaded file: {file.filename}")
+            content = await file.read()
+            if len(content) > RequestBuilder._max_file_size:
+                raise ValueError(
+                    f"File {file.filename} exceeds maximum size "
+                    f"({len(content) / (1024 * 1024):.2f} MB)"
+                )
+            requests.append(
+                AgentRequestFile(
+                    file_data=base64.b64encode(content).decode("utf-8"),
+                    name=file.filename or "unknown",
+                    mime_type=file.content_type,
+                )
+            )
+
+    @staticmethod
+    async def _add_multipart_images(requests: List[Any], images: Optional[List[Any]]):
+        if not images:
+            return
+        for image in images:
+            RequestBuilder._log.debug(f"Processing uploaded image: {image.filename}")
+            content = await image.read()
+            if len(content) > RequestBuilder._max_file_size:
+                raise ValueError(
+                    f"Image {image.filename} exceeds maximum size "
+                    f"({len(content) / (1024 * 1024):.2f} MB)"
+                )
+            if image.content_type and not image.content_type.startswith("image/"):
+                raise ValueError(f"Invalid image type: {image.content_type}")
+            requests.append(
+                AgentRequestImage(
+                    image_data=base64.b64encode(content).decode("utf-8"),
+                    name=image.filename or "unknown",
+                    mime_type=image.content_type,
+                )
+            )
+
+
+class AgentHandler:
+    """Manages AgentService lifecycle: selection, validation, and execution."""
+
+    _log = logging.getLogger("ak.chatservice.agenthandler")
+
+    def __init__(self):
+        self.service: Optional[AgentService] = None
+
+    def initialize(self, session_id: str, agent: Optional[str]):
+        self.service = AgentService()
+        self.service.select(session_id, agent)
+        if not self.service.agent:
+            raise ValueError("No agent available")
+
+    def run_sync(self, requests: List[Any]) -> Any:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                asyncio.set_event_loop(asyncio.new_event_loop())
+                return asyncio.run(self.service.run_multi(requests=requests))
+            else:
+                return loop.run_until_complete(self.service.run_multi(requests=requests))
+        except RuntimeError:
+            return asyncio.run(self.service.run_multi(requests=requests))
+
+    async def run_async(self, requests: List[Any]) -> Any:
+        return await self.service.run_multi(requests=requests)
+
+    def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
+        return self.service.get_response_session_id(session_id) if self.service else session_id
+
+
+class ResponseBuilder:
+    """Formats agent results and errors into response dicts."""
+
+    @staticmethod
+    def success(status_code: int, result: Any, session_id: str, rest_api_mode: bool):
+        response_dict = {
+            "result": str(result)
+            if isinstance(result, (AgentReplyText, AgentReplyImage))
+            else "Non textual result received",
+            "session_id": session_id,
+        }
+        return response_dict if rest_api_mode else (status_code, response_dict)
+
+    @staticmethod
+    def error(status_code: int, error: Exception, session_id: Optional[str], rest_api_mode: bool):
+        response_dict = {
+            "error": str(error),
+            "session_id": session_id,
+        }
+        if rest_api_mode:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=status_code, detail=response_dict)
+        return (status_code, response_dict)
+
+
+class ChatService:
+    def __init__(self, rest_api_mode: bool = False):
+        self._log = logging.getLogger("ak.chatservice")
+        self.rest_api_mode = rest_api_mode
+        self._handler = AgentHandler()
+
+    def process_chat_request(self, req: BaseRunRequest) -> tuple[int, Dict[str, Any]]:
+        session_id = req.session_id
+        try:
+            self._validate(req)
+            requests = RequestBuilder.from_base_request(req)
+            self._handler.initialize(session_id, req.agent)
+            result = self._handler.run_sync(requests)
+            return ResponseBuilder.success(200, result, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+        except ValueError as ve:
+            self._log.error(f"ValueError processing request: {ve}")
+            return ResponseBuilder.error(400, ve, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+        except Exception as e:
+            self._log.error(f"Error processing request: {e}")
+            return ResponseBuilder.error(500, e, self._handler.get_response_session_id(None), self.rest_api_mode)
+
+    async def process_chat_request_async(self, req: BaseRunRequest) -> tuple[int, Dict[str, Any]]:
+        session_id = req.session_id
+        try:
+            self._validate(req)
+            requests = RequestBuilder.from_base_request(req)
+            self._handler.initialize(session_id, req.agent)
+            result = await self._handler.run_async(requests)
+            return ResponseBuilder.success(200, result, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+        except ValueError as ve:
+            self._log.error(f"ValueError processing request: {ve}")
+            return ResponseBuilder.error(400, ve, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+        except Exception as e:
+            self._log.error(f"Error processing request: {e}")
+            return ResponseBuilder.error(500, e, self._handler.get_response_session_id(None), self.rest_api_mode)
+
+    async def process_multipart_request_async(
+        self,
+        prompt: str,
+        agent: Optional[str] = None,
+        session_id: Optional[str] = None,
+        files: Optional[List[Any]] = None,
+        images: Optional[List[Any]] = None,
+    ) -> tuple[int, Dict[str, Any]]:
+        try:
+            if not session_id:
+                raise ValueError("No session_id is provided in the request")
+            if not prompt:
+                raise ValueError("No prompt provided in the request")
+            requests = await RequestBuilder.from_multipart_async(prompt, files, images)
+            self._handler.initialize(session_id, agent)
+            result = await self._handler.run_async(requests)
+            return ResponseBuilder.success(200, result, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+        except ValueError as ve:
+            self._log.error(f"ValueError processing multipart request: {ve}")
+            return ResponseBuilder.error(400, ve, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+        except Exception as e:
+            self._log.error(f"Error processing multipart request: {e}")
+            return ResponseBuilder.error(500, e, self._handler.get_response_session_id(session_id), self.rest_api_mode)
+
+    @staticmethod
+    def _validate(req: BaseRunRequest):
+        if req.session_id is None:
+            raise ValueError("No session_id is provided in the request")
+        if not req.prompt:
+            raise ValueError("No prompt provided in the request")
