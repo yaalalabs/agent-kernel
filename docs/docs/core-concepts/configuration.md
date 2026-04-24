@@ -135,6 +135,8 @@ logging:
   system:
     level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
+> Logging is auto-configured on import. Agent Kernel currently initializes logging as part of module import/startup, not only when you explicitly read these configuration values. In practice, that means importing the library may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
+> Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
 
 ### JSON Configuration
 
