@@ -1,3 +1,9 @@
 messenger:
   agent: "general"
   api_version: "v21.0"
+
+logging:
+  ak:
+    level: INFO
+  system:
+    level: INFO

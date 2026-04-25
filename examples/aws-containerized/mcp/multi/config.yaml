@@ -6,7 +6,9 @@ mcp:
 
 logging:
   ak:
-    level: DEBUG
+    level: WARNING
+  system:
+    level: WARNING
 session:
   type: redis
   redis:
