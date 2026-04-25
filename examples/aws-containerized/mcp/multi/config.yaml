@@ -4,7 +4,9 @@ mcp:
   expose_agents: true
   agents: ['*']
 
-debug: true
+logging:
+  ak:
+    level: DEBUG
 session:
   type: redis
   redis:

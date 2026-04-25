@@ -123,8 +123,10 @@
       "name": "Enable debug logging",
       "input": "How do I enable debug logging?",
       "expected_outputs": [
-        "debug: true",
-        "AK_DEBUG"
+        "logging:",
+        "ak:",
+        "level:",
+        "AK_LOGGING__AK__LEVEL"
       ]
     }
   ]

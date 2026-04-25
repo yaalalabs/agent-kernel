@@ -22,7 +22,6 @@ Create `config.yaml`:
 
 ```yaml
 # Core settings
-debug: true
 library_version: "0.1.0"
 
 # Session management
@@ -144,7 +143,14 @@ Alternatively, use `config.json`:
 
 ```json
 {
-  "debug": true,
+  "logging": {
+    "ak": {
+      "level": "WARNING"
+    },
+    "system": {
+      "level": "WARNING"
+    }
+  },
   "session": {
     "type": "redis",
     "redis": {
@@ -263,9 +269,6 @@ A name can have single underscores ('_') in its body.
 ### Core Configuration
 
 ```bash
-# Enable debug mode
-export AK_DEBUG=true  # default: false
-
 # Library version (auto-detected from package metadata)
 export AK_LIBRARY_VERSION=0.1.0
 ```
@@ -431,9 +434,6 @@ export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path
 # Bedrock-specific output guardrail configuration
 export AK_GUARDRAIL__OUTPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
 export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default: DRAFT)
-
-# Optional: enable debug logs for Walled AI guardrails
-export AK_DEBUG=true
 ```
 
 ### Logging Configuration (Optional)
@@ -456,7 +456,6 @@ If the `logging` section is omitted from the configuration, default loggers will
 
 ```yaml
 # Core configuration
-debug: false                    # Enable debug mode
 library_version: "0.1.0"       # Library version (auto-detected)
 
 # Session storage configuration
@@ -584,7 +583,6 @@ from agentkernel.core import Config
 config = Config.get() # or config = Config()
 
 # Access configuration values
-print(f"Debug mode: {config.debug}")
 print(f"API port: {config.api.port}")
 print(f"Session storage: {config.session.type}")
 print(f"Redis URL: {config.session.redis.url}")
@@ -596,9 +594,9 @@ You can reload the configs from scratch by calling __init__(). However, this mig
 from agentkernel import Config
 import os
 
-os.environ["AK_DEBUG"] = "True"  # default is False. Setting to True
+os.environ["AK_LOGGING__AK__LEVEL"] = "DEBUG"  # Set Agent Kernel logging level to DEBUG
 config.__init__()
-print(f"Debug mode: {config.debug}") # will show True
+print(f"AK logging level: {config.logging.ak.level}") # will show DEBUG
 ```
 
 ## Your Application configs
@@ -625,8 +623,8 @@ print(config.model_dump())
 ### Development Setup
 
 ```bash
-# Enable debug mode with in-memory storage
-export AK_DEBUG=true
+# Set logging to DEBUG level with in-memory storage
+export AK_LOGGING__AK__LEVEL=DEBUG
 export AK_SESSION__TYPE=in_memory
 export AK_API__PORT=8000
 ```
@@ -635,7 +633,7 @@ export AK_API__PORT=8000
 
 ```bash
 # Production configuration with Redis
-export AK_DEBUG=false
+export AK_LOGGING__AK__LEVEL=WARNING
 export AK_SESSION__TYPE=redis
 export AK_SESSION__REDIS__URL=redis://prod-redis:6379
 export AK_SESSION__REDIS__TTL=86400  # 1 day
@@ -647,7 +645,7 @@ export AK_API__PORT=8000
 
 ```bash
 # Production configuration with DynamoDB
-export AK_DEBUG=false
+export AK_LOGGING__AK__LEVEL=WARNING
 export AK_SESSION__TYPE=dynamodb
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions-prod
 export AK_SESSION__DYNAMODB__TTL=86400  # 1 day
@@ -750,7 +748,7 @@ export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
 4. **Use Redis or DynamoDB for production** session storage
    - Use **DynamoDB** for non-performance-critical deployments
    - Use **Redis** for performance-critical deployments
-5. **Enable debug mode only in development**
+5. **Set appropriate logging levels for your environment**
 6. **Use specific agent lists** instead of "*" in production for security
 7. **Ensure DynamoDB table has correct schema** (partition key: 'session_id', sort key: 'key')
 
