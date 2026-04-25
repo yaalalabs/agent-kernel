@@ -6,16 +6,24 @@ module "serverless_agents" {
   # Basic lambda configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "Agent Kernel OpenAI Sample Lambda"
-  function_name        = "openai-agents"
-  handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist"
-  package_type         = "Image"
-  memory_size          = 256
   create_redis_cluster = true
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region
+
+  # Request handler configuration
+  request_handler = {
+    function_name         = "openai-agents"
+    function_description   = "Agent Kernel OpenAI Sample Lambda"
+    handler_path          = "lambda.handler"
+    module_name           = var.module_name
+    package_path          = "../dist"
+    package_type          = "Image"
+    memory_size           = 256
+    environment_variables = {
+      "OPENAI_API_KEY" = var.openai_api_key
+    }
+  }
 
   # To override the default API version, API base path, and agent endpoint
   # api_version    = "0.3.3"
@@ -32,10 +40,5 @@ module "serverless_agents" {
       path           = "app_info",
       method         = "POST",
     }
-  ] 
-
-  # Environment variables passed to lambda
-  environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
-  }
+  ]
 }

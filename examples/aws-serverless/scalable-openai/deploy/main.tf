@@ -6,14 +6,7 @@ module "serverless_agents" {
   # Basic configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
-  function_name        = "request-handler"
   module_name          = var.module_name
-  handler_path         = "lambda_request_handler.handler"
-  package_path         = "../dist_request_handler.zip"
-  package_type         = "LocalZip"
-  memory_size          = 256
-  timeout              = 45
   product_display_name = "AK OpenAI Scalable Serverless Example"
   region               = var.region
   is_production        = var.is_production
@@ -23,14 +16,15 @@ module "serverless_agents" {
   execution_mode = "rest_sync" # rest_sync or rest_async
 
   # Memory DB Config
-  create_redis_cluster = true
+  # create_redis_cluster = true
+  create_dynamodb_memory_table = true
 
   # Response Store Config 
   # create_redis_response_store = true # if True, it will use the memory Redis cluster for response store or may create.
   create_dynamodb_response_store = true
 
   # API Gateway configuration
-  api_version    = "0.3.3"
+  api_version    = "0.3.1"
   api_base_path  = "api"
   agent_endpoint = "chat"
 
@@ -46,9 +40,21 @@ module "serverless_agents" {
     }
   ]
 
-  # Environment variables for request handler
-  environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+  # Request handler configuration
+  request_handler = {
+    module_name           = "rqst-hdlr"
+    function_name         = "rqh-func"
+    function_description  = "Agent Kernel OpenAI Scalable Sample Lambda"
+    handler_path          = "lambda_request_handler.handler"
+    package_path          = "../dist_request_handler.zip"
+    package_type          = "S3Zip"
+    package_path          = "../dist_request_handler"
+    package_type          = "Image"
+    memory_size           = 256
+    timeout               = 45
+    environment_variables = {
+      "OPENAI_API_KEY" = var.openai_api_key
+    }
   }
 
   # Agent runner configuration
@@ -68,8 +74,8 @@ module "serverless_agents" {
 
   # Response handler configuration
   response_handler = {
-    function_name         = "res-func"
-    module_name           = "response-handler"
+    function_name         = "rsh-func"
+    module_name           = "rspns-hdlr"
     function_description  = "Response handler for processing completed requests"
     timeout               = 45
     memory_size           = 256
