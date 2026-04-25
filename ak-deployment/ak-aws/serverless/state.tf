@@ -29,15 +29,6 @@ locals {
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
   
-  agent_runner_package_path             = try(var.agent_runner.package_path, null)
-  agent_runner_artifact_module_name     = var.agent_runner.module_name
-  agent_runner_logs_retention_in_days   = try(var.agent_runner.cloudwatch_logs_retention_in_days, null)
-
-  response_handler_package_path         = try(var.response_handler.package_path, null)
-  response_handler_package_type         = try(var.response_handler.package_type, null)
-  response_handler_artifact_module_name = var.response_handler.module_name
-  response_handler_logs_retention_in_days = try(var.response_handler.cloudwatch_logs_retention_in_days, null)
-
   create_authorizer                     = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
   # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
@@ -220,8 +211,8 @@ module "agent_runner_source_package" {
   version          = "0.3.3"
   env_alias        = var.env_alias
   region           = var.region
-  module_name      = local.agent_runner_artifact_module_name
-  package_dir_path = local.agent_runner_package_path
+  module_name      = var.agent_runner.module_name
+  package_dir_path = var.agent_runner.package_path
   product_alias    = var.product_alias
   s3_bucket        = module.agent_runner_source_storage[0].source_storage_s3_bucket
   depends_on       = [module.agent_runner_source_storage]
@@ -232,13 +223,13 @@ module "agent_runner_docker_image" {
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.3.3"
   env_alias     = var.env_alias
-  module_name   = local.agent_runner_artifact_module_name
+  module_name   = var.agent_runner.module_name
   product_alias = var.product_alias
-  source_path   = local.agent_runner_package_path
+  source_path   = var.agent_runner.package_path
 }
 
 module "response_handler_source_storage" {
-  count                = var.queue_mode && local.response_handler_package_type == "S3Zip" ? 1 : 0
+  count                = var.queue_mode && var.response_handler.package_type == "S3Zip" ? 1 : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
   version              = "0.3.3"
   region               = var.region
@@ -250,26 +241,26 @@ module "response_handler_source_storage" {
 }
 
 module "response_handler_source_package" {
-  count            = var.queue_mode && local.response_handler_package_type == "S3Zip" ? 1 : 0
+  count            = var.queue_mode && var.response_handler.package_type == "S3Zip" ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
   version          = "0.3.3"
   env_alias        = var.env_alias
   region           = var.region
-  module_name      = local.response_handler_artifact_module_name
-  package_dir_path = local.response_handler_package_path
+  module_name      = var.response_handler.module_name
+  package_dir_path = var.response_handler.package_path
   product_alias    = var.product_alias
   s3_bucket        = module.response_handler_source_storage[0].source_storage_s3_bucket
   depends_on       = [module.response_handler_source_storage]
 }
 
 module "response_handler_docker_image" {
-  count         = var.queue_mode && local.response_handler_package_type == "Image" ? 1 : 0
+  count         = var.queue_mode && var.response_handler.package_type == "Image" ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.3.3"
   env_alias     = var.env_alias
-  module_name   = local.response_handler_artifact_module_name
+  module_name   = var.response_handler.module_name
   product_alias = var.product_alias
-  source_path   = local.response_handler_package_path
+  source_path   = var.response_handler.package_path
 }
 
 module "redis" {
@@ -441,11 +432,7 @@ module "agent_runner" {
   module_type   = var.module_type
 
   agent_runner = merge(var.agent_runner, {
-    module_name  = local.agent_runner_artifact_module_name
-    package_path = local.agent_runner_package_path
-    package_type = try(var.agent_runner.package_type, null)
-    layers       = try(var.agent_runner.layers, null)
-    environment_variables = merge(try(var.agent_runner.environment_variables, null), {
+    environment_variables = merge(var.agent_runner.environment_variables, {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
@@ -455,7 +442,7 @@ module "agent_runner" {
   is_production                     = var.is_production
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
-  cloudwatch_logs_retention_in_days = local.agent_runner_logs_retention_in_days
+  cloudwatch_logs_retention_in_days = var.agent_runner.cloudwatch_logs_retention_in_days
   create_dynamodb_memory_table      = var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
   dynamodb_memory_table_arn         = local.dynamodb_memory_table_arn
@@ -486,24 +473,21 @@ module "response_handler" {
   source = "./modules/response-handler"
 
   region                            = var.region
-  cloudwatch_logs_retention_in_days = local.response_handler_logs_retention_in_days
+  product_alias                     = var.product_alias
+  env_alias                         = var.env_alias
+  is_production                     = var.is_production
+  lambda_signer_profile_name        = local.lambda_signer_profile_name
+  lambda_signing_config_arn         = local.lambda_signing_config_arn
+  cloudwatch_logs_retention_in_days = var.response_handler.cloudwatch_logs_retention_in_days
   subnet_ids                        = local.subnet_ids
   security_group_id                 = local.security_group_id
   lambda_kms_key_arn                = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn            = local.cloudwatch_kms_key_arn
-  source_bucket                     = local.response_handler_package_type == "S3Zip" ? module.response_handler_source_storage[0].source_storage_s3_bucket : null
-  docker_image_uri                  = local.response_handler_package_type == "Image" ? module.response_handler_docker_image[0].docker_image_uri : null
-  is_production                     = var.is_production
-  lambda_signer_profile_name        = local.lambda_signer_profile_name
-  lambda_signing_config_arn         = local.lambda_signing_config_arn
+  source_bucket                     = var.response_handler.package_type == "S3Zip" ? module.response_handler_source_storage[0].source_storage_s3_bucket : null
+  docker_image_uri                  = var.response_handler.package_type == "Image" ? module.response_handler_docker_image[0].docker_image_uri : null
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
   response_handler = merge(var.response_handler, {
-    module_name = local.response_handler_artifact_module_name
-    package_path = local.response_handler_package_path
-    package_type = local.response_handler_package_type
-    environment_variables = merge(try(var.response_handler.environment_variables, null), {
+    environment_variables = merge(var.response_handler.environment_variables, {
       AK_EXECUTION__MODE = var.execution_mode
     })
   })
