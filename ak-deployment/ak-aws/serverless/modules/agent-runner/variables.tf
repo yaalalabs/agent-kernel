@@ -98,7 +98,7 @@ variable "agent_runner" {
     function_description           = optional(string, "Agent runner Lambda for processing input queue messages")
     timeout                        = optional(number, 30)
     memory_size                    = optional(number, 512)
-    package_path                   = string
+    package_path                   = optional(string, null)
     package_type                   = optional(string, "LocalZip")
     handler_path                   = optional(string, "agent_runner.handler")
     module_name                    = optional(string, "agent-runner")
