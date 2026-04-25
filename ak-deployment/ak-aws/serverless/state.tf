@@ -438,7 +438,6 @@ module "agent_runner" {
   is_production                     = var.is_production
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
-  cloudwatch_logs_retention_in_days = var.agent_runner.cloudwatch_logs_retention_in_days
   create_dynamodb_memory_table      = var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
   dynamodb_memory_table_arn         = local.dynamodb_memory_table_arn
@@ -474,7 +473,6 @@ module "response_handler" {
   is_production                     = var.is_production
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
-  cloudwatch_logs_retention_in_days = var.response_handler.cloudwatch_logs_retention_in_days
   subnet_ids                        = local.subnet_ids
   security_group_id                 = local.security_group_id
   lambda_kms_key_arn                = local.lambda_kms_key_arn
