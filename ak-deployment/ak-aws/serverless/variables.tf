@@ -229,6 +229,27 @@ variable "request_handler" {
   }
 }
 
+variable "agent_runner" {
+  description = "Agent runner configuration object"
+  type = object({
+    function_name         = optional(string, "agent-runner")
+    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
+    timeout               = optional(number, 45)
+    memory_size           = optional(number, 512)
+    handler_path          = optional(string, "agent_runner.handler")
+    module_name           = optional(string, "agent-runner")
+    package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+  })
+  default = {}
+  validation {
+    condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
+    error_message = "agent_runner.package_path must be set when queue_mode is true."
+  }
+}
 
 variable "response_handler" {
   description = "Response handler configuration object"
@@ -249,28 +270,6 @@ variable "response_handler" {
   validation {
     condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
     error_message = "response_handler.package_path must be set when queue_mode is true."
-  }
-}
-
-variable "agent_runner" {
-  description = "Agent runner configuration object"
-  type = object({
-    function_name         = optional(string, "agent-runner")
-    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
-    timeout               = optional(number, 45)
-    memory_size           = optional(number, 512)
-    handler_path          = optional(string, "agent_runner.handler")
-    module_name           = optional(string, "agent-runner")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
-    cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
-  })
-  default = {}
-  validation {
-    condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
-    error_message = "agent_runner.package_path must be set when queue_mode is true."
   }
 }
 

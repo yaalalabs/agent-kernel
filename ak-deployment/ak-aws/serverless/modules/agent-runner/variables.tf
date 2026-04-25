@@ -99,7 +99,7 @@ variable "agent_runner" {
     timeout                        = optional(number, 30)
     memory_size                    = optional(number, 512)
     package_path                   = optional(string, null)
-    package_type                   = optional(string, "LocalZip")
+    package_type                   = string
     handler_path                   = optional(string, "agent_runner.handler")
     module_name                    = optional(string, "agent-runner")
     layers                         = optional(list(string), [])
