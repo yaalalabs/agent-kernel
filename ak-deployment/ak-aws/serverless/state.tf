@@ -24,10 +24,8 @@ locals {
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   
   request_handler_enabled               = var.enable_api_gateway
-  request_handler_lambda_function_arn   = local.request_handler_enabled ? module.request_handler[0].lambda_function_arn : null
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
-  request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
   
   create_authorizer                     = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
   # Authorizer status message for logging
@@ -76,8 +74,6 @@ locals {
     local.chat_endpoint,
     var.gateway_endpoints
   )
-
-  agent_invoke_url = try(module.api_gateway[0].agent_invoke_url, null)
 }
 
 resource "aws_security_group" "lambda" {
