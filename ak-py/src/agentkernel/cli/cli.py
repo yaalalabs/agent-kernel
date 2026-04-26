@@ -19,16 +19,23 @@ class _ContextFilter(logging.Filter):
             context_logger.addFilter(cls())
 
 
+class _CLIFilter(logging.Filter):
+    """Show AK warnings while allowing only external errors in default CLI mode."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.ERROR:
+            return True
+        return record.name.startswith("ak")
+
+    @classmethod
+    def setup(cls) -> None:
+        root_logger = logging.getLogger()
+        if not any(isinstance(f, cls) for f in root_logger.filters):
+            root_logger.addFilter(cls())
+
+
 class _CLIOutputConfig:
     """Keep CLI output focused on AgentKernel logs in normal mode."""
-
-    _NOISY_LOGGERS = (
-        "httpx",
-        "httpcore",
-        "openai",
-        "urllib3",
-        "asyncio",
-    )
 
     @classmethod
     def setup(cls) -> None:
@@ -36,9 +43,9 @@ class _CLIOutputConfig:
         if cfg.logging.ak.level or cfg.logging.system.level:
             return
 
+        # Keep useful AK warnings visible while suppressing third-party warning noise.
         logging.getLogger().setLevel(logging.WARNING)
-        for logger_name in cls._NOISY_LOGGERS:
-            logging.getLogger(logger_name).setLevel(logging.ERROR)
+        _CLIFilter.setup()
 
 
 ak_cli_logger = logging.getLogger("ak.cli")
