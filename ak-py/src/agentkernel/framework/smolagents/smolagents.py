@@ -1,3 +1,5 @@
+import functools
+import inspect
 from typing import Any, Callable, List
 
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
@@ -342,6 +344,31 @@ class SmolagentsToolBuilder(ToolBuilder):
     """
 
     @classmethod
+    def _wrap(cls, func: Callable) -> Callable:
+        """
+        Patch the docstring of a function so that it strictly adheres to
+        smolagents' JSON schema generator requirements which strictly require Google-format.
+
+        :param func: Original python function
+        :return: Wrapped function with patched docstring
+        """
+        doc = func.__doc__ or func.__name__
+        if "Args:" not in doc:
+            sig = inspect.signature(func)
+            args_lines = []
+            for name, param in sig.parameters.items():
+                args_lines.append(f"        {name}: {name}")
+            if args_lines:
+                doc += "\n\n    Args:\n" + "\n".join(args_lines)
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        wrapper.__doc__ = doc
+        return wrapper
+
+    @classmethod
     def bind(cls, funcs: list[Callable]) -> list[Any]:
         """
         Bind generic tool functions to smolagents tool definitions.
@@ -354,5 +381,6 @@ class SmolagentsToolBuilder(ToolBuilder):
         for func in funcs:
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func).__name__}")
-            tools.append(smol_tool(func))
+            patched_func = cls._wrap(func)
+            tools.append(smol_tool(patched_func))
         return tools
