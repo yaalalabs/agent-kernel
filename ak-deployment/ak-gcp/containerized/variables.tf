@@ -97,8 +97,8 @@ variable "backend_deadline" {
 
 variable "min_instance_count" {
   type        = number
-  description = "Minimum number of instances (0 = scale to zero)"
-  default     = 0
+  description = "Minimum number of instances. Defaults to 1 (always-on, no cold starts). Set to 0 to scale to zero."
+  default     = 1
 }
 
 variable "max_instance_count" {

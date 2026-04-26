@@ -40,5 +40,5 @@ def custom_app_info_handler() -> dict[str, str]:
 RESTAPI.add(router)
 
 
-def main():
+def main() -> None:
     RESTAPI.run()

@@ -27,7 +27,7 @@ router = APIRouter()
 
 # Adding a custom route - Option 1
 @router.get("/version")
-def get_app_name():
+def get_app_name() -> dict[str, str]:
     return {"name": "my_custom_app", "version": "1.0.0"}
 
 
@@ -40,7 +40,7 @@ class CustomHandler(AgentRESTRequestHandler):
         parent_router = super().get_router()
 
         @parent_router.get("/whoami")
-        def whoami():
+        def whoami() -> dict[str, str]:
             return {"whoami": "I am a custom application built with Agent Kernel!"}
 
         return parent_router
@@ -49,5 +49,5 @@ class CustomHandler(AgentRESTRequestHandler):
 OpenAIModule([triage_agent, math_agent, history_agent])
 
 
-def main():
+def main() -> None:
     RESTAPI.run([CustomHandler()])
