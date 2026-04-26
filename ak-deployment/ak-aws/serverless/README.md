@@ -338,7 +338,7 @@ module "serverless_api_auth" {
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
 | `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
-| `timeout` | Authorizer Lambda timeout in seconds | `number` | `45` | no |
+| `timeout` | Authorizer Lambda timeout in seconds | `number` | `30` | no |
 | `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
@@ -387,7 +387,7 @@ module "serverless_api_auth" {
 | `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
 | `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
 | `package_path` | Agent runner deployment package path | `string` | `null` | no |
-| `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
@@ -804,10 +804,13 @@ authorizer = {
 - `package_path` - Path to authorizer deployment package
 - `module_name` - Authorizer module name
 
-**Optional Fields**:
-- `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
-- `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
-- `environment_variables` - Environment variables for authorizer
+**Optional Authorizer Fields:**
+- `description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")
+- `result_ttl_in_seconds` - Cache TTL for authorizer results (default: 150)
+- `timeout` - Authorizer Lambda timeout in seconds (default: 30)
+- `memory_size` - Authorizer Lambda memory size in MB (default: 128)
+- `layers` - List of Lambda layer ARNs to attach (default: [])
+- `environment_variables` - Environment variables for authorizer Lambda
 
 **Note**: The authorizer infrastructure will only be created if the `authorizer` object is provided and all required fields are present. If any required field is missing, no authorizer will be created and your endpoints will be publicly accessible.
 

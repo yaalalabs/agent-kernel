@@ -46,10 +46,8 @@ module "serverless_agents" {
     function_name         = "rqh-func"
     function_description  = "Agent Kernel OpenAI Scalable Sample Lambda"
     handler_path          = "lambda_request_handler.handler"
+    package_type          = "LocalZip"
     package_path          = "../dist_request_handler.zip"
-    package_type          = "S3Zip"
-    package_path          = "../dist_request_handler"
-    package_type          = "Image"
     memory_size           = 256
     timeout               = 45
     environment_variables = {
