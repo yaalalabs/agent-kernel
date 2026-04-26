@@ -10,6 +10,8 @@ module "serverless_agents" {
   product_display_name = "AK OpenAI Scalable Serverless Example"
   region               = var.region
   is_production        = var.is_production
+  vpc_id               = "vpc-09033229d67314c1c"
+  private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
 
   # Execution mode - using for scalable processing
   queue_mode = true # recommended for production
