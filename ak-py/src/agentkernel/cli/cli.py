@@ -24,7 +24,8 @@ class _CLIOutputConfig:
 
     @classmethod
     def setup(cls) -> None:
-        if AKConfig.get().debug:
+        cfg = AKConfig.get()
+        if cfg.logging.ak.level or cfg.logging.system.level:
             return
 
         logging.getLogger().setLevel(logging.CRITICAL)
