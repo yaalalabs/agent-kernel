@@ -22,13 +22,23 @@ class _ContextFilter(logging.Filter):
 class _CLIOutputConfig:
     """Keep CLI output focused on AgentKernel logs in normal mode."""
 
+    _NOISY_LOGGERS = (
+        "httpx",
+        "httpcore",
+        "openai",
+        "urllib3",
+        "asyncio",
+    )
+
     @classmethod
     def setup(cls) -> None:
         cfg = AKConfig.get()
         if cfg.logging.ak.level or cfg.logging.system.level:
             return
 
-        logging.getLogger().setLevel(logging.CRITICAL)
+        logging.getLogger().setLevel(logging.WARNING)
+        for logger_name in cls._NOISY_LOGGERS:
+            logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
 ak_cli_logger = logging.getLogger("ak.cli")
