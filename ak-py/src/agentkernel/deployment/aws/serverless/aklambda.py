@@ -4,12 +4,14 @@ import json
 import logging
 import os
 from typing import Any, Callable, Dict, Optional, Tuple
+from ....core.config import AKConfig, ExecutionMode
 
 
 class LambdaRouter:
     """
-    A router for AWS Lambda events coming from API Gateway (REST API v1).
-    - Register handlers per (method, path).
+    A router for AWS Lambda events coming from API Gateway (REST API v1 and WebSocket APIs).
+    - Register handlers per (method, path) for REST endpoints.
+    - Register handlers per route key for WebSocket endpoints.
     - Path can be provided in multiple forms and will be normalized.
     - If no handler match is found, the router returns None and caller can fallback.
     """
@@ -19,6 +21,7 @@ class LambdaRouter:
         self._default_chat_path = "default_chat_path"
         self._default_chat_method = "POST"
         self._default_user_polling_method = None
+        self._config = AKConfig().get()
 
         from .core import DefaultEndpointsHandler
 
@@ -28,6 +31,7 @@ class LambdaRouter:
             self._default_user_polling_method,
         ) = DefaultEndpointsHandler.get_default_endpoint_info()
         self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = DefaultEndpointsHandler.get_routes()
+        self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = {}
 
     @staticmethod
     def _normalize_path(path: str) -> str:
@@ -44,6 +48,9 @@ class LambdaRouter:
     @staticmethod
     def _normalize_method(method: Optional[str]) -> str:
         return (method or "GET").upper()
+    
+    def _is_websocket_mode(self) -> bool:
+        return self._config.execution.mode == ExecutionMode.ASYNC
 
     def register(self, path: str, method: str = None) -> Callable[[Callable], Callable]:
         """
@@ -52,6 +59,9 @@ class LambdaRouter:
         :param method: HTTP method (defaults to "GET")
         :return: Decorator function that registers the handler and returns it unchanged.
         """
+        if self._is_websocket_mode():
+            raise ValueError("REST routes cannot be registered in WebSocket mode, Current mode: " + self._config.execution.mode.value)
+
         norm_path = self._normalize_path(path)
         norm_method = self._normalize_method(method)
 
@@ -63,6 +73,29 @@ class LambdaRouter:
                 self._log.warning(f"Route {norm_method} {norm_path} already exists. Skipping.")
                 return func
             methods[norm_method] = func
+            return func
+
+        return _decorator
+
+    def register_websocket(self, route_key: str) -> Callable[[Callable], Callable]:
+        """
+        Factory function that creates a decorator to register a WebSocket handler for a given route key.
+        WebSocket routes do not use HTTP methods, only the route key.
+        :param route_key: Route key for the WebSocket route
+        :return: Decorator function that registers the handler and returns it unchanged.
+        """
+        if not self._is_websocket_mode():
+            raise ValueError("WebSocket routes can only be registered in 'ASYNC' mode, Current mode: " + self._config.execution.mode.value)
+
+        norm_route_key = self._normalize_path(route_key)
+
+        def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
+            self._log.info(f"Registering WebSocket route {norm_route_key} -> {func.__name__}")
+
+            if norm_route_key in self._websocket_routes:
+                self._log.warning(f"WebSocket route {norm_route_key} already exists. Skipping.")
+                return func
+            self._websocket_routes[norm_route_key] = func
             return func
 
         return _decorator
@@ -83,11 +116,17 @@ class LambdaRouter:
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
         Dispatch incoming event to the appropriate registered handler.
+        Detects whether the event is from API Gateway REST or WebSocket and routes accordingly.
         :param event: Event dictionary containing request information
         :param context: AWS Lambda context object
         :return: Formatted response dictionary or None if no route matches
         :raises ValueError: If no registered route matches the request
         """
+        # WebSocket events have requestContext with routeKey, REST events have httpMethod
+        if self._is_websocket_mode():
+            self._log.info("Dispatching WebSocket endpoint")
+            return self._dispatch_websocket_endpoint(event, context)
+        self._log.info("Dispatching REST endpoint")
         return self._dispatch_rest_endpoint(event, context)
 
     def _dispatch_rest_endpoint(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
@@ -124,10 +163,40 @@ class LambdaRouter:
         self._log.debug(f"Lambda function result: {result}")
         return result
 
+    def _dispatch_websocket_endpoint(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Dispatch incoming API Gateway WebSocket event to the appropriate registered handler.
+        :param event: API Gateway WebSocket event dictionary containing request information
+        :param context: AWS Lambda context object
+        :return: Formatted API Gateway response dictionary or None if no route matches
+        :raises ValueError: If no registered route matches the request
+        """
+        request_context = event.get("requestContext", {})
+        route_key = request_context.get("routeKey")
+        connection_id = request_context.get("connectionId")
+        
+        self._log.info(f"WebSocket event - Route Key: {route_key}, Connection ID: {connection_id}")
+        
+        if not route_key:
+            self._log.warning("WebSocket event missing routeKey")
+            raise ValueError("WebSocket event missing routeKey")
+        
+        norm_route_key = self._normalize_path(route_key)
+        handler = self._websocket_routes.get(norm_route_key)
+        
+        if not handler:
+            self._log.warning(f"No registered WebSocket route found for route key -> '{route_key}'")
+            raise ValueError(f"No registered WebSocket route found for route key -> '{route_key}'")
+        
+        result = handler(event, context)
+        self._log.debug(f"WebSocket handler result: {result}")
+        return result
+
 
 class Lambda:
     """
     Lambda class provides an AWS Lambda interface for interacting with agents.
+    Supports both REST API and WebSocket API Gateway events.
     Includes a handler method for AWS Lambda function integration.
     """
 
@@ -149,6 +218,15 @@ class Lambda:
         :return: Decorator function that registers the handler and returns it unchanged.
         """
         return cls._get_router().register(path, method)
+
+    @classmethod
+    def register_websocket(cls, route_key: str) -> Callable[[Callable], Callable]:
+        """
+        Class method decorator that delegates WebSocket route registration to the internal LambdaRouter.
+        :param route_key: WebSocket route key that must be sent as "routeKey" in the request message payload to trigger this handler
+        :return: Decorator function that registers the handler and returns it unchanged.
+        """
+        return cls._get_router().register_websocket(route_key)
 
     @staticmethod
     def _wrap_response(result: Any) -> Dict[str, Any]:
@@ -180,7 +258,8 @@ class Lambda:
         # Attempting to dispatch to custom routes
         try:
             router = cls._get_router()
-            cls._log.info(f"Registered Routes: {router._routes}")
+            cls._log.info(f"Registered REST Routes: {router._routes}")
+            cls._log.info(f"Registered WebSocket Routes: {router._websocket_routes}")
             result = router.dispatch(event, context)
             return cls._wrap_response(result)
         except Exception as e:
