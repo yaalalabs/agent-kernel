@@ -37,4 +37,5 @@ variable "vpc_id" {
 variable "private_subnet_ids" {
   description = "List of private subnet IDs for ECS deployment"
   type        = list(string)
+  sensitive   = true
 }

@@ -53,7 +53,7 @@ class ResponseDBHandler:
         response_store_type: ResponseDBHandler.Type = ResponseDBHandler.Type.from_str(response_store_config.type)
 
         # Check for Redis configuration
-        if response_store_type == ResponseDBHandler.Type.REDIS:
+        if response_store_type == ResponseDBHandler.Type.REDIS and response_store_config.redis is not None:
             from .redis import RedisResponseStore
 
             redis_config = response_store_config.redis
@@ -65,7 +65,7 @@ class ResponseDBHandler:
             )
 
         # Check for DynamoDB configuration
-        elif response_store_type == ResponseDBHandler.Type.DYNAMODB:
+        elif response_store_type == ResponseDBHandler.Type.DYNAMODB and response_store_config.dynamodb is not None:
             from .dynamodb import DynamoDBResponseStore
 
             dynamodb_config = response_store_config.dynamodb

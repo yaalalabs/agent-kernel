@@ -126,7 +126,17 @@ guardrail:
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
     version: "DRAFT"  # AWS Bedrock guardrail version (Bedrock only)
+
+# Logging configuration (optional)
+# If omitted, default loggers will not be overridden
+logging:
+  ak:
+    level: WARNING  # Agent Kernel log level: INFO, DEBUG, ERROR, WARNING, CRITICAL
+  system:
+    level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
+> Logging is auto-configured on import. Agent Kernel currently initializes logging as part of module import/startup, not only when you explicitly read these configuration values. In practice, that means importing the library may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
+> Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
 
 ### JSON Configuration
 
@@ -222,6 +232,14 @@ Alternatively, use `config.json`:
       "type": "openai",
       "model": "gpt-4o-mini",
       "config_path": ""
+    }
+  },
+  "logging": {  // Optional - if omitted, default loggers will not be overridden
+    "ak": {
+      "level": "WARNING"
+    },
+    "system": {
+      "level": "WARNING"
     }
   }
 }
@@ -418,6 +436,18 @@ export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default
 export AK_DEBUG=true
 ```
 
+### Logging Configuration (Optional)
+
+```bash
+# Agent Kernel logging level
+export AK_LOGGING__AK__LEVEL=INFO  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL'
+
+# System/root logger level
+export AK_LOGGING__SYSTEM__LEVEL=WARNING  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL'
+```
+
+If the `logging` section is omitted from the configuration, default loggers will not be overridden.
+
 
 
 ## Configuration Schema
@@ -527,6 +557,14 @@ guardrail:
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
+
+# Logging configuration (optional)
+# If omitted, default loggers will not be overridden
+logging:
+  ak:                           # Agent Kernel logger configuration
+    level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
+  system:                       # System/root logger configuration
+    level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
 ```
 
 ## Configuration Precedence
