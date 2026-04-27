@@ -23,7 +23,7 @@ class SessionNonVolatileCacheAttachmentStore(AttachmentStore):
     simple but causes session size to grow with each attachment.
     """
 
-    _log = logging.getLogger("ak.core.multimodal.storage.session_cache")
+    _log = logging.getLogger("ak.multimodal.storage.session_cache")
 
     def __init__(self, session_id: str):
         """
