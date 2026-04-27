@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import re
 import argparse
 import yaml
@@ -407,6 +408,7 @@ def main():
 
         print("\n📝 Rewriting module sources...")
         inject_dependencies(workspace_root)
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
