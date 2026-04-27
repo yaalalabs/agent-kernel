@@ -4,6 +4,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
+import ParticleSphere from '../components/ParticleSphere';
 import {
   MdRocketLaunch,
   MdSwapHoriz,
@@ -32,17 +33,15 @@ import { FaFacebookMessenger } from 'react-icons/fa6';
 function Hero() {
   return (
     <section className={styles.hero}>
-      <div className={styles.heroOrb} />
-      <div className={styles.heroGrid} />
+      {/* <div className={styles.heroOrb} /> */}
+      {/* <div className={styles.heroGrid} /> */}
       <div className="container">
         <div className={styles.heroContent}>
-          <img src="/img/branding/agent-kernel-icon-color.svg" alt="Agent Kernel" className={styles.heroLogo} />
+          {/* <img src="/img/branding/agent-kernel-icon-color.svg" alt="Agent Kernel" className={styles.heroLogo} /> */}
           <h1 className={styles.heroTitle}>Agent Kernel</h1>
           <p className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
           <p className={styles.heroBody}>
-            The open-source, framework-agnostic, multi-cloud runtime for production AI agents.
-            Works with OpenAI, LangGraph, CrewAI, and Google ADK — simultaneously, in one runtime.
-            Deploys to AWS, Azure, or on-prem with zero platform code.
+            Agent Kernel is the open-source platform for building and deploying AI-powered assistants without months of engineering work. Works with any major AI technology, runs on any cloud, connects to Slack, WhatsApp, and more out of the box.
           </p>
           <div className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
@@ -56,7 +55,7 @@ function Hero() {
               <FaGithub style={{ marginRight: '8px' }} />
               View on GitHub
             </Link>
-            <Link className={`button button--secondary button--lg ${styles.btnGhost}`} to="/features">
+            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/features">
               Explore Features
             </Link>
           </div>
@@ -605,6 +604,7 @@ export default function Home() {
     <Layout
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
+      <ParticleSphere />
       <Hero />
       <main>
         <AffiliationsStrip />

@@ -111,7 +111,7 @@ html {
 }
 
 body {
-  background-color: var(--ak-bg);
+  background-color: transparent;
   color: var(--ak-text);
   font-feature-settings: 'kern' 1, 'liga' 1;
   -webkit-font-smoothing: antialiased;
@@ -162,7 +162,7 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: rgba(14, 16, 23, 0.92);
+  background-color: rgba(14, 16, 23, 0.2);
   border-bottom: 1px solid var(--ak-border);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -204,7 +204,7 @@ article {
    ============================================================================= */
 
 .footer {
-  background-color: #07080c;
+  background-color: rgba(14, 16, 23, 0.2);
   border-top: 1px solid var(--ak-border);
   padding: 3rem 0 2rem;
 }
