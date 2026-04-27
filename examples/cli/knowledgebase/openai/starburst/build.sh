@@ -11,6 +11,6 @@ if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
   # For local development of agentkernel, install from local source to preserve latest extras and modules.
-  uv sync --all-extras --no-install-project
-  uv pip install --force-reinstall "../../../../../ak-py[cli,openai,test,knowledgebase-trino]"
+  uv sync --find-links ../../../../../ak-py/dist --all-extras
+  uv pip install --force-reinstall --find-links ../../../../../ak-py/dist agentkernel[cli,openai,test,knowledgebase-trino] || true
 fi
