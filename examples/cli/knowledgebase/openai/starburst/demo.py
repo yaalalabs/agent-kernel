@@ -1,10 +1,21 @@
+"""
+Starburst knowledge base demo using Agent Kernel + OpenAI Agents SDK.
+
+This example routes across two read-only Starburst backends:
+- MongoDB source through Trino
+- Google Sheets source through Trino
+
+"""
+
+from agents import Agent
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.knowledgebase.starburst import StarburstManager
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent
 
-s_db = StarburstManager(
+
+# Step 1a: MongoDB data accessed through Starburst/Trino.
+mongo_starburst_backend = StarburstManager(
     name="StarburstDB-mongo",
     host="name-mongocluster.trino.galaxy.starburst.io",
     catalog="catalog name",
@@ -42,7 +53,8 @@ s_db = StarburstManager(
     }
 )
 
-s2_db = StarburstManager(
+# Step 1b: Google Sheets data accessed through Starburst/Trino.
+sheets_starburst_backend = StarburstManager(
     name="StarburstDB_Sheets",
     host="name-free-cluster.trino.galaxy.starburst.io",
     catalog="catalog name",
@@ -79,8 +91,9 @@ s2_db = StarburstManager(
     }
 )
 
+# Step 2: Combine both Starburst backends and define logical source placeholders.
 knowledge_builder = KnowledgeBuilder(
-    [s_db, s2_db],
+    [mongo_starburst_backend, sheets_starburst_backend],
     semantic_map={
         "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'put your sheet id here'))",
         "<MONGO_SOURCE>": "put your MongoDB source path here (eg: mongodb.default.clients)",
@@ -89,6 +102,8 @@ knowledge_builder = KnowledgeBuilder(
 
 
 def build_agent(description: str) -> Agent:
+    """Create one router agent that can query both Starburst backends."""
+
     instructions = f"""{description}
 
 EXECUTION PROTOCOL:
@@ -114,11 +129,13 @@ EXECUTION PROTOCOL:
 5. RESPOND:
    Answer strictly from the returned data. If empty, say no records were found.
 """
+    # Step 3: Build framework-agnostic KB callables and bind to OpenAI tool format.
+    knowledge_tools = knowledge_builder.build()
     return Agent(
         name="KB_Router_Agent",
         model="gpt-4o-mini",
         instructions=instructions,
-        tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
+        tools=OpenAIToolBuilder.bind(knowledge_tools),
     )
 
 
@@ -129,13 +146,15 @@ You help users store and retrieve information across the StarburstDB-mongo and S
 Always route to one backend first, execute the tool call, and return direct results.
 """
 
+# Step 4: Register router agent for CLI execution.
 agent = build_agent(AGENT_DESCRIPTION)
-
 OpenAIModule([agent])
 
 if __name__ == "__main__":
     try:
+        # Step 5: Start interactive CLI.
         CLI.main()
     finally:
-        s_db.close()
-        s2_db.close()
+        # Close Starburst connections gracefully.
+        mongo_starburst_backend.close()
+        sheets_starburst_backend.close()

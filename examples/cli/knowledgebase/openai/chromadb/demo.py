@@ -1,10 +1,17 @@
+"""
+ChromaDB knowledge base demo using Agent Kernel + OpenAI Agents SDK.
+
+"""
+
+from agents import Agent
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.chroma import ChromaManager
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent
 
-v_db = ChromaManager(
+
+# Step 1: Configure the ChromaDB backend with a clear schema.
+chroma_backend = ChromaManager(
     persist_path="./Scratches/my_chroma_db",
     name="ChromaDB",
     description=(
@@ -28,10 +35,17 @@ v_db = ChromaManager(
     }
 )
 
-knowledge_builder = KnowledgeBuilder([v_db])
+# Step 2: Turn backend capabilities into callable KB tools.
+knowledge_builder = KnowledgeBuilder([chroma_backend])
 
 
 def build_agent(description: str) -> Agent:
+    """Create the router agent and bind knowledge-base tools.
+
+    The agent uses the tool protocol below so it can safely route, query,
+    and respond from knowledge-base results.
+    """
+
     instructions = f"""{description}
 
 EXECUTION PROTOCOL:
@@ -54,6 +68,9 @@ EXECUTION PROTOCOL:
 5. RESPOND:
    Answer strictly from the returned data. If empty, say no records were found.
 """
+
+    # Step 3: build() produces framework-agnostic callables like get_schemas/read_kb/write_kb.
+    # bind(...) converts those callables into OpenAI Agent tools.
     return Agent(
         name="KB_Router_Agent",
         model="gpt-4o-mini",
@@ -69,9 +86,11 @@ You help users store and retrieve information in ChromaDB.
 Always route to the ChromaDB backend first, execute the tool call, and return direct results.
 """
 
+# Step 4: Create and register the agent in the OpenAI module runtime.
 agent = build_agent(AGENT_DESCRIPTION)
-
 OpenAIModule([agent])
 
+
 if __name__ == "__main__":
+    # Step 5: Launch interactive CLI chat.
     CLI.main()

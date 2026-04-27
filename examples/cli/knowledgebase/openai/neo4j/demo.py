@@ -1,10 +1,18 @@
+"""
+Neo4j knowledge base demo using Agent Kernel + OpenAI Agents SDK.
+
+
+"""
+
+from agents import Agent
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.knowledgebase.neo4j import Neo4jManager
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent
 
-g_db = Neo4jManager(
+
+# Step 1: Configure Neo4j and describe exactly how reads/writes should be built.
+neo4j_backend = Neo4jManager(
     name="Neo4jDB",
     description=(
         "Neo4j graph database. Use for entities, relationships, and structured facts. "
@@ -51,10 +59,13 @@ g_db = Neo4jManager(
     }
 )
 
-knowledge_builder = KnowledgeBuilder([g_db])
+# Step 2: Turn Neo4j capabilities into reusable KB tools.
+knowledge_builder = KnowledgeBuilder([neo4j_backend])
 
 
 def build_agent(description: str) -> Agent:
+    """Create the router agent and attach Neo4j knowledge tools."""
+
     instructions = f"""{description}
 
 EXECUTION PROTOCOL:
@@ -78,11 +89,13 @@ EXECUTION PROTOCOL:
 5. RESPOND:
    Answer strictly from the returned data. If empty, say no records were found.
 """
+    # Step 3: build() creates callables and bind(...) adapts them to OpenAI tools.
+    knowledge_tools = knowledge_builder.build()
     return Agent(
         name="KB_Router_Agent",
         model="gpt-4o-mini",
         instructions=instructions,
-        tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
+        tools=OpenAIToolBuilder.bind(knowledge_tools),
     )
 
 
@@ -93,12 +106,14 @@ You help users store and retrieve information in Neo4jDB.
 Always route to the Neo4jDB backend first, execute the tool call, and return direct results.
 """
 
+# Step 4: Register the configured agent in the OpenAI runtime module.
 agent = build_agent(AGENT_DESCRIPTION)
-
 OpenAIModule([agent])
 
 if __name__ == "__main__":
     try:
+        # Step 5: Start CLI for interactive prompts.
         CLI.main()
     finally:
-        g_db.close()
+        # Always close Neo4j driver resources before exit.
+        neo4j_backend.close()

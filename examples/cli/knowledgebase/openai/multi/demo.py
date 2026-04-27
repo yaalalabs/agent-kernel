@@ -1,12 +1,25 @@
+"""
+Multi-backend knowledge base demo with OpenAI Agents SDK.
+
+This is the most complete KB router example in this folder. It combines:
+- ChromaDB (semantic vector search)
+- Neo4j (graph relationships)
+- Starburst Mongo source (SQL read-only)
+- Starburst Sheets source (SQL read-only)
+
+"""
+
+from agents import Agent
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.chroma import ChromaManager
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.knowledgebase.neo4j import Neo4jManager
 from agentkernel.knowledgebase.starburst import StarburstManager
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent
 
-v_db = ChromaManager(
+
+# Step 1a: Semantic vector backend for unstructured knowledge.
+chroma_backend = ChromaManager(
     persist_path="./Scratches/my_chroma_db",
     name="ChromaDB",
     description=(
@@ -30,7 +43,8 @@ v_db = ChromaManager(
     }
 )
 
-g_db = Neo4jManager(
+# Step 1b: Graph backend for entities and relationships.
+neo4j_backend = Neo4jManager(
     name="Neo4jDB",
     description=(
         "Neo4j graph database. Use for entities, relationships, and structured facts. "
@@ -77,7 +91,8 @@ g_db = Neo4jManager(
     }
 )
 
-s_db = StarburstManager(
+# Step 1c: Starburst backend for Mongo client records.
+mongo_starburst_backend = StarburstManager(
     name="StarburstDB-mongo",
     host="name-mongocluster.trino.galaxy.starburst.io",
     catalog="catalog name",
@@ -115,7 +130,8 @@ s_db = StarburstManager(
     }
 )
 
-s2_db = StarburstManager(
+# Step 1d: Starburst backend for Google Sheets knowledge.
+sheets_starburst_backend = StarburstManager(
     name="StarburstDB_Sheets",
     host="name-free-cluster.trino.galaxy.starburst.io",
     catalog="catalog name",
@@ -152,8 +168,14 @@ s2_db = StarburstManager(
     }
 )
 
+# Step 2: Combine all backends and map semantic placeholders to physical sources.
 knowledge_builder = KnowledgeBuilder(
-    [v_db, g_db, s_db, s2_db],
+    [
+        chroma_backend,
+        neo4j_backend,
+        mongo_starburst_backend,
+        sheets_starburst_backend,
+    ],
     semantic_map={
         "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'put your sheet id here'))",
         "<MONGO_SOURCE>": "put your MongoDB source path here (eg: mongodb.default.clients)",
@@ -162,6 +184,8 @@ knowledge_builder = KnowledgeBuilder(
 
 
 def build_agent(description: str) -> Agent:
+    """Create one router agent and attach all available KB tools."""
+
     instructions = f"""{description}
 
 EXECUTION PROTOCOL:
@@ -188,11 +212,13 @@ EXECUTION PROTOCOL:
 5. RESPOND:
    Answer strictly from the returned data. If empty, say no records were found.
 """
+    # Step 3: Build KB callables and bind them into OpenAI tool definitions.
+    knowledge_tools = knowledge_builder.build()
     return Agent(
         name="KB_Router_Agent",
         model="gpt-4o-mini",
         instructions=instructions,
-        tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
+        tools=OpenAIToolBuilder.bind(knowledge_tools),
     )
 
 
@@ -207,14 +233,16 @@ You help users store and retrieve information across multiple databases:
 Always route to one backend first, execute the tool call, and return direct results.
 """
 
+# Step 4: Register the router agent in OpenAIModule.
 agent = build_agent(AGENT_DESCRIPTION)
-
 OpenAIModule([agent])
 
 if __name__ == "__main__":
     try:
+        # Step 5: Start the interactive CLI session.
         CLI.main()
     finally:
-        g_db.close()
-        s_db.close()
-        s2_db.close()
+        # Close networked backends so sessions do not leak resources.
+        neo4j_backend.close()
+        mongo_starburst_backend.close()
+        sheets_starburst_backend.close()
