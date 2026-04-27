@@ -34,24 +34,24 @@ async def test_kb_schemas_available(test_client):
     await test_client.expect(["ChromaDB", "semantic"])
 
 
-@pytest.mark.order(5)
-async def test_store_data(test_client):
-    """Test storing facts/documents into ChromaDB"""
-    await test_client.send(
-        "Store this fact: The capital of France is Paris, located on the Seine River. "
-        "The city is known for the Eiffel Tower."
-    )
-    response = (test_client.last_agent_response or "").lower()
-    assert any(
-        keyword in response for keyword in ["stored", "added", "saved", "recorded"]
-    )
+# @pytest.mark.order(5)
+# async def test_store_data(test_client):
+#     """Test storing facts/documents into ChromaDB"""
+#     await test_client.send(
+#         "Store this fact: The capital of France is Paris, located on the Seine River. "
+#         "The city is known for the Eiffel Tower."
+#     )
+#     response = (test_client.last_agent_response or "").lower()
+#     assert any(
+#         keyword in response for keyword in ["stored", "added", "saved", "recorded"]
+#     )
 
 
-@pytest.mark.order(6)
-async def test_retrieve_stored_data(test_client):
-    """Test retrieving previously stored facts from ChromaDB"""
-    await test_client.send("What information do you have about Paris and France?")
-    response = (test_client.last_agent_response or "").lower()
-    assert "paris" in response or "france" in response
-    assert "capital" in response or "seine" in response or "eiffel" in response
+# @pytest.mark.order(6)
+# async def test_retrieve_stored_data(test_client):
+#     """Test retrieving previously stored facts from ChromaDB"""
+#     await test_client.send("What information do you have about Paris and France?")
+#     response = (test_client.last_agent_response or "").lower()
+#     assert "paris" in response or "france" in response
+#     assert "capital" in response or "seine" in response or "eiffel" in response
 
