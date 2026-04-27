@@ -12,5 +12,5 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of agentkernel, install from local source to preserve latest extras and modules.
   uv sync --all-extras --no-install-project
-  uv pip install --force-reinstall "../../../../../ak-py[cli,openai,test,knowledgebase-chromadb]"
+  uv pip install --python .venv/bin/python --force-reinstall "../../../../../ak-py[cli,openai,test,knowledgebase-chromadb]"
 fi
