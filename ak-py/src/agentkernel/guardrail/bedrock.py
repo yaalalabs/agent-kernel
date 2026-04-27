@@ -9,7 +9,7 @@ from ..core.config import AKConfig
 from ..core.model import AgentReply, AgentReplyText, AgentRequest
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("ak.guardrail.bedrock")
 
 
 class BaseBedrockGuardrail(ABC):
