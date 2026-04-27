@@ -445,17 +445,14 @@ kb = KnowledgeBuilder([mongo_backend, sheets_backend], semantic_map={...})
 # 2. Extract the knowledge base tools
 kb_tools = kb.build()  # Returns [get_schemas, read_kb, write_kb, get_all_kb_descriptions]
 
-# 3. Bind knowledge base tools to your agent framework
-tool_builder = CrewAIToolBuilder()
-for tool in kb_tools:
-    tool_builder.bind(tool)  # Makes tool callable from CrewAI agent
-
-# 4. Create your agent with these tools automatically available
+# 3. Create your agent with these tools automatically available
 knowledge_agent = CrewAgent(
     role="knowledge_router",
     goal="Query and manage knowledge across vector stores and graphs",
-    tools=[],  # CrewAIToolBuilder auto-registers tools
-    # Agent now has: get_schemas, read_kb, write_kb available
+    # Bind framework-agnostic KB callables into CrewAI-compatible tools
+    # so the agent can invoke get_schemas/read_kb/write_kb at runtime.
+    tools=crewAItoolbuilder.bind(kb_tools)
+   
 )
 ```
 
