@@ -5,7 +5,7 @@ description = "OpenAI CLI knowledgebase demo using Starburst/Trino backend"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai,knowledgebase-trino]>=0.3.3",
+    "agentkernel[cli,openai,trino]>=0.3.3",
 ]
 
 [dependency-groups]

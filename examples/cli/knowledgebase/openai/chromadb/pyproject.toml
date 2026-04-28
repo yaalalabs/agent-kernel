@@ -5,7 +5,7 @@ description = "OpenAI CLI knowledgebase demo using ChromaDB backend"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,knowledgebase-chromadb,openai]>=0.3.3",
+    "agentkernel[cli,chromadb,openai]>=0.3.3",
 ]
 
 [dependency-groups]

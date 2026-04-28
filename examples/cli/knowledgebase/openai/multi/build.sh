@@ -12,5 +12,5 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of agentkernel, install from local source to preserve latest extras and modules.
   uv sync --find-links ../../../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --find-links ../../../../../ak-py/dist agentkernel[cli,openai,test,knowledgebase-chromadb,knowledgebase-neo4j,knowledgebase-trino] || true
+  uv pip install --force-reinstall --find-links ../../../../../ak-py/dist agentkernel[cli,openai,test,chromadb,neo4j,trino] || true
 fi

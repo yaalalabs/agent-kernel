@@ -84,6 +84,9 @@ azure = [
     { name = "azure-functions", version = "1.24.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "azure-functions", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
+chromadb = [
+    { name = "chromadb" },
+]
 crewai = [
     { name = "crewai" },
     { name = "openinference-instrumentation-crewai" },
@@ -97,15 +100,6 @@ gmail = [
 ]
 instagram = [
     { name = "httpx" },
-]
-knowledgebase-chromadb = [
-    { name = "chromadb" },
-]
-knowledgebase-neo4j = [
-    { name = "neo4j" },
-]
-knowledgebase-trino = [
-    { name = "trino" },
 ]
 langfuse = [
     { name = "langfuse" },
@@ -125,6 +119,9 @@ messenger = [
 ]
 multimodal = [
     { name = "litellm" },
+]
+neo4j = [
+    { name = "neo4j" },
 ]
 openai = [
     { name = "openai-agents" },
@@ -162,6 +159,9 @@ test = [
     { name = "ragas" },
     { name = "rapidfuzz" },
 ]
+trino = [
+    { name = "trino" },
+]
 walledai = [
     { name = "walledai" },
 ]
@@ -185,7 +185,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "botbuilder-schema", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
-    { name = "chromadb", marker = "extra == 'knowledgebase-chromadb'", specifier = ">=0.4.0" },
+    { name = "chromadb", marker = "extra == 'chromadb'", specifier = ">=0.4.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.150.0" },
     { name = "datasets", marker = "extra == 'test'", specifier = ">=2.14.0" },
     { name = "deprecated", specifier = ">=1.2.18" },
@@ -212,7 +212,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.74.9" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
-    { name = "neo4j", marker = "extra == 'knowledgebase-neo4j'", specifier = ">=5.0.0" },
+    { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.0.0" },
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.6.5" },
     { name = "openai-guardrails", marker = "extra == 'openai'", specifier = ">=0.2.1" },
@@ -236,11 +236,11 @@ requires-dist = [
     { name = "singleton-type", specifier = ">=0.0.5" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.48.0" },
-    { name = "trino", marker = "extra == 'knowledgebase-trino'", specifier = ">=0.337.0" },
+    { name = "trino", marker = "extra == 'trino'", specifier = ">=0.337.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "knowledgebase-neo4j", "knowledgebase-chromadb", "knowledgebase-trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "test", "a2a", "mcp", "multimodal"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "cli", "aws", "azure", "redis", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -326,9 +326,9 @@ name = "aiologic"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sniffio" },
+    { name = "sniffio", marker = "python_full_version < '3.13'" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
-    { name = "wrapt" },
+    { name = "wrapt", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a8/13/50b91a3ea6b030d280d2654be97c48b6ed81753a50286ee43c646ba36d3c/aiologic-0.16.0.tar.gz", hash = "sha256:c267ccbd3ff417ec93e78d28d4d577ccca115d5797cdbd16785a551d9658858f", size = 225952, upload-time = "2025-11-27T23:48:41.195Z" }
 wheels = [
@@ -1068,7 +1068,7 @@ name = "culsans"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiologic" },
+    { name = "aiologic", marker = "python_full_version < '3.13'" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d9/e3/49afa1bc180e0d28008ec6bcdf82a4072d1c7a41032b5b759b60814ca4b0/culsans-0.11.0.tar.gz", hash = "sha256:0b43d0d05dce6106293d114c86e3fb4bfc63088cfe8ff08ed3fe36891447fe33", size = 107546, upload-time = "2025-12-31T23:15:38.196Z" }

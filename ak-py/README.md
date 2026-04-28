@@ -30,9 +30,9 @@ pip install agentkernel
 Install optional knowledge base extras as needed:
 
 ```bash
-pip install "agentkernel[knowledgebase-chromadb]"
-pip install "agentkernel[knowledgebase-neo4j]"
-pip install "agentkernel[knowledgebase-trino]"
+pip install "agentkernel[chromadb]"
+pip install "agentkernel[neo4j]"
+pip install "agentkernel[trino]"
 ```
 
 **Requirements:**

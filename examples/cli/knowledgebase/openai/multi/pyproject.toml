@@ -5,7 +5,7 @@ description = "OpenAI CLI knowledgebase demo using ChromaDB, Neo4j, and Starburs
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai,knowledgebase-chromadb,knowledgebase-neo4j,knowledgebase-trino]>=0.3.3",
+    "agentkernel[cli,openai,chromadb,neo4j,trino]>=0.3.3",
 ]
 
 [dependency-groups]
