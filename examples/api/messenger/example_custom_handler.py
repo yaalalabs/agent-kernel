@@ -5,8 +5,6 @@ from agentkernel.messenger import AgentMessengerRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

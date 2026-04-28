@@ -286,13 +286,19 @@ Supported formats: `.yaml`, `.yml`, `.json`
 
 ### Configuration Options
 
-#### Debug Mode
+#### Logging Configuration
 
-- **Field**: `debug`
-- **Type**: boolean
-- **Default**: `false`
-- **Description**: Enable debug mode across the library
-- **Environment Variable**: `AK_DEBUG`
+- **Field**: `logging.ak.level`
+- **Type**: string
+- **Default**: `WARNING`
+- **Description**: Agent Kernel logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+- **Environment Variable**: `AK_LOGGING__AK__LEVEL`
+
+- **Field**: `logging.system.level`
+- **Type**: string
+- **Default**: `WARNING`
+- **Description**: System/root logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+- **Environment Variable**: `AK_LOGGING__SYSTEM__LEVEL`
 
 #### Session Store
 
@@ -878,7 +884,6 @@ AK_TRACE__TYPE=langfuse  # or openllmetry
 #### config.yaml
 
 ```yaml
-debug: false
 session:
   type: redis
   redis:

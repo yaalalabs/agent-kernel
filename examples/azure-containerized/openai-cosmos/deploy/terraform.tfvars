@@ -1,6 +1,6 @@
 region = "centralus"
 # The Azure Resource Group you want to deploy the ACR into
-resource_group_name = ""
+resource_group_name = "openai_cont_daily"
 
 # Product alias (used in ACR name and image name)
 product_alias = "ak-oai"
@@ -9,9 +9,9 @@ product_alias = "ak-oai"
 env_alias = "dev"
 
 # Module name (part of ACR and image name)
-module_name = "examples"
+module_name = "daily"
 
 # Optional display name (used for tags, can be null)
 product_display_name = "Demo Platform API"
 
-publisher_email="" 
+publisher_email="agentkernel@yaala.ai" 

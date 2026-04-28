@@ -154,7 +154,9 @@ The deployment provides the following outputs:
 This example uses Azure Cosmos DB for agent memory storage. The configuration in `config.yaml` specifies:
 
 ```yaml
-debug: true
+logging:
+  ak:
+    level: DEBUG
 session:
   type: cosmosdb
   cosmosdb:
