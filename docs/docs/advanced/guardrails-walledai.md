@@ -25,7 +25,7 @@ Set required environment variables:
 
 ```bash
 export WALLED_API_KEY=your-walledai-api-key
-export AK_DEBUG=true
+export AK_LOGGING__AK__LEVEL=DEBUG
 ```
 
 ## Configuration
@@ -132,7 +132,7 @@ When the reply contains `[Person_1]`, output guardrail restores it to `john` bef
 1. Ensure input/output guardrails are enabled in config
 2. Verify `type: walledai` for both input and output
 3. Confirm `WALLED_API_KEY` is set in the runtime environment
-4. Enable debug logs with `AK_DEBUG=true`
+4. Enable debug logs with `AK_LOGGING__AK__LEVEL=DEBUG`
 
 ### Missing API key or provider errors
 

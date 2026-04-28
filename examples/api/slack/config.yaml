@@ -1,5 +1,7 @@
 # Core settings
-debug: true
+logging:
+  ak:
+    level: DEBUG
 library_version: "0.1.0"
 
 # Slack integration settings

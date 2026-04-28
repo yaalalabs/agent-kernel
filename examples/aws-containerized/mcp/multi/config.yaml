@@ -4,7 +4,11 @@ mcp:
   expose_agents: true
   agents: ['*']
 
-debug: true
+logging:
+  ak:
+    level: WARNING
+  system:
+    level: WARNING
 session:
   type: redis
   redis:
