@@ -18,20 +18,28 @@ class LambdaRouter:
 
     def __init__(self):
         self._log = logging.getLogger("ak.aws.lambda.router")
-        self._default_chat_path = "default_chat_path"
-        self._default_chat_method = "POST"
+        self._default_chat_path = None
+        self._default_chat_method = None
         self._default_user_polling_method = None
         self._config = AKConfig().get()
 
-        from .core import DefaultEndpointsHandler
-
-        (
-            self._default_chat_path,
-            self._default_chat_method,
-            self._default_user_polling_method,
-        ) = DefaultEndpointsHandler.get_default_endpoint_info()
-        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = DefaultEndpointsHandler.get_routes()
+        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {}
         self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = {}
+
+        if self._is_websocket_mode():
+            from .core import DefaultWSRoutesHandler
+
+            self._log.info("Initializing default WebSocket routes")
+            self._websocket_routes = DefaultWSRoutesHandler.get_routes()
+        else:
+            from .core import DefaultEndpointsHandler
+
+            (
+                self._default_chat_path,
+                self._default_chat_method,
+                self._default_user_polling_method,
+            ) = DefaultEndpointsHandler.get_default_endpoint_info()
+            self._routes = DefaultEndpointsHandler.get_routes()
 
     @staticmethod
     def _normalize_path(path: str) -> str:

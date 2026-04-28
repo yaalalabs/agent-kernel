@@ -1,2 +1,3 @@
 from .default_endpoints import DefaultEndpointsHandler
+from .default_ws_endpoints import DefaultWSRoutesHandler
 from .sqs_consumer import LambdaSQSConsumer
