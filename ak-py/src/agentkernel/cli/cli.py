@@ -5,58 +5,12 @@ import readline  # Enables line editing and history features for input() in the 
 from ..core import AgentService
 from ..core.config import AKConfig
 
-
-class _ContextFilter(logging.Filter):
-    """Hide known OpenTelemetry shutdown noise from console output."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return not (record.name == "opentelemetry.context" and "Failed to detach context" in record.getMessage())
-
-    @classmethod
-    def setup(cls) -> None:
-        context_logger = logging.getLogger("opentelemetry.context")
-        if not any(isinstance(f, cls) for f in context_logger.filters):
-            context_logger.addFilter(cls())
-
-
-class _CLIFilter(logging.Filter):
-    """Show AK warnings while allowing only external errors in default CLI mode."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.levelno >= logging.ERROR:
-            return True
-        return record.name.startswith("ak")
-
-    @classmethod
-    def setup(cls) -> None:
-        root_logger = logging.getLogger()
-        if not any(isinstance(f, cls) for f in root_logger.filters):
-            root_logger.addFilter(cls())
-
-
-class _CLIOutputConfig:
-    """Keep CLI output focused on AgentKernel logs in normal mode."""
-
-    @classmethod
-    def setup(cls) -> None:
-        cfg = AKConfig.get()
-        if cfg.logging.ak.level or cfg.logging.system.level:
-            return
-
-        # Keep useful AK warnings visible while suppressing third-party warning noise.
-        logging.getLogger().setLevel(logging.WARNING)
-        _CLIFilter.setup()
-
-
 ak_cli_logger = logging.getLogger("ak.cli")
 
 if not ak_cli_logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("\033[36m(kernel) >> %(message)s\033[0m"))
     ak_cli_logger.addHandler(handler)
-
-_ContextFilter.setup()
-_CLIOutputConfig.setup()
 
 
 class CLI:
