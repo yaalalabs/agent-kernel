@@ -74,17 +74,74 @@ kb_tools = KnowledgeBuilder([v_db, g_db]).build()
 
 `kb_tools` is the output of `KnowledgeBuilder.build()`: a list of plain Python callables such as `get_schemas`, `read_kb`, and `write_kb`. Those callables are not yet agent tools on their own. The framework-specific adapter binds them into the agent runtime. In the OpenAI examples, that happens in one step with `tools=OpenAIToolBuilder.bind(knowledgeBuilder.build())`.
 
-Example with semantic placeholders:
 
-```python
-kb_tools = KnowledgeBuilder(
-  [v_db, g_db],
-  semantic_map={
-    "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => '...'))",
-    "<MONGO_SOURCE>": "kb_mongo.my_company_kb.clients",
-  },
-).build()
-```
+
+### `semantic_map`
+
+1. What is `semantic_map`:
+  - **Definition**: A mapping of stable, human-friendly placeholder tokens (keys) to concrete backend resource identifiers (values) used by `KnowledgeBuilder` at runtime.
+  - **Form**: a plain Python dict where keys are tokens like `<SHEETS_SOURCE>` and values are backend-specific resource strings (SQL table references, DB paths, Trino/Starburst CALL syntax, etc.).
+
+2. Purpose:
+  - Decouples agent prompts from changing physical resource names so agent prompts remain portable across deployments.
+  - Lets agents generate queries using logical tokens while the runtime binds those tokens to the correct backend targets.
+  - Reduces agent hallucinations by centralizing backend-specific details in the deployment configuration.
+
+3. Examples:
+  - Vector store (Chroma): no physical table name needed — map to the backend name when helpful: `"<VECTOR_STORE>": "ChromaDB"`.
+  - Graph (Neo4j): map to a named graph or connection string: `"<GRAPH>": "neo4j.default.graph"`.
+  - Starburst/Trino (Sheets/Mongo): map logical placeholders to SQL FROM targets: `"<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'SHEET_ID'))"` or `"<MONGO_SOURCE>": "catalog.schema.table"`.
+
+4. How to write a `semantic_map` (best practices):
+  - Keep placeholders short and descriptive (e.g., `<SHEETS_SOURCE>`, `<MONGO_SOURCE>`).
+  - Use one mapping per logical resource; avoid aliasing the same physical target under many keys.
+  - Document expected query syntax in the backend `schema()` so agents can build correct queries (see demo examples for required templates).
+  - Never expose credentials in `semantic_map` values; keep `semantic_map` purely as resource identifiers.
+  - Make environment-specific overrides (CI, staging, prod) by supplying a different `semantic_map` at deployment time.
+
+  #### KnowledgeBuilder example (semantic_map)
+
+  The short example below shows the minimal steps to register backends, provide a `semantic_map`, build KB tools, and how the token replacement works at runtime. All explanatory notes are in comments.
+
+  ```python
+  # 1) Import the pieces
+  from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+  from agentkernel.knowledgebase.chroma import ChromaManager
+  from agentkernel.knowledgebase.neo4j import Neo4jManager
+
+  # 2) Define (lightweight) backends and their schemas
+  #    In real code you would supply full schema dictionaries as in the demos.
+  v_db = ChromaManager(name="ChromaDB").add_schema({"description": "Vector store"})
+  g_db = Neo4jManager(name="Neo4jDB").add_schema({"description": "Graph DB"})
+
+  # 3) Define the semantic_map - agent prompts use the LEFT side tokens
+  #    and the runtime replaces them with the RIGHT side physical targets.
+  semantic_map = {
+    "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'SHEET_ID'))",  # Trino/Starburst wrapper
+    "<MONGO_SOURCE>": "catalog.schema.clients",  # Example catalog.schema.table path
+  }
+
+  # 4) Create the KnowledgeBuilder with backends + semantic_map
+  kb = KnowledgeBuilder([v_db, g_db], semantic_map=semantic_map)
+
+  # 5) Build the KB tools (framework adapters bind these into agents)
+  #    The exact return shape can be a list of callables; here we store as a variable.
+  kb_tools = kb.build()
+
+  # 6) Agent constructs a query using the logical placeholder token
+  query = "SELECT client_name, status FROM <MONGO_SOURCE> WHERE status = 'active' LIMIT 5"
+
+  # 7) At runtime, before the backend executes the SQL, KnowledgeBuilder
+  #    replaces `<MONGO_SOURCE>` with `catalog.schema.clients` from `semantic_map`.
+  #    Then `read_kb()` sends the resolved SQL to the correct Starburst backend.
+  #    (In practice the agent calls the `read_kb` callable from `kb_tools`.)
+  resolved_query = query.replace("<MONGO_SOURCE>", semantic_map["<MONGO_SOURCE>"])
+  # read_results = read_kb("StarburstDB-mongo", resolved_query)
+
+  # NOTE: Keep placeholders consistent in prompts and document required
+  #       query templates in each backend's `schema()` to avoid runtime errors.
+  ```
+
 
 Example of wiring the KB tools into an agent:
 
@@ -105,6 +162,9 @@ kb_router_agent = Agent(
   tools=OpenAIToolBuilder.bind(kb_tools),
 )
 ```
+
+Note: `kb_tools` used above is the result of calling `build()` on a `KnowledgeBuilder` instance (for example, `kb_tools = KnowledgeBuilder([...], semantic_map={...}).build()` or `kb_tools = kb.build()`); ensure you have created that variable before binding it into the agent to avoid confusion.
+
 
 ## KB Router Pattern
 
