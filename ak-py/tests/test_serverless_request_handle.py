@@ -5,6 +5,7 @@ from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
 def test_base_request_from_nested_payload_generates_request_id_and_body():
     payload = {
         "user_id": "user-1",
+        "route": "route-1",
         "body": {
             "prompt": "hello",
             "session_id": "session-1",
@@ -16,6 +17,7 @@ def test_base_request_from_nested_payload_generates_request_id_and_body():
 
     assert request.request_id is not None
     assert request.user_id == "user-1"
+    assert request.route == "route-1"
     assert request.body is not None
     assert request.body.prompt == "hello"
     assert request.body.session_id == "session-1"
@@ -26,6 +28,7 @@ def test_base_request_from_flat_payload_excludes_envelope_fields_from_body():
     payload = {
         "request_id": "request-1",
         "user_id": "user-1",
+        "route": "route-1",
         "prompt": "hello",
         "session_id": "session-1",
         "agent": "openai",
@@ -35,36 +38,42 @@ def test_base_request_from_flat_payload_excludes_envelope_fields_from_body():
 
     assert request.request_id == "request-1"
     assert request.user_id == "user-1"
+    assert request.route == "route-1"
     assert request.body is not None
     assert request.body.prompt == "hello"
     assert request.body.session_id == "session-1"
     assert request.body.agent == "openai"
     assert "request_id" not in request.body.model_dump()
     assert "user_id" not in request.body.model_dump()
+    assert "route" not in request.body.model_dump()
 
 
 def test_base_request_from_envelope_only_payload_keeps_body_empty():
     payload = {
         "user_id": "user-1",
         "request_id": "request-1",
+        "route": "route-1",
     }
 
     request = BaseRequest.from_payload(payload)
 
     assert request.request_id == "request-1"
     assert request.user_id == "user-1"
+    assert request.route == "route-1"
     assert request.body is None
 
 
 def test_base_request_from_user_only_payload_generates_request_id():
     payload = {
         "user_id": "user-1",
+        "route": "route-1",
     }
 
     request = BaseRequest.from_payload(payload)
 
     assert request.request_id is not None
     assert request.user_id == "user-1"
+    assert request.route == "route-1"
     assert request.body is None
 
 
@@ -79,6 +88,7 @@ def test_base_request_from_flat_run_payload_generates_body():
 
     assert request.request_id is not None
     assert request.user_id is None
+    assert request.route is None
     assert request.body is not None
     assert request.body.prompt == "hello"
     assert request.body.session_id == "session-1"
@@ -130,3 +140,24 @@ def test_sqs_handler_get_message_custom_attributes_flattens_message_attributes()
     attributes = SQSHandler.get_message_custom_attributes(record)
 
     assert attributes == {"request_id": "request-1", "user_id": "user-1"}
+
+
+def test_base_request_route_filtered_from_nested_body():
+    """Test that route is filtered out when present in nested body dict."""
+    payload = {
+        "user_id": "user-1",
+        "route": "route-1",
+        "body": {
+            "prompt": "hello",
+            "route": "should-be-filtered",
+            "session_id": "session-1",
+        },
+    }
+
+    request = BaseRequest.from_payload(payload)
+
+    assert request.route == "route-1"
+    assert request.body is not None
+    assert request.body.prompt == "hello"
+    assert request.body.session_id == "session-1"
+    assert "route" not in request.body.model_dump()
