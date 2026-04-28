@@ -135,6 +135,7 @@ class BaseRunRequest(BaseModel):
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
     user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
+    route: Optional[str] = None # TODO:: RouteKey of the Websocket, needed for WS implementation
     body: Optional[BaseRunRequest] = None
     model_config = ConfigDict(extra="allow")
 
@@ -149,20 +150,21 @@ class BaseRequest(BaseModel):
         if isinstance(payload, dict):
             request_id = payload.get("request_id") or str(uuid.uuid4())
             user_id = payload.get("user_id")
+            route = payload.get("route")
 
             if "body" in payload and payload["body"] is not None:
                 body = payload["body"]
                 if isinstance(body, dict):
-                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id"}}
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id", "route"}}
             else:
-                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "body"}}
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "route", "body"}}
 
             if not body:
-                return cls(request_id=request_id, user_id=user_id)
+                return cls(request_id=request_id, user_id=user_id, route=route)
 
             if not isinstance(body, BaseRunRequest):
                 body = BaseRunRequest.model_validate(body)
 
-            return cls(request_id=request_id, user_id=user_id, body=body)
+            return cls(request_id=request_id, user_id=user_id, route=route, body=body)
 
-        raise TypeError(f"Unsupported payload type for BaseRequest: {type(payload)!r}")
+        raise TypeError(f"Unsupported payload type for BaseRequest: {repr(type(payload))}")
