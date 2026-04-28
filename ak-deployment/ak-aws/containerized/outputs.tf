@@ -17,3 +17,13 @@ output "api_gateway_stage" {
 output "agent_invoke_url" {
   value = "${try(aws_apigatewayv2_stage.stage.invoke_url, format("%s/%s", aws_apigatewayv2_api.http_api.api_endpoint, aws_apigatewayv2_stage.stage.name))}/api/${var.api_version}/${var.agent_endpoint}"
 }
+
+output "vpc_id" {
+  description = "VPC ID used for the deployment"
+  value       = local.vpc_id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used for the deployment"
+  value       = local.subnet_ids
+}

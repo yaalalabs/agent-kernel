@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import re
 import argparse
+import yaml
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Set
 
 
 DEPLOYMENT_ROOTS = [
@@ -12,6 +14,11 @@ DEPLOYMENT_ROOTS = [
     'ak-deployment/ak-azure',
     'examples'
 ]
+
+BACKEND_TEMPLATES = {
+    'aws': 'backend.tf.aws.template',
+    'azure': 'backend.tf.azure.template',
+}
 
 REGISTRY_TO_LOCAL_ROOTS = {
     'yaalalabs/ak-serverless/aws': ('ak-deployment/ak-aws/serverless', 'aws'),
@@ -24,6 +31,7 @@ REGISTRY_PREFIX_RE = r'^(?:app\.terraform\.io/|registry\.terraform\.io/)?'
 
 VERSION_MARKER = "AK_LOCAL_DEV_COMMENT"
 PROVIDER_MARKER = "AK_PROVIDER"
+
 
 
 # ---------- FILE DISCOVERY ----------
@@ -61,7 +69,123 @@ def _localize_registry_source(source_value: str, file_path: Path, workspace_root
 
     return None
 
+def get_cloud(project_type: str) -> str:
+    if project_type.startswith('aws'):
+        return 'aws'
+    elif project_type.startswith('azure'):
+        return 'azure'
+    else:
+        raise ValueError(f"Unknown project type: {project_type}")
 
+def load_yaml(path: Path) -> Dict:
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def get_projects(config: Dict) -> Set[Tuple[str, str, str]]:
+    projects = set()
+
+    if 'deployment_base' in config:
+        for project in config['deployment_base']:
+            t = project.get('type', '')
+            if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized']:
+                path = project.get('path', '')
+                deploy_dir = project.get('deploy_dir', 'deploy')
+                if path:
+                    projects.add((path, deploy_dir, t))
+
+    for schedule in ['nightly', 'weekly']:
+        if schedule in config and 'tests' in config[schedule]:
+            for test in config[schedule]['tests']:
+                t = test.get('type', '')
+                if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized']:
+                    path = test.get('path', '')
+                    deploy_dir = test.get('deploy_dir', 'deploy')
+                    if path:
+                        projects.add((path, deploy_dir, t))
+
+    return projects
+
+def generate_backend_tf(template: str, project_path: str, project_type: str, state_config: Dict) -> str:
+    cloud = get_cloud(project_type)
+    cfg = state_config[cloud]['state']
+
+    state_key = f"{project_path}/terraform.tfstate"
+
+    content = template.replace('{state_key}', state_key)
+
+    for key, value in cfg.items():
+        content = content.replace(f'{{{key}}}', value)
+
+    return content
+
+def inject_backend_files(workspace_root: Path,
+                         templates: Dict[str, str],
+                         state_config: Dict,
+                         projects: Set[Tuple[str, str, str]]):
+
+    count = 0
+
+    for project_path, deploy_dir, project_type in sorted(projects):
+        deploy_path = workspace_root / project_path / deploy_dir
+
+        if not deploy_path.exists():
+            print(f"⚠️  Missing deploy dir: {deploy_path}")
+            continue
+
+        cloud = get_cloud(project_type)
+
+        backend_path = deploy_path / "backend.tf"
+        content = generate_backend_tf(
+            templates[cloud],
+            project_path,
+            project_type,
+            state_config
+        )
+
+        backend_path.write_text(content)
+
+        print(f"✅ backend.tf -> {backend_path}")
+        count += 1
+
+    print(f"\n✨ Injected backend.tf into {count} projects")
+
+def remove_backend_files(
+    workspace_root: Path,
+    projects: Set[Tuple[str, str, str]]
+) -> None:
+    """
+    Remove backend.tf files from all project deploy directories.
+
+    Args:
+        workspace_root: Root directory of the workspace
+        projects: Set of project tuples (path, deploy_dir, type)
+    """
+    removed_count = 0
+    skipped_count = 0
+
+    for project_path, deploy_dir, _ in sorted(projects):
+        deploy_path = workspace_root / project_path / deploy_dir
+        backend_path = deploy_path / "backend.tf"
+
+        if not deploy_path.exists():
+            print(f"⚠️  Missing deploy dir: {deploy_path}")
+            continue
+
+        if backend_path.exists():
+            try:
+                backend_path.unlink()
+                print(f"🗑️  Removed backend.tf -> {backend_path}")
+                removed_count += 1
+            except Exception as e:
+                print(f"❌ Failed to remove {backend_path}: {e}")
+        else:
+            skipped_count += 1
+
+    print(f"\n✨ Removed backend.tf from {removed_count} projects")
+    if skipped_count:
+        print(f"ℹ️  Skipped {skipped_count} projects (no backend.tf found)")
+        
 # ---------- SOURCE CHECKS ----------
 
 def _is_yaalalabs_source(source_value: str) -> bool:
@@ -238,19 +362,53 @@ def revert_dependencies(root):
 
 
 def main():
+    print("🔧 AK Dependency Injector\n")
     parser = argparse.ArgumentParser()
     parser.add_argument('--revert', action='store_true')
     args = parser.parse_args()
 
-    workspace_root = Path(__file__).parent.parent.parent
+    script_dir = Path(__file__).parent
+    workspace_root = script_dir.parent.parent
+
+    config_path = workspace_root / '.github' / 'integration-test-config.yaml'
+    state_config_path = script_dir / 'state-config.yaml'
+
+    if not config_path.exists():
+        print(f"❌ Missing config: {config_path}")
+        return 1
+
+    if not state_config_path.exists():
+        print(f"❌ Missing state config: {state_config_path}")
+        return 1
+
+    config = load_yaml(config_path)
+    state_config = load_yaml(state_config_path)
+
+    # Load templates
+    templates = {}
+    for cloud, filename in BACKEND_TEMPLATES.items():
+        path = script_dir / filename
+        if not path.exists():
+            print(f"❌ Missing template: {path}")
+            return 1
+        templates[cloud] = path.read_text()
+
+    projects = get_projects(config)
+    print(f"🔍 Found {len(projects)} projects")
 
     if args.revert:
-        print("🔄 Reverting...")
+        print("🔄 Removing backend.tf...")
+        remove_backend_files(workspace_root, projects)
+        
+        print("🔄 Reverting modules...")
         revert_dependencies(workspace_root)
     else:
-        print("📝 Injecting...")
-        inject_dependencies(workspace_root)
+        print("📝 Injecting backend.tf...")
+        inject_backend_files(workspace_root, templates, state_config, projects)
 
+        print("\n📝 Rewriting module sources...")
+        inject_dependencies(workspace_root)
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
