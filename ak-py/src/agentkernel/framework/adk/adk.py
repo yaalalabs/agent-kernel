@@ -31,6 +31,7 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
 from ...core.config import AKConfig
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -101,12 +102,20 @@ class GoogleADKRunner(BaseRunner):
         :return: The final response text from the agent.
         """
         new_message = types.Content(role="user", parts=parts)
-        response_text = None
-        for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
-            if event.is_final_response() and event.content and event.content.parts:
-                text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
-                response_text = " ".join(text_parts) if text_parts else None
-                break
+        response_text = ""
+
+        if hasattr(runner, "run_async"):
+            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
+                if event.is_final_response() and event.content and event.content.parts:
+                    text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
+                    response_text = " ".join(text_parts) if text_parts else ""
+                    break
+        else:
+            for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
+                if event.is_final_response() and event.content and event.content.parts:
+                    text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
+                    response_text = " ".join(text_parts) if text_parts else ""
+                    break
         return response_text
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
@@ -178,7 +187,7 @@ class GoogleADKRunner(BaseRunner):
 
                 return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=f"Error during agent execution: {str(e)}")
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
 
 
 class GoogleADKAgent(AKBaseAgent):
