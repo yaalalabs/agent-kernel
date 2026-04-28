@@ -10,9 +10,9 @@ module "containered_agents" {
   package_path                 = "../dist"
   container_type               = "ecs"
   region                       = var.region
-  vpc_id                       = "vpc-09033229d67314c1c"
+  vpc_id                       = var.vpc_id
   create_dynamodb_memory_table = true
-  private_subnet_ids           = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
+  private_subnet_ids           = var.private_subnet_ids
   product_display_name         = "OpenAI Agents"
   ecs_container_port           = 8000
 

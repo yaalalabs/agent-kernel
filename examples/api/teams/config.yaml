@@ -1,2 +1,8 @@
 teams:
   agent: "general"
+
+logging:
+  ak:
+    level: DEBUG
+  system:
+    level: DEBUG

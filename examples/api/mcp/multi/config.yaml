@@ -1,3 +1,9 @@
 mcp:
   enabled: true
   expose_agents: true
+
+logging:
+  ak:
+    level: WARNING
+  system:
+    level: WARNING

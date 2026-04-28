@@ -298,15 +298,23 @@ dependencies = ["agentkernel[openai,api]>=0.2.13"]
 
 Add to `config.yaml`:
 ```yaml
-debug: true
+logging:
+  ak:
+    level: DEBUG  # Agent Kernel logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+  system:
+    level: DEBUG  # System/root logger level (affects process-wide logging)
 ```
 
-Or set environment variable:
+Or set environment variables:
 ```bash
-export AK_DEBUG=true
+export AK_LOGGING__AK__LEVEL=DEBUG
+# Optional: Enable system-wide debug logging
+export AK_LOGGING__SYSTEM__LEVEL=DEBUG
 ```
 
-This enables verbose logging for all Agent Kernel components with `(kernel) >>` prefix.
+- `logging.ak.level` controls Agent Kernel's own logger verbosity
+- `logging.system.level` controls the process-wide/root logger (use with caution as it affects all application logging)
+- If you do not want Agent Kernel to modify application-wide logging, omit the `system` section
 
 ### Health Check Endpoint
 

@@ -1,14 +1,9 @@
 import asyncio
+import logging
 
 from agentkernel.gmail import AgentGmailRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
-
-# Configure logging to show all messages in terminal
-logging.basicConfig(
-    level=logging.DEBUG,  # Show DEBUG and above (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 
 # Create your agent
 general_agent = OpenAIAgent(

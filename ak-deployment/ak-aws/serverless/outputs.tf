@@ -30,6 +30,16 @@ output "agent_invoke_url" {
   value       = try(module.api_gateway[0].agent_invoke_url, null)
 }
 
+output "vpc_id" {
+  description = "VPC ID used for the deployment"
+  value       = local.vpc_id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used for the deployment"
+  value       = local.subnet_ids
+}
+
 output "api_gateway_id" {
   description = "API Gateway REST API ID"
   value       = try(module.api_gateway[0].api_gateway_rest_api_id, null)
