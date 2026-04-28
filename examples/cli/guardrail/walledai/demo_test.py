@@ -27,18 +27,18 @@ async def test_client():
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def debug_false_test_client():
-    previous_debug = os.environ.get("AK_DEBUG")
-    os.environ["AK_DEBUG"] = "false"
+    previous_logging_level = os.environ.get("AK_LOGGING__AK__LEVEL")
+    os.environ["AK_LOGGING__AK__LEVEL"] = "WARNING"
     test = Test("demo.py")
     await test.start()
     try:
         yield test
     finally:
         await test.stop()
-        if previous_debug is None:
-            os.environ.pop("AK_DEBUG", None)
+        if previous_logging_level is None:
+            os.environ.pop("AK_LOGGING__AK__LEVEL", None)
         else:
-            os.environ["AK_DEBUG"] = previous_debug
+            os.environ["AK_LOGGING__AK__LEVEL"] = previous_logging_level
 
 
 @pytest.mark.order(1)

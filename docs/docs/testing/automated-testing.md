@@ -451,10 +451,24 @@ def setup_test_env():
 
 Enable debug output for troubleshooting:
 
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
-# Or use pytest verbose output
+**Using environment variables:**
+```bash
+export AK_LOGGING__AK__LEVEL=DEBUG  # Agent Kernel logger level
+export AK_LOGGING__SYSTEM__LEVEL=DEBUG  # System/root logger level
+```
+
+**Using config.yaml:**
+```yaml
+logging:
+  ak:
+    level: DEBUG
+  system:
+    level: DEBUG
+```
+
+Or use pytest verbose output:
+```bash
 pytest -v -s test_file.py
 ```

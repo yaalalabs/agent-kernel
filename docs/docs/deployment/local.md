@@ -30,7 +30,6 @@ python my_agent.py
 - Session management
 - Conversation history
 - Error display
-- Debug mode
 
 ## REST API Mode
 

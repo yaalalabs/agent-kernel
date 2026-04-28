@@ -4,7 +4,6 @@ This script tests the Teams bot locally without requiring a full Teams setup.
 """
 
 import asyncio
-import logging
 
 from agentkernel.core import Config
 from agentkernel.openai import OpenAIModule
@@ -16,9 +15,6 @@ from botbuilder.schema import (
     ChannelAccount,
     ConversationAccount,
 )
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
 
 # Create agent
 general_agent = OpenAIAgent(

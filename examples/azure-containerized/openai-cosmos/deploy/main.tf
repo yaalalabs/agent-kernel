@@ -13,23 +13,14 @@ module "containerd_agent" {
   container_port              = 8000
   container_health_check_path = "/health"
 
-  api_version             = "0.3.3"
+  # api_version             = "0.3.3"
   is_production           = false
-  create_redis_cluster    = true
-  create_cosmosdb_cluster = false
+  create_redis_cluster    = false
+  create_cosmosdb_cluster = true
   environment_variables = {
     OPENAI_API_KEY = var.openai_api_key
   }
   tags = {
     "costcenter" = "agent-kernel"
   }
-
-  gateway_endpoints = [
-    {
-      path           = "chat"
-      method         = "POST"
-      overwrite_path = "/run"
-    }
-  ]
-
 }
