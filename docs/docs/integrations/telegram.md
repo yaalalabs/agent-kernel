@@ -245,13 +245,21 @@ await self._send_message(
 
 For detailed troubleshooting information:
 
-```python
-import logging
+Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+**Using environment variables:**
+```bash
+export AK_LOGGING__AK__LEVEL=DEBUG  # Agent Kernel logger level
+export AK_LOGGING__SYSTEM__LEVEL=DEBUG  # System/root logger level
+```
+
+**Using config.yaml:**
+```yaml
+logging:
+  ak:
+    level: DEBUG
+  system:
+    level: DEBUG
 ```
 
 ## API Rate Limits

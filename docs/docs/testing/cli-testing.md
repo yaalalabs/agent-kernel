@@ -304,7 +304,7 @@ Each CLI session maintains conversation history:
 Enable verbose logging:
 
 ```bash
-export AK_LOG_LEVEL=DEBUG
+export AK_LOGGING__AK__LEVEL=DEBUG
 python my_agent.py
 ```
 
