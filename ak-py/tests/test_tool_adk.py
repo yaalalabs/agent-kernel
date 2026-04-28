@@ -565,7 +565,7 @@ class TestGoogleADKRunnerToolContext:
         with patch.object(Runtime, "current", side_effect=RuntimeError("runtime error")):
             result = await runner.run(mock_agent, session, requests)
 
-        assert "Error during agent execution" in result.text
+        assert result.text == "Error: runtime error"
 
     @pytest.mark.asyncio
     async def test_run_returns_no_content_for_empty_requests(self):
