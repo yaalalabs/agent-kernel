@@ -15,6 +15,7 @@ on:
 jobs:
   setup:
     runs-on: ubuntu-latest
+    environment: ci-tests
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
@@ -40,6 +41,7 @@ jobs:
 
   build-ak-py:
     runs-on: ubuntu-latest
+    environment: ci-tests
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -62,9 +64,47 @@ jobs:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
 
-  run-tests:
+  get-base-outputs:
     needs: [setup, build-ak-py]
     runs-on: ubuntu-latest
+    outputs:
+      vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
+      private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Inject dependencies and retrieve base outputs
+        id: base-outputs
+        run: |
+          python3 scripts/deploy/inject_dependencies.py
+          python3 .github/scripts/get_base_outputs.py \
+            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
+
+  run-tests:
+    needs: [setup, build-ak-py, get-base-outputs]
+    runs-on: ubuntu-latest
+    environment: ci-tests
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
@@ -94,16 +134,24 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Azure login
+        if: matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
       - name: Inject dependencies
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Deploy, Test, and Destroy - ${{ matrix.path }}
@@ -112,27 +160,59 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
-          # Deploy
-          python .github/scripts/run_single_test.py \
-            --type ${{ matrix.type }} \
-            --path ${{ matrix.path }} \
-            --deploy-dir ${{ matrix.deploy_dir }} \
-            --action deploy
-          
-          # Test
-          python .github/scripts/run_single_test.py \
-            --type ${{ matrix.type }} \
-            --path ${{ matrix.path }} \
-            --deploy-dir ${{ matrix.deploy_dir }} \
-            --action test
-          
-          # Destroy
-          python .github/scripts/run_single_test.py \
-            --type ${{ matrix.type }} \
-            --path ${{ matrix.path }} \
-            --deploy-dir ${{ matrix.deploy_dir }} \
-            --action destroy
+          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
+              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
+              --action deploy
+            
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
+            
+            # Destroy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
+              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
+              --action destroy
+
+          elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+            
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
+            
+            # Destroy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action destroy
+          fi
 
       - name: Upload test results
         if: always()
@@ -147,6 +227,7 @@ jobs:
   redeploy-openai:
     needs: [setup, run-tests]
     runs-on: ubuntu-latest
+    environment: ci-tests
     defaults:
       run:
         shell: bash -e {0}
@@ -172,8 +253,14 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
+      # - name: Azure login
+      #   uses: azure/login@v3
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:

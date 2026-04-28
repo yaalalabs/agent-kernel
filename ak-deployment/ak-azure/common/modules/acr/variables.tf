@@ -1,7 +1,6 @@
 variable "region" {
   type        = string
   description = "Region"
-  default     = "eastus"
 }
 
 variable "product_alias" {
