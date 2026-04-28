@@ -60,9 +60,9 @@ output "vnet_id" {
   value       = local.vnet_id
 }
 
-output "subnet_id" {
+output "private_subnet_ids" {
   description = "ID of the subnet used by Container Apps"
-  value       = local.subnet_ids
+  value       = [local.subnet_ids, local.function_subnet_id]
 }
 
 output "redis_url" {

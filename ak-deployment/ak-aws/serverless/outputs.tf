@@ -27,7 +27,17 @@ output "authorizer_status" {
 
 output "agent_invoke_url" {
   description = "Invoke URL for the agent chat endpoint"
-  value       = local.agent_invoke_url
+  value       = try(module.api_gateway[0].agent_invoke_url, "")
+}
+
+output "vpc_id" {
+  description = "VPC ID used for the deployment"
+  value       = local.vpc_id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used for the deployment"
+  value       = local.subnet_ids
 }
 
 output "api_gateway_id" {

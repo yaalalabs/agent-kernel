@@ -3,6 +3,7 @@ import logging
 import readline  # Enables line editing and history features for input() in the CLI
 
 from ..core import AgentService
+from ..core.config import AKConfig
 
 ak_cli_logger = logging.getLogger("ak.cli")
 

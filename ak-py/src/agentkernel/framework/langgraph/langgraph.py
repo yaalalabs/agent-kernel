@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -24,9 +25,11 @@ from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.tool import SystemToolFactory
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
+_logger = logging.getLogger(__name__)
 
 
 class CheckPointer(BaseCheckpointSaver):
@@ -286,6 +289,31 @@ class LangGraphRunner(BaseRunner):
         super().__init__(FRAMEWORK)
 
     @staticmethod
+    def _extract_text_content(content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    if item.strip():
+                        text_parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        text_parts.append(text)
+            if text_parts:
+                return " ".join(text_parts)
+            # No usable text parts found - log structured content for debugging
+            _logger.debug("No usable text parts extracted from content list: %s", content)
+            return ""
+        # Fallback: log and return empty string instead of str(content)
+        _logger.debug("Unable to extract text from content type %s: %s", type(content).__name__, content)
+        return ""
+
+    @staticmethod
     def _session(session: Session) -> Any | None:
         """
         Returns the LangGraph session associated with the provided session.
@@ -338,7 +366,9 @@ class LangGraphRunner(BaseRunner):
                 config=session_config.model_dump(),
             )
             last_message = result["messages"][-1]
-            return AgentReplyText(text=last_message.content, prompt=prompt)
+            return AgentReplyText(text=self._extract_text_content(last_message.content), prompt=prompt)
+        except Exception as e:
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
