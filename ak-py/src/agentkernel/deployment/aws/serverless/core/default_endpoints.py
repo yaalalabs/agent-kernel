@@ -89,14 +89,12 @@ class DefaultEndpointsHandler:
     def _handle_request(
         self,
         event: Dict[str, Any],
-        operation: Callable[[BaseRequest], Dict[str, Any]],
-        headers: Optional[Dict[str, str]] = None,
+        operation: Callable[[BaseRequest], Dict[str, Any]]
     ) -> tuple[int, Dict[str, Any]]:
         """
         Execute operation with standard request parsing and error handling.
         :param event: API Gateway event
         :param operation: Function executed with parsed payload
-        :param headers: Optional response headers
         :return: API Gateway formatted response
         """
         request_id = None
