@@ -1,15 +1,14 @@
-from __future__ import annotations
-
 import json
 import logging
 import traceback
 from typing import Any, Callable, Dict, Optional
 
-from .....core.config import AKConfig
-from .....core.model import BaseRequest, ExecutionMode
-from ....common.chat_service import ChatService
-from ...core.response_store import ResponseDBHandler
-from ...core.sqs_handler import SQSHandler
+from ......core.config import AKConfig
+from ......core.model import BaseRequest, ExecutionMode
+from .....common.chat_service import ChatService
+from ....core.response_store import ResponseDBHandler
+from ....core.sqs_handler import SQSHandler
+from .common import BaseLambdaRouter
 
 
 class DefaultEndpointsHandler:
@@ -260,3 +259,91 @@ class DefaultEndpointsHandler:
         :return: Streaming response
         """
         raise NotImplementedError("STREAM mode is not yet implemented")
+
+
+class RESTLambdaRouter(BaseLambdaRouter):
+    """
+    Router for AWS Lambda events coming from API Gateway REST API v1.
+    - Register handlers per (method, route) for REST endpoints.
+    - Route can be provided in multiple forms and will be normalized.
+    - If no handler match is found, the router raises ValueError.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._default_chat_path = None
+        self._default_chat_method = None
+        self._default_user_polling_method = None
+        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {}
+
+        self._endpoints_handler = DefaultEndpointsHandler()
+        (
+            self._default_chat_path,
+            self._default_chat_method,
+            self._default_user_polling_method,
+        ) = self._endpoints_handler.get_default_endpoint_info()
+        self._routes = self._endpoints_handler.get_routes()
+
+    @staticmethod
+    def _normalize_method(method: Optional[str]) -> str:
+        return (method or "GET").upper()
+
+    def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
+        """
+        Factory function that creates a decorator to register a handler for a given HTTP route and method.
+        :param route: URL route for the handler
+        :param method: HTTP method (defaults to "GET")
+        :return: Decorator function that registers the handler and returns it unchanged.
+        """
+        if method is None:
+            raise ValueError("HTTP method is required for REST routes")
+        
+        norm_route = self._normalize_path(route)
+        norm_method = self._normalize_method(method)
+
+        def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
+            self._log.info(f"Registering route {norm_method} {norm_route} -> {func.__name__}")
+
+            methods = self._routes.setdefault(norm_route, {})
+            if norm_method in methods:
+                self._log.warning(f"Route {norm_method} {norm_route} already exists. Skipping.")
+                return func
+            methods[norm_method] = func
+            return func
+
+        return _decorator
+
+    def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Dispatch incoming API Gateway REST event to the appropriate registered handler.
+        :param event: API Gateway event dictionary containing request information
+        :param context: AWS Lambda context object
+        :return: Formatted API Gateway response dictionary or None if no route matches
+        :raises ValueError: If no registered route matches the request
+        """
+        self._log.info("Dispatching REST endpoint")
+        method = self._normalize_method(event.get("httpMethod"))
+        event_path = event.get("path") or event.get("resource") or "/"
+        self._log.info(f"Event path: {event_path}, Method: {method}")
+
+        converted_event_path = self._default_chat_path
+        env_base_path, env_agent_endpoint = self._get_base_paths_from_env()
+        if env_base_path and env_agent_endpoint:
+            converted_event_path = (
+                self._default_chat_path
+                if event_path == env_agent_endpoint and method in [self._default_chat_method, self._default_user_polling_method]
+                else event_path.removeprefix(env_base_path)
+            )
+        else:
+            self._log.warning("Environment variables not provided; using default agent handler")
+            method = self._default_user_polling_method if method == self._default_user_polling_method else self._default_chat_method
+
+        self._log.info(f"Converted event path: {converted_event_path}")
+        methods = self._routes.get(converted_event_path, {})
+        handler = methods.get(method)
+        if not methods or not handler:
+            self._log.warning(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
+            raise ValueError(f"No registered route found for API Gateway path -> '{event_path}' and method '{method}'")
+        result = handler(event, context)
+        self._log.debug(f"Lambda function result: {result}")
+        return result
