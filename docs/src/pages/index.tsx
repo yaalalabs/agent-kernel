@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
 import ParticleSphere from '../components/ParticleSphere';
 import {
@@ -31,6 +33,48 @@ import { FaFacebookMessenger } from 'react-icons/fa6';
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
+  const titleRef = useRef(null);
+  const taglineRef = useRef(null);
+  const bodyRef = useRef(null);
+  const buttonsRef = useRef(null);
+
+  useEffect(() => {
+    const tl = gsap.timeline();
+
+    // Set initial states
+    gsap.set([titleRef.current, taglineRef.current, bodyRef.current, buttonsRef.current], {
+      opacity: 0,
+      y: 30
+    });
+
+    // Animate elements in sequence
+    tl.to(titleRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.8,
+      ease: "power2.out"
+    })
+    .to(taglineRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out"
+    }, "-=0.4")
+    .to(bodyRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out"
+    }, "-=0.3")
+    .to(buttonsRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.5,
+      ease: "power2.out"
+    }, "-=0.2");
+
+  }, []);
+
   return (
     <section className={styles.hero}>
       {/* <div className={styles.heroOrb} /> */}
@@ -38,12 +82,12 @@ function Hero() {
       <div className="container">
         <div className={styles.heroContent}>
           {/* <img src="/img/branding/agent-kernel-icon-color.svg" alt="Agent Kernel" className={styles.heroLogo} /> */}
-          <h1 className={styles.heroTitle}>Agent Kernel</h1>
-          <p className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
-          <p className={styles.heroBody}>
+          <h1 ref={titleRef} className={styles.heroTitle}>Agent Kernel</h1>
+          <p ref={taglineRef} className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
+          <p ref={bodyRef} className={styles.heroBody}>
             Agent Kernel is the open-source platform for building and deploying AI-powered assistants without months of engineering work. Works with any major AI technology, runs on any cloud, connects to Slack, WhatsApp, and more out of the box.
           </p>
-          <div className={styles.heroButtons}>
+          <div ref={buttonsRef} className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
               Get Started →
             </Link>
@@ -68,6 +112,10 @@ function Hero() {
 /* ─── Frameworks Strip ──────────────────────────────────────────────────── */
 
 function FrameworksStrip() {
+  const frameworksRef = useRef(null);
+  const labelRef = useRef(null);
+  const rowRef = useRef(null);
+
   const frameworks = [
     { name: 'ChatGPT OpenAI Agents', logo: '/img/integrations/chatgpt.png', link: '/docs/frameworks/openai' },
     { name: 'LangGraph', logo: '/img/integrations/langgraph.png', link: '/docs/frameworks/langgraph' },
@@ -75,10 +123,80 @@ function FrameworksStrip() {
     { name: 'Google ADK', logo: '/img/integrations/googleADK.png', link: '/docs/frameworks/google-adk' },
   ];
 
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+
+    // Set initial states
+    gsap.set(labelRef.current, {
+      opacity: 0,
+      y: 20
+    });
+
+    gsap.set(rowRef.current?.children || [], {
+      opacity: 0,
+      y: 20
+    });
+
+    // Create scroll-triggered animation
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: frameworksRef.current,
+        start: "top 85%",
+        toggleActions: "play none none none"
+      }
+    });
+
+    // Animate label first
+    tl.to(labelRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out"
+    });
+
+    // Then animate framework items with stagger
+    tl.to(rowRef.current?.children || [], {
+      opacity: 1,
+      y: 0,
+      duration: 0.4,
+      ease: "power2.out",
+      stagger: 0.08
+    }, "-=0.3");
+
+    // Add hover animations to framework items
+    const frameworkItems = rowRef.current?.querySelectorAll(`.${styles.frameworkItem}`) || [];
+    frameworkItems.forEach((item) => {
+      const img = item.querySelector('img');
+      if (img) {
+        item.addEventListener('mouseenter', () => {
+          gsap.to(img, {
+            scale: 1.05,
+            duration: 0.2,
+            ease: "power1.out"
+          });
+        });
+
+        item.addEventListener('mouseleave', () => {
+          gsap.to(img, {
+            scale: 1,
+            duration: 0.2,
+            ease: "power1.out"
+          });
+        });
+      }
+    });
+
+    // Cleanup
+    return () => {
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+    };
+
+  }, []);
+
   return (
-    <section className={styles.frameworksStrip}>
-      <p className={styles.frameworksLabel}>Works with the frameworks you already use</p>
-      <div className={styles.frameworksRow}>
+    <section ref={frameworksRef} className={styles.frameworksStrip}>
+      <p ref={labelRef} className={styles.frameworksLabel}>Works with the frameworks you already use</p>
+      <div ref={rowRef} className={styles.frameworksRow}>
         {frameworks.map((framework, index) => (
           <Link key={framework.name} to={framework.link} className={styles.frameworkItem}>
             <div className={styles.frameworkLogoContainer}>
@@ -555,7 +673,7 @@ function Community() {
 
   return (
     <section className={styles.ctaSection}>
-      <div className={styles.ctaGlow} />
+      {/* <div className={styles.ctaGlow} /> */}
       <div className="container">
         <div className={styles.ctaContent}>
           <h2 className={styles.ctaTitle}>Ready to Ship Your First Agent?</h2>
@@ -612,13 +730,11 @@ export default function Home() {
         {/* <AffiliationsStrip /> */}
         <FrameworksStrip />
         {/* <AgentKernelArchDiagram />
-        <ValueProp />
-        <WhoItsFor />
         <KeyFeatures />
         <AgentSkills />
         <Deployment />
-        <MessagingIntegrations />
-        <Community /> */}
+        <MessagingIntegrations /> */}
+        <Community />
       </main>
     </Layout>
   );
