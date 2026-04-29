@@ -1,123 +1,171 @@
 import json
 import logging
-import os
 import traceback
-from typing import Any, Callable, Dict, Optional, Tuple
+from enum import Enum
+from typing import Any, Callable, Dict, Tuple
 
 from .....core.model import BaseRequest
 from .....core.config import AKConfig
 from ....common.chat_service import ChatService
 from ...core.websocket_service import WebSocketHandler
+from ...core.sqs_handler import SQSHandler
 
 
 class DefaultWSRoutesHandler:
     _log = logging.getLogger("ak.aws.serverless.default_ws_endpoints")
 
-    _ws_handler: Optional[WebSocketHandler] = None
-    _chat_service: Optional[ChatService] = None
+    class MessageType(Enum):
+        """WebSocket message types."""
+        CHAT_RESPONSE = "chat_response"
+        CHAT_QUEUED = "chat_queued"
 
-    @classmethod
-    def _get_config(cls):
-        return AKConfig.get()
-
-    @classmethod
-    def _get_chat_service(cls) -> ChatService:
-        if cls._chat_service is None:
-            cls._chat_service = ChatService()
-        return cls._chat_service
-
-    @classmethod
-    def _get_ws_handler(cls) -> WebSocketHandler:
-        if cls._ws_handler is not None:
-            return cls._ws_handler
-
-        cls._ws_handler = WebSocketHandler(
-            endpoint_url=cls._get_config().websocket_api.endpoint_url,
-            conn_table_name=cls._get_config().websocket_api.connection_table_name,
+    def __init__(self):
+        self._config = AKConfig.get()
+        self._ws_handler = WebSocketHandler(
+            endpoint_url=self._config.websocket_api.endpoint_url,
+            conn_table_name=self._config.websocket_api.connection_table_name,
         )
-        return cls._ws_handler
+        self._chat_service = ChatService()
 
-    @classmethod
-    def _parse_body(cls, event: Dict[str, Any]) -> BaseRequest:
+    def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
         body = event.get("body")
         body_dict = json.loads(body) if isinstance(body, str) and body else (body or {})
         return BaseRequest.from_payload(body_dict)
 
-    @classmethod
-    def _extract_connection_id(cls, event: Dict[str, Any]) -> str:
+    def _extract_connection_id(self, event: Dict[str, Any]) -> str:
         request_context = event.get("requestContext", {})
         connection_id = request_context.get("connectionId")
         if not connection_id:
             raise ValueError("WebSocket event missing requestContext.connectionId")
         return connection_id
 
-    @classmethod
-    def get_routes(cls) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
+    def _is_queue_mode(self) -> bool:
+        """Check if queue mode is enabled (queues are configured)."""
+        return (
+            self._config.execution.queues.input.url is not None
+            and self._config.execution.queues.output.url is not None
+        )
+
+    def _build_broadcasting_message(self, message_type: MessageType, **kwargs) -> Dict[str, Any]:
+        """
+        Build a standardized broadcast message format.
+        
+        :param message_type: The type of message from MessageType enum
+        :param kwargs: Additional fields to include in the message
+        :return: Standardized message dictionary
+        """
+        message = {
+            "type": message_type.value,
+        }
+        message.update(kwargs)
+        return message
+
+    def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         return {
-            "/$connect": cls._handle_connect,
-            "/$disconnect": cls._handle_disconnect,
-            "/$default": cls._handle_default,
-            "/chat": cls._handle_chat,
+            "/$connect": self._handle_connect,
+            "/$disconnect": self._handle_disconnect,
+            "/$default": self._handle_default,
+            "/chat": self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
         }
 
-    @classmethod
-    def _handle_connect(cls, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    def _handle_connect(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         try:
-            connection_id = cls._extract_connection_id(event)
+            connection_id = self._extract_connection_id(event)
 
-            request = cls._parse_body(event)
+            request = self._parse_body(event)
             user_id = request.user_id
 
-            cls._get_ws_handler().on_connect(connection_id=connection_id, user_id=user_id)
+            self._ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
 
             return 200, {"status": "CONNECTED"}
         except Exception as e:
-            cls._log.error(f"WebSocket $connect failed: {e}\n{traceback.format_exc()}")
+            self._log.error(f"WebSocket $connect failed: {e}\n{traceback.format_exc()}")
             return 500, {"error": "Connect failed"}
 
-    @classmethod
-    def _handle_disconnect(cls, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    def _handle_disconnect(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         try:
-            connection_id = cls._extract_connection_id(event)
+            connection_id = self._extract_connection_id(event)
 
-            cls._get_ws_handler().on_disconnect(connection_id=connection_id)
+            self._ws_handler.on_disconnect(connection_id=connection_id)
             return 200, {"status": "DISCONNECTED"}
         except Exception as e:
-            cls._log.error(f"WebSocket $disconnect failed: {e}\n{traceback.format_exc()}")
+            self._log.error(f"WebSocket $disconnect failed: {e}\n{traceback.format_exc()}")
             return 500, {"error": "Disconnect failed"}
 
-    @classmethod
-    def _handle_default(cls) -> Tuple[int, Dict[str, Any]]:
+    def _handle_default(self) -> Tuple[int, Dict[str, Any]]:
         try:
-            cls._get_ws_handler().on_default()
+            self._ws_handler.on_default()
             return 200, {"status": "OK"}
         except Exception as e:
-            cls._log.error(f"WebSocket $default failed: {e}\n{traceback.format_exc()}")
+            self._log.error(f"WebSocket $default failed: {e}\n{traceback.format_exc()}")
             return 500, {"error": "Default route failed"}
 
-    @classmethod
-    def _handle_chat(cls, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    def _handle_direct_chat(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         try:
-            connection_id = cls._extract_connection_id(event)
+            connection_id = self._extract_connection_id(event)
 
-            request = cls._parse_body(event)
+            request = self._parse_body(event)
             if request.body is None:
                 raise ValueError("body is required")
 
-            status_code, res_body = cls._get_chat_service().process_chat_request(
+            status_code, res_body = self._chat_service.process_chat_request(
                 request.body.model_dump(exclude_none=True)
             )
 
-            cls._get_ws_handler().broadcast(
-                message={
-                    "type": "chat_response", # TODO:: BaseModel here ######################
-                    "statusCode": status_code,
+            self._ws_handler.broadcast(
+                message=self._build_broadcasting_message(
+                    message_type=self.MessageType.CHAT_RESPONSE,
                     **res_body,
-                },
+                ),
                 connection_ids=[connection_id],
             )
 
-            return 200, {"status": "SENT"}   # TODO:: CHECK THIS, MAKE BETTER? #######################
+            return 200, {"status": "SENT"}
         except Exception as e:
-            cls._log.error(f"WebSocket chat failed: {e}\n{traceback.format_exc()}")
+            self._log.error(f"WebSocket chat failed: {e}\n{traceback.format_exc()}")
             return 500, {"error": "Chat failed"}
+
+    def _handle_queue_mode_chat(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+        """
+        Handle chat request in queue mode - send message to SQS input queue.
+        :param event: WebSocket event
+        :return: Tuple of status code and response body
+        """
+        try:
+            connection_id = self._extract_connection_id(event)
+            request = self._parse_body(event)
+            request_body = request.body
+            if request_body is None:
+                raise ValueError("body is required")
+            if not request.request_id:
+                raise ValueError("request_id is required")
+
+            session_id = request_body.session_id
+            if not session_id:
+                raise ValueError("session_id is required")
+
+            self._log.info(f"Sending WebSocket chat request to queue: request_id={request.request_id}, session_id={session_id}")
+
+            response = SQSHandler.send_message_to_input_queue(
+                message_body=request_body,
+                message_group_id=session_id,
+                message_deduplication_id=request.request_id,
+                request_id=request.request_id,
+                user_id=request.user_id,
+            )
+
+            self._log.info(f"Message sent to input queue successfully: {response}")
+
+            self._ws_handler.broadcast(
+                message=self._build_broadcasting_message(
+                    message_type=self.MessageType.CHAT_QUEUED,
+                    status="ACCEPTED",
+                    request_id=request.request_id,
+                ),
+                connection_ids=[connection_id],
+            )
+
+            return 200, {"status": "QUEUED", "request_id": request.request_id}
+        except Exception as e:
+            self._log.error(f"WebSocket queue mode chat failed: {e}\n{traceback.format_exc()}")
+            return 500, {"error": "Queue mode chat failed"}
