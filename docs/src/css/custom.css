@@ -162,14 +162,13 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: rgba(14, 16, 23, 0.2);
-  border-bottom: 1px solid var(--ak-border);
+  background-color: rgba(14, 16, 23, 0.8);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  height: 60px;
+  padding: 0 2rem;
 }
 
-/* On mobile, backdrop-filter creates a compositing layer that breaks the
-   navbar-sidebar z-index ordering. Remove it so the sidebar renders correctly. */
 @media (max-width: 996px) {
   .navbar {
     backdrop-filter: none;
@@ -186,17 +185,55 @@ article {
 .navbar__title {
   font-weight: 700;
   letter-spacing: -0.02em;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  color: #ffffff;
 }
 
+/* Nav links */
 .navbar__link {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.75);
+  transition: color 0.15s ease;
 }
 
 .navbar__link:hover,
 .navbar__link--active {
-  color: var(--ak-blue);
+  color: #ffffff;
+  background: none;
+}
+
+/* Search button — pill-shaped, white fill */
+.navbar__search-input-wrapper,
+.navbar__search-button,
+[class*="searchButton"] {
+  background: #ffffff !important;
+  color: #0e1017 !important;
+  border-radius: 9999px !important;
+  border: none !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  padding: 0.4rem 1.1rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.4rem !important;
+  letter-spacing: 0.01em;
+}
+
+/* Icon links (GitHub, Discord, PyPI, Terraform) */
+.header-github-link,
+.header-discord-link,
+.header-pypi-link,
+.header-terraform-link {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.header-github-link:hover,
+.header-discord-link:hover,
+.header-pypi-link:hover,
+.header-terraform-link:hover {
+  opacity: 1;
 }
 
 /* =============================================================================
@@ -204,36 +241,101 @@ article {
    ============================================================================= */
 
 .footer {
-  background-color: rgba(14, 16, 23, 0.2);
-  border-top: 1px solid var(--ak-border);
-  padding: 3rem 0 2rem;
+  background-color: rgba(14, 16, 23, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 3rem 0 0;
 }
 
+/* Center the entire footer inner content */
+.footer__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2.5rem;
+}
+
+/* Links grid — centered on screen */
+.footer__links {
+  display: flex;
+  justify-content: center;
+  gap: 5rem;
+  padding-bottom: 2.5rem;
+}
+
+/* Section headings */
 .footer__title {
-  color: var(--ak-text);
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  margin-bottom: 1rem;
 }
 
+/* Links */
 .footer__link-item {
-  color: var(--ak-text-secondary);
-  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.875rem;
   transition: color 0.15s ease;
-}
-
-.footer__link-item:hover {
-  color: var(--ak-blue);
   text-decoration: none;
 }
 
+.footer__link-item:hover {
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+}
+
+/* Bottom bar: logo left · copyright center · socials right */
+.footer__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 2.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 0;
+}
+
 .footer__copyright {
-  color: var(--ak-text-muted);
-  font-size: 0.85rem;
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--ak-border);
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.8rem;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.footer__logo {
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.footer__logo:hover {
+  opacity: 1;
+}
+
+.footer__social-links {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.footer__social-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.footer__social-link:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #ffffff;
+  text-decoration: none;
 }
 
 /* =============================================================================
