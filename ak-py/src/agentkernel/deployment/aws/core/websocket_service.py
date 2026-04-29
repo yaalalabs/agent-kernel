@@ -51,7 +51,7 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
 
 
 class WebSocketHandler:
-    def __init__(self, endpoint_url: str, conn_table_name: str):  # TODO:: read from AKConfig or something
+    def __init__(self, endpoint_url: str, conn_table_name: str):
         self._connection_store = WebSocketConnectionStore(conn_table_name)
         self._api_gateway = boto3.client(
             "apigatewaymanagementapi",
