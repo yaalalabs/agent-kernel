@@ -250,62 +250,65 @@
 /* ─── Frameworks Strip ─────────────────────────────────────────────────────── */
 
 .frameworksStrip {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 2.25rem 0;
-  background: rgba(14, 16, 23, 0.4);
+  padding: 3rem 1.5rem 5rem;
+  text-align: center;
 }
 
 .frameworksLabel {
   text-align: center;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #5e627d;
-  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 2rem;
+  letter-spacing: -0.01em;
 }
 
 .frameworksRow {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 2.5rem;
-  flex-wrap: wrap;
+  gap: 3rem;
+  flex-wrap: nowrap;
+  margin: 0 auto;
 }
 
 .frameworkItem {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  opacity: 0.45;
-  transition: opacity 0.2s ease;
+  gap: 3rem;
+  flex-shrink: 0;
   text-decoration: none;
 }
 
 .frameworkItem:hover {
-  opacity: 0.9;
+  text-decoration: none;
+}
+
+.frameworkLogoContainer {
+  width: 180px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .frameworkLogo {
-  height: 36px;
-  width: auto;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+  transition: transform 0.2s ease;
 }
 
-.invertOnDark {
-  filter: brightness(0) invert(1);
+.frameworkItem:hover .frameworkLogo {
+  transform: scale(1.05);
 }
 
-[data-theme='light'] .invertOnDark {
-  filter: none;
-}
-
-.frameworkName {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #94a3b8;
-  white-space: nowrap;
+.frameworkSeparator {
+  color: #ffffff;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  text-decoration: none;
 }
 
 /* ─── Value Proposition ───────────────────────────────────────────────────── */

@@ -21,6 +21,7 @@
     "@mdx-js/react": "^3.0.0",
     "@types/three": "^0.184.0",
     "clsx": "^2.0.0",
+    "gsap": "^3.12.2",
     "prism-react-renderer": "^2.3.0",
     "react": "^18.0.0",
     "react-icons": "^5.5.0",

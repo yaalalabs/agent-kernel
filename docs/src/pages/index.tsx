@@ -69,28 +69,30 @@ function Hero() {
 
 function FrameworksStrip() {
   const frameworks = [
-    { name: 'OpenAI Agents SDK', logo: '/img/integrations/openai.svg', link: '/docs/frameworks/openai', invert: true },
-    { name: 'LangGraph', logo: '/img/integrations/langgraph.png', link: '/docs/frameworks/langgraph', invert: true },
-    { name: 'CrewAI', logo: '/img/integrations/crewai.svg', link: '/docs/frameworks/crewai', invert: false },
-    { name: 'Google ADK', logo: '/img/integrations/adk.png', link: '/docs/frameworks/google-adk', invert: false },
+    { name: 'ChatGPT OpenAI Agents', logo: '/img/integrations/chatgpt.png', link: '/docs/frameworks/openai' },
+    { name: 'LangGraph', logo: '/img/integrations/langgraph.png', link: '/docs/frameworks/langgraph' },
+    { name: 'CrewAI', logo: '/img/integrations/crewai.png', link: '/docs/frameworks/crewai' },
+    { name: 'Google ADK', logo: '/img/integrations/googleADK.png', link: '/docs/frameworks/google-adk' },
   ];
 
   return (
     <section className={styles.frameworksStrip}>
-      <div className="container">
-        <p className={styles.frameworksLabel}>Works with the frameworks you already use</p>
-        <div className={styles.frameworksRow}>
-          {frameworks.map((f, i) => (
-            <Link key={i} to={f.link} className={styles.frameworkItem}>
+      <p className={styles.frameworksLabel}>Works with the frameworks you already use</p>
+      <div className={styles.frameworksRow}>
+        {frameworks.map((framework, index) => (
+          <Link key={framework.name} to={framework.link} className={styles.frameworkItem}>
+            <div className={styles.frameworkLogoContainer}>
               <img
-                src={f.logo}
-                alt={f.name}
-                className={`${styles.frameworkLogo} ${f.invert ? styles.invertOnDark : ''}`}
+                src={framework.logo}
+                alt={framework.name}
+                className={styles.frameworkLogo}
               />
-              <span className={styles.frameworkName}>{f.name}</span>
-            </Link>
-          ))}
-        </div>
+            </div>
+            {index < frameworks.length - 1 && (
+              <span className={styles.frameworkSeparator}>●</span>
+            )}
+          </Link>
+        ))}
       </div>
     </section>
   );
@@ -607,16 +609,16 @@ export default function Home() {
       <ParticleSphere />
       <Hero />
       <main>
-        <AffiliationsStrip />
+        {/* <AffiliationsStrip /> */}
         <FrameworksStrip />
-        <AgentKernelArchDiagram />
+        {/* <AgentKernelArchDiagram />
         <ValueProp />
         <WhoItsFor />
         <KeyFeatures />
         <AgentSkills />
         <Deployment />
         <MessagingIntegrations />
-        <Community />
+        <Community /> */}
       </main>
     </Layout>
   );
