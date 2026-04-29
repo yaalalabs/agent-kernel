@@ -28,9 +28,6 @@ class BaseLambdaRouter(ABC):
         if len(path) > 1 and path.endswith("/"):
             path = path[:-1]
         return path
-    
-    def _is_websocket_mode(self) -> bool:
-        return self._config.execution.mode == ExecutionMode.ASYNC
 
     def _get_base_paths_from_env(self) -> Tuple[Optional[str], Optional[str]]:
         """
