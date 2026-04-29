@@ -17,6 +17,7 @@ class DefaultWSRoutesHandler:
 
     class MessageType(Enum):
         """WebSocket message types."""
+
         CHAT_RESPONSE = "chat_response"
         CHAT_QUEUED = "chat_queued"
 
@@ -47,10 +48,12 @@ class DefaultWSRoutesHandler:
             and self._config.execution.queues.output.url is not None
         )
 
-    def _build_broadcasting_message(self, message_type: MessageType, **kwargs) -> Dict[str, Any]:
+    def _build_broadcasting_message(
+        self, message_type: MessageType, **kwargs
+    ) -> Dict[str, Any]:
         """
         Build a standardized broadcast message format.
-        
+
         :param message_type: The type of message from MessageType enum
         :param kwargs: Additional fields to include in the message
         :return: Standardized message dictionary
@@ -60,8 +63,13 @@ class DefaultWSRoutesHandler:
         }
         message.update(kwargs)
         return message
-    
-    def _build_lambda_response(self, user_id: Optional[str]=None, msg:Optional[str]=None, success:bool=True) -> Dict[str, Any]:
+
+    def _build_lambda_response(
+        self,
+        user_id: Optional[str] = None,
+        msg: Optional[str] = None,
+        success: bool = True,
+    ) -> Dict[str, Any]:
         """
         Build a standardized response body.
         :param user_id: Optional user ID for tracking
@@ -69,13 +77,24 @@ class DefaultWSRoutesHandler:
         :param success: Whether the response is a success or failure
         :return: Standardized response dictionary
         """
-        msg = msg or ("Operation successful" if success else "An unexpected error occurred")
-        body = {"status": "SUCCESS", "message": msg} if success else {"status": "FAILED", "message": msg}
+        msg = msg or (
+            "Operation successful" if success else "An unexpected error occurred"
+        )
+        body = (
+            {"status": "SUCCESS", "message": msg}
+            if success
+            else {"status": "FAILED", "message": msg}
+        )
         if user_id:
             body["user_id"] = user_id
         return body
 
-    def _handle_msg_and_brdcst(self, event: Dict[str, Any], operation: Callable[[BaseRequest], Dict[str, Any]], message_type: Optional[MessageType]=None) -> Tuple[int, Dict[str, Any]]:
+    def _handle_msg_and_brdcst(
+        self,
+        event: Dict[str, Any],
+        operation: Callable[[BaseRequest], Dict[str, Any]],
+        message_type: Optional[MessageType] = None,
+    ) -> Tuple[int, Dict[str, Any]]:
         user_id = None
         try:
             request = self._parse_body(event)
@@ -83,15 +102,21 @@ class DefaultWSRoutesHandler:
             brdcstin_msg = operation(request)
             if message_type:
                 brdcstin_msg = self._build_broadcasting_message(message_type, **brdcstin_msg)
-            self.ws_handler.broadcast(
-                message=brdcstin_msg,
-                user_id=user_id,
+            self.ws_handler.broadcast(message=brdcstin_msg, user_id=user_id)
+            return (
+                200,
+                self._build_lambda_response(
+                    user_id=user_id, msg="Request processed successfully", success=True
+                ),
             )
-            return (200, self._build_lambda_response(user_id=user_id, msg="Request processed successfully", success=True))
-
         except Exception as e:
             self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
-            return (500, self._build_lambda_response(user_id=user_id, msg="Request processing failed", success=False))  # (statusCode, body) will be handled in aklambda.py
+            return (
+                500,
+                self._build_lambda_response(
+                    user_id=user_id, msg="Request processing failed", success=False
+                ),
+            )
 
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         return {
@@ -101,7 +126,7 @@ class DefaultWSRoutesHandler:
             "/chat": self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
         }
 
-    def _handle_connect(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    def _handle_connect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         try:
             connection_id = self._extract_connection_id(event)
 
@@ -110,61 +135,65 @@ class DefaultWSRoutesHandler:
 
             self.ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
 
-            return 200, self._build_lambda_response(user_id=user_id, msg="WebSocket connection established", success=True)
+            return 200, self._build_lambda_response(
+                user_id=user_id, msg="WebSocket connection established", success=True
+            )
         except Exception as e:
             self._log.error(f"WebSocket $connect failed: {e}\n{traceback.format_exc()}")
-            return 500, self._build_lambda_response(msg="Failed to establish WebSocket connection", success=False)
+            return 500, self._build_lambda_response(
+                msg="Failed to establish WebSocket connection", success=False
+            )
 
-    def _handle_disconnect(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    def _handle_disconnect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         try:
             connection_id = self._extract_connection_id(event)
 
             self.ws_handler.on_disconnect(connection_id=connection_id)
-            return 200, self._build_lambda_response(msg="WebSocket connection closed", success=True)
+            return 200, self._build_lambda_response(
+                msg="WebSocket connection closed", success=True
+            )
         except Exception as e:
-            self._log.error(f"WebSocket $disconnect failed: {e}\n{traceback.format_exc()}")
-            return 500, self._build_lambda_response(msg="Failed to close WebSocket connection", success=False)
+            self._log.error(
+                f"WebSocket $disconnect failed: {e}\n{traceback.format_exc()}"
+            )
+            return 500, self._build_lambda_response(
+                msg="Failed to close WebSocket connection", success=False
+            )
 
-    def _handle_default(self) -> Tuple[int, Dict[str, Any]]:
+    def _handle_default(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         try:
             self.ws_handler.on_default()
-            return 200, self._build_lambda_response(msg="Default route handled successfully", success=True)
+            return 200, self._build_lambda_response(
+                msg="Default route handled successfully", success=True
+            )
         except Exception as e:
             self._log.error(f"WebSocket $default failed: {e}\n{traceback.format_exc()}")
-            return 500, self._build_lambda_response(msg="Failed to handle default route", success=False)
+            return 500, self._build_lambda_response(
+                msg="Failed to handle default route", success=False
+            )
 
-    def _handle_direct_chat(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
-        try:
-            request = self._parse_body(event)
+    def _handle_direct_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        def _process_chat(request: BaseRequest) -> Dict[str, Any]:
             if request.body is None:
                 raise ValueError("body is required")
-
             _, res_body = self._chat_service.process_chat_request(
                 request.body.model_dump(exclude_none=True)
             )
+            return res_body
 
-            self.ws_handler.broadcast(
-                message=self._build_broadcasting_message(
-                    message_type=self.MessageType.CHAT_RESPONSE,
-                    **res_body,
-                ),
-                user_id=request.user_id,
-            )
+        return self._handle_msg_and_brdcst(
+            event,
+            _process_chat,
+            message_type=self.MessageType.CHAT_RESPONSE,
+        )
 
-            return 200, self._build_lambda_response(user_id=request.user_id, msg="Chat response sent successfully", success=True)
-        except Exception as e:
-            self._log.error(f"WebSocket chat failed: {e}\n{traceback.format_exc()}")
-            return 500, self._build_lambda_response(msg="Failed to process chat request", success=False)
-
-    def _handle_queue_mode_chat(self, event: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    def _handle_queue_mode_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         """
         Handle chat request in queue mode - send message to SQS input queue.
         :param event: WebSocket event
         :return: Tuple of status code and response body
         """
-        try:
-            connection_id = self._extract_connection_id(event)
-            request = self._parse_body(event)
+        def _queue_chat(request: BaseRequest) -> Dict[str, Any]:
             request_body = request.body
             if request_body is None:
                 raise ValueError("body is required")
@@ -187,21 +216,14 @@ class DefaultWSRoutesHandler:
 
             self._log.info(f"Message sent to input queue successfully: {response}")
 
-            self.ws_handler.broadcast(
-                message=self._build_broadcasting_message(
-                    message_type=self.MessageType.CHAT_QUEUED,
-                    status="ACCEPTED",
-                    request_id=request.request_id,
-                ),
-                connection_ids=[connection_id],
-            )
+            return {"status": "ACCEPTED", "request_id": request.request_id}
 
-            response = self._build_lambda_response(user_id=request.user_id, msg="Chat request queued for processing", success=True)
-            response["request_id"] = request.request_id
-            return 200, response
-        except Exception as e:
-            self._log.error(f"WebSocket queue mode chat failed: {e}\n{traceback.format_exc()}")
-            return 500, self._build_lambda_response(msg="Failed to queue chat request", success=False)
+        status_code, response = self._handle_msg_and_brdcst(event, _queue_chat, message_type=self.MessageType.CHAT_QUEUED)
+
+        if status_code == 200:
+            response["request_id"] = self._parse_body(event).request_id
+
+        return status_code, response
 
 
 class WSLambdaRouter(BaseLambdaRouter):
@@ -216,24 +238,25 @@ class WSLambdaRouter(BaseLambdaRouter):
         super().__init__()
         self._log.info("Initializing default WebSocket routes")
         self._ws_routes_handler = DefaultWSRoutesHandler()
-        self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = self._ws_routes_handler.get_routes()
+        self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = (
+            self._ws_routes_handler.get_routes()
+        )
 
     def _get_ws_handler_function(self, handler_logic_func: Callable[[Dict[str, Any], Any], Any]):
         def _handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             try:
                 user_id = self._ws_routes_handler._parse_body(event).user_id
                 res_msg_to_brdcst = handler_logic_func(event, context)
-                self._ws_routes_handler.ws_handler.broadcast(
-                    message=res_msg_to_brdcst,
-                    user_id=user_id,
-                )
+                self._ws_routes_handler.ws_handler.broadcast(message=res_msg_to_brdcst, user_id=user_id)
                 return 200, self._ws_routes_handler._build_lambda_response(user_id=user_id, msg="Message broadcast successfully", success=True)
             except Exception as e:
                 self._log.error(f"WebSocket handler failed: {e}\n{traceback.format_exc()}")
                 return 500, self._ws_routes_handler._build_lambda_response(msg="WebSocket handler encountered an error", success=False)
         return _handler
 
-    def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
+    def register(
+        self, route: str, method: Optional[str] = None
+    ) -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a WebSocket handler for a given route.
         WebSocket routes do not use HTTP methods, only the route.
@@ -243,18 +266,24 @@ class WSLambdaRouter(BaseLambdaRouter):
         """
         if method is not None:
             raise ValueError("HTTP method is not allowed in WebSocket mode")
-        
+
         norm_route = self._normalize_path(route)
 
         def _decorator(wrapped_func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
-            self._log.info(f"Registering WebSocket route {norm_route} -> {wrapped_func.__name__}")
-            
-            wrapped_func = self._get_ws_handler_function(handler_logic_func=wrapped_func)
+            self._log.info(
+                f"Registering WebSocket route {norm_route} -> {wrapped_func.__name__}"
+            )
+
+            wrapped_func = self._get_ws_handler_function(
+                handler_logic_func=wrapped_func
+            )
 
             if norm_route in self._websocket_routes:
-                self._log.warning(f"WebSocket route {norm_route} already exists. Skipping.")
+                self._log.warning(
+                    f"WebSocket route {norm_route} already exists. Skipping."
+                )
                 return wrapped_func
-            
+
             self._websocket_routes[norm_route] = wrapped_func
             return wrapped_func
 
@@ -272,20 +301,26 @@ class WSLambdaRouter(BaseLambdaRouter):
         request_context = event.get("requestContext", {})
         route_key = request_context.get("routeKey")
         connection_id = request_context.get("connectionId")
-        
-        self._log.info(f"WebSocket event - Route Key: {route_key}, Connection ID: {connection_id}")
-        
+
+        self._log.info(
+            f"WebSocket event - Route Key: {route_key}, Connection ID: {connection_id}"
+        )
+
         if not route_key:
             self._log.warning("WebSocket event missing routeKey")
             raise ValueError("WebSocket event missing routeKey")
-        
+
         norm_route_key = self._normalize_path(route_key)
         handler = self._websocket_routes.get(norm_route_key)
-        
+
         if not handler:
-            self._log.warning(f"No registered WebSocket route found for route key -> '{route_key}'")
-            raise ValueError(f"No registered WebSocket route found for route key -> '{route_key}'")
-        
+            self._log.warning(
+                f"No registered WebSocket route found for route key -> '{route_key}'"
+            )
+            raise ValueError(
+                f"No registered WebSocket route found for route key -> '{route_key}'"
+            )
+
         result = handler(event, context)
         self._log.debug(f"WebSocket handler result: {result}")
         return result
