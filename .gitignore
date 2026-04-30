@@ -7,3 +7,5 @@ Scratches
 __pycache__
 .github/skills
 pytest-report.xml
+*.DS_Store
+*.pip-cache
