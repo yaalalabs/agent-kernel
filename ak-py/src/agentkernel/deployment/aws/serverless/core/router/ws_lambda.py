@@ -238,9 +238,8 @@ class WSLambdaRouter(BaseLambdaRouter):
         super().__init__()
         self._log.info("Initializing default WebSocket routes")
         self._ws_routes_handler = DefaultWSRoutesHandler()
-        self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = (
-            self._ws_routes_handler.get_routes()
-        )
+        self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = self._ws_routes_handler.get_routes()
+        self._log.info(f"Registered WebSocket Routes: {self._websocket_routes}")
 
     def _get_ws_handler_function(self, handler_logic_func: Callable[[Dict[str, Any], Any], Any]):
         def _handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

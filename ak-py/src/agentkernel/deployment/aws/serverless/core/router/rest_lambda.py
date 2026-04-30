@@ -283,6 +283,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
             self._default_user_polling_method,
         ) = self._endpoints_handler.get_default_endpoint_info()
         self._routes = self._endpoints_handler.get_routes()
+        self._log.info(f"Registered REST Routes: {self._routes}")
 
     @staticmethod
     def _normalize_method(method: Optional[str]) -> str:

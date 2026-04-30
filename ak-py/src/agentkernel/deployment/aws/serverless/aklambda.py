@@ -73,8 +73,6 @@ class Lambda:
         # Attempting to dispatch to custom routes
         try:
             router = cls._get_router()
-            cls._log.info(f"Registered REST Routes: {router._routes}")
-            cls._log.info(f"Registered WebSocket Routes: {router._websocket_routes}")
             result = router.dispatch(event, context)
             return cls._wrap_response(result)
         except Exception as e:
