@@ -19,25 +19,25 @@ module "websocket_api" {
     "$connect" = {
       operation_name = "ConnectRoute"
       integration = {
-        uri = var.lambda_function_invoke_arn
+        uri = var.connection_handler_lambda_invoke_arn
       }
     },
     "$disconnect" = {
       operation_name = "DisconnectRoute"
       integration = {
-        uri = var.lambda_function_invoke_arn
+        uri = var.connection_handler_lambda_invoke_arn
       }
     },
     "$default" = {
       operation_name = "DefaultRoute"
       integration = {
-        uri = var.lambda_function_invoke_arn
+        uri = var.route_handler_lambda_invoke_arn
       }
     },
     "chat" = {
       operation_name = "ChatRoute"
       integration = {
-        uri = var.lambda_function_invoke_arn
+        uri = var.route_handler_lambda_invoke_arn
       }
     }
   }
@@ -73,7 +73,15 @@ module "websocket_api" {
 # Lambda Permissions for WebSocket API
 resource "aws_lambda_permission" "websocket_api" {
   action        = "lambda:InvokeFunction"
-  function_name = var.lambda_function_name
+  function_name = var.route_handler_lambda_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${module.websocket_api.api_execution_arn}/*"
+}
+
+# Lambda Permissions for Connection Handler
+resource "aws_lambda_permission" "websocket_connection_handler" {
+  action        = "lambda:InvokeFunction"
+  function_name = var.connection_handler_lambda_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${module.websocket_api.api_execution_arn}/*"
 }

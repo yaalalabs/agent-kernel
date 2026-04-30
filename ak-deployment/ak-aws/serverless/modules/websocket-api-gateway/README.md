@@ -1,6 +1,6 @@
 # WebSocket API Gateway Module
 
-This module creates a WebSocket API Gateway for real-time bidirectional communication and wires it to a Lambda function. It also creates a DynamoDB table to store WebSocket connection mappings.
+This module creates a WebSocket API Gateway for real-time bidirectional communication and wires it to two Lambda functions: a connection handler for connection lifecycle events and a routes handler for message routing. It also creates a DynamoDB table to store WebSocket connection mappings.
 
 This module uses:
 - `terraform-aws-modules/apigateway-v2/aws` for the WebSocket API Gateway
@@ -12,11 +12,13 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 
 - Creates a WebSocket API with route selection based on `request.body.route`
 - Configures four routes: `$connect`, `$disconnect`, `$default`, and `chat`
+- Uses a connection handler Lambda for `$connect` and `$disconnect` routes
+- Uses a routes handler Lambda for `$default` and custom routes (e.g., `chat`)
 - Creates a DynamoDB table for storing user-to-connection-id mappings
 - Includes a Global Secondary Index (GSI) for connection_id lookups
 - Supports TTL for automatic cleanup of stale connections
 - Creates CloudWatch log groups and stage logging
-- Configures Lambda permissions for WebSocket API integration
+- Configures Lambda permissions for both Lambda functions
 
 ## Example Wiring
 
@@ -30,8 +32,13 @@ module "websocket_api_gateway" {
   product_display_name = "Agent Kernel"
   stage_name          = "prod"
 
-  lambda_function_name    = module.websocket_handler.lambda_function_name
-  lambda_function_invoke_arn = module.websocket_handler.lambda_function_invoke_arn
+  # Routes handler Lambda (for $default and custom routes like chat)
+  route_handler_lambda_name    = module.websocket_routes_handler.lambda_function_name
+  route_handler_lambda_invoke_arn = module.websocket_routes_handler.lambda_function_invoke_arn
+
+  # Connection handler Lambda (for $connect and $disconnect routes)
+  connection_handler_lambda_name = module.websocket_connection_handler.lambda_function_name
+  connection_handler_lambda_invoke_arn = module.websocket_connection_handler.lambda_function_invoke_arn
 
   enable_data_trace          = false
   logging_level              = "ERROR"
@@ -55,8 +62,10 @@ module "websocket_api_gateway" {
 | `env_alias` | Environment alias |
 | `product_display_name` | Human-readable product name |
 | `stage_name` | WebSocket API stage name |
-| `lambda_function_invoke_arn` | Lambda function invoke ARN |
-| `lambda_function_name` | Lambda function name |
+| `route_handler_lambda_invoke_arn` | Routes handler Lambda function invoke ARN (for $default and custom routes) |
+| `route_handler_lambda_name` | Routes handler Lambda function name |
+| `connection_handler_lambda_invoke_arn` | Connection handler Lambda function invoke ARN (for $connect and $disconnect routes) |
+| `connection_handler_lambda_name` | Connection handler Lambda function name |
 | `enable_data_trace` | Enable data trace logging |
 | `logging_level` | Logging level (ERROR, INFO, OFF) |
 | `enable_detailed_metrics` | Enable detailed metrics |
@@ -98,6 +107,9 @@ The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
 ## Notes
 
 - The WebSocket API uses `$request.body.route` for route selection
-- All routes integrate with the same Lambda function using AWS_PROXY integration
-- The Lambda function receives route information in the event context
+- The module uses a dual-lambda architecture:
+  - **Connection handler Lambda**: Handles `$connect` and `$disconnect` routes for connection lifecycle management
+  - **Routes handler Lambda**: Handles `$default` and custom routes (e.g., `chat`) for message routing and processing
+- Both Lambda functions use AWS_PROXY integration and receive route information in the event context
+- Lambda permissions are configured for both Lambda functions to allow WebSocket API invocation
 - TTL is optional and can be disabled if not needed for connection cleanup

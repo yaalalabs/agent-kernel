@@ -33,14 +33,24 @@ variable "tags" {
   default     = {}
 }
 
-variable "lambda_function_invoke_arn" {
+variable "route_handler_lambda_invoke_arn" {
   type        = string
-  description = "Invoke ARN of the Lambda function"
+  description = "Invoke ARN of the routes handler Lambda function (for $default and custom routes)"
 }
 
-variable "lambda_function_name" {
+variable "route_handler_lambda_name" {
   type        = string
-  description = "Name of the Lambda function"
+  description = "Name of the routes handler Lambda function"
+}
+
+variable "connection_handler_lambda_invoke_arn" {
+  type        = string
+  description = "Invoke ARN of the connection handler Lambda function (for $connect and $disconnect routes)"
+}
+
+variable "connection_handler_lambda_name" {
+  type        = string
+  description = "Name of the connection handler Lambda function"
 }
 
 variable "enable_data_trace" {
