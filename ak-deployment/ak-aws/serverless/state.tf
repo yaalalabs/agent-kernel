@@ -23,12 +23,15 @@ locals {
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   
-  request_handler_enabled               = var.enable_api_gateway
+  request_handler_enabled               = var.enable_api_gateway || var.execution_mode == "async"
   request_handler_package_path          = var.package_path
   request_handler_lambda_function_arn   = local.request_handler_enabled ? module.request_handler[0].lambda_function_arn : null
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
+
+  websocket_api_enabled                  = var.execution_mode == "async"
+  rest_api_enabled                       = var.enable_api_gateway && var.execution_mode != "async"
   
   agent_runner_package_path             = try(var.agent_runner.package_path, null)
   agent_runner_artifact_module_name     = var.agent_runner.module_name
@@ -169,7 +172,7 @@ module "authorizer" {
 }
 
 module "api_gateway" {
-  count  = var.enable_api_gateway ? 1 : 0
+  count  = local.rest_api_enabled ? 1 : 0
   source = "./modules/api-gateway"
 
   region               = var.region
@@ -190,6 +193,26 @@ module "api_gateway" {
   authorizer_lambda_function_name       = local.create_authorizer ? module.authorizer[0].lambda_function_name : ""
   authorizer_lambda_function_invoke_arn = local.create_authorizer ? module.authorizer[0].lambda_function_invoke_arn : ""
   create_authorizer                     = local.create_authorizer
+
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+
+  depends_on = [module.request_handler]
+}
+
+module "websocket_api_gateway" {
+  count  = local.websocket_api_enabled ? 1 : 0
+  source = "./modules/websocket-api-gateway"
+
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  product_display_name = var.product_display_name
+  tags                 = var.tags
+
+  route_handler_lambda_invoke_arn      = local.request_handler_lambda_invoke_arn
+  route_handler_lambda_name            = local.request_handler_lambda_function_name
+  connection_handler_lambda_invoke_arn = local.request_handler_lambda_invoke_arn
+  connection_handler_lambda_name       = local.request_handler_lambda_function_name
 
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 

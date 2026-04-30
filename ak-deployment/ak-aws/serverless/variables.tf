@@ -67,8 +67,8 @@ variable "execution_mode" {
   description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
   default     = null
   validation {
-    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async or null."
+    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async", "async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async or null."
   }
   validation {
     condition = !var.queue_mode || var.execution_mode != null

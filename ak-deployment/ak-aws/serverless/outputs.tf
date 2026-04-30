@@ -168,3 +168,48 @@ output "output_dlq_url" {
   value       = var.queue_mode ? module.queues[0].output_dlq_url : null
 }
 
+# WebSocket API Gateway outputs (conditional based on execution_mode == "async")
+output "websocket_api_endpoint_url" {
+  description = "WebSocket API endpoint URL"
+  value       = try(module.websocket_api_gateway[0].websocket_api_endpoint_url, null)
+}
+
+output "websocket_api_id" {
+  description = "WebSocket API ID"
+  value       = try(module.websocket_api_gateway[0].websocket_api_id, null)
+}
+
+output "websocket_api_execution_arn" {
+  description = "WebSocket API execution ARN"
+  value       = try(module.websocket_api_gateway[0].websocket_api_execution_arn, null)
+}
+
+output "websocket_api_stage_name" {
+  description = "WebSocket API stage name"
+  value       = try(module.websocket_api_gateway[0].websocket_api_stage_name, null)
+}
+
+output "websocket_api_stage_arn" {
+  description = "WebSocket API stage ARN"
+  value       = try(module.websocket_api_gateway[0].websocket_api_stage_arn, null)
+}
+
+output "websocket_connection_table_name" {
+  description = "DynamoDB table name for WebSocket connection mapping"
+  value       = try(module.websocket_api_gateway[0].websocket_connection_table_name, null)
+}
+
+output "websocket_connection_table_arn" {
+  description = "DynamoDB table ARN for WebSocket connection mapping"
+  value       = try(module.websocket_api_gateway[0].websocket_connection_table_arn, null)
+}
+
+output "websocket_cloudwatch_log_group_arn" {
+  description = "ARN of the CloudWatch log group for WebSocket API"
+  value       = try(module.websocket_api_gateway[0].websocket_cloudwatch_log_group_arn, null)
+}
+
+output "websocket_cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group for WebSocket API"
+  value       = try(module.websocket_api_gateway[0].websocket_cloudwatch_log_group_name, null)
+}
