@@ -10,7 +10,7 @@ from slack_sdk.errors import SlackApiError
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
-from ...core.model import AgentReplyImage, AgentReplyText, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentSlackRequestHandler(RESTRequestHandler):
@@ -128,7 +128,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 return
 
             # Build requests list with text, files, and images
-            requests = []
+            requests = [AgentRequestAny(name="body", content=str(body))]
             if question:
                 requests.append(AgentRequestText(text=question))
 
