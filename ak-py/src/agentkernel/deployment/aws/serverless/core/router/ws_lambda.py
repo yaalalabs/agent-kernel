@@ -18,8 +18,8 @@ class DefaultWSRoutesHandler:
     class MessageType(Enum):
         """WebSocket message types."""
 
-        CHAT_RESPONSE = "chat_response"
-        CHAT_QUEUED = "chat_queued"
+        CHAT_RESPONSE = "CHAT_RESPONSE"
+        CHAT_QUEUED = "CHAT_QUEUED"
 
     def __init__(self):
         self._config = AKConfig.get()
