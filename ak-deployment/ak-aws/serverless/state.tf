@@ -91,6 +91,9 @@ locals {
   )
 
   agent_invoke_url = try(module.api_gateway[0].agent_invoke_url, null)
+
+  websocket_api_endpoint_url      = try(module.websocket_api_gateway[0].websocket_api_endpoint_url, null)
+  websocket_connection_table_name = try(module.websocket_api_gateway[0].websocket_connection_table_name, null)
 }
 
 resource "aws_security_group" "lambda" {
@@ -451,7 +454,9 @@ module "request_handler" {
   lambda_kms_key_arn                      = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
   environment_variables = merge(try(var.environment_variables, null), {
-    AK_EXECUTION__MODE = var.execution_mode
+    AK_EXECUTION__MODE           = var.execution_mode,
+    AK_WEBSOCKET_API__ENDPOINT_URL = local.websocket_api_endpoint_url,
+    AK_WEBSOCKET_API__CONNECTION_TABLE_NAME = local.websocket_connection_table_name
   })
 
   depends_on = [module.request_handler_source_package]
