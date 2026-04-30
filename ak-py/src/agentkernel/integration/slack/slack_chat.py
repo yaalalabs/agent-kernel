@@ -128,7 +128,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 return
 
             # Build requests list with text, files, and images
-            requests = [AgentRequestAny(name="body", content=str(body))]
+            requests = []
             if question:
                 requests.append(AgentRequestText(text=question))
 
@@ -148,6 +148,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
             # Use run_multi
             if len(requests) > 0:
+                requests.append(AgentRequestAny(name="body", content=body))
                 result = await service.run_multi(requests=requests)
             else:
                 await say(channel=channel, thread_ts=thread_ts, text="Please provide a message or attachment.")
