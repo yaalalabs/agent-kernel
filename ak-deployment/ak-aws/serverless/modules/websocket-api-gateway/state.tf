@@ -1,6 +1,7 @@
 # DynamoDB Table for WebSocket Connection Mapping
 module "websocket_connections" {
-  source = "../../../common/modules/dynamodb"
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.3.3"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
