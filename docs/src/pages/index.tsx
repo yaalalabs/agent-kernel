@@ -671,10 +671,14 @@ function Levels() {
     if (scrollTriggerRef.current) {
       scrollTriggerRef.current.kill();
     }
-  };
 
-  useEffect(() => {
-    if (selectedLevel && contentRef.current) {
+    gsap.set(sectionRef.current, { height: 'auto', clearProps: 'height' });
+
+    ScrollTrigger.refresh();
+
+    ScrollTrigger.refresh();
+
+    if (contentRef.current) {
       gsap.registerPlugin(ScrollToPlugin);
       gsap.to(window, {
         duration: 1,
@@ -682,7 +686,7 @@ function Levels() {
         ease: 'power2.out',
       });
     }
-  }, [selectedLevel]);
+  };
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
@@ -716,6 +720,10 @@ function Levels() {
     if (!selectedLevel) {
       gsap.registerPlugin(ScrollTrigger);
 
+      gsap.set(sectionRef.current, { height: '100vh' });
+      ScrollTrigger.refresh();
+      ScrollTrigger.refresh();
+
       gsap.fromTo(
         [titleRef.current, subtitleRef.current, cardsRef.current],
         { opacity: 0, y: 30 },
@@ -738,7 +746,7 @@ function Levels() {
           start: 'top top',
           end: '+=100%',
           pin: true,
-          pinSpacing: false,
+          pinSpacing: true,
           scrub: false,
         },
       });
