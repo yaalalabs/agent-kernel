@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import styles from './index.module.css';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
+import { ScrollToPlugin } from 'gsap/dist/ScrollToPlugin';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
 import ParticleSphere from '../components/ParticleSphere';
 import {
@@ -25,6 +26,15 @@ import {
   MdExtension,
   MdIntegrationInstructions,
   MdCloudUpload,
+  MdGpsFixed,
+  MdAssignment,
+  MdBolt,
+  MdTrendingUp,
+  MdRefresh,
+  MdMessage,
+  MdScience,
+  MdLink,
+  MdSmartToy,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
@@ -244,203 +254,97 @@ function AffiliationsStrip() {
   );
 }
 
-/* ─── Value Proposition ─────────────────────────────────────────────────── */
+// /* ─── Key Features ──────────────────────────────────────────────────────── */
 
-function ValueProp() {
-  const items = [
-    { problem: 'Months of platform engineering', solution: 'Production-ready in days' },
-    { problem: 'Framework lock-in', solution: 'Switch with 2 import lines' },
-    { problem: 'Cloud lock-in', solution: 'AWS + Azure, same code' },
-    { problem: 'Build session management', solution: 'Multi-backend, built-in' },
-    { problem: 'Wire messaging platforms', solution: 'Slack, WhatsApp, 6+ out of the box' },
-    { problem: 'No testing standard', solution: 'pytest-integrated test framework' },
-  ];
+// function KeyFeatures() {
+//   const features = [
+//     {
+//       icon: <MdSwapHoriz />,
+//       title: 'Framework-Agnostic',
+//       description: 'Run OpenAI, LangGraph, CrewAI, and Google ADK side by side in one runtime. Switch frameworks with 2 import lines.',
+//       size: 'wide',
+//       link: '/docs/frameworks/overview',
+//     },
+//     {
+//       icon: <MdCloud />,
+//       title: 'Multi-Cloud',
+//       description: 'Same agent code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps. Zero vendor lock-in.',
+//       size: 'normal',
+//       link: '/docs/deployment/overview',
+//     },
+//     {
+//       icon: <MdMemory />,
+//       title: 'Session & Memory',
+//       description: 'Built-in volatile and non-volatile caching. Backends: Redis, DynamoDB, Cosmos DB, in-memory.',
+//       size: 'normal',
+//       link: '/docs/architecture/memory-management',
+//     },
+//     {
+//       icon: <MdSettings />,
+//       title: 'Execution Hooks',
+//       description: 'Pre/post-execution hooks for guardrails, RAG injection, analytics, and response moderation. Works across all frameworks.',
+//       size: 'normal',
+//       link: '/docs/integrations/hooks',
+//     },
+//     {
+//       icon: <FaSlack />,
+//       title: 'Messaging Integrations',
+//       description: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
+//       size: 'normal',
+//       link: '/docs/integrations/overview',
+//     },
+//     {
+//       icon: <MdBugReport />,
+//       title: 'Testing Framework',
+//       description: 'pytest-integrated agent testing with fuzzy, semantic, and fallback comparison modes. CI/CD ready.',
+//       size: 'wide',
+//       link: '/docs/testing/overview',
+//     },
+//     {
+//       icon: <MdSecurity />,
+//       title: 'Guardrails',
+//       description: 'OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, and content moderation. Enforce safety policies without touching agent logic.',
+//       size: 'wide',
+//       link: '/docs/advanced/guardrails',
+//     },
+//     {
+//       icon: <MdVisibility />,
+//       title: 'Observability & Tracing',
+//       description: 'LangFuse and OpenLLMetry tracing with one config line. Full visibility into every agent, tool, and LLM call — in development and production.',
+//       size: 'wide',
+//       link: '/docs/advanced/traceability',
+//     },
+//   ];
 
-  return (
-    <section className={styles.section}>
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Stop Building Plumbing.</h2>
-          <h2 className={`${styles.sectionTitle} ${styles.gradientText}`}>Start Building Intelligence.</h2>
-          <p className={styles.sectionSubtitle}>
-            Every hour your team spends on infrastructure is an hour not spent on your core AI product.
-            Agent Kernel handles the entire platform layer so you don't have to.
-          </p>
-        </div>
-        <div className={styles.valuePropGrid}>
-          {items.map((item, i) => (
-            <div key={i} className={styles.valuePropCard}>
-              <div className={styles.valueProblem}>
-                <span className={styles.xMark}>✕</span>
-                {item.problem}
-              </div>
-              <div className={styles.valueArrow}>→</div>
-              <div className={styles.valueSolution}>
-                <span className={styles.checkMark}>✓</span>
-                {item.solution}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Who It's For ──────────────────────────────────────────────────────── */
-
-function WhoItsFor() {
-  const segments = [
-    {
-      icon: <MdBusiness />,
-      title: 'Software Companies\n(Services)',
-      tagline: 'Ship AI agent solutions to clients in weeks, not months.',
-      href: '/use-cases',
-      accent: 'cyan',
-    },
-    {
-      icon: <MdAutoAwesome />,
-      title: 'Software Companies\n(Products)',
-      tagline: 'Add intelligent agents to your SaaS without framework lock-in.',
-      href: '/use-cases',
-      accent: 'violet',
-    },
-    {
-      icon: <MdRocketLaunch />,
-      title: 'AI Startups',
-      tagline: 'Go from prototype to production in days, not quarters.',
-      href: '/use-cases',
-      accent: 'cyan',
-    },
-    {
-      icon: <MdGroup />,
-      title: 'Domain Experts',
-      tagline: 'Build production AI products without a full engineering team.',
-      href: '/use-cases',
-      accent: 'violet',
-    },
-  ];
-
-  return (
-    <section className={styles.section}>
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Built for Teams Who Move Fast</h2>
-          <p className={styles.sectionSubtitle}>
-            From AI service agencies to domain experts — Agent Kernel meets you where you are.
-          </p>
-        </div>
-        <div className={styles.segmentsGrid}>
-          {segments.map((s, i) => (
-            <Link key={i} to={s.href} className={`${styles.segmentCard} ${styles[`accent_${s.accent}`]}`}>
-              <div className={styles.segmentIcon}>{s.icon}</div>
-              <h3 className={styles.segmentTitle}>{s.title}</h3>
-              <p className={styles.segmentTagline}>{s.tagline}</p>
-              <span className={styles.segmentCta}>Learn more →</span>
-            </Link>
-          ))}
-        </div>
-        <div className={styles.sectionFooter}>
-          <Link to="/use-cases" className={styles.sectionLink}>
-            See all use cases and market segments →
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Key Features ──────────────────────────────────────────────────────── */
-
-function KeyFeatures() {
-  const features = [
-    {
-      icon: <MdSwapHoriz />,
-      title: 'Framework-Agnostic',
-      description: 'Run OpenAI, LangGraph, CrewAI, and Google ADK side by side in one runtime. Switch frameworks with 2 import lines.',
-      size: 'wide',
-      link: '/docs/frameworks/overview',
-    },
-    {
-      icon: <MdCloud />,
-      title: 'Multi-Cloud',
-      description: 'Same agent code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps. Zero vendor lock-in.',
-      size: 'normal',
-      link: '/docs/deployment/overview',
-    },
-    {
-      icon: <MdMemory />,
-      title: 'Session & Memory',
-      description: 'Built-in volatile and non-volatile caching. Backends: Redis, DynamoDB, Cosmos DB, in-memory.',
-      size: 'normal',
-      link: '/docs/architecture/memory-management',
-    },
-    {
-      icon: <MdSettings />,
-      title: 'Execution Hooks',
-      description: 'Pre/post-execution hooks for guardrails, RAG injection, analytics, and response moderation. Works across all frameworks.',
-      size: 'normal',
-      link: '/docs/integrations/hooks',
-    },
-    {
-      icon: <FaSlack />,
-      title: 'Messaging Integrations',
-      description: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
-      size: 'normal',
-      link: '/docs/integrations/overview',
-    },
-    {
-      icon: <MdBugReport />,
-      title: 'Testing Framework',
-      description: 'pytest-integrated agent testing with fuzzy, semantic, and fallback comparison modes. CI/CD ready.',
-      size: 'wide',
-      link: '/docs/testing/overview',
-    },
-    {
-      icon: <MdSecurity />,
-      title: 'Guardrails',
-      description: 'OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, and content moderation. Enforce safety policies without touching agent logic.',
-      size: 'wide',
-      link: '/docs/advanced/guardrails',
-    },
-    {
-      icon: <MdVisibility />,
-      title: 'Observability & Tracing',
-      description: 'LangFuse and OpenLLMetry tracing with one config line. Full visibility into every agent, tool, and LLM call — in development and production.',
-      size: 'wide',
-      link: '/docs/advanced/traceability',
-    },
-  ];
-
-  return (
-    <section className={styles.section}>
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Everything You Need in Production</h2>
-          <p className={styles.sectionSubtitle}>
-            No more cobbling together deployment pipelines, session stores, and integration glue.
-            Agent Kernel gives you the full stack from day one.
-          </p>
-        </div>
-        <div className={styles.bentoGrid}>
-          {features.map((f, i) => (
-            <Link
-              key={i}
-              to={f.link}
-              className={`${styles.bentoCard} ${f.size === 'wide' ? styles.bentoWide : ''}`}>
-              <div className={styles.bentoIcon}>{f.icon}</div>
-              <h3 className={styles.bentoTitle}>{f.title}</h3>
-              <p className={styles.bentoDescription}>{f.description}</p>
-            </Link>
-          ))}
-        </div>
-        <div className={styles.sectionFooter}>
-          <Link to="/features" className={styles.sectionLink}>View all features →</Link>
-        </div>
-      </div>
-    </section>
-  );
-}
+//   return (
+//     <section className={styles.section}>
+//       <div className="container">
+//         <div className={styles.sectionHeader}>
+//           <h2 className={styles.sectionTitle}>Everything You Need in Production</h2>
+//           <p className={styles.sectionSubtitle}>
+//             No more cobbling together deployment pipelines, session stores, and integration glue.
+//             Agent Kernel gives you the full stack from day one.
+//           </p>
+//         </div>
+//         <div className={styles.bentoGrid}>
+//           {features.map((f, i) => (
+//             <Link
+//               key={i}
+//               to={f.link}
+//               className={`${styles.bentoCard} ${f.size === 'wide' ? styles.bentoWide : ''}`}>
+//               <div className={styles.bentoIcon}>{f.icon}</div>
+//               <h3 className={styles.bentoTitle}>{f.title}</h3>
+//               <p className={styles.bentoDescription}>{f.description}</p>
+//             </Link>
+//           ))}
+//         </div>
+//         <div className={styles.sectionFooter}>
+//           <Link to="/features" className={styles.sectionLink}>View all features →</Link>
+//         </div>
+//       </div>
+//     </section>
+//   );
+// }
 
 /* ─── Deployment ────────────────────────────────────────────────────────── */
 
@@ -716,6 +620,480 @@ function Community() {
   );
 }
 
+/* ─── Levels ────────────────────────────────────────────────────────────── */
+
+interface Level {
+  id: string;
+  title: string;
+  image: string;
+  description: string;
+}
+
+interface ScrollTriggerInstance {
+  kill: () => void;
+}
+
+function Levels() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const cardsRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  const [isPinned, setIsPinned] = useState(true);
+  const scrollTriggerRef = useRef<ScrollTriggerInstance | null>(null);
+
+  const levels: Level[] = [
+    {
+      id: '01',
+      title: 'Business Leader',
+      image: '/img/business_leader.png',
+      description: 'You run or work in a business and want AI assistants that actually work without needing to understand the tech.',
+    },
+    {
+      id: '02',
+      title: 'Developer',
+      image: '/img/developer.png',
+      description: 'You write software but haven\'t built AI agents yet. You want to ship something real without learning a new stack from scratch.',
+    },
+    {
+      id: '03',
+      title: 'AI Engineer',
+      image: '/img/ai.png',
+      description: 'You already work with LLMs and agentic frameworks. You need a production-grade runtime that doesn\'t get in your way.',
+    },
+  ];
+
+  const handleLevelSelect = (levelId: string) => {
+    setSelectedLevel(levelId);
+    setIsPinned(false);
+
+    if (scrollTriggerRef.current) {
+      scrollTriggerRef.current.kill();
+    }
+  };
+
+  useEffect(() => {
+    if (selectedLevel && contentRef.current) {
+      gsap.registerPlugin(ScrollToPlugin);
+      gsap.to(window, {
+        duration: 1,
+        scrollTo: { y: contentRef.current.offsetTop - 100 },
+        ease: 'power2.out',
+      });
+    }
+  }, [selectedLevel]);
+
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (!isPinned) return;
+      const rect = sectionRef.current?.getBoundingClientRect();
+      if (rect && rect.top <= 0 && rect.bottom >= window.innerHeight) {
+        if (e.deltaY > 0) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPinned) return;
+      const rect = sectionRef.current?.getBoundingClientRect();
+      if (rect && rect.top <= 0 && rect.bottom >= window.innerHeight) {
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isPinned) return;
+      const rect = sectionRef.current?.getBoundingClientRect();
+      if (rect && rect.top <= 0 && rect.bottom >= window.innerHeight) {
+        if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+          e.preventDefault();
+        }
+      }
+    };
+
+    if (!selectedLevel) {
+      gsap.registerPlugin(ScrollTrigger);
+
+      gsap.fromTo(
+        [titleRef.current, subtitleRef.current, cardsRef.current],
+        { opacity: 0, y: 30 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 1,
+          ease: 'power2.out',
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: 'top 60%',
+            toggleActions: 'play none none reverse',
+          },
+        }
+      );
+
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: 'top top',
+          end: '+=100%',
+          pin: true,
+          pinSpacing: false,
+          scrub: false,
+        },
+      });
+
+      scrollTriggerRef.current = tl.scrollTrigger as ScrollTriggerInstance | null;
+
+      window.addEventListener('wheel', handleWheel, { passive: false });
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (scrollTriggerRef.current) {
+        scrollTriggerRef.current.kill();
+      }
+    };
+  }, [isPinned, selectedLevel]);
+
+  return (
+    <section
+      ref={sectionRef}
+      className={`${styles.levelsSection} ${!selectedLevel ? styles.levelsPinned : ''}`}
+    >
+      <div className="container">
+        <div className={styles.levelsContainer}>
+          <p ref={subtitleRef} className={styles.levelsSubtitle}>
+            Choose your level
+          </p>
+
+          <h2 ref={titleRef} className={styles.levelsTitle}>
+            Agent Kernel fits your experience
+          </h2>
+
+          <div ref={cardsRef} className={styles.levelsGrid}>
+            {levels.map((level) => (
+              <div
+                key={level.id}
+                data-level={level.id}
+                onClick={() => handleLevelSelect(level.id)}
+                className={`${styles.levelCard} ${selectedLevel === level.id ? styles.levelCardSelected : ''}`}
+              >
+                <div className={styles.levelNumber}>Level {level.id}</div>
+
+                <div className={styles.levelImage}>
+                  <img src={level.image} alt={level.title} />
+                </div>
+
+                <h3 className={styles.levelCardTitle}>{level.title}</h3>
+                <p className={styles.levelCardDescription}>{level.description}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className={styles.levelsHint}>
+            Select a level to continue
+          </div>
+
+          {/* ── BUSINESS LEADER CONTENT ── */}
+          {selectedLevel === '01' && (
+            <div ref={contentRef} className={styles.levelContent}>
+              <div className={styles.contentStep}>
+                <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
+                <h2 className={styles.contentTitle}>
+                  Where is the gap in your business?
+                </h2>
+                <p className={styles.contentBody}>
+                  Most businesses have processes that still depend too much on people. They are repetitive, slow, and hard to scale. The gap looks different depending on where you are.
+                </p>
+              </div>
+
+              <div className={styles.contentGrid}>
+                <div className={styles.contentCard}>
+                  <h3 className={styles.contentCardLabel}>SaaS / Product</h3>
+                  <p className={styles.contentCardTitle}>Do you have an existing product?</p>
+                  <ul className={styles.bulletList}>
+                    <li>Users still do too much manually inside your app</li>
+                    <li>Support tickets pile up for questions your product could answer</li>
+                    <li>Repetitive workflows require human involvement every time</li>
+                  </ul>
+                </div>
+
+                <div className={styles.contentCard}>
+                  <h3 className={styles.contentCardLabel}>Enterprise / Large Org</h3>
+                  <p className={styles.contentCardTitle}>Do you run complex operations?</p>
+                  <ul className={styles.bulletList}>
+                    <li>Thousands of customer queries handled by an overstretched team</li>
+                    <li>Knowledge locked across systems and documents</li>
+                    <li>Cross-team hand offs are slow and error-prone</li>
+                  </ul>
+                </div>
+
+                <div className={styles.contentCard}>
+                  <h3 className={styles.contentCardLabel}>Building Something New</h3>
+                  <p className={styles.contentCardTitle}>Do you have a product idea?</p>
+                  <ul className={styles.bulletList}>
+                    <li>You see an opportunity for an AI-powered service in your industry</li>
+                    <li>You're not sure which AI technology to commit to</li>
+                    <li>Building from scratch feels like months before anything reaches users</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '2rem' }}>
+                <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
+                <h2 className={styles.contentTitle}>
+                  An AI agent doesn't just answer, it gets things done.
+                </h2>
+
+                <div className={styles.agentFlow}>
+                  <div className={styles.flowStep}>
+                    <MdGpsFixed className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Goal</h4>
+                    <p className={styles.flowDesc}>Understand the goal</p>
+                  </div>
+                  <div className={styles.flowArrow}>→</div>
+                  <div className={styles.flowStep}>
+                    <MdAssignment className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Plan</h4>
+                    <p className={styles.flowDesc}>Plan steps</p>
+                  </div>
+                  <div className={styles.flowArrow}>→</div>
+                  <div className={styles.flowStep}>
+                    <MdBolt className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Act</h4>
+                    <p className={styles.flowDesc}>Take actions</p>
+                  </div>
+                  <div className={styles.flowArrow}>→</div>
+                  <div className={styles.flowStep}>
+                    <MdVisibility className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Observe</h4>
+                    <p className={styles.flowDesc}>Observe the results</p>
+                  </div>
+                  <div className={styles.flowArrow}>→</div>
+                  <div className={styles.flowStep}>
+                    <MdTrendingUp className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Improve</h4>
+                    <p className={styles.flowDesc}>Gets smarter</p>
+                  </div>
+                  <div className={styles.flowArrow}>→</div>
+                  <div className={styles.flowStep}>
+                    <MdRefresh className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Repeat</h4>
+                    <p className={styles.flowDesc}>Always on, always learning</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── DEVELOPER CONTENT ── */}
+          {selectedLevel === '02' && (
+            <div ref={contentRef} className={styles.levelContent}>
+              <div className={styles.contentStep}>
+                <p className={styles.stepLabel}>Developer Analogy</p>
+                <h2 className={styles.contentTitle}>
+                  Like an Operating System for AI Agents
+                </h2>
+                <p className={styles.contentBody}>
+                  Agent Kernel is like an operating system for AI assistants. Install it on your laptop, server, or cloud, and run AI agents hassle-free. No infrastructure building required.
+                </p>
+                <ul className={styles.bulletListLarge}>
+                  <li>No need to build APIs, integrations, or session stores</li>
+                  <li>Everything works out of the box</li>
+                  <li>Scales from single execution to thousands of agents in parallel</li>
+                  <li>Interacts with the real world automatically</li>
+                  <li>Just define what your assistant should do</li>
+                </ul>
+              </div>
+
+              <div className={styles.contentStep}>
+                <h2 className={styles.contentTitle}>Architecture Stack</h2>
+                <div className={styles.architectureStack}>
+                  {[
+                    {
+                      num: '01',
+                      label: 'Your Agent Logic',
+                      sub: 'instructions · tools · framework SDK',
+                    },
+                    {
+                      num: '02',
+                      label: 'Agent Kernel Runtime',
+                      sub: 'CLI · REST API · sessions · hooks · observability',
+                    },
+                    {
+                      num: '03',
+                      label: 'Cloud Infrastructure',
+                      sub: 'AWS Lambda · ECS · Azure Functions · Container Apps',
+                    },
+                    {
+                      num: '04',
+                      label: 'Channels & Data',
+                      sub: 'Slack · WhatsApp · Telegram · Gmail · Redis · DynamoDB',
+                    },
+                  ].map((layer) => (
+                    <div key={layer.label} className={styles.architectureLayer}>
+                      <div className={styles.layerNumber}>{layer.num}</div>
+                      <div className={styles.layerContent}>
+                        <h3 className={styles.layerLabel}>{layer.label}</h3>
+                        <p className={styles.layerSub}>{layer.sub}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={styles.contentStep}>
+                <p className={styles.stepLabel}>Enterprise Features Included</p>
+                <h2 className={styles.contentTitle}>
+                  Everything You Need to Ship
+                </h2>
+
+                <div className={styles.featuresGrid}>
+                  {[
+                    {
+                      icon: MdBolt,
+                      title: 'REST API Server',
+                      body: 'FastAPI-based server out of the box. No boilerplate.',
+                    },
+                    {
+                      icon: MdAutoAwesome,
+                      title: 'Multi-Framework',
+                      body: 'OpenAI Agents, LangGraph, CrewAI, Google ADK.',
+                    },
+                    {
+                      icon: MdSmartToy,
+                      title: 'Session & Memory',
+                      body: 'Redis, DynamoDB, Cosmos DB or in-memory—your choice.',
+                    },
+                    {
+                      icon: MdCloud,
+                      title: 'Cloud Deployment',
+                      body: 'Pre-built Terraform for AWS, ECS, Azure, Container Apps.',
+                    },
+                    {
+                      icon: FaSlack,
+                      title: 'Messaging Integrations',
+                      body: 'Slack, WhatsApp, Telegram, Gmail—plug and play.',
+                    },
+                    {
+                      icon: MdScience,
+                      title: 'Testing Framework',
+                      body: 'pytest-integrated test runner for AI agents.',
+                    },
+                    {
+                      icon: MdLink,
+                      title: 'Execution Hooks',
+                      body: 'Pre/post hooks for RAG, validation, moderation.',
+                    },
+                    {
+                      icon: MdVisibility,
+                      title: 'Observability',
+                      body: 'Langfuse and OpenLLMetry tracing with one config line.',
+                    },
+                  ].map((feature) => {
+                    const IconComponent = feature.icon;
+                    return (
+                      <div key={feature.title} className={styles.featureCard}>
+                        <IconComponent className={styles.featureIcon} />
+                        <h3 className={styles.featureTitle}>{feature.title}</h3>
+                        <p className={styles.featureBody}>{feature.body}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── AI ENGINEER CONTENT ── */}
+          {selectedLevel === '03' && (
+            <div ref={contentRef} className={styles.levelContent}>
+              <div className={styles.contentStep}>
+                <h2 className={styles.contentTitle}>
+                  Advanced Capabilities for Production AI
+                </h2>
+                <p className={styles.contentBody}>
+                  Agent Kernel gives you the production-grade features that enterprise AI systems need, without framework lock-in or vendor dependency.
+                </p>
+              </div>
+
+              <div className={styles.contentStep}>
+                <h2 className={styles.contentTitle}>Core Capabilities</h2>
+
+                <div className={styles.capabilitiesGrid}>
+                  {[
+                    {
+                      icon: MdSwapHoriz,
+                      title: 'Framework Agnostic',
+                      body: 'Run OpenAI Agents, LangGraph, CrewAI, and Google ADK side by side. Switch frameworks with 2 import lines.',
+                    },
+                    {
+                      icon: MdCloud,
+                      title: 'Multi-Cloud',
+                      body: 'Same agent code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps. Zero vendor lock-in.',
+                    },
+                    {
+                      icon: MdMemory,
+                      title: 'Session & Memory',
+                      body: 'Built-in volatile and non-volatile caching. Backends: Redis, DynamoDB, Cosmos DB, in-memory.',
+                    },
+                    {
+                      icon: MdSettings,
+                      title: 'Execution Hooks',
+                      body: 'Pre/post-execution hooks for guardrails, RAG injection, analytics, and response moderation.',
+                    },
+                    {
+                      icon: FaSlack,
+                      title: 'Messaging Integrations',
+                      body: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
+                    },
+                    {
+                      icon: MdBugReport,
+                      title: 'Testing Framework',
+                      body: 'pytest-integrated agent testing with fuzzy, semantic, and fallback comparison modes.',
+                    },
+                    {
+                      icon: MdSecurity,
+                      title: 'Guardrails',
+                      body: 'OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, and moderation.',
+                    },
+                    {
+                      icon: MdVisibility,
+                      title: 'Observability & Tracing',
+                      body: 'LangFuse and OpenLLMetry tracing with one config line. Full visibility into every call.',
+                    },
+                  ].map((feature) => {
+                    const IconComponent = feature.icon;
+                    return (
+                      <div key={feature.title} className={styles.capabilityCard}>
+                        <IconComponent className={styles.capabilityIcon} />
+                        <h3 className={styles.capabilityTitle}>{feature.title}</h3>
+                        <p className={styles.capabilityBody}>{feature.body}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className={styles.contentStep}>
+                <h2 className={styles.contentTitle}>Production Deployment</h2>
+                <p className={styles.contentBody}>
+                  Deploy with full Terraform modules, pre-configured best practices, and zero cloud lock-in. Same code runs everywhere.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function Home() {
@@ -729,6 +1107,7 @@ export default function Home() {
       <main>
         {/* <AffiliationsStrip /> */}
         <FrameworksStrip />
+        <Levels />
         {/* <AgentKernelArchDiagram />
         <KeyFeatures />
         <AgentSkills />

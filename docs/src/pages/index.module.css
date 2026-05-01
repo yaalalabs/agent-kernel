@@ -988,6 +988,431 @@
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+/* ─── Levels ──────────────────────────────────────────────────────────────── */
+
+.levelsSection {
+  padding: 5rem 2.5rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.levelsPinned {
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.levelsContainer {
+  max-width: 72rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.levelsSubtitle {
+  font-size: 1.5rem;
+  font-weight: 200;
+  color: #ffffff;
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.levelsTitle {
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin-bottom: 4rem;
+}
+
+.levelsGrid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 2rem;
+  max-width: 64rem;
+  margin: 0 auto 3rem;
+}
+
+.levelCard {
+  background: rgba(14, 16, 23, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 2rem 2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.levelCard:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.levelCardSelected {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
+}
+
+.levelNumber {
+  font-size: 1.125rem;
+  font-weight: 300;
+  color: #ffffff;
+}
+
+.levelImage {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.levelImage img {
+  width: 4rem;
+  height: 4rem;
+  display: block;
+  margin: 0 auto;
+}
+
+.levelCardTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.levelCardDescription {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.625;
+  margin: 0;
+}
+
+.levelsHint {
+  text-align: center;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 3rem;
+}
+
+.levelContent {
+  margin-top: 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+  text-align: left;
+}
+
+.contentStep {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.stepLabel {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.contentTitle {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 0 0 1rem 0;
+  text-transform: uppercase;
+}
+
+.contentBody {
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.625;
+  margin: 0 0 1rem 0;
+  max-width: 100%;
+}
+
+.contentGrid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 2rem;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+.contentCard {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.contentCardLabel {
+  font-size: 0.875rem;
+  font-weight: 200;
+  color: #ffffff;
+  margin: 0 0 1rem 0;
+  text-transform: uppercase;
+}
+
+.contentCardTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0 0 1rem 0;
+}
+
+.bulletList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bulletList li {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.bulletList li:before {
+  content: "•";
+  color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.bulletListLarge {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 600px;
+}
+
+.bulletListLarge li {
+  font-size: 0.95rem;
+  color: #94a3b8;
+  line-height: 1.7;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.bulletListLarge li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: #4f7df7;
+  font-weight: 700;
+}
+
+.agentFlow {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  margin-top: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 2rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.flowStep {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 120px;
+  border: none;
+  background: transparent;
+}
+
+.flowIcon {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.5rem;
+  color: #ffffff;
+}
+
+.flowLabel {
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.flowDesc {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+}
+
+.flowArrow {
+  font-size: 1.5rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0 0.5rem;
+}
+
+.architectureStack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.architectureLayer {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.layerNumber {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 3rem;
+  flex-shrink: 0;
+}
+
+.layerNumber > div {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.layerContent {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.layerLabel {
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.layerSub {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+.featureCard {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.featureIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #ffffff;
+}
+
+.featureTitle {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.featureBody {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  flex: 1;
+}
+
+.capabilitiesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+.capabilityCard {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.capabilityIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: #ffffff;
+}
+
+.capabilityTitle {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.capabilityBody {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  flex: 1;
+}
+
 /* ─── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 996px) {
@@ -1012,6 +1437,22 @@
   }
 
   .skillsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .agentFlow {
+    gap: 1rem;
+  }
+
+  .architectureStack {
+    max-width: 100%;
+  }
+
+  .featuresGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .capabilitiesGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -1066,5 +1507,68 @@
   .communityLink {
     width: 100%;
     max-width: 320px;
+  }
+
+  .levelsSection {
+    padding: 4rem 1.5rem;
+  }
+
+  .levelsTitle {
+    font-size: 1.8rem;
+  }
+
+  .levelCard {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .levelCardTitle {
+    font-size: 1.1rem;
+  }
+
+  .contentTitle {
+    font-size: 1.6rem;
+  }
+
+  .contentGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .agentFlow {
+    padding: 1.5rem 1rem;
+  }
+
+  .flowStep {
+    min-width: 70px;
+  }
+
+  .flowIcon {
+    font-size: 1.4rem;
+  }
+
+  .featuresGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .capabilitiesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .levelContent {
+    margin-top: 2rem;
+    gap: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .levelsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .contentGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .agentFlow {
+    flex-direction: row;
   }
 }
