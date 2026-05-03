@@ -70,7 +70,7 @@ module "websocket_api" {
   tags = var.tags
 }
 
-# Lambda Permissions for WebSocket API
+# Access for Websocket API Gateway to invoke the route handler lambda
 resource "aws_lambda_permission" "websocket_api" {
   action        = "lambda:InvokeFunction"
   function_name = var.route_handler_lambda_name
@@ -78,7 +78,7 @@ resource "aws_lambda_permission" "websocket_api" {
   source_arn    = "${module.websocket_api.api_execution_arn}/*"
 }
 
-# Lambda Permissions for Connection Handler
+# Access for Websocket API Gateway to invoke the connection handler lambda
 resource "aws_lambda_permission" "websocket_connection_handler" {
   action        = "lambda:InvokeFunction"
   function_name = var.connection_handler_lambda_name
