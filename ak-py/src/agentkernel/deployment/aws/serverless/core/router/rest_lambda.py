@@ -15,6 +15,7 @@ class DefaultEndpointsHandler:
     """Provides default endpoint routes depending on EXECUTION_MODE."""
 
     def __init__(self):
+        """Initialize default REST endpoints handler."""
         self._log = logging.getLogger("ak.aws.lambda.default_endpoints")
         self._default_chat_path = "default_chat_path"
         self._default_chat_method = "POST"
@@ -78,6 +79,13 @@ class DefaultEndpointsHandler:
         return BaseRequest.from_payload(body_dict)
 
     def _build_failure_body(self, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
+        """Build standardized error response body.
+
+        :param request_id: Optional request ID to include
+        :param status: Optional status code to include
+        :param message: Error message
+        :return: Error response dictionary
+        """
         error_body = {"error": message or "An unexpected error occurred"}
         if status is not None:
             error_body["status"] = status
@@ -270,6 +278,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
     """
 
     def __init__(self):
+        """Initialize REST Lambda router."""
         super().__init__()
         self._default_chat_path = None
         self._default_chat_method = None
@@ -287,6 +296,11 @@ class RESTLambdaRouter(BaseLambdaRouter):
 
     @staticmethod
     def _normalize_method(method: Optional[str]) -> str:
+        """Normalize HTTP method to uppercase.
+
+        :param method: HTTP method string
+        :return: Uppercase method string, defaults to GET
+        """
         return (method or "GET").upper()
 
     def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:

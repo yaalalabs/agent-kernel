@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from ......core.config import AKConfig
-from ......core.model import ExecutionMode
 
 
 class BaseLambdaRouter(ABC):
@@ -14,6 +13,7 @@ class BaseLambdaRouter(ABC):
     """
 
     def __init__(self):
+        """Initialize base Lambda router."""
         self._log = logging.getLogger("ak.aws.lambda.router")
         self._config = AKConfig().get()
 

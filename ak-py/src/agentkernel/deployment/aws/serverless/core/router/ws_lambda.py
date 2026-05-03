@@ -21,20 +21,38 @@ class DefaultWSRoutesHandler:
         CHAT_RESPONSE = "CHAT_RESPONSE"
         CHAT_QUEUED = "CHAT_QUEUED"
 
-    def __init__(self):
+    def __init__(self, connection_routes: bool = False, system_routes: bool = False):
+        """Initialize WebSocket routes handler.
+
+        :param connection_routes: Include $connect and $disconnect routes
+        :param system_routes: Include $default and /chat routes
+        """
         self._config = AKConfig.get()
         self._chat_service = ChatService()
         self.ws_handler = WebSocketHandler(
             endpoint_url=self._config.websocket_api.endpoint_url,
             conn_table_name=self._config.websocket_api.connection_table_name,
         )
+        self.connection_routes = connection_routes
+        self.system_routes = system_routes
 
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
+        """Parse request body from WebSocket event.
+
+        :param event: WebSocket event dictionary
+        :return: Parsed BaseRequest object
+        """
         body = event.get("body")
         body_dict = json.loads(body) if isinstance(body, str) and body else (body or {})
         return BaseRequest.from_payload(body_dict)
 
     def _extract_connection_id(self, event: Dict[str, Any]) -> str:
+        """Extract connection ID from WebSocket event.
+
+        :param event: WebSocket event dictionary
+        :return: Connection ID string
+        :raises ValueError: If connectionId is missing
+        """
         request_context = event.get("requestContext", {})
         connection_id = request_context.get("connectionId")
         if not connection_id:
@@ -42,7 +60,10 @@ class DefaultWSRoutesHandler:
         return connection_id
 
     def _is_queue_mode(self) -> bool:
-        """Check if queue mode is enabled (queues are configured)."""
+        """Check if queue mode is enabled (queues are configured).
+
+        :return: True if both input and output queues are configured
+        """
         return (
             self._config.execution.queues.input.url is not None
             and self._config.execution.queues.output.url is not None
@@ -95,6 +116,13 @@ class DefaultWSRoutesHandler:
         operation: Callable[[BaseRequest], Dict[str, Any]],
         message_type: Optional[MessageType] = None,
     ) -> Tuple[int, Dict[str, Any]]:
+        """Handle message and broadcast result to user.
+
+        :param event: WebSocket event dictionary
+        :param operation: Function to process the request
+        :param message_type: Optional message type for broadcasting
+        :return: Tuple of (status_code, response_body)
+        """
         user_id = None
         try:
             request = self._parse_body(event)
@@ -119,14 +147,26 @@ class DefaultWSRoutesHandler:
             )
 
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
-        return {
-            "/$connect": self._handle_connect,
-            "/$disconnect": self._handle_disconnect,
-            "/$default": self._handle_default,
-            "/chat": self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
-        }
+        """Get registered route handlers based on configuration.
+
+        :return: Dictionary mapping route keys to handler functions
+        """
+        routes = {}
+        if self.connection_routes:
+            routes["/$connect"] = self._handle_connect
+            routes["/$disconnect"] = self._handle_disconnect
+        if self.system_routes:
+            routes["/$default"] = self._handle_default
+            routes["/chat"] = self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat        
+        return routes
 
     def _handle_connect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        """Handle WebSocket $connect route.
+
+        :param event: WebSocket connect event
+        :param context: Lambda context object
+        :return: Tuple of (status_code, response_body)
+        """
         try:
             connection_id = self._extract_connection_id(event)
 
@@ -145,6 +185,12 @@ class DefaultWSRoutesHandler:
             )
 
     def _handle_disconnect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        """Handle WebSocket $disconnect route.
+
+        :param event: WebSocket disconnect event
+        :param context: Lambda context object
+        :return: Tuple of (status_code, response_body)
+        """
         try:
             connection_id = self._extract_connection_id(event)
 
@@ -161,6 +207,12 @@ class DefaultWSRoutesHandler:
             )
 
     def _handle_default(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        """Handle WebSocket $default route.
+
+        :param event: WebSocket default route event
+        :param context: Lambda context object
+        :return: Tuple of (status_code, response_body)
+        """
         try:
             self.ws_handler.on_default()
             return 200, self._build_lambda_response(
@@ -173,6 +225,12 @@ class DefaultWSRoutesHandler:
             )
 
     def _handle_direct_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        """Handle direct chat request without queue.
+
+        :param event: WebSocket chat event
+        :param context: Lambda context object
+        :return: Tuple of (status_code, response_body)
+        """
         def _process_chat(request: BaseRequest) -> Dict[str, Any]:
             if request.body is None:
                 raise ValueError("body is required")
@@ -234,14 +292,24 @@ class WSLambdaRouter(BaseLambdaRouter):
     - If no handler match is found, the router raises ValueError.
     """
 
-    def __init__(self):
+    def __init__(self, connection_routes: bool = False, system_routes: bool = True):
+        """Initialize WebSocket Lambda router.
+
+        :param connection_routes: Include $connect and $disconnect routes
+        :param system_routes: Include $default and /chat routes
+        """
         super().__init__()
         self._log.info("Initializing default WebSocket routes")
-        self._ws_routes_handler = DefaultWSRoutesHandler()
+        self._ws_routes_handler = DefaultWSRoutesHandler(connection_routes=connection_routes, system_routes=system_routes)
         self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = self._ws_routes_handler.get_routes()
         self._log.info(f"Registered WebSocket Routes: {self._websocket_routes}")
 
     def _get_ws_handler_function(self, handler_logic_func: Callable[[Dict[str, Any], Any], Any]):
+        """Wrap handler function with WebSocket broadcasting.
+
+        :param handler_logic_func: Handler function to wrap
+        :return: Wrapped handler function
+        """
         def _handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             try:
                 user_id = self._ws_routes_handler._parse_body(event).user_id
