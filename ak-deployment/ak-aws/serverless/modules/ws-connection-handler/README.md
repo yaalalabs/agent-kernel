@@ -70,9 +70,9 @@ module "ws_connection_handler" {
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
 | `function_name` | Lambda function name | `string` | `"ws-connection-handler"` |
-| `function_description` | Lambda function description | `string` | `"WebSocket connection handler..."` |
-| `timeout` | Lambda timeout in seconds | `number` | `10` |
-| `memory_size` | Lambda memory in MB | `number` | `128` |
+| `function_description` | Lambda function description | `string` | `"WebSocket connection handler Lambda for $connect and $disconnect routes"` |
+| `timeout` | Lambda timeout in seconds | `number` | `30` |
+| `memory_size` | Lambda memory in MB | `number` | `256` |
 | `handler_path` | Lambda handler path | `string` | `"ws_connection_handler.handler"` |
 | `module_name` | Module name for resource naming | `string` | `"ws-connection-handler"` |
 | `package_path` | Path to Lambda zip package | `string` | n/a (required) |

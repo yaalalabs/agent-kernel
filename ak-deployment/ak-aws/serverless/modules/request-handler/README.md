@@ -67,7 +67,12 @@ module "request_handler" {
 | `dynamodb_memory_table_arn` | Agent memory table ARN |
 | `dynamodb_multimodal_memory_table_arn` | Multimodal memory table ARN |
 | `lambda_signing_config_arn` | Optional code signing config ARN |
+| `lambda_signer_profile_name` | AWS Signer profile name for code signing |
 | `docker_image_uri` | Image URI when `package_type = "Image"` |
+| `lambda_kms_key_arn` | KMS key ARN for Lambda encryption |
+| `cloudwatch_kms_key_arn` | KMS key ARN for CloudWatch logs encryption |
+| `product_display_name` | Product display name |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days |
 
 ## Injected Environment Variables
 
