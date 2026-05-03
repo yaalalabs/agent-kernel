@@ -25,16 +25,6 @@ output "websocket_api_stage_arn" {
   value       = module.websocket_api.stage_arns[0]
 }
 
-output "websocket_connection_table_name" {
-  description = "DynamoDB table name for WebSocket connection mapping"
-  value       = module.websocket_connections.table_name
-}
-
-output "websocket_connection_table_arn" {
-  description = "DynamoDB table ARN for WebSocket connection mapping"
-  value       = module.websocket_connections.table_arn
-}
-
 output "websocket_connection_table_gsi_name" {
   description = "Global Secondary Index name for connection_id lookups"
   value       = "connection_id-index"

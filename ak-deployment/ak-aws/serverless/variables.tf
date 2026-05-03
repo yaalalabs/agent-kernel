@@ -270,7 +270,7 @@ variable "gateway_endpoints" {
 
 
 variable "authorizer" {
-  description = "Authorizer configuration object"
+  description = "Authorizer configuration object. Required when execution_mode is 'rest_sync' or 'rest_async', must be null when execution_mode is 'async'."
   type = object({
     description           = optional(string, "API Gateway Lambda Authorizer")
     function_name         = string
@@ -282,8 +282,44 @@ variable "authorizer" {
     environment_variables = optional(map(string), {})
   })
   default = null
+  validation {
+    condition     = !(var.execution_mode == "async" && var.authorizer != null)
+    error_message = "authorizer must be null when execution_mode is 'async' (WebSocket mode)."
+  }
+  validation {
+    condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.authorizer == null)
+    error_message = "authorizer is required when execution_mode is 'rest_sync' or 'rest_async'."
+  }
 }
 
+variable "ws_connection_handler" {
+  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be null when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
+  type = object({
+    function_name         = optional(string, "ws-connection-handler")
+    function_description  = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
+    timeout               = optional(number, 30)
+    memory_size           = optional(number, 256)
+    handler_path          = optional(string, "ws_connection_handler.handler")
+    module_name           = optional(string, "ws-connection-handler")
+    package_path          = optional(string, null)
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+  })
+  default = null
+  validation {
+    condition     = !(var.execution_mode == "async" && var.ws_connection_handler == null)
+    error_message = "ws_connection_handler is required when execution_mode is 'async' (WebSocket mode)."
+  }
+  validation {
+    condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.ws_connection_handler != null)
+    error_message = "ws_connection_handler must be null when execution_mode is 'rest_sync' or 'rest_async'."
+  }
+  validation {
+    condition     = var.ws_connection_handler == null ? true : try(var.ws_connection_handler.package_path, null) != null
+    error_message = "ws_connection_handler.package_path is required when ws_connection_handler is defined."
+  }
+}
 
 variable "response_handler" {
   description = "Response handler configuration object"

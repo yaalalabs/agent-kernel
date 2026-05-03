@@ -92,8 +92,11 @@ locals {
 
   agent_invoke_url = try(module.api_gateway[0].agent_invoke_url, null)
 
+  # WebSocket API Gateway locals
   websocket_api_endpoint_url      = try(module.websocket_api_gateway[0].websocket_api_endpoint_url, null)
-  websocket_connection_table_name = try(module.websocket_api_gateway[0].websocket_connection_table_name, null)
+  websocket_api_endpoint_arn      = try(module.websocket_api_gateway[0].websocket_api_execution_arn, null)
+  websocket_connection_table_name = local.websocket_api_enabled ? module.websocket_connections[0].table_name : null
+  websocket_connection_table_arn  = local.websocket_api_enabled ? module.websocket_connections[0].table_arn : null
 }
 
 resource "aws_security_group" "lambda" {
@@ -214,12 +217,12 @@ module "websocket_api_gateway" {
 
   route_handler_lambda_invoke_arn      = local.request_handler_lambda_invoke_arn
   route_handler_lambda_name            = local.request_handler_lambda_function_name
-  connection_handler_lambda_invoke_arn = local.request_handler_lambda_invoke_arn
-  connection_handler_lambda_name       = local.request_handler_lambda_function_name
+  connection_handler_lambda_invoke_arn = module.ws_connection_handler[0].ws_connection_handler_lambda_function_invoke_arn
+  connection_handler_lambda_name       = module.ws_connection_handler[0].ws_connection_handler_lambda_function_name
 
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
-  depends_on = [module.request_handler]
+  depends_on = [module.request_handler, module.ws_connection_handler, module.websocket_connections]
 }
 
 module "docker_image" {
@@ -379,6 +382,33 @@ check "queue_visibility_timeouts" {
   }
 }
 
+# WebSocket Connections DynamoDB Table
+module "websocket_connections" {
+  count  = local.websocket_api_enabled ? 1 : 0
+  source = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.3.3"
+  attributes = [
+    { name = "user_id", type = "S" },
+    { name = "connection_id", type = "S" }
+  ]
+  global_secondary_indexes = [
+    {
+      name            = "connection_id-index"
+      hash_key        = "connection_id"
+      range_key       = "user_id"
+      projection_type = "ALL"
+    }
+  ]
+  hash_key           = "user_id"
+  range_key          = "connection_id"
+  env_alias          = var.env_alias
+  module_name        = "${var.module_name}-websocket-connections"
+  product_alias      = var.product_alias
+  table_name         = "websocket-connections"
+  ttl_enabled        = true
+  ttl_attribute_name = "expiry_time"
+}
+
 # DynamoDB response store module
 module "dynamodb_response_store" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
@@ -406,6 +436,31 @@ module "dynamodb_response_store" {
   product_alias      = var.product_alias
   table_name         = "ak-responses"
   ttl_attribute_name = "expiry_time"
+}
+
+module "ws_connection_handler" {
+  count  = local.websocket_api_enabled ? 1 : 0
+  source = "./modules/ws-connection-handler"
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_type          = var.module_type
+  is_production        = var.is_production
+  vpc_id              = local.vpc_id
+  subnet_ids          = local.subnet_ids
+  security_group_id   = local.security_group_id
+  lambda_kms_key_arn     = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+  ws_connection_handler = merge(var.ws_connection_handler, {
+    environment_variables = merge(
+      try(var.ws_connection_handler.environment_variables, {}),
+      {
+        AK_WEBSOCKET_API__CONNECTION_TABLE_NAME = local.websocket_connection_table_name,
+        AK_WEBSOCKET_API__ENDPOINT_URL          = local.websocket_api_endpoint_url
+      }
+    )
+  })
+  websocket_connection_table_arn = local.websocket_connection_table_arn
 }
 
 # Request Handler Lambda Module
@@ -454,9 +509,7 @@ module "request_handler" {
   lambda_kms_key_arn                      = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
   environment_variables = merge(try(var.environment_variables, null), {
-    AK_EXECUTION__MODE           = var.execution_mode,
-    AK_WEBSOCKET_API__ENDPOINT_URL = local.websocket_api_endpoint_url,
-    AK_WEBSOCKET_API__CONNECTION_TABLE_NAME = local.websocket_connection_table_name
+    AK_EXECUTION__MODE = var.execution_mode
   })
 
   depends_on = [module.request_handler_source_package]

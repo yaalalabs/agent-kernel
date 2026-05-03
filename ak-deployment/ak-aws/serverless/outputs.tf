@@ -196,12 +196,12 @@ output "websocket_api_stage_arn" {
 
 output "websocket_connection_table_name" {
   description = "DynamoDB table name for WebSocket connection mapping"
-  value       = try(module.websocket_api_gateway[0].websocket_connection_table_name, null)
+  value       = local.websocket_connection_table_name
 }
 
 output "websocket_connection_table_arn" {
   description = "DynamoDB table ARN for WebSocket connection mapping"
-  value       = try(module.websocket_api_gateway[0].websocket_connection_table_arn, null)
+  value       = local.websocket_connection_table_arn
 }
 
 output "websocket_cloudwatch_log_group_arn" {
@@ -212,4 +212,30 @@ output "websocket_cloudwatch_log_group_arn" {
 output "websocket_cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for WebSocket API"
   value       = try(module.websocket_api_gateway[0].websocket_cloudwatch_log_group_name, null)
+}
+
+# WebSocket Connection Handler outputs (conditional based on execution_mode == "async")
+output "ws_connection_handler_lambda_function_arn" {
+  description = "ARN of the WebSocket connection handler Lambda function"
+  value       = try(module.ws_connection_handler[0].ws_connection_handler_lambda_function_arn, null)
+}
+
+output "ws_connection_handler_lambda_function_name" {
+  description = "Name of the WebSocket connection handler Lambda function"
+  value       = try(module.ws_connection_handler[0].ws_connection_handler_lambda_function_name, null)
+}
+
+output "ws_connection_handler_lambda_function_invoke_arn" {
+  description = "Invoke ARN of the WebSocket connection handler Lambda function"
+  value       = try(module.ws_connection_handler[0].ws_connection_handler_lambda_function_invoke_arn, null)
+}
+
+output "ws_connection_handler_lambda_role_arn" {
+  description = "ARN of the WebSocket connection handler Lambda execution role"
+  value       = try(module.ws_connection_handler[0].ws_connection_handler_lambda_role_arn, null)
+}
+
+output "ws_connection_handler_lambda_role_name" {
+  description = "Name of the WebSocket connection handler Lambda execution role"
+  value       = try(module.ws_connection_handler[0].ws_connection_handler_lambda_role_name, null)
 }
