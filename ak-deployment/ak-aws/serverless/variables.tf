@@ -293,7 +293,7 @@ variable "authorizer" {
 }
 
 variable "ws_connection_handler" {
-  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be null when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
+  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be empty ({}) when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
   type = object({
     function_name         = optional(string, "ws-connection-handler")
     function_description  = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
@@ -306,17 +306,17 @@ variable "ws_connection_handler" {
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables = optional(map(string), {})
   })
-  default = null
+  default = {}
   validation {
-    condition     = !(var.execution_mode == "async" && var.ws_connection_handler == null)
+    condition     = !(var.execution_mode == "async" && var.ws_connection_handler == {})
     error_message = "ws_connection_handler is required when execution_mode is 'async' (WebSocket mode)."
   }
   validation {
-    condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.ws_connection_handler != null)
-    error_message = "ws_connection_handler must be null when execution_mode is 'rest_sync' or 'rest_async'."
+    condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.ws_connection_handler != {})
+    error_message = "ws_connection_handler must be empty when execution_mode is 'rest_sync' or 'rest_async'."
   }
   validation {
-    condition     = var.ws_connection_handler == null ? true : try(var.ws_connection_handler.package_path, null) != null
+    condition     = var.ws_connection_handler == {} ? true : try(var.ws_connection_handler.package_path, null) != null
     error_message = "ws_connection_handler.package_path is required when ws_connection_handler is defined."
   }
 }
