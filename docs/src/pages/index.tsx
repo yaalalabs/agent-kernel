@@ -460,7 +460,7 @@ function MessagingIntegrations() {
     { name: 'Instagram', icon: <FaInstagram />, color: '#E4405F', link: '/docs/integrations/instagram' },
     { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
     { name: 'Gmail', icon: <SiGmail />, color: '#EA4335', link: '/docs/integrations/gmail' },
-    { name: 'Teams', icon: <FaMicrosoft />, color: '#6264A7', link: '/docs/integrations/teams' },
+    { name: 'Teams', icon: <FaMicrosoft />, color: '#6264A7', link: '/docs/next/integrations/teams' },
   ];
 
   return (

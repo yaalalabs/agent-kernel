@@ -96,8 +96,8 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - Starburst Galaxy for SQL analytics over MongoDB, Google Sheets, PostgreSQL, and more
   - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
   - `semantic_map` keeps agent prompts portable across deployments
-  
-  [Learn more about knowledge bases →](/docs/architecture/knowledge-bases)
+  - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
+  [Learn more about knowledge bases →](/docs/next/architecture/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)
