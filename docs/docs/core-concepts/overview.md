@@ -320,6 +320,150 @@ if __name__ == "__main__":
 # - Execute agent logic via Runners
 ```
 
+## Knowledge Bases
+
+Sessions and caches help with short- to medium-term conversational context, but many applications also need durable, cross-session knowledge that persists across conversations and agents. Examples include product manuals, user or customer profiles, organizational policies, or domain knowledge graphs.
+
+Agent Kernel's **Knowledge Base** support provides a unified way to connect multiple storage backends (vector stores and graph databases) and expose them to agents as callable tools. This lets agents query and update knowledge with the same interface, regardless of which backend system stores the data.
+
+### Core Components
+
+**`KnowledgeBase` Interface**
+
+A backend-agnostic interface that every knowledge backend must implement (ChromaDB, Neo4j, Starburst/Trino, etc.). This ensures agents can read and write across different storage systems using the same API.
+
+```python
+from agentkernel.knowledgebase import KnowledgeBase
+
+# Every backend implements:
+# - schema(): metadata about what the backend contains
+# - read(query, limit): retrieve data
+# - write(records, **kwargs): persist data
+# - format_results(): present results to agents
+```
+
+**`KnowledgeBuilder`**
+
+Composes multiple backends and generates callable tools that agents can use. It creates three main functions:
+- `get_schemas()`: returns metadata for all connected backends (agent uses this to decide which backend to query)
+- `read_kb(backend, query)`: retrieve information from a specific backend
+- `write_kb(backend, text, query)`: persist information to a specific backend
+
+Critically, `KnowledgeBuilder` also handles **semantic placeholders** via `semantic_map`. This reduces agent hallucinations and errors by letting agents use stable logical names instead of remembering exact catalog/schema/table names or long physical identifiers:
+
+```python
+knowledgeBuilder = KnowledgeBuilder(
+    [mongo_backend, sheets_backend],
+    semantic_map={
+        "<MONGO_SOURCE>": "mongodb.prod.customers",  # Agent uses <MONGO_SOURCE>
+        "<SHEETS_SOURCE>": "sheets.prod.policies",   # Agent uses <SHEETS_SOURCE>
+    },
+)
+```
+
+The agent generates queries like `SELECT * FROM <MONGO_SOURCE> WHERE status = 'active'` and the semantic map resolves placeholders at runtime. If you deploy to a different environment, you simply provide a different map—the agent's query logic never changes.
+
+**KB Router Pattern**
+
+In practice, an agent often needs to decide *which* backend to query for a given task. The **KB Router** pattern uses a coordinator agent that:
+1. Calls `get_schemas()` once to inspect all available backends and their purposes
+2. For each user request, decides which backend(s) to query
+3. Routes reads/writes to the appropriate backend via `read_kb` / `write_kb`
+
+This keeps agents focused on domain logic while the router handles backend selection.
+
+When you have multiple knowledge bases, you can provide explicit instructions to your agent about routing decisions. The agent then uses these instructions plus the schema information to intelligently decide:
+- **Which KB to read from** – e.g., "For customer data, query the MongoDB backend. For company policies, query the Sheets backend."
+- **Which KB to write to** – e.g., "Store graph relationships in Neo4j using explicit Cypher. Store unstructured notes in ChromaDB."
+
+```python
+router_agent = CrewAgent(
+    role="knowledge_coordinator",
+    goal="Route queries to the right knowledge backend",
+    instructions="""
+    You have access to multiple knowledge bases:
+    - VectorDB: Use for semantic search of unstructured facts, documents, and notes
+    - GraphDB: Use for structured relationships, entities, and their connections
+    - MongoDB: Use for customer records, transactions, and business data
+    
+    When the user asks a question:
+    1. Call get_schemas() to see all available backends
+    2. Decide which backend(s) best answer the question
+    3. Call read_kb() to query the chosen backend
+    4. When storing new knowledge:
+       - New relationships or entities → write to GraphDB
+       - Unstructured notes or documents → write to VectorDB
+       - Business transactions → write to MongoDB
+    """,
+    tools=[],  # Knowledge base tools auto-registered
+)
+```
+
+The agent now has the intelligence to:
+- Understand *what* each backend stores (from `get_schemas()`)
+- Follow *where* to write based on instruction rules
+- Route both reads and writes to minimize hallucinations and ensure data goes to the right place
+
+### Example Flow
+
+```python
+from agentkernel.knowledgebase.chroma import ChromaManager
+from agentkernel.knowledgebase.neo4j import Neo4jManager
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+
+# 1. Define backends
+vector_store = ChromaManager(name="VectorDB", description="...")
+graph_db = Neo4jManager(name="GraphDB", description="...")
+
+# 2. Compose with semantic mapping
+kb = KnowledgeBuilder(
+    [vector_store, graph_db],
+    semantic_map={"<GRAPH>": "neo4j.default.graph"},
+)
+
+# 3. Agent uses tools
+kb.build()  # Creates get_schemas(), read_kb(), write_kb(), etc.
+
+# 4. Agent can now:
+# - Call get_schemas() to discover backends
+# - Call read_kb("GraphDB", "MATCH (n) LIMIT 5") to query the graph
+# - Call write_kb("VectorDB", text="new fact") to store knowledge
+```
+
+### Plugging Knowledge Base Into an Agent
+
+Once you have a `KnowledgeBuilder`, connecting it to an agent is straightforward. Get the knowledge base tools and pass them to your agent framework:
+
+```python
+from crewai import Agent as CrewAgent
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+from agentkernel.crewai import CrewAIToolBuilder
+
+# 1. Create KnowledgeBuilder with your backends
+kb = KnowledgeBuilder([mongo_backend, sheets_backend], semantic_map={...})
+
+# 2. Extract the knowledge base tools
+kb_tools = kb.build()  # Returns [get_schemas, read_kb, write_kb, get_all_kb_descriptions]
+
+# 3. Create your agent with these tools automatically available
+knowledge_agent = CrewAgent(
+    role="knowledge_router",
+    goal="Query and manage knowledge across vector stores and graphs",
+    # Bind framework-agnostic KB callables into CrewAI-compatible tools
+    # so the agent can invoke get_schemas/read_kb/write_kb at runtime.
+    tools=crewAItoolbuilder.bind(kb_tools)
+   
+)
+```
+
+The knowledge base tools integrate seamlessly with Agent Kernel's `ToolBuilder` pattern, which means:
+- **Framework-agnostic**: same KB tools work with OpenAI, CrewAI, LangGraph, etc.
+- **No boilerplate**: Agent automatically gets `read_kb`, `write_kb`, and schema introspection
+- **Pluggable**: swap backends without changing agent code
+- **Type-aware**: agent knows the function signatures and can call them correctly
+
+For a complete working example with multiple agents and interactive routing, see [`examples/cli/knowledgebase/openai/multi/demo.py`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/knowledgebase/openai/multi).
+
 ## Next Steps
 
 Dive deeper into each core concept:
@@ -338,6 +482,7 @@ Or explore specific use cases:
 - [Deployment](../deployment/overview) - Production deployment options
 - [Session Management](./session) - Session configuration and lifecycle
 - [Memory Management](../architecture/memory-management) - Advanced memory features and caching
+- [Knowledge Bases](../architecture/knowledge-bases) -  knowledge backends and KB routing
 
 ---
 

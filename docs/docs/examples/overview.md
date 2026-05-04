@@ -35,6 +35,7 @@ Command-line interface examples for local development and testing:
 - **`langgraph/`** - LangGraph framework integration examples
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples
+- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, and `multi/`
 
 ### 📁 Containerized Examples (`/examples/containerized`)
 

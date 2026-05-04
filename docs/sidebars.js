@@ -41,6 +41,7 @@ const sidebars = {
         'architecture/overview',
         'architecture/execution-flow',
         'architecture/memory-management',
+        'architecture/knowledge-bases'
       ],
     },
     {
