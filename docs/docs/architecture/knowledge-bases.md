@@ -202,7 +202,7 @@ You can bring your own storage backend by subclassing `KnowledgeBase`. Any backe
 
 ### Minimal implementation
 
-Subclass `KnowledgeBase` and implement the four required members:
+Subclass `KnowledgeBase` and implement the five required members: `connect`, `write`, `read`, `backend_name`, and `get_description`:
 
 ```python
 from typing import Any, Iterable, List, Mapping
