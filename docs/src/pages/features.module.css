@@ -1416,6 +1416,12 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.frameworkComingSoon {
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
 .frameworkName {
   font-size: 1rem;
   font-weight: 700;
