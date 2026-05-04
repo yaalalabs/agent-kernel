@@ -196,7 +196,72 @@ See the per-backend READMEs for step-by-step usage and routing behavior:
 - `examples/cli/knowledgebase/openai/starburst/README.md`
 - `examples/cli/knowledgebase/openai/multi/README.md`
 
+## Custom KnowledgeBase Adapters
+
+You can bring your own storage backend by subclassing `KnowledgeBase`. Any backend registered with `KnowledgeBuilder` — built-in or custom — is exposed to agents through the same `read_kb` / `write_kb` / `get_schemas` tools.
+
+### Minimal implementation
+
+Subclass `KnowledgeBase` and implement the four required members:
+
+```python
+from typing import Any, Iterable, List, Mapping
+from agentkernel.knowledgebase.base import KnowledgeBase, Record
+
+
+class MyBackend(KnowledgeBase):
+    """Example custom knowledge base adapter."""
+
+    @property
+    def backend_name(self) -> str:
+        return "MyBackend"  # Must be unique across registered backends
+
+    def connect(self, **kwargs) -> None:
+        # Establish any client / connection here
+        self._client = ...  # your storage client
+
+    def write(self, records: Iterable[Record], **kwargs) -> None:
+        # Persist records; each record is {"text": str, "metadata": dict}
+        for record in records:
+            self._client.store(record["text"], record.get("metadata", {}))
+
+    def read(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+        # Return the most relevant records for the query
+        raw = self._client.search(query, top_k=limit)
+        return [{"text": r.text, "metadata": r.meta} for r in raw]
+
+    def get_description(self) -> str:
+        return "MyBackend stores domain-specific knowledge and supports full-text search."
+```
+
+### Registering the custom backend
+
+Pass your backend to `KnowledgeBuilder` exactly as you would a built-in one:
+
+```python
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+
+my_backend = MyBackend().add_schema({
+    "description": "Domain knowledge store",
+    "usage": "Call read_kb with a natural-language query to retrieve matching entries.",
+})
+
+kb = KnowledgeBuilder([my_backend])
+kb_tools = kb.build()
+```
+
+### Optional overrides
+
+| Method | Default | When to override |
+|---|---|---|
+| `format_results(rows)` | Bullet-list of `text` + `source` | Custom display format for agent responses |
+| `close()` | No-op | Release connections or flush write buffers |
+| `add_schema(config)` | Merges dict into `_dynamic_schema` | Rarely needed; just call it rather than override |
+| `schema()` | Returns `{"backend": name, ...schema_config}` | If your backend needs computed schema fields |
+
+
 ## When to Use Knowledge Bases vs. Memory
+
 
 Use **session memory and caches** when:
 - Data is tied to a single conversation or short‑lived workflow.

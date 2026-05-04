@@ -22,10 +22,27 @@ import {
   MdExtension,
   MdIntegrationInstructions,
   MdCloudUpload,
+  MdStorage,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
+
+/* ─── What's New Banner ─────────────────────────────────────────────────── */
+
+function WhatsNewBanner() {
+  return (
+    <div className={styles.whatsNewBanner}>
+      <span className={styles.whatsNewBadge}>What's New</span>
+      <span className={styles.whatsNewText}>
+        🧠 <strong>Knowledge Base Support</strong> — ChromaDB, Neo4j &amp; Starburst Galaxy built-in, plus a <strong>custom adapter API</strong> to plug in any backend.
+      </span>
+      <Link to="/docs/next/architecture/knowledge-bases" className={styles.whatsNewLink}>
+        Learn more →
+      </Link>
+    </div>
+  );
+}
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
@@ -91,6 +108,22 @@ function FrameworksStrip() {
               <span className={styles.frameworkName}>{f.name}</span>
             </Link>
           ))}
+          <span className={styles.frameworkItem} style={{ opacity: 0.45, cursor: 'default' }}>
+            <img
+              src="/img/integrations/smolagents.svg"
+              alt="Smol Agents"
+              className={styles.frameworkLogo}
+            />
+            <span className={styles.frameworkName}>Smol Agents <em style={{ fontSize: '0.75em' }}>(soon)</em></span>
+          </span>
+          <span className={styles.frameworkItem} style={{ opacity: 0.45, cursor: 'default' }}>
+            <img
+              src="/img/integrations/livekit.png"
+              alt="LiveKit"
+              className={styles.frameworkLogo}
+            />
+            <span className={styles.frameworkName}>LiveKit <em style={{ fontSize: '0.75em' }}>(soon)</em></span>
+          </span>
         </div>
       </div>
     </section>
@@ -133,7 +166,7 @@ function ValueProp() {
     { problem: 'Framework lock-in', solution: 'Switch with 2 import lines' },
     { problem: 'Cloud lock-in', solution: 'AWS + Azure, same code' },
     { problem: 'Build session management', solution: 'Multi-backend, built-in' },
-    { problem: 'Wire messaging platforms', solution: 'Slack, WhatsApp, 6+ out of the box' },
+    { problem: 'Wire messaging platforms', solution: 'Slack, WhatsApp, Teams, 7+ out of the box' },
     { problem: 'No testing standard', solution: 'pytest-integrated test framework' },
   ];
 
@@ -264,9 +297,16 @@ function KeyFeatures() {
       link: '/docs/integrations/hooks',
     },
     {
+      icon: <MdStorage />,
+      title: 'Knowledge Bases',
+      description: 'Backend-agnostic durable knowledge storage with ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL analytics). Cross-session, multi-agent knowledge with semantic search.',
+      size: 'wide',
+      link: '/docs/next/architecture/knowledge-bases',
+    },
+    {
       icon: <FaSlack />,
       title: 'Messaging Integrations',
-      description: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
+      description: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail, Microsoft Teams — built-in. Plug and play.',
       size: 'normal',
       link: '/docs/integrations/overview',
     },
@@ -420,6 +460,7 @@ function MessagingIntegrations() {
     { name: 'Instagram', icon: <FaInstagram />, color: '#E4405F', link: '/docs/integrations/instagram' },
     { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
     { name: 'Gmail', icon: <SiGmail />, color: '#EA4335', link: '/docs/integrations/gmail' },
+    { name: 'Teams', icon: <FaMicrosoft />, color: '#6264A7', link: '/docs/integrations/teams' },
   ];
 
   return (
@@ -446,13 +487,7 @@ function MessagingIntegrations() {
             ))}
           </div>
         </div>
-        <div className={styles.comingSoonRow}>
-          <div className={`${styles.messagingCard} ${styles.comingSoonCard}`}>
-            <MdCode className={styles.messagingIcon} style={{ color: '#6264A7' } as React.CSSProperties} />
-            <span className={styles.messagingName}>Teams</span>
-            <span className={styles.comingSoonBadge}>Coming Soon</span>
-          </div>
-        </div>
+
       </div>
     </section>
   );
@@ -605,6 +640,7 @@ export default function Home() {
     <Layout
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
+      <WhatsNewBanner />
       <Hero />
       <main>
         <AffiliationsStrip />

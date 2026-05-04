@@ -25,6 +25,7 @@ The following built-in integrations are available.
 - **[Instagram](./instagram)** - Deploy agents as Instagram DM bots
 - **[Telegram](./telegram)** - Deploy agents as Telegram bots
 - **[Gmail](./gmail)** - Deploy agents as Gmail bots that automatically read and reply to emails
+- **[Microsoft Teams](./teams)** - Deploy agents as Microsoft Teams bots via Azure Bot Framework, supporting 1:1 chats, group chats, and channels
 
 ```mermaid
 ---
@@ -33,13 +34,15 @@ config:
   elk: true
 ---
 flowchart LR
-    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"]
+    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"] & T["Teams"]
 
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style O fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style T fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ### Custom
@@ -54,13 +57,14 @@ config:
 ---
 flowchart LR
     
-    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailHandler"] & N["CustomHandler"]
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailHandler"] & T["AgentTeamsHandler"] & N["CustomHandler"]
 
     style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#b5667b,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#484c7a,stroke:#fff,stroke-width:2px,color:#fff
     style O fill:#3a9ecc,stroke:#fff,stroke-width:2px,color:#fff
+    style T fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
     style N fill:#bd7e4a,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
