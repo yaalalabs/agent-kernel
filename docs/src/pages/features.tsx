@@ -323,8 +323,7 @@ function FrameworkSupport() {
             <Link
               key={i}
               to={f.link}
-              className={`${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''} ${'comingSoon' in f && f.comingSoon ? styles.frameworkComingSoon ?? '' : ''}`}
-              style={'comingSoon' in f && f.comingSoon ? { opacity: 0.6 } : {}}>
+              className={`${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''} ${'comingSoon' in f && f.comingSoon ? styles.frameworkComingSoon : ''}`}>
               <h3 className={styles.frameworkName}>{f.name}</h3>
               <p className={styles.frameworkDescription}>{f.description}</p>
               <span className={styles.frameworkLink}>Learn more →</span>
