@@ -180,6 +180,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["crewai", "redis"] },
+    { name = "crewai" },
 ]
 
 [package.dev-dependencies]
@@ -191,7 +192,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["crewai", "redis"], specifier = ">=0.3.3" }]
+requires-dist = [
+    { name = "agentkernel", extras = ["crewai", "redis"], specifier = ">=0.3.3" },
+    { name = "crewai", specifier = "==0.165.1" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -563,7 +567,7 @@ wheels = [
 
 [[package]]
 name = "crewai"
-version = "0.159.0"
+version = "0.165.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "appdirs" },
@@ -593,9 +597,9 @@ dependencies = [
     { name = "tomli-w" },
     { name = "uv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/47/1c/7b7622988703606137fa6abaa50f61bf0a736f04b7b574637cde51b2112b/crewai-0.159.0.tar.gz", hash = "sha256:feff7a97a3fa0c7ddb6d8a94d6cb584eb093930e6ca5b330d64c36241381741f", size = 6346238, upload-time = "2025-08-13T23:53:08.957Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/fd/4f1d30f8966a5d21c785f80b1edce2a0505373180ddeba5c2026c969dd5a/crewai-0.165.1.tar.gz", hash = "sha256:8f0c1e13fad39092ed7e2116722ec01361cb68a0ed5a05158374d1262cc49b8f", size = 6450486, upload-time = "2025-08-19T03:06:45.623Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/c7/47af318bce3d86384ea804a51b6bdd7bf5af233d3422f7d5512a5b5915a1/crewai-0.159.0-py3-none-any.whl", hash = "sha256:809719e3d40de850313d600706b0b39bb2e7ff518e90bccfa028d6dc4a06ce17", size = 379181, upload-time = "2025-08-13T23:53:03.606Z" },
+    { url = "https://files.pythonhosted.org/packages/59/01/68d92b7fffed5995a9b069e7517d353033d1735dac7d0349e5c62a18a842/crewai-0.165.1-py3-none-any.whl", hash = "sha256:9bdc8e26dfddd54a2a7046cc8625ea37a4cbd9588fa4d372317325421523ec25", size = 380622, upload-time = "2025-08-19T03:06:43.239Z" },
 ]
 
 [[package]]
