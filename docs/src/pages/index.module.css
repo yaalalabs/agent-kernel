@@ -456,6 +456,225 @@
   color: #8b5cf6;
 }
 
+/* ─── Business Leader Step 03 — Highlight Card ─────────────────────────────── */
+ 
+.blHighlightCard {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.5rem;
+  padding: 2rem 2.25rem;
+  margin-bottom: 2rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+ 
+.blHighlightEyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 0.75rem 0;
+}
+ 
+.blHighlightTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 1rem 0;
+  line-height: 1.3;
+}
+ 
+.blHighlightBody {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.65;
+  margin: 0 0 0.75rem 0;
+  max-width: 680px;
+}
+ 
+.blHighlightBody:last-child {
+  margin-bottom: 0;
+}
+ 
+/* ─── Business Leader Step 03 — Value Grid ──────────────────────────────────── */
+ 
+.blValueGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+ 
+.blValueCard {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 1.75rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  text-align: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: border-color 0.2s ease;
+}
+ 
+.blValueCard:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+ 
+.blValueIcon {
+  font-size: 3rem;
+  color: #ffffff;
+  opacity: 0.8;
+}
+ 
+.blValueTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.3;
+}
+ 
+.blValueBody {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.6;
+  margin: 0;
+}
+ 
+/* ─── Step 04 — Scenarios wrapper ───────────────────────────────────────────── */
+ 
+.blScenarios {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  margin-top: 1.5rem;
+}
+ 
+/* ─── Tab buttons ────────────────────────────────────────────────────────────── */
+ 
+.blTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+ 
+.blTab {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  backdrop-filter: blur(4px);
+}
+ 
+.blTab:hover {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+ 
+/* Active tab: white border + white text, matches the image */
+.blTabActive {
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+  background: transparent;
+}
+ 
+/* ─── Scenario content area ──────────────────────────────────────────────────── */
+ 
+.blScenarioContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+ 
+.blScenarioTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.2;
+}
+ 
+.blScenarioChannels {
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0 0 1.5rem 0;
+  font-weight: 400;
+}
+ 
+/* ─── Three columns ──────────────────────────────────────────────────────────── */
+ 
+.blScenarioCols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+ 
+.blScenarioCol {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.75rem;
+  padding: 2rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+ 
+.blScenarioColHeading {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.25rem 0;
+  line-height: 1.3;
+}
+ 
+.blScenarioColSub {
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 0 1rem 0;
+  font-weight: 400;
+}
+ 
+.blScenarioColBody {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.7;
+  margin: 0;
+}
+ 
+/* ─── Responsive ─────────────────────────────────────────────────────────────── */
+ 
+@media (max-width: 768px) {
+  .blTabBar {
+    gap: 0.5rem;
+  }
+ 
+  .blTab {
+    padding: 0.6rem 1rem;
+    font-size: 0.8rem;
+  }
+ 
+  .blScenarioCols {
+    grid-template-columns: 1fr;
+  }
+ 
+  .blScenarioTitle {
+    font-size: 1.35rem;
+  }
+}
+
 /* ─── Key Features (Bento) ─────────────────────────────────────────────────── */
 
 .bentoGrid {
@@ -1125,7 +1344,7 @@
 }
 
 .contentTitle {
-  font-size: 1.875rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: -0.03em;
@@ -1187,7 +1406,7 @@
 }
 
 .bulletList li {
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
   display: flex;

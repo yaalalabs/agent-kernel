@@ -620,6 +620,180 @@ function Community() {
   );
 }
 
+/* ─── Business Leader Scenarios ────────────────────────────────────────── */
+function BusinessLeaderScenarios() {
+  const [activeTab, setActiveTab] = useState<string>('ecommerce');
+ 
+  const tabs = [
+    { id: 'ecommerce', label: 'E-Commerce' },
+    { id: 'sales', label: 'Sales' },
+    { id: 'itops', label: 'IT & Ops' },
+    { id: 'insurance', label: 'Insurance' },
+    { id: 'logistics', label: 'Logistics' },
+    { id: 'hr', label: 'HR & Recruiting' },
+  ];
+ 
+  const scenarios: Record<string, {
+    title: string;
+    channels: string;
+    problem: { heading: string; sub: string; body: string };
+    agent: { heading: string; sub: string; body: string };
+    whyAk: { heading: string; sub: string; body: string };
+  }> = {
+    ecommerce: {
+      title: 'Order Management Agent',
+      channels: 'Website / WhatsApp / Instagram',
+      problem: {
+        heading: 'The Problem',
+        sub: "Why it's painful",
+        body: 'Customers ask "where\'s my order?" across your website, WhatsApp, and Instagram and your team copies tracking numbers between systems all day.',
+      },
+      agent: {
+        heading: 'The Agent',
+        sub: 'What it actually does',
+        body: 'Connects to your order system, shipping carriers, and payment gateway. Looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps conversation memory across channels and sessions.',
+      },
+      whyAk: {
+        heading: 'Why Agent Kernel',
+        sub: 'The Agent Kernel advantage',
+        body: 'One agent can serve many channels with built-in session memory, guardrails, and cloud deployment flexibility.',
+      },
+    },
+    sales: {
+      title: 'Lead Qualification Agent',
+      channels: 'Website / Slack / Email',
+      problem: {
+        heading: 'The Problem',
+        sub: "Why it's painful",
+        body: 'Sales reps spend hours qualifying inbound leads manually, copying data into CRM, and scheduling demos — losing hot leads to slow follow-up.',
+      },
+      agent: {
+        heading: 'The Agent',
+        sub: 'What it actually does',
+        body: 'Engages leads the moment they arrive, asks qualification questions, scores intent, updates your CRM automatically, and books demo calls — around the clock.',
+      },
+      whyAk: {
+        heading: 'Why Agent Kernel',
+        sub: 'The Agent Kernel advantage',
+        body: 'Integrates with Slack alerts, Gmail follow-ups, and your CRM via hooks — deployed in days, not quarters.',
+      },
+    },
+    itops: {
+      title: 'IT Help Desk Agent',
+      channels: 'Slack / Teams / Email',
+      problem: {
+        heading: 'The Problem',
+        sub: "Why it's painful",
+        body: 'Your IT team is buried in repetitive tickets — password resets, VPN access, software installs — while critical issues wait in the queue.',
+      },
+      agent: {
+        heading: 'The Agent',
+        sub: 'What it actually does',
+        body: 'Handles Tier-1 requests autonomously: resets passwords, provisions access, runs diagnostics, and escalates only what truly needs a human.',
+      },
+      whyAk: {
+        heading: 'Why Agent Kernel',
+        sub: 'The Agent Kernel advantage',
+        body: 'Works inside Slack or Teams with guardrails to prevent unauthorized actions and full observability on every step taken.',
+      },
+    },
+    insurance: {
+      title: 'Claims Intake Agent',
+      channels: 'Website / WhatsApp / Email',
+      problem: {
+        heading: 'The Problem',
+        sub: "Why it's painful",
+        body: 'Claims intake is slow and error-prone — customers call, agents transcribe, documents get lost, and follow-ups fall through the cracks.',
+      },
+      agent: {
+        heading: 'The Agent',
+        sub: 'What it actually does',
+        body: 'Guides claimants through intake, collects documents, validates policy coverage, creates claim records, and sends status updates automatically.',
+      },
+      whyAk: {
+        heading: 'Why Agent Kernel',
+        sub: 'The Agent Kernel advantage',
+        body: 'PII guardrails and audit-grade tracing built in. Runs on your own cloud so sensitive data never leaves your infrastructure.',
+      },
+    },
+    logistics: {
+      title: 'Shipment Tracking Agent',
+      channels: 'WhatsApp / Telegram / Email',
+      problem: {
+        heading: 'The Problem',
+        sub: "Why it's painful",
+        body: 'Dispatchers field hundreds of "where is my shipment?" calls a day while drivers, carriers, and customers all use different systems.',
+      },
+      agent: {
+        heading: 'The Agent',
+        sub: 'What it actually does',
+        body: 'Unifies carrier APIs, answers tracking queries instantly, proactively alerts customers on delays, and updates ETAs across all channels.',
+      },
+      whyAk: {
+        heading: 'Why Agent Kernel',
+        sub: 'The Agent Kernel advantage',
+        body: 'Multi-channel by default — WhatsApp, Telegram, email — with session memory so every customer gets a continuous conversation.',
+      },
+    },
+    hr: {
+      title: 'Recruiting Screener Agent',
+      channels: 'Email / Slack / Website',
+      problem: {
+        heading: 'The Problem',
+        sub: "Why it's painful",
+        body: 'Recruiters spend 60% of their time on first-round screens, scheduling, and chasing candidates — before any real evaluation begins.',
+      },
+      agent: {
+        heading: 'The Agent',
+        sub: 'What it actually does',
+        body: 'Reaches out to applicants, runs structured screening conversations, scores responses, schedules interviews with calendar integration, and summarizes for hiring managers.',
+      },
+      whyAk: {
+        heading: 'Why Agent Kernel',
+        sub: 'The Agent Kernel advantage',
+        body: 'Semantic testing ensures agent responses stay on-script. Hooks let you inject role-specific rubrics without touching agent logic.',
+      },
+    },
+  };
+ 
+  const active = scenarios[activeTab];
+ 
+  return (
+    <div className={styles.blScenarios}>
+ 
+      {/* ── Tab buttons — big rounded bordered buttons like in the image ── */}
+      <div className={styles.blTabBar}>
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`${styles.blTab} ${activeTab === t.id ? styles.blTabActive : ''}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+ 
+      {/* ── Scenario content ── */}
+      <div className={styles.blScenarioContent}>
+        <h3 className={styles.blScenarioTitle}>{active.title}</h3>
+        <p className={styles.blScenarioChannels}>{active.channels}</p>
+ 
+        <div className={styles.blScenarioCols}>
+          {[active.problem, active.agent, active.whyAk].map((col) => (
+            <div key={col.heading} className={styles.blScenarioCol}>
+              <p className={styles.blScenarioColHeading}>{col.heading}</p>
+              <p className={styles.blScenarioColSub}>{col.sub}</p>
+              <p className={styles.blScenarioColBody}>{col.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+ 
+    </div>
+  );
+}
+
 /* ─── Levels ────────────────────────────────────────────────────────────── */
 
 interface Level {
@@ -810,6 +984,8 @@ function Levels() {
           {/* ── BUSINESS LEADER CONTENT ── */}
           {selectedLevel === '01' && (
             <div ref={contentRef} className={styles.levelContent}>
+          
+              {/* ── STEP 01 ── */}
               <div className={styles.contentStep}>
                 <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
                 <h2 className={styles.contentTitle}>
@@ -819,7 +995,7 @@ function Levels() {
                   Most businesses have processes that still depend too much on people. They are repetitive, slow, and hard to scale. The gap looks different depending on where you are.
                 </p>
               </div>
-
+          
               <div className={styles.contentGrid}>
                 <div className={styles.contentCard}>
                   <h3 className={styles.contentCardLabel}>SaaS / Product</h3>
@@ -830,7 +1006,6 @@ function Levels() {
                     <li>Repetitive workflows require human involvement every time</li>
                   </ul>
                 </div>
-
                 <div className={styles.contentCard}>
                   <h3 className={styles.contentCardLabel}>Enterprise / Large Org</h3>
                   <p className={styles.contentCardTitle}>Do you run complex operations?</p>
@@ -840,7 +1015,6 @@ function Levels() {
                     <li>Cross-team hand offs are slow and error-prone</li>
                   </ul>
                 </div>
-
                 <div className={styles.contentCard}>
                   <h3 className={styles.contentCardLabel}>Building Something New</h3>
                   <p className={styles.contentCardTitle}>Do you have a product idea?</p>
@@ -851,13 +1025,14 @@ function Levels() {
                   </ul>
                 </div>
               </div>
-
+          
+              {/* ── STEP 02 ── */}
               <div style={{ marginTop: '2rem' }}>
                 <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
                 <h2 className={styles.contentTitle}>
                   An AI agent doesn't just answer, it gets things done.
                 </h2>
-
+          
                 <div className={styles.agentFlow}>
                   <div className={styles.flowStep}>
                     <MdGpsFixed className={styles.flowIcon} />
@@ -896,6 +1071,73 @@ function Levels() {
                   </div>
                 </div>
               </div>
+          
+              {/* ── STEP 03 ── */}
+              <div style={{ marginTop: '2rem' }}>
+                <p className={styles.stepLabel}>Step 03 / Agent Kernel</p>
+                <h2 className={styles.contentTitle}>
+                  Agent Kernel is the engine that powers it at scale
+                </h2>
+          
+                {/* OS analogy highlight card */}
+                <div className={styles.blHighlightCard}>
+                  <p className={styles.blHighlightEyebrow}>For Your Business</p>
+                  <h3 className={styles.blHighlightTitle}>
+                    Agent Kernel is like an Operating System for AI agents.
+                  </h3>
+                  <p className={styles.blHighlightBody}>
+                    You don't need to understand how an operating system works to use the Internet. It runs behind the scenes, powering websites, servers, and cloud systems.
+                  </p>
+                  <p className={styles.blHighlightBody}>
+                    Agent Kernel does the same thing for AI agents. It's a powerful platform that runs your AI agents in the background, handling all the complex infrastructure so that you focus on building the features that matter to your business.
+                  </p>
+                </div>
+          
+                {/* 3 value props */}
+                <div className={styles.blValueGrid}>
+                  <div className={styles.blValueCard}>
+                    <div className={styles.blValueIcon}>
+                      <MdRocketLaunch />
+                    </div>
+                    <h4 className={styles.blValueTitle}>Days, not months</h4>
+                    <p className={styles.blValueBody}>
+                      No one has to build agent infrastructure from scratch. Go from idea to enterprise-grade working agent ideas.
+                    </p>
+                  </div>
+                  <div className={styles.blValueCard}>
+                    <div className={styles.blValueIcon}>
+                      <MdMessage />
+                    </div>
+                    <h4 className={styles.blValueTitle}>Works where you are</h4>
+                    <p className={styles.blValueBody}>
+                      Pre-built messaging connectors such as Slack, WhatsApp, Instagram, Telegrams, Gmail, and Teams. No custom wiring required.
+                    </p>
+                  </div>
+                  <div className={styles.blValueCard}>
+                    <div className={styles.blValueIcon}>
+                      <MdCloud />
+                    </div>
+                    <h4 className={styles.blValueTitle}>Runs on any cloud</h4>
+                    <p className={styles.blValueBody}>
+                      Deploy on AWS, Azure, or your own on-prem Docker. No vendor lock-in. You stay in control of your data and infrastructure.
+                    </p>
+                  </div>
+                </div>
+              </div>
+          
+              {/* ── STEP 04 ── */}
+              <div style={{ marginTop: '2rem' }}>
+                <p className={styles.stepLabel}>Step 04 / See it in action</p>
+                <h2 className={styles.contentTitle}>
+                  See your Agent Kernel in action
+                </h2>
+                <p className={styles.contentBody}>
+                  Curious what your agent can actually do? Here are some real starting points across industries.
+                </p>
+          
+                <BusinessLeaderScenarios />
+              </div>
+          
             </div>
           )}
 
