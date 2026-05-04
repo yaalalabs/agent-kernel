@@ -1,8 +1,11 @@
+import os
+import sys
+
 import pytest
 import pytest_asyncio
 from agentkernel.test import Test
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
