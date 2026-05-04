@@ -8,7 +8,7 @@ slug: /
 **From Agent Logic to Production in Minutes.**
 
 :::tip What's New
-☁️ **Multi-Cloud Azure Support** - Agent Kernel now supports Microsoft Azure! Deploy to Azure Functions (serverless) or Azure Container Apps (containerized) with the same ease as AWS. Full Terraform modules, Cosmos DB session storage, and enterprise-ready deployment patterns. [Learn more →](/docs/deployment/overview)
+🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
 :::
 
 ## What is Agent Kernel?
@@ -37,11 +37,15 @@ flowchart LR
     D["CrewAI"] --> B
     E["LangGraph"] --> B
     F["Google ADK"] --> B
+    SA["Smol Agents *(soon)*"] --> B
+    LK["LiveKit *(soon)*"] --> B
     G["Test Framework"]
     B --> G
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
+    style SA fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
+    style LK fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
 ```
 
 ## Why Agent Kernel?
@@ -62,6 +66,7 @@ Agent Kernel provides pre-built execution capabilities:
   - Telegram
   - Instagram
   - Gmail
+  - Microsoft Teams
 - **Multi-Cloud Serverless Deployment** for scalable production
   - AWS Lambda
   - Azure Functions
@@ -85,6 +90,14 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 
 ### Enterprise-Ready Features
 
+- **Knowledge Bases**: Backend-agnostic durable knowledge storage across sessions
+  - ChromaDB for semantic/vector search
+  - Neo4j for entity and relationship graph queries
+  - Starburst Galaxy for SQL analytics over MongoDB, Google Sheets, PostgreSQL, and more
+  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
+  - `semantic_map` keeps agent prompts portable across deployments
+  - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
+  [Learn more about knowledge bases →](/docs/next/architecture/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)
@@ -171,6 +184,10 @@ Agent Kernel currently supports:
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
 
+Coming soon:
+- **Smol Agents** - Hugging Face's lightweight agentic framework
+- **LiveKit Agents** - Real-time audio/video agent framework for voice-enabled AI applications
+
 ### Flexible Deployment
 
 ```mermaid
@@ -185,7 +202,7 @@ flowchart LR
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- AWS Cloud --> E["AWS Lambda"] & F["AWS ECS/Fargate"]
     B -- Azure Cloud --> K["Azure Functions"] & L["Azure Container Apps"]
-    D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"]
+    D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"] & T["Teams"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff

@@ -27,6 +27,8 @@ graph TB
         H[CrewAI]
         I[LangGraph]
         J[Google ADK]
+        SA[Smol Agents soon]
+        LK[LiveKit soon]
     end
     
     subgraph "Storage Layer"
@@ -34,6 +36,12 @@ graph TB
         L[Redis AWS & Azure]
         M[DynamoDB AWS]
         N[Cosmos DB Azure]
+    end
+
+    subgraph "Knowledge Base Layer"
+        KB1[ChromaDB]
+        KB2[Neo4j]
+        KB3[Starburst Galaxy]
     end
     
     subgraph "Execution Layer"
@@ -54,11 +62,17 @@ graph TB
     C --> H
     C --> I
     C --> J
+    C -.-> SA
+    C -.-> LK
     
     E --> K
     E --> L
     E --> M
     E --> N
+
+    F --> KB1
+    F --> KB2
+    F --> KB3
     
     F --> O
     F --> P
@@ -67,6 +81,11 @@ graph TB
 
     style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff    
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style SA fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
+    style LK fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
+    style KB1 fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
+    style KB2 fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
+    style KB3 fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Key Design Principles

@@ -191,6 +191,13 @@ function CoreFeatures() {
       link: '/docs/architecture/memory-management',
     },
     {
+      icon: <MdStorage />,
+      title: 'Knowledge Bases',
+      description: 'Backend-agnostic durable knowledge storage for cross-session, multi-agent knowledge. Semantic search, graph queries, and SQL analytics with a single unified API.',
+      highlights: ['ChromaDB — vector/semantic search', 'Neo4j — entity and relationship graphs', 'Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL', 'semantic_map keeps agent prompts portable'],
+      link: '/docs/next/architecture/knowledge-bases',
+    },
+    {
       icon: <MdCloud />,
       title: 'Multi-Cloud Deployment',
       description: 'One agent codebase deploys to AWS and Azure with full Terraform modules. No vendor lock-in, ever.',
@@ -287,6 +294,18 @@ function FrameworkSupport() {
       link: '/docs/frameworks/multi-framework',
       featured: true,
     },
+    {
+      name: 'Smol Agents',
+      description: "Hugging Face's lightweight agentic framework for open-source models. Coming soon.",
+      link: '/docs/frameworks/overview',
+      comingSoon: true,
+    },
+    {
+      name: 'LiveKit Agents',
+      description: 'Real-time audio and video agent framework for voice-enabled AI applications. Coming soon.',
+      link: '/docs/frameworks/overview',
+      comingSoon: true,
+    },
   ];
 
   return (
@@ -304,7 +323,7 @@ function FrameworkSupport() {
             <Link
               key={i}
               to={f.link}
-              className={`${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''}`}>
+              className={`${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''} ${'comingSoon' in f && f.comingSoon ? styles.frameworkComingSoon : ''}`}>
               <h3 className={styles.frameworkName}>{f.name}</h3>
               <p className={styles.frameworkDescription}>{f.description}</p>
               <span className={styles.frameworkLink}>Learn more →</span>
@@ -650,6 +669,7 @@ function MessagingSection() {
     { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
     { name: 'Instagram', icon: <FaInstagram />, color: '#E4405F', link: '/docs/integrations/instagram' },
     { name: 'Gmail', icon: <SiGmail />, color: '#EA4335', link: '/docs/integrations/gmail' },
+    { name: 'Teams', icon: <FaMicrosoft />, color: '#6264A7', link: '/docs/next/integrations/teams' },
   ];
 
   return (
