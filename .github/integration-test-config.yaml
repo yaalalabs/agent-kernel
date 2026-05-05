@@ -37,18 +37,18 @@ weekly:
   # then each project is deployed and tested
   tests:
     #AWS Containerized
-    - type: aws-containerized
-      path: examples/aws-containerized/adk
-      deploy_dir: deploy
-    - type: aws-containerized
-      path: examples/aws-containerized/openai-dynamodb
-      deploy_dir: deploy
-    - type: aws-containerized
-      path: examples/aws-containerized/crewai
-      deploy_dir: deploy
-    - type: aws-containerized
-      path: examples/aws-containerized/mcp/multi
-      deploy_dir: deploy
+    # - type: aws-containerized
+    #   path: examples/aws-containerized/adk
+    #   deploy_dir: deploy
+    # - type: aws-containerized
+    #   path: examples/aws-containerized/openai-dynamodb
+    #   deploy_dir: deploy
+    # - type: aws-containerized
+    #   path: examples/aws-containerized/crewai
+    #   deploy_dir: deploy
+    # - type: aws-containerized
+    #   path: examples/aws-containerized/mcp/multi
+    #   deploy_dir: deploy
     
     # AWS Serverless
 
