@@ -17,12 +17,12 @@ output "websocket_api_execution_arn" {
 
 output "websocket_api_stage_name" {
   description = "WebSocket API stage name"
-  value       = module.websocket_api.stage_names[0]
+  value       = module.websocket_api.stage_id
 }
 
 output "websocket_api_stage_arn" {
   description = "WebSocket API stage ARN"
-  value       = module.websocket_api.stage_arns[0]
+  value       = module.websocket_api.stage_arn
 }
 
 output "websocket_connection_table_gsi_name" {
@@ -32,10 +32,11 @@ output "websocket_connection_table_gsi_name" {
 
 output "websocket_cloudwatch_log_group_arn" {
   description = "ARN of the CloudWatch log group for WebSocket API"
-  value       = module.websocket_api.stage_log_group_arns[0]
+  value       = module.websocket_api.stage_access_logs_cloudwatch_log_group_arn
 }
 
 output "websocket_cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for WebSocket API"
-  value       = module.websocket_api.stage_log_group_names[0]
+  value       = module.websocket_api.stage_access_logs_cloudwatch_log_group_name
 }
+
