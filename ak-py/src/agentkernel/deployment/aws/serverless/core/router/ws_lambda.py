@@ -31,7 +31,8 @@ class DefaultWSRoutesHandler:
         self._chat_service = ChatService()
         self.ws_handler = WebSocketHandler(
             endpoint_url=self._config.websocket_api.endpoint_url,
-            conn_table_name=self._config.websocket_api.connection_table_name,
+            conn_table_name=self._config.websocket_api.connection_table.table_name,
+            ttl=self._config.websocket_api.connection_table.ttl,
         )
         self.connection_routes = connection_routes
         self.system_routes = system_routes
