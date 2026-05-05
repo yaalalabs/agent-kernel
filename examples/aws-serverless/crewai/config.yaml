@@ -4,5 +4,5 @@ logging:
 session:
   type: redis
   redis:
-    prefix: "ak:langgraph:example:"
+    prefix: "ak:crewai:example:"
     url: "redis://ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
