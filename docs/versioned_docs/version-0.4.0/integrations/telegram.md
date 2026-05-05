@@ -1,0 +1,314 @@
+# Telegram
+
+Deploy your Agent Kernel agents as Telegram bots that can respond to messages in real-time. This integration connects your AI agents directly to Telegram, enabling natural conversations with users through one of the world's most popular messaging platforms.
+
+## Overview
+
+The `AgentTelegramRequestHandler` provides a seamless bridge between your Agent Kernel agents and Telegram. When users message your bot, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Telegram.
+
+### How it works:
+
+1. User sends a message to your Telegram bot
+2. Telegram delivers the message to your webhook endpoint
+3. Agent Kernel verifies and processes the message
+4. Visual feedback is sent (typing indicator, etc.)
+5. Agent generates a response and sends it back to the user
+
+The integration handles all the complexity of the Telegram Bot API, including webhook setup, security, message formatting, and session management.
+
+## Quick Start
+
+### Prerequisites
+
+- Telegram account
+- Bot created via [@BotFather](https://t.me/botfather)
+- Bot token from BotFather
+- Public HTTPS endpoint (use ngrok or pinggy for local development)
+
+### 1. Create Your Telegram Bot
+
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot` and follow instructions
+3. Save your bot token (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`)
+
+### 2. Get Your Credentials
+
+- Bot Token: From BotFather
+- Webhook Secret: Optional, any secure random string
+
+### 3. Configure Environment Variables
+
+Set these before starting your application:
+
+```bash
+export AK_TELEGRAM__BOT_TOKEN="your_bot_token"
+export AK_TELEGRAM__WEBHOOK_SECRET="your_secure_random_string"  # Optional
+export OPENAI_API_KEY="your_openai_api_key"
+```
+### Multimodal Configuration
+
+For image and document support, configure these environment variables:
+
+```bash
+export AK_MULTIMODAL__ENABLED=true              # Enable multimodal support (default: false)
+export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session (default: 5)
+```
+
+
+### 4. Expose Local Server
+
+Use a tunneling service for webhook delivery:
+
+**ngrok:**
+
+```bash
+ngrok http 8000
+```
+
+**pinggy:**
+
+```bash
+ssh -p443 -R0:localhost:8000 a.pinggy.io
+```
+
+Copy the HTTPS URL for webhook setup.
+
+### 5. Configure Telegram Webhook
+
+Set your webhook using curl:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-tunnel-url.com/telegram/webhook",
+    "secret_token": "your_secure_random_string"
+  }'
+```
+
+Or with Python:
+
+```python
+import requests
+
+BOT_TOKEN = "your_bot_token"
+WEBHOOK_URL = "https://your-tunnel-url.com/telegram/webhook"
+SECRET_TOKEN = "your_secure_random_string"
+
+response = requests.post(
+    f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+    json={
+        "url": WEBHOOK_URL,
+        "secret_token": SECRET_TOKEN,
+    }
+)
+print(response.json())
+```
+
+Verify webhook:
+
+```bash
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
+```
+
+## Features
+
+- **Text messages and commands** - Standard messaging with `/start`, `/help`, etc.
+- **Multi-modal support** - Send and analyze images, PDFs, and document files alongside text
+- **Typing indicator** - Visual feedback while processing
+- **Inline keyboards** - Interactive button-based interactions
+- **Markdown formatting** - Rich text formatting in responses
+- **Session management** - Per-chat conversation context with memory
+- **Automatic message splitting** - Long responses split to respect Telegram's 4096 character limit
+
+## Multi-Modal Support (Images & Documents)
+
+The Telegram integration supports sending images and documents alongside text messages for intelligent analysis:
+
+### Supported File Types
+
+| Type                | Formats                                            | Use Cases                                       |
+| ------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| **Images**          | JPEG, PNG, WebP, GIF                               | Photo analysis, vision tasks, object detection  |
+| **Documents**       | PDF (other text formats are handled as plain text) | Document summarization, Q&A, content extraction |
+| **Text**            | Plain messages                                     | Standard conversations                          |
+
+### How It Works
+
+1. User sends an image or document with optional text caption
+2. Telegram webhook delivers the message to your agent
+3. Agent Kernel downloads and processes the file
+4. A brief description of the file is generated via LLM and the file is saved to the **session cache** (not sent raw to the agent)
+5. The description is injected into the user's message text so the agent understands what was attached
+6. When the agent needs to inspect the file in detail, it calls the `analyze_attachments` tool, which retrieves the file from the session cache
+7. Response is sent back through Telegram
+
+> **Note:** The `analyze_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
+
+### Example Scenarios
+
+**Image Analysis:**
+
+- User sends photo of a receipt: "What's the total?"
+- Bot analyzes image and responds with extracted total
+
+**Document Q&A:**
+
+- User sends PDF and asks: "Summarize key points"
+- Bot reads and summarizes the document
+
+**Follow-up Questions:**
+
+- Message 1: User sends image, asks "What is this?"
+- Bot analyzes and responds
+- Message 2: User asks "What colors are dominant?"
+- Bot remembers the image from previous context and answers
+
+### Session Memory with Context
+
+Each chat maintains conversation history:
+
+- Previous messages are remembered
+- Images/files from earlier messages can be referenced and re-analyzed via `analyze_attachments`
+- Multi-turn conversations with rich context
+- Works seamlessly with OpenAI GPT-4o and compatible models
+- **Session-scoped storage**: Files are stored in each chat's own session cache, isolated per user — one user cannot access another user's attachments
+
+### Custom Command Handler
+
+```python
+from agentkernel.telegram import AgentTelegramRequestHandler
+
+class CustomTelegramHandler(AgentTelegramRequestHandler):
+    async def _handle_command(self, chat_id: int, command: str):
+        if command == "/status":
+            await self._send_message(chat_id, "✅ Bot is running!")
+        elif command == "/about":
+            await self._send_message(chat_id, "I'm powered by Agent Kernel and OpenAI")
+        else:
+            await super()._handle_command(chat_id, command)
+```
+
+
+### Multi-Agent Setup
+
+```python
+support_agent = OpenAIAgent(
+    name="support",
+    handoff_description="Customer support agent",
+    instructions="Provide helpful customer support. Be concise for Telegram.",
+)
+
+sales_agent = OpenAIAgent(
+    name="sales",
+    handoff_description="Sales inquiry agent",
+    instructions="Help with product questions. Keep responses brief.",
+)
+
+OpenAIModule([support_agent, sales_agent])
+```
+
+### Inline Keyboards
+
+```python
+async def _send_message_with_keyboard(self, chat_id: int, text: str):
+    reply_markup = {
+        "inline_keyboard": [
+            [
+                {"text": "Option 1", "callback_data": "opt1"},
+                {"text": "Option 2", "callback_data": "opt2"}
+            ],
+            [{"text": "Help", "callback_data": "help"}]
+        ]
+    }
+    await self._send_message(chat_id, text, reply_markup=reply_markup)
+```
+
+### Markdown Formatting
+
+```python
+await self._send_message(
+    chat_id,
+    "*Bold text*\n_Italic text_\n`Code`",
+    parse_mode="Markdown"
+)
+```
+
+## Supported Message Types
+
+- Text messages
+- Commands (e.g., /start, /help)
+- Inline keyboards and callback queries
+
+
+### Enable Debug Logging
+
+For detailed troubleshooting information:
+
+Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
+
+**Using environment variables:**
+```bash
+export AK_LOGGING__AK__LEVEL=DEBUG  # Agent Kernel logger level
+export AK_LOGGING__SYSTEM__LEVEL=DEBUG  # System/root logger level
+```
+
+**Using config.yaml:**
+```yaml
+logging:
+  ak:
+    level: DEBUG
+  system:
+    level: DEBUG
+```
+
+## API Rate Limits
+
+Telegram Bot API enforces rate limits:
+
+- **Messages to same chat:** 1 message per second
+- **Bulk messages:** 30 messages per second to different chats
+- **Group messages:** 20 messages per minute per group
+
+Best practice: Implement queuing for high-volume scenarios.
+
+## Production Deployment
+
+### Pre-Launch Checklist
+
+✅ Use environment variables for all secrets  
+✅ Deploy behind a reverse proxy (nginx, Apache) \
+✅ Set up health checks and monitoring \
+✅ Implement error handling and retry logic \
+✅ Review Telegram Bot API documentation for compliance
+
+### Deployment Architecture
+
+- **Serverless (AWS Lambda):** Cost-effective for low-to-medium traffic, auto-scaling built-in
+- **Containerized (Docker/Kubernetes):** Better for high traffic and complex workflows
+- **Traditional Server:** Simple deployment for small-scale applications
+
+## Telegram vs Messenger Comparison
+
+| Feature              | Telegram                 | Facebook Messenger         |
+| -------------------- | ------------------------ | -------------------------- |
+| Message Limit        | 4096 characters          | 2000 characters            |
+| User Identifier      | Chat ID                  | Page-Scoped ID (PSID)      |
+| Visual Feedback      | Typing indicators        | Typing, seen receipts      |
+| Interactive Elements | Inline keyboards         | Buttons, quick replies     |
+| Authentication       | Bot token + secret       | Page access token + secret |
+| App Review           | Not required             | Required for public access |
+| Rich Media           | Media, basic attachments | Extensive template support |
+
+## Example Projects
+
+- Basic Example: \
+`examples/api/telegram/server.py`\
+`examples/api/telegram/server_adk.py`
+
+## References
+
+- [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
+- [BotFather](https://t.me/botfather)
+
+---

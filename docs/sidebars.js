@@ -41,6 +41,7 @@ const sidebars = {
         'architecture/overview',
         'architecture/execution-flow',
         'architecture/memory-management',
+        'architecture/knowledge-bases'
       ],
     },
     {
@@ -90,6 +91,7 @@ const sidebars = {
         'integrations/instagram',
         'integrations/telegram',
         'integrations/gmail',
+        'integrations/teams',
         'integrations/hooks',
       ],
     },

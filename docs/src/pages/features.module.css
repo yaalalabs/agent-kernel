@@ -383,6 +383,12 @@
   border-color: rgba(139, 92, 246, 0.5);
 }
 
+.frameworkComingSoon {
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
 .frameworkName {
   font-size: 0.95rem;
   font-weight: 700;
