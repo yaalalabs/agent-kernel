@@ -10,7 +10,7 @@ from slack_sdk.errors import SlackApiError
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
-from ...core.model import AgentReplyImage, AgentReplyText, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentSlackRequestHandler(RESTRequestHandler):
@@ -148,6 +148,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
             # Use run_multi
             if len(requests) > 0:
+                requests.append(AgentRequestAny(name="body", content=body))
                 result = await service.run_multi(requests=requests)
             else:
                 await say(channel=channel, thread_ts=thread_ts, text="Please provide a message or attachment.")

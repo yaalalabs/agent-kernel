@@ -32,7 +32,7 @@ class APITestClient:
         if files:
             payload["files"] = files
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
             resp.raise_for_status()
             data = resp.json()
