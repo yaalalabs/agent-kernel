@@ -1,4 +1,5 @@
 import json
+import time
 import boto3
 import logging
 from typing import List
@@ -11,15 +12,18 @@ from ...common.websocket_connection_store import WebSocketConnectionStoreABC
 
 
 class WebSocketConnectionStore(WebSocketConnectionStoreABC):
-    def __init__(self, table_name: str):
+    def __init__(self, table_name: str, ttl: int):
         self._connection_table = boto3.resource("dynamodb").Table(table_name)
+        self._ttl = ttl
         self._log = logging.getLogger("ak.websocket.connection_store")
 
     def add_connection(self, user_id: str, connection_id: str) -> None:
+        expiry_time = int(time.time()) + self._ttl
         self._connection_table.put_item(
             Item={
                 "user_id": user_id,
                 "connection_id": connection_id,
+                "expiry_time": expiry_time,
             }
         )
 
@@ -51,8 +55,8 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
 
 
 class WebSocketHandler:
-    def __init__(self, endpoint_url: str, conn_table_name: str):
-        self._connection_store = WebSocketConnectionStore(conn_table_name)
+    def __init__(self, endpoint_url: str, conn_table_name: str, ttl: int):
+        self._connection_store = WebSocketConnectionStore(conn_table_name, ttl)
         self._api_gateway = boto3.client(
             "apigatewaymanagementapi",
             endpoint_url=endpoint_url,
