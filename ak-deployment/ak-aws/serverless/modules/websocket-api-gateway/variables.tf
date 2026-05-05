@@ -24,7 +24,7 @@ variable "product_display_name" {
 variable "stage_name" {
   type        = string
   description = "WebSocket API stage name"
-  default     = "prod"
+  default     = "agents"
 }
 
 variable "tags" {
