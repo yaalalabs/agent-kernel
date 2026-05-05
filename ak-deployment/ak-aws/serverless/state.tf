@@ -177,6 +177,15 @@ module "authorizer" {
   lambda_signing_config_arn  = local.lambda_signing_config_arn
 }
 
+# Shared API Gateway Resources Module
+module "shared_api_gateway_resources" {
+  source = "./modules/shared-api-gateway-resources"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  tags          = var.tags
+}
+
 module "api_gateway" {
   count  = local.rest_api_enabled ? 1 : 0
   source = "./modules/api-gateway"
@@ -200,9 +209,9 @@ module "api_gateway" {
   authorizer_lambda_function_invoke_arn = local.create_authorizer ? module.authorizer[0].lambda_function_invoke_arn : ""
   create_authorizer                     = local.create_authorizer
 
-  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+  cloudwatch_kms_key_arn       = local.cloudwatch_kms_key_arn
 
-  depends_on = [module.request_handler]
+  depends_on = [module.shared_api_gateway_resources]
 }
 
 module "websocket_api_gateway" {
@@ -220,9 +229,9 @@ module "websocket_api_gateway" {
   connection_handler_lambda_invoke_arn = module.ws_connection_handler[0].ws_connection_handler_lambda_function_invoke_arn
   connection_handler_lambda_name       = module.ws_connection_handler[0].ws_connection_handler_lambda_function_name
 
-  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+  cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
 
-  depends_on = [module.request_handler, module.ws_connection_handler, module.websocket_connections]
+  depends_on = [module.shared_api_gateway_resources]
 }
 
 module "docker_image" {
@@ -455,8 +464,7 @@ module "ws_connection_handler" {
     environment_variables = merge(
       try(var.ws_connection_handler.environment_variables, {}),
       {
-        AK_WEBSOCKET_API__CONNECTION_TABLE_NAME = local.websocket_connection_table_name,
-        AK_WEBSOCKET_API__ENDPOINT_URL          = local.websocket_api_endpoint_url
+        AK_WEBSOCKET_API__CONNECTION_TABLE_NAME = local.websocket_connection_table_name
       }
     )
   })
