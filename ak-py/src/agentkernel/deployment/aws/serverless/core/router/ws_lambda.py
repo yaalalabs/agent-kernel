@@ -101,6 +101,17 @@ class ConnectionRoutesHandler(BaseWSHandler):
             return query_params.get("token")
         return None
 
+    def _extract_user_id(self, event: Dict[str, Any]) -> Optional[str]:
+        """Extract user_id from WebSocket event query string.
+
+        :param event: WebSocket event dictionary
+        :return: User ID string if found, None otherwise
+        """
+        query_params = event.get("queryStringParameters", {})
+        if isinstance(query_params, dict):
+            return query_params.get("userId")
+        return None
+
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         """Get registered connection route handlers.
 
@@ -131,8 +142,7 @@ class ConnectionRoutesHandler(BaseWSHandler):
                 if not validation_result.is_valid:
                     return 401, self._build_lambda_response(msg=validation_result.error_msg or "Authentication failed", success=False)
 
-            request = self._parse_body(event)
-            user_id = request.user_id
+            user_id = self._extract_user_id(event)
 
             self.ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
 

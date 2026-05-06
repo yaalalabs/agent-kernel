@@ -134,7 +134,6 @@ class BaseRunRequest(BaseModel):
 
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
-    user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
     route: Optional[str] = None # TODO:: RouteKey of the Websocket, needed for WS implementation
     body: Optional[BaseRunRequest] = None
     model_config = ConfigDict(extra="allow")

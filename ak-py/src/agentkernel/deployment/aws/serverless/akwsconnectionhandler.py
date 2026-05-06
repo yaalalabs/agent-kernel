@@ -6,19 +6,22 @@ from typing import Optional
 
 class WebsocketConnectionHandler(Lambda):
     _log = logging.getLogger("ak.aws.serverless.websocket_connection_handler")
+    _auth_validator: Optional[AuthValidator] = None
 
-    def __init__(self, auth_validator: Optional[AuthValidator] = None):
-        super().__init__()
-        self._auth_validator = auth_validator
+    @classmethod
+    def set_auth_validator(cls, auth_validator: AuthValidator) -> "type[WebsocketConnectionHandler]":
+        cls._auth_validator = auth_validator
+        return cls
 
-    def _get_router(self) -> WSLambdaRouter:
-        if self._router is None:
-            self._router = WSLambdaRouter(
+    @classmethod
+    def _get_router(cls) -> WSLambdaRouter:
+        if cls._router is None:
+            cls._router = WSLambdaRouter(
                 connection_routes=True,
                 system_routes=False,
-                auth_validator=self._auth_validator
+                auth_validator=cls._auth_validator
             )
-        return self._router
+        return cls._router
 
     def register(self, route: str, method: Optional[str] = None) -> None:
         """

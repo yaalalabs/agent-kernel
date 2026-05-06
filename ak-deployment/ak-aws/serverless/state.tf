@@ -464,7 +464,7 @@ module "ws_connection_handler" {
     environment_variables = merge(
       try(var.ws_connection_handler.environment_variables, {}),
       {
-        AK_WEBSOCKET_API__CONNECTION_TABLE_NAME = local.websocket_connection_table_name
+        AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = local.websocket_connection_table_name
       }
     )
   })
