@@ -39,56 +39,35 @@ def main():
 
     # Initialize Terraform to access remote state
     print(f"Initializing Terraform in {deploy_path}...")
-    try:
-        subprocess.run(
-            ["terraform", "init", "-upgrade"],
-            cwd=str(deploy_path),
-            check=True,
-            env={**os.environ, "TF_INPUT": "0"},
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error: Terraform init failed with exit code {e.returncode}")
-        sys.exit(1)
+    subprocess.run(
+        ["terraform", "init", "-upgrade"],
+        cwd=str(deploy_path),
+        check=True,
+        env={**os.environ, "TF_INPUT": "0"},
+    )
 
-    # Wrap outputs in a try/except to handle missing state gracefully
-    try:
-        print("Fetching outputs from Terraform state...")
-        
-        # Retrieve vpc_id
-        result_vpc = subprocess.run(
-            ["terraform", "output", "-raw", "vpc_id"],
-            cwd=str(deploy_path),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        vpc_id = result_vpc.stdout.strip()
+    # Retrieve vpc_id
+    result = subprocess.run(
+        ["terraform", "output", "-raw", "vpc_id"],
+        cwd=str(deploy_path),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    vpc_id = result.stdout.strip()
 
-        # Retrieve private_subnet_ids (JSON array)
-        result_subnet = subprocess.run(
-            ["terraform", "output", "-json", "private_subnet_ids"],
-            cwd=str(deploy_path),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        private_subnet_ids = result_subnet.stdout.strip()
+    # Retrieve private_subnet_ids (JSON array)
+    result = subprocess.run(
+        ["terraform", "output", "-json", "private_subnet_ids"],
+        cwd=str(deploy_path),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    private_subnet_ids = result.stdout.strip()
 
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ ERROR: Failed to retrieve Terraform outputs.")
-        print(f"Command run: {' '.join(e.cmd)}")
-        print(f"Terraform stderr: {e.stderr.strip() if e.stderr else 'No stderr output'}")
-        print("\nPossible causes:")
-        print("1. 'terraform apply' has not been run yet for the base deployment (no state file exists).")
-        print("2. The outputs 'vpc_id' or 'private_subnet_ids' are not defined in the Terraform configuration.")
-        sys.exit(1)
-
-    # Validate JSON
-    try:
-        json.loads(private_subnet_ids)  # ensure valid JSON
-    except json.JSONDecodeError:
-        print(f"Error: private_subnet_ids is not valid JSON. Received: {private_subnet_ids}")
-        sys.exit(1)
+    # Validate
+    json.loads(private_subnet_ids)  # ensure valid JSON
 
     print(f"VPC ID: {vpc_id}")
     print(f"Private Subnet IDs: {private_subnet_ids}")
