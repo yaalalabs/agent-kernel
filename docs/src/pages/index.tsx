@@ -815,7 +815,15 @@ function Levels() {
   const contentRef = useRef<HTMLDivElement>(null);
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(true);
+  const [selectedFramework, setSelectedFramework] = useState<string>('openai');
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const scrollTriggerRef = useRef<ScrollTriggerInstance | null>(null);
+
+  const copyToClipboard = (code: string, id: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(id);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
 
   const levels: Level[] = [
     {
@@ -1143,26 +1151,49 @@ function Levels() {
 
           {/* ── DEVELOPER CONTENT ── */}
           {selectedLevel === '02' && (
-            <div ref={contentRef} className={styles.levelContent}>
-              <div className={styles.contentStep}>
-                <p className={styles.stepLabel}>Developer Analogy</p>
-                <h2 className={styles.contentTitle}>
-                  Like an Operating System for AI Agents
+            <div ref={contentRef} className={styles.developerContent}>
+
+              {/* Step 01 — Developer Analogy */}
+              <div className={styles.developerAnalogy}>
+                <p className={styles.devStepLabel}>Developer Analogy</p>
+                <h2 className={styles.devTitle}>
+                  Like an Operating System and Deployment Infrastructure for your AI Agent.
                 </h2>
-                <p className={styles.contentBody}>
-                  Agent Kernel is like an operating system for AI assistants. Install it on your laptop, server, or cloud, and run AI agents hassle-free. No infrastructure building required.
-                </p>
-                <ul className={styles.bulletListLarge}>
-                  <li>No need to build APIs, integrations, or session stores</li>
-                  <li>Everything works out of the box</li>
-                  <li>Scales from single execution to thousands of agents in parallel</li>
-                  <li>Interacts with the real world automatically</li>
-                  <li>Just define what your assistant should do</li>
-                </ul>
+                <div className={styles.devDescription}>
+                  <p className={styles.devIntro}>
+                    Agent Kernel is like an operating system for AI assistants.
+                  </p>
+                  <div className={styles.devBulletList}>
+                    <div className={styles.devBulletItem}>
+                      <span className={styles.devBullet}>•</span>
+                      <span className={styles.devBulletText}>Install it on your laptop, server, or cloud, and run AI agents hassle-free.</span>
+                    </div>
+                    <div className={styles.devBulletItem}>
+                      <span className={styles.devBullet}>•</span>
+                      <span className={styles.devBulletText}>No need to build infrastructure, APIs, or integrations.</span>
+                    </div>
+                    <div className={styles.devBulletItem}>
+                      <span className={styles.devBullet}>•</span>
+                      <span className={styles.devBulletText}>Everything works out of the box.</span>
+                    </div>
+                    <div className={styles.devBulletItem}>
+                      <span className={styles.devBullet}>•</span>
+                      <span className={styles.devBulletText}>Scales from single execution to thousands of agent invocations in parallel.</span>
+                    </div>
+                    <div className={styles.devBulletItem}>
+                      <span className={styles.devBullet}>•</span>
+                      <span className={styles.devBulletText}>Interacts with the real world automatically.</span>
+                    </div>
+                    <div className={styles.devBulletItem}>
+                      <span className={styles.devBullet}>•</span>
+                      <span className={styles.devBulletText}>Just define what your assistant should do.</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>Architecture Stack</h2>
+              {/* Architecture flow — 4 stacked layers */}
+              <div className={styles.architectureWrapper}>
                 <div className={styles.architectureStack}>
                   {[
                     {
@@ -1185,82 +1216,398 @@ function Levels() {
                       label: 'Channels & Data',
                       sub: 'Slack · WhatsApp · Telegram · Gmail · Redis · DynamoDB',
                     },
-                  ].map((layer) => (
-                    <div key={layer.label} className={styles.architectureLayer}>
-                      <div className={styles.layerNumber}>{layer.num}</div>
-                      <div className={styles.layerContent}>
-                        <h3 className={styles.layerLabel}>{layer.label}</h3>
-                        <p className={styles.layerSub}>{layer.sub}</p>
+                  ].map((layer, i, arr) => (
+                    <div key={layer.label} className={styles.architectureLayerGroup}>
+                      {/* Step number */}
+                      <div className={styles.layerNumberWrapper}>
+                        <div className={styles.layerNumberCircle}>
+                          {layer.num}
+                        </div>
+                        {i < arr.length - 1 && (
+                          <div className={styles.layerConnector} />
+                        )}
+                      </div>
+                      {/* Content */}
+                      <div className={styles.layerContentWrapper}>
+                        <div className={styles.layerContentBox}>
+                          <h3 className={styles.layerLabel}>{layer.label}</h3>
+                          <p className={styles.layerSub}>{layer.sub}</p>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              <div className={styles.contentStep}>
-                <p className={styles.stepLabel}>Enterprise Features Included</p>
-                <h2 className={styles.contentTitle}>
-                  Everything You Need to Ship
+              
+              {/* Step 02 — Available Features */}
+              <div className={styles.devFeatureSection}>
+                <p className={styles.devFeatureLabel}>All Enterprise Features Available Free And Open-Source</p>
+                <h2 className={styles.devFeatureTitle}>
+                  Focus on Agent Logic. We Handle the Rest.
                 </h2>
 
-                <div className={styles.featuresGrid}>
+                <div className={styles.devFeaturesGrid}>
                   {[
                     {
                       icon: MdBolt,
                       title: 'REST API Server',
-                      body: 'FastAPI-based server out of the box. No boilerplate.',
+                      body: 'FastAPI-based server out of the box. No boilerplate. Just run your agent.',
+                      tag: 'FastAPI',
                     },
                     {
                       icon: MdAutoAwesome,
-                      title: 'Multi-Framework',
+                      title: 'Multi-Framework Support',
                       body: 'OpenAI Agents, LangGraph, CrewAI, Google ADK.',
+                      tag: '4 frameworks',
                     },
                     {
                       icon: MdSmartToy,
                       title: 'Session & Memory',
-                      body: 'Redis, DynamoDB, Cosmos DB or in-memory—your choice.',
+                      body: 'Built-in conversation state. Redis, DynamoDB, Cosmos DB or in-memory—your choice.',
+                      tag: 'Pluggable',
                     },
                     {
                       icon: MdCloud,
                       title: 'Cloud Deployment',
-                      body: 'Pre-built Terraform for AWS, ECS, Azure, Container Apps.',
+                      body: 'Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps.',
+                      tag: 'Terraform',
                     },
                     {
-                      icon: FaSlack,
+                      icon: MdMessage,
                       title: 'Messaging Integrations',
-                      body: 'Slack, WhatsApp, Telegram, Gmail—plug and play.',
+                      body: 'Slack, WhatsApp, Instagram, Telegram, Gmail, Teams—plug and play.',
+                      tag: '6+ channels',
                     },
                     {
                       icon: MdScience,
                       title: 'Testing Framework',
-                      body: 'pytest-integrated test runner for AI agents.',
+                      body: 'pytest-integrated test runner. Write automated tests for your AI agents like any other code.',
+                      tag: 'pytest',
                     },
                     {
                       icon: MdLink,
                       title: 'Execution Hooks',
-                      body: 'Pre/post hooks for RAG, validation, moderation.',
+                      body: 'Pre/post hooks for RAG injection, input validation, response moderation, analytics.',
+                      tag: 'Hooks',
                     },
                     {
                       icon: MdVisibility,
                       title: 'Observability',
-                      body: 'Langfuse and OpenLLMetry tracing with one config line.',
+                      body: 'Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation.',
+                      tag: '1 config line',
                     },
                   ].map((feature) => {
                     const IconComponent = feature.icon;
                     return (
-                      <div key={feature.title} className={styles.featureCard}>
-                        <IconComponent className={styles.featureIcon} />
-                        <h3 className={styles.featureTitle}>{feature.title}</h3>
-                        <p className={styles.featureBody}>{feature.body}</p>
+                      <div key={feature.title} className={styles.devFeatureCard}>
+                        <IconComponent className={styles.devFeatureIcon} />
+                        <h3 className={styles.devFeatureCardTitle}>{feature.title}</h3>
+                        <p className={styles.devFeatureCardBody}>{feature.body}</p>
+                        <span className={styles.devFeatureTag}>
+                          {feature.tag}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {/* Step 03 — Framework Selection */}
+              <div className={styles.devFrameworkSection}>
+                <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
+                <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
+
+                <div className={styles.devFrameworkContainer}>
+                  {/* Left Column - Body & Buttons */}
+                  <div className={styles.devFrameworkButtonsCol}>
+                    <p className={styles.devFrameworkBody}>
+                      Choose a supported framework that fits your team, while Agent Kernel gives you a consistent production-ready layer for deployment, APIs, sessions, and integrations.
+                    </p>
+                    
+                    <div className={styles.devFrameworkButtonsGroup}>
+                      {[
+                        { id: 'openai', label: 'OpenAI Agents' },
+                        { id: 'crewai', label: 'CrewAI' },
+                        { id: 'langgraph', label: 'LangGraph' },
+                        { id: 'adk', label: 'Google ADK' },
+                      ].map((fw) => (
+                        <button
+                          key={fw.id}
+                          onClick={() => setSelectedFramework(fw.id)}
+                          className={`${styles.devFrameworkButton} ${
+                            selectedFramework === fw.id ? styles.devFrameworkButtonActive : ''
+                          }`}
+                        >
+                          {fw.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right Column - Code Display */}
+                  <div className={styles.devFrameworkCodeCol}>
+                    {selectedFramework === 'openai' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[openai]', 'openai-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'openai-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[openai]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+)
+
+OpenAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'openai-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'openai-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+)
+
+OpenAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/openai" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'crewai' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[crewai]', 'crewai-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'crewai-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[crewai]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+agent = CrewAgent(
+    role="assistant",
+    goal="Help users with their questions",
+    backstory="You are a helpful AI assistant",
+    verbose=False,
+)
+
+CrewAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'crewai-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'crewai-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+agent = CrewAgent(
+    role="assistant",
+    goal="Help users with their questions",
+    backstory="You are a helpful AI assistant",
+    verbose=False,
+)
+
+CrewAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/crewai" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'langgraph' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[langgraph]', 'langgraph-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'langgraph-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[langgraph]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    return {"messages": state["messages"] + ["response"]}
+
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()`, 'langgraph-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'langgraph-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    return {"messages": state["messages"] + ["response"]}
+
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/langgraph" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'adk' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[adk]', 'adk-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'adk-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[adk]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import ADKModule
+
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant",
+)
+
+ADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'adk-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'adk-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import ADKModule
+
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant",
+)
+
+ADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/google-adk" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
-
-          {/* ── AI ENGINEER CONTENT ── */}
           {selectedLevel === '03' && (
             <div ref={contentRef} className={styles.levelContent}>
               <div className={styles.contentStep}>
