@@ -12,7 +12,7 @@ module "serverless_agents" {
   module_name          = var.module_name
   package_path         = "../dist"
   package_type         = "Image"
-  memory_size          = 256
+  memory_size          = 512
   create_redis_cluster = false # This is optional. Set to true if you want to create one. Otherwise you can reuse an already existing redis host by setting configurations on config.yaml
   product_display_name = "Agent Kernel OpenAI with Redis"
   vpc_id               = var.vpc_id

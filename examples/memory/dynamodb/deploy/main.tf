@@ -12,7 +12,7 @@ module "serverless_agents" {
   module_name                  = var.module_name
   package_path                 = "../dist"
   package_type                 = "Image"
-  memory_size                  = 256
+  memory_size                  = 512
   product_display_name         = "Agent Kernel OpenAI with DynamoDB"
   create_dynamodb_memory_table = true
   vpc_id                       = var.vpc_id
