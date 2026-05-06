@@ -353,7 +353,7 @@ function Deployment() {
     {
       icon: <FaAws />,
       name: 'Amazon AWS',
-      color: '#FF9900',
+      color: '#ffffff',
       description: 'Serverless or containerized deployments with Terraform modules.',
       modes: ['AWS Lambda (Serverless)', 'AWS ECS/Fargate (Containerized)'],
       modules: [
@@ -365,7 +365,7 @@ function Deployment() {
     {
       icon: <FaMicrosoft />,
       name: 'Microsoft Azure',
-      color: '#0078D4',
+      color: '#ffffff',
       description: 'Functions or Container Apps with Cosmos DB session storage.',
       modes: ['Azure Functions (Serverless)', 'Azure Container Apps (Containerized)'],
       modules: [
@@ -377,7 +377,7 @@ function Deployment() {
     {
       icon: <SiGooglecloud />,
       name: 'Google Cloud',
-      color: '#4285F4',
+      color: '#ffffff',
       description: 'Cloud Run and Cloud Functions deployments — Terraform modules in progress.',
       modes: ['Cloud Run (Containerized)', 'Cloud Functions (Serverless)'],
       modules: [],
@@ -1606,6 +1606,20 @@ if __name__ == "__main__":
                   </div>
                 </div>
               </div>
+
+              {/* Step 04 — How Agent Kernel Fits In */}
+              <div className={styles.devArchitectureSection}>
+                <p className={styles.devStepLabel}>The complete picture</p>
+                <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
+
+                <p className={styles.devFrameworkBody}>
+                  Agent Kernel sits between your agent logic and cloud deployment, providing the production-ready runtime layer that handles everything except what makes your agents unique. One consistent API, any framework, any cloud.
+                </p>
+
+                <div className={styles.devArchitectureWrapper}>
+                  <AgentKernelArchDiagram />
+                </div>
+              </div>
             </div>
           )}
           {selectedLevel === '03' && (
@@ -1705,10 +1719,10 @@ export default function Home() {
         {/* <AffiliationsStrip /> */}
         <FrameworksStrip />
         <Levels />
-        {/* <AgentKernelArchDiagram />
-        <KeyFeatures />
-        <AgentSkills />
+        {/* <AgentKernelArchDiagram /> */}
         <Deployment />
+        {/* <KeyFeatures />
+        <AgentSkills />
         <MessagingIntegrations /> */}
         <Community />
       </main>

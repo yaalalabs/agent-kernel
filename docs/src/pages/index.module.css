@@ -737,15 +737,15 @@
 }
 
 .cloudCard {
-  background: #0e1017;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 1rem;
   padding: 2rem 1.75rem;
+  backdrop-filter: blur(4px);
   transition: border-color 0.2s ease;
 }
 
 .cloudCard:hover {
-  border-color: rgba(79, 125, 247, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .cloudCardComingSoon {
@@ -783,14 +783,14 @@
 .cloudName {
   font-size: 1.15rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #ffffff;
   letter-spacing: -0.02em;
   margin-bottom: 0;
 }
 
 .cloudDescription {
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: rgba(255, 255, 255, 0.7);
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -806,7 +806,7 @@
 
 .cloudModes li {
   font-size: 0.875rem;
-  color: #5e627d;
+  color: rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -814,7 +814,7 @@
 
 .cloudModes li::before {
   content: '→';
-  color: #4f7df7;
+  color: #00d4ff;
   font-size: 0.8rem;
 }
 
@@ -830,13 +830,14 @@
   gap: 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #8b5cf6;
+  color: #00d4ff;
   text-decoration: none;
   transition: color 0.15s ease;
 }
 
 .terraformLink:hover {
-  color: #a78bfa;
+  color: #0080ff;
+  text-decoration: none;
 }
 
 .terraformIcon {
@@ -1932,6 +1933,17 @@
   color: rgba(255, 255, 255, 0.85);
   display: block;
   white-space: pre;
+}
+
+/* ─── Developer Architecture Section ──────────────────────────────────────── */
+
+.devArchitectureSection {
+  margin-top: 4rem;
+}
+
+.devArchitectureWrapper {
+  margin-top: 2rem;
+  max-width: 100%;
 }
 
 .featuresGrid {

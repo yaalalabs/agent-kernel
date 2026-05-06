@@ -76,14 +76,6 @@ export default function AgentKernelArchDiagram() {
   return (
     <section ref={sectionRef} className={styles.archSection} aria-label="Agent Kernel architecture overview">
       <div className="container">
-        <div className={styles.header}>
-          <h2 className={styles.title}>How Agent Kernel Fits In</h2>
-          <p className={styles.subtitle}>
-            A thin, production-ready runtime between your agent logic and the cloud —
-            handling everything except what makes your agents unique.
-          </p>
-        </div>
-
         <div className={styles.diagram}>
 
           {/* ── Layer 1: Your Agent Logic ── */}

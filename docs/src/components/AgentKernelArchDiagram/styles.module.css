@@ -1,40 +1,40 @@
 /*
   AgentKernelArchDiagram — vertical three-layer architecture with SVG particle flow.
   Animation philosophy: purposeful, restrained, premium.
-
-  Layout (SVG viewBox 900×420 matches CSS pixel heights of each row):
-    topBox  :  h≈74px  (y 0-74)
-    gap     :  36px    (y 74-110)  ← SVG connector line here
-    hubCard :  h≈130px (y 110-240)
-    gap     :  40px    (y 240-280) ← SVG fan lines here
-    deployRow: h≈72px  (y 280-352)
-
-  Total ≈ 420px — matches SVG_H constant in index.tsx.
+  Styling: matches developer section color scheme
 */
 
+:root {
+  --ak-blue: #4f7df7;
+  --ak-purple: #8b9dff;
+}
+
 .archSection {
-  padding: 5rem 0 4.5rem;
+  padding: 2rem 0;
   position: relative;
-  background: linear-gradient(180deg, transparent, rgba(79, 125, 247, 0.025) 40%, transparent);
+  background: transparent;
+  --ak-blue: #00d4ff;
+  --ak-purple: #7a3fe3;
 }
 
 .header {
   text-align: center;
   max-width: 580px;
   margin: 0 auto 2.5rem;
+  display: none;
 }
 
 .title {
   font-size: clamp(1.6rem, 3vw, 2.2rem);
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: var(--ak-text);
+  color: #ffffff;
   margin-bottom: 0.6rem;
 }
 
 .subtitle {
   font-size: 0.95rem;
-  color: var(--ak-text-secondary);
+  color: rgba(255, 255, 255, 0.7);
   line-height: 1.65;
   margin: 0;
 }
@@ -50,11 +50,6 @@
   gap: 0;
 }
 
-/*
-  Connector SVGs are narrow strips that sit between rows.
-  They are NOT absolutely positioned — they flow naturally in the column.
-  preserveAspectRatio="none" stretches them to full container width.
-*/
 .connectorSvg {
   width: 100%;
   display: block;
@@ -78,18 +73,19 @@
 /* ─── Top box ────────────────────────────────────────────────────────────── */
 
 .topBox {
-  /* height ≈ 74px → matches SVG TOP_BOTTOM=74 */
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ak-surface-raised);
-  border: 1px solid var(--ak-border-accent);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 0.875rem;
   padding: 1rem 2.5rem;
-  box-shadow: 0 2px 24px var(--ak-blue-glow);
+  box-shadow: none;
   z-index: 1;
   opacity: 0;
   width: fit-content;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .topBoxContent {
@@ -102,28 +98,27 @@
 .topBoxLabel {
   font-size: 1rem;
   font-weight: 700;
-  color: var(--ak-text);
+  color: #ffffff;
 }
 
 .topBoxSub {
   font-size: 0.78rem;
-  color: var(--ak-text-muted);
+  color: rgba(255, 255, 255, 0.6);
 }
-
-/* topBox height sets the first connectorSvg's height (viewBox="0 0 900 36") */
 
 /* ─── Hub card ───────────────────────────────────────────────────────────── */
 
 .hubCard {
-  /* height ≈ 130px → hub_top 110, hub_bottom 240 */
   width: 100%;
-  background: linear-gradient(135deg, rgba(79, 125, 247, 0.06), rgba(139, 92, 246, 0.06));
-  border: 1px solid var(--ak-border-accent);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 1.25rem;
   padding: 1.25rem 1.75rem;
-  box-shadow: 0 0 40px rgba(79, 125, 247, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: none;
   z-index: 1;
   opacity: 0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .hubHeader {
@@ -143,7 +138,7 @@
 .hubLabel {
   font-size: 0.9rem;
   font-weight: 700;
-  color: var(--ak-text);
+  color: #ffffff;
   letter-spacing: -0.01em;
 }
 
@@ -164,11 +159,13 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  background: var(--ak-surface-raised);
-  border: 1px solid var(--ak-border);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
   opacity: 0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .moduleIn {
@@ -178,7 +175,7 @@
 
 .moduleIcon {
   font-size: 1rem;
-  color: var(--ak-purple);
+  color: #00d4ff;
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -187,11 +184,9 @@
 .moduleLabel {
   font-size: 0.73rem;
   font-weight: 600;
-  color: var(--ak-text-secondary);
+  color: rgba(255, 255, 255, 0.7);
   line-height: 1.25;
 }
-
-/* hubCard → connectorSvg(44px) → deployRow flows naturally in column */
 
 /* ─── Deploy row ─────────────────────────────────────────────────────────── */
 
@@ -215,13 +210,15 @@
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
-  background: var(--ak-surface);
-  border: 1px solid var(--ak-border);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 0.625rem;
   padding: 0.65rem 0.9rem;
   min-width: 110px;
   flex: 1;
   opacity: 0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .deployIn {
@@ -231,7 +228,7 @@
 
 .deployIcon {
   font-size: 1.25rem;
-  color: var(--ak-text-secondary);
+  color: rgba(255, 255, 255, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -240,7 +237,7 @@
 .deployLabel {
   font-size: 0.7rem;
   font-weight: 600;
-  color: var(--ak-text-muted);
+  color: rgba(255, 255, 255, 0.6);
   text-align: center;
 }
 
