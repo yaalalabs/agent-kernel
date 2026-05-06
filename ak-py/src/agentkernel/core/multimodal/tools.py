@@ -11,7 +11,7 @@ from ..model import SystemTool
 from ..tool import ToolContext
 from .storage import AttachmentStorageManager
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("ak.multimodal.tools")
 
 
 def _analyze_attachments(attachment_ids: list[str], prompt: str) -> str:

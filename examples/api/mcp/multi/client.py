@@ -6,8 +6,6 @@ from typing import Any, List
 
 from fastmcp.client import Client
 
-logging.basicConfig(level=logging.WARN, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", force=True)
-
 
 class MCPHttpClient:
 

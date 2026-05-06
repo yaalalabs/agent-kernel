@@ -1,7 +1,9 @@
-debug: true
+logging:
+  ak:
+    level: DEBUG
 session:
   type: redis
-  cache: 
+  cache:
     size: 256
   redis:
     prefix: "ak:oai:redis:"

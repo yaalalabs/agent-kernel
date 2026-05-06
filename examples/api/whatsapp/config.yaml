@@ -1,3 +1,9 @@
 whatsapp:
   agent: "general"
   api_version: "v24.0"
+
+logging:
+  ak:
+    level: INFO
+  system:
+    level: INFO

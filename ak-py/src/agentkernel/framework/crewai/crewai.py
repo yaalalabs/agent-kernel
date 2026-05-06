@@ -11,6 +11,7 @@ from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBui
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "crewai"
@@ -51,7 +52,7 @@ class CrewAISession(Storage):
         :return: List of items matching the query.
         """
         self._log.debug(f"search: {query}, {limit}, {score_threshold}")
-        return list(map(lambda item: {"context": item["value"]}, self._items[:limit]))  # CrewAI expects a list of dicts with a "context" key
+        return list(map(lambda item: {"content": item["value"], "context": item["value"]}, self._items[:limit]))
 
     def reset(self) -> None:
         """
@@ -129,11 +130,14 @@ class CrewAIRunner(Runner):
             )
             reply = crew.kickoff(inputs={})
             if hasattr(reply, "raw"):
-                reply = str(reply.raw)
+                raw_reply = reply.raw
+                reply_text = "" if raw_reply is None else str(raw_reply)
             else:
-                reply = str(reply)
+                reply_text = "" if reply is None else str(reply)
 
-            return AgentReplyText(text=reply, prompt=prompt)
+            return AgentReplyText(text=reply_text, prompt=prompt)
+        except Exception as e:
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

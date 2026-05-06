@@ -5,7 +5,7 @@
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
-  version = "0.3.3"
+  version = "0.4.0"
 
   # Basic ECS configuration
   product_alias        = var.product_alias
@@ -14,8 +14,8 @@ module "containered_agents" {
   package_path         = "../dist"
   container_type       = "ecs"
   region               = var.region
-  vpc_id               = "vpc-09033229d67314c1c"
-  private_subnet_ids   = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
+  vpc_id               = var.vpc_id
+  private_subnet_ids   = var.private_subnet_ids
   product_display_name = "AK CrewAI Containerized Example"
   ecs_container_port   = 8000
   gateway_endpoints = [

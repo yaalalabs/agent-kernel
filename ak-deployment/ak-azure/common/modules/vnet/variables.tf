@@ -6,7 +6,6 @@ variable "resource_group_name" {
 variable "location" {
   type        = string
   description = "Azure region for resources"
-  default     = "eastus"
 }
 
 variable "vnet_cidr" {
