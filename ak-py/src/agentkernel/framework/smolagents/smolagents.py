@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import inspect
 from typing import Any, Callable, List
@@ -16,6 +17,7 @@ from ...core.model import (
     AgentRequestAny,
     AgentRequestText,
 )
+from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "smolagents"
@@ -149,15 +151,15 @@ class SmolagentsRunner(Runner):
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
 
-            # Preserve conversational continuity across requests.
-            reply = agent.agent.run(prompt, reset=False)
+            # Preserve conversational continuity across requests without blocking the async event loop.
+            reply = await asyncio.to_thread(agent.agent.run, prompt, reset=False)
 
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=f"Error during agent execution: {str(e)}", prompt=prompt)
+            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
@@ -357,9 +359,9 @@ class SmolagentsToolBuilder(ToolBuilder):
             sig = inspect.signature(func)
             args_lines = []
             for name, param in sig.parameters.items():
-                args_lines.append(f"        {name}: {name}")
+                args_lines.append(f"    {name}: {name}")
             if args_lines:
-                doc += "\n\n    Args:\n" + "\n".join(args_lines)
+                doc += "\n\nArgs:\n" + "\n".join(args_lines)
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
