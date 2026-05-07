@@ -2,6 +2,7 @@ import json
 import logging
 
 from ....core.config import AKConfig
+from ....core.model import ExecutionMode
 from ...common.chat_service import ChatService
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
@@ -11,7 +12,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = None
-    max_receive_count: int = AKConfig.get().execution.queues.input.max_receive_count
+    _config = AKConfig.get()
+    max_receive_count: int = _config.execution.queues.input.max_receive_count
 
     @classmethod
     def _get_chat_service(cls) -> ChatService:
@@ -30,6 +32,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
+        endpoint_url = message_attributes.get("endpoint_url") if cls._config.execution.mode == ExecutionMode.ASYNC else None
 
         if not request_id:
             raise ValueError("request_id is required")
@@ -40,6 +43,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             "request_id": request_id,
             "user_id": user_id,
         }
+
+        if endpoint_url:
+            record_attributes["endpoint_url"] = endpoint_url
 
         cls._log.info(f"Extracted record attributes: {record_attributes}")
         return record_attributes
@@ -61,12 +67,17 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param record_attributes: Extracted attributes (``dict``) from the record.
         :return: None.
         """
+        custom_attributes = []
+        if record_attributes.get("endpoint_url"):
+            custom_attributes.append(SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], data_type=SQSHandler.AttributeDataType.STRING))
+        
         SQSHandler.send_message_to_output_queue(
             message_group_id=record_attributes["message_group_id"],
             message_deduplication_id=record_attributes["message_deduplication_id"],
             message_body=message_body,
             request_id=record_attributes["request_id"],
             user_id=record_attributes["user_id"],
+            custom_message_attributes=custom_attributes
         )
 
     @classmethod

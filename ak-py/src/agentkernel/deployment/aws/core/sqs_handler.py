@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, List
 
 import boto3
 from pydantic import BaseModel, ConfigDict
@@ -260,6 +260,7 @@ class SQSHandler:
         message_body: Optional[Any] = None,
         request_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        custom_message_attributes: Optional[List[CustomAttribute]] = [],
         **extra_kwargs: Any,
     ):
         """Send a message to the input queue with standard custom attributes.
@@ -285,6 +286,8 @@ class SQSHandler:
             message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
         if user_id is not None:
             message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
+        
+        message_attributes.extend(custom_message_attributes)
 
         return cls.send_message(
             queue_url=queue_url,
@@ -303,6 +306,7 @@ class SQSHandler:
         message_body: Optional[Any] = None,
         request_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        custom_message_attributes: Optional[List[CustomAttribute]] = [],
         **extra_kwargs: Any,
     ):
         """Send a message to the output queue with standard custom attributes.
@@ -328,6 +332,8 @@ class SQSHandler:
             message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
         if user_id is not None:
             message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
+
+        message_attributes.extend(custom_message_attributes)
 
         return cls.send_message(
             queue_url=queue_url,

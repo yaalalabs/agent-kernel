@@ -351,12 +351,17 @@ class SystemRoutesHandler(BaseWSHandler):
 
             self._log.info(f"Sending WebSocket chat request to queue: request_id={request.request_id}, session_id={session_id}")
 
+            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+
             response = SQSHandler.send_message_to_input_queue(
                 message_body=request_body,
                 message_group_id=session_id,
                 message_deduplication_id=request.request_id,
                 request_id=request.request_id,
                 user_id=user_id,
+                custom_message_attributes=[
+                    SQSHandler.CustomAttribute(name="endpoint_url", value=endpoint_url, datatype=SQSHandler.AttributeDataType.STRING)
+                ]
             )
 
             self._log.info(f"Message sent to input queue successfully: {response}")
