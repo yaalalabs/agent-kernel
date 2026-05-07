@@ -6,11 +6,11 @@ from google.adk.models.lite_llm import LiteLlm
 # Math specialist agent
 math_agent = Agent(
     name="math",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-4.1-2025-04-14"),
     description="Specialist agent for math questions",
     instruction="""
     You provide help with math problems.
-    Explain your reasoning at each step and include examples.
+    no reasoning and no need for steps explanation. Just give the final answer.
     If prompted for anything else you refuse to answer.
     """,
 )
@@ -18,7 +18,7 @@ math_agent = Agent(
 # General purpose agent
 history_agent = Agent(
     name="history",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-4.1-2025-04-14"),
     description="Agent for history questions",
     instruction="""
     You provide assistance with history queries.
@@ -28,7 +28,7 @@ history_agent = Agent(
 
 triage_agent = LlmAgent(
     name="triage",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-4.1-2025-04-14"),
     description="Agent that routes the user to the appropriate specialist agent (math or history).",
     instruction="""
     You determine which agent to use based on the user's question.
