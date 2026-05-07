@@ -29,6 +29,15 @@ class BaseLambdaRouter(ABC):
             path = path[:-1]
         return path
 
+    @staticmethod
+    def normalize_ws_route(route: str) -> str:
+        """Remove leading and trailing '/' from WebSocket route.
+
+        :param route: WebSocket route string
+        :return: Route string without leading or trailing '/'
+        """
+        return route.strip("/")
+
     def _get_base_paths_from_env(self) -> Tuple[Optional[str], Optional[str]]:
         """
         Get the base path from environment variables.

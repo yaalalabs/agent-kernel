@@ -140,8 +140,8 @@ class ConnectionRoutesHandler(BaseWSHandler):
         :return: Dictionary mapping route keys to handler functions
         """
         return {
-            "/$connect": self._handle_connect,
-            "/$disconnect": self._handle_disconnect,
+            "$connect": self._handle_connect,
+            "$disconnect": self._handle_disconnect,
         }
 
     def _handle_connect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
@@ -285,8 +285,8 @@ class SystemRoutesHandler(BaseWSHandler):
         :return: Dictionary mapping route keys to handler functions
         """
         return {
-            "/$default": self._handle_default,
-            "/chat": self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
+            "$default": self._handle_default,
+            "chat": self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
         }
 
     def _handle_default(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
@@ -433,7 +433,7 @@ class WSLambdaRouter(BaseLambdaRouter):
         if method is not None:
             raise ValueError("HTTP method is not allowed in WebSocket mode")
 
-        norm_route = self._normalize_path(route)
+        norm_route = self.normalize_ws_route(route)
 
         def _decorator(wrapped_func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
             self._log.info(
@@ -472,7 +472,7 @@ class WSLambdaRouter(BaseLambdaRouter):
             self._log.warning("WebSocket event missing routeKey")
             raise ValueError("WebSocket event missing routeKey")
 
-        norm_route_key = self._normalize_path(route_key)
+        norm_route_key = self.normalize_ws_route(route_key)
         self._log.info(f"Normalized route key: '{route_key}', Connection ID: '{connection_id}'")
         handler = self._websocket_routes.get(norm_route_key)
 
