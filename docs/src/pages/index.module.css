@@ -726,122 +726,185 @@
   margin: 0;
 }
 
-/* ─── Deployment / Cloud ──────────────────────────────────────────────────── */
-
+/* ─── Section wrapper ─────────────────────────────────────────────────────── */
+ 
+.section {
+  padding: 5rem 1rem;
+  color: #ffffff;
+}
+ 
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+ 
+.sectionHeader {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+ 
+.sectionTitle {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.02em;
+}
+ 
+.sectionSubtitle {
+  font-size: 0.975rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.7;
+  max-width: 600px;
+  margin: 0 auto;
+}
+ 
+/* ─── Grid ────────────────────────────────────────────────────────────────── */
+ 
 .cloudGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
+  gap: 1.5rem;
   max-width: 1100px;
   margin: 0 auto;
+  position: relative;
+  z-index: 1;
 }
-
+ 
+/* ─── Card ────────────────────────────────────────────────────────────────── */
+ 
 .cloudCard {
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 1rem;
-  padding: 2rem 1.75rem;
+  background: rgba(20, 25, 40, 1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 2rem 1.75rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   backdrop-filter: blur(4px);
-  transition: border-color 0.2s ease;
+  -webkit-backdrop-filter: blur(4px);
+  position: relative;
+  z-index: 0;
 }
-
-.cloudCard:hover {
-  border-color: rgba(255, 255, 255, 0.25);
+ 
+/* ─── Cloud logo icon ─────────────────────────────────────────────────────── */
+ 
+.cloudIcon {
+  margin-bottom: 1.25rem;
 }
-
-.cloudCardComingSoon {
-  opacity: 0.6;
-  pointer-events: none;
-  border-style: dashed;
+ 
+/* Make the react-icon large and white, matching the screenshot */
+.cloudIconSvg {
+  width: 3rem !important;
+  height: 3rem !important;
+  color: #ffffff;
+  display: block;
 }
-
+ 
+/* ─── Name row ────────────────────────────────────────────────────────────── */
+ 
 .cloudNameRow {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.625rem;
   flex-wrap: wrap;
 }
-
-.cloudComingSoonBadge {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #5e627d;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  padding: 0.2rem 0.6rem;
-  flex-shrink: 0;
-}
-
-.cloudIcon {
-  font-size: 2.25rem;
-  margin-bottom: 1rem;
-}
-
+ 
 .cloudName {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   font-weight: 700;
   color: #ffffff;
-  letter-spacing: -0.02em;
-  margin-bottom: 0;
+  margin: 0;
+  letter-spacing: -0.015em;
 }
-
+ 
+/* Rectangular outlined badge — matches screenshot exactly */
+.cloudComingSoonBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+ 
+/* ─── Description ─────────────────────────────────────────────────────────── */
+ 
 .cloudDescription {
   font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.6;
-  margin-bottom: 1rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.65;
+  margin: 0 0 1rem;
 }
-
+ 
+/* ─── Mode bullets ────────────────────────────────────────────────────────── */
+ 
 .cloudModes {
   list-style: none;
   padding: 0;
-  margin: 0 0 1.25rem;
+  margin: 0 0 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
-
+ 
 .cloudModes li {
   font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
 }
-
-.cloudModes li::before {
-  content: '→';
-  color: #00d4ff;
-  font-size: 0.8rem;
+ 
+.arrow {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.85rem;
+  flex-shrink: 0;
 }
-
+ 
+/* ─── Terraform module links ──────────────────────────────────────────────── */
+ 
 .cloudModules {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
+  margin-top: auto; /* push to bottom of card */
 }
-
+ 
 .terraformLink {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  color: #00d4ff;
-  text-decoration: none;
-  transition: color 0.15s ease;
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: opacity 0.15s ease;
 }
-
+ 
 .terraformLink:hover {
-  color: #0080ff;
-  text-decoration: none;
+  opacity: 0.75;
+  text-decoration: underline;
 }
-
+ 
+/* Terraform icon — purple, matches the Terraform brand color in screenshot */
 .terraformIcon {
-  font-size: 0.95rem;
+  font-size: 1rem;
+  color: #7b42bc;
+  flex-shrink: 0;
+}
+ 
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+ 
+@media (max-width: 900px) {
+  .cloudGrid {
+    grid-template-columns: 1fr;
+    max-width: 500px;
+  }
 }
 
 /* ─── Messaging Integrations ──────────────────────────────────────────────── */

@@ -351,9 +351,8 @@ function AffiliationsStrip() {
 function Deployment() {
   const clouds = [
     {
-      icon: <FaAws />,
+      icon: <FaAws className={styles.cloudIconSvg} />,
       name: 'Amazon AWS',
-      color: '#ffffff',
       description: 'Serverless or containerized deployments with Terraform modules.',
       modes: ['AWS Lambda (Serverless)', 'AWS ECS/Fargate (Containerized)'],
       modules: [
@@ -363,9 +362,8 @@ function Deployment() {
       comingSoon: false,
     },
     {
-      icon: <FaMicrosoft />,
+      icon: <FaMicrosoft className={styles.cloudIconSvg} />,
       name: 'Microsoft Azure',
-      color: '#ffffff',
       description: 'Functions or Container Apps with Cosmos DB session storage.',
       modes: ['Azure Functions (Serverless)', 'Azure Container Apps (Containerized)'],
       modules: [
@@ -375,11 +373,10 @@ function Deployment() {
       comingSoon: false,
     },
     {
-      icon: <SiGooglecloud />,
+      icon: <SiGooglecloud className={styles.cloudIconSvg} />,
       name: 'Google Cloud',
-      color: '#ffffff',
       description: 'Cloud Run and Cloud Functions deployments — Terraform modules in progress.',
-      modes: ['Cloud Run (Containerized)', 'Cloud Functions (Serverless)'],
+      modes: ['Cloud Run (Containerized)', 'Cloud Functions (Containerized)'],
       modules: [],
       comingSoon: true,
     },
@@ -387,27 +384,45 @@ function Deployment() {
 
   return (
     <section className={styles.section}>
-      <div className="container">
+      <div>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Deploy Anywhere</h2>
           <p className={styles.sectionSubtitle}>
-            AWS, Azure, or on-prem Docker. Same agent code — zero platform rewrites.
-            Full Terraform modules with production best practices baked in.
+            Run the same agent code on AWS, Azure, or your own on-prem Docker.{' '}
+            <br />
+            Zero rewrites. Includes production-ready Terraform modules with best practices baked in.
           </p>
         </div>
+
         <div className={styles.cloudGrid}>
           {clouds.map((c, i) => (
-            <div key={i} className={`${styles.cloudCard} ${c.comingSoon ? styles.cloudCardComingSoon : ''}`}>
-              <div className={styles.cloudIcon} style={{ color: c.color }}>{c.icon}</div>
+            <div key={i} className={styles.cloudCard}>
+              {/* Logo */}
+              <div className={styles.cloudIcon}>{c.icon}</div>
+
+              {/* Name + badge */}
               <div className={styles.cloudNameRow}>
                 <h3 className={styles.cloudName}>{c.name}</h3>
-                {c.comingSoon && <span className={styles.cloudComingSoonBadge}>Coming Soon</span>}
+                {c.comingSoon && (
+                  <span className={styles.cloudComingSoonBadge}>COMING SOON</span>
+                )}
               </div>
+
+              {/* Description */}
               <p className={styles.cloudDescription}>{c.description}</p>
+
+              {/* Mode bullets */}
               <ul className={styles.cloudModes}>
-                {c.modes.map((m, j) => <li key={j}>{m}</li>)}
+                {c.modes.map((m, j) => (
+                  <li key={j}>
+                    <span className={styles.arrow}>→</span>
+                    {m}
+                  </li>
+                ))}
               </ul>
-              {!c.comingSoon && (
+
+              {/* Terraform links */}
+              {c.modules.length > 0 && (
                 <div className={styles.cloudModules}>
                   {c.modules.map((m, j) => (
                     <Link
@@ -415,18 +430,16 @@ function Deployment() {
                       to={m.url}
                       className={styles.terraformLink}
                       target="_blank"
-                      rel="noopener noreferrer">
+                      rel="noopener noreferrer"
+                    >
                       <SiTerraform className={styles.terraformIcon} />
-                      {m.name} →
+                      <span>{m.name}</span>
                     </Link>
                   ))}
                 </div>
               )}
             </div>
           ))}
-        </div>
-        <div className={styles.sectionFooter}>
-          <Link to="/docs/deployment/overview" className={styles.sectionLink}>View deployment docs →</Link>
         </div>
       </div>
     </section>
