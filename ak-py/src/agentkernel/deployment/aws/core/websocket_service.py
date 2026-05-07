@@ -53,6 +53,22 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
         for item in resp.get("Items", []):
             self.delete_connection(item["user_id"], connection_id)
 
+    def get_user_id(self, connection_id: str) -> Optional[str]:
+        """
+        Uses GSI: connection_id-index to get user_id for a given connection_id
+        Returns None if no connection found
+        """
+        resp = self._connection_table.query(
+            IndexName="connection_id-index",
+            KeyConditionExpression=Key("connection_id").eq(connection_id),
+        )
+        items = resp.get("Items", [])
+        if items:
+            if len(items) > 1:
+                self._log.warning(f"There is more than 1 user for connection_id {connection_id}, selecting first one")
+            return items[0]["user_id"]
+        return None
+
 
 class WebSocketHandler:
     def __init__(self, endpoint_url: str, conn_table_name: str, ttl: int):

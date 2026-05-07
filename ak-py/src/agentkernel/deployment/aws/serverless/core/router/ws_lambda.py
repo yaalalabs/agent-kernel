@@ -2,6 +2,7 @@ import json
 import logging
 import traceback
 from enum import Enum
+from pydantic import BaseModel
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from ......auth.handler import AuthValidator, ValidationContext, ValidationResult
@@ -15,6 +16,11 @@ from .common import BaseLambdaRouter
 
 class BaseWSHandler:
     """Base class for WebSocket route handlers with shared functionality."""
+    
+    class WSMessageInfo(BaseModel):
+        """WebSocket message information."""
+        user_id: str
+        request: BaseRequest
     
     def __init__(self):
         """Initialize base WebSocket handler."""
@@ -34,6 +40,46 @@ class BaseWSHandler:
         body = event.get("body")
         body_dict = json.loads(body) if isinstance(body, str) and body else (body or {})
         return BaseRequest.from_payload(body_dict)
+
+    def _extract_connection_id(self, event: Dict[str, Any]) -> str:
+        """Extract connection ID from WebSocket event.
+
+        :param event: WebSocket event dictionary
+        :return: Connection ID string
+        :raises ValueError: If connectionId is missing
+        """
+        request_context = event.get("requestContext", {})
+        connection_id = request_context.get("connectionId")
+        if not connection_id:
+            raise ValueError("WebSocket event missing requestContext.connectionId")
+        return connection_id
+    
+    def _extract_user_id(self, event: Dict[str, Any]) -> Optional[str]:
+        """Extract user_id from WebSocket event query string.
+
+        :param event: WebSocket event dictionary
+        :return: User ID string if found, None otherwise
+        """
+        query_params = event.get("queryStringParameters", {})
+        if isinstance(query_params, dict):
+            return query_params.get("userId")
+        return None
+
+    def _parse_event_to_wsmessage(self, event: Dict[str, Any]) -> 'BaseWSHandler.WSMessageInfo':
+        """Parse WebSocket event to WSMessageInfo object.
+
+        :param event: WebSocket event dictionary
+        :return: WSMessageInfo object with user_id and request
+        :raises ValueError: If connection_id is missing or user_id cannot be found
+        """
+        request = self._parse_body(event)
+        connection_id = self._extract_connection_id(event)
+        user_id = self.ws_handler.get_user_id(connection_id)
+        
+        if not user_id:
+            raise ValueError(f"No user_id found for connection_id: {connection_id}")
+            
+        return self.WSMessageInfo(user_id=user_id, request=request)
 
     def _build_lambda_response(
         self,
@@ -77,19 +123,6 @@ class ConnectionRoutesHandler(BaseWSHandler):
         super().__init__()
         self.auth_validator = auth_validator
 
-    def _extract_connection_id(self, event: Dict[str, Any]) -> str:
-        """Extract connection ID from WebSocket event.
-
-        :param event: WebSocket event dictionary
-        :return: Connection ID string
-        :raises ValueError: If connectionId is missing
-        """
-        request_context = event.get("requestContext", {})
-        connection_id = request_context.get("connectionId")
-        if not connection_id:
-            raise ValueError("WebSocket event missing requestContext.connectionId")
-        return connection_id
-
     def _extract_auth_token(self, event: Dict[str, Any]) -> Optional[str]:
         """Extract authentication token from WebSocket event query string.
 
@@ -99,17 +132,6 @@ class ConnectionRoutesHandler(BaseWSHandler):
         query_params = event.get("queryStringParameters", {})
         if isinstance(query_params, dict):
             return query_params.get("token")
-        return None
-
-    def _extract_user_id(self, event: Dict[str, Any]) -> Optional[str]:
-        """Extract user_id from WebSocket event query string.
-
-        :param event: WebSocket event dictionary
-        :return: User ID string if found, None otherwise
-        """
-        query_params = event.get("queryStringParameters", {})
-        if isinstance(query_params, dict):
-            return query_params.get("userId")
         return None
 
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
@@ -224,7 +246,7 @@ class SystemRoutesHandler(BaseWSHandler):
     def _handle_msg_and_brdcst(
         self,
         event: Dict[str, Any],
-        operation: Callable[[BaseRequest], Dict[str, Any]],
+        operation: Callable[['BaseWSHandler.WSMessageInfo'], Dict[str, Any]],
         message_type: Optional[MessageType] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """Handle message and broadcast result to user.
@@ -236,9 +258,9 @@ class SystemRoutesHandler(BaseWSHandler):
         """
         user_id = None
         try:
-            request = self._parse_body(event)
-            user_id = request.user_id
-            brdcstin_msg = operation(request)
+            ws_message_info = self._parse_event_to_wsmessage(event)
+            user_id = ws_message_info.user_id
+            brdcstin_msg = operation(ws_message_info)
             if message_type:
                 brdcstin_msg = self._build_broadcasting_message(message_type, **brdcstin_msg)
             self.ws_handler.broadcast(message=brdcstin_msg, user_id=user_id)
@@ -292,7 +314,8 @@ class SystemRoutesHandler(BaseWSHandler):
         :param context: Lambda context object
         :return: Tuple of (status_code, response_body)
         """
-        def _process_chat(request: BaseRequest) -> Dict[str, Any]:
+        def _process_chat(ws_message_info: 'BaseWSHandler.WSMessageInfo') -> Dict[str, Any]:
+            request = ws_message_info.request
             if request.body is None:
                 raise ValueError("body is required")
             _, res_body = self._chat_service.process_chat_request(
@@ -312,7 +335,9 @@ class SystemRoutesHandler(BaseWSHandler):
         :param event: WebSocket event
         :return: Tuple of status code and response body
         """
-        def _queue_chat(request: BaseRequest) -> Dict[str, Any]:
+        def _queue_chat(ws_message_info: 'BaseWSHandler.WSMessageInfo') -> Dict[str, Any]:
+            request = ws_message_info.request
+            user_id = ws_message_info.user_id
             request_body = request.body
             if request_body is None:
                 raise ValueError("body is required")
@@ -330,7 +355,7 @@ class SystemRoutesHandler(BaseWSHandler):
                 message_group_id=session_id,
                 message_deduplication_id=request.request_id,
                 request_id=request.request_id,
-                user_id=request.user_id,
+                user_id=user_id,
             )
 
             self._log.info(f"Message sent to input queue successfully: {response}")
@@ -385,7 +410,8 @@ class WSLambdaRouter(BaseLambdaRouter):
         """
         def _handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             try:
-                user_id = self._system_handler._parse_body(event).user_id
+                ws_message_info = self._system_handler._parse_event_to_wsmessage(event)
+                user_id = ws_message_info.user_id
                 res_msg_to_brdcst = handler_logic_func(event, context)
                 self._system_handler.ws_handler.broadcast(message=res_msg_to_brdcst, user_id=user_id)
                 return 200, self._system_handler._build_lambda_response(user_id=user_id, msg="Message broadcast successfully", success=True)
