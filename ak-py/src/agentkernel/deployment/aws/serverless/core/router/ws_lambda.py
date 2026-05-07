@@ -5,7 +5,7 @@ from enum import Enum
 from pydantic import BaseModel
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from ......auth.handler import AuthValidator, ValidationContext, ValidationResult
+from ......auth.handler import AuthValidator
 from ......core.config import AKConfig
 from ......core.model import BaseRequest
 from .....common.chat_service import ChatService
