@@ -148,6 +148,40 @@ resource "aws_iam_role_policy_attachment" "response_handler_dynamodb_attachment"
   policy_arn = aws_iam_policy.response_handler_dynamodb_policy[0].arn
 }
 
+# Websocket connections DynamoDB permissions
+resource "aws_iam_policy" "response_handler_websocket_connections_dynamodb_policy" {
+  count = var.websocket_connections_dynamodb != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-websocket-connections-ddb"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          var.websocket_connections_dynamodb.table_arn,
+          "${var.websocket_connections_dynamodb.table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "response_handler_websocket_connections_dynamodb_attachment" {
+  count      = var.websocket_connections_dynamodb != null ? 1 : 0
+  role       = aws_iam_role.response_handler_lambda_role.name
+  policy_arn = aws_iam_policy.response_handler_websocket_connections_dynamodb_policy[0].arn
+}
+
 # Response Handler Lambda Function
 module "response_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
@@ -188,8 +222,11 @@ module "response_handler_lambda" {
     } : {},
     local.dynamodb_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
-    } : {}
-    , {
+    } : {},
+    var.websocket_connections_dynamodb != null ? {
+      AK_WEBSOCKET__DYNAMODB__TABLE_NAME = var.websocket_connections_dynamodb.table_name
+    } : {},
+    {
       AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT = tostring(local.output_queue_consumer_max_receive_count)
     }
   )

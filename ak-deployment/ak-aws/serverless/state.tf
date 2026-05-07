@@ -511,6 +511,10 @@ module "request_handler" {
   input_queue_url                         = local.input_queue_url
   response_store_redis                    = local.response_handler_response_store_redis
   response_store_dynamodb                 = local.response_handler_response_store_dynamodb
+  websocket_connections_dynamodb          = local.websocket_api_enabled ? {
+    table_name = module.websocket_connections[0].table_name
+    table_arn  = module.websocket_connections[0].table_arn
+  } : null
   lambda_signer_profile_name              = local.lambda_signer_profile_name
   lambda_signing_config_arn               = local.lambda_signing_config_arn
   docker_image_uri                        = var.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
@@ -610,6 +614,10 @@ module "response_handler" {
 
   response_store_redis    = local.response_handler_response_store_redis
   response_store_dynamodb = local.response_handler_response_store_dynamodb
+  websocket_connections_dynamodb = local.websocket_api_enabled ? {
+    table_name = module.websocket_connections[0].table_name
+    table_arn  = module.websocket_connections[0].table_arn
+  } : null
 
   depends_on = [module.queues, module.dynamodb_response_store]
 }

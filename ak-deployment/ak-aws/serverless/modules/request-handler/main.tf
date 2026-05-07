@@ -128,6 +128,40 @@ resource "aws_iam_role_policy_attachment" "lambda_response_store_dynamodb_attach
   policy_arn = aws_iam_policy.lambda_response_store_dynamodb_policy[0].arn
 }
 
+# Websocket connections DynamoDB permissions
+resource "aws_iam_policy" "lambda_websocket_connections_dynamodb_policy" {
+  count = var.websocket_connections_dynamodb != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-websocket-connections-ddb"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          var.websocket_connections_dynamodb.table_arn,
+          "${var.websocket_connections_dynamodb.table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_websocket_connections_dynamodb_attachment" {
+  count      = var.websocket_connections_dynamodb != null ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.lambda_websocket_connections_dynamodb_policy[0].arn
+}
+
 # SQS permissions for RequestHandler Lambda (conditional on queue_mode)
 resource "aws_iam_policy" "lambda_sqs_policy" {
   count = var.queue_mode ? 1 : 0
@@ -248,6 +282,9 @@ module "lambda_deployment" {
     } : {},
       var.input_queue_url != null ? {
       AK_EXECUTION__QUEUES__INPUT__URL = var.input_queue_url
+    } : {},
+      var.websocket_connections_dynamodb != null ? {
+      AK_WEBSOCKET__DYNAMODB__TABLE_NAME = var.websocket_connections_dynamodb.table_name
     } : {}
   )
   event_source_mapping = var.event_source_mapping

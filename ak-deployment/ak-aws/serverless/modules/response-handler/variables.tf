@@ -122,3 +122,12 @@ variable "cloudwatch_kms_key_arn" {
   description = "KMS key ARN for CloudWatch logs encryption"
   default     = null
 }
+
+variable "websocket_connections_dynamodb" {
+  description = "DynamoDB configuration for websocket connections table"
+  type = object({
+    table_name = string
+    table_arn  = string
+  })
+  default = null
+}
