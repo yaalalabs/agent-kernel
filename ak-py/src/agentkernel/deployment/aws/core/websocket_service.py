@@ -2,7 +2,7 @@ import json
 import time
 import boto3
 import logging
-from typing import List
+from typing import List, Dict
 from boto3.dynamodb.conditions import Key
 from typing import Optional
 
@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 from ...common.websocket_connection_store import WebSocketConnectionStoreABC
 
 
-class WebSocketConnectionStore:
+class WebSocketConnectionStore(WebSocketConnectionStoreABC):
     """
     Internal DynamoDB data access layer.
     Handles only storage/query operations.
@@ -87,13 +87,27 @@ class WebSocketHandler:
     Main public WebSocket interface.
     Users interact ONLY with this class.
     """
-    def __init__(self, endpoint_url: str, conn_table_name: str, ttl: int):
+
+    def __init__(self, conn_table_name: str, ttl: int):
         self._connection_store = WebSocketConnectionStore(conn_table_name, ttl)
-        self._api_gateway = boto3.client(
-            "apigatewaymanagementapi",
-            endpoint_url=endpoint_url,
-        )
+        self._clients: Dict[str, any] = {}
         self._log = logging.getLogger("ak.websocket.manager")
+
+    # internal client resolver (cached per endpoint)
+    def _get_api_gateway(self, endpoint_url: str):
+        if endpoint_url not in self._clients:
+            self._clients[endpoint_url] = boto3.client(
+                "apigatewaymanagementapi",
+                endpoint_url=endpoint_url,
+            )
+        return self._clients[endpoint_url]
+
+    @staticmethod
+    def construct_endpoint_url_from_event(event: dict) -> str:
+        request_context = event["requestContext"]
+        domain_name = request_context["domainName"]
+        stage = request_context["stage"]
+        return f"https://{domain_name}/{stage}"
 
     # Connection Store Public API
     def add_connection(self, user_id: str, connection_id: str) -> None:
@@ -126,9 +140,11 @@ class WebSocketHandler:
         self._log.warning("Unknown websocket route")
 
     # Message sending operations
-    def send(self, connection_id: str, message: dict) -> None:
+    def send(self, endpoint_url: str, connection_id: str, message: dict) -> None:
         try:
-            self._api_gateway.post_to_connection(
+            api_gateway = self._get_api_gateway(endpoint_url)
+
+            api_gateway.post_to_connection(
                 ConnectionId=connection_id,
                 Data=json.dumps(message).encode("utf-8"),
             )
@@ -138,7 +154,6 @@ class WebSocketHandler:
 
             if error_code == "GoneException":
                 self._log.info(f"Cleaning stale connection: {connection_id}")
-
                 self.delete_by_connection_id(connection_id)
 
             else:
@@ -146,10 +161,12 @@ class WebSocketHandler:
 
     def broadcast(
         self,
+        endpoint_url: str,
         message: dict,
         user_id: Optional[str] = None,
         connection_ids: Optional[List[str]] = None,
     ) -> None:
+
         if not user_id and not connection_ids:
             raise ValueError("Provide either user_id or connection_ids")
 
@@ -157,4 +174,4 @@ class WebSocketHandler:
             connection_ids = self.get_connections(user_id)
 
         for connection_id in connection_ids:
-            self.send(connection_id=connection_id, message=message)
+            self.send(endpoint_url=endpoint_url, connection_id=connection_id, message=message)

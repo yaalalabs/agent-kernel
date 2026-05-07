@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 
 class WebSocketConnectionStoreABC(ABC):
@@ -28,6 +28,16 @@ class WebSocketConnectionStoreABC(ABC):
 
         :param user_id: User identifier
         :return: List of connection IDs
+        """
+        pass
+
+    @abstractmethod
+    def get_user_id(self, connection_id: str) -> Optional[str]:
+        """
+        Retrieve the user ID for a given connection ID.
+
+        :param connection_id: WebSocket connection identifier
+        :return: User ID if found, None otherwise
         """
         pass
 

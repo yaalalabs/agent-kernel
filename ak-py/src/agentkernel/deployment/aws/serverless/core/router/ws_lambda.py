@@ -263,7 +263,8 @@ class SystemRoutesHandler(BaseWSHandler):
             brdcstin_msg = operation(ws_message_info)
             if message_type:
                 brdcstin_msg = self._build_broadcasting_message(message_type, **brdcstin_msg)
-            self.ws_handler.broadcast(message=brdcstin_msg, user_id=user_id)
+            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+            self.ws_handler.broadcast(endpoint_url=endpoint_url, message=brdcstin_msg, user_id=user_id)
             return (
                 200,
                 self._build_lambda_response(
@@ -413,7 +414,8 @@ class WSLambdaRouter(BaseLambdaRouter):
                 ws_message_info = self._system_handler._parse_event_to_wsmessage(event)
                 user_id = ws_message_info.user_id
                 res_msg_to_brdcst = handler_logic_func(event, context)
-                self._system_handler.ws_handler.broadcast(message=res_msg_to_brdcst, user_id=user_id)
+                endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+                self._system_handler.ws_handler.broadcast(endpoint_url=endpoint_url, message=res_msg_to_brdcst, user_id=user_id)
                 return 200, self._system_handler._build_lambda_response(user_id=user_id, msg="Message broadcast successfully", success=True)
             except Exception as e:
                 self._log.error(f"WebSocket handler failed: {e}\n{traceback.format_exc()}")
