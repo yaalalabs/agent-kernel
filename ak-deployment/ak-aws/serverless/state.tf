@@ -47,16 +47,20 @@ locals {
   authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
   authorizer_status_message     = !var.enable_api_gateway ? "Did NOT create Authorizer Lambda: enable_api_gateway is false." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
 
+  # Effective response store creation flags (disabled when execution_mode is async)
+  create_dynamodb_response_store_effective = var.create_dynamodb_response_store && var.execution_mode != "async"
+  create_redis_response_store_effective     = var.create_redis_response_store && var.execution_mode != "async"
+
   # DynamoDB response store configuration
-  response_store_dynamodb_table_name     = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_name : null
-  response_store_dynamodb_table_arn      = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_arn : null
-  response_handler_response_store_dynamodb = var.create_dynamodb_response_store ? {
+  response_store_dynamodb_table_name     = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_name : null
+  response_store_dynamodb_table_arn      = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_arn : null
+  response_handler_response_store_dynamodb = local.create_dynamodb_response_store_effective ? {
     table_name = local.response_store_dynamodb_table_name
     table_arn  = local.response_store_dynamodb_table_arn
   } : null
   # Redis response store configuration
-  response_store_redis_url            = var.create_redis_response_store ? local.redis_url : null
-  response_handler_response_store_redis = var.create_redis_response_store ? {
+  response_store_redis_url            = local.create_redis_response_store_effective ? local.redis_url : null
+  response_handler_response_store_redis = local.create_redis_response_store_effective ? {
     url = local.response_store_redis_url
   } : null
 
@@ -317,7 +321,7 @@ module "response_handler_docker_image" {
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
   version       = "0.4.0"
-  count         = (var.create_redis_cluster == true || var.create_redis_response_store) ? 1 : 0
+  count         = (var.create_redis_cluster == true || local.create_redis_response_store_effective) ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -422,7 +426,7 @@ module "websocket_connections" {
 module "dynamodb_response_store" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
   version = "0.4.0"
-  count   = var.create_dynamodb_response_store ? 1 : 0
+  count   = local.create_dynamodb_response_store_effective ? 1 : 0
 
   attributes = [
     { name = "request_id", type = "S" },
