@@ -468,24 +468,17 @@ class WSLambdaRouter(BaseLambdaRouter):
         route_key = request_context.get("routeKey")
         connection_id = request_context.get("connectionId")
 
-        self._log.info(
-            f"WebSocket event - Route Key: {route_key}, Connection ID: {connection_id}"
-        )
-
         if not route_key:
             self._log.warning("WebSocket event missing routeKey")
             raise ValueError("WebSocket event missing routeKey")
 
         norm_route_key = self._normalize_path(route_key)
+        self._log.info(f"Normalized route key: '{route_key}', Connection ID: '{connection_id}'")
         handler = self._websocket_routes.get(norm_route_key)
 
         if not handler:
-            self._log.warning(
-                f"No registered WebSocket route found for route key -> '{route_key}'"
-            )
-            raise ValueError(
-                f"No registered WebSocket route found for route key -> '{route_key}'"
-            )
+            self._log.warning(f"No registered WebSocket route found for route key -> '{route_key}'")
+            raise ValueError(f"No registered WebSocket route found for route key -> '{route_key}'")
 
         result = handler(event, context)
         self._log.debug(f"WebSocket handler result: {result}")
