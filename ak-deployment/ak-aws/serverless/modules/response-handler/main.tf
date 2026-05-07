@@ -224,7 +224,7 @@ module "response_handler_lambda" {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
     } : {},
     var.websocket_connections_dynamodb != null ? {
-      AK_WEBSOCKET__DYNAMODB__TABLE_NAME = var.websocket_connections_dynamodb.table_name
+      AK_WEBSOCKET__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_dynamodb.table_name
     } : {},
     {
       AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT = tostring(local.output_queue_consumer_max_receive_count)

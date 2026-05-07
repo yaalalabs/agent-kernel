@@ -284,7 +284,7 @@ module "lambda_deployment" {
       AK_EXECUTION__QUEUES__INPUT__URL = var.input_queue_url
     } : {},
       var.websocket_connections_dynamodb != null ? {
-      AK_WEBSOCKET__DYNAMODB__TABLE_NAME = var.websocket_connections_dynamodb.table_name
+      AK_WEBSOCKET__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_dynamodb.table_name
     } : {}
   )
   event_source_mapping = var.event_source_mapping
