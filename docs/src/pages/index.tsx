@@ -867,20 +867,8 @@ function Levels() {
       scrollTriggerRef.current.kill();
     }
 
+    ScrollTrigger.getAll().forEach(trigger => trigger.kill());
     gsap.set(sectionRef.current, { height: 'auto', clearProps: 'height' });
-
-    ScrollTrigger.refresh();
-
-    ScrollTrigger.refresh();
-
-    if (contentRef.current) {
-      gsap.registerPlugin(ScrollToPlugin);
-      gsap.to(window, {
-        duration: 1,
-        scrollTo: { y: contentRef.current.offsetTop - 100 },
-        ease: 'power2.out',
-      });
-    }
   };
 
   useEffect(() => {
