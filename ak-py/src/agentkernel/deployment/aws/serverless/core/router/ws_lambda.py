@@ -21,7 +21,6 @@ class BaseWSHandler:
         """WebSocket message types."""
         CHAT_RESPONSE = "CHAT_RESPONSE"
         CHAT_QUEUED = "CHAT_QUEUED"
-        ROUTE_NOT_FOUND = "ROUTE_NOT_FOUND"
         SYSTEM_RESPONSE = "SYSTEM_RESPONSE"
 
     class WSMessageInfo(BaseModel):
@@ -67,17 +66,6 @@ class BaseWSHandler:
             raise ValueError("WebSocket event missing requestContext.connectionId")
         return connection_id
     
-    def _extract_user_id(self, event: Dict[str, Any]) -> Optional[str]:
-        """Extract user_id from WebSocket event query string.
-
-        :param event: WebSocket event dictionary
-        :return: User ID string if found, None otherwise
-        """
-        query_params = event.get("queryStringParameters", {})
-        if isinstance(query_params, dict):
-            return query_params.get("userId")
-        return None
-
     def _parse_event_to_wsmessage(self, event: Dict[str, Any]) -> 'BaseWSHandler.WSMessageInfo':
         """Parse WebSocket event to WSMessageInfo object.
 
@@ -158,15 +146,21 @@ class BaseWSHandler:
 class ConnectionRoutesHandler(BaseWSHandler):
     """Handles WebSocket connection lifecycle routes ($connect, $disconnect).
     
-    This handler is responsible for managing WebSocket connections and optionally
-    validating authentication tokens before allowing connections.
+    This handler is responsible for managing WebSocket connections and requires
+    authentication tokens before allowing connections.
+    
+    Authentication is mandatory for WebSocket connections. The auth_validator
+    must be provided and will validate JWT tokens. user_id is extracted from the
+    JWT token's user_id claim after signature verification. The JWT token should
+    include a user_id claim containing the user's identifier (email, username,
+    or any other identifier).
     """
     _log = logging.getLogger("ak.aws.serverless.connection_routes")
 
-    def __init__(self, auth_validator: Optional[AuthValidator] = None):
+    def __init__(self, auth_validator: AuthValidator):
         """Initialize connection routes handler.
 
-        :param auth_validator: Optional auth validator for $connect route
+        :param auth_validator: Required auth validator for $connect route
         """
         super().__init__()
         self.auth_validator = auth_validator
@@ -193,7 +187,10 @@ class ConnectionRoutesHandler(BaseWSHandler):
         }
 
     def _handle_connect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
-        """Handle WebSocket $connect route with optional authentication.
+        """Handle WebSocket $connect route with mandatory authentication.
+
+        user_id is extracted from the JWT token's user_id claim after validation.
+        The JWT token structure should include a user_id claim containing email, username, or any identifier.
 
         :param event: WebSocket connect event
         :param context: Lambda context object
@@ -202,17 +199,19 @@ class ConnectionRoutesHandler(BaseWSHandler):
         try:
             connection_id = self._extract_connection_id(event)
 
-            # Validate authentication if validator is provided
-            if self.auth_validator:
-                token = self._extract_auth_token(event)
-                if not token:
-                    return 401, self._build_lambda_response(msg="Authentication token is required", success=False)
-                
-                validation_result = self.auth_validator.validate(token)
-                if not validation_result.is_valid:
-                    return 401, self._build_lambda_response(msg=validation_result.error_msg or "Authentication failed", success=False)
-
-            user_id = self._extract_user_id(event)
+            token = self._extract_auth_token(event)
+            if not token:
+                return 401, self._build_lambda_response(msg="Authentication token is required", success=False)
+            
+            validation_result = self.auth_validator.validate(token)
+            if not validation_result.is_valid:
+                return 401, self._build_lambda_response(msg=validation_result.error_msg or "Authentication failed", success=False)
+            
+            user_id = None
+            if validation_result.claims:
+                user_id = validation_result.claims.get('userId')
+            if not user_id:
+                return 401, self._build_lambda_response(msg="'userId' claim is required in JWT token", success=False)
 
             self.ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
 
@@ -302,7 +301,7 @@ class SystemRoutesHandler(BaseWSHandler):
         def _process_default(ws_message_info: 'BaseWSHandler.WSMessageInfo') -> Dict[str, Any]:
             self.ws_handler.on_default()
             requested_route = ws_message_info.request.route
-            return {"status": "ROUTE_NOT_FOUND", "message": f"Route '{requested_route}' not found"}
+            return {"status": "FAILED", "message": f"Route '{requested_route}' not found"}
 
         return self._handle_msg_and_brdcst(
             event,
@@ -338,9 +337,11 @@ class SystemRoutesHandler(BaseWSHandler):
         :param event: WebSocket event
         :return: Tuple of status code and response body
         """
-        def _queue_chat(ws_message_info: 'BaseWSHandler.WSMessageInfo') -> Dict[str, Any]:
-            request = ws_message_info.request
+        user_id = None
+        try:
+            ws_message_info = self._parse_event_to_wsmessage(event)
             user_id = ws_message_info.user_id
+            request = ws_message_info.request
             request_body = request.body
             if request_body is None:
                 raise ValueError("body is required")
@@ -368,14 +369,20 @@ class SystemRoutesHandler(BaseWSHandler):
 
             self._log.info(f"Message sent to input queue successfully: {response}")
 
-            return {"status": "ACCEPTED", "request_id": request.request_id}
+            response_body = self._build_lambda_response(
+                user_id=user_id, msg="Request processed successfully", success=True
+            )
+            response_body["request_id"] = request.request_id
 
-        status_code, response = self._handle_msg_and_brdcst(event, _queue_chat, message_type=self.MessageType.CHAT_QUEUED)
-
-        if status_code == 200:
-            response["request_id"] = self._parse_body(event).request_id
-
-        return status_code, response
+            return 200, response_body
+        except Exception as e:
+            self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
+            return (
+                500,
+                self._build_lambda_response(
+                    user_id=user_id, msg="Request processing failed", success=False
+                ),
+            )
 
 
 class WSLambdaRouter(BaseLambdaRouter):
@@ -389,9 +396,10 @@ class WSLambdaRouter(BaseLambdaRouter):
     def __init__(self, connection_routes: bool = False, system_routes: bool = True, auth_validator: Optional[AuthValidator] = None):
         """Initialize WebSocket Lambda router.
 
-        :param connection_routes: Include $connect and $disconnect routes
+        :param connection_routes: Include $connect and $disconnect routes (requires auth_validator)
         :param system_routes: Include $default and /chat routes
-        :param auth_validator: Optional auth validator for $connect route
+        :param auth_validator: Required auth validator for $connect route when connection_routes is True
+        :raises ValueError: If connection_routes is True but auth_validator is not provided
         """
         super().__init__()
         self._log.info("Initializing WebSocket routes")
@@ -401,6 +409,8 @@ class WSLambdaRouter(BaseLambdaRouter):
         self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = {}
         
         if connection_routes:
+            if not auth_validator:
+                raise ValueError("auth_validator is required when connection_routes is True")
             self._log.info("Initializing connection routes handler")
             self._websocket_routes.update(ConnectionRoutesHandler(auth_validator=auth_validator).get_routes())
         
