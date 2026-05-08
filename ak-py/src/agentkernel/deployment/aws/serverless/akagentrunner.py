@@ -67,10 +67,16 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param record_attributes: Extracted attributes (``dict``) from the record.
         :return: None.
         """
+        cls._log.info("Sending message to output queue")
+        cls._log.debug(f"Message body: {message_body}")
+        cls._log.debug(f"Record attributes: {record_attributes}")
+
         custom_attributes = []
         if record_attributes.get("endpoint_url"):
-            custom_attributes.append(SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], data_type=SQSHandler.AttributeDataType.STRING))
+            custom_attributes.append(SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING))
         
+        cls._log.debug(f"Custom attributes: {custom_attributes}")
+
         SQSHandler.send_message_to_output_queue(
             message_group_id=record_attributes["message_group_id"],
             message_deduplication_id=record_attributes["message_deduplication_id"],
