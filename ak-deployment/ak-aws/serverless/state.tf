@@ -23,14 +23,14 @@ locals {
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
   
-  request_handler_enabled               = var.enable_api_gateway || var.execution_mode == "async"
+  request_handler_enabled               = var.enable_api_gateway
   request_handler_package_path          = var.package_path
   request_handler_lambda_function_arn   = local.request_handler_enabled ? module.request_handler[0].lambda_function_arn : null
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
 
-  websocket_api_enabled                  = var.execution_mode == "async"
+  websocket_api_enabled                  = var.enable_api_gateway && var.execution_mode == "async"
   rest_api_enabled                       = var.enable_api_gateway && var.execution_mode != "async"
   
   agent_runner_package_path             = try(var.agent_runner.package_path, null)

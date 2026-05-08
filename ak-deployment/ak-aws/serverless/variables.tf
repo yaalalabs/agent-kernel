@@ -64,7 +64,7 @@ variable "enable_api_gateway" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
+  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false (except 'async' is allowed regardless of queue_mode)."
   default     = null
   validation {
     condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async", "async"], var.execution_mode)
@@ -75,8 +75,8 @@ variable "execution_mode" {
     error_message = "execution_mode cannot be null when queue_mode is true."
   }
   validation {
-    condition = var.queue_mode || var.execution_mode == null
-    error_message = "execution_mode must be null when queue_mode is false."
+    condition = var.queue_mode || var.execution_mode == null || var.execution_mode == "async"
+    error_message = "execution_mode must be null when queue_mode is false (except 'async' is allowed)."
   }
 }
 
@@ -321,7 +321,7 @@ variable "gateway_endpoints" {
 }
 
 variable "authorizer" {
-  description = "Authorizer configuration object. Required when execution_mode is 'rest_sync' or 'rest_async', must be null when execution_mode is 'async'."
+  description = "Authorizer configuration object. Optional when execution_mode is 'rest_sync' or 'rest_async', must be null when execution_mode is 'async'."
   type = object({
     description           = optional(string, "API Gateway Lambda Authorizer")
     function_name         = string
@@ -336,10 +336,6 @@ variable "authorizer" {
   validation {
     condition     = !(var.execution_mode == "async" && var.authorizer != null)
     error_message = "'authorizer' cannot be defined in 'async' (websocket) execution mode."
-  }
-  validation {
-    condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.authorizer == null)
-    error_message = "authorizer is required when execution_mode is 'rest_sync' or 'rest_async'."
   }
 }
 
