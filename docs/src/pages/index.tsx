@@ -659,12 +659,12 @@ function BusinessLeaderScenarios() {
       problem: {
         heading: 'The Problem',
         sub: "Why it's painful",
-        body: 'Customers ask "where\'s my order?" across your website, WhatsApp, and Instagram and your team copies tracking numbers between systems all day.',
+        body: 'Customers ask "where\'s my order?" across your website, WhatsApp, and Instagram - and your team copies tracking numbers between systems all day.',
       },
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'Connects to your order system, shipping carriers, and payment gateway. Looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps conversation memory across channels and sessions.',
+        body: 'The agent connects to the order system, shipping carriers, and payment gateway. It looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps the conversation memory across channels and sessions.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
@@ -678,17 +678,17 @@ function BusinessLeaderScenarios() {
       problem: {
         heading: 'The Problem',
         sub: "Why it's painful",
-        body: 'Sales reps spend hours qualifying inbound leads manually, copying data into CRM, and scheduling demos — losing hot leads to slow follow-up.',
+        body: 'Leads come in from your website, ads, and events - but they sit in a spreadsheet until someone manually qualifies them and books a meeting.',
       },
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'Engages leads the moment they arrive, asks qualification questions, scores intent, updates your CRM automatically, and books demo calls — around the clock.',
+        body: 'The agent qualifies leads, scores them, creates CRM contacts, books discovery calls, tags not-ready leads for follow-up, logs notes, and updates deal stages. Specialized agents can split conversation, CRM work, and scheduling.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'Integrates with Slack alerts, Gmail follow-ups, and your CRM via hooks — deployed in days, not quarters.',
+        body: 'This proves multi-agent collaboration, easy API integrations, and persistent knowledge of a returning lead.',
       },
     },
     itops: {
@@ -697,17 +697,17 @@ function BusinessLeaderScenarios() {
       problem: {
         heading: 'The Problem',
         sub: "Why it's painful",
-        body: 'Your IT team is buried in repetitive tickets — password resets, VPN access, software installs — while critical issues wait in the queue.',
+        body: 'Employees submit IT tickets for password resets, software access, and VPN issues - then wait hours for a human to do something that takes 30 seconds.',
       },
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'Handles Tier-1 requests autonomously: resets passwords, provisions access, runs diagnostics, and escalates only what truly needs a human.',
+        body: 'The agent works in Slack and Microsoft Teams. It resets passwords through the identity provider, provisions software, restarts services, checks status dashboards, and creates escalation tickets when a human is needed.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'Works inside Slack or Teams with guardrails to prevent unauthorized actions and full observability on every step taken.',
+        body: 'Hooks, guardrails, and audit-ready session tracking make action-taking safe and traceable.',
       },
     },
     insurance: {
@@ -716,17 +716,17 @@ function BusinessLeaderScenarios() {
       problem: {
         heading: 'The Problem',
         sub: "Why it's painful",
-        body: 'Claims intake is slow and error-prone — customers call, agents transcribe, documents get lost, and follow-ups fall through the cracks.',
+        body: 'Filing an insurance claim means phone trees, paper forms, and weeks of back-and-forth before anything happens.',
       },
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'Guides claimants through intake, collects documents, validates policy coverage, creates claim records, and sends status updates automatically.',
+        body: 'The agent accepts vehicle-damage photos over WhatsApp or Telegram, analyzes them with multimodal support, creates the claim, checks policy details, routes it to the right adjuster, updates the customer, and can trigger payment for straightforward claims.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'PII guardrails and audit-grade tracing built in. Runs on your own cloud so sensitive data never leaves your infrastructure.',
+        body: 'This use case proves multimodal input, multi-agent pipelines, guardrails for regulated data, and persistent sessions.',
       },
     },
     logistics: {
@@ -735,17 +735,17 @@ function BusinessLeaderScenarios() {
       problem: {
         heading: 'The Problem',
         sub: "Why it's painful",
-        body: 'Dispatchers field hundreds of "where is my shipment?" calls a day while drivers, carriers, and customers all use different systems.',
+        body: 'Your operations team juggles dashboards, carrier portals, and a shared inbox to keep shipments on track - and customers still get surprised by delays.',
       },
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'Unifies carrier APIs, answers tracking queries instantly, proactively alerts customers on delays, and updates ETAs across all channels.',
+        body: 'The agent monitors carrier APIs, spots delays, reroutes shipments, updates ETAs, notifies customers on their preferred channel, and alerts internal teams in Slack. Different agents can monitor, communicate, and coordinate operations.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'Multi-channel by default — WhatsApp, Telegram, email — with session memory so every customer gets a continuous conversation.',
+        body: 'This shows multi-channel notifications, multi-agent coordination, cloud flexibility, and observability of every decision.',
       },
     },
     hr: {
@@ -754,17 +754,17 @@ function BusinessLeaderScenarios() {
       problem: {
         heading: 'The Problem',
         sub: "Why it's painful",
-        body: 'Recruiters spend 60% of their time on first-round screens, scheduling, and chasing candidates — before any real evaluation begins.',
+        body: 'Your hiring pipeline is bottlenecked by scheduling, reminders, interviewer feedback, and stage updates rather than by finding candidates.',
       },
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'Reaches out to applicants, runs structured screening conversations, scores responses, schedules interviews with calendar integration, and summarizes for hiring managers.',
+        body: 'When a candidate enters the interview stage, the agent checks availability, sends scheduling links over email, confirms bookings, creates meeting rooms, sends reminders, prompts interviewers for feedback in Slack, compiles summaries, and updates the ATS.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'Semantic testing ensures agent responses stay on-script. Hooks let you inject role-specific rubrics without touching agent logic.',
+        body: 'This demonstrates Gmail integration, Slack coordination, ATS and calendar tool use, and long-running session memory across the candidate journey.',
       },
     },
   };
