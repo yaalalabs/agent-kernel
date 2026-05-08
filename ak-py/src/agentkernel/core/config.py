@@ -68,6 +68,7 @@ class _APIConfig(BaseModel):
 
 class _WebSocketAPIConfig(BaseModel):
     endpoint_url: str = Field(default=None, description="WebSocket API endpoint URL")
+    chat_route: str = Field(description="WebSocket chat route")
     connection_table: Optional[_DynamoDBConfig] = Field(default=None, description="DynamoDB configuration for storing WebSocket connections")
 
 
