@@ -34,7 +34,7 @@ module "websocket_api" {
         uri = var.route_handler_lambda_invoke_arn
       }
     },
-    "chat" = {
+    "${var.chat_route}" = {
       operation_name = "ChatRoute"
       integration = {
         uri = var.route_handler_lambda_invoke_arn
@@ -84,4 +84,29 @@ resource "aws_lambda_permission" "websocket_connection_handler" {
   function_name = var.connection_handler_lambda_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${module.websocket_api.api_execution_arn}/*"
+}
+
+# IAM policy for route handler Lambda to call PostToConnection on WebSocket API
+resource "aws_iam_policy" "route_handler_websocket_api_policy" {
+  count = var.route_handler_lambda_role_name != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-route-handler-websocket-api"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "execute-api:ManageConnections"
+        ]
+        Resource = "${module.websocket_api.api_execution_arn}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "route_handler_websocket_api_attachment" {
+  count      = var.route_handler_lambda_role_name != null ? 1 : 0
+  role       = var.route_handler_lambda_role_name
+  policy_arn = aws_iam_policy.route_handler_websocket_api_policy[0].arn
 }

@@ -227,9 +227,11 @@ module "websocket_api_gateway" {
   env_alias            = var.env_alias
   product_display_name = var.product_display_name
   tags                 = var.tags
+  chat_route           = var.ws_chat_route
 
   route_handler_lambda_invoke_arn      = local.request_handler_lambda_invoke_arn
   route_handler_lambda_name            = local.request_handler_lambda_function_name
+  route_handler_lambda_role_name        = local.request_handler_enabled ? module.request_handler[0].lambda_role_name : null
   connection_handler_lambda_invoke_arn = module.ws_connection_handler[0].ws_connection_handler_lambda_function_invoke_arn
   connection_handler_lambda_name       = module.ws_connection_handler[0].ws_connection_handler_lambda_function_name
 
@@ -525,8 +527,10 @@ module "request_handler" {
   lambda_kms_key_arn                      = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
   environment_variables = merge(try(var.environment_variables, null), {
-    AK_EXECUTION__MODE = var.execution_mode
-  })
+    AK_EXECUTION__MODE = var.execution_mode,
+  }, local.websocket_api_enabled ? {
+    AK_WEBSOCKET_API__CHAT_ROUTE = var.ws_chat_route,
+  } : {})
 
   depends_on = [module.request_handler_source_package]
 }
@@ -622,7 +626,9 @@ module "response_handler" {
     table_name = module.websocket_connections[0].table_name
     table_arn  = module.websocket_connections[0].table_arn
   } : null
+  websocket_api_execution_arn = local.websocket_api_enabled ? module.websocket_api_gateway[0].websocket_api_execution_arn : null
+  execution_mode = var.execution_mode
 
-  depends_on = [module.queues, module.dynamodb_response_store]
+  depends_on = [module.websocket_api_gateway, module.queues, module.dynamodb_response_store]
 }
 

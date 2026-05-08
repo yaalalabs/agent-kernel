@@ -174,6 +174,12 @@ variable "api_base_path" {
   default     = "api"
 }
 
+variable "ws_chat_route" {
+  type        = string
+  description = "WebSocket chat route"
+  default     = "chat"
+}
+
 variable "tags" {
   type = map(string)
   description = "Resource tags"

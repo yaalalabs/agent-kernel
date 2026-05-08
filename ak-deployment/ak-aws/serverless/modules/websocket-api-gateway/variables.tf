@@ -33,6 +33,11 @@ variable "tags" {
   default     = {}
 }
 
+variable "chat_route" {
+  type        = string
+  description = "WebSocket route for chat messages"
+}
+
 variable "route_handler_lambda_invoke_arn" {
   type        = string
   description = "Invoke ARN of the routes handler Lambda function (for $default and custom routes)"
@@ -41,6 +46,12 @@ variable "route_handler_lambda_invoke_arn" {
 variable "route_handler_lambda_name" {
   type        = string
   description = "Name of the routes handler Lambda function"
+}
+
+variable "route_handler_lambda_role_name" {
+  type        = string
+  description = "IAM role name of the routes handler Lambda function (for PostToConnection permission)"
+  default     = null
 }
 
 variable "connection_handler_lambda_invoke_arn" {

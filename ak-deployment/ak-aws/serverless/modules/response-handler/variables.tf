@@ -131,3 +131,14 @@ variable "websocket_connections_dynamodb" {
   })
   default = null
 }
+
+variable "websocket_api_execution_arn" {
+  description = "Execution ARN of the WebSocket API Gateway (for PostToConnection permission)"
+  type        = string
+  default     = null
+}
+
+variable "execution_mode" {
+  description = "Execution mode for the serverless module"
+  type        = string
+}
