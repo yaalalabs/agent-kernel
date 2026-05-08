@@ -29,22 +29,13 @@ module "serverless_agents" {
   # create_redis_response_store = true # if True, it will use the memory Redis cluster for response store or may create.
   create_dynamodb_response_store = true
 
-  # API Gateway configuration
-  api_version    = "0.3.3"
-  api_base_path  = "api"
-  agent_endpoint = "chat"
-
-  # Custom API endpoints
-  gateway_endpoints = [
-    {
-      path   = "app"
-      method = "GET"
-    },
-    {
-      path   = "app_info"
-      method = "POST"
-    }
+  # WS Custom Routes Configuration
+  ws_routes = [
+    {route = "app"},
+    {route = "app_info"}
   ]
+  # Override the default websocket chat route, default is "chat"
+  # ws_chat_route = "chat-new"
 
   # Environment variables for request handler
   environment_variables = {
