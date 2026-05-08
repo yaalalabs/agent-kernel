@@ -228,6 +228,7 @@ module "websocket_api_gateway" {
   product_display_name = var.product_display_name
   tags                 = var.tags
   chat_route           = var.ws_chat_route
+  custom_routes        = var.ws_routes
 
   route_handler_lambda_invoke_arn      = local.request_handler_lambda_invoke_arn
   route_handler_lambda_name            = local.request_handler_lambda_function_name

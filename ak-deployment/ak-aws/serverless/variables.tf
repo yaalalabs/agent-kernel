@@ -180,6 +180,14 @@ variable "ws_chat_route" {
   default     = "chat"
 }
 
+variable "ws_routes" {
+  type = list(object({
+    route = string
+  }))
+  description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
+  default     = []
+}
+
 variable "tags" {
   type = map(string)
   description = "Resource tags"

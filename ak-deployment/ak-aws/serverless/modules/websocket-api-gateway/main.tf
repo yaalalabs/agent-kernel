@@ -15,32 +15,43 @@ module "websocket_api" {
   route_selection_expression = "$request.body.route"
 
   # Routes & Integration(s)
-  routes = {
-    "$connect" = {
-      operation_name = "ConnectRoute"
-      integration = {
-        uri = var.connection_handler_lambda_invoke_arn
+  routes = merge(
+    {
+      "$connect" = {
+        operation_name = "ConnectRoute"
+        integration = {
+          uri = var.connection_handler_lambda_invoke_arn
+        }
+      },
+      "$disconnect" = {
+        operation_name = "DisconnectRoute"
+        integration = {
+          uri = var.connection_handler_lambda_invoke_arn
+        }
+      },
+      "$default" = {
+        operation_name = "DefaultRoute"
+        integration = {
+          uri = var.route_handler_lambda_invoke_arn
+        }
+      },
+      "${var.chat_route}" = {
+        operation_name = "ChatRoute"
+        integration = {
+          uri = var.route_handler_lambda_invoke_arn
+        }
       }
     },
-    "$disconnect" = {
-      operation_name = "DisconnectRoute"
-      integration = {
-        uri = var.connection_handler_lambda_invoke_arn
-      }
-    },
-    "$default" = {
-      operation_name = "DefaultRoute"
-      integration = {
-        uri = var.route_handler_lambda_invoke_arn
-      }
-    },
-    "${var.chat_route}" = {
-      operation_name = "ChatRoute"
-      integration = {
-        uri = var.route_handler_lambda_invoke_arn
+    {
+      for custom_route in var.custom_routes :
+      custom_route.route => {
+        operation_name = "${custom_route.route}Route"
+        integration = {
+          uri = var.route_handler_lambda_invoke_arn
+        }
       }
     }
-  }
+  )
 
   # Stage
   stage_name = var.stage_name

@@ -36,6 +36,24 @@ variable "tags" {
 variable "chat_route" {
   type        = string
   description = "WebSocket route for chat messages"
+  validation {
+    condition     = !contains(var.chat_route, "/")
+    error_message = "chat_route cannot contain '/' character. Route names must not include slashes."
+  }
+}
+
+variable "custom_routes" {
+  type = list(object({
+    route = string
+  }))
+  description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
+  default     = []
+  validation {
+    condition = alltrue([
+      for route_obj in var.custom_routes : !contains(route_obj.route, "/")
+    ])
+    error_message = "custom_routes cannot contain '/' character in any route name. Route names must not include slashes."
+  }
 }
 
 variable "route_handler_lambda_invoke_arn" {
