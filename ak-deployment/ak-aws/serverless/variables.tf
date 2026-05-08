@@ -156,57 +156,7 @@ variable "layers" {
   default = []
 }
 
-variable "api_version" {
-  type        = string
-  description = "API version"
-  default     = "v1"
-  validation {
-    condition     = var.execution_mode != "async"
-    error_message = "'api_version' cannot be defined in 'async' (websocket) execution mode."
-  }
-}
 
-variable "agent_endpoint" {
-  type        = string
-  description = "Agent invocation endpoint"
-  default     = "chat"
-  validation {
-    condition     = var.execution_mode != "async"
-    error_message = "'agent_endpoint' cannot be defined in 'async' (websocket) execution mode."
-  }
-}
-
-variable "api_base_path" {
-  type        = string
-  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
-  default     = "api"
-  validation {
-    condition     = var.execution_mode != "async"
-    error_message = "'api_base_path' cannot be defined in 'async' (websocket) execution mode."
-  }
-}
-
-variable "ws_chat_route" {
-  type        = string
-  description = "WebSocket chat route"
-  default     = "chat"
-  validation {
-    condition     = var.execution_mode == "async"
-    error_message = "'ws_chat_route' can only be defined in 'async' (websocket) execution mode."
-  }
-}
-
-variable "ws_routes" {
-  type = list(object({
-    route = string
-  }))
-  description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
-  default     = []
-  validation {
-    condition     = var.execution_mode == "async"
-    error_message = "'ws_routes' can only be defined in 'async' (websocket) execution mode."
-  }
-}
 
 variable "tags" {
   type = map(string)
@@ -280,13 +230,76 @@ variable "private_subnet_cidrs" {
   default = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
+variable "api_version" {
+  type        = string
+  description = "API version"
+  default     = null
+
+  validation {
+    condition     = var.execution_mode != "async" || var.api_version == null
+    error_message = "'api_version' cannot be defined in 'async' (websocket) execution mode."
+  }
+}
+
+variable "agent_endpoint" {
+  type        = string
+  description = "Agent invocation endpoint"
+  default     = null
+
+  validation {
+    condition     = var.execution_mode != "async" || var.agent_endpoint == null
+    error_message = "'agent_endpoint' cannot be defined in 'async' (websocket) execution mode."
+  }
+}
+
+variable "api_base_path" {
+  type        = string
+  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
+  default     = null
+
+  validation {
+    condition     = var.execution_mode != "async" || var.api_base_path == null
+    error_message = "'api_base_path' cannot be defined in 'async' (websocket) execution mode."
+  }
+}
+
+variable "ws_chat_route" {
+  type        = string
+  description = "WebSocket chat route"
+  default     = "chat"
+  validation {
+    condition     = var.execution_mode == "async" || var.ws_chat_route == null
+    error_message = "ws_chat_route must only be set in async mode"
+  }
+  validation {
+    condition     = var.ws_chat_route == null || !strcontains(var.ws_chat_route, "/")
+    error_message = "ws_chat_route must not contain '/'."
+  }
+}
+
+variable "ws_routes" {
+  type = list(object({
+    route = string
+  }))
+  description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
+  default     = null
+
+  validation {
+    condition     = var.execution_mode == "async" || var.ws_routes == null
+    error_message = "'ws_routes' can only be defined in 'async' (websocket) execution mode."
+  }
+}
+
 variable "gateway_endpoints" {
   description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+
   type = list(object({
     path   = string   # e.g. "/app/check", "/health", "/app/status/test"
     method = string   # GET, POST, PUT, DELETE, ANY
   }))
+
   default = []
+
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
@@ -297,15 +310,15 @@ variable "gateway_endpoints" {
         )
       )
     ])
+
     error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
   }
+
   validation {
-    condition     = var.execution_mode != "async"
+    condition     = var.execution_mode != "async" || length(var.gateway_endpoints) == 0
     error_message = "'gateway_endpoints' cannot be defined in 'async' (websocket) execution mode."
   }
 }
-
-
 
 variable "authorizer" {
   description = "Authorizer configuration object. Required when execution_mode is 'rest_sync' or 'rest_async', must be null when execution_mode is 'async'."
