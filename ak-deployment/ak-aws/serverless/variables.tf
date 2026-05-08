@@ -160,24 +160,40 @@ variable "api_version" {
   type        = string
   description = "API version"
   default     = "v1"
+  validation {
+    condition     = var.execution_mode != "async"
+    error_message = "'api_version' cannot be defined in 'async' (websocket) execution mode."
+  }
 }
 
 variable "agent_endpoint" {
   type        = string
   description = "Agent invocation endpoint"
   default     = "chat"
+  validation {
+    condition     = var.execution_mode != "async"
+    error_message = "'agent_endpoint' cannot be defined in 'async' (websocket) execution mode."
+  }
 }
 
 variable "api_base_path" {
   type        = string
   description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
   default     = "api"
+  validation {
+    condition     = var.execution_mode != "async"
+    error_message = "'api_base_path' cannot be defined in 'async' (websocket) execution mode."
+  }
 }
 
 variable "ws_chat_route" {
   type        = string
   description = "WebSocket chat route"
   default     = "chat"
+  validation {
+    condition     = var.execution_mode == "async"
+    error_message = "'ws_chat_route' can only be defined in 'async' (websocket) execution mode."
+  }
 }
 
 variable "ws_routes" {
@@ -186,6 +202,10 @@ variable "ws_routes" {
   }))
   description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
   default     = []
+  validation {
+    condition     = var.execution_mode == "async"
+    error_message = "'ws_routes' can only be defined in 'async' (websocket) execution mode."
+  }
 }
 
 variable "tags" {
@@ -279,6 +299,10 @@ variable "gateway_endpoints" {
     ])
     error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
   }
+  validation {
+    condition     = var.execution_mode != "async"
+    error_message = "'gateway_endpoints' cannot be defined in 'async' (websocket) execution mode."
+  }
 }
 
 
@@ -298,7 +322,7 @@ variable "authorizer" {
   default = null
   validation {
     condition     = !(var.execution_mode == "async" && var.authorizer != null)
-    error_message = "authorizer must be null when execution_mode is 'async' (WebSocket mode)."
+    error_message = "'authorizer' cannot be defined in 'async' (websocket) execution mode."
   }
   validation {
     condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.authorizer == null)
@@ -322,12 +346,12 @@ variable "ws_connection_handler" {
   })
   default = {}
   validation {
-    condition     = !(var.execution_mode == "async" && var.ws_connection_handler == {})
-    error_message = "ws_connection_handler is required when execution_mode is 'async' (WebSocket mode)."
+    condition     = var.execution_mode == "async" || var.ws_connection_handler == {}
+    error_message = "'ws_connection_handler' can only be defined in 'async' (websocket) execution mode."
   }
   validation {
-    condition     = !(contains(["rest_sync", "rest_async"], var.execution_mode) && var.ws_connection_handler != {})
-    error_message = "ws_connection_handler must be empty when execution_mode is 'rest_sync' or 'rest_async'."
+    condition     = !(var.execution_mode == "async" && var.ws_connection_handler == {})
+    error_message = "ws_connection_handler is required when execution_mode is 'async' (WebSocket mode)."
   }
   validation {
     condition     = var.ws_connection_handler == {} ? true : try(var.ws_connection_handler.package_path, null) != null
