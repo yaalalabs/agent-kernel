@@ -471,7 +471,9 @@ module "ws_connection_handler" {
       try(var.ws_connection_handler.environment_variables, {}),
       {
         AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = local.websocket_connection_table_name
-      }
+      }, local.websocket_api_enabled ? {
+        AK_WEBSOCKET_API__CHAT_ROUTE = var.ws_chat_route,
+      } : {}
     )
   })
   websocket_connection_table_arn = local.websocket_connection_table_arn
