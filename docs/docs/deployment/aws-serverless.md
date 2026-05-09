@@ -663,10 +663,19 @@ If the response is not available yet, the poll endpoint returns a `NOT_FOUND` bo
 
 **WebSocket Connection**
 
-Connect to the WebSocket endpoint with a bearer token in the connection URL:
+Connect to the WebSocket endpoint with a bearer token in the connection URL. The endpoint URL is constructed by combining the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs from the serverless module:
 
 ```bash
-wss://{api-id}.execute-api.us-east-1.amazonaws.com/agents?token=your-jwt-token
+{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=your-jwt-token
+```
+
+For example, if the outputs are:
+- `websocket_api_endpoint_url = "wss://abc123.execute-api.us-east-1.amazonaws.com"`
+- `websocket_api_stage_name = "prod"`
+
+The connection URL would be:
+```bash
+wss://abc123.execute-api.us-east-1.amazonaws.com/prod?token=your-jwt-token
 ```
 
 The bearer token must include a `userId` claim for authentication.

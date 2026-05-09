@@ -73,10 +73,22 @@ This script:
 After apply, Terraform outputs:
 
 - `websocket_api_endpoint_url`
+- `websocket_api_stage_name`
 
 See `deploy/outputs.tf`.
 
 ## Using the WebSocket API
+
+To connect to the WebSocket API, combine the outputs to form the complete endpoint URL:
+
+```bash
+{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=your-jwt-token
+```
+
+For example:
+```bash
+wss://abc123.execute-api.us-east-1.amazonaws.com/prod?token=your-jwt-token
+```
 
 The WebSocket `$connect` route is protected by a custom token validator in `lambda_ws_connection_handler.py`.
 
