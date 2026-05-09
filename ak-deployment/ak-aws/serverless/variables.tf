@@ -64,19 +64,15 @@ variable "enable_api_gateway" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false (except 'async' is allowed regardless of queue_mode)."
-  default     = null
+  description = "Execution mode for the deployment. Allowed values: rest_sync, async (always allowed), rest_async and other modes (only when queue_mode is true)."
+  default     = "rest_sync"
   validation {
-    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async", "async"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async, async or null."
+    condition = contains(["rest_sync", "rest_async", "async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async."
   }
   validation {
-    condition = !var.queue_mode || var.execution_mode != null
-    error_message = "execution_mode cannot be null when queue_mode is true."
-  }
-  validation {
-    condition = var.queue_mode || var.execution_mode == null || var.execution_mode == "async"
-    error_message = "execution_mode must be null when queue_mode is false (except 'async' is allowed)."
+    condition = var.queue_mode || contains(["rest_sync", "async"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync or async when queue_mode is false."
   }
 }
 
