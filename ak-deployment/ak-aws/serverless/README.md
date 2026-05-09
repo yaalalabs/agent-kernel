@@ -568,10 +568,13 @@ When `execution_mode = "async"`, the module creates a WebSocket API Gateway for 
 - Support for custom routes beyond the default
 
 **Important notes**:
-- When `execution_mode = "async"`, the `authorizer` must be null (not supported for WebSocket mode)
+- When `execution_mode = "async"`, the `authorizer` must be null (API Gateway authorizer is not used for WebSocket mode)
+- Authentication for WebSocket is handled by the WebSocket connection handler Lambda and is mandatory
+- The bearer token must include a `userId` claim for WebSocket connections
 - The `ws_connection_handler` configuration is required when `execution_mode = "async"`
 - Only LocalZip package type is supported for the WebSocket connection handler
 - The WebSocket API uses `$request.body.route` for route selection
+- Support for custom routes beyond the default `chat` route
 
 ### 💾 Multi-Storage Support
 

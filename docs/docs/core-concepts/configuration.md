@@ -60,6 +60,35 @@ mcp:
   agents:
     - "*"  # Expose all agents as MCP tools
 
+# WebSocket API configuration (for AWS serverless deployments)
+websocket_api:
+  connection_table:
+    table_name: "websocket-connections"
+    ttl: 3600  # Connection TTL in seconds for automatic cleanup
+  chat_route: "chat"  # Default route for chat messages
+
+# Execution configuration (for AWS serverless deployments)
+execution:
+  mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
+  queues:
+    input:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
+      max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
+    output:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
+      max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
+  response_store:
+    type: redis  # Response store type: redis or dynamodb (required for rest_sync and rest_async modes)
+    retry_count: 5  # Number of retry attempts for response store reads
+    delay: 5  # Delay in seconds between response store reads retry attempts
+    redis:
+      url: "redis://localhost:6379"  # Redis connection URL for response storage
+      prefix: "ak:responses:"  # Key prefix for Redis response storage
+      ttl: 604800  # Redis saved value TTL in seconds
+    dynamodb:
+      table_name: "agent-responses"  # DynamoDB table name for response storage
+      ttl: 604800  # DynamoDB item TTL in seconds (0 disables)
+
 # Testing configuration
 test:
   mode: fallback  # Options: fuzzy, judge, fallback
@@ -183,6 +212,47 @@ Alternatively, use `config.json`:
     "expose_agents": true,
     "url": "http://localhost:8000/mcp",
     "agents": ["*"]
+  },
+  "websocket_api": {
+    "connection_table": {
+      "table_name": "websocket-connections",
+      "ttl": 3600
+    },
+    "chat_route": "chat"
+  },
+  "execution": {
+    "mode": "rest_sync",
+    "queues": {
+      "input": {
+        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input",
+        "max_receive_count": 3
+      },
+      "output": {
+        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output",
+        "max_receive_count": 3
+      }
+    },
+    "response_store": {
+      "type": "redis",
+      "retry_count": 5,
+      "delay": 5,
+      "redis": {
+        "url": "redis://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 604800
+      },
+      "dynamodb": {
+        "table_name": "agent-responses",
+        "ttl": 604800
+      }
+    }
+  },
+  "websocket_api": {
+    "connection_table": {
+      "table_name": "websocket-connections",
+      "ttl": 3600
+    },
+    "chat_route": "chat"
   },
   "test": {
     "mode": "fallback",
@@ -433,8 +503,46 @@ export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path
 
 # Bedrock-specific output guardrail configuration
 export AK_GUARDRAIL__OUTPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
-export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version (default: DRAFT)
+export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version
 ```
+
+### Execution Configuration (AWS Serverless)
+
+```bash
+# Execution mode
+export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'stream', 'async'
+
+# Queue configuration
+export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
+export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
+export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
+
+# Response store configuration
+export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'dynamodb'
+export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
+export AK_EXECUTION__RESPONSE_STORE__DELAY=5
+
+# Redis response store
+export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__REDIS__TTL=604800
+
+# DynamoDB response store
+export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME=agent-responses
+export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
+```
+
+**Execution Modes**:
+- `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
+- `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
+- `stream` - Streaming mode (not yet implemented)
+- `async` - WebSocket mode for real-time bidirectional communication (queues optional, response_store not used)
+
+**Notes**:
+- Queues and response_store are required for `rest_sync` and `rest_async` modes
+- For `async` (WebSocket) mode, queues are optional but response_store is not used since responses are broadcast directly through the WebSocket connection
+- When queues are not configured, the request handler processes requests directly without queuing
 
 ### Logging Configuration (Optional)
 
@@ -556,6 +664,28 @@ guardrail:
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
+
+# Execution configuration (for AWS serverless deployments)
+execution:
+  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
+  queues:                       # Queue URLs for queue-based execution
+    input:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
+      max_receive_count: 3      # Max receive count before message is treated as failed
+    output:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
+      max_receive_count: 3      # Max receive count before message is treated as failed
+  response_store:               # Response storage configuration (required for rest_sync and rest_async modes)
+    type: "redis"               # Response store type: 'redis' or 'dynamodb'
+    retry_count: 5              # Number of retry attempts for response store reads
+    delay: 5                    # Delay in seconds between response store reads retry attempts
+    redis:
+      url: "redis://localhost:6379"  # Redis connection URL
+      prefix: "ak:responses:"        # Key prefix for Redis response storage
+      ttl: 604800                     # Redis TTL in seconds
+    dynamodb:
+      table_name: "agent-responses"  # DynamoDB table name for response storage
+      ttl: 604800                     # DynamoDB TTL in seconds (0 to disable)
 
 # Logging configuration (optional)
 # If omitted, default loggers will not be overridden

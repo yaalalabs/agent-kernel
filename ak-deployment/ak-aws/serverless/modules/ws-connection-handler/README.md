@@ -7,7 +7,7 @@ This module creates a Lambda function to handle WebSocket `$connect` and `$disco
 The WebSocket connection handler is responsible for:
 - Managing WebSocket connection lifecycle (`$connect` and `$disconnect` routes)
 - Storing and removing connection metadata in DynamoDB
-- Authentication during the `$connect` route (when integrated with an authorizer)
+- Authentication during the `$connect` route (mandatory - bearer token must include `userId` claim)
 
 ## Usage
 
