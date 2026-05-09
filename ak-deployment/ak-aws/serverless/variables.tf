@@ -230,18 +230,30 @@ variable "api_version" {
   type        = string
   description = "API version"
   default     = "v1"
+  validation {
+    condition     = var.execution_mode == "async" || (var.api_version != null && length(trimspace(var.api_version)) > 0)
+    error_message = "api_version must not be null, empty, or whitespace-only when execution_mode is not 'async'."
+  }
 }
 
 variable "agent_endpoint" {
   type        = string
   description = "Agent invocation endpoint"
   default     = "chat"
+  validation {
+    condition     = var.execution_mode == "async" || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
+    error_message = "agent_endpoint must not be null, empty, or whitespace-only when execution_mode is not 'async'."
+  }
 }
 
 variable "api_base_path" {
   type        = string
   description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
   default     = "api"
+  validation {
+    condition     = var.execution_mode == "async" || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
+    error_message = "api_base_path must not be whitespace-only when provided and execution_mode is not 'async'. Use null or empty string to omit."
+  }
 }
 
 variable "ws_chat_route" {
@@ -250,13 +262,13 @@ variable "ws_chat_route" {
   default     = "chat"
 
   validation {
-    condition     = var.execution_mode != "async" || length(trimspace(var.ws_chat_route)) > 0
-    error_message = "ws_chat_route must not be empty or whitespace-only."
+    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
+    error_message = "ws_chat_route must not be null, empty, or whitespace-only."
   }
 
   validation {
-    condition     = var.execution_mode != "async" || can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route))
-    error_message = "ws_chat_route must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
+    error_message = "ws_chat_route must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
 
@@ -273,13 +285,13 @@ variable "ws_routes" {
   }
 
   validation {
-    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : length(trimspace(r.route)) > 0])
-    error_message = "Routes in 'ws_routes' must not be empty or whitespace-only."
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
+    error_message = "Routes in 'ws_routes' must not be null, empty, or whitespace-only."
   }
 
   validation {
-    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : can(regex("^[a-zA-Z0-9_-]+$", r.route))])
-    error_message = "Routes in 'ws_routes' must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    error_message = "Routes in 'ws_routes' must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
 
@@ -296,15 +308,15 @@ variable "gateway_endpoints" {
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
-        length(trimspace(ep.path)) > 0 &&
-        contains(
+        ep.path != null && length(trimspace(ep.path)) > 0 &&
+        ep.method != null && contains(
           ["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"],
           upper(ep.method)
         )
       )
     ])
 
-    error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
+    error_message = "Each gateway_endpoints entry must: have a non-null, non-empty 'path', and a non-null valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
   }
 
   validation {
