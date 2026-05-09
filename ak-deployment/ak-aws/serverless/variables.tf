@@ -229,47 +229,34 @@ variable "private_subnet_cidrs" {
 variable "api_version" {
   type        = string
   description = "API version"
-  default     = null
-
-  validation {
-    condition     = var.execution_mode != "async" || var.api_version == null
-    error_message = "'api_version' cannot be defined in 'async' (websocket) execution mode."
-  }
+  default     = "v1"
 }
 
 variable "agent_endpoint" {
   type        = string
   description = "Agent invocation endpoint"
-  default     = null
-
-  validation {
-    condition     = var.execution_mode != "async" || var.agent_endpoint == null
-    error_message = "'agent_endpoint' cannot be defined in 'async' (websocket) execution mode."
-  }
+  default     = "chat"
 }
 
 variable "api_base_path" {
   type        = string
   description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
-  default     = null
-
-  validation {
-    condition     = var.execution_mode != "async" || var.api_base_path == null
-    error_message = "'api_base_path' cannot be defined in 'async' (websocket) execution mode."
-  }
+  default     = "api"
 }
 
 variable "ws_chat_route" {
   type        = string
   description = "WebSocket chat route"
   default     = "chat"
+
   validation {
-    condition     = var.execution_mode == "async" || var.ws_chat_route == null
-    error_message = "ws_chat_route must only be set in async mode"
+    condition     = var.execution_mode != "async" || length(trimspace(var.ws_chat_route)) > 0
+    error_message = "ws_chat_route must not be empty or whitespace-only."
   }
+
   validation {
-    condition     = var.ws_chat_route == null || !strcontains(var.ws_chat_route, "/")
-    error_message = "ws_chat_route must not contain '/'."
+    condition     = var.execution_mode != "async" || can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route))
+    error_message = "ws_chat_route must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
 
@@ -278,11 +265,21 @@ variable "ws_routes" {
     route = string
   }))
   description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
-  default     = null
+  default     = []
 
   validation {
-    condition     = var.execution_mode == "async" || var.ws_routes == null
+    condition     = var.execution_mode == "async" || length(var.ws_routes) == 0
     error_message = "'ws_routes' can only be defined in 'async' (websocket) execution mode."
+  }
+
+  validation {
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : length(trimspace(r.route)) > 0])
+    error_message = "Routes in 'ws_routes' must not be empty or whitespace-only."
+  }
+
+  validation {
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    error_message = "Routes in 'ws_routes' must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
 
@@ -336,7 +333,7 @@ variable "authorizer" {
 }
 
 variable "ws_connection_handler" {
-  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be empty ({}) when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
+  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be empty ({}) or null when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
   type = object({
     function_name         = optional(string, "ws-connection-handler")
     function_description  = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
@@ -350,14 +347,6 @@ variable "ws_connection_handler" {
     environment_variables = optional(map(string), {})
   })
   default = {}
-  validation {
-    condition     = var.execution_mode == "async" || var.ws_connection_handler == {}
-    error_message = "'ws_connection_handler' can only be defined in 'async' (websocket) execution mode."
-  }
-  validation {
-    condition     = !(var.execution_mode == "async" && var.ws_connection_handler == {})
-    error_message = "ws_connection_handler is required when execution_mode is 'async' (WebSocket mode)."
-  }
   validation {
     condition     = var.execution_mode != "async" || try(var.ws_connection_handler.package_path, null) != null
     error_message = "ws_connection_handler.package_path is required when execution_mode is 'async'."
