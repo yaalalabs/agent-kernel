@@ -251,7 +251,7 @@ variable "api_base_path" {
   description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
   default     = "api"
   validation {
-    condition     = var.execution_mode == "async" || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
+    condition     = var.execution_mode == "async" || (var.api_base_path != null && length(trimspace(var.api_base_path)) > 0)
     error_message = "api_base_path must not be whitespace-only when provided and execution_mode is not 'async'. Use null or empty string to omit."
   }
 }
