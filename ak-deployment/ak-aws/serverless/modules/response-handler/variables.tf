@@ -138,7 +138,3 @@ variable "websocket_api_execution_arn" {
   default     = null
 }
 
-variable "execution_mode" {
-  description = "Execution mode for the serverless module"
-  type        = string
-}
