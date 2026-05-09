@@ -359,8 +359,8 @@ variable "ws_connection_handler" {
     error_message = "ws_connection_handler is required when execution_mode is 'async' (WebSocket mode)."
   }
   validation {
-    condition     = var.ws_connection_handler == {} ? true : try(var.ws_connection_handler.package_path, null) != null
-    error_message = "ws_connection_handler.package_path is required when ws_connection_handler is defined."
+    condition     = var.execution_mode != "async" || try(var.ws_connection_handler.package_path, null) != null
+    error_message = "ws_connection_handler.package_path is required when execution_mode is 'async'."
   }
 }
 
