@@ -3,9 +3,6 @@ locals {
   lambda_kms_key_arn            = var.lambda_kms_key_arn
   cloudwatch_kms_key_arn        = var.cloudwatch_kms_key_arn
   
-  # Execution mode
-  is_async = var.execution_mode == "async"
-  
   # Response handler configuration
   response_handler_function_name        = var.response_handler.function_name
   response_handler_function_description = var.response_handler.function_description
@@ -156,7 +153,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_dynamodb_attachment"
 
 # Websocket connections DynamoDB permissions
 resource "aws_iam_policy" "response_handler_websocket_connections_dynamodb_policy" {
-  count = local.is_async && var.websocket_connections_dynamodb != null ? 1 : 0
+  count = var.websocket_connections_dynamodb != null ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-websocket-connections-ddb"
   
   policy = jsonencode({
@@ -183,14 +180,14 @@ resource "aws_iam_policy" "response_handler_websocket_connections_dynamodb_polic
 }
 
 resource "aws_iam_role_policy_attachment" "response_handler_websocket_connections_dynamodb_attachment" {
-  count      = local.is_async && var.websocket_connections_dynamodb != null ? 1 : 0
+  count      = var.websocket_connections_dynamodb != null ? 1 : 0
   role       = aws_iam_role.response_handler_lambda_role.name
   policy_arn = aws_iam_policy.response_handler_websocket_connections_dynamodb_policy[0].arn
 }
 
 # WebSocket API Gateway permissions for PostToConnection
 resource "aws_iam_policy" "response_handler_websocket_api_policy" {
-  count = local.is_async ? 1 : 0
+  count = local.websocket_api_execution_arn != null ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-websocket-api"
 
   policy = jsonencode({
@@ -208,7 +205,7 @@ resource "aws_iam_policy" "response_handler_websocket_api_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "response_handler_websocket_api_attachment" {
-  count      = local.is_async ? 1 : 0
+  count      = local.websocket_api_execution_arn != null ? 1 : 0
   role       = aws_iam_role.response_handler_lambda_role.name
   policy_arn = aws_iam_policy.response_handler_websocket_api_policy[0].arn
 }
