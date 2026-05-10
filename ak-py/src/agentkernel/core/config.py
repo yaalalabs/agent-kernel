@@ -132,6 +132,17 @@ class _GmailConfig(BaseModel):
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
 
 
+class _LiveKitConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for LiveKit Voice interactions")
+    url: str = Field(default="", description="LiveKit WebSocket URL (e.g., wss://my-project.livekit.cloud)")
+    api_key: str = Field(default="", description="LiveKit API Key")
+    api_secret: str = Field(default="", description="LiveKit API Secret")
+    stt_provider: str = Field(default="deepgram", pattern="^(deepgram|openai)$", description="Speech-to-Text provider (deepgram or openai)")
+    tts_provider: str = Field(
+        default="openai", pattern="^(openai|elevenlabs|google)$", description="Text-to-Speech provider (openai, elevenlabs, or google)"
+    )
+
+
 class _MultimodalStorageRedisConfig(BaseModel):
     url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
     ttl: int = Field(default=604800, description="Attachment TTL in seconds")
@@ -281,6 +292,7 @@ class AKConfig(YamlBaseSettingsModified):
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
     telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
+    livekit: _LiveKitConfig = Field(description="LiveKit Voice related configurations", default_factory=_LiveKitConfig)
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
