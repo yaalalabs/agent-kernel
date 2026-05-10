@@ -123,6 +123,69 @@ module "nodejs_api" {
 }
 ```
 
+### WebSocket API with Custom Routes
+
+```hcl
+module "websocket_api" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region              = "us-west-2"
+  product_alias       = "myapp"
+  env_alias           = "prod"
+  product_display_name = "WebSocket API with Custom Routes"
+  
+  module_name          = "chat"
+  function_name        = "handler"
+  function_description = "WebSocket API handler"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
+  
+  package_type = "LocalZip"
+  package_path = "${path.module}/dist/function.zip"
+  
+  # WebSocket configuration
+  execution_mode = "async"
+  queue_mode     = true
+  
+  # Customize WebSocket routes
+  ws_chat_route = "conversation"  # Rename default chat route
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "status_updates" }
+  ]
+  
+  # WebSocket connection handler
+  ws_connection_handler = {
+    package_path = "${path.module}/dist/ws-connection-handler.zip"
+    timeout      = 30
+    memory_size  = 256
+  }
+  
+  # Required for queue mode
+  response_handler = {
+    package_path = "${path.module}/dist/response-handler.zip"
+  }
+  
+  agent_runner = {
+    package_path = "${path.module}/dist/agent-runner.zip"
+  }
+  
+  # Storage for WebSocket connections
+  create_dynamodb_response_store = true
+  
+  environment_variables = {
+    ENVIRONMENT = "production"
+  }
+}
+
+# WebSocket endpoint will be available at:
+# wss://{api-id}.execute-api.us-west-2.amazonaws.com/agents
+output "websocket_url" {
+  value = module.websocket_api.websocket_api_endpoint_url
+}
+```
+
 ### Container Image Deployment
 
 ```hcl
@@ -321,6 +384,8 @@ module "serverless_api_auth" {
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `api_base_path` | Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit | `string` | `"api"` | no |
+| `ws_chat_route` | WebSocket chat route name (only used in async execution mode) | `string` | `"chat"` | no |
+| `ws_routes` | List of custom WebSocket routes to add beyond the default chat route (only allowed in async execution mode) | `list(object)` | `[]` | no |
 | `gateway_endpoints` | List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. Path values are validated and limited to three resource levels (for example, `app/test/func` or `app/check`) | `list(object)` | `[]` | no |
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
@@ -366,6 +431,43 @@ module "serverless_api_auth" {
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the WebSocket connection handler | `map(string)` | `{}` | no |
+
+### WebSocket Routes Configuration
+
+When using `execution_mode = "async"`, you can customize WebSocket routes:
+
+| Variable | Description | Type | Default | Validation |
+|----------|-------------|------|---------|------------|
+| `ws_chat_route` | Name of the default chat route | `string` | `"chat"` | Must contain only alphanumeric characters, hyphens (-), and underscores (_). Cannot contain '/' or be empty. |
+| `ws_routes` | List of additional custom routes | `list(object({ route = string }))` | `[]` | Only allowed in async mode. Each route must follow the same naming rules as `ws_chat_route`. |
+
+**Example WebSocket Routes Configuration**:
+```hcl
+module "websocket_api" {
+  source = "yaalalabs/ak-serverless/aws"
+  
+  execution_mode = "async"
+  
+  # Customize the default chat route name
+  ws_chat_route = "conversation"
+  
+  # Add custom routes
+  ws_routes = [
+    { route = "notifications" },
+    { route = "status_updates" },
+    { route = "file_upload" }
+  ]
+  
+  # ... other configuration
+}
+```
+
+This configuration creates WebSocket routes accessible via:
+- `conversation` (custom chat route)
+- `notifications` (custom route)
+- `status_updates` (custom route)  
+- `file_upload` (custom route)
+- `$connect`, `$disconnect`, `$default` (predefined routes)
 
 ### Response Handler Object Structure
 
@@ -551,7 +653,8 @@ When `execution_mode = "async"`, the module creates a WebSocket API Gateway for 
 
 **What gets created**:
 - WebSocket API Gateway with route selection based on `request.body.route`
-- Four configured routes: `$connect`, `$disconnect`, `$default`, and `chat`
+- Predefined routes: `$connect`, `$disconnect`, `$default`, and configurable chat route (default: `chat`)
+- Support for custom routes via `ws_routes` variable
 - Connection handler Lambda for `$connect` and `$disconnect` routes
 - Routes handler Lambda for `$default` and custom routes (e.g., `chat`)
 - DynamoDB table for storing user-to-connection-id mappings
@@ -574,7 +677,10 @@ When `execution_mode = "async"`, the module creates a WebSocket API Gateway for 
 - The `ws_connection_handler` configuration is required when `execution_mode = "async"`
 - Only LocalZip package type is supported for the WebSocket connection handler
 - The WebSocket API uses `$request.body.route` for route selection
-- Support for custom routes beyond the default `chat` route
+- The default chat route name can be customized via `ws_chat_route` variable
+- Additional custom routes can be defined via `ws_routes` variable (only in async mode)
+- Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
+- Route names cannot contain '/' and cannot be empty or whitespace-only
 
 ### 💾 Multi-Storage Support
 

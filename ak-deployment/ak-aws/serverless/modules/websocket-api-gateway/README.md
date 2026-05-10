@@ -11,9 +11,10 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 ## What It Does
 
 - Creates a WebSocket API with route selection based on `request.body.route`
-- Configures four routes: `$connect`, `$disconnect`, `$default`, and `chat`
+- Configures predefined routes: `$connect`, `$disconnect`, `$default`
+- Supports configurable chat route (default: `chat`) and additional custom routes
 - Uses a connection handler Lambda for `$connect` and `$disconnect` routes
-- Uses a routes handler Lambda for `$default` and custom routes (e.g., `chat`)
+- Uses a routes handler Lambda for `$default` and custom routes (e.g., `chat`, custom routes)
 - Creates a DynamoDB table for storing user-to-connection-id mappings
 - Includes a Global Secondary Index (GSI) for connection_id lookups
 - Supports TTL for automatic cleanup of stale connections
@@ -109,7 +110,9 @@ The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
 - The WebSocket API uses `$request.body.route` for route selection
 - The module uses a dual-lambda architecture:
   - **Connection handler Lambda**: Handles `$connect` and `$disconnect` routes for connection lifecycle management
-  - **Routes handler Lambda**: Handles `$default` and custom routes (e.g., `chat`) for message routing and processing
+  - **Routes handler Lambda**: Handles `$default` and custom routes (configurable chat route and additional custom routes) for message routing and processing
 - Both Lambda functions use AWS_PROXY integration and receive route information in the event context
 - Lambda permissions are configured for both Lambda functions to allow WebSocket API invocation
 - TTL is optional and can be disabled if not needed for connection cleanup
+- Custom routes are configured at the parent serverless module level via `ws_chat_route` and `ws_routes` variables
+- Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
