@@ -119,6 +119,8 @@ livekit = [
     "livekit-plugins-openai>=1.0.0",
     "livekit-plugins-deepgram>=1.0.0",
     "livekit-plugins-silero>=1.0.0",
+    "livekit-plugins-elevenlabs>=1.0.0",
+    "livekit-plugins-google>=1.0.0",
     "livekit-api>=0.2.0",
 ]
 test = [

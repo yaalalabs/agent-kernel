@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
 Run the script in development mode:
 ```bash
-python worker.py dev
+uv run server.py
 ```
 
 You can now connect to your LiveKit room using the [LiveKit Agents Playground](https://cloud.livekit.io/projects/p_/agents) or your own custom frontend to talk to your agent!

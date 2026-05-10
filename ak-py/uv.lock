@@ -117,6 +117,10 @@ livekit = [
     { name = "livekit-api" },
     { name = "livekit-plugins-deepgram", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
     { name = "livekit-plugins-deepgram", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "livekit-plugins-elevenlabs", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "livekit-plugins-elevenlabs", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "livekit-plugins-google", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "livekit-plugins-google", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
     { name = "livekit-plugins-openai", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
     { name = "livekit-plugins-openai", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
     { name = "livekit-plugins-silero", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
@@ -225,6 +229,8 @@ requires-dist = [
     { name = "livekit-agents", marker = "extra == 'livekit'", specifier = ">=1.0.0" },
     { name = "livekit-api", marker = "extra == 'livekit'", specifier = ">=0.2.0" },
     { name = "livekit-plugins-deepgram", marker = "extra == 'livekit'", specifier = ">=1.0.0" },
+    { name = "livekit-plugins-elevenlabs", marker = "extra == 'livekit'", specifier = ">=1.0.0" },
+    { name = "livekit-plugins-google", marker = "extra == 'livekit'", specifier = ">=1.0.0" },
     { name = "livekit-plugins-openai", marker = "extra == 'livekit'", specifier = ">=1.0.0" },
     { name = "livekit-plugins-silero", marker = "extra == 'livekit'", specifier = ">=1.0.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
@@ -2048,6 +2054,22 @@ wheels = [
 ]
 
 [[package]]
+name = "google-cloud-texttospeech"
+version = "2.36.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1a/fe/670610dce6852c8fbdd723101a2ffb497d196bc242cb04a1312339f49d67/google_cloud_texttospeech-2.36.0.tar.gz", hash = "sha256:6c605af7e4774c1bac99fcaaf4538f152b10bba7738a23f42184557f444dc6b7", size = 196558, upload-time = "2026-04-02T21:23:42.236Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/1a/0317eaa1ccd6e3645d570851574bb7c1a1cfa3504bb114b7211db59b154d/google_cloud_texttospeech-2.36.0-py3-none-any.whl", hash = "sha256:03f76162543e9d77ecbab823c1cc3728c42ef40547353bcfdbd9ac0e71cb8121", size = 200086, upload-time = "2026-04-02T21:23:13.444Z" },
+]
+
+[[package]]
 name = "google-cloud-trace"
 version = "1.19.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3200,6 +3222,82 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/91/36/6fd218b20ac323d560feb04f8436da9b212b2a3a7d7cb696032872bd4a3e/livekit_plugins_deepgram-1.5.8.tar.gz", hash = "sha256:f03943cbfee87448c9749f4737ceacb5935ae828a881970170cdbaa6bf74f3fa", size = 18034, upload-time = "2026-05-05T18:46:58.329Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/95/53/af9f12b604b1c9a0f7b8698aed6705b0107140765b350791a4bfe9e2c85b/livekit_plugins_deepgram-1.5.8-py3-none-any.whl", hash = "sha256:3c131059a9e50f73c5664f358eec523b234241b145fd1906a5966e99ea06206a", size = 22820, upload-time = "2026-05-05T18:46:56.956Z" },
+]
+
+[[package]]
+name = "livekit-plugins-elevenlabs"
+version = "1.3.5"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "livekit-agents", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, extra = ["codecs"], marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d5/be/9a81d7436a5fa8e539376055e6dc540107d9db183e7cd2ed5fcbda4e2087/livekit_plugins_elevenlabs-1.3.5.tar.gz", hash = "sha256:9e14a5f650041fe9fdd8b1f907e67d067e29e377edcf5af6cc5d0ce6bc5be590", size = 14905, upload-time = "2025-11-25T21:05:06.708Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/de/0c351e3b81c4ae9da6faaf474506f6bb43bcb38a17c972f2e411d96d7f5f/livekit_plugins_elevenlabs-1.3.5-py3-none-any.whl", hash = "sha256:c47455a96636060a739c883fcaff81478a95d0e381e02c55541ff32670ce1250", size = 17256, upload-time = "2025-11-25T21:05:05.79Z" },
+]
+
+[[package]]
+name = "livekit-plugins-elevenlabs"
+version = "1.5.8"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "livekit-agents", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, extra = ["codecs"], marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/05/3627c88c89ff5154212a33eb14021c790791743c4f85731aea610f548fec/livekit_plugins_elevenlabs-1.5.8.tar.gz", hash = "sha256:f0d11496e3d853ed631bfff9fcde76b7760b826835120971fb1f26d5d22379b6", size = 17327, upload-time = "2026-05-05T18:47:14.563Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/9a/96ec5dbbe8960ae80652a6a1683a6bd68224749e6eff90c8359f37f6b3eb/livekit_plugins_elevenlabs-1.5.8-py3-none-any.whl", hash = "sha256:fe291c2e9a9500b82f2668e25f73c5924b46c006c785b3c81d3ef73ba75ea1cd", size = 19995, upload-time = "2026-05-05T18:47:12.947Z" },
+]
+
+[[package]]
+name = "livekit-plugins-google"
+version = "1.3.5"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "google-auth", marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "google-cloud-speech", marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "google-cloud-texttospeech", marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "google-genai", marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+    { name = "livekit-agents", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/47/28a786118ad54ac72103e848dbcd7ae11766c011d043d4cbd4c29c7e3858/livekit_plugins_google-1.3.5.tar.gz", hash = "sha256:1c7f95c34af4d2fe16ab1702da8bf59c328b92d106255801bb190c5be8884f63", size = 31806, upload-time = "2025-11-25T21:05:16.826Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/18/138fb4104b839ace0688681c18c249b1e73343269b0eef5430d28f2921e0/livekit_plugins_google-1.3.5-py3-none-any.whl", hash = "sha256:875a8008753b47d73268d1ebe21e4e896ec9dcb347b2eab6f9058ed8b1483a15", size = 39091, upload-time = "2025-11-25T21:05:15.583Z" },
+]
+
+[[package]]
+name = "livekit-plugins-google"
+version = "1.5.8"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13' and sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "google-auth", marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "google-cloud-speech", marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "google-cloud-texttospeech", marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "google-genai", marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "livekit-agents", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/69/5a750e446f6596ebd3d8dd6fc6129c128fd81110387b8954189c2d64a159/livekit_plugins_google-1.5.8.tar.gz", hash = "sha256:a712ef5a97eb29ef2115dd6ad1549de7d1f9564e51524e5d6b69f0bd359f5bd6", size = 40768, upload-time = "2026-05-05T18:47:23.746Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/fb/55098183f63574ef7c63e5c8d559f723ffb2e70e506135df893c94790aa3/livekit_plugins_google-1.5.8-py3-none-any.whl", hash = "sha256:511b548e1b57be3dbde53d4e32ebadd2b676e67640b3df3e48cb028acc855fb5", size = 47378, upload-time = "2026-05-05T18:47:22.379Z" },
 ]
 
 [[package]]
