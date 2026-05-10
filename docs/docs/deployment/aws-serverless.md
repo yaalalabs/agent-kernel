@@ -886,6 +886,12 @@ module "websocket_deployment" {
 
 The DynamoDB connection table is automatically created by the Terraform module and stores user-to-connection-id mappings for broadcasting messages to the correct WebSocket connections.
 
+### Important: Async Mode with API Gateway Disabled
+
+> **⚠️ WARNING**: When using `execution_mode = "async"` (WebSocket mode) with `enable_api_gateway = false`, the default response handler will fail because it sends responses as WebSocket messages directly through the API Gateway. Without the WebSocket API Gateway, there is no endpoint to send these messages to.
+>
+> **Solution**: If you disable the API Gateway in async mode, you must provide a custom response handler implementation that handles responses differently (e.g., storing them in a database, sending to an external service, or using an alternative messaging system). Override the response handler Lambda to implement your custom response delivery mechanism.
+
 ## Cost Optimization
 
 ### Lambda Configuration
