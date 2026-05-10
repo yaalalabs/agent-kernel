@@ -19,14 +19,15 @@ import {
   MdNetworkCheck,
 } from 'react-icons/md';
 import { FaGithub, FaLock } from 'react-icons/fa';
+import ParticleSphere from '../components/ParticleSphere';
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
   return (
-    <header className={styles.hero}>
-      <div className={styles.heroOrb} />
-      <div className={styles.heroGrid} />
+    <section className={styles.hero}>
+      {/* <div className={styles.heroOrb} />
+      <div className={styles.heroGrid} /> */}
       <div className="container">
         <div className={styles.heroContent}>
           <h1 className={styles.heroTitle}>Who Is Agent Kernel Built For?</h1>
@@ -46,7 +47,7 @@ function Hero() {
           </div>
         </div>
       </div>
-    </header>
+    </section>
   );
 }
 
@@ -269,31 +270,31 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
 
 /* ─── Segment Tiles ─────────────────────────────────────────────────────── */
 
-function SegmentTilesSection({ onOpen }: { onOpen: (s: typeof segments[0]) => void }) {
-  return (
-    <section className={styles.tilesSection}>
-      <div className="container">
-        <div className={styles.tilesGrid}>
-          {segments.map(s => (
-            <div key={s.id} className={`${styles.tile} ${styles[`tile_${s.accent}`]}`}>
-              <div className={`${styles.tileIconWrap} ${styles[`tileIconWrap_${s.accent}`]}`}>
-                {s.icon}
-              </div>
-              <h3 className={styles.tileTitle}>{s.title}</h3>
-              <p className={styles.tileSub}>{s.subtitle}</p>
-              <button
-                className={`${styles.tileBtn} ${s.accent === 'violet' ? styles.tileBtn_violet : ''}`}
-                onClick={() => onOpen(s)}
-              >
-                Learn More
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+// function SegmentTilesSection({ onOpen }: { onOpen: (s: typeof segments[0]) => void }) {
+//   return (
+//     <section className={styles.tilesSection}>
+//       <div className="container">
+//         <div className={styles.tilesGrid}>
+//           {segments.map(s => (
+//             <div key={s.id} className={`${styles.tile} ${styles[`tile_${s.accent}`]}`}>
+//               <div className={`${styles.tileIconWrap} ${styles[`tileIconWrap_${s.accent}`]}`}>
+//                 {s.icon}
+//               </div>
+//               <h3 className={styles.tileTitle}>{s.title}</h3>
+//               <p className={styles.tileSub}>{s.subtitle}</p>
+//               <button
+//                 className={`${styles.tileBtn} ${s.accent === 'violet' ? styles.tileBtn_violet : ''}`}
+//                 onClick={() => onOpen(s)}
+//               >
+//                 Learn More
+//               </button>
+//             </div>
+//           ))}
+//         </div>
+//       </div>
+//     </section>
+//   );
+// }
 
 /* ─── Differentiators ───────────────────────────────────────────────────── */
 
@@ -404,12 +405,13 @@ export default function UseCases() {
     <Layout
       title="Use Cases"
       description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
+      <ParticleSphere />
       <Hero />
       <main>
         <UseCaseJourneyMap />
-        <SegmentTilesSection onOpen={setActiveSegment} />
+        {/* <SegmentTilesSection onOpen={setActiveSegment} /> */}
         <Differentiators />
-        <FinalCTA />
+        {/* <FinalCTA /> */}
       </main>
       {activeSegment && (
         <SegmentModal segment={activeSegment} onClose={() => setActiveSegment(null)} />

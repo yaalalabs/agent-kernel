@@ -1,34 +1,50 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './styles.module.css';
+import { FaRegClock, FaRocket } from 'react-icons/fa';
 
 /* ─── Data ───────────────────────────────────────────────────────────────── */
+
+interface Step {
+  label: string;
+  sub: string;
+}
 
 interface Track {
   id: 'traditional' | 'with-ak';
   title: string;
   timeLabel: string;
-  fillPercent: number;
-  barDuration: string;
-  steps: string[];
+  steps: Step[];
+  doneLabel: string;
+  doneIcon: React.ReactNode;
 }
 
 const tracks: Track[] = [
   {
     id: 'traditional',
-    title: 'Traditional Approach',
-    timeLabel: '3–6 Months',
-    fillPercent: 92,
-    barDuration: '1.4s',
-    steps: ['Platform Eng.', 'Framework Setup', 'Cloud Config', 'Session Mgmt', 'Integrations', 'Testing Setup', 'Deploy Pipeline'],
+    title: 'Traditional',
+    timeLabel: '3–6 months',
+    doneLabel: 'Months later…',
+    doneIcon: <FaRegClock />,
+    steps: [
+      { label: 'Platform engineering', sub: 'Set up base infrastructure' },
+      { label: 'Framework setup',      sub: 'Choose, configure, scaffold' },
+      { label: 'Cloud config',         sub: 'Regions, roles, networking' },
+      { label: 'Session management',   sub: 'Auth, state, tokens' },
+      { label: 'Integrations',         sub: 'APIs, queues, data sources' },
+      { label: 'Testing setup',        sub: 'Harnesses, CI, coverage' },
+      { label: 'Deploy pipeline',      sub: 'Build, push, release gates' },
+    ],
   },
   {
     id: 'with-ak',
-    title: 'With Agent Kernel',
+    title: 'Agent Kernel',
     timeLabel: 'Days',
-    fillPercent: 28,
-    barDuration: '0.5s',
-    // Only 2 chips — bar intentionally short; empty space reinforces simplicity
-    steps: ['Write Logic', 'Deploy'],
+    doneLabel: 'Shipped',
+    doneIcon: <FaRocket />,
+    steps: [
+      { label: 'Write your logic', sub: 'Focus on what your agent does — not how it runs' },
+      { label: 'Deploy',           sub: 'Agent Kernel handles the rest' },
+    ],
   },
 ];
 
@@ -39,8 +55,10 @@ export default function UseCaseJourneyMap() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
       setVisible(true);
       return;
     }
@@ -60,89 +78,103 @@ export default function UseCaseJourneyMap() {
   }, []);
 
   return (
-    <section ref={sectionRef} className={styles.journeySection} aria-label="Time to production comparison">
+    <section
+      ref={sectionRef}
+      className={styles.journeySection}
+      aria-label="Time to production comparison"
+    >
       <div className="container">
+
+        {/* Header */}
         <div className={styles.header}>
+          <p className={styles.eyebrow}>Time to production</p>
           <h2 className={styles.title}>
             Traditional vs.{' '}
-            <span className={styles.gradientText}>With Agent Kernel</span>
+            <span className={styles.gradientText}>Agent Kernel</span>
           </h2>
-          <p className={styles.subtitle}>
-            The same production-ready deployment, in a fraction of the time.
-          </p>
         </div>
 
-        <div className={styles.tracksWrapper}>
-          {/* SVG bracket — spans between the two trackMeta labels */}
-          <svg
-            className={styles.bracketSvg}
-            viewBox="0 0 40 100"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <line
-              x1="32" y1="12" x2="32" y2="88"
-              stroke="var(--ak-border-accent)" strokeWidth="1.5"
-              strokeDasharray="76"
-              strokeDashoffset={visible ? 0 : 76}
-              style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.22,1,0.36,1) 0.3s' }}
-            />
-            <line x1="22" y1="12" x2="32" y2="12" stroke="var(--ak-border-accent)" strokeWidth="1.5" />
-            <line x1="22" y1="88" x2="32" y2="88" stroke="var(--ak-border-accent)" strokeWidth="1.5" />
-            <text
-              x="12" y="54"
-              fill="var(--ak-text-muted)"
-              fontSize="10"
-              fontFamily="var(--ifm-font-family-base)"
-              textAnchor="middle"
-            >vs</text>
-          </svg>
-
-          {tracks.map((track, i) => (
-            <div key={track.id} className={styles.trackRow}>
-              {/* Left: label + time */}
-              <div className={styles.trackMeta}>
-                <span className={styles.trackTitle}>{track.title}</span>
-                <span className={`${styles.trackTime} ${styles[`trackTime_${track.id}`]}`}>
+        {/* Two-column timeline grid */}
+        <div className={styles.grid}>
+          {tracks.map((track, trackIdx) => (
+            <div
+              key={track.id}
+              className={`${styles.column} ${styles[`col_${track.id}`]}`}
+            >
+              {/* Column header */}
+              <div className={styles.colHeader}>
+                <p className={styles.colTitle}>{track.title}</p>
+                <p className={`${styles.colTime} ${styles[`colTime_${track.id}`]}`}>
                   {track.timeLabel}
-                </span>
+                </p>
               </div>
 
-              {/* Right: chips (above bar) + bar + badge */}
-              <div className={styles.trackContent}>
-                {/* Step chips — always fully visible, outside the animated bar */}
-                <div className={styles.chipsRow}>
-                  {track.steps.map((step, j) => (
-                    <span
-                      key={j}
-                      className={`${styles.stepChip} ${styles[`chip_${track.id}`]} ${visible ? styles.chipVisible : ''}`}
-                      style={{ '--chip-delay': `${i * 150 + 400 + j * 60}ms` } as React.CSSProperties}
-                    >
-                      {step}
-                    </span>
-                  ))}
-                  {track.id === 'with-ak' && (
-                    <span className={`${styles.timeSavedBadge} ${visible ? styles.badgeVisible : ''}`}>
-                      ~90% less time
-                    </span>
-                  )}
-                </div>
+              {/* Steps */}
+              <div className={styles.timeline}>
+                {track.steps.map((step, stepIdx) => {
+                  const isLast = stepIdx === track.steps.length - 1;
+                  // stagger: each track starts offset so AK finishes way before Traditional
+                  const baseDelay = trackIdx === 0 ? 0 : 200;
+                  const stepDelay = baseDelay + stepIdx * (trackIdx === 0 ? 120 : 220);
+                  const lineDelay = stepDelay + 60;
 
-                {/* Progress bar — animates independently of chips */}
-                <div className={styles.trackBarOuter}>
-                  <div
-                    className={`${styles.trackBar} ${styles[`bar_${track.id}`]} ${visible ? styles.trackBarVisible : ''}`}
-                    style={{
-                      '--bar-target': `${track.fillPercent}%`,
-                      '--bar-duration': track.barDuration,
-                      '--bar-delay': `${i * 150}ms`,
-                    } as React.CSSProperties}
-                  />
+                  return (
+                    <div key={stepIdx} className={styles.stepRow}>
+                      {/* Node + connector */}
+                      <div className={styles.nodeCol}>
+                        <div
+                          className={`${styles.node} ${styles[`node_${track.id}`]} ${visible ? styles.nodeVisible : ''}`}
+                          style={{ '--node-delay': `${stepDelay}ms` } as React.CSSProperties}
+                        />
+                        {!isLast && (
+                          <div
+                            className={`${styles.connector} ${styles[`connector_${track.id}`]} ${visible ? styles.connectorVisible : ''}`}
+                            style={{ '--line-delay': `${lineDelay}ms` } as React.CSSProperties}
+                          />
+                        )}
+                      </div>
+
+                      {/* Text */}
+                      <div
+                        className={`${styles.stepText} ${visible ? styles.stepTextVisible : ''}`}
+                        style={{ '--text-delay': `${stepDelay}ms` } as React.CSSProperties}
+                      >
+                        <span className={styles.stepLabel}>{step.label}</span>
+                        <span className={styles.stepSub}>{step.sub}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Done badge */}
+                <div
+                  className={`${styles.doneBadge} ${styles[`done_${track.id}`]} ${visible ? styles.doneBadgeVisible : ''}`}
+                  style={{
+                    '--done-delay': `${
+                      trackIdx === 0
+                        ? track.steps.length * 120 + 100
+                        : 200 + track.steps.length * 220
+                    }ms`,
+                  } as React.CSSProperties}
+                >
+                  <span>{track.doneIcon}</span>
+                  <span>{track.doneLabel}</span>
                 </div>
               </div>
+
+              {/* Savings callout — only on AK column */}
+              {track.id === 'with-ak' && (
+                <div
+                  className={`${styles.savingsCard} ${visible ? styles.savingsCardVisible : ''}`}
+                >
+                  <p className={styles.savingsLabel}>Time saved</p>
+                  <p className={styles.savingsValue}>~90% less</p>
+                </div>
+              )}
             </div>
           ))}
         </div>
+
       </div>
     </section>
   );
