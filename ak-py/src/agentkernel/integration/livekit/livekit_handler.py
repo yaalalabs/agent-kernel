@@ -92,7 +92,6 @@ class AgentKernelLLM(llm.LLM):
         super().__init__()
         self.agent_name = agent_name
         self.session_id = session_id
-        self._service = AgentService()
 
     def chat(
         self,
@@ -196,36 +195,34 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
         self.api_secret = Config.get().livekit.api_secret
 
     def get_router(self) -> APIRouter:
-        router = APIRouter(prefix="/livekit", tags=["LiveKit Integration"])
+        from contextlib import asynccontextmanager
 
-        @router.on_event("startup")
-        async def startup_event():
-            if getattr(self, "_worker_started", False):
-                return
-            self._worker_started = True
+        @asynccontextmanager
+        async def lifespan(r: APIRouter):
+            if not getattr(self, "_worker_started", False):
+                self._worker_started = True
+                self._log.info("Starting up LiveKit Background Worker")
 
-            self._log.info("Starting up LiveKit Background Worker")
+                # Setup worker options
+                kwargs = {}
+                if self.url:
+                    kwargs["ws_url"] = self.url
+                if self.api_key:
+                    kwargs["api_key"] = self.api_key
+                if self.api_secret:
+                    kwargs["api_secret"] = self.api_secret
 
-            # Setup worker options
-            kwargs = {}
-            if self.url:
-                kwargs["ws_url"] = self.url
-            if self.api_key:
-                kwargs["api_key"] = self.api_key
-            if self.api_secret:
-                kwargs["api_secret"] = self.api_secret
+                # Set port to 0 to assign a random port, avoiding conflicts on 8081
+                kwargs["port"] = 0
 
-            # Set port to 0 to assign a random port, avoiding conflicts on 8081
-            kwargs["port"] = 0
+                # We initialize the AgentServer and start it as an asyncio task
+                worker_opts = WorkerOptions(agent_name="agent-kernel-worker", entrypoint_fnc=self._entrypoint, worker_type=WorkerType.ROOM, **kwargs)
 
-            # We initialize the AgentServer and start it as an asyncio task
-            worker_opts = WorkerOptions(agent_name="agent-kernel-worker", entrypoint_fnc=self._entrypoint, worker_type=WorkerType.ROOM, **kwargs)
+                self._server = AgentServer.from_server_options(worker_opts)
+                self._worker_task = asyncio.create_task(self._server.run())
 
-            self._server = AgentServer.from_server_options(worker_opts)
-            self._worker_task = asyncio.create_task(self._server.run())
+            yield
 
-        @router.on_event("shutdown")
-        async def shutdown_event():
             if self._worker_task and not self._worker_task.done():
                 self._log.info("Shutting down LiveKit Background Worker")
                 self._worker_task.cancel()
@@ -233,6 +230,8 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
                     await self._worker_task
                 except asyncio.CancelledError:
                     pass
+
+        router = APIRouter(prefix="/livekit", tags=["LiveKit Integration"], lifespan=lifespan)
 
         @router.get("/token")
         def get_token(room: str, identity: str):

@@ -38,7 +38,7 @@ In your `config.yaml`, configure which Agent Kernel agent should respond to Live
 livekit:
   agent: "my-voice-agent"
   stt_provider: "deepgram"   # Options: deepgram, openai
-  tts_provider: "openai"     # Options: openai, elevenlabs, google (Note: requires `pip install livekit-plugins-elevenlabs`, etc.)
+  tts_provider: "openai"     # Options: openai, elevenlabs, google
   url: "wss://your-project-id.livekit.cloud" # Optional, can use LIVEKIT_URL env var
   api_key: "your_api_key"                    # Optional, can use LIVEKIT_API_KEY env var
   api_secret: "your_api_secret"              # Optional, can use LIVEKIT_API_SECRET env var
