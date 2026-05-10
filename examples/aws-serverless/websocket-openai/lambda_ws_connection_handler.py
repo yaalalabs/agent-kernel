@@ -1,6 +1,6 @@
 import jwt
-from agentkernel.aws import WebsocketConnectionHandler
 from agentkernel.auth import AuthValidator, ValidationResult
+from agentkernel.aws import WebsocketConnectionHandler
 
 
 class CustomAuthTokenValidator(AuthValidator):
@@ -15,5 +15,6 @@ class CustomAuthTokenValidator(AuthValidator):
             return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
         except Exception as e:
             return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
+
 
 handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
