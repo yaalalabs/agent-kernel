@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Callable
+from typing import Awaitable, Callable, Optional
 
 from fastapi import APIRouter, HTTPException
 from livekit import agents, api
@@ -12,7 +12,6 @@ from livekit.plugins import deepgram, openai, silero
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
-from ...core.model import AgentReplyText
 
 logger = logging.getLogger("ak.integration.livekit")
 
@@ -185,10 +184,11 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
     2. Runs a LiveKit Worker as a background asyncio task seamlessly tied to the FastAPI lifecycle.
     """
 
-    def __init__(self, entrypoint_fnc: Callable[[JobContext], None] = None):
+    def __init__(self, entrypoint_fnc: Optional[Callable[[JobContext], Awaitable[None]]] = None):
         self._log = logging.getLogger("ak.api.livekit")
         self._entrypoint = entrypoint_fnc or _default_entrypoint
         self._worker_task = None
+        self._server = None
 
         # Pull config
         self.url = Config.get().livekit.url
@@ -221,8 +221,18 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
             # We initialize the AgentServer and start it as an asyncio task
             worker_opts = WorkerOptions(agent_name="agent-kernel-worker", entrypoint_fnc=self._entrypoint, worker_type=WorkerType.ROOM, **kwargs)
 
-            server = AgentServer.from_server_options(worker_opts)
-            self._worker_task = asyncio.create_task(server.run())
+            self._server = AgentServer.from_server_options(worker_opts)
+            self._worker_task = asyncio.create_task(self._server.run())
+
+        @router.on_event("shutdown")
+        async def shutdown_event():
+            if self._worker_task and not self._worker_task.done():
+                self._log.info("Shutting down LiveKit Background Worker")
+                self._worker_task.cancel()
+                try:
+                    await self._worker_task
+                except asyncio.CancelledError:
+                    pass
 
         @router.get("/token")
         def get_token(room: str, identity: str):
