@@ -33,10 +33,7 @@ class ResponseHandler(LambdaSQSConsumer):
             ws_config = cls._config.websocket_api
             if not ws_config.connection_table or not ws_config.connection_table.table_name:
                 raise ValueError("websocket_api.connection_table.table_name is required for WebSocket handler")
-            cls._websocket_handler = WebSocketHandler(
-                conn_table_name=ws_config.connection_table.table_name,
-                ttl=ws_config.connection_table.ttl
-            )
+            cls._websocket_handler = WebSocketHandler(conn_table_name=ws_config.connection_table.table_name, ttl=ws_config.connection_table.ttl)
         return cls._websocket_handler
 
     @classmethod
@@ -86,11 +83,7 @@ class ResponseHandler(LambdaSQSConsumer):
             message_body = json.loads(message_body)
 
         cls._log.info(f"Broadcasting message via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
-        cls._get_websocket_handler().broadcast(
-            endpoint_url=endpoint_url,
-            message=message_body,
-            user_id=user_id
-        )
+        cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=message_body, user_id=user_id)
         cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
 
     @classmethod
@@ -140,11 +133,7 @@ class ResponseHandler(LambdaSQSConsumer):
 
                 if endpoint_url and user_id:
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
-                    cls._get_websocket_handler().broadcast(
-                        endpoint_url=endpoint_url,
-                        message=error_message,
-                        user_id=user_id
-                    )
+                    cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=error_message, user_id=user_id)
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")

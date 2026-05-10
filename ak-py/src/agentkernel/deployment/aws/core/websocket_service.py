@@ -1,11 +1,10 @@
 import json
-import time
-import boto3
 import logging
-from typing import List, Dict
-from boto3.dynamodb.conditions import Key
-from typing import Optional
+import time
+from typing import Dict, List, Optional
 
+import boto3
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from ...common.websocket_connection_store import WebSocketConnectionStoreABC
@@ -47,9 +46,7 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
         :param user_id: User identifier
         :return: List of connection IDs
         """
-        resp = self._table.query(
-            KeyConditionExpression=Key("user_id").eq(user_id)
-        )
+        resp = self._table.query(KeyConditionExpression=Key("user_id").eq(user_id))
 
         return [item["connection_id"] for item in resp.get("Items", [])]
 

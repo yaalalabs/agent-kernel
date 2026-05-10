@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from typing import Any, Dict, Mapping, Optional, List
+from typing import Any, Dict, List, Mapping, Optional
 
 import boto3
 from pydantic import BaseModel, ConfigDict
@@ -297,7 +297,7 @@ class SQSHandler:
             message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
         if user_id is not None:
             message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
-        
+
         message_attributes.extend(custom_message_attributes)
 
         return cls.send_message(

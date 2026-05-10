@@ -77,8 +77,10 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
         custom_attributes = []
         if record_attributes.get("endpoint_url"):
-            custom_attributes.append(SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING))
-        
+            custom_attributes.append(
+                SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
+            )
+
         cls._log.debug(f"Custom attributes: {custom_attributes}")
 
         SQSHandler.send_message_to_output_queue(
@@ -87,7 +89,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             message_body=message_body,
             request_id=record_attributes["request_id"],
             user_id=record_attributes["user_id"],
-            custom_message_attributes=custom_attributes
+            custom_message_attributes=custom_attributes,
         )
 
     @classmethod

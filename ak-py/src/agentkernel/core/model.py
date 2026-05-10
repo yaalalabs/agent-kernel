@@ -134,7 +134,7 @@ class BaseRunRequest(BaseModel):
 
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
-    route: Optional[str] = None # RouteKey of the Websocket, needed for WS implementation
+    route: Optional[str] = None  # RouteKey of the Websocket, needed for WS implementation
     body: Optional[BaseRunRequest] = None
     model_config = ConfigDict(extra="allow")
 

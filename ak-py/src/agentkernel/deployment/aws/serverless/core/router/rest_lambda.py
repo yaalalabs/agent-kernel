@@ -95,11 +95,7 @@ class DefaultEndpointsHandler:
             error_body["request_id"] = request_id
         return error_body
 
-    def _handle_request(
-        self,
-        event: Dict[str, Any],
-        operation: Callable[[BaseRequest], Dict[str, Any]]
-    ) -> tuple[int, Dict[str, Any]]:
+    def _handle_request(self, event: Dict[str, Any], operation: Callable[[BaseRequest], Dict[str, Any]]) -> tuple[int, Dict[str, Any]]:
         """
         Execute operation with standard request parsing and error handling.
 
@@ -328,7 +324,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
         """
         if method is None:
             raise ValueError("HTTP method is required for REST routes")
-        
+
         norm_route = self._normalize_path(route)
         norm_method = self._normalize_method(method)
 

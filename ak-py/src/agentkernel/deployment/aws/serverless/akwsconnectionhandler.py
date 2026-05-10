@@ -1,8 +1,10 @@
-from .core import WSLambdaRouter
-from ....auth.handler import AuthValidator
-from .aklambda import Lambda
 import logging
 from typing import Optional
+
+from ....auth.handler import AuthValidator
+from .aklambda import Lambda
+from .core import WSLambdaRouter
+
 
 class WebsocketConnectionHandler(Lambda):
     _log = logging.getLogger("ak.aws.serverless.websocket_connection_handler")
@@ -28,11 +30,7 @@ class WebsocketConnectionHandler(Lambda):
         :return: WSLambdaRouter instance configured for connection handling
         """
         if cls._router is None:
-            cls._router = WSLambdaRouter(
-                connection_routes=True,
-                system_routes=False,
-                auth_validator=cls._auth_validator
-            )
+            cls._router = WSLambdaRouter(connection_routes=True, system_routes=False, auth_validator=cls._auth_validator)
         return cls._router
 
     def register(self, route: str, method: Optional[str] = None) -> None:
@@ -47,6 +45,5 @@ class WebsocketConnectionHandler(Lambda):
         :raises NotImplementedError: Route registration is not supported
         """
         raise NotImplementedError(
-            "WebsocketConnectionHandler does not support route registration. "
-            "Use Lambda.register() for custom routes instead."
+            "WebsocketConnectionHandler does not support route registration. " "Use Lambda.register() for custom routes instead."
         )
