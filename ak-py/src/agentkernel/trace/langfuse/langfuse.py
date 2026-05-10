@@ -66,3 +66,11 @@ class LangFuse(BaseTrace):
         from .smolagents import LangFuseSmolagentsRunner
 
         return LangFuseSmolagentsRunner(self._client)
+
+    def autogen(self) -> Runner:
+        """
+        Returns the Langfuse AutoGen runner instance.
+        """
+        from .autogen import LangFuseAutogenRunner
+
+        return LangFuseAutogenRunner(self._client)

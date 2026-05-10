@@ -92,3 +92,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.smolagents()
         return None
+
+    def autogen(self) -> Runner | None:
+        """
+        Returns the AutoGen trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.autogen()
+        return None

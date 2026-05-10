@@ -7,7 +7,7 @@ name = "agentkernel"
 version = "0.4.0"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.13"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "Yaala Labs", email = "agentkernel@yaalalabs.com" }
@@ -42,6 +42,10 @@ langgraph = [
     "langchain_community~=0.4.1",
     "litellm~=1.74.9"
 ]
+autogen = [
+    "pyautogen~=0.2.35",
+]
+
 smolagents = [
     "smolagents>=1.0.0",
 ]

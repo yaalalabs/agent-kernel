@@ -139,3 +139,11 @@ class OpenLLMetry(BaseTrace):
         from .smolagents import OpenLLMetrySmolagentsRunner
 
         return OpenLLMetrySmolagentsRunner()
+
+    def autogen(self) -> Runner:
+        """
+        Returns the OpenLLMetry AutoGen runner instance.
+        """
+        from .autogen import OpenLLMetryAutogenRunner
+
+        return OpenLLMetryAutogenRunner()

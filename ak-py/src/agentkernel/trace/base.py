@@ -45,3 +45,10 @@ class BaseTrace(ABC):
         Initialize Smolagents instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def autogen(self) -> Runner:
+        """
+        Initialize AutoGen instrumentation
+        """
+        raise NotImplementedError

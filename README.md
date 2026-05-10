@@ -21,7 +21,7 @@ Agent Kernel (AK) provides a streamlined solution for developing and executing A
 Run existing agents on Agent Kernel's variety of execution frameworks with little to no effort required for porting.
 
 
-Currently, Agent Kernel supports portability across popular AI agent frameworks, including [Langraph](https://www.langchain.com/langgraph) and [OpenAI Agents](https://openai.github.io/openai-agents-python/), allowing developers to leverage these frameworks’ capabilities while benefiting from AK's versatility.
+Currently, Agent Kernel supports portability across popular AI agent frameworks, including [AutoGen](https://microsoft.github.io/autogen/), [smolagents](https://huggingface.co/docs/smolagents/en/index), [Langraph](https://www.langchain.com/langgraph) and [OpenAI Agents](https://openai.github.io/openai-agents-python/), allowing developers to leverage these frameworks’ capabilities while benefiting from AK's versatility.
 
 ## Agent Kernel Features
 
