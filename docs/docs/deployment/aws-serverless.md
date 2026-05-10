@@ -707,24 +707,43 @@ Responses are broadcast back through the WebSocket connection:
 
 **Custom Routes**
 
-You can register custom WebSocket routes in your request handler:
+You can register custom WebSocket routes in your request handler and define them in your Terraform configuration:
 
+**1. Define routes in Terraform:**
+```hcl
+module "websocket_deployment" {
+  # ... other configuration
+  
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "custom_handler" }
+  ]
+}
+```
+
+**2. Register handlers in your Lambda code:**
 ```python
 from agentkernel.aws import Lambda
 
-@Lambda.register("custom_route")
+@Lambda.register("custom_handler")
 def custom_handler(event, context):
     return {"response": "Custom route response"}
+
+@Lambda.register("notifications")
+def notifications_handler(event, context):
+    return {"response": "Notification processed"}
 ```
 
-Send messages to custom routes:
-
+**3. Send messages to custom routes:**
 ```json
 {
-  "route": "custom_route",
+  "route": "custom_handler",
   "data": "your data"
 }
 ```
+
+**Note**: Custom routes must be defined in both Terraform (`ws_routes`) and registered in your Lambda handler code to function properly.
 
 ### Execution Modes and Response Store
 
@@ -827,6 +846,43 @@ export AK_WEBSOCKET_API__CHAT_ROUTE=chat
 - `connection_table.table_name` - DynamoDB table name for storing WebSocket connection mappings
 - `connection_table.ttl` - TTL in seconds for automatic cleanup of stale connections
 - `chat_route` - The default route name for chat messages (default: "chat")
+
+**Terraform WebSocket Route Configuration**:
+
+In your Terraform configuration, you can customize WebSocket routes:
+
+```hcl
+module "websocket_deployment" {
+  source = "yaalalabs/ak-serverless/aws"
+  
+  execution_mode = "async"
+  
+  # Customize the default chat route name
+  ws_chat_route = "conversation"
+  
+  # Add custom routes beyond the default chat route
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "status_updates" }
+  ]
+  
+  # ... other configuration
+}
+```
+
+**Route Naming Rules**:
+- Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
+- Route names cannot contain '/' and cannot be empty or whitespace-only
+- The `$` prefix is reserved for predefined routes (`$connect`, `$disconnect`, `$default`)
+- Custom routes can only be defined when `execution_mode = "async"`
+
+**Available Routes**:
+- `$connect` - Handled by WebSocket connection handler (predefined)
+- `$disconnect` - Handled by WebSocket connection handler (predefined)  
+- `$default` - Fallback route for unmatched messages (predefined)
+- `ws_chat_route` - Configurable default chat route (default: "chat")
+- `ws_routes` - Additional custom routes as defined in Terraform
 
 The DynamoDB connection table is automatically created by the Terraform module and stores user-to-connection-id mappings for broadcasting messages to the correct WebSocket connections.
 
