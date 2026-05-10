@@ -37,9 +37,10 @@ class Lambda:
     def register(cls, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
         """
         Class method decorator that delegates route registration to the internal LambdaRouter.
+
         :param route: URL route for the handler (normalized with leading slash, no trailing slash)
         :param method: HTTP method (defaults to "GET", case-insensitive)
-        :return: Decorator function that registers the handler and returns it unchanged.
+        :return: Decorator function that registers the handler and returns it unchanged
         """
         return cls._get_router().register(route, method)
 
@@ -47,6 +48,7 @@ class Lambda:
     def _wrap_response(result: Any) -> Dict[str, Any]:
         """
         Normalize various handler return types into API Gateway compatible responses.
+
         :param result: Handler return value (dict, tuple, str, or list)
         :return: API Gateway compatible response dictionary with statusCode and body
         """
@@ -65,6 +67,7 @@ class Lambda:
     def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         AWS Lambda handler function to process incoming requests.
+
         :param event: API Gateway event dictionary containing request information
         :param context: AWS Lambda context object
         :return: API Gateway response dictionary with status code and body

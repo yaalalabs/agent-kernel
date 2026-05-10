@@ -25,8 +25,10 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def _get_record_attributes(cls, raw_queue_message: dict) -> dict:
         """
         Extract attributes from the raw SQS message record.
-        :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function.
-        :return: Dictionary (``dict``) containing extracted attributes.
+
+        :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function
+        :return: Dictionary (``dict``) containing extracted attributes
+        :raises ValueError: If request_id is missing
         """
         attributes = SQSHandler.get_message_system_attributes(raw_queue_message)
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
@@ -54,8 +56,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def _construct_error_message_body(cls, error_msg: str) -> dict:
         """
         Build a standard error response body for failed message processing.
-        :param error_msg: Human-readable error description (``str``).
-        :return: Error payload (``dict``) to be sent to the response queue.
+
+        :param error_msg: Human-readable error description (``str``)
+        :return: Error payload (``dict``) to be sent to the response queue
         """
         return {"error": error_msg}
 
@@ -63,9 +66,10 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def _send_to_output_queue(cls, message_body: dict, record_attributes: dict) -> None:
         """
         Send a prepared message to the configured response SQS queue using send_message_to_output_queue.
-        :param message_body: Message body (``dict``) to be sent to the response queue.
-        :param record_attributes: Extracted attributes (``dict``) from the record.
-        :return: None.
+
+        :param message_body: Message body (``dict``) to be sent to the response queue
+        :param record_attributes: Extracted attributes (``dict``) from the record
+        :return: None
         """
         cls._log.info("Sending message to output queue")
         cls._log.debug(f"Message body: {message_body}")
@@ -90,8 +94,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def _parse_body(cls, record: dict) -> dict:
         """
         Parse the JSON body from an SQS record.
-        :param record: SQS record (``dict``) passed from the Lambda event.
-        :return: Parsed JSON body (``dict``) from the record.
+
+        :param record: SQS record (``dict``) passed from the Lambda event
+        :return: Parsed JSON body (``dict``) from the record
         """
         return json.loads(record["body"])
 
@@ -99,8 +104,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def process_message(cls, record: dict) -> None:
         """
         Process a single SQS record, invoke the chat service, and send the response (or an error) to the output queue.
-        :param record: SQS record (``dict``) containing the chat request payload.
-        :return: None.
+
+        :param record: SQS record (``dict``) containing the chat request payload
+        :return: None
         """
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
@@ -114,8 +120,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     def on_permanent_failure(cls, record: dict) -> None:
         """
         Handle messages that have reached their maximum retry count by sending an error response to the output queue.
-        :param record: SQS record (``dict``) that failed processing after all retries.
-        :return: None.
+
+        :param record: SQS record (``dict``) that failed processing after all retries
+        :return: None
         """
         cls._log.info(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times. Sending error message to Output Queue`")
         try:

@@ -44,7 +44,8 @@ class BaseWSHandler:
         self.CHAT_ROUTE = chat_route
 
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
-        """Parse request body from WebSocket event.
+        """
+        Parse request body from WebSocket event.
 
         :param event: WebSocket event dictionary
         :return: Parsed BaseRequest object
@@ -54,7 +55,8 @@ class BaseWSHandler:
         return BaseRequest.from_payload(body_dict)
 
     def _extract_connection_id(self, event: Dict[str, Any]) -> str:
-        """Extract connection ID from WebSocket event.
+        """
+        Extract connection ID from WebSocket event.
 
         :param event: WebSocket event dictionary
         :return: Connection ID string
@@ -67,7 +69,8 @@ class BaseWSHandler:
         return connection_id
     
     def _parse_event_to_wsmessage(self, event: Dict[str, Any]) -> 'BaseWSHandler.WSMessageInfo':
-        """Parse WebSocket event to WSMessageInfo object.
+        """
+        Parse WebSocket event to WSMessageInfo object.
 
         :param event: WebSocket event dictionary
         :return: WSMessageInfo object with user_id and request
@@ -86,7 +89,8 @@ class BaseWSHandler:
         operation: Callable[[WSMessageInfo], Dict[str, Any]],
         message_type: Optional[MessageType] = None,
     ) -> Tuple[int, Dict[str, Any]]:
-        """Handle message and broadcast result to user.
+        """
+        Handle message and broadcast result to user.
 
         :param event: WebSocket event dictionary
         :param operation: Function to process the request
@@ -125,6 +129,7 @@ class BaseWSHandler:
     ) -> Dict[str, Any]:
         """
         Build a standardized response body.
+
         :param user_id: Optional user ID for tracking
         :param msg: Message to include in the response
         :param success: Whether the response is a success or failure
@@ -166,7 +171,8 @@ class ConnectionRoutesHandler(BaseWSHandler):
         self.auth_validator = auth_validator
 
     def _extract_auth_token(self, event: Dict[str, Any]) -> Optional[str]:
-        """Extract authentication token from WebSocket event query string.
+        """
+        Extract authentication token from WebSocket event query string.
 
         :param event: WebSocket event dictionary
         :return: Token string if found, None otherwise
@@ -177,8 +183,10 @@ class ConnectionRoutesHandler(BaseWSHandler):
         return None
 
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
-        """Get registered connection route handlers.
+        """
+        Get registered connection route handlers.
 
+        :param: None
         :return: Dictionary mapping route keys to handler functions
         """
         return {
@@ -187,7 +195,8 @@ class ConnectionRoutesHandler(BaseWSHandler):
         }
 
     def _handle_connect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
-        """Handle WebSocket $connect route with mandatory authentication.
+        """
+        Handle WebSocket $connect route with mandatory authentication.
 
         user_id is extracted from the JWT token's user_id claim after validation.
         The JWT token structure should include a user_id claim containing email, username, or any identifier.
@@ -223,7 +232,8 @@ class ConnectionRoutesHandler(BaseWSHandler):
 
 
     def _handle_disconnect(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
-        """Handle WebSocket $disconnect route.
+        """
+        Handle WebSocket $disconnect route.
 
         :param event: WebSocket disconnect event
         :param context: Lambda context object
@@ -259,8 +269,10 @@ class SystemRoutesHandler(BaseWSHandler):
         self._chat_service = ChatService()
 
     def _is_queue_mode(self) -> bool:
-        """Check if queue mode is enabled (queues are configured).
+        """
+        Check if queue mode is enabled (queues are configured).
 
+        :param: None
         :return: True if both input and output queues are configured
         """
         return self._config.execution.queues.input.url is not None
@@ -282,8 +294,10 @@ class SystemRoutesHandler(BaseWSHandler):
         return message
 
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
-        """Get registered system route handlers.
+        """
+        Get registered system route handlers.
 
+        :param: None
         :return: Dictionary mapping route keys to handler functions
         """
         return {
@@ -292,7 +306,8 @@ class SystemRoutesHandler(BaseWSHandler):
         }
 
     def _handle_default(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
-        """Handle WebSocket $default route.
+        """
+        Handle WebSocket $default route.
 
         :param event: WebSocket default route event
         :param context: Lambda context object
@@ -310,7 +325,8 @@ class SystemRoutesHandler(BaseWSHandler):
         )
 
     def _handle_direct_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
-        """Handle direct chat request without queue.
+        """
+        Handle direct chat request without queue.
 
         :param event: WebSocket chat event
         :param context: Lambda context object
@@ -334,7 +350,9 @@ class SystemRoutesHandler(BaseWSHandler):
     def _handle_queue_mode_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         """
         Handle chat request in queue mode - send message to SQS input queue.
+
         :param event: WebSocket event
+        :param context: Lambda context object
         :return: Tuple of status code and response body
         """
         user_id = None
@@ -444,10 +462,13 @@ class WSLambdaRouter(BaseLambdaRouter):
     ) -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a WebSocket handler for a given route.
+
         WebSocket routes do not use HTTP methods, only the route.
+
         :param route: Route key for the WebSocket route
         :param method: Not used for WebSocket routes (kept for interface compatibility)
-        :return: Decorator function that registers the handler and returns it unchanged.
+        :return: Decorator function that registers the handler and returns it unchanged
+        :raises ValueError: If HTTP method is provided
         """
         if method is not None:
             raise ValueError("HTTP method is not allowed in WebSocket mode")
@@ -480,6 +501,7 @@ class WSLambdaRouter(BaseLambdaRouter):
 
         :param event: WebSocket event dictionary
         :param error_message: Error message to broadcast
+        :return: None
         """
         try:
             request_context = event.get("requestContext", {})
@@ -508,6 +530,7 @@ class WSLambdaRouter(BaseLambdaRouter):
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
         Dispatch incoming API Gateway WebSocket event to the appropriate registered handler.
+
         :param event: API Gateway WebSocket event dictionary containing request information
         :param context: AWS Lambda context object
         :return: Formatted API Gateway response dictionary or None if no route matches

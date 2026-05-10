@@ -71,15 +71,17 @@ class DefaultEndpointsHandler:
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
         """
         Parse request body from API Gateway event.
+
         :param event: API Gateway event
-        :return: Parsed JSON payload
+        :return: Parsed BaseRequest object
         """
         body = event.get("body")
         body_dict = json.loads(body) if isinstance(body, str) else (body or {})
         return BaseRequest.from_payload(body_dict)
 
     def _build_failure_body(self, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
-        """Build standardized error response body.
+        """
+        Build standardized error response body.
 
         :param request_id: Optional request ID to include
         :param status: Optional status code to include
@@ -100,9 +102,10 @@ class DefaultEndpointsHandler:
     ) -> tuple[int, Dict[str, Any]]:
         """
         Execute operation with standard request parsing and error handling.
+
         :param event: API Gateway event
         :param operation: Function executed with parsed payload
-        :return: API Gateway formatted response
+        :return: API Gateway formatted response (statusCode, body)
         """
         request_id = None
         try:
@@ -119,8 +122,10 @@ class DefaultEndpointsHandler:
     def _send_to_queue(self, payload: BaseRequest) -> Dict[str, Any]:
         """
         Send request payload to SQS queue.
+
         :param payload: Request payload containing a request_id and nested run body
         :return: Queue submission status
+        :raises ValueError: If body, request_id, or session_id is missing
         """
         request_body = payload.body
         if request_body is None:
@@ -144,8 +149,10 @@ class DefaultEndpointsHandler:
     def _get_message(self, payload: BaseRequest) -> Dict[str, Any]:
         """
         Fetch messages from response database.
+
         :param payload: Request payload containing request_id
         :return: Message for request
+        :raises ValueError: If request_id is missing
         """
         request_id = payload.request_id
         if not request_id:
@@ -155,9 +162,10 @@ class DefaultEndpointsHandler:
     def _handle_rest_sync(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Send request to queue and immediately fetch response.
+
         :param event: API Gateway event
         :param context: Lambda context
-        :return: Queue status and response data
+        :return: Tuple of (status_code, response_body)
         """
 
         def sync_operation(payload: BaseRequest) -> Dict[str, Any]:
@@ -186,9 +194,10 @@ class DefaultEndpointsHandler:
     def _handle_async_submit(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Submit message to queue (async mode).
+
         :param event: API Gateway event
         :param context: Lambda context
-        :return: Queue submission response
+        :return: Tuple of (status_code, response_body)
         """
 
         def submit_operation(payload: BaseRequest) -> Dict[str, Any]:
@@ -206,9 +215,10 @@ class DefaultEndpointsHandler:
     def _handle_async_poll(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Poll database for messages (async mode).
+
         :param event: API Gateway event
         :param context: Lambda context
-        :return: Message for request
+        :return: Tuple of (status_code, response_body)
         """
 
         def poll_operation(payload: BaseRequest) -> Dict[str, Any]:
@@ -235,9 +245,10 @@ class DefaultEndpointsHandler:
     def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Process chat request directly without queue.
+
         :param event: API Gateway event
         :param context: Lambda context
-        :return: Chat response
+        :return: API Gateway formatted response with statusCode and body
         """
 
         try:
@@ -262,9 +273,11 @@ class DefaultEndpointsHandler:
     def _handle_stream(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Handle streaming request.
+
         :param event: API Gateway event
         :param context: Lambda context
-        :return: Streaming response
+        :return: API Gateway formatted response
+        :raises NotImplementedError: STREAM mode is not yet implemented
         """
         raise NotImplementedError("STREAM mode is not yet implemented")
 
@@ -296,7 +309,8 @@ class RESTLambdaRouter(BaseLambdaRouter):
 
     @staticmethod
     def _normalize_method(method: Optional[str]) -> str:
-        """Normalize HTTP method to uppercase.
+        """
+        Normalize HTTP method to uppercase.
 
         :param method: HTTP method string
         :return: Uppercase method string, defaults to GET
@@ -306,9 +320,11 @@ class RESTLambdaRouter(BaseLambdaRouter):
     def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a handler for a given HTTP route and method.
+
         :param route: URL route for the handler
         :param method: HTTP method (defaults to "GET")
-        :return: Decorator function that registers the handler and returns it unchanged.
+        :return: Decorator function that registers the handler and returns it unchanged
+        :raises ValueError: If HTTP method is not provided
         """
         if method is None:
             raise ValueError("HTTP method is required for REST routes")
@@ -331,6 +347,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
         Dispatch incoming API Gateway REST event to the appropriate registered handler.
+
         :param event: API Gateway event dictionary containing request information
         :param context: AWS Lambda context object
         :return: Formatted API Gateway response dictionary or None if no route matches

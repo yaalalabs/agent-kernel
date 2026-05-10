@@ -19,7 +19,12 @@ class BaseLambdaRouter(ABC):
 
     @staticmethod
     def _normalize_path(path: str) -> str:
-        """Add leading '/' if not present and remove trailing '/' if present"""
+        """
+        Add leading '/' if not present and remove trailing '/' if present.
+
+        :param path: Path string to normalize
+        :return: Normalized path string
+        """
         if not path:
             return "/"
         if not path.startswith("/"):
@@ -31,7 +36,8 @@ class BaseLambdaRouter(ABC):
 
     @staticmethod
     def normalize_ws_route(route: str) -> str:
-        """Remove leading and trailing '/' from WebSocket route.
+        """
+        Remove leading and trailing '/' from WebSocket route.
 
         :param route: WebSocket route string
         :return: Route string without leading or trailing '/'
@@ -41,6 +47,8 @@ class BaseLambdaRouter(ABC):
     def _get_base_paths_from_env(self) -> Tuple[Optional[str], Optional[str]]:
         """
         Get the base path from environment variables.
+
+        :param: None
         :return: Tuple of (base_path, agent_endpoint_path) or (None, None) if not found
         """
         api_base_path = os.getenv("API_BASE_PATH")
@@ -55,9 +63,10 @@ class BaseLambdaRouter(ABC):
     def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
         """
         Register a handler for a given route.
+
         :param route: Route path or key for the handler
         :param method: HTTP method (optional, only for WebSocket mode)
-        :return: Decorator function that registers the handler and returns it unchanged.
+        :return: Decorator function that registers the handler and returns it unchanged
         """
         pass
 
@@ -65,6 +74,7 @@ class BaseLambdaRouter(ABC):
     def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
         """
         Dispatch incoming event to the appropriate registered handler.
+
         :param event: Event dictionary containing request information
         :param context: AWS Lambda context object
         :return: Formatted response dictionary or None if no route matches

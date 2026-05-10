@@ -47,6 +47,7 @@ class ResponseHandler(LambdaSQSConsumer):
         :param record: SQS record
         :param body: Optional message body payload. If not provided, uses record["body"]
         :return: Message dictionary for storage
+        :raises ValueError: If request_id is missing in SQS message attributes
         """
         message_body = body if body is not None else record.get("body")
         if isinstance(message_body, str):
@@ -64,10 +65,12 @@ class ResponseHandler(LambdaSQSConsumer):
     def _broadcast_via_websocket(cls, record: Dict[str, Any]) -> None:
         """
         Broadcast the message via WebSocket for ASYNC execution mode.
+
         Extracts endpoint_url, user_id from custom attributes and broadcasts the message body.
 
         :param record: SQS record containing the response payload
         :return: None
+        :raises ValueError: If endpoint_url or user_id is missing in message attributes
         """
         message_attributes = SQSHandler.get_message_custom_attributes(record)
         endpoint_url = message_attributes.get("endpoint_url")
@@ -94,6 +97,7 @@ class ResponseHandler(LambdaSQSConsumer):
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
         Process a single SQS record based on execution mode.
+
         - ASYNC mode: Broadcast via WebSocket
         - Other modes: Store in response store
 
@@ -113,6 +117,7 @@ class ResponseHandler(LambdaSQSConsumer):
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
         """
         Handle messages that have reached their maximum retry count based on execution mode.
+
         - ASYNC mode: Broadcast error via WebSocket
         - Other modes: Store error message in response store
 

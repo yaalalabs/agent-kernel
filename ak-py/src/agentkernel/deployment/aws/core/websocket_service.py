@@ -23,6 +23,13 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
         self._log = logging.getLogger("ak.websocket.connection_store")
 
     def add_connection(self, user_id: str, connection_id: str) -> None:
+        """
+        Store a WebSocket connection for a user.
+
+        :param user_id: User identifier
+        :param connection_id: WebSocket connection identifier
+        :return: None
+        """
         expiry_time = int(time.time()) + self._ttl
 
         self._table.put_item(
@@ -34,6 +41,12 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
         )
 
     def get_connections(self, user_id: str) -> List[str]:
+        """
+        Retrieve all connection IDs for a given user.
+
+        :param user_id: User identifier
+        :return: List of connection IDs
+        """
         resp = self._table.query(
             KeyConditionExpression=Key("user_id").eq(user_id)
         )
@@ -42,7 +55,10 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
 
     def get_user_id(self, connection_id: str) -> Optional[str]:
         """
-        Uses GSI: connection_id-index
+        Retrieve the user ID for a given connection ID using GSI: connection_id-index.
+
+        :param connection_id: WebSocket connection identifier
+        :return: User ID if found, None otherwise
         """
 
         resp = self._table.query(
@@ -61,6 +77,13 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
         return items[0]["user_id"]
 
     def delete_connection(self, user_id: str, connection_id: str) -> None:
+        """
+        Delete a specific connection for a user.
+
+        :param user_id: User identifier
+        :param connection_id: WebSocket connection identifier
+        :return: None
+        """
         self._table.delete_item(
             Key={
                 "user_id": user_id,
@@ -70,7 +93,10 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
 
     def delete_by_connection_id(self, connection_id: str) -> None:
         """
-        Uses GSI: connection_id-index
+        Delete a connection by its connection ID using GSI: connection_id-index.
+
+        :param connection_id: WebSocket connection identifier
+        :return: None
         """
 
         resp = self._table.query(
@@ -95,6 +121,12 @@ class WebSocketHandler:
 
     # internal client resolver (cached per endpoint)
     def _get_api_gateway(self, endpoint_url: str):
+        """
+        Get or create a cached boto3 API Gateway Management API client for the given endpoint.
+
+        :param endpoint_url: The API Gateway endpoint URL
+        :return: Boto3 API Gateway Management API client
+        """
         if endpoint_url not in self._clients:
             self._clients[endpoint_url] = boto3.client(
                 "apigatewaymanagementapi",
@@ -104,6 +136,12 @@ class WebSocketHandler:
 
     @staticmethod
     def construct_endpoint_url_from_event(event: dict) -> str:
+        """
+        Construct the API Gateway endpoint URL from a WebSocket event.
+
+        :param event: WebSocket event dictionary
+        :return: Constructed endpoint URL string
+        """
         request_context = event["requestContext"]
         domain_name = request_context["domainName"]
         stage = request_context["stage"]
@@ -111,36 +149,95 @@ class WebSocketHandler:
 
     # Connection Store Public API
     def add_connection(self, user_id: str, connection_id: str) -> None:
+        """
+        Store a WebSocket connection for a user.
+
+        :param user_id: User identifier
+        :param connection_id: WebSocket connection identifier
+        :return: None
+        """
         self._connection_store.add_connection(user_id, connection_id)
 
     def get_connections(self, user_id: str) -> List[str]:
+        """
+        Retrieve all connection IDs for a given user.
+
+        :param user_id: User identifier
+        :return: List of connection IDs
+        """
         return self._connection_store.get_connections(user_id)
 
     def get_user_id(self, connection_id: str) -> Optional[str]:
+        """
+        Retrieve the user ID for a given connection ID.
+
+        :param connection_id: WebSocket connection identifier
+        :return: User ID if found, None otherwise
+        """
         return self._connection_store.get_user_id(connection_id)
 
     def delete_connection(self, user_id: str, connection_id: str) -> None:
+        """
+        Delete a specific connection for a user.
+
+        :param user_id: User identifier
+        :param connection_id: WebSocket connection identifier
+        :return: None
+        """
         self._connection_store.delete_connection(user_id, connection_id)
 
     def delete_by_connection_id(self, connection_id: str) -> None:
+        """
+        Delete a connection by its connection ID.
+
+        :param connection_id: WebSocket connection identifier
+        :return: None
+        """
         self._connection_store.delete_by_connection_id(connection_id)
 
     # WebSocket Lifecycle Methods
     def on_connect(self, connection_id: str, user_id: str) -> None:
+        """
+        Handle WebSocket connection establishment.
+
+        :param connection_id: WebSocket connection identifier
+        :param user_id: User identifier
+        :return: None
+        :raises ValueError: If user_id is not provided
+        """
         if not user_id:
             raise ValueError("user_id is required")
         self.add_connection(user_id, connection_id)
         self._log.info(f"Connected: user_id={user_id}, connection_id={connection_id}")
 
     def on_disconnect(self, connection_id: str) -> None:
+        """
+        Handle WebSocket connection termination.
+
+        :param connection_id: WebSocket connection identifier
+        :return: None
+        """
         self.delete_by_connection_id(connection_id)
         self._log.info(f"Disconnected: connection_id={connection_id}")
 
     def on_default(self) -> None:
+        """
+        Handle unknown WebSocket routes.
+
+        :return: None
+        """
         self._log.warning("Unknown websocket route")
 
     # Message sending operations
     def send(self, endpoint_url: str, connection_id: str, message: dict) -> None:
+        """
+        Send a message to a specific WebSocket connection.
+
+        :param endpoint_url: API Gateway endpoint URL
+        :param connection_id: WebSocket connection identifier
+        :param message: Message dictionary to send
+        :return: None
+        """
         try:
             api_gateway = self._get_api_gateway(endpoint_url)
 
@@ -166,6 +263,16 @@ class WebSocketHandler:
         user_id: Optional[str] = None,
         connection_ids: Optional[List[str]] = None,
     ) -> None:
+        """
+        Broadcast a message to multiple WebSocket connections.
+
+        :param endpoint_url: API Gateway endpoint URL
+        :param message: Message dictionary to broadcast
+        :param user_id: User identifier to broadcast to (retrieves all connections for user)
+        :param connection_ids: Specific connection IDs to broadcast to
+        :return: None
+        :raises ValueError: If neither user_id nor connection_ids is provided
+        """
 
         if not user_id and not connection_ids:
             raise ValueError("Provide either user_id or connection_ids")
