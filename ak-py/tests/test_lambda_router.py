@@ -1,9 +1,6 @@
-import json
-import os
-
 import pytest
 
-from agentkernel.deployment.aws.serverless.aklambda import LambdaRouter
+from agentkernel.deployment.aws.serverless.core.router import RESTLambdaRouter
 
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
 
@@ -32,7 +29,7 @@ def make_event_without_env_vars(monkeypatch, path, method="GET"):
 
 @pytest.fixture  # what fixture does here is it enables every test function to get a new lambda router instance if they want to by just adding router as a parameter
 def router():
-    return LambdaRouter()
+    return RESTLambdaRouter()
 
 
 @pytest.fixture
@@ -45,10 +42,7 @@ def stub_default(router):  # 'router' here this means it depends on the router f
     def _register(status=200, payload=None):  # registers a function that returns the payload for the default path and method
         if payload is None:
             payload = {"stubbed": True}
-        router._routes.setdefault(router._default_chat_path, {})[router._default_chat_method] = lambda e, c: {
-            "statusCode": status,
-            "body": json.dumps(payload),
-        }
+        router._routes.setdefault(router._default_chat_path, {})[router._default_chat_method] = lambda e, c: (status, payload)
 
     return _register
 
@@ -56,13 +50,14 @@ def stub_default(router):  # 'router' here this means it depends on the router f
 def test_register_normalizes_and_routes_with_env_vars(router, monkeypatch):
     @router.register("foo/", method="get")  # normalizes to '/foo' and 'GET'
     def foo_handler(event, context):
-        return {"ok": True, "path_seen": event.get("path")}
+        return (200, {"ok": True, "path_seen": event.get("path")})
 
     event = make_event_with_env_vars(monkeypatch, "/api/v1/foo", method="GET")
     resp = router.dispatch(event, context=None)
 
-    assert resp["ok"] is True
-    assert resp["path_seen"] == "/api/v1/foo"
+    assert resp[0] == 200  # status code
+    assert resp[1]["ok"] is True
+    assert resp[1]["path_seen"] == "/api/v1/foo"
 
 
 def test_dispatch_routes_to_default_when_event_is_agent_endpoint_with_env_vars(router, stub_default, monkeypatch):
@@ -72,8 +67,8 @@ def test_dispatch_routes_to_default_when_event_is_agent_endpoint_with_env_vars(r
     event = make_event_with_env_vars(monkeypatch, "/api/v1/agent", method="POST")
     resp = router.dispatch(event, context=None)
 
-    assert resp["statusCode"] == 201
-    assert json.loads(resp["body"]) == {"routed_to": "default_handler"}
+    assert resp[0] == 201  # status code
+    assert resp[1] == {"routed_to": "default_handler"}
 
 
 def test_dispatch_default_fallback_without_env_vars_uses_default_route(router, stub_default, monkeypatch):
@@ -83,8 +78,8 @@ def test_dispatch_default_fallback_without_env_vars_uses_default_route(router, s
     event = make_event_without_env_vars(monkeypatch, "/anything/here", method="GET")
     resp = router.dispatch(event, context=None)
 
-    assert resp["statusCode"] == 202
-    assert json.loads(resp["body"]) == {"fallback": True}
+    assert resp[0] == 202  # status code
+    assert resp[1] == {"fallback": True}
 
 
 def test_dispatch_raises_for_unknown_route_with_env_vars(router, monkeypatch):
