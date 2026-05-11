@@ -165,6 +165,7 @@ dependencies = [
     { name = "langgraph-prebuilt" },
     { name = "langgraph-sdk" },
     { name = "langgraph-supervisor" },
+    { name = "langsmith" },
     { name = "openai" },
 ]
 
@@ -180,12 +181,13 @@ dev = [
 requires-dist = [
     { name = "agentkernel", extras = ["langgraph", "redis"], specifier = ">=0.3.3" },
     { name = "langchain-litellm", specifier = ">=0.2.2" },
-    { name = "langchain-openai", specifier = ">=0.3.28" },
+    { name = "langchain-openai", specifier = "==1.1.6" },
     { name = "langgraph", specifier = "==1.0.5" },
     { name = "langgraph-checkpoint", specifier = "==3.0.1" },
     { name = "langgraph-prebuilt", specifier = "==1.0.5" },
     { name = "langgraph-sdk", specifier = "==0.3.1" },
     { name = "langgraph-supervisor", specifier = ">=0.0.29" },
+    { name = "langsmith", specifier = "==0.5.0" },
     { name = "openai", specifier = ">=1.99.1" },
 ]
 
@@ -777,16 +779,16 @@ wheels = [
 
 [[package]]
 name = "langchain-openai"
-version = "1.1.7"
+version = "1.1.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
     { name = "openai" },
     { name = "tiktoken" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/b7/30bfc4d1b658a9ee524bcce3b0b2ec9c45a11c853a13c4f0c9da9882784b/langchain_openai-1.1.7.tar.gz", hash = "sha256:f5ec31961ed24777548b63a5fe313548bc6e0eb9730d6552b8c6418765254c81", size = 1039134, upload-time = "2026-01-07T19:44:59.728Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/67/228dc28b4498ea16422577013b5bb4ba35a1b99f8be975d6747c7a9f7e6a/langchain_openai-1.1.6.tar.gz", hash = "sha256:e306612654330ae36fb6bbe36db91c98534312afade19e140c3061fe4208dac8", size = 1038310, upload-time = "2025-12-18T17:58:52.84Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/a1/50e7596aca775d8c3883eceeaf47489fac26c57c1abe243c00174f715a8a/langchain_openai-1.1.7-py3-none-any.whl", hash = "sha256:34e9cd686aac1a120d6472804422792bf8080a2103b5d21ee450c9e42d053815", size = 84753, upload-time = "2026-01-07T19:44:58.629Z" },
+    { url = "https://files.pythonhosted.org/packages/db/5b/1f6521df83c1a8e8d3f52351883b59683e179c0aa1bec75d0a77a394c9e7/langchain_openai-1.1.6-py3-none-any.whl", hash = "sha256:c42d04a67a85cee1d994afe400800d2b09ebf714721345f0b651eb06a02c3948", size = 84701, upload-time = "2025-12-18T17:58:51.527Z" },
 ]
 
 [[package]]
@@ -872,7 +874,7 @@ wheels = [
 
 [[package]]
 name = "langsmith"
-version = "0.4.14"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -881,11 +883,12 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
     { name = "requests-toolbelt" },
+    { name = "uuid-utils" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/85/b0/1def3c6d12eb5e412213e39f1ba4ac64a47ec3102cf42a3a1ff86af1402d/langsmith-0.4.14.tar.gz", hash = "sha256:4d29c7a9c85b20ba813ab9c855407bccdf5eb4f397f512ffa89959b2a2cb83ed", size = 921872, upload-time = "2025-08-12T20:39:43.704Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/4b/d448307e8557e36b20008d0d1cd0a58233c38d90bf978e1d093be0ca4cb2/langsmith-0.5.0.tar.gz", hash = "sha256:5cadf1ddd30e838cf61679f4a776aaef638d4b02ffbceba9f73283caebd39e1b", size = 869272, upload-time = "2025-12-16T17:35:38.78Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/08/3f0fb3e2f7cc6fd91c4d06d7abc6607425a66973bee79d04018bac41dd4f/langsmith-0.4.14-py3-none-any.whl", hash = "sha256:b6d070ac425196947d2a98126fb0e35f3b8c001a2e6e5b7049dd1c56f0767d0b", size = 373249, upload-time = "2025-08-12T20:39:41.992Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/8a/d9bc95607846bc82fbe0b98d2592ffb5e036c97a362735ae926e3d519df7/langsmith-0.5.0-py3-none-any.whl", hash = "sha256:a83750cb3dccb33148d4ffe005e3e03080fad13e01671efbb74c9a68813bfef8", size = 273711, upload-time = "2025-12-16T17:35:37.165Z" },
 ]
 
 [[package]]

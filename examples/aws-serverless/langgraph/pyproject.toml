@@ -7,13 +7,14 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "agentkernel[langgraph,redis]>=0.3.3",
     "langchain-litellm>=0.2.2",
-    "langchain-openai>=0.3.28",
-    "langgraph==1.0.5",                    
+    "langchain-openai==1.1.6",
+    "langgraph==1.0.5",           
     "langgraph-checkpoint==3.0.1",
-    "langgraph-prebuilt==1.0.5",           
+    "langgraph-prebuilt==1.0.5",  
     "langgraph-sdk==0.3.1",
     "langgraph-supervisor>=0.0.29",
-    "openai>=1.99.1",
+    "langsmith==0.5.0",
+    "openai>=1.99.1",             
 ]
 
 [dependency-groups]
