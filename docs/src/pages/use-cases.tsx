@@ -296,54 +296,9 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
 //   );
 // }
 
-/* ─── Differentiators ───────────────────────────────────────────────────── */
-
 function Differentiators() {
-  const items = [
-    {
-      icon: <MdSwapHoriz />,
-      title: 'Framework-Agnostic',
-      description: 'The only runtime that lets you swap between OpenAI, CrewAI, LangGraph, and Google ADK with near-zero code change — and run all of them simultaneously in a single runtime.',
-    },
-    {
-      icon: <MdCloud />,
-      title: 'Multi-Cloud Native',
-      description: 'Same agent code deploys to AWS and Azure. Unique in the market — no other AI agent runtime offers this out of the box.',
-    },
-    {
-      icon: <MdSpeed />,
-      title: 'Full Lifecycle',
-      description: 'Build → Test → Deploy → Monitor. One tool covers the entire agent lifecycle, from a Python script to a multi-AZ production cluster.',
-    },
-    {
-      icon: <MdCode />,
-      title: 'Lightweight',
-      description: 'A thin adapter layer, not a heavy abstraction. Minimal learning curve, minimal overhead. Bring your existing agent code and wrap it in minutes.',
-    },
-    {
-      icon: <MdSecurity />,
-      title: 'Production-Ready from Day One',
-      description: 'Fault tolerance, guardrails, observability, and session management are not afterthoughts — they\'re built in and ready from your first deployment.',
-    },
-    {
-      icon: <MdMessage />,
-      title: 'Built-in Messaging',
-      description: 'Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail integrations out of the box. Reach users on day one, not after months of integration work.',
-    },
-    {
-      icon: <FaLock />,
-      title: 'Open-Source',
-      description: 'Apache 2.0 licensed. No usage fees, no proprietary lock-in, community-driven. Full access to the codebase — fork it, extend it, contribute back.',
-    },
-    {
-      icon: <MdNetworkCheck />,
-      title: 'Protocol Support',
-      description: 'MCP (Model Context Protocol) server and A2A (Agent-to-Agent) server modes for future-proof agent architectures and ecosystem compatibility.',
-    },
-  ];
-
   return (
-    <section className={styles.differentiators}>
+    <section className={styles.diffSection}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Why Teams Choose Agent Kernel</h2>
@@ -351,14 +306,60 @@ function Differentiators() {
             What makes Agent Kernel different from rolling your own or using other platforms.
           </p>
         </div>
-        <div className={styles.diffGrid}>
-          {items.map((item, i) => (
-            <div key={i} className={styles.diffCard}>
-              <div className={styles.diffIcon}>{item.icon}</div>
-              <h3 className={styles.diffTitle}>{item.title}</h3>
-              <p className={styles.diffDescription}>{item.description}</p>
+        <div className={styles.bentoGrid}>
+
+          <div className={`${styles.bentoCard} ${styles.bentoWide}`}>
+            <div className={styles.bentoIcon}><MdSwapHoriz /></div>
+            <span className={styles.bentoTag}>Core differentiator</span>
+            <h3 className={styles.bentoTitle}>Framework-Agnostic</h3>
+            <p className={styles.bentoDesc}>The only runtime that lets you swap between OpenAI, CrewAI, LangGraph, and Google ADK with near-zero code change — and run all of them simultaneously in a single runtime.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoNarrow}`}>
+            <div className={styles.bentoIcon}><MdCloud /></div>
+            <h3 className={styles.bentoTitle}>Multi-Cloud Native</h3>
+            <p className={styles.bentoDesc}>Same agent code deploys to AWS and Azure out of the box. No other AI agent runtime offers this.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoThird}`}>
+            <div className={styles.bentoIcon}><MdSpeed /></div>
+            <h3 className={styles.bentoTitle}>Full Lifecycle</h3>
+            <p className={styles.bentoDesc}>Build → Test → Deploy → Monitor. One tool, from Python script to multi-AZ production cluster.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoThird}`}>
+            <div className={styles.bentoIcon}><MdCode /></div>
+            <h3 className={styles.bentoTitle}>Lightweight</h3>
+            <p className={styles.bentoDesc}>A thin adapter layer, not a heavy abstraction. Bring your existing agent code and wrap it in minutes.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoThird}`}>
+            <div className={styles.bentoIcon}><MdSecurity /></div>
+            <h3 className={styles.bentoTitle}>Production-Ready from Day One</h3>
+            <p className={styles.bentoDesc}>Fault tolerance, guardrails, observability, and session management built in — not bolted on later.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoNarrow}`}>
+            <div className={styles.bentoIcon}><MdMessage /></div>
+            <h3 className={styles.bentoTitle}>Built-in Messaging</h3>
+            <p className={styles.bentoDesc}>Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail — reach users on day one, not after months of integration work.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoWide}`}>
+            <div className={styles.bentoIcon}><FaLock /></div>
+            <span className={styles.bentoTag}>Apache 2.0</span>
+            <h3 className={styles.bentoTitle}>Open-Source</h3>
+            <p className={styles.bentoDesc}>No usage fees, no proprietary lock-in, community-driven. Full access to the codebase — fork it, extend it, contribute back.</p>
+          </div>
+
+          <div className={`${styles.bentoCard} ${styles.bentoFull}`}>
+            <div className={styles.bentoIcon}><MdNetworkCheck /></div>
+            <div>
+              <h3 className={styles.bentoTitle}>Protocol Support</h3>
+              <p className={styles.bentoDesc}>MCP (Model Context Protocol) server and A2A (Agent-to-Agent) server modes for future-proof agent architectures and ecosystem compatibility.</p>
             </div>
-          ))}
+          </div>
+
         </div>
       </div>
     </section>
@@ -409,8 +410,8 @@ export default function UseCases() {
       <Hero />
       <main>
         <UseCaseJourneyMap />
-        {/* <SegmentTilesSection onOpen={setActiveSegment} /> */}
         <Differentiators />
+        {/* <SegmentTilesSection onOpen={setActiveSegment} /> */}
         {/* <FinalCTA /> */}
       </main>
       {activeSegment && (
