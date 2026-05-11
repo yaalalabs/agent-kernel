@@ -122,6 +122,16 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--ak-text);
 }
 
+/* Ensure sections with backdrop-filter effects render properly */
+section {
+  position: relative;
+  isolation: isolate;
+}
+
+.container {
+  position: relative;
+}
+
 /* =============================================================================
    Page Transitions
    ============================================================================= */
@@ -149,7 +159,7 @@ article {
   transition:
     opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, transform;
+  /* Removed will-change to prevent stacking context interference with backdrop-filter */
 }
 
 .scroll-reveal.scroll-reveal-visible {
