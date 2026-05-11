@@ -86,38 +86,51 @@
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btnPrimary {
-  background: #4f7df7 !important;
-  color: #07080c !important;
-  font-weight: 700 !important;
-  border: none !important;
+  padding: 0.6rem 1.75rem !important;
+  background: rgba(15, 21, 35, 0.8) !important;
+  color: #ffffff !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.35) !important;
+  border-radius: 0.375rem !important;
+  font-weight: 900 !important;
+  font-size: 0.875rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.12em !important;
 }
 
 .btnPrimary:hover {
-  background: #6d6af7 !important;
-  color: #07080c !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) !important;
 }
 
 .btnSecondary {
-  background: transparent !important;
-  border: 1px solid rgba(79, 125, 247, 0.35) !important;
-  color: #4f7df7 !important;
-  font-weight: 600 !important;
+  padding: 0.6rem 1.75rem !important;
+  background: #ffffff !important;
+  color: #0F1523 !important;
+  border: none !important;
+  border-radius: 0.375rem !important;
+  font-weight: 900 !important;
+  font-size: 0.875rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.12em !important;
 }
 
 .btnSecondary:hover {
-  background: rgba(79, 125, 247, 0.08) !important;
-  border-color: #4f7df7 !important;
-  color: #4f7df7 !important;
+  background: #f3f4f6 !important;
+  color: #0F1523 !important;
 }
 
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
 
 .hero {
   position: relative;
-  padding: 7rem 0 5rem;
-  text-align: center;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5rem 1.5rem;
   overflow: hidden;
-  background: #07080c;
+  text-align: center;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -166,7 +179,7 @@
 }
 
 .heroTitle {
-  font-size: clamp(2.4rem, 5vw, 3.6rem);
+  font-size: clamp(2.4rem, 5.5vw, 4rem);
   font-weight: 900;
   color: #dfe1f0;
   letter-spacing: -0.04em;

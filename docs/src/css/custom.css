@@ -523,8 +523,6 @@ code {
 }
 
 .blog-wrapper aside {
-  background-color: var(--ak-surface);
-  border: 1px solid var(--ak-border);
   border-radius: 0.5rem;
   padding: 1rem;
 }
@@ -542,7 +540,7 @@ code {
 
 /* Ensure footer stays transparent */
 .blog-wrapper footer {
-  background-color: transparent;
+  background-color: var(--ak-bg);
 }
 
 .blog-wrapper footer .container {

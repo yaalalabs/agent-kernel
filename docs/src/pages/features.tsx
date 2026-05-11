@@ -34,22 +34,20 @@ import { FaPython, FaAws, FaDocker, FaSlack, FaWhatsapp, FaInstagram, FaTelegram
 import { SiTerraform, SiRedis, SiAmazondynamodb, SiOpenai, SiGmail } from 'react-icons/si';
 import { FaMicrosoft } from 'react-icons/fa';
 import { FaFacebookMessenger } from 'react-icons/fa6';
+import ParticleSphere from '../components/ParticleSphere';
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
   return (
-    <header className={styles.hero}>
-      <div className={styles.heroOrb} />
-      <div className={styles.heroGrid} />
+    <section className={styles.hero}>
+      {/* <div className={styles.heroOrb} />
+      <div className={styles.heroGrid} /> */}
       <div className="container">
         <div className={styles.heroContent}>
-          <span className={styles.heroBadge}>Everything in one runtime</span>
-          <h1 className={styles.heroTitle}>Why Agent Kernel<br />Changes the Game</h1>
+          <h1 className={styles.heroTitle}>Everything You Need to Build,<br />Run, and Scale AI Agents</h1>
           <p className={styles.heroSubtitle}>
-            Like Express.js for web servers or Spring Boot for Java — Agent Kernel is the scaffolding,
-            execution environment, session management, and deployment infrastructure for AI agents.
-            You bring the logic. We handle the rest.
+            From runtime and memory to guardrails, observability, testing, and multi-cloud deployment.
           </p>
           <div className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
@@ -61,7 +59,7 @@ function Hero() {
           </div>
         </div>
       </div>
-    </header>
+    </section>
   );
 }
 
@@ -722,6 +720,7 @@ export default function Features() {
     <Layout
       title="Features"
       description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations.">
+      <ParticleSphere />
       <Hero />
       <main>
         <ProblemTable />
