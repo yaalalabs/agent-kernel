@@ -5,11 +5,11 @@ create_deployment_package() {
     pushd ../
     rm -rf dist
     mkdir -p dist/data
-    uv export --no-hashes > requirements.txt
+    uv export --frozen --no-hashes > requirements.txt
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist/data
     else
-      uv sync --force-reinstall --find-links ../../../ak-py/dist --all-extras
+      uv pip install -r requirements.txt --target=dist/data --find-links ../../../ak-py/dist
     fi
     cp -r lambda.py config.yaml dist/data
     popd || exit 1
