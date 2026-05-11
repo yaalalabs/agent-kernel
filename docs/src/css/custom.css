@@ -8,23 +8,23 @@
 
 :root {
   /* Brand Palette */
-  --ak-bg:              #07080c;
-  --ak-surface:         #0e1017;
-  --ak-surface-raised:  #151820;
-  --ak-surface-overlay: #1c1f2e;
-  --ak-border:          #1c1f2e;
-  --ak-border-accent:   rgba(79, 125, 247, 0.3);
+  --ak-bg:              #050a1a;
+  --ak-surface:         #0f1425;
+  --ak-surface-raised:  #1a1f35;
+  --ak-surface-overlay: #212b45;
+  --ak-border:          #212b45;
+  --ak-border-accent:   rgba(88, 166, 255, 0.35);
 
-  /* Accent Colors */
-  --ak-blue:            #4f7df7;
-  --ak-blue-light:      #6d6af7;
-  --ak-blue-dark:       #3a6ae0;
-  --ak-blue-glow:       rgba(79, 125, 247, 0.15);
-  --ak-purple:          #8b5cf6;
-  --ak-purple-light:    #a78bfa;
-  --ak-purple-glow:     rgba(139, 92, 246, 0.15);
-  --ak-gradient:        linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
-  --ak-gradient-subtle: linear-gradient(135deg, rgba(79,125,247,0.08) 0%, rgba(139,92,246,0.08) 100%);
+  /* Accent Colors - Vibrant Particle Theme */
+  --ak-blue:            #58a6ff;
+  --ak-blue-light:      #79c0ff;
+  --ak-blue-dark:       #3d8bfd;
+  --ak-blue-glow:       rgba(88, 166, 255, 0.2);
+  --ak-purple:          #d299ff;
+  --ak-purple-light:    #e5c3ff;
+  --ak-purple-glow:     rgba(210, 153, 255, 0.2);
+  --ak-gradient:        linear-gradient(135deg, #58a6ff 0%, #d299ff 100%);
+  --ak-gradient-subtle: linear-gradient(135deg, rgba(88,166,255,0.12) 0%, rgba(210,153,255,0.12) 100%);
 
   /* Text */
   --ak-text:           #dfe1f0;
@@ -37,22 +37,22 @@
   --ak-azure:  #0078D4;
 
   /* Docusaurus primary (brand blue) */
-  --ifm-color-primary:          #4f7df7;
-  --ifm-color-primary-dark:     #3a6ae0;
-  --ifm-color-primary-darker:   #2d5fc4;
-  --ifm-color-primary-darkest:  #1e4ba8;
-  --ifm-color-primary-light:    #6d8ef9;
-  --ifm-color-primary-lighter:  #8aa5fb;
-  --ifm-color-primary-lightest: #b3c4fd;
+  --ifm-color-primary:          #58a6ff;
+  --ifm-color-primary-dark:     #3d8bfd;
+  --ifm-color-primary-darker:   #2870f0;
+  --ifm-color-primary-darkest:  #1e5dd8;
+  --ifm-color-primary-light:    #79c0ff;
+  --ifm-color-primary-lighter:  #a0d3ff;
+  --ifm-color-primary-lightest: #c8e1ff;
 
   /* Docusaurus layout */
-  --ifm-background-color:         #07080c;
-  --ifm-background-surface-color: #0e1017;
-  --ifm-navbar-background-color:  #0e1017;
-  --ifm-footer-background-color:  #07080c;
+  --ifm-background-color:         #050a1a;
+  --ifm-background-surface-color: #0f1425;
+  --ifm-navbar-background-color:  #0f1425;
+  --ifm-footer-background-color:  #050a1a;
 
   --ifm-code-font-size: 94%;
-  --docusaurus-highlighted-code-line-bg: rgba(79, 125, 247, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(88, 166, 255, 0.15);
 
   /* Typography */
   --ifm-font-family-base: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -63,27 +63,45 @@
 
   /* Layout */
   --ifm-global-radius: 0.5rem;
-  --ifm-navbar-shadow: 0 1px 0 0 #1c1f2e;
-  --ifm-toc-border-color: #1c1f2e;
+  --ifm-navbar-shadow: 0 1px 0 0 #212b45;
+  --ifm-toc-border-color: #212b45;
 }
 
 /* Dark mode (same palette — site is dark-first) */
 [data-theme='dark'] {
-  --ifm-color-primary:          #4f7df7;
-  --ifm-color-primary-dark:     #3a6ae0;
-  --ifm-color-primary-darker:   #2d5fc4;
-  --ifm-color-primary-darkest:  #1e4ba8;
-  --ifm-color-primary-light:    #6d8ef9;
-  --ifm-color-primary-lighter:  #8aa5fb;
-  --ifm-color-primary-lightest: #b3c4fd;
+  --ifm-color-primary:          #58a6ff;
+  --ifm-color-primary-dark:     #3d8bfd;
+  --ifm-color-primary-darker:   #2870f0;
+  --ifm-color-primary-darkest:  #1e5dd8;
+  --ifm-color-primary-light:    #79c0ff;
+  --ifm-color-primary-lighter:  #a0d3ff;
+  --ifm-color-primary-lightest: #c8e1ff;
 
-  --ifm-background-color:         #07080c;
-  --ifm-background-surface-color: #0e1017;
-  --ifm-navbar-background-color:  #0e1017;
-  --ifm-footer-background-color:  #07080c;
+  --ifm-background-color:         #050a1a;
+  --ifm-background-surface-color: #0f1425;
+  --ifm-navbar-background-color:  #0f1425;
+  --ifm-footer-background-color:  #050a1a;
 
   --ifm-font-color-base: #dfe1f0;
-  --docusaurus-highlighted-code-line-bg: rgba(79, 125, 247, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(88, 166, 255, 0.15);
+}
+
+/* Dark theme doc/blog containers */
+[data-theme='dark'] .docMainContainer_TBSr {
+  background-color: #050a1a;
+}
+
+[data-theme='dark'] .docsWrapper_hBAB {
+  background-color: #050a1a;
+}
+
+[data-theme='dark'] .theme-doc-sidebar-container {
+  background-color: #0f1425;
+}
+
+[data-theme='dark'] .docItemContainer_Djhp {
+  background-color: #0f1425;
+  border-color: #212b45;
 }
 
 /* Light mode fallback — keep it clean */
@@ -172,7 +190,7 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: rgba(14, 16, 23, 0.8);
+  background-color: rgba(15, 20, 37, 0.8);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   height: 60px;
@@ -183,7 +201,7 @@ article {
   .navbar {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background-color: rgba(14, 16, 23, 0.98);
+    background-color: rgba(15, 20, 37, 0.98);
   }
 }
 
@@ -218,7 +236,7 @@ article {
 .navbar__search-button,
 [class*="searchButton"] {
   background: #ffffff !important;
-  color: #0e1017 !important;
+  color: #0a0d15 !important;
   border-radius: 9999px !important;
   border: none !important;
   font-size: 0.82rem !important;
@@ -251,7 +269,7 @@ article {
    ============================================================================= */
 
 .footer {
-  background-color: rgba(14, 16, 23, 0.95);
+  background-color: rgba(15, 20, 37, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 3rem 0 0;
 }
@@ -354,7 +372,7 @@ article {
 
 .button--primary {
   background: var(--ak-blue);
-  color: #07080c;
+  color: #05060b;
   font-weight: 600;
   border: none;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
@@ -363,9 +381,9 @@ article {
 
 .button--primary:hover {
   background: var(--ak-blue-light);
-  color: #07080c;
+  color: #05060b;
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(79, 125, 247, 0.3);
+  box-shadow: 0 4px 20px rgba(88, 166, 255, 0.3);
 }
 
 .button--secondary {
@@ -403,8 +421,8 @@ article {
 }
 
 code {
-  background: rgba(79, 125, 247, 0.08);
-  border: 1px solid rgba(79, 125, 247, 0.15);
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.2);
   border-radius: 0.25rem;
   color: var(--ak-blue-light);
   font-size: 0.875em;
@@ -441,7 +459,7 @@ code {
 
 .menu__link--active {
   color: var(--ak-blue) !important;
-  background: rgba(79, 125, 247, 0.08) !important;
+  background: rgba(88, 166, 255, 0.1) !important;
   font-weight: 600;
   border-left: 2px solid var(--ak-blue);
   padding-left: calc(var(--ifm-menu-link-padding-horizontal) - 2px);
@@ -472,6 +490,63 @@ code {
   background: transparent !important;
   display: block;
   margin: 0 auto;
+}
+
+/* =============================================================================
+   Doc & Blog Layout
+   ============================================================================= */
+
+/* Main container for docs and blog pages */
+.docMainContainer_TBSr {
+  background-color: var(--ak-bg);
+}
+
+.docsWrapper_hBAB {
+  background-color: var(--ak-bg);
+}
+
+.theme-doc-sidebar-container {
+  background-color: var(--ak-surface);
+  padding: 1rem;
+}
+
+.docItemContainer_Djhp {
+  background-color: var(--ak-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--ak-border);
+  padding: 1rem;
+}
+
+/* Blog page styling */
+.blog-wrapper .main-wrapper {
+  background-color: var(--ak-bg);
+}
+
+.blog-wrapper aside {
+  background-color: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.blog-wrapper main {
+  background-color: var(--ak-bg);
+}
+
+.blog-wrapper article {
+  border-radius: 0.5rem;
+  border: 1px solid var(--ak-border);
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Ensure footer stays transparent */
+.blog-wrapper footer {
+  background-color: transparent;
+}
+
+.blog-wrapper footer .container {
+  background-color: transparent;
 }
 
 /* =============================================================================
@@ -511,8 +586,8 @@ article {
 }
 
 .alert--info {
-  border-color: rgba(79, 125, 247, 0.3);
-  background: rgba(79, 125, 247, 0.05);
+  border-color: rgba(88, 166, 255, 0.35);
+  background: rgba(88, 166, 255, 0.08);
 }
 
 .alert--success {
