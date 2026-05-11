@@ -771,7 +771,6 @@
 /* ─── Card ────────────────────────────────────────────────────────────────── */
  
 .cloudCard {
-  background: rgba(20, 25, 40, 1);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.75rem;
   padding: 2rem 1.75rem 2rem;

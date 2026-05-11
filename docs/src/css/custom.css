@@ -159,7 +159,7 @@ article {
   transition:
     opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-  /* Removed will-change to prevent stacking context interference with backdrop-filter */
+  will-change: transform;
 }
 
 .scroll-reveal.scroll-reveal-visible {

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
 import UseCaseJourneyMap from '../components/UseCaseJourneyMap';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import {
   MdBusiness,
   MdAutoAwesome,
@@ -20,6 +22,8 @@ import {
 } from 'react-icons/md';
 import { FaGithub, FaLock } from 'react-icons/fa';
 import ParticleSphere from '../components/ParticleSphere';
+
+gsap.registerPlugin(ScrollTrigger);
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
@@ -297,6 +301,35 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
 // }
 
 function Differentiators() {
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const cards = gridRef.current?.querySelectorAll(`.${styles.bentoCard}`);
+    if (!cards || cards.length === 0) return;
+
+    gsap.fromTo(
+      cards,
+      {
+        opacity: 0,
+        y: 30,
+      },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.6,
+        stagger: 0.08,
+        ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        scrollTrigger: {
+          trigger: gridRef.current,
+          start: 'top 70%',
+          end: 'top 30%',
+          scrub: false,
+          once: true,
+        },
+      }
+    );
+  }, []);
+
   return (
     <section className={styles.diffSection}>
       <div className="container">
@@ -306,7 +339,7 @@ function Differentiators() {
             What makes Agent Kernel different from rolling your own or using other platforms.
           </p>
         </div>
-        <div className={styles.bentoGrid}>
+        <div className={styles.bentoGrid} ref={gridRef}>
 
           <div className={`${styles.bentoCard} ${styles.bentoWide}`}>
             <div className={styles.bentoIcon}><MdSwapHoriz /></div>
