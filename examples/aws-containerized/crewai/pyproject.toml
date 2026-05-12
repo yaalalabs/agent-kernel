@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     "agentkernel[crewai,api,redis]>=0.4.0",
     "crewai==0.165.1"
+    "python-multipart"
+    
 ]
 
 [dependency-groups]
@@ -15,6 +17,7 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    
 ]
 
 [tool.uv]
