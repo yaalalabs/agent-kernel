@@ -5,7 +5,7 @@ create_deployment_package() {
     pushd ../
     rm -rf dist
     mkdir -p dist/data
-    uv export --frozen --no-hashes > requirements.txt
+    uv export --no-hashes > requirements.txt
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist/data
     else
