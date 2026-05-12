@@ -38,3 +38,10 @@ class BaseTrace(ABC):
         Initialize Google ADK instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def smolagents(self) -> Runner:
+        """
+        Initialize Smolagents instrumentation
+        """
+        raise NotImplementedError
