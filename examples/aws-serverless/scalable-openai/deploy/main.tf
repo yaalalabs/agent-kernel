@@ -10,8 +10,10 @@ module "serverless_agents" {
   function_name        = "request-handler"
   module_name          = var.module_name
   handler_path         = "lambda_request_handler.handler"
-  package_path         = "../dist_request_handler.zip"
-  package_type         = "LocalZip"
+  # package_path         = "../dist_request_handler.zip"
+  # package_type         = "LocalZip"
+  package_path         = "../dist_request_handler"
+  package_type         = "Image"
   memory_size          = 256
   timeout              = 45
   product_display_name = "AK OpenAI Scalable Serverless Example"
@@ -20,7 +22,7 @@ module "serverless_agents" {
 
   # Execution mode - using for scalable processing
   queue_mode = true # recommended for production
-  execution_mode = "rest_sync" # rest_sync or rest_async
+  execution_mode = "rest_async" # rest_sync or rest_async
 
   # Memory DB Config
   create_redis_cluster = true
@@ -66,7 +68,7 @@ module "serverless_agents" {
     }
   }
 
-  # Response handler configuration
+  # Response handler configuration - Image mode
   response_handler = {
     function_name         = "res-func"
     module_name           = "response-handler"
@@ -74,8 +76,10 @@ module "serverless_agents" {
     timeout               = 45
     memory_size           = 256
     handler_path          = "lambda_response_handler.handler"
-    package_type          = "LocalZip"
-    package_path          = "../dist_response_handler.zip"
+    # package_type          = "LocalZip"
+    # package_path          = "../dist_response_handler.zip"
+    package_type          = "Image"
+    package_path          = "../dist_response_handler"
   }
 
   # Queue configuration for scalable processing
