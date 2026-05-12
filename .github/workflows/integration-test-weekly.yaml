@@ -91,7 +91,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.14.3
 
       - name: Inject dependencies and retrieve base outputs
         id: base-outputs
@@ -148,8 +148,7 @@ jobs:
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
-
+          terraform_version: 1.14.3
       - name: Inject dependencies
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
@@ -264,7 +263,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.14.3
 
       - name: Inject dependencies
         run: python3 scripts/deploy/inject_dependencies.py
