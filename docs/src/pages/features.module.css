@@ -9,9 +9,9 @@
   position: relative;
 }
 
-.section:nth-child(even) {
+/* .section:nth-child(even) {
   background: rgba(14, 16, 23, 0.3);
-}
+} */
 
 .sectionHeader {
   text-align: center;
@@ -25,12 +25,13 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #4f7df7;
-  background: rgba(79, 125, 247, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.2);
+  color: #00D4FF;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.2);
   border-radius: 999px;
   padding: 0.2rem 0.7rem;
   margin-bottom: 1rem;
+  backdrop-filter: blur(4px);
 }
 
 .sectionTitle {
@@ -54,18 +55,18 @@
 }
 
 .sectionLink {
-  color: #4f7df7;
+  color: #00D4FF;
   font-size: 0.95rem;
   font-weight: 600;
   text-decoration: none;
-  border-bottom: 1px solid rgba(79, 125, 247, 0.3);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.3);
   padding-bottom: 1px;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .sectionLink:hover {
-  color: #6d6af7;
-  border-color: #6d6af7;
+  color: #00ECFF;
+  border-color: #00ECFF;
 }
 
 .featureLink {
@@ -74,13 +75,13 @@
   padding-top: 1rem;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #4f7df7;
+  color: #00D4FF;
   text-decoration: none;
   transition: color 0.15s ease;
 }
 
 .featureLink:hover {
-  color: #6d6af7;
+  color: #00ECFF;
 }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
@@ -205,19 +206,19 @@
 /* ─── Problem Table ───────────────────────────────────────────────────────── */
 
 .problemTable {
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.875rem;
   overflow: hidden;
+  backdrop-filter: blur(4px);
 }
 
 .problemTableHeader {
   display: grid;
   grid-template-columns: 1fr 2fr 2fr;
   gap: 0;
-  background: rgba(79, 125, 247, 0.06);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.15);
-  padding: 0.875rem 1.5rem;
+  background: rgba(79, 125, 247, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 1rem 1.5rem;
 }
 
 .problemCol {
@@ -225,7 +226,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #5e627d;
+  color: #94a3b8;
 }
 
 .problemRow {
@@ -243,7 +244,7 @@
 }
 
 .problemRow:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(79, 125, 247, 0.05);
 }
 
 .problemRowHighlight {
@@ -259,7 +260,7 @@
 
 .problemColBad {
   font-size: 0.875rem;
-  color: #5e627d;
+  color: #94a3b8;
   display: flex;
   gap: 0.5rem;
   align-items: flex-start;
@@ -302,24 +303,23 @@
 }
 
 .featureCard {
-  background: #0e1017;
+  backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-left: 3px solid #4f7df7;
   border-radius: 0.875rem;
   padding: 1.75rem 1.5rem;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 .featureCard:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(79, 125, 247, 0.08);
+  border-color: rgba(79, 125, 247, 0.25);
 }
 
 .featureIcon {
-  font-size: 1.6rem;
-  color: #4f7df7;
+  font-size: 1.8rem;
+  color: #dfe1f0;
   margin-bottom: 0.875rem;
 }
 
@@ -349,7 +349,7 @@
 
 .featureHighlights li {
   font-size: 0.8rem;
-  color: #5e627d;
+  color: #94a3b8;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -371,7 +371,7 @@
 }
 
 .frameworkCard {
-  background: #0e1017;
+  backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1.25rem;
@@ -388,8 +388,9 @@
 }
 
 .frameworkFeatured {
-  border-color: rgba(139, 92, 246, 0.3);
-  background: linear-gradient(135deg, rgba(79,125,247,0.04) 0%, rgba(139,92,246,0.04) 100%);
+  border-color: rgba(0, 51, 102, 0.3);
+  background-color: rgba(1, 34, 68, 0.6);
+  backdrop-filter: blur(6px);
 }
 
 .frameworkFeatured:hover {
@@ -415,12 +416,12 @@
 .frameworkLink {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #4f7df7;
+  color: #00D4FF;
 }
 
 /* ─── Memory ──────────────────────────────────────────────────────────────── */
 
-.memoryGrid {
+/* .memoryGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1.25rem;
@@ -484,7 +485,7 @@
 .memoryUseCases li::before {
   content: '·';
   color: #4f7df7;
-}
+} */
 
 /* ─── Testing ─────────────────────────────────────────────────────────────── */
 
@@ -496,7 +497,7 @@
 }
 
 .testingCard {
-  background: #0e1017;
+  backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 2rem 1.75rem;
@@ -553,7 +554,7 @@
 
 .testingBigIcon {
   font-size: 2rem;
-  color: #4f7df7;
+  color: #00D4FF;
   margin-bottom: 1rem;
 }
 
@@ -564,7 +565,7 @@
 }
 
 .modeCard {
-  background: rgba(79, 125, 247, 0.04);
+  backdrop-filter: blur(4px);
   border: 1px solid rgba(79, 125, 247, 0.12);
   border-radius: 0.75rem;
   padding: 1.5rem;
@@ -576,13 +577,13 @@
 
 .modeCard:hover {
   border-color: rgba(79, 125, 247, 0.3);
-  background: rgba(79, 125, 247, 0.07);
+  backdrop-filter: blur(6px);
   text-decoration: none;
 }
 
 .modeIcon {
   font-size: 1.4rem;
-  color: #4f7df7;
+  color: #00D4FF;
   margin-bottom: 0.75rem;
 }
 
@@ -602,7 +603,7 @@
 
 /* ─── Deployment ──────────────────────────────────────────────────────────── */
 
-.deploymentGrid {
+/* .deploymentGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.25rem;
@@ -716,10 +717,10 @@
   gap: 0.75rem;
   flex-shrink: 0;
   flex-wrap: wrap;
-}
+} */
 
 /* Azure button sits on a blue-tinted banner — secondary needs a visible surface */
-.terraformBannerButtons :global(.button--secondary) {
+/* .terraformBannerButtons :global(.button--secondary) {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(139, 92, 246, 0.55);
   color: #dfe1f0;
@@ -730,11 +731,11 @@
   border-color: #8b5cf6;
   color: #ffffff;
   transform: translateY(-1px);
-}
+} */
 
 /* ─── Observability / Guardrails ──────────────────────────────────────────── */
 
-.observabilityLayout {
+/* .observabilityLayout {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
@@ -819,7 +820,7 @@
   color: #94a3b8;
   line-height: 1.6;
   margin: 0;
-}
+} */
 
 /* ─── Messaging ───────────────────────────────────────────────────────────── */
 
@@ -830,7 +831,7 @@
 }
 
 .messagingCard {
-  background: #0e1017;
+  backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1rem;
