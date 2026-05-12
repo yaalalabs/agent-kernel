@@ -8,7 +8,7 @@ math_agent = Agent(
     name="math",
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. no reasoning and no need for steps explanation. Just give the final answer. \
-        If prompted for anything else you refuse to answer.",
+        If asked about anything else, refuse to answer.",
     model="openai/gpt-4.1-mini",
 )
 

@@ -10,8 +10,8 @@ from crewai import Agent
 math_agent = Agent(
     role="math",
     goal="Specialist agent for math questions",
-    backstory="You provide help with math problems. no reasoning and no need for steps explanation. Just give the final answer. \
-        If prompted for anything else you refuse to answer.",
+    backstory="You provide help with math problems. Do not provide reasoning or step-by-step explanations. Just give the final answer. \
+         If prompted for anything else, refuse to answer.",
     verbose=False,
     tracing=False,
     model="openai/gpt-4.1-mini",

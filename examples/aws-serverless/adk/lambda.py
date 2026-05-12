@@ -10,8 +10,8 @@ math_agent = Agent(
     description="Specialist agent for math questions",
     instruction="""
     You provide help with math problems.
-    no reasoning and no need for steps explanation. Just give the final answer.
-    If prompted for anything else you refuse to answer.
+    Do not provide reasoning or step-by-step explanations. Just give the final answer.
+    If prompted for anything else, refuse to answer.
     """,
 )
 
