@@ -14,7 +14,7 @@ math_agent = Agent(
         If prompted for anything else you refuse to answer.",
     verbose=False,
     tracing=False,
-    model="openai/gpt-4.1-2025-04-14",
+    model="openai/gpt-4.1-mini",
 )
 
 history_agent = Agent(
@@ -23,7 +23,7 @@ history_agent = Agent(
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
     tracing=False,
-    model="openai/gpt-4.1-2025-04-14",
+    model="openai/gpt-4.1-mini",
 )
 
 CrewAIModule([math_agent, history_agent])

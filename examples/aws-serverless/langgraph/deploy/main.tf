@@ -15,7 +15,7 @@ module "serverless_agents" {
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
-  memory_size          = 512
+  memory_size          = 1024
   product_display_name = "AK Langraph Serverless Example"
 
   # Environment variables passed to lambda
