@@ -1,6 +1,6 @@
 aws:
   state:
-    bucket_name: agent-kernel-terraform-state-bucket-akdev
+    bucket_name: agent-kernel-terraform-state-bucket-dev
     region: ap-southeast-2
 
 azure:
