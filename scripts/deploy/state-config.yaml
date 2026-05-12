@@ -1,7 +1,6 @@
 aws:
   state:
-    bucket_name: agent-kernel-terraform-state-bucket
-    dynamodb_table: ak-terraform-state-lock
+    bucket_name: agent-kernel-terraform-state-bucket-akdev
     region: ap-southeast-2
 
 azure:
