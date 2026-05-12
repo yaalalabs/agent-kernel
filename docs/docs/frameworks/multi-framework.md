@@ -1,5 +1,5 @@
 ---
-sidebar_position: 6
+sidebar_position: 7
 ---
 
 # Multi-Framework Runtime
@@ -29,11 +29,13 @@ graph TB
     A --> C[CrewAI Agents] 
     A --> D[LangGraph Agents]
     A --> E[Google ADK Agents]
+    A --> G[Smolagents Agents]
     
     B --> F[CLI Interface]
     C --> F
     D --> F
     E --> F
+    G --> F
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
@@ -91,7 +93,7 @@ pip install agentkernel[cli,crewai,openai]
 For all supported frameworks:
 
 ```bash
-pip install agentkernel[cli,crewai,openai,langgraph,google-adk]
+pip install agentkernel[cli,crewai,openai,langgraph,google-adk,smolagents]
 ```
 
 ## Project Structure
@@ -177,6 +179,7 @@ Choose frameworks based on their strengths:
 | Role-based teams | CrewAI | Natural role definitions, collaboration focus |
 | Complex workflows | LangGraph | Advanced state management, conditional logic |
 | Google ecosystem | Google ADK | Native Google service integration |
+| Lightweight tool-first agents | Smolagents | Fast iteration with ToolCalling and CodeAgent patterns |
 
 ### Agent Organization
 
@@ -240,6 +243,6 @@ This example demonstrates OpenAI Agents SDK and CrewAI agents running together w
 
 ## Next Steps
 
-- Explore individual framework guides: [OpenAI](./openai.md), [CrewAI](./crewai.md), [LangGraph](./langgraph.md)
+- Explore individual framework guides: [OpenAI](./openai.md), [CrewAI](./crewai.md), [LangGraph](./langgraph.md), [Google ADK](./google-adk.md), [Smolagents](./smolagents.md)
 - Learn about [deployment options](../deployment/overview.md) for multi-framework applications
 - See [architecture details](../architecture/overview.md) for understanding the module system

@@ -84,3 +84,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.adk()
         return None
+
+    def smolagents(self) -> Runner | None:
+        """
+        Returns the Smolagents trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.smolagents()
+        return None
