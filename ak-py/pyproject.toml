@@ -37,7 +37,7 @@ crewai = [
     "openinference-instrumentation-litellm>=0.1.28",
 ]
 langgraph = [
-    "langgraph~=1.0.5",
+    "langgraph==1.0.5",
     "langchain~=1.2.3",
     "langchain_community~=0.4.1",
     "litellm~=1.74.9"
