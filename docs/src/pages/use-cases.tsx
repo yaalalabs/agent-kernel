@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
@@ -15,7 +15,6 @@ import {
   MdCloud,
   MdCode,
   MdSecurity,
-  MdVisibility,
   MdMessage,
   MdSpeed,
   MdNetworkCheck,
@@ -30,8 +29,6 @@ gsap.registerPlugin(ScrollTrigger);
 function Hero() {
   return (
     <section className={styles.hero}>
-      {/* <div className={styles.heroOrb} />
-      <div className={styles.heroGrid} /> */}
       <div className="container">
         <div className={styles.heroContent}>
           <h1 className={styles.heroTitle}>Who Is Agent Kernel Built For?</h1>
@@ -272,33 +269,6 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
   );
 }
 
-/* ─── Segment Tiles ─────────────────────────────────────────────────────── */
-
-// function SegmentTilesSection({ onOpen }: { onOpen: (s: typeof segments[0]) => void }) {
-//   return (
-//     <section className={styles.tilesSection}>
-//       <div className="container">
-//         <div className={styles.tilesGrid}>
-//           {segments.map(s => (
-//             <div key={s.id} className={`${styles.tile} ${styles[`tile_${s.accent}`]}`}>
-//               <div className={`${styles.tileIconWrap} ${styles[`tileIconWrap_${s.accent}`]}`}>
-//                 {s.icon}
-//               </div>
-//               <h3 className={styles.tileTitle}>{s.title}</h3>
-//               <p className={styles.tileSub}>{s.subtitle}</p>
-//               <button
-//                 className={`${styles.tileBtn} ${s.accent === 'violet' ? styles.tileBtn_violet : ''}`}
-//                 onClick={() => onOpen(s)}
-//               >
-//                 Learn More
-//               </button>
-//             </div>
-//           ))}
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
 
 function Differentiators() {
   const gridRef = useRef<HTMLDivElement>(null);
@@ -399,37 +369,6 @@ function Differentiators() {
   );
 }
 
-/* ─── Final CTA ─────────────────────────────────────────────────────────── */
-
-function FinalCTA() {
-  return (
-    <section className={styles.ctaSection}>
-      <div className={styles.ctaGlow} />
-      <div className="container">
-        <div className={styles.ctaContent}>
-          <h2 className={styles.ctaTitle}>Get started in minutes — it's free and open-source.</h2>
-          <p className={styles.ctaSubtitle}>
-            Apache 2.0 license. No usage fees. No vendor lock-in. Just install, build, and ship.
-          </p>
-          <div className={styles.ctaButtons}>
-            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
-            </Link>
-            <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
-              to="https://github.com/yaalalabs/agent-kernel"
-              target="_blank"
-              rel="noopener noreferrer">
-              <FaGithub style={{ marginRight: '8px' }} />
-              View on GitHub
-            </Link>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function UseCases() {
@@ -444,8 +383,6 @@ export default function UseCases() {
       <main>
         <UseCaseJourneyMap />
         <Differentiators />
-        {/* <SegmentTilesSection onOpen={setActiveSegment} /> */}
-        {/* <FinalCTA /> */}
       </main>
       {activeSegment && (
         <SegmentModal segment={activeSegment} onClose={() => setActiveSegment(null)} />

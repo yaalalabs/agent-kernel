@@ -2,37 +2,24 @@ import React from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './features.module.css';
-import RequestLifecycleAnimation from '../components/RequestLifecycleAnimation';
 import {
   MdMemory,
-  MdShare,
-  MdLayers,
   MdSwapHoriz,
   MdCloud,
   MdSpeed,
   MdSecurity,
   MdVisibility,
-  MdApi,
   MdCode,
-  MdStorage,
   MdNetworkCheck,
   MdTerminal,
   MdBugReport,
   MdTimer,
-  MdExtension,
-  MdArchitecture,
-  MdIntegrationInstructions,
-  MdRocketLaunch,
-  MdPower,
-  MdGroup,
-  MdMessage,
   MdSettings,
   MdHealthAndSafety,
   MdCheck,
 } from 'react-icons/md';
-import { FaPython, FaAws, FaDocker, FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
-import { SiTerraform, SiRedis, SiAmazondynamodb, SiOpenai, SiGmail } from 'react-icons/si';
-import { FaMicrosoft } from 'react-icons/fa';
+import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
+import { SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 import ParticleSphere from '../components/ParticleSphere';
 
@@ -41,8 +28,6 @@ import ParticleSphere from '../components/ParticleSphere';
 function Hero() {
   return (
     <section className={styles.hero}>
-      {/* <div className={styles.heroOrb} />
-      <div className={styles.heroGrid} /> */}
       <div className="container">
         <div className={styles.heroContent}>
           <h1 className={styles.heroTitle}>Everything You Need to Build,<br />Run, and Scale AI Agents</h1>
@@ -314,63 +299,6 @@ function FrameworkSupport() {
   );
 }
 
-/* ─── Memory Section ────────────────────────────────────────────────────── */
-
-// function MemorySection() {
-//   const types = [
-//     {
-//       icon: <MdMemory />,
-//       name: 'Volatile Cache',
-//       description: 'Request-scoped temporary storage. Auto-clears after each request. Keeps prompts clean and reduces token usage.',
-//       useCases: ['RAG search results', 'Uploaded file content', 'Temporary calculations', 'Request-scoped flags'],
-//     },
-//     {
-//       icon: <MdStorage />,
-//       name: 'Non-Volatile Cache',
-//       description: 'Session-persistent storage that survives across multiple requests. Share data between hooks and tools.',
-//       useCases: ['User preferences', 'Session metadata', 'Extracted entities', 'Persistent configurations'],
-//     },
-//     {
-//       icon: <SiRedis />,
-//       name: 'Redis Backend',
-//       description: 'High-performance distributed memory for production AWS and Azure workloads.',
-//       useCases: ['Production deployments', 'Multi-process apps', 'Distributed systems', 'Session persistence'],
-//     },
-//     {
-//       icon: <SiAmazondynamodb />,
-//       name: 'DynamoDB / Cosmos DB',
-//       description: 'Serverless, auto-scaling NoSQL for AWS Lambda and Azure Functions with configurable TTL.',
-//       useCases: ['Serverless deployments', 'Auto-scaling apps', 'Pay-per-use pricing', 'Cloud-native infrastructure'],
-//     },
-//   ];
-
-//   return (
-//     <section className={styles.section}>
-//       <div className="container">
-//         <div className={styles.sectionHeader}>
-//           <span className={styles.sectionNumber}>04</span>
-//           <h2 className={styles.sectionTitle}>Smart Memory Management</h2>
-//           <p className={styles.sectionSubtitle}>
-//             Two cache types with identical APIs, different lifecycles. Swap backends with environment variables — no code changes.
-//           </p>
-//         </div>
-//         <div className={styles.memoryGrid}>
-//           {types.map((t, i) => (
-//             <Link key={i} to="/docs/architecture/memory-management" className={styles.memoryCard}>
-//               <div className={styles.memoryIcon}>{t.icon}</div>
-//               <h3 className={styles.memoryName}>{t.name}</h3>
-//               <p className={styles.memoryDescription}>{t.description}</p>
-//               <ul className={styles.memoryUseCases}>
-//                 {t.useCases.map((u, j) => <li key={j}>{u}</li>)}
-//               </ul>
-//             </Link>
-//           ))}
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
-
 /* ─── Testing Section ───────────────────────────────────────────────────── */
 
 function TestingSection() {
@@ -445,198 +373,6 @@ function TestingSection() {
     </section>
   );
 }
-
-/* ─── Deployment Section ────────────────────────────────────────────────── */
-
-// function DeploymentSection() {
-//   const options = [
-//     {
-//       icon: <MdTerminal />,
-//       title: 'Local Development',
-//       description: 'CLI testing and REST API server for local iteration.',
-//       features: ['CLI interactive sessions', 'Automated test scenarios', 'No cloud dependencies', 'Fast iteration'],
-//       link: '/docs/deployment/local',
-//     },
-//     {
-//       icon: <FaAws />,
-//       title: 'AWS Serverless',
-//       description: 'Lambda-based execution for variable, cost-efficient workloads.',
-//       features: ['Lambda execution', 'Auto-scaling', 'Pay-per-use', 'DynamoDB session storage'],
-//       link: '/docs/deployment/aws-serverless',
-//     },
-//     {
-//       icon: <FaAws />,
-//       title: 'AWS Containerized',
-//       description: 'ECS/Fargate for consistent, predictable production performance.',
-//       features: ['ECS/Fargate', 'Multi-AZ', 'Predictable performance', 'Redis session storage'],
-//       link: '/docs/deployment/aws-containerized',
-//     },
-//     {
-//       icon: <FaMicrosoft />,
-//       title: 'Azure Serverless',
-//       description: 'Azure Functions with KEDA-based scaling and Cosmos DB.',
-//       features: ['Azure Functions', 'KEDA auto-scaling', 'Cosmos DB storage', 'Pay-per-use'],
-//       link: '/docs/deployment/azure-serverless',
-//     },
-//     {
-//       icon: <FaMicrosoft />,
-//       title: 'Azure Containerized',
-//       description: 'Container Apps for multi-zone, high-availability deployments.',
-//       features: ['Container Apps', 'Multi-zone HA', 'Built-in scaling', 'Redis session storage'],
-//       link: '/docs/deployment/azure-containerized',
-//     },
-//     {
-//       icon: <FaDocker />,
-//       title: 'On-Premise / Docker',
-//       description: 'Full control with Docker and REST API for on-premise deployments.',
-//       features: ['Docker support', 'REST API server', 'Custom infrastructure', 'Full control'],
-//       link: '/docs/deployment/local',
-//     },
-//   ];
-
-//   return (
-//     <section className={styles.section}>
-//       <div className="container">
-//         <div className={styles.sectionHeader}>
-//           <span className={styles.sectionNumber}>06</span>
-//           <h2 className={styles.sectionTitle}>Deploy Anywhere</h2>
-//           <p className={styles.sectionSubtitle}>
-//             From local CLI to global multi-cloud production — the same agent code runs everywhere.
-//           </p>
-//         </div>
-//         <div className={styles.deploymentGrid}>
-//           {options.map((o, i) => (
-//             <Link key={i} to={o.link} className={styles.deploymentCard}>
-//               <div className={styles.deploymentHeader}>
-//                 <span className={styles.deploymentIcon}>{o.icon}</span>
-//                 <h3 className={styles.deploymentTitle}>{o.title}</h3>
-//               </div>
-//               <p className={styles.deploymentDescription}>{o.description}</p>
-//               <ul className={styles.deploymentFeatures}>
-//                 {o.features.map((f, j) => <li key={j}>{f}</li>)}
-//               </ul>
-//             </Link>
-//           ))}
-//         </div>
-//         <div className={styles.terraformBanner}>
-//           <SiTerraform className={styles.terraformBannerIcon} />
-//           <div>
-//             <h3>Infrastructure as Code — Multi-Cloud</h3>
-//             <p>Official Terraform modules for AWS and Azure. Production-ready with best practices baked in.</p>
-//           </div>
-//           <div className={styles.terraformBannerButtons}>
-//             <Link
-//               to="https://registry.terraform.io/modules/yaalalabs?provider=aws"
-//               className="button button--primary"
-//               target="_blank"
-//               rel="noopener noreferrer">
-//               <FaAws style={{ marginRight: '6px' }} /> AWS Modules
-//             </Link>
-//             <Link
-//               to="https://registry.terraform.io/modules/yaalalabs?provider=azurerm"
-//               className="button button--secondary"
-//               target="_blank"
-//               rel="noopener noreferrer">
-//               <FaMicrosoft style={{ marginRight: '6px' }} /> Azure Modules
-//             </Link>
-//           </div>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
-
-/* ─── Observability Section ─────────────────────────────────────────────── */
-
-// function ObservabilitySection() {
-//   return (
-//     <section className={styles.section}>
-//       <div className="container">
-//         <div className={styles.sectionHeader}>
-//           <span className={styles.sectionNumber}>07</span>
-//           <h2 className={styles.sectionTitle}>Observability & Traceability</h2>
-//           <p className={styles.sectionSubtitle}>
-//             Full visibility into every agent action, LLM call, and tool invocation — with one config line.
-//           </p>
-//         </div>
-//         <div className={styles.observabilityLayout}>
-//           <div className={styles.observabilityText}>
-//             <MdVisibility className={styles.observabilityBigIcon} />
-//             <h3>Multi-Level Tracing</h3>
-//             <p>Track every decision your agents make at the granularity you choose.</p>
-//             <ul>
-//               <li>Agent action tracking</li>
-//               <li>LLM call monitoring with cost estimation</li>
-//               <li>Tool invocation logs</li>
-//               <li>Multi-agent collaboration traces</li>
-//               <li>Performance metrics and latency</li>
-//             </ul>
-//             <Link to="/docs/advanced/traceability" className={styles.featureLink}>
-//               View traceability docs →
-//             </Link>
-//           </div>
-//           <div className={styles.observabilityTools}>
-//             <div className={styles.observabilityTool}>
-//               <h4>LangFuse</h4>
-//               <p>Comprehensive LLM observability, analytics, and prompt management platform.</p>
-//             </div>
-//             <div className={styles.observabilityTool}>
-//               <h4>OpenLLMetry (Traceloop)</h4>
-//               <p>OpenTelemetry-based observability for LLM applications. Works with any OTel backend.</p>
-//             </div>
-//           </div>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
-
-/* ─── Guardrails Section ────────────────────────────────────────────────── */
-
-// function GuardrailsSection() {
-//   return (
-//     <section className={styles.section}>
-//       <div className="container">
-//         <div className={styles.sectionHeader}>
-//           <span className={styles.sectionNumber}>08</span>
-//           <h2 className={styles.sectionTitle}>Content Safety & Guardrails</h2>
-//           <p className={styles.sectionSubtitle}>
-//             Validate inputs before agents see them and outputs before users do.
-//             Works with any Agent Kernel framework via execution hooks.
-//           </p>
-//         </div>
-//         <div className={styles.observabilityLayout}>
-//           <div className={styles.observabilityText}>
-//             <MdSecurity className={styles.observabilityBigIcon} />
-//             <h3>Multi-Layer Protection</h3>
-//             <p>Validate content at both input and output stages with pluggable providers.</p>
-//             <ul>
-//               <li>Input validation before agent processing</li>
-//               <li>Output validation before delivery</li>
-//               <li>PII detection and redaction (30+ entity types)</li>
-//               <li>Jailbreak and prompt attack detection</li>
-//               <li>Topic blocking and keyword filtering</li>
-//               <li>Contextual grounding checks</li>
-//             </ul>
-//             <Link to="/docs/advanced/guardrails" className={styles.featureLink}>
-//               View guardrails docs →
-//             </Link>
-//           </div>
-//           <div className={styles.observabilityTools}>
-//             <div className={styles.observabilityTool}>
-//               <h4>OpenAI Guardrails</h4>
-//               <p>Flexible LLM-based content validation with custom rules and policies.</p>
-//             </div>
-//             <div className={styles.observabilityTool}>
-//               <h4>AWS Bedrock Guardrails</h4>
-//               <p>Enterprise-grade content filtering with 30+ PII types and contextual grounding checks.</p>
-//             </div>
-//           </div>
-//         </div>
-//       </div>
-//     </section>
-//   );
-// }
 
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
 
@@ -724,14 +460,9 @@ export default function Features() {
       <Hero />
       <main>
         <ProblemTable />
-        {/* <RequestLifecycleAnimation /> */}
         <CoreFeatures />
         <FrameworkSupport />
-        {/* <MemorySection /> */}
         <TestingSection />
-        {/* <DeploymentSection /> */}
-        {/* <ObservabilitySection /> */}
-        {/* <GuardrailsSection /> */}
         <MessagingSection />
         <CTASection />
       </main>
