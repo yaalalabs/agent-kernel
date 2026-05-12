@@ -1,9 +1,9 @@
 import os
 
+os.environ["CREWAI_TRACING_ENABLED"] = "false"
+
 from agentkernel.aws import Lambda
 from agentkernel.crewai import CrewAIModule
-
-os.environ["CREWAI_TRACING_ENABLED"] = "false"
 
 from crewai import Agent
 
