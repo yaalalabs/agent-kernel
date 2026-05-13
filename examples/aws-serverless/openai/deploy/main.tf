@@ -18,7 +18,7 @@ module "serverless_agents" {
   region               = var.region
 
   # To override the default API version, API base path, and agent endpoint
-  # api_version    = "0.4.0"
+  # api_version    = "v1"
   # api_base_path  = "api-new"
   # agent_endpoint = "chat-new"
 
