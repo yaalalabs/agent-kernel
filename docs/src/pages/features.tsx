@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId, useState, useEffect, useRef } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './features.module.css';
@@ -23,6 +23,68 @@ import { SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 import ParticleSphere from '../components/ParticleSphere';
 
+/** Stable fragment ids for in-page navigation (diagram + deep links). */
+const FEATURE_ANCHORS = {
+  problem: 'features-problem',
+  core: 'features-core',
+  frameworks: 'features-frameworks',
+  testing: 'features-testing',
+  messaging: 'features-messaging',
+  cta: 'features-cta',
+} as const;
+
+type FeatureAnchorKey = keyof typeof FEATURE_ANCHORS;
+
+const FEATURE_PAGE_MAP: {
+  anchor: FeatureAnchorKey;
+  number: string;
+  title: string;
+  hint: string;
+}[] = [
+  {
+    anchor: 'problem',
+    number: '01',
+    title: 'The Problem',
+    hint: 'What Agent Kernel solves',
+  },
+  {
+    anchor: 'core',
+    number: '02',
+    title: 'Core Capabilities',
+    hint: 'Runtime, memory, hooks, and more',
+  },
+  {
+    anchor: 'frameworks',
+    number: '03',
+    title: 'Framework Support',
+    hint: 'One runtime, any framework',
+  },
+  {
+    anchor: 'testing',
+    number: '04',
+    title: 'Testing',
+    hint: 'CLI, pytest, comparison modes',
+  },
+  {
+    anchor: 'messaging',
+    number: '05',
+    title: 'Messaging',
+    hint: 'Slack, WhatsApp, and more',
+  },
+  {
+    anchor: 'cta',
+    number: '06',
+    title: 'Get Started',
+    hint: 'Docs, use cases, GitHub',
+  },
+];
+
+function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
+  const id = FEATURE_ANCHORS[anchor];
+  const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
@@ -45,6 +107,182 @@ function Hero() {
         </div>
       </div>
     </section>
+  );
+}
+
+/* ─── Page map (diagram) ────────────────────────────────────────────────── */
+
+function FeaturesPageMap() {
+  const gradId = useId().replace(/:/g, '');
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const topRow = FEATURE_PAGE_MAP.slice(0, 3);
+  const bottomRow = FEATURE_PAGE_MAP.slice(3, 6);
+
+  useEffect(() => {
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      setVisible(true);
+      return;
+    }
+    const el = sectionRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const reducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const COL_X = [143, 450, 757] as const;
+
+  // Top strip
+  const topLines = COL_X.map((x, i) => ({
+    id: `${gradId}T${i}`,
+    d: `M ${x} 0 L 450 60`,
+    len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
+    delay: 0.20 + i * 0.07,
+  }));
+
+  // Bottom strip
+  const botLines = COL_X.map((x, i) => ({
+    id: `${gradId}B${i}`,
+    d: `M 450 0 L ${x} 60`,
+    len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
+    delay: 0.41 + i * 0.07,
+  }));
+
+  const topGlowId = `${gradId}TGlow`;
+  const botGlowId = `${gradId}BGlow`;
+
+  const topParticles = [
+    { pathId: `${gradId}T0`, delay: '0.9s', dur: '1.8s', color: '#4f7df7' },
+    { pathId: `${gradId}T1`, delay: '1.5s', dur: '1.4s', color: '#00d4ff' },
+    { pathId: `${gradId}T2`, delay: '1.2s', dur: '1.8s', color: '#8b5cf6' },
+  ];
+  const botParticles = [
+    { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: '#4f7df7' },
+    { pathId: `${gradId}B1`, delay: '2.5s', dur: '1.4s', color: '#00d4ff' },
+    { pathId: `${gradId}B2`, delay: '1.8s', dur: '1.8s', color: '#8b5cf6' },
+  ];
+
+  return (
+    <div ref={sectionRef} className={styles.pageMapSection} role="region" aria-labelledby="features-page-map-heading">
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionNumber}>Feature Map</span>
+          <h2 id="features-page-map-heading" className={styles.sectionTitle}>
+            Everything Agent Kernel Does
+          </h2>
+          <p className={styles.sectionSubtitle}>
+            Six production-ready capabilities — explore any area below.
+          </p>
+        </div>
+
+        <div className={styles.pageMapDiagram}>
+
+          {/* ── Layer 1: top row nodes ── */}
+          <div className={styles.pageMapTopRow}>
+            {topRow.map((item, i) => (
+              <button
+                key={item.anchor}
+                type="button"
+                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ''}`}
+                style={{ '--node-delay': `${i * 80}ms` } as React.CSSProperties}
+                onClick={() => scrollToFeaturesSection(item.anchor)}>
+                <span className={styles.pageMapNodeNumber}>{item.number}</span>
+                <span className={styles.pageMapNodeTitle}>{item.title}</span>
+                <span className={styles.pageMapNodeHint}>{item.hint}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* ── Connector: top nodes → hub ── */}
+          <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
+            <defs>
+              <filter id={topGlowId} x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              {topLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
+            </defs>
+            {topLines.map(l => (
+              <path key={l.id} d={l.d} fill="none"
+                stroke="rgba(79, 125, 247, 0.4)" strokeWidth="1.5"
+                strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
+                style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
+              />
+            ))}
+            {visible && !reducedMotion && topParticles.map((p, i) => (
+              <circle key={i} r="3" fill={p.color} filter={`url(#${topGlowId})`} opacity="0.9">
+                <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
+                  <mpath href={`#${p.pathId}`} />
+                </animateMotion>
+              </circle>
+            ))}
+          </svg>
+
+          {/* ── Hub ── */}
+          <div className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ''}`}>
+            <span className={styles.pageMapHubLabel}>Overview</span>
+          </div>
+
+          {/* ── Connector: hub → bottom nodes ── */}
+          <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
+            <defs>
+              <filter id={botGlowId} x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              {botLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
+            </defs>
+            {botLines.map(l => (
+              <path key={l.id} d={l.d} fill="none"
+                stroke="rgba(79, 125, 247, 0.4)" strokeWidth="1.5"
+                strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
+                style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
+              />
+            ))}
+            {visible && !reducedMotion && botParticles.map((p, i) => (
+              <circle key={i} r="3" fill={p.color} filter={`url(#${botGlowId})`} opacity="0.9">
+                <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
+                  <mpath href={`#${p.pathId}`} />
+                </animateMotion>
+              </circle>
+            ))}
+          </svg>
+
+          {/* ── Layer 3: bottom row nodes ── */}
+          <div className={styles.pageMapBottomRow}>
+            {bottomRow.map((item, i) => (
+              <button
+                key={item.anchor}
+                type="button"
+                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ''}`}
+                style={{ '--node-delay': `${300 + i * 80}ms` } as React.CSSProperties}
+                onClick={() => scrollToFeaturesSection(item.anchor)}>
+                <span className={styles.pageMapNodeNumber}>{item.number}</span>
+                <span className={styles.pageMapNodeTitle}>{item.title}</span>
+                <span className={styles.pageMapNodeHint}>{item.hint}</span>
+              </button>
+            ))}
+          </div>
+
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -106,7 +344,7 @@ function ProblemTable() {
   ];
 
   return (
-    <section className={styles.section}>
+    <section id={FEATURE_ANCHORS.problem} className={`${styles.section} ${styles.pageAnchor}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>01</span>
@@ -211,7 +449,7 @@ function CoreFeatures() {
   ];
 
   return (
-    <section className={styles.section}>
+    <section id={FEATURE_ANCHORS.core} className={`${styles.section} ${styles.pageAnchor}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>02</span>
@@ -273,7 +511,7 @@ function FrameworkSupport() {
   ];
 
   return (
-    <section className={styles.section}>
+    <section id={FEATURE_ANCHORS.frameworks} className={`${styles.section} ${styles.pageAnchor}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>03</span>
@@ -324,7 +562,7 @@ function TestingSection() {
   ];
 
   return (
-    <section className={styles.section}>
+    <section id={FEATURE_ANCHORS.testing} className={`${styles.section} ${styles.pageAnchor}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>04</span>
@@ -387,7 +625,7 @@ function MessagingSection() {
   ];
 
   return (
-    <section className={styles.section}>
+    <section id={FEATURE_ANCHORS.messaging} className={`${styles.section} ${styles.pageAnchor}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>05</span>
@@ -419,7 +657,7 @@ function MessagingSection() {
 
 function CTASection() {
   return (
-    <section className={styles.ctaSection}>
+    <section id={FEATURE_ANCHORS.cta} className={`${styles.ctaSection} ${styles.pageAnchor}`}>
       <div className={styles.ctaGlow} />
       <div className="container">
         <div className={styles.ctaContent}>
@@ -459,6 +697,7 @@ export default function Features() {
       <ParticleSphere />
       <Hero />
       <main>
+        <FeaturesPageMap />
         <ProblemTable />
         <CoreFeatures />
         <FrameworkSupport />

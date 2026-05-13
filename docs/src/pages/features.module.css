@@ -199,6 +199,222 @@
   flex-wrap: wrap;
 }
 
+
+.pageAnchor {
+  scroll-margin-top: calc(var(--ifm-navbar-height, 3.75rem) + 0.75rem);
+}
+
+/* ─── Page map (post-hero diagram) ───────────────────────────────────────────── */
+
+.pageMapSection {
+  padding: 5rem 0 4.5rem;
+}
+
+.pageMapDiagram {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Narrow SVG strip between rows */
+.pageMapConnector {
+  width: 100%;
+  height: 3.75rem;
+  display: block;
+  pointer-events: none;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.pageMapTopRow,
+.pageMapBottomRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+/* Center hub */
+.pageMapHub {
+  align-self: center;
+  flex-shrink: 0;
+  width: 7.25rem;
+  height: 7.25rem;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14, 16, 23, 0.1);
+  border: 1px solid rgba(79, 125, 247, 0.22);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.pageMapHubLabel {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.pageMapHubSub {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #5e627d;
+  margin-top: 0.2rem;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.pageMapSection .pageMapNode {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--ifm-font-family-base);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.875rem;
+  padding: 1.5rem 1.25rem;
+  background: rgba(14, 16, 23, 0.1);
+  color: #dfe1f0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  opacity: 0;
+}
+
+.pageMapSection .pageMapNode:hover {
+  transform: translateY(-4px);
+  border-color: rgba(79, 125, 247, 0.25);
+}
+
+.pageMapSection .pageMapNode:focus-visible {
+  outline: 2px solid #4f7df7;
+  outline-offset: 3px;
+}
+
+/* Section index pills */
+.pageMapNodeNumber {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  margin-bottom: 0.1rem;
+}
+
+.pageMapNodeTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #dfe1f0;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.pageMapNodeHint {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin: 0;
+}
+
+[data-theme='light'] .pageMapSection {
+  border-bottom-color: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme='light'] .pageMapSection .sectionTitle {
+  color: #0f172a;
+}
+
+[data-theme='light'] .pageMapSection .sectionSubtitle {
+  color: #475569;
+}
+
+[data-theme='light'] .pageMapSection .sectionNumber {
+  color: #3d63c9;
+  background: rgba(79, 125, 247, 0.1);
+  border-color: rgba(79, 125, 247, 0.22);
+}
+
+[data-theme='light'] .pageMapSection .pageMapNode {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+[data-theme='light'] .pageMapSection .pageMapNode:hover {
+  border-color: rgba(79, 125, 247, 0.35);
+}
+
+[data-theme='light'] .pageMapNodeTitle {
+  color: #0f172a;
+}
+
+[data-theme='light'] .pageMapNodeHint {
+  color: #64748b;
+}
+
+[data-theme='light'] .pageMapNodeNumber {
+  color: #0d6c82;
+  background: rgba(0, 180, 216, 0.1);
+  border-color: rgba(0, 180, 216, 0.22);
+}
+
+[data-theme='light'] .pageMapHub {
+  background: rgba(79, 125, 247, 0.08);
+  border-color: rgba(79, 125, 247, 0.28);
+}
+
+[data-theme='light'] .pageMapHubLabel {
+  color: #3d63c9;
+}
+
+[data-theme='light'] .pageMapHubSub {
+  color: #64748b;
+}
+
+/* ─── Page map entrance animations ──────────────────────────────────────────── */
+
+@keyframes pageMapNodeReveal {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pageMapHubReveal {
+  from { opacity: 0; transform: scale(0.82); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.pageMapNodeIn {
+  animation: pageMapNodeReveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--node-delay, 0ms);
+}
+
+.pageMapHubIn {
+  animation: pageMapHubReveal 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: 180ms;
+}
+
 /* ─── Problem Table ───────────────────────────────────────────────────────── */
 
 .problemTable {
@@ -663,6 +879,20 @@
 }
 
 @media (max-width: 768px) {
+  .pageMapSection {
+    padding: 3.25rem 0 3rem;
+  }
+
+  .pageMapTopRow,
+  .pageMapBottomRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .pageMapConnector,
+  .pageMapHub {
+    display: none;
+  }
+
   .hero {
     padding: 5rem 0 3.5rem;
   }
