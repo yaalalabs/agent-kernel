@@ -291,6 +291,15 @@ jobs:
               --path ${{ matrix.path }} \
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action destroy
+
+          elif [[ "${{ matrix.type }}" == "api" ]]; then
+
+            # API examples
+            python .github/scripts/run_single_test.py \
+              --type api \
+              --path "${{ matrix.path }}" \
+              --deploy-dir deploy \
+              --action test
           fi
       - name: Upload test results
         if: always()
