@@ -722,6 +722,479 @@ function Levels() {
     };
   }, [isPinned, selectedLevel]);
 
+  useEffect(() => {
+    if (selectedLevel) {
+      gsap.registerPlugin(ScrollTrigger);
+
+      // Animate contentStep elements - Smooth fade and slide
+      const steps = contentRef.current?.querySelectorAll(`.${styles.contentStep}`) || [];
+      steps.forEach((step) => {
+        gsap.fromTo(
+          step,
+          { opacity: 0, y: 30 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 1,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: step,
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate contentCard elements - Subtle scale and fade
+      const cards = contentRef.current?.querySelectorAll(`.${styles.contentCard}`) || [];
+      cards.forEach((card, idx) => {
+        gsap.fromTo(
+          card,
+          { opacity: 0, y: 25, scale: 0.95 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.9,
+            ease: 'power2.out',
+            delay: idx * 0.08,
+            scrollTrigger: {
+              trigger: card,
+              start: 'top 88%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate architecture layers - Slide from left
+      const layers = contentRef.current?.querySelectorAll(`.${styles.architectureLayerGroup}`) || [];
+      layers.forEach((layer, index) => {
+        gsap.fromTo(
+          layer,
+          { opacity: 0, x: -50 },
+          {
+            opacity: 1,
+            x: 0,
+            duration: 0.9,
+            delay: index * 0.12,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: layer,
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate capability/feature cards - Staggered fade and scale
+      const capCards = contentRef.current?.querySelectorAll(
+        `.${styles.capabilityCard}, .${styles.devFeatureCard}, .${styles.blValueCard}`
+      ) || [];
+      capCards.forEach((card, idx) => {
+        gsap.fromTo(
+          card,
+          { opacity: 0, y: 25, scale: 0.96 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.95,
+            ease: 'power2.out',
+            delay: (idx % 3) * 0.1,
+            scrollTrigger: {
+              trigger: card,
+              start: 'top 88%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate agent flow with sequential color highlighting
+      const flowSection = contentRef.current?.querySelector(`.${styles.agentFlow}`);
+      const flowSteps = contentRef.current?.querySelectorAll(`.${styles.flowStep}`) || [];
+      const flowArrows = contentRef.current?.querySelectorAll(`.${styles.flowArrow}`) || [];
+      if (flowSection && flowSteps.length > 0) {
+        gsap.set(flowSteps, { opacity: 0, y: 24, scale: 0.96 });
+        gsap.set(flowArrows, { opacity: 0, x: -6 });
+
+        const flowTl = gsap.timeline({
+          scrollTrigger: {
+            trigger: flowSection,
+            start: 'top 85%',
+            toggleActions: 'play none none none',
+          },
+        });
+
+        flowTl
+          .to(flowSteps, {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.65,
+            ease: 'power2.out',
+            stagger: 0.09,
+          })
+          .to(
+            flowArrows,
+            {
+              opacity: 1,
+              x: 0,
+              duration: 0.35,
+              ease: 'power2.out',
+              stagger: 0.06,
+            },
+            '-=0.45'
+          );
+
+        const neutralIconColor = '#ffffff';
+        const neutralLabelColor = '#ffffff';
+        const neutralDescColor = 'rgba(255, 255, 255, 0.7)';
+        const neutralArrowColor = 'rgba(255, 255, 255, 0.6)';
+        const activeColor = '#00d4ff';
+
+        // Progressive highlight to make the execution flow obvious
+        const flowPulseTl = gsap.timeline({
+          paused: true,
+          repeat: -1,
+          repeatDelay: 0.15,
+        });
+
+        flowSteps.forEach((step, index) => {
+          const icon = step.querySelector(`.${styles.flowIcon}`);
+          const label = step.querySelector(`.${styles.flowLabel}`);
+          const desc = step.querySelector(`.${styles.flowDesc}`);
+          const arrow = flowArrows[index] ?? null;
+
+          const textTargets = [icon, label, desc].filter(Boolean) as Element[];
+
+          flowPulseTl
+            .to(step, {
+              duration: 0.22,
+              ease: 'power2.out',
+            })
+            .to(
+              textTargets,
+              {
+                color: (_target, i) => (i === 2 ? '#e4eeff' : activeColor),
+                duration: 0.22,
+                ease: 'power2.out',
+              },
+              '<'
+            )
+            .to(
+              arrow,
+              {
+                color: activeColor,
+                x: 4,
+                opacity: 1,
+                duration: 0.2,
+                ease: 'power2.out',
+              },
+              '<0.05'
+            )
+            .to({}, { duration: 0.2 })
+            .to(step, {
+              backgroundColor: 'transparent',
+              boxShadow: 'none',
+              y: 0,
+              duration: 0.25,
+              ease: 'power2.out',
+            })
+            .to(
+              icon,
+              {
+                color: neutralIconColor,
+                duration: 0.25,
+                ease: 'power2.out',
+              },
+              '<'
+            )
+            .to(
+              label,
+              {
+                color: neutralLabelColor,
+                duration: 0.25,
+                ease: 'power2.out',
+              },
+              '<'
+            )
+            .to(
+              desc,
+              {
+                color: neutralDescColor,
+                duration: 0.25,
+                ease: 'power2.out',
+              },
+              '<'
+            )
+            .to(
+              arrow,
+              {
+                color: neutralArrowColor,
+                x: 0,
+                duration: 0.25,
+                ease: 'power2.out',
+              },
+              '<'
+            );
+        });
+
+        ScrollTrigger.create({
+          trigger: flowSection,
+          start: 'top 80%',
+          end: 'bottom 20%',
+          onEnter: () => flowPulseTl.play(),
+          onLeave: () => flowPulseTl.pause(),
+          onEnterBack: () => flowPulseTl.play(),
+          onLeaveBack: () => flowPulseTl.pause(),
+        });
+      }
+
+      // Animate highlight cards - Smooth entrance with subtle scale
+      const highlightCards = contentRef.current?.querySelectorAll(
+        `.${styles.blHighlightCard}`
+      ) || [];
+      highlightCards.forEach((card) => {
+        gsap.fromTo(
+          card,
+          { opacity: 0, y: 30, scale: 0.97 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 1.05,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: card,
+              start: 'top 82%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate developer analogy section
+      const devAnalogy = contentRef.current?.querySelector(`.${styles.developerAnalogy}`);
+      if (devAnalogy) {
+        gsap.fromTo(
+          devAnalogy,
+          { opacity: 0, y: 35 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 1.1,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: devAnalogy,
+              start: 'top 75%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }
+
+      // Animate Architecture Wrapper
+      const archWrappers = contentRef.current?.querySelectorAll(`.${styles.devArchitectureWrapper}`) || [];
+      archWrappers.forEach((wrapper) => {
+        gsap.fromTo(
+          wrapper,
+          { opacity: 0, y: 40, scale: 0.95 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 1.1,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: wrapper,
+              start: 'top 80%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate BusinessLeaderScenarios tabs
+      const blTabs = contentRef.current?.querySelectorAll(`.${styles.blTab}`) || [];
+      blTabs.forEach((tab, idx) => {
+        gsap.fromTo(
+          tab,
+          { opacity: 0, y: 15 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.7,
+            ease: 'power2.out',
+            delay: idx * 0.06,
+            scrollTrigger: {
+              trigger: tab,
+              start: 'top 88%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate scenario content
+      const scenarioContent = contentRef.current?.querySelector(`.${styles.blScenarioContent}`);
+      if (scenarioContent) {
+        gsap.fromTo(
+          scenarioContent,
+          { opacity: 0, y: 30, scale: 0.97 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.95,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: scenarioContent,
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }
+
+      // Animate scenario columns
+      const scenarioCols = contentRef.current?.querySelectorAll(`.${styles.blScenarioCol}`) || [];
+      scenarioCols.forEach((col, idx) => {
+        gsap.fromTo(
+          col,
+          { opacity: 0, y: 25, scale: 0.95 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.85,
+            ease: 'power2.out',
+            delay: idx * 0.1,
+            scrollTrigger: {
+              trigger: col,
+              start: 'top 88%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate developer framework section
+      const devFrameworkSection = contentRef.current?.querySelector(`.${styles.devFrameworkSection}`);
+      if (devFrameworkSection) {
+        gsap.fromTo(
+          devFrameworkSection,
+          { opacity: 0, y: 40 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 1.1,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: devFrameworkSection,
+              start: 'top 80%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }
+
+      // Animate framework buttons
+      const frameworkButtons = contentRef.current?.querySelectorAll(`.${styles.devFrameworkButton}`) || [];
+      frameworkButtons.forEach((btn, idx) => {
+        gsap.fromTo(
+          btn,
+          { opacity: 0, y: 15, scale: 0.95 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.7,
+            ease: 'power2.out',
+            delay: idx * 0.08,
+            scrollTrigger: {
+              trigger: btn,
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Animate code blocks
+      const codeBlocks = contentRef.current?.querySelectorAll(`.${styles.devFrameworkCodeBlock}`) || [];
+      codeBlocks.forEach((block, idx) => {
+        gsap.fromTo(
+          block,
+          { opacity: 0, x: 30, scale: 0.98 },
+          {
+            opacity: 1,
+            x: 0,
+            scale: 1,
+            duration: 0.95,
+            ease: 'power2.out',
+            delay: idx * 0.12,
+            scrollTrigger: {
+              trigger: block,
+              start: 'top 83%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      });
+
+      // Add professional hover animations to cards
+      const allAnimatedCards = contentRef.current?.querySelectorAll(
+        `.${styles.contentCard}, .${styles.capabilityCard}, .${styles.devFeatureCard}, .${styles.blValueCard}`
+      ) || [];
+      allAnimatedCards.forEach((card: any) => {
+        card.addEventListener('mouseenter', () => {
+          gsap.to(card, {
+            y: -6,
+            scale: 1.02,
+            boxShadow: '0 16px 32px rgba(0,0,0,0.12)',
+            duration: 0.25,
+            ease: 'power2.out',
+          });
+        });
+        card.addEventListener('mouseleave', () => {
+          gsap.to(card, {
+            y: 0,
+            scale: 1,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+            duration: 0.25,
+            ease: 'power2.out',
+          });
+        });
+      });
+
+      // Add hover animations to framework buttons
+      frameworkButtons.forEach((btn: any) => {
+        btn.addEventListener('mouseenter', () => {
+          gsap.to(btn, {
+            scale: 1.05,
+            duration: 0.15,
+            ease: 'power2.out',
+          });
+        });
+        btn.addEventListener('mouseleave', () => {
+          gsap.to(btn, {
+            scale: 1,
+            duration: 0.15,
+            ease: 'power2.out',
+          });
+        });
+      });
+
+      return () => {
+        ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+      };
+    }
+  }, [selectedLevel, styles]);
+
   return (
     <section
       ref={sectionRef}
@@ -917,7 +1390,22 @@ function Levels() {
           
                 <BusinessLeaderScenarios />
               </div>
-          
+
+              {/* ── STEP 05 — Architecture Overview ── */}
+              <div style={{ marginTop: '3rem' }}>
+                <p className={styles.stepLabel}>Step 05 / How it works</p>
+                <h2 className={styles.contentTitle}>
+                  Agent Kernel is the engine that powers it all
+                </h2>
+                <p className={styles.contentBody}>
+                  See how Agent Kernel connects your agent logic to production infrastructure, messaging channels, and data storage—all without rewrites or complexity.
+                </p>
+
+                <div className={styles.devArchitectureWrapper}>
+                  <AgentKernelArchDiagram />
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -1469,6 +1957,19 @@ if __name__ == "__main__":
                   Deploy with full Terraform modules, pre-configured best practices, and zero cloud lock-in. Same code runs everywhere.
                 </p>
               </div>
+
+              {/* ── How Agent Kernel Fits In ── */}
+              <div className={styles.contentStep}>
+                <h2 className={styles.contentTitle}>How Agent Kernel Fits In</h2>
+                <p className={styles.contentBody}>
+                  Agent Kernel sits between your agent logic and cloud deployment, providing the production-ready runtime layer that handles everything except what makes your agents unique. One consistent API, any framework, any cloud.
+                </p>
+
+                <div className={styles.devArchitectureWrapper}>
+                  <AgentKernelArchDiagram />
+                </div>
+              </div>
+
             </div>
           )}
         </div>
