@@ -19,7 +19,10 @@ const config = {
   projectName: 'agent-kernel',
   trailingSlash: false,
 
-  clientModules: ['./src/clientModules/scrollReveal.ts'],
+  clientModules: [
+    './src/clientModules/ensureGtagGlobal.ts',
+    './src/clientModules/scrollReveal.ts',
+  ],
 
   onBrokenLinks: 'throw',
 
