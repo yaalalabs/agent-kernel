@@ -281,11 +281,16 @@
   flex-shrink: 0;
 }
 
-.pageMapTopRow,
-.pageMapBottomRow {
+.pageMapTopRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.25rem;
+}
+
+.pageMapBottomRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
 }
 
 /* Center hub — dark glass circle with teal glow */
@@ -684,7 +689,47 @@
   text-decoration: none;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.frameworkLogo {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 2.75rem;
+  margin-bottom: 1rem;
+}
+
+.frameworkLogoImg {
+  display: block;
+  max-height: 2.5rem;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* OpenAI mark ships as black; invert for dark cards */
+.frameworkLogoImgInvert {
+  filter: brightness(0) invert(1);
+}
+
+.frameworkLogoIcon {
+  font-size: 2.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.frameworkLogoLangchain {
+  color: #1eb854;
+}
+
+.frameworkLogoGemini {
+  color: #8ab4f8;
+}
+
+.frameworkLogoHf {
+  color: #ffd21e;
 }
 
 .frameworkCard:hover {
@@ -843,7 +888,7 @@
 
 .messagingGrid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 1rem;
 }
 

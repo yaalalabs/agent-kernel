@@ -17,10 +17,14 @@ import {
   MdSettings,
   MdHealthAndSafety,
   MdCheck,
+  MdMenuBook,
+  MdExtension,
+  MdHub,
 } from 'react-icons/md';
 import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaGithub } from 'react-icons/fa';
-import { SiGmail } from 'react-icons/si';
+import { SiGmail, SiGooglegemini, SiLangchain, SiHuggingface } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
+import { TbBrandTeams } from 'react-icons/tb';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 
 /** Stable fragment ids for in-page navigation (diagram + deep links). */
@@ -30,6 +34,7 @@ const FEATURE_ANCHORS = {
   frameworks: 'features-frameworks',
   testing: 'features-testing',
   messaging: 'features-messaging',
+  protocols: 'features-protocols',
   cta: 'features-cta',
 } as const;
 
@@ -72,8 +77,14 @@ const FEATURE_PAGE_MAP: {
     hint: 'Slack, WhatsApp, and more',
   },
   {
-    anchor: 'cta',
+    anchor: 'protocols',
     number: '06',
+    title: 'Protocol Support',
+    hint: 'MCP and A2A out of the box',
+  },
+  {
+    anchor: 'cta',
+    number: '07',
     title: 'Get Started',
     hint: 'Docs, use cases, GitHub',
   },
@@ -119,7 +130,7 @@ function FeaturesPageMap() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const topRow = FEATURE_PAGE_MAP.slice(0, 3);
-  const bottomRow = FEATURE_PAGE_MAP.slice(3, 6);
+  const bottomRow = FEATURE_PAGE_MAP.slice(3, 7);
 
   useEffect(() => {
     if (
@@ -148,10 +159,11 @@ function FeaturesPageMap() {
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const COL_X = [143, 450, 757] as const;
+  const COL_X_TOP = [143, 450, 757] as const;
+  const COL_X_BOT = [113, 338, 563, 788] as const;
 
   // Top strip
-  const topLines = COL_X.map((x, i) => ({
+  const topLines = COL_X_TOP.map((x, i) => ({
     id: `${gradId}T${i}`,
     d: `M ${x} 0 L 450 60`,
     len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
@@ -159,7 +171,7 @@ function FeaturesPageMap() {
   }));
 
   // Bottom strip
-  const botLines = COL_X.map((x, i) => ({
+  const botLines = COL_X_BOT.map((x, i) => ({
     id: `${gradId}B${i}`,
     d: `M 450 0 L ${x} 60`,
     len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
@@ -179,9 +191,10 @@ function FeaturesPageMap() {
     { pathId: `${gradId}T2`, delay: '1.2s',  dur: '1.8s', color: TEAL },
   ];
   const botParticles = [
-    { pathId: `${gradId}B0`, delay: '2.0s',  dur: '1.8s', color: TEAL },
-    { pathId: `${gradId}B1`, delay: '2.5s',  dur: '1.4s', color: TEAL },
-    { pathId: `${gradId}B2`, delay: '1.8s',  dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}B1`, delay: '2.35s', dur: '1.4s', color: TEAL },
+    { pathId: `${gradId}B2`, delay: '2.1s', dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}B3`, delay: '2.55s', dur: '1.5s', color: TEAL },
   ];
 
   return (
@@ -193,7 +206,7 @@ function FeaturesPageMap() {
             Everything Agent Kernel Does
           </h2>
           <p className={styles.sectionSubtitle}>
-            Six production-ready capabilities — explore any area below.
+            Seven production-ready capabilities — explore any area below.
           </p>
         </div>
 
@@ -345,6 +358,11 @@ function ProblemTable() {
       with: 'Built-in with multiple backends',
     },
     {
+      problem: 'Knowledge Bases',
+      without: 'Build your own database connectors. Handle data complexity, separate tools for storage and retrieval',
+      with: 'Built-in with multiple knowledge sources',
+    },
+    {
       problem: 'Messaging integrations',
       without: 'Build custom Slack/WhatsApp bots from scratch',
       with: 'Built-in handlers, plug and play',
@@ -420,21 +438,21 @@ function CoreFeatures() {
     {
       icon: <MdCode />,
       title: 'Six Core Abstractions',
-      description: 'Agent, Runner, Session, Module, Runtime, and Tools — a unified API across all frameworks. Build once, run on any supported framework.',
+      description: 'Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.',
       highlights: ['Unified Python API', 'Framework adapters for 4 SDKs', 'Portable tool functions via ToolBuilder', 'Framework-agnostic hooks'],
       link: '/docs/core-concepts/overview',
     },
     {
       icon: <MdSwapHoriz />,
-      title: 'Framework-Agnostic Runtime',
-      description: 'OpenAI Agents, LangGraph, CrewAI, and Google ADK — run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.',
+      title: 'Framework-Neutral Runtime',
+      description: 'OpenAI Agents, LangGraph, CrewAI, and Google ADK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.',
       highlights: ['OpenAI Agents SDK', 'LangGraph', 'CrewAI', 'Google ADK'],
       link: '/docs/frameworks/overview',
     },
     {
       icon: <MdSettings />,
       title: 'Execution Hooks',
-      description: 'Pre and post-execution hooks give you surgical control over every agent request — for any framework.',
+      description: 'Pre and post-execution hooks give you surgical control over every agent request, for any framework.',
       highlights: ['Pre-hooks: guardrails, RAG, auth, validation', 'Post-hooks: moderation, disclaimers, analytics', 'Hook chaining and composition', 'Early termination with custom responses'],
       link: '/docs/integrations/hooks',
     },
@@ -446,9 +464,17 @@ function CoreFeatures() {
       link: '/docs/architecture/memory-management',
     },
     {
+      icon: <MdMenuBook />,
+      title: 'Knowledge Bases',
+      description:
+        'Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, and custom SQL data sources.',
+      highlights: ['ChromaDB — vector/semantic search','Neo4j — entity and relationship graphs','Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL','semantic_map keeps agent prompts portable',],
+      link: '/docs/architecture/memory-management',
+    },
+    {
       icon: <MdCloud />,
       title: 'Multi-Cloud Deployment',
-      description: 'One agent codebase deploys to AWS and Azure with full Terraform modules. No vendor lock-in, ever.',
+      description: 'One agent codebase deploys to AWS, and Azure and GCP with full Terraform modules. No vendor lock-in, ever.',
       highlights: ['AWS Lambda (Serverless)', 'AWS ECS/Fargate (Containerized)', 'Azure Functions (Serverless)', 'Azure Container Apps (Containerized)'],
       link: '/docs/deployment/overview',
     },
@@ -489,7 +515,7 @@ function CoreFeatures() {
           <span className={styles.sectionNumber}>02</span>
           <h2 className={styles.sectionTitle}>Core Capabilities</h2>
           <p className={styles.sectionSubtitle}>
-            Everything you need to build, run, and scale production AI agents — without building platform code.
+            Everything you need to build, run, and scale production AI agents without building platform code.
           </p>
         </div>
         <div className={styles.featuresGrid}>
@@ -520,27 +546,94 @@ function FrameworkSupport() {
       name: 'OpenAI Agents SDK',
       description: 'Official OpenAI agents framework with full support for tools, handoffs, and streaming.',
       link: '/docs/frameworks/openai',
+      logo: (
+        <img
+          src="/img/integrations/openai.svg"
+          alt=""
+          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
+          width={120}
+          height={32}
+        />
+      ),
     },
     {
       name: 'LangGraph',
       description: 'Graph-based agent orchestration for complex stateful multi-actor applications.',
       link: '/docs/frameworks/langgraph',
+      logo: (
+        <SiLangchain
+          className={`${styles.frameworkLogoIcon} ${styles.frameworkLogoLangchain}`}
+          aria-hidden
+        />
+      ),
     },
     {
       name: 'Google ADK',
       description: "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
       link: '/docs/frameworks/google-adk',
+      logo: (
+        <SiGooglegemini
+          className={`${styles.frameworkLogoIcon} ${styles.frameworkLogoGemini}`}
+          aria-hidden
+        />
+      ),
     },
     {
       name: 'CrewAI',
       description: 'Role-based multi-agent framework for orchestrating collaborative AI workflows.',
       link: '/docs/frameworks/crewai',
+      logo: (
+        <img
+          src="/img/integrations/crewai.svg"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={140}
+          height={48}
+        />
+      ),
+    },
+    {
+      name: 'Smolagents',
+      description:
+        "Hugging Face's Smolagents with first-class support for writing your own coding agents.",
+      link: 'https://huggingface.co/docs/smolagents/index',
+      external: true,
+      logo: (
+        <SiHuggingface
+          className={`${styles.frameworkLogoIcon} ${styles.frameworkLogoHf}`}
+          aria-hidden
+        />
+      ),
+    },
+    {
+      name: 'LiveKit',
+      description: 'LiveKit provides the complete stack for voice-based AI agents.',
+      link: 'https://docs.livekit.io/',
+      external: true,
+      logo: (
+        <img
+          src="/img/integrations/livekit-mark.svg"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={38}
+          height={38}
+        />
+      ),
     },
     {
       name: 'Multi-Framework',
       description: 'Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.',
       link: '/docs/frameworks/multi-framework',
       featured: true,
+      logo: (
+        <img
+          src="/img/branding/agent-kernel-icon-color.svg"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={48}
+          height={48}
+        />
+      ),
     },
   ];
 
@@ -555,16 +648,34 @@ function FrameworkSupport() {
           </p>
         </div>
         <div className={styles.frameworksGrid}>
-          {frameworks.map((f, i) => (
-            <Link
-              key={i}
-              to={f.link}
-              className={`${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''}`}>
-              <h3 className={styles.frameworkName}>{f.name}</h3>
-              <p className={styles.frameworkDescription}>{f.description}</p>
-              <span className={styles.frameworkLink}>Learn more →</span>
-            </Link>
-          ))}
+          {frameworks.map((f, i) => {
+            const cardClass = `${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''}`;
+            const inner = (
+              <>
+                <div className={styles.frameworkLogo}>{f.logo}</div>
+                <h3 className={styles.frameworkName}>{f.name}</h3>
+                <p className={styles.frameworkDescription}>{f.description}</p>
+                <span className={styles.frameworkLink}>Learn more →</span>
+              </>
+            );
+            if (f.external) {
+              return (
+                <a
+                  key={i}
+                  href={f.link}
+                  className={cardClass}
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  {inner}
+                </a>
+              );
+            }
+            return (
+              <Link key={i} to={f.link} className={cardClass}>
+                {inner}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -590,7 +701,7 @@ function TestingSection() {
     {
       icon: <MdTimer />,
       name: 'Fallback Mode',
-      description: 'Tries fuzzy first, falls back to judge. The default — best of both worlds.',
+      description: 'Tries fuzzy first, falls back to judge. The default -best of both worlds.',
       link: '/docs/testing/cli-testing#fallback-mode-default',
     },
   ];
@@ -651,6 +762,7 @@ function TestingSection() {
 function MessagingSection() {
   const platforms = [
     { name: 'Slack', icon: <FaSlack />, color: '#4A154B', link: '/docs/integrations/slack' },
+    { name: 'Microsoft Teams', icon: <TbBrandTeams />, color: '#6264A7', link: '/docs/integrations/teams' },
     { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#25D366', link: '/docs/integrations/whatsapp' },
     { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#0084FF', link: '/docs/integrations/messenger' },
     { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
@@ -680,6 +792,49 @@ function MessagingSection() {
         <div className={styles.sectionFooter}>
           <Link to="/docs/integrations/overview" className={styles.sectionLink}>
             View integration docs →
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Protocol Support ──────────────────────────────────────────────────── */
+
+function ProtocolSupport() {
+  return (
+    <section id={FEATURE_ANCHORS.protocols} className={`${styles.section} ${styles.pageAnchor}`}>
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionNumber}>06</span>
+          <h2 className={styles.sectionTitle}>Protocol Support</h2>
+          <p className={styles.sectionSubtitle}>
+            Standard protocols for tool connectivity and multi-agent coordination — wired into the runtime.
+          </p>
+        </div>
+        <div className={styles.testingLayout}>
+          <Link to="/docs/api/mcp-server" className={styles.testingCard}>
+            <MdExtension className={styles.testingBigIcon} />
+            <h3>MCP — Model Context Protocol</h3>
+            <p>
+              Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external
+              tools, data sources, and services in a structured, consistent way. It acts as a bridge between an
+              AI&apos;s reasoning and real-world actions, enabling agents to retrieve information and execute tasks
+              reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP
+              tools.
+            </p>
+            <span className={styles.featureLink}>MCP server docs →</span>
+          </Link>
+          <Link to="/docs/api/a2a-server" className={styles.testingCard}>
+            <MdHub className={styles.testingBigIcon} />
+            <h3>A2A — Agent-to-Agent</h3>
+            <p>
+              Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each
+              other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by
+              allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent
+              Kernel natively supports exposing any agent over the A2A protocol by switching configuration.
+            </p>
+            <span className={styles.featureLink}>A2A server docs →</span>
           </Link>
         </div>
       </div>
@@ -740,6 +895,7 @@ export default function Features() {
         <FrameworkSupport />
         <TestingSection />
         <MessagingSection />
+        <ProtocolSupport />
         <CTASection />
       </main>
     </Layout>
