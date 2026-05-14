@@ -155,7 +155,9 @@ The deployment provides the following outputs:
 This example uses Azure Redis Cache for agent memory storage. The configuration in `config.yaml` specifies:
 
 ```yaml
-debug: true
+logging:
+  ak:
+    level: DEBUG
 session:
   type: redis
   redis:

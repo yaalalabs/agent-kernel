@@ -24,7 +24,7 @@ class DynamoDBAttachmentDriver:
     raw DynamoDB attachment operations.
     """
 
-    _log = logging.getLogger("ak.core.multimodal.storage.dynamodb.driver")
+    _log = logging.getLogger("ak.multimodal.storage.dynamodb.driver")
 
     def __init__(self, table_name: str, ttl: int):
         """

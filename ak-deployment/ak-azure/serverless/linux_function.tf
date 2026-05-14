@@ -44,9 +44,9 @@ resource "azurerm_storage_container" "function_deployment" {
   container_access_type = "private"
 }
 
-# Upload the function package zip to the container
+# Upload the function package zip to the container, this is to refer later on
 resource "azurerm_storage_blob" "function_package" {
-  name                   = "app.zip"
+  name                   = "app-${filemd5(var.package_path)}.zip" # versioned name
   storage_account_name   = azurerm_storage_account.function_storage.name
   storage_container_name = azurerm_storage_container.function_deployment.name
   type                   = "Block"
@@ -121,15 +121,15 @@ resource "azurerm_function_app_flex_consumption" "function" {
       "WEBSITE_DNS_SERVER"                    = "168.63.129.16"
     },
     local.redis_url != null ? {
-      "AK_SESSION__REDIS__URL"        = local.full_redis_url
+      "AK_SESSION__REDIS__URL" = local.full_redis_url
       # "AK_FULL_REDIS_URL" = local.full_redis_url #on Redis reach through private endpoint, use the direct IP
     } : {},
     local.cosmosdb_table_name != null ? {
-      "AK_SESSION_COSMOSDB_TABLE_NAME"     = local.cosmosdb_table_name
-      "AK_SESSION_COSMOSDB_TABLE_ENDPOINT" = local.cosmosdb_table_endpoint
-      "AK_SESSION_COSMOSDB_PRIMARY_KEY"    = local.cosmosdb_primary_key
-      "AK_SESSION_COSMOSDB_CONNECTION_STRING" = local.cosmosdb_connection_string
-      "AK_SESSION__COSMOSDB__TABLE_NAME" = local.cosmosdb_table_name
+      "AK_SESSION_COSMOSDB_TABLE_NAME"          = local.cosmosdb_table_name
+      "AK_SESSION_COSMOSDB_TABLE_ENDPOINT"      = local.cosmosdb_table_endpoint
+      "AK_SESSION_COSMOSDB_PRIMARY_KEY"         = local.cosmosdb_primary_key
+      "AK_SESSION_COSMOSDB_CONNECTION_STRING"   = local.cosmosdb_connection_string
+      "AK_SESSION__COSMOSDB__TABLE_NAME"        = local.cosmosdb_table_name
       "AK_SESSION__COSMOSDB__CONNECTION_STRING" = local.cosmosdb_connection_string
     } : {}
   )
@@ -149,7 +149,7 @@ resource "azurerm_function_app_flex_consumption" "function" {
   }
 }
 
-# Trigger deployment using Azure CLI (runs after infra is ready)
+# Trigger deployment using Azure CLI (runs after infra is ready) This is the only supported way to deploy to consumption plan function apps
 resource "null_resource" "deploy_function_code" {
   triggers = {
     # Re-run if the zip changes
@@ -159,46 +159,46 @@ resource "null_resource" "deploy_function_code" {
   provisioner "local-exec" {
     command = <<EOT
       set -e
-      
+
       echo "Waiting for Function App to be in 'Running' state..."
       TIMEOUT=300
       ELAPSED=0
       INTERVAL=10
-      
+
       while [ $ELAPSED -lt $TIMEOUT ]; do
         STATE=$(az functionapp show \
           --resource-group ${data.azurerm_resource_group.rg.name} \
           --name ${local.function_app_name} \
           --query "properties.state" \
           -o tsv 2>/dev/null || echo "")
-        
+
         echo "Current state: $STATE"
-        
+
         if [ "$STATE" = "Running" ]; then
           echo "Function App is running!"
           break
         fi
-        
+
         sleep $INTERVAL
         ELAPSED=$((ELAPSED + INTERVAL))
       done
-      
+
       if [ $ELAPSED -ge $TIMEOUT ]; then
         echo "Timeout waiting for Function App to be running"
         exit 1
       fi
-      
+
       echo "Deploying function code..."
       az functionapp deployment source config-zip \
         --resource-group ${data.azurerm_resource_group.rg.name} \
         --name ${local.function_app_name} \
         --src ${var.package_path}
-      
+
       echo "Waiting for deployment to complete and host keys to be available..."
       TIMEOUT=300
       ELAPSED=0
       INTERVAL=10
-      
+
       while [ $ELAPSED -lt $TIMEOUT ]; do
         # Try to get the master key - if successful, host keys are ready
         MASTER_KEY=$(az functionapp keys list \
@@ -206,24 +206,24 @@ resource "null_resource" "deploy_function_code" {
           --name ${local.function_app_name} \
           --query "masterKey" \
           -o tsv 2>/dev/null || echo "")
-        
+
         if [ -n "$MASTER_KEY" ] && [ "$MASTER_KEY" != "null" ] && [ "$MASTER_KEY" != "" ]; then
           echo "Host keys are available! Master key retrieved successfully."
           break
         fi
-        
+
         echo "Host keys not ready yet (attempt $((ELAPSED/INTERVAL + 1))), waiting..."
         sleep $INTERVAL
         ELAPSED=$((ELAPSED + INTERVAL))
       done
-      
+
       if [ $ELAPSED -ge $TIMEOUT ]; then
         echo "WARNING: Timeout waiting for host keys to be created"
         echo "This might be due to VNet integration or storage account access issues"
         echo "Try restarting the function app or checking storage account connectivity"
         exit 1
       fi
-      
+
       echo "Deployment completed successfully!"
     EOT
   }

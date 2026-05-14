@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.3.3"
+version = "0.4.0"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -42,6 +42,9 @@ langgraph = [
     "langchain_community~=0.4.1",
     "litellm~=1.74.9"
 ]
+smolagents = [
+    "smolagents>=1.0.0",
+]
 cli = [
 
 ]
@@ -57,6 +60,17 @@ azure = [
 redis = [
     "redis>=7.1.0",
 ]
+
+neo4j = [
+    "neo4j>=5.0.0",
+]
+chromadb = [
+    "chromadb>=0.4.0",
+]
+trino = [
+    "trino>=0.337.0",
+]
+
 openai = [
     "openai-agents>=0.6.5",
     "openinference-instrumentation-openai-agents>=1.4.0",
@@ -90,6 +104,12 @@ instagram = [
 ]
 telegram = [
     "httpx>=0.27.0"
+]
+teams = [
+    "botbuilder-core>=4.17.0",
+    "botbuilder-schema>=4.17.0",
+    "msal>=1.31.1",
+    "httpx>=0.27.0",
 ]
 gmail = [
     "google-auth>=2.0.0",
@@ -150,4 +170,3 @@ target-version = ["py312"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
-

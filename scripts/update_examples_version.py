@@ -78,7 +78,7 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
     for attempt in range(retries):
         try:
             # Run uv lock in the project directory
-            result = subprocess.run(
+            subprocess.run(
                 ["uv", "lock"],
                 cwd=project_dir,
                 check=True,
@@ -110,7 +110,7 @@ def regenerate_uv_lock(project_dir: Path, dry_run: bool = False, retries: int = 
                 continue
             
         except subprocess.TimeoutExpired:
-            last_error = f"uv lock timed out after 15 seconds"
+            last_error = "uv lock timed out after 15 seconds"
             if attempt < retries - 1:
                 print(f"  ⚠ Attempt {attempt + 1}/{retries} timed out.")
                 print(f"  ⏳ Waiting {retry_delay}s before retry...")
@@ -207,7 +207,7 @@ def main():
     if args.version:
         print(f"Updating agentkernel version to: {args.version}")
     else:
-        print(f"Regenerating lock files without version update")
+        print("Regenerating lock files without version update")
     print()
 
     modified_count = 0
@@ -228,12 +228,12 @@ def main():
                 for match in matches:
                     print(f"  - {match}>=... → {match}>={args.version}")
                 if not args.skip_lock:
-                    print(f"  - Would regenerate uv.lock")
+                    print("  - Would regenerate uv.lock")
                 modified_count += 1
             elif not args.version and args.force_lock:
                 print(f"Would regenerate lock: {relative_path}")
                 if not args.skip_lock:
-                    print(f"  - Would regenerate uv.lock")
+                    print("  - Would regenerate uv.lock")
         else:
             was_modified = False
             if args.version:
@@ -245,23 +245,23 @@ def main():
 
                 # Regenerate uv.lock file
                 if not args.skip_lock:
-                    print(f"  Regenerating uv.lock...")
+                    print("  Regenerating uv.lock...")
                     if regenerate_uv_lock(project_dir, args.dry_run, args.lock_retries, args.lock_retry_delay):
-                        print(f"  ✓ Lock file regenerated")
+                        print("  ✓ Lock file regenerated")
                         lock_success_count += 1
                     else:
-                        print(f"  ✗ Failed to regenerate lock file")
+                        print("  ✗ Failed to regenerate lock file")
                         lock_fail_count += 1
             else:
                 # File wasn't modified but we might need to force lock regeneration
                 if args.force_lock and not args.skip_lock:
                     print(f"  {relative_path} (no version change, regenerating lock)")
-                    print(f"  Regenerating uv.lock...")
+                    print("  Regenerating uv.lock...")
                     if regenerate_uv_lock(project_dir, args.dry_run, args.lock_retries, args.lock_retry_delay):
-                        print(f"  ✓ Lock file regenerated")
+                        print("  ✓ Lock file regenerated")
                         lock_success_count += 1
                     else:
-                        print(f"  ✗ Failed to regenerate lock file")
+                        print("  ✗ Failed to regenerate lock file")
                         lock_fail_count += 1
                 else:
                     if args.version:
@@ -272,7 +272,7 @@ def main():
         if args.version:
             print(f"Dry run complete. {modified_count} file(s) would be modified.")
         else:
-            print(f"Dry run complete. Lock files would be regenerated for all examples.")
+            print("Dry run complete. Lock files would be regenerated for all examples.")
     else:
         if args.version:
             print(f"Updated {modified_count} file(s).")

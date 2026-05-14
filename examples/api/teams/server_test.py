@@ -4,7 +4,6 @@ This script tests the Teams bot locally without requiring a full Teams setup.
 """
 
 import asyncio
-import logging
 
 from agentkernel.core import Config
 from agentkernel.openai import OpenAIModule
@@ -16,9 +15,6 @@ from botbuilder.schema import (
     ChannelAccount,
     ConversationAccount,
 )
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
 
 # Create agent
 general_agent = OpenAIAgent(
@@ -50,9 +46,7 @@ async def test_teams_handler():
     print("Testing Teams handler...")
     print(f"Mock message: {mock_activity.text}")
     print(f"From: {mock_activity.from_property.name}")
-    print(
-        "\nNote: Full integration test requires Azure Bot credentials and Teams environment."
-    )
+    print("\nNote: Full integration test requires Azure Bot credentials and Teams environment.")
     print("Use 'uv run server.py' with proper credentials for real testing.")
 
 

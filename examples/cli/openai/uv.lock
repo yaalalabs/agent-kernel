@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.3.3"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/fb/8b01a8a4aaefb9d6c30a9a58afe5e40c20753bb60ff1e75790753a81e6af/agentkernel-0.3.3.tar.gz", hash = "sha256:30423523be7370678bb5ba2c9060ecaddf46eb554c42614808ed76ae9b0dadc3", size = 167371, upload-time = "2026-04-17T12:28:48.677Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/87/ff7a485d0611da5ce78b67159717854dee7128a387a0cb2abbb7f28443e4/agentkernel-0.4.0.tar.gz", hash = "sha256:e628ed432374b48f4c55ac76f840c8b17390ceca320d8816b9a7e968dccaa292", size = 179480, upload-time = "2026-05-04T10:32:06.644Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/8a/52d670ef39e77414a49e8cb17218bbeb0534358e807975f810cedc164bb0/agentkernel-0.3.3-py3-none-any.whl", hash = "sha256:fe1720ed7e559af82477673c1d3b15bd07e03e903fa1ebd415f275df1e4f50f8", size = 238623, upload-time = "2026-04-17T12:28:47.126Z" },
+    { url = "https://files.pythonhosted.org/packages/23/0e/62433282db09e31b8e0413c2589c38df45a63f9c3f70a9f1c8e00ed67a8c/agentkernel-0.4.0-py3-none-any.whl", hash = "sha256:b5efbffada213aa6c6ac065c1b1caa94eaa776e0d298d7d55c20f778cfd596e0", size = 253858, upload-time = "2026-05-04T10:32:04.191Z" },
 ]
 
 [package.optional-dependencies]
@@ -348,11 +348,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.3.3" }]
+requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.4.0" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.3.3" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.4.0" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -808,14 +808,14 @@ wheels = [
 
 [[package]]
 name = "griffe"
-version = "1.14.0"
+version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/d7/6c09dd7ce4c7837e4cdb11dce980cb45ae3cd87677298dc3b781b6bce7d3/griffe-1.14.0.tar.gz", hash = "sha256:9d2a15c1eca966d68e00517de5d69dd1bc5c9f2335ef6c1775362ba5b8651a13", size = 424684, upload-time = "2025-09-05T15:02:29.167Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/b5/23b91f22b7b3a7f8f62223f6664946271c0f5cb4179605a3e6bbae863920/griffe-1.13.0.tar.gz", hash = "sha256:246ea436a5e78f7fbf5f24ca8a727bb4d2a4b442a2959052eea3d0bfe9a076e0", size = 412759, upload-time = "2025-08-26T13:27:11.422Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/b1/9ff6578d789a89812ff21e4e0f80ffae20a65d5dd84e7a17873fe3b365be/griffe-1.14.0-py3-none-any.whl", hash = "sha256:0e9d52832cccf0f7188cfe585ba962d2674b241c01916d780925df34873bceb0", size = 144439, upload-time = "2025-09-05T15:02:27.511Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/8c/b7cfdd8dfe48f6b09f7353323732e1a290c388bd14f216947928dc85f904/griffe-1.13.0-py3-none-any.whl", hash = "sha256:470fde5b735625ac0a36296cd194617f039e9e83e301fcbd493e2b58382d0559", size = 139365, upload-time = "2025-08-26T13:27:09.882Z" },
 ]
 
 [[package]]

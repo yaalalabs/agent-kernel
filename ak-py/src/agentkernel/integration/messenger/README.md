@@ -286,12 +286,24 @@ async def _send_quick_replies(self, recipient_id: str, text: str, quick_replies:
 
 ### Debug Logging
 
-Enable debug logging to troubleshoot:
+Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+**Using environment variables:**
+```bash
+export AK_LOGGING__AK__LEVEL=DEBUG  # Agent Kernel logger level
+export AK_LOGGING__SYSTEM__LEVEL=DEBUG  # System/root logger level
 ```
+
+**Using config.yaml:**
+```yaml
+logging:
+  ak:
+    level: DEBUG
+  system:
+    level: DEBUG
+```
+
+For more information, see the [Configuration documentation](../../../../docs/docs/core-concepts/configuration.md).
 
 ## API Rate Limits
 

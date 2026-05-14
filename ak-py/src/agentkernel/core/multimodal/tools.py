@@ -11,16 +11,19 @@ from ..model import SystemTool
 from ..tool import ToolContext
 from .storage import AttachmentStorageManager
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("ak.multimodal.tools")
 
 
 def _analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
     """
     Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
-    :param attachment_ids: List of attachment IDs to analyze
-    :param prompt: The question/prompt for analyzing the attachments
-    :return: Only the LLM analysis response text
+    Args:
+        attachment_ids: List of attachment IDs to analyze.
+        prompt: Question or instruction used to analyze the attachments.
+
+    Returns:
+        Only the LLM analysis response text.
     """
     if not attachment_ids:
         return "No attachments provided"
