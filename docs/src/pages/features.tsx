@@ -21,7 +21,7 @@ import {
 import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
 import { SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
-import ParticleSphere from '../components/ParticleSphere';
+import PlantParticlesBackground from '../components/PlantParticlesBackground';
 
 /** Stable fragment ids for in-page navigation (diagram + deep links). */
 const FEATURE_ANCHORS = {
@@ -694,7 +694,7 @@ export default function Features() {
     <Layout
       title="Features"
       description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations.">
-      <ParticleSphere />
+      <PlantParticlesBackground />
       <Hero />
       <main>
         <FeaturesPageMap />

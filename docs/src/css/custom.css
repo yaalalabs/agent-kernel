@@ -1,6 +1,6 @@
 /* =============================================================================
    Agent Kernel Design System — Dark Technical Premium
-   Brand Colors: Blue (#4f7df7) + Purple (#8b5cf6) on Deep Black (#07080c)
+   Brand Colors: Cyan (#00DDFF) + Magenta (#F200FF) on Deep Black (#0D001A)
    Fonts: Instrument Sans (body) + JetBrains Mono (code)
    ============================================================================= */
 
@@ -8,23 +8,23 @@
 
 :root {
   /* Brand Palette */
-  --ak-bg:              #050a1a;
-  --ak-surface:         #0f1425;
-  --ak-surface-raised:  #1a1f35;
-  --ak-surface-overlay: #212b45;
-  --ak-border:          #212b45;
-  --ak-border-accent:   rgba(88, 166, 255, 0.35);
+  --ak-bg:              #0D001A;
+  --ak-surface:         #160025;
+  --ak-surface-raised:  #1D0035;
+  --ak-surface-overlay: #250045;
+  --ak-border:          #250045;
+  --ak-border-accent:   rgba(0, 221, 255, 0.35);
 
   /* Accent Colors - Vibrant Particle Theme */
-  --ak-blue:            #58a6ff;
-  --ak-blue-light:      #79c0ff;
-  --ak-blue-dark:       #3d8bfd;
-  --ak-blue-glow:       rgba(88, 166, 255, 0.2);
-  --ak-purple:          #d299ff;
-  --ak-purple-light:    #e5c3ff;
-  --ak-purple-glow:     rgba(210, 153, 255, 0.2);
-  --ak-gradient:        linear-gradient(135deg, #58a6ff 0%, #d299ff 100%);
-  --ak-gradient-subtle: linear-gradient(135deg, rgba(88,166,255,0.12) 0%, rgba(210,153,255,0.12) 100%);
+  --ak-blue:            #00DDFF;
+  --ak-blue-light:      #40E8FF;
+  --ak-blue-dark:       #00AADE;
+  --ak-blue-glow:       rgba(0, 221, 255, 0.2);
+  --ak-purple:          #F200FF;
+  --ak-purple-light:    #FF66FF;
+  --ak-purple-glow:     rgba(242, 0, 255, 0.2);
+  --ak-gradient:        linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
+  --ak-gradient-subtle: linear-gradient(135deg, rgba(0,221,255,0.12) 0%, rgba(242,0,255,0.12) 100%);
 
   /* Text */
   --ak-text:           #dfe1f0;
@@ -36,23 +36,23 @@
   --ak-aws:    #FF9900;
   --ak-azure:  #0078D4;
 
-  /* Docusaurus primary (brand blue) */
-  --ifm-color-primary:          #58a6ff;
-  --ifm-color-primary-dark:     #3d8bfd;
-  --ifm-color-primary-darker:   #2870f0;
-  --ifm-color-primary-darkest:  #1e5dd8;
-  --ifm-color-primary-light:    #79c0ff;
-  --ifm-color-primary-lighter:  #a0d3ff;
-  --ifm-color-primary-lightest: #c8e1ff;
+  /* Docusaurus primary (brand cyan) */
+  --ifm-color-primary:          #00DDFF;
+  --ifm-color-primary-dark:     #00AADE;
+  --ifm-color-primary-darker:   #0090C0;
+  --ifm-color-primary-darkest:  #007AA3;
+  --ifm-color-primary-light:    #40E8FF;
+  --ifm-color-primary-lighter:  #80F0FF;
+  --ifm-color-primary-lightest: #C0F8FF;
 
   /* Docusaurus layout */
-  --ifm-background-color:         #050a1a;
-  --ifm-background-surface-color: #0f1425;
-  --ifm-navbar-background-color:  #0f1425;
-  --ifm-footer-background-color:  #050a1a;
+  --ifm-background-color:         #0D001A;
+  --ifm-background-surface-color: #160025;
+  --ifm-navbar-background-color:  #160025;
+  --ifm-footer-background-color:  #0D001A;
 
   --ifm-code-font-size: 94%;
-  --docusaurus-highlighted-code-line-bg: rgba(88, 166, 255, 0.15);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
 
   /* Typography */
   --ifm-font-family-base: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -63,61 +63,61 @@
 
   /* Layout */
   --ifm-global-radius: 0.5rem;
-  --ifm-navbar-shadow: 0 1px 0 0 #212b45;
-  --ifm-toc-border-color: #212b45;
+  --ifm-navbar-shadow: 0 1px 0 0 #250045;
+  --ifm-toc-border-color: #250045;
 }
 
 /* Dark mode (same palette — site is dark-first) */
 [data-theme='dark'] {
-  --ifm-color-primary:          #58a6ff;
-  --ifm-color-primary-dark:     #3d8bfd;
-  --ifm-color-primary-darker:   #2870f0;
-  --ifm-color-primary-darkest:  #1e5dd8;
-  --ifm-color-primary-light:    #79c0ff;
-  --ifm-color-primary-lighter:  #a0d3ff;
-  --ifm-color-primary-lightest: #c8e1ff;
+  --ifm-color-primary:          #00DDFF;
+  --ifm-color-primary-dark:     #00AADE;
+  --ifm-color-primary-darker:   #0090C0;
+  --ifm-color-primary-darkest:  #007AA3;
+  --ifm-color-primary-light:    #40E8FF;
+  --ifm-color-primary-lighter:  #80F0FF;
+  --ifm-color-primary-lightest: #C0F8FF;
 
-  --ifm-background-color:         #050a1a;
-  --ifm-background-surface-color: #0f1425;
-  --ifm-navbar-background-color:  #0f1425;
-  --ifm-footer-background-color:  #050a1a;
+  --ifm-background-color:         #0D001A;
+  --ifm-background-surface-color: #160025;
+  --ifm-navbar-background-color:  #160025;
+  --ifm-footer-background-color:  #0D001A;
 
   --ifm-font-color-base: #dfe1f0;
-  --docusaurus-highlighted-code-line-bg: rgba(88, 166, 255, 0.15);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
 }
 
 /* Dark theme doc/blog containers */
 [data-theme='dark'] .docMainContainer_TBSr {
-  background-color: #050a1a;
+  background-color: #0D001A;
 }
 
 [data-theme='dark'] .docsWrapper_hBAB {
-  background-color: #050a1a;
+  background-color: #0D001A;
 }
 
 [data-theme='dark'] .theme-doc-sidebar-container {
-  background-color: #0f1425;
+  background-color: #160025;
 }
 
 [data-theme='dark'] .docItemContainer_Djhp {
-  background-color: #0f1425;
-  border-color: #212b45;
+  background-color: #160025;
+  border-color: #250045;
 }
 
 /* Light mode fallback — keep it clean */
 [data-theme='light'] {
-  --ifm-color-primary:          #3a6ae0;
-  --ifm-color-primary-dark:     #2d5fc4;
-  --ifm-color-primary-darker:   #2555b0;
-  --ifm-color-primary-darkest:  #1e4ba8;
-  --ifm-color-primary-light:    #4f7df7;
-  --ifm-color-primary-lighter:  #6d8ef9;
-  --ifm-color-primary-lightest: #8aa5fb;
+  --ifm-color-primary:          #0099BB;
+  --ifm-color-primary-dark:     #0085A5;
+  --ifm-color-primary-darker:   #007090;
+  --ifm-color-primary-darkest:  #005F7A;
+  --ifm-color-primary-light:    #00AADE;
+  --ifm-color-primary-lighter:  #40C8E8;
+  --ifm-color-primary-lightest: #80E0F0;
 
   --ifm-background-color:        #ffffff;
   --ifm-background-surface-color: #f8fafc;
   --ifm-navbar-background-color: #ffffff;
-  --ifm-footer-background-color: #07080c;
+  --ifm-footer-background-color: #0D001A;
 }
 
 /* =============================================================================
@@ -190,7 +190,7 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: rgba(15, 20, 37, 0.8);
+  background-color: #0D001A;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   height: 60px;
@@ -201,7 +201,7 @@ article {
   .navbar {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background-color: rgba(15, 20, 37, 0.98);
+    background-color: #0D001A;
   }
 }
 
@@ -269,7 +269,7 @@ article {
    ============================================================================= */
 
 .footer {
-  background-color: rgba(15, 20, 37, 0.95);
+  background-color: #0D001A;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 3rem 0 0;
 }
@@ -383,7 +383,7 @@ article {
   background: var(--ak-blue-light);
   color: #05060b;
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(88, 166, 255, 0.3);
+  box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
 }
 
 .button--secondary {
@@ -408,7 +408,7 @@ article {
 
 .prism-code {
   border-radius: 0.5rem;
-  background: #0c0f1a !important;
+  background: #0D001A !important;
   border: 1px solid var(--ak-border);
 }
 
@@ -421,8 +421,8 @@ article {
 }
 
 code {
-  background: rgba(88, 166, 255, 0.1);
-  border: 1px solid rgba(88, 166, 255, 0.2);
+  background: rgba(0, 221, 255, 0.1);
+  border: 1px solid rgba(0, 221, 255, 0.2);
   border-radius: 0.25rem;
   color: var(--ak-blue-light);
   font-size: 0.875em;
@@ -431,9 +431,9 @@ code {
 }
 
 [data-theme='light'] code {
-  background: rgba(58, 106, 224, 0.07);
-  border-color: rgba(58, 106, 224, 0.15);
-  color: #2d5fc4;
+  background: rgba(0, 153, 187, 0.07);
+  border-color: rgba(0, 153, 187, 0.15);
+  color: #0085A5;
 }
 
 /* =============================================================================
@@ -459,7 +459,7 @@ code {
 
 .menu__link--active {
   color: var(--ak-blue) !important;
-  background: rgba(88, 166, 255, 0.1) !important;
+  background: rgba(0, 221, 255, 0.1) !important;
   font-weight: 600;
   border-left: 2px solid var(--ak-blue);
   padding-left: calc(var(--ifm-menu-link-padding-horizontal) - 2px);
@@ -584,8 +584,8 @@ article {
 }
 
 .alert--info {
-  border-color: rgba(88, 166, 255, 0.35);
-  background: rgba(88, 166, 255, 0.08);
+  border-color: rgba(0, 221, 255, 0.35);
+  background: rgba(0, 221, 255, 0.08);
 }
 
 .alert--success {

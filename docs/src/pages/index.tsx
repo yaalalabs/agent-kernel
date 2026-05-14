@@ -8,6 +8,7 @@ import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/dist/ScrollToPlugin';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
 import ParticleSphere from '../components/ParticleSphere';
+import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import {
   MdRocketLaunch,
   MdSwapHoriz,
@@ -1986,7 +1987,7 @@ export default function Home() {
     <Layout
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
-      <ParticleSphere />
+      <PlantParticlesBackground />
       <Hero />
       <main>
         <FrameworksStrip />
