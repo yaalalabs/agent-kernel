@@ -11,8 +11,8 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
-    BaseMultimodalRunRequest,
     BaseRunRequest,
+    BaseChatRequest,
 )
 from .service import AgentService
 
@@ -37,23 +37,27 @@ class RequestBuilder:
         return requests
 
     @staticmethod
-    async def from_base_request_async(req: Union[BaseRunRequest, BaseMultimodalRunRequest]) -> List[Any]:
-        """Build agent request list from BaseRunRequest or BaseMultimodalRunRequest asynchronously.
+    async def from_base_request_async(req: BaseChatRequest) -> List[Any]:
+        """Build agent request list from a BaseChatRequest asynchronously.
 
-        :param req: Base run request (with FileData/ImageData) or BaseMultimodalRunRequest (with UploadFile)
+        :param req: Base chat request (may be a BaseRunRequest with FileData/ImageData
+                    or a multipart/upload-style request defined elsewhere)
         :return: List of AgentRequest objects for processing
         """
         requests = [AgentRequestText(text=req.prompt)]
 
-        if isinstance(req, BaseMultimodalRunRequest):
-            # Handle multipart UploadFile objects
-            await RequestBuilder._add_multipart_files(requests, req.files)
-            await RequestBuilder._add_multipart_images(requests, req.images)
-        else:
-            # Handle FileData/ImageData objects
+        # If this is a BaseRunRequest, it contains FileData/ImageData objects
+        # (base64 or URLs) — handle them synchronously. Otherwise, assume
+        # multipart/upload-style objects and attempt to process them
+        # via the async multipart handlers.
+        if isinstance(req, BaseRunRequest):
             RequestBuilder._add_images(requests, req.images)
             RequestBuilder._add_files(requests, req.files)
             RequestBuilder._attach_additional_context(req, requests)
+        else:
+            # For other subclasses (e.g., upload objects) try async multipart
+            await RequestBuilder._add_multipart_files(requests, getattr(req, "files", None))
+            await RequestBuilder._add_multipart_images(requests, getattr(req, "images", None))
 
         return requests
 
@@ -295,12 +299,11 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.error(500, e, handler.get_response_session_id(None), self.rest_api_mode)
 
-    async def process_async_chat_request(
-        self, req: Union[BaseRunRequest, BaseMultimodalRunRequest]
-    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
-        """Process a chat request asynchronously (unified for both BaseRunRequest and BaseMultimodalRunRequest).
+    async def process_async_chat_request(self, req: BaseChatRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+        """Process a chat request asynchronously.
 
-        :param req: Base run request (with FileData/ImageData) or BaseMultimodalRunRequest (with UploadFile)
+        :param req: Base chat request (could be a BaseRunRequest or another subclass
+                    that represents multipart/upload requests).
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
