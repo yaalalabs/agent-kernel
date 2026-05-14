@@ -14,6 +14,13 @@ interface Message {
   animated?: boolean;
 }
 
+const QUICK_PROMPTS = [
+  'How do I get started with Agent Kernel?',
+  'What frameworks does Agent Kernel support?',
+  'How do I connect Slack or WhatsApp?',
+  'How does multi-agent orchestration work?',
+];
+
 const FloatingChatbot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -133,6 +140,9 @@ const FloatingChatbot: React.FC = () => {
       {/* Trigger Button */}
       {!isMaximized && (
         <div className={styles.chatButtonContainer}>
+          {!isOpen && (
+            <span className={styles.chatButtonLabel}>Ask AI</span>
+          )}
           <button
             className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
             onClick={toggleChat}
@@ -176,11 +186,13 @@ const FloatingChatbot: React.FC = () => {
                   className={styles.avatarLogo}
                 />
               </div>
-              <div>
-                <h3 className={styles.chatTitle}>Agent Kernel</h3>
+              <div className={styles.headerMeta}>
+                <div className={styles.headerEyebrow}>
+                  <h3 className={styles.chatTitle}>Agent Kernel</h3>
+                </div>
                 <p className={styles.chatStatus}>
                   <span className={styles.statusDot} />
-                  Online
+                  Online · Ready to help
                 </p>
               </div>
             </div>
@@ -234,6 +246,10 @@ const FloatingChatbot: React.FC = () => {
           <div className={styles.chatMessages}>
             {messages.length === 0 && (
               <div className={styles.welcomeMessage}>
+                <div className={styles.welcomeEyebrow}>
+                  <span className={styles.welcomeEyebrowDot} />
+                  Agent Kernel AI
+                </div>
                 <div className={styles.welcomeIcon}>
                   <img
                     src="/img/branding/agent-kernel-icon-color.svg"
@@ -243,6 +259,21 @@ const FloatingChatbot: React.FC = () => {
                 </div>
                 <h4>How can I help?</h4>
                 <p>Ask me anything about Agent Kernel — setup, agents, integrations, and more.</p>
+                <div className={styles.promptChips}>
+                  {QUICK_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      className={styles.promptChip}
+                      onClick={() => {
+                        setInputValue(prompt);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {prompt}
+                      <span className={styles.promptChipArrow}>→</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {messages.map((message) => (
