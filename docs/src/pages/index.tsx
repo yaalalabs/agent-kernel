@@ -237,6 +237,7 @@ function AffiliationsStrip() {
             className={styles.affiliationItem}>
             <img src="/img/lf_membership.svg" alt="Linux Foundation Member" className={styles.affiliationLogo} />
           </a>
+          <span className={styles.affiliationSeparator}>●</span>
           <a
             href="https://aaif.io"
             target="_blank"
@@ -1991,6 +1992,7 @@ export default function Home() {
       <Hero />
       <main>
         <FrameworksStrip />
+        <AffiliationsStrip />
         <Levels />
         <Deployment />
         <Community />

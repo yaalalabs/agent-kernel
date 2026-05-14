@@ -207,25 +207,24 @@
 /* ─── Affiliations Strip ───────────────────────────────────────────────────── */
 
 .affiliationsStrip {
-  padding: 1.5rem 0;
-  background: rgba(14, 16, 23, 0.4);
+  padding: 2.5rem 0 3.5rem;
+  text-align: center;
 }
 
 .affiliationsLabel {
   text-align: center;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #5e627d;
-  margin-bottom: 1.1rem;
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 2rem;
+  letter-spacing: -0.01em;
 }
 
 .affiliationsRow {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 3rem;
+  gap: 3.5rem;
   flex-wrap: wrap;
 }
 
@@ -233,18 +232,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.75;
-  transition: opacity 0.15s ease;
+  opacity: 0.9;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .affiliationItem:hover {
   opacity: 1;
+  transform: translateY(-2px);
 }
 
 .affiliationLogo {
-  height: 36px;
+  height: 100px;
   width: auto;
-  max-width: 180px;
+  max-width: 260px;
+}
+
+.affiliationSeparator {
+  color: #ffffff;
+  font-size: 1.5rem;
+  flex-shrink: 0;
 }
 
 /* ─── Frameworks Strip ─────────────────────────────────────────────────────── */
