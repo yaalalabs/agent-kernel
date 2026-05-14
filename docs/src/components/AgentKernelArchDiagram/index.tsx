@@ -30,17 +30,13 @@ const deployTargets = [
   { id: 'docker',    label: 'Docker',           icon: <FaDocker /> },
 ];
 
-/*
- * SVG overlay only handles two simple connectors:
- *   1. Top connector:  Your Code box bottom → hub card top  (~36px gap)
- *   2. Fan connector:  hub card bottom → each deploy box top (~44px gap)
- *
- * The SVG is placed between rows as narrow strips so coordinate alignment is exact.
- * No coordinate ambiguity — each SVG strip is only as tall as the gap it fills.
- */
-
 // 5 deploy targets; their x-center positions spread across 900px
 const DEPLOY_X = [90, 225, 450, 675, 810];
+
+/* ─── Teal accent tokens (match differentiators palette) ────────────────── */
+const TEAL      = 'rgba(0,213,190,1)';
+const TEAL_LINE = 'rgba(0,213,190,0.28)';
+const TEAL_HALO = 'rgba(0,213,190,0.1)';
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
@@ -91,8 +87,7 @@ export default function AgentKernelArchDiagram() {
 
           {/*
             ── Connector 1: topBox → hubCard ──
-            A narrow SVG strip (36px tall) sits between the two rows.
-            viewBox 900×36 maps exactly to the CSS gap height.
+            Narrow 36px strip between the two rows.
           */}
           <svg
             className={styles.connectorSvg}
@@ -102,27 +97,41 @@ export default function AgentKernelArchDiagram() {
           >
             <defs>
               <marker id="akArrow1" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
-                <path d="M0,0 L7,3.5 L0,7 Z" fill="var(--ak-blue)" opacity="0.6" />
+                <path d="M0,0 L7,3.5 L0,7 Z" fill={TEAL} opacity="0.6" />
               </marker>
               <filter id="akGlowTop" x="-200%" y="-200%" width="500%" height="500%">
-                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge>
                   <feMergeNode in="blur" />
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
+              {/* Halo filter — matches differentiators lineGlow */}
+              <filter id="akHaloTop" x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="5" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
               <path id="akDown1" d="M 450 0 L 450 36" />
             </defs>
+            {/* Halo line */}
             <line
               x1="450" y1="0" x2="450" y2="30"
-              stroke="var(--ak-blue)" strokeWidth="1.5" strokeOpacity="0.5"
+              stroke={TEAL_HALO}
+              strokeWidth="8"
+              filter="url(#akHaloTop)"
+            />
+            {/* Main line */}
+            <line
+              x1="450" y1="0" x2="450" y2="30"
+              stroke={TEAL_LINE}
+              strokeWidth="1.5"
               strokeDasharray="30"
               strokeDashoffset={visible ? 0 : 30}
               style={{ transition: 'stroke-dashoffset 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s' }}
               markerEnd="url(#akArrow1)"
             />
             {visible && !reducedMotion && (
-              <circle r="3.5" fill="var(--ak-blue)" filter="url(#akGlowTop)" opacity="0.9">
+              <circle r="3.5" fill={TEAL} filter="url(#akGlowTop)" opacity="0.9">
                 <animateMotion dur="1.8s" repeatCount="indefinite" begin="0.9s">
                   <mpath href="#akDown1" />
                 </animateMotion>
@@ -136,11 +145,15 @@ export default function AgentKernelArchDiagram() {
             style={{ '--layer-delay': '180ms' } as React.CSSProperties}
           >
             <div className={styles.hubHeader}>
-              <img
-                src="/img/branding/agent-kernel-icon-color.svg"
-                alt="Agent Kernel"
-                className={styles.hubLogo}
-              />
+              {/* Logo with pulsing glow — mirrors orbitHub */}
+              <div className={styles.hubLogoWrap}>
+                <div className={styles.hubLogoGlow} />
+                <img
+                  src="/img/branding/agent-kernel-icon-color.svg"
+                  alt="Agent Kernel"
+                  className={styles.hubLogo}
+                />
+              </div>
               <span className={styles.hubLabel}>Agent Kernel Runtime</span>
             </div>
             <div className={styles.modulesGrid}>
@@ -150,7 +163,11 @@ export default function AgentKernelArchDiagram() {
                   className={`${styles.moduleChip} ${visible ? styles.moduleIn : ''}`}
                   style={{ '--mod-delay': `${280 + i * 65}ms` } as React.CSSProperties}
                 >
-                  <span className={styles.moduleIcon}>{mod.icon}</span>
+                  {/* Icon cell with pulsing bg — mirrors iconCell / iconCellBg */}
+                  <div className={styles.moduleIconCell}>
+                    <div className={styles.moduleIconBg} />
+                    <span className={styles.moduleIcon}>{mod.icon}</span>
+                  </div>
                   <span className={styles.moduleLabel}>{mod.label}</span>
                 </div>
               ))}
@@ -159,9 +176,7 @@ export default function AgentKernelArchDiagram() {
 
           {/*
             ── Connector 2: hubCard → deployRow ──
-            A 44px SVG strip — fan of 5 lines from hub center (x=450) to each deploy box.
-            viewBox 900×44 maps exactly to this gap.
-            Lines go from y=0 (hub card bottom) to y=44 (deploy box top).
+            44px SVG fan — 5 curved paths from hub centre to each deploy box.
           */}
           <svg
             className={styles.connectorSvg}
@@ -171,26 +186,38 @@ export default function AgentKernelArchDiagram() {
           >
             <defs>
               <marker id="akArrow2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                <path d="M0,0 L6,3 L0,6 Z" fill="var(--ak-blue)" opacity="0.4" />
+                <path d="M0,0 L6,3 L0,6 Z" fill={TEAL} opacity="0.4" />
               </marker>
               <filter id="akGlowFan" x="-100%" y="-100%" width="300%" height="300%">
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
+                <feGaussianBlur stdDeviation="4" result="blur" />
                 <feMerge>
                   <feMergeNode in="blur" />
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
-              {/* Particle paths — one per deploy target */}
+              <filter id="akHaloFan" x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="5" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              {/* Particle paths */}
               {DEPLOY_X.map((x, i) => (
-                <path
-                  key={i}
-                  id={`akFan${i}`}
-                  d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
-                />
+                <path key={i} id={`akFan${i}`} d={`M 450 0 C 450 22, ${x} 22, ${x} 44`} />
               ))}
             </defs>
 
-            {/* Fan lines: hub center → each deploy box top */}
+            {/* Halo fan lines */}
+            {DEPLOY_X.map((x, i) => (
+              <path
+                key={`halo${i}`}
+                d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
+                fill="none"
+                stroke={TEAL_HALO}
+                strokeWidth="8"
+                filter="url(#akHaloFan)"
+              />
+            ))}
+
+            {/* Main fan lines */}
             {DEPLOY_X.map((x, i) => {
               const dx = x - 450;
               const len = Math.round(Math.sqrt(dx * dx + 44 * 44) + 20);
@@ -199,9 +226,8 @@ export default function AgentKernelArchDiagram() {
                   key={i}
                   d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
                   fill="none"
-                  stroke="var(--ak-blue)"
-                  strokeWidth="1"
-                  strokeOpacity="0.22"
+                  stroke={TEAL_LINE}
+                  strokeWidth="1.5"
                   strokeDasharray={len}
                   strokeDashoffset={visible ? 0 : len}
                   style={{
@@ -212,12 +238,12 @@ export default function AgentKernelArchDiagram() {
               );
             })}
 
-            {/* Particles — staggered to different deploy targets */}
+            {/* Traveling dots — teal, staggered */}
             {visible && !reducedMotion && [0, 2, 4, 1, 3].map((targetIdx, j) => (
               <circle key={j} r="3.5"
-                fill={j % 2 === 0 ? 'var(--ak-blue)' : 'var(--ak-purple)'}
+                fill={TEAL}
                 filter="url(#akGlowFan)"
-                opacity="0.85"
+                opacity="0.9"
               >
                 <animateMotion
                   dur={`${1.6 + j * 0.2}s`}

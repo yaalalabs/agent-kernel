@@ -527,11 +527,13 @@ function BusinessLeaderScenarios() {
   return (
     <div className={styles.blScenarios}>
  
-      {/* ── Tab buttons — big rounded bordered buttons like in the image ── */}
-      <div className={styles.blTabBar}>
+      {/* ── Tab buttons — horizontally scrollable on mobile ── */}
+      <div className={styles.blTabBar} role="tablist" aria-label="Industry scenarios">
         {tabs.map((t) => (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={activeTab === t.id}
             onClick={() => setActiveTab(t.id)}
             className={`${styles.blTab} ${activeTab === t.id ? styles.blTabActive : ''}`}
           >
