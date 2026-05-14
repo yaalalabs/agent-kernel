@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
@@ -270,35 +270,199 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
 }
 
 
+const ORBIT_CARDS = [
+  {
+    icon: <MdSwapHoriz />,
+    color: '#40BBDE',
+    title: 'Framework-Agnostic',
+    desc: 'Swap between OpenAI, CrewAI, LangGraph, and Google ADK with near-zero code change — run all frameworks simultaneously in one runtime.',
+  },
+  {
+    icon: <MdCloud />,
+    color: '#8E5DFF',
+    title: 'Multi-Cloud Native',
+    desc: 'Same agent code deploys to AWS and Azure out of the box. No other AI agent runtime offers this out of the box.',
+  },
+  {
+    icon: <MdSpeed />,
+    color: '#F7A544',
+    title: 'Full Lifecycle',
+    desc: 'Build → Test → Deploy → Monitor. One tool that takes you from a Python script to a multi-AZ production cluster.',
+  },
+  {
+    icon: <MdCode />,
+    color: '#4ADB76',
+    title: 'Lightweight',
+    desc: 'A thin adapter layer, not a heavy abstraction. Bring your existing agent code and wrap it in minutes, not days.',
+  },
+  {
+    icon: <MdSecurity />,
+    color: '#DB4444',
+    title: 'Production-Ready',
+    desc: 'Fault tolerance, guardrails, observability, and session management built in from day one — not bolted on later.',
+  },
+  {
+    icon: <MdMessage />,
+    color: '#73D0EB',
+    title: 'Built-in Messaging',
+    desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail — ship working integrations on day one, not months later.',
+  },
+  {
+    icon: <FaLock />,
+    color: '#B391FF',
+    title: 'Open-Source',
+    desc: 'No usage fees, no proprietary lock-in. Community-driven with full codebase access — fork it, extend it, contribute back.',
+  },
+  {
+    icon: <MdNetworkCheck />,
+    color: '#F7BC77',
+    title: 'Protocol Support',
+    desc: 'MCP and A2A server modes for future-proof agent architectures and full ecosystem compatibility out of the box.',
+  },
+];
+
+function IconCell({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <div
+      className={styles.iconCell}
+      style={{ '--icon-color': color } as React.CSSProperties}
+    >
+      <div className={styles.iconCellBg} />
+      <span className={styles.iconCellGlyph}>{children}</span>
+    </div>
+  );
+}
+
 function Differentiators() {
-  const gridRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hubRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const drawLines = useCallback(() => {
+    const container = containerRef.current;
+    const hub = hubRef.current;
+    const svg = svgRef.current;
+    if (!container || !hub || !svg) return;
+
+    const cRect = container.getBoundingClientRect();
+    const hRect = hub.getBoundingClientRect();
+    const hx = hRect.left + hRect.width / 2 - cRect.left;
+    const hy = hRect.top + hRect.height / 2 - cRect.top;
+
+    svg.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
+
+    svg.innerHTML = `
+      <defs>
+        <filter id="lineGlow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="5" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="dotGlow" x="-300%" y="-300%" width="700%" height="700%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>`;
+
+    const durations = [2.8, 3.4, 2.5, 3.1, 2.9, 3.6, 2.6, 3.2];
+
+    cardRefs.current.forEach((card, i) => {
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      if (r.width === 0) return;
+      const cx = r.left + r.width / 2 - cRect.left;
+      const cy = r.top + r.height / 2 - cRect.top;
+
+      // Quadratic bezier with a slight perpendicular curve
+      const midX = (hx + cx) / 2;
+      const midY = (hy + cy) / 2;
+      const dx = cx - hx;
+      const dy = cy - hy;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const cpX = midX + (-dy / len) * 35;
+      const cpY = midY + (dx / len) * 35;
+      const pathD = `M ${hx} ${hy} Q ${cpX} ${cpY} ${cx} ${cy}`;
+      const pathId = `op${i}`;
+
+      // Halo line
+      const haloPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      haloPath.setAttribute('d', pathD);
+      haloPath.setAttribute('stroke', 'rgba(0,213,190,0.1)');
+      haloPath.setAttribute('stroke-width', '8');
+      haloPath.setAttribute('fill', 'none');
+      haloPath.setAttribute('filter', 'url(#lineGlow)');
+      svg.appendChild(haloPath);
+
+      // Main line
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('id', pathId);
+      path.setAttribute('d', pathD);
+      path.setAttribute('stroke', 'rgba(0,213,190,0.28)');
+      path.setAttribute('stroke-width', '1.5');
+      path.setAttribute('fill', 'none');
+      svg.appendChild(path);
+
+      // Endpoint dot
+      const endDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      endDot.setAttribute('cx', String(cx));
+      endDot.setAttribute('cy', String(cy));
+      endDot.setAttribute('r', '4');
+      endDot.setAttribute('fill', 'rgba(0,213,190,0.55)');
+      endDot.setAttribute('filter', 'url(#dotGlow)');
+      svg.appendChild(endDot);
+
+      // Traveling dot
+      const traveler = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      traveler.setAttribute('r', '3.5');
+      traveler.setAttribute('fill', 'rgba(0,230,210,1)');
+      traveler.setAttribute('filter', 'url(#dotGlow)');
+      const motion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+      motion.setAttribute('dur', `${durations[i]}s`);
+      motion.setAttribute('repeatCount', 'indefinite');
+      motion.setAttribute('begin', `${i * 0.38}s`);
+      const mpath = document.createElementNS('http://www.w3.org/2000/svg', 'mpath');
+      mpath.setAttribute('href', `#${pathId}`);
+      motion.appendChild(mpath);
+      traveler.appendChild(motion);
+      svg.appendChild(traveler);
+    });
+  }, []);
 
   useEffect(() => {
-    const cards = gridRef.current?.querySelectorAll(`.${styles.bentoCard}`);
-    if (!cards || cards.length === 0) return;
+    const timer = setTimeout(drawLines, 80);
+    const ro = new ResizeObserver(drawLines);
+    if (containerRef.current) ro.observe(containerRef.current);
+    window.addEventListener('resize', drawLines);
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+      window.removeEventListener('resize', drawLines);
+    };
+  }, [drawLines]);
 
+  useEffect(() => {
+    const els = containerRef.current?.querySelectorAll(
+      `.${styles.orbitCard}, .${styles.orbitHub}`
+    );
+    if (!els?.length) return;
     gsap.fromTo(
-      cards,
-      {
-        opacity: 0,
-        y: 30,
-      },
+      els,
+      { opacity: 0, scale: 0.88 },
       {
         opacity: 1,
-        y: 0,
-        duration: 0.6,
-        stagger: 0.08,
-        ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        scale: 1,
+        duration: 0.5,
+        stagger: 0.07,
+        ease: 'back.out(1.2)',
         scrollTrigger: {
-          trigger: gridRef.current,
-          start: 'top 70%',
-          end: 'top 30%',
-          scrub: false,
+          trigger: containerRef.current,
+          start: 'top 75%',
           once: true,
         },
+        onComplete: drawLines,
       }
     );
-  }, []);
+  }, [drawLines]);
 
   return (
     <section className={styles.diffSection}>
@@ -309,60 +473,34 @@ function Differentiators() {
             What makes Agent Kernel different from rolling your own or using other platforms.
           </p>
         </div>
-        <div className={styles.bentoGrid} ref={gridRef}>
 
-          <div className={`${styles.bentoCard} ${styles.bentoWide}`}>
-            <div className={styles.bentoIcon}><MdSwapHoriz /></div>
-            <span className={styles.bentoTag}>Core differentiator</span>
-            <h3 className={styles.bentoTitle}>Framework-Agnostic</h3>
-            <p className={styles.bentoDesc}>The only runtime that lets you swap between OpenAI, CrewAI, LangGraph, and Google ADK with near-zero code change — and run all of them simultaneously in a single runtime.</p>
-          </div>
+        <div ref={containerRef} className={styles.orbitScene}>
+          {/* SVG connector lines — drawn dynamically */}
+          <svg ref={svgRef} className={styles.orbitSvg} aria-hidden="true" />
 
-          <div className={`${styles.bentoCard} ${styles.bentoNarrow}`}>
-            <div className={styles.bentoIcon}><MdCloud /></div>
-            <h3 className={styles.bentoTitle}>Multi-Cloud Native</h3>
-            <p className={styles.bentoDesc}>Same agent code deploys to AWS and Azure out of the box. No other AI agent runtime offers this.</p>
-          </div>
-
-          <div className={`${styles.bentoCard} ${styles.bentoThird}`}>
-            <div className={styles.bentoIcon}><MdSpeed /></div>
-            <h3 className={styles.bentoTitle}>Full Lifecycle</h3>
-            <p className={styles.bentoDesc}>Build → Test → Deploy → Monitor. One tool, from Python script to multi-AZ production cluster.</p>
-          </div>
-
-          <div className={`${styles.bentoCard} ${styles.bentoThird}`}>
-            <div className={styles.bentoIcon}><MdCode /></div>
-            <h3 className={styles.bentoTitle}>Lightweight</h3>
-            <p className={styles.bentoDesc}>A thin adapter layer, not a heavy abstraction. Bring your existing agent code and wrap it in minutes.</p>
-          </div>
-
-          <div className={`${styles.bentoCard} ${styles.bentoThird}`}>
-            <div className={styles.bentoIcon}><MdSecurity /></div>
-            <h3 className={styles.bentoTitle}>Production-Ready from Day One</h3>
-            <p className={styles.bentoDesc}>Fault tolerance, guardrails, observability, and session management built in — not bolted on later.</p>
-          </div>
-
-          <div className={`${styles.bentoCard} ${styles.bentoNarrow}`}>
-            <div className={styles.bentoIcon}><MdMessage /></div>
-            <h3 className={styles.bentoTitle}>Built-in Messaging</h3>
-            <p className={styles.bentoDesc}>Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail — reach users on day one, not after months of integration work.</p>
-          </div>
-
-          <div className={`${styles.bentoCard} ${styles.bentoWide}`}>
-            <div className={styles.bentoIcon}><FaLock /></div>
-            <span className={styles.bentoTag}>Apache 2.0</span>
-            <h3 className={styles.bentoTitle}>Open-Source</h3>
-            <p className={styles.bentoDesc}>No usage fees, no proprietary lock-in, community-driven. Full access to the codebase — fork it, extend it, contribute back.</p>
-          </div>
-
-          <div className={`${styles.bentoCard} ${styles.bentoFull}`}>
-            <div className={styles.bentoIcon}><MdNetworkCheck /></div>
-            <div>
-              <h3 className={styles.bentoTitle}>Protocol Support</h3>
-              <p className={styles.bentoDesc}>MCP (Model Context Protocol) server and A2A (Agent-to-Agent) server modes for future-proof agent architectures and ecosystem compatibility.</p>
+          {/* 8 surrounding cards */}
+          {ORBIT_CARDS.map((card, i) => (
+            <div
+              key={i}
+              ref={el => { cardRefs.current[i] = el; }}
+              className={`${styles.orbitCard} ${styles[`orbitPos${i}`]}`}
+              style={{ '--card-color': card.color } as React.CSSProperties}
+            >
+              <IconCell color={card.color}>{card.icon}</IconCell>
+              <h3 className={styles.bentoTitle}>{card.title}</h3>
+              <p className={styles.bentoDesc}>{card.desc}</p>
             </div>
-          </div>
+          ))}
 
+          {/* Central hub */}
+          <div ref={hubRef} className={styles.orbitHub}>
+            <div className={styles.orbitHubGlowCore} />
+            <img
+              src="/img/branding/agent-kernel-icon-color.svg"
+              alt="Agent Kernel"
+              className={styles.orbitHubIcon}
+            />
+          </div>
         </div>
       </div>
     </section>

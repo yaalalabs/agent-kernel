@@ -225,7 +225,7 @@
 
 .diffSection {
   padding: clamp(2.5rem, 8vw, 5rem) 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(4px);
 }
 
 .bentoGrid {
@@ -268,6 +268,62 @@
   flex-shrink: 0;
 }
 
+/* ── Icon cell ───────────────────────────────────────────────── */
+.iconCell {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: filter 0.22s ease, transform 0.22s ease;
+}
+
+/* Pulsing radial bg */
+.iconCellBg {
+  position: absolute;
+  inset: 4px;
+  border-radius: 0.35rem;
+  background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--icon-color, #40bbde) 22%, transparent) 0%, transparent 75%);
+  animation: iconPulse 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* The icon itself */
+.iconCellGlyph {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.55rem;
+  color: var(--icon-color, #40bbde);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--icon-color, #40bbde) 60%, transparent));
+  transition: filter 0.22s ease;
+}
+
+/* Hover state — glow brightens */
+.orbitCard:hover .iconCellGlyph {
+  filter: drop-shadow(0 0 11px color-mix(in srgb, var(--icon-color, #40bbde) 85%, transparent));
+}
+
+.orbitCard:hover .iconCellBg {
+  animation-play-state: paused;
+  opacity: 1;
+}
+
+/* Card border tints to match icon accent on hover */
+.orbitCard:hover {
+  border-color: color-mix(in srgb, var(--card-color, #40bbde) 30%, transparent);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--card-color, #40bbde) 12%, transparent);
+}
+
+@keyframes iconPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50%       { opacity: 1;    transform: scale(1.06); }
+}
+
 .bentoTag {
   display: inline-block;
   font-size: 0.7rem;
@@ -306,6 +362,139 @@
 
 @media (max-width: 640px) {
   .bentoThird { grid-column: span 12; }
+}
+
+/* ─── Orbit Scene ─────────────────────────────────────────────────────────── */
+
+.orbitScene {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas:
+    "c0 c1 c2"
+    "c3 hub c4"
+    "c5 c6 c7";
+  gap: 1.25rem 1.5rem;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
+.orbitSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+/* ── Hub ─────────────────────────────────────────────────────── */
+.orbitHub {
+  grid-area: hub;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  justify-self: center;
+}
+
+/* Radial glow behind the logo */
+.orbitHubGlowCore {
+  position: absolute;
+  inset: -40px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 213, 190, 0.18) 0%,
+    rgba(0, 213, 190, 0.04) 50%,
+    transparent 70%
+  );
+  animation: corePulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+
+.orbitHubIcon {
+  position: relative;
+  z-index: 3;
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(0, 213, 190, 0.6));
+}
+
+@keyframes corePulse {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.1); }
+}
+
+
+/* ── Orbit cards ─────────────────────────────────────────────── */
+.orbitCard {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: 148px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  padding: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(8, 12, 28, 0.72);
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.orbitCard:hover {
+  border-color: rgba(0, 213, 190, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0, 213, 190, 0.07);
+}
+
+
+/* Grid area assignments */
+.orbitPos0 { grid-area: c0; }
+.orbitPos1 { grid-area: c1; }
+.orbitPos2 { grid-area: c2; }
+.orbitPos3 { grid-area: c3; }
+.orbitPos4 { grid-area: c4; }
+.orbitPos5 { grid-area: c5; }
+.orbitPos6 { grid-area: c6; }
+.orbitPos7 { grid-area: c7; }
+
+/* Tablet */
+@media (max-width: 996px) {
+  .orbitScene {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "hub hub"
+      "c0 c1"
+      "c2 c3"
+      "c4 c5"
+      "c6 c7";
+    justify-items: stretch;
+  }
+  .orbitHub {
+    width: 150px;
+    height: 150px;
+    margin: 0 auto 0.5rem;
+  }
+  .orbitHubIcon { width: 60px; height: 60px; }
+  .orbitSvg { display: none; }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .orbitScene {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "hub"
+      "c0" "c1" "c2" "c3"
+      "c4" "c5" "c6" "c7";
+  }
 }
 
 /* ─── Modal ───────────────────────────────────────────────────────────────── */
@@ -483,7 +672,10 @@
   margin-bottom: 1.75rem;
 }
 
-.segmentColumn {}
+.segmentColumn {
+  display: flex;
+  flex-direction: column;
+}
 
 .segmentColumnTitle {
   font-size: 0.75rem;
@@ -703,6 +895,15 @@
     font-size: 1.4rem;
   }
 
+  .iconCell {
+    width: 46px;
+    height: 46px;
+  }
+
+  .iconCellGlyph {
+    font-size: 1.4rem;
+  }
+
   .ctaButtons {
     gap: clamp(0.5rem, 2vw, 0.75rem);
   }
@@ -790,6 +991,15 @@
     border-radius: 0.375rem;
   }
 
+  .iconCell {
+    width: 42px;
+    height: 42px;
+  }
+
+  .iconCellGlyph {
+    font-size: 1.25rem;
+  }
+
   .bentoTitle {
     font-size: 0.875rem;
   }
@@ -874,6 +1084,15 @@
     width: 36px;
     height: 36px;
     font-size: 1rem;
+  }
+
+  .iconCell {
+    width: 38px;
+    height: 38px;
+  }
+
+  .iconCellGlyph {
+    font-size: 1.1rem;
   }
 
   .bentoTitle {
