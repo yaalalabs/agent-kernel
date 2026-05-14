@@ -30,6 +30,7 @@ import {
   MdBolt,
   MdTrendingUp,
   MdRefresh,
+  MdFeedback,
   MdMessage,
   MdScience,
   MdLink,
@@ -1292,10 +1293,19 @@ function Levels() {
                     <p className={styles.flowDesc}>Take actions</p>
                   </div>
                   <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdVisibility className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Observe</h4>
-                    <p className={styles.flowDesc}>Observe the results</p>
+                  <div className={styles.flowSplit}>
+                    <div className={styles.flowSplitPair}>
+                      <div className={styles.flowStep}>
+                        <MdVisibility className={styles.flowIcon} />
+                        <h4 className={styles.flowLabel}>Observe</h4>
+                        <p className={styles.flowDesc}>Observe the results</p>
+                      </div>
+                      <div className={styles.flowStep}>
+                        <MdFeedback className={styles.flowIcon} />
+                        <h4 className={styles.flowLabel}>Get Feedback</h4>
+                        <p className={styles.flowDesc}>Capture signals and outcomes</p>
+                      </div>
+                    </div>
                   </div>
                   <div className={styles.flowArrow}>→</div>
                   <div className={styles.flowStep}>

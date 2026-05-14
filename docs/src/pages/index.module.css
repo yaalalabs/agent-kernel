@@ -1705,6 +1705,26 @@
   margin: 0 0.5rem;
 }
 
+.flowSplit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.flowSplitPair {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.75rem 1.25rem;
+}
+
+.flowSplitPair .flowStep {
+  min-width: 108px;
+}
+
 /* ─── Developer Analogy Styles ────────────────────────────────────────────── */
 
 .developerContent {
@@ -2518,6 +2538,10 @@
     flex-direction: column;
     flex-wrap: wrap;
     gap: 0.75rem;
+  }
+
+  .flowSplitPair {
+    flex-direction: column;
   }
 
   .flowArrow {
