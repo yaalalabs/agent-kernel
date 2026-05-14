@@ -676,9 +676,7 @@ function Levels() {
     if (!selectedLevel) {
       gsap.registerPlugin(ScrollTrigger);
 
-      gsap.set(sectionRef.current, { height: '100vh' });
-      ScrollTrigger.refresh();
-      ScrollTrigger.refresh();
+      const isDesktop = window.innerWidth > 996;
 
       gsap.fromTo(
         [titleRef.current, subtitleRef.current, cardsRef.current],
@@ -696,22 +694,27 @@ function Levels() {
         }
       );
 
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: sectionRef.current,
-          start: 'top top',
-          end: '+=100%',
-          pin: true,
-          pinSpacing: true,
-          scrub: false,
-        },
-      });
+      if (isDesktop) {
+        gsap.set(sectionRef.current, { height: '100vh' });
+        ScrollTrigger.refresh();
 
-      scrollTriggerRef.current = tl.scrollTrigger as ScrollTriggerInstance | null;
+        const tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: 'top top',
+            end: '+=100%',
+            pin: true,
+            pinSpacing: true,
+            scrub: false,
+          },
+        });
 
-      window.addEventListener('wheel', handleWheel, { passive: false });
-      window.addEventListener('touchmove', handleTouchMove, { passive: false });
-      window.addEventListener('keydown', handleKeyDown);
+        scrollTriggerRef.current = tl.scrollTrigger as ScrollTriggerInstance | null;
+
+        window.addEventListener('wheel', handleWheel, { passive: false });
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('keydown', handleKeyDown);
+      }
     }
 
     return () => {

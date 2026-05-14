@@ -907,8 +907,15 @@
  
 @media (max-width: 900px) {
   .cloudGrid {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .cloudGrid {
     grid-template-columns: 1fr;
-    max-width: 500px;
+    max-width: 100%;
   }
 }
 
@@ -2106,10 +2113,6 @@
     grid-column: span 1;
   }
 
-  .cloudGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .valuePropGrid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2150,10 +2153,6 @@
   }
 
   .bentoGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .cloudGrid {
     grid-template-columns: 1fr;
   }
 
@@ -2248,5 +2247,361 @@
 
   .agentFlow {
     flex-direction: row;
+  }
+}
+
+/* =============================================================================
+   Additional Responsive — Tablet (≤ 996px)
+   ============================================================================= */
+
+@media (max-width: 996px) {
+  /* FrameworksStrip — allow wrapping, shrink logos */
+  .frameworksRow {
+    flex-wrap: wrap;
+    gap: 1.5rem 0;
+    justify-content: center;
+  }
+
+  .frameworkItem {
+    flex: 0 0 50%;
+    justify-content: center;
+    gap: 0;
+    padding: 0.5rem 0;
+  }
+
+  .frameworkSeparator {
+    display: none;
+  }
+
+  .frameworkLogoContainer {
+    width: 140px;
+    height: 140px;
+  }
+
+  /* Business Leader value grid — 2 cols on tablet */
+  .blValueGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Affiliations — slightly tighter */
+  .affiliationsRow {
+    gap: 2rem;
+  }
+
+  .affiliationLogo {
+    height: 80px;
+  }
+}
+
+/* =============================================================================
+   Additional Responsive — Mobile (≤ 768px)
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  /* Hero */
+  .heroTagline {
+    font-size: 1.6rem;
+  }
+
+  .heroBody {
+    max-width: 100%;
+    padding: 0 0.5rem;
+  }
+
+  .heroButtons {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .heroButtons .btnPrimary,
+  .heroButtons .btnSecondary {
+    text-align: center;
+  }
+
+  /* FrameworksStrip — 2 per row */
+  .frameworksRow {
+    flex-wrap: wrap;
+    gap: 1rem 0;
+    justify-content: center;
+  }
+
+  .frameworkItem {
+    flex: 0 0 50%;
+    justify-content: center;
+    gap: 0;
+    padding: 0.75rem 0;
+  }
+
+  .frameworkLogoContainer {
+    width: 140px;
+    height: 140px;
+  }
+
+  .frameworksLabel {
+    font-size: 1rem;
+    padding: 0 1rem;
+  }
+
+  .frameworkSeparator {
+    display: none;
+  }
+
+  /* AffiliationsStrip */
+  .affiliationsStrip {
+    padding: 2rem 0;
+  }
+
+  .affiliationsRow {
+    gap: 1.5rem;
+  }
+
+  .affiliationLogo {
+    height: 64px;
+    max-width: 180px;
+  }
+
+  /* Business Leader */
+  .blValueGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .blHighlightCard {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .blHighlightTitle {
+    font-size: 1.4rem;
+  }
+
+  /* agentFlow — column on mobile */
+  .agentFlow {
+    flex-direction: column;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .flowArrow {
+    transform: rotate(90deg);
+    margin: 0;
+  }
+
+  /* CTA section */
+  .ctaSection {
+    padding: 4rem 0;
+  }
+
+  .ctaButtons {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* Levels section */
+  .levelsSection {
+    padding: 3rem 1rem;
+  }
+
+  .levelsPinned {
+    min-height: auto;
+  }
+
+  .levelsTitle {
+    font-size: 1.75rem;
+    margin-bottom: 2rem;
+  }
+
+  .levelsSubtitle {
+    font-size: 1.1rem;
+  }
+
+  .levelsGrid {
+    gap: 0.75rem;
+  }
+
+  /* Level cards — horizontal layout on mobile */
+  .levelCard {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    grid-template-rows: auto auto;
+    gap: 0.2rem 1rem;
+    padding: 1.25rem;
+    align-items: center;
+  }
+
+  .levelCard:hover {
+    transform: none;
+  }
+
+  .levelCardSelected {
+    transform: none;
+  }
+
+  .levelNumber {
+    display: none;
+  }
+
+  .levelImage {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    margin-bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .levelImage img {
+    width: 3rem;
+    height: 3rem;
+    margin: 0;
+  }
+
+  .levelCardTitle {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 1.1rem;
+    align-self: end;
+  }
+
+  .levelCardDescription {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 0.875rem;
+    align-self: start;
+    line-height: 1.5;
+  }
+
+  .levelsHint {
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  /* Content steps */
+  .contentTitle {
+    font-size: 1.4rem;
+  }
+
+  .contentBody {
+    font-size: 1rem;
+  }
+
+  .stepLabel {
+    font-size: 1rem;
+  }
+
+  /* Developer content */
+  .devBulletList {
+    padding-left: 0.5rem;
+  }
+
+  .devBulletText {
+    font-size: 1rem;
+  }
+
+  .developerContent {
+    margin-top: 2.5rem;
+  }
+
+  /* Section shared */
+  .sectionHeader {
+    padding: 0 1rem;
+  }
+}
+
+/* =============================================================================
+   Additional Responsive — Small Mobile (≤ 480px)
+   ============================================================================= */
+
+@media (max-width: 480px) {
+  /* Hero */
+  .heroTagline {
+    font-size: 1.25rem;
+  }
+
+  .heroBody {
+    font-size: 0.95rem;
+  }
+
+  /* FrameworksStrip */
+  .frameworksStrip {
+    padding: 2rem 1rem 3rem;
+  }
+
+  .frameworkLogoContainer {
+    width: 110px;
+    height: 110px;
+  }
+
+  .frameworksLabel {
+    font-size: 0.9rem;
+  }
+
+  /* AffiliationsStrip */
+  .affiliationLogo {
+    height: 50px;
+    max-width: 150px;
+  }
+
+  .affiliationsRow {
+    gap: 1rem;
+  }
+
+  .affiliationSeparator {
+    font-size: 1rem;
+  }
+
+  /* Levels */
+  .levelsTitle {
+    font-size: 1.5rem;
+  }
+
+  .levelsSubtitle {
+    font-size: 1rem;
+  }
+
+  .levelCardTitle {
+    font-size: 1.15rem;
+  }
+
+  .levelCardDescription {
+    font-size: 0.9rem;
+  }
+
+  /* Content */
+  .contentTitle {
+    font-size: 1.25rem;
+  }
+
+  .contentBody {
+    font-size: 0.95rem;
+  }
+
+  /* CTA */
+  .ctaSection {
+    padding: 3.5rem 0;
+  }
+
+  .ctaSubtitle {
+    font-size: 0.95rem;
+    padding: 0 1rem;
+  }
+
+  /* Business Leader scenarios */
+  .blScenarioTitle {
+    font-size: 1.2rem;
+  }
+
+  .blTab {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  /* Cloud grid */
+  .cloudCard {
+    padding: 1.5rem 1.25rem;
+  }
+
+  /* Architecture */
+  .layerContentBox {
+    padding: 1rem;
   }
 }
