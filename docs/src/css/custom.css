@@ -217,6 +217,10 @@ article {
   color: #ffffff;
 }
 
+.navbar__logo {
+  height: 3rem;
+}
+
 /* Nav links */
 .navbar__link {
   font-weight: 500;

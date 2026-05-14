@@ -325,10 +325,10 @@ const config = {
       ],
       image: 'img/card.png',
       navbar: {
-        title: 'Agent Kernel',
+        title: '',
         logo: {
           alt: 'Agent Kernel Logo',
-          src: 'img/branding/agent-kernel-icon-color.svg',
+          src: 'img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg',
         },
         items: [
           { to: '/features', label: 'Features', position: 'left' },
