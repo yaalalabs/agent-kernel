@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
 
-from agentkernel.core.model import BaseRunRequest
+from agentkernel.core.model import BaseMultimodalRunRequest, BaseRunRequest
 
 from ..core import Config
 from ..core.chat_service import ChatService
@@ -57,7 +57,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         @router.post("/api/v1/chat")
         async def run(body: BaseRunRequest):
-            return await self.chat_service.process_chat_request_async(req=body)
+            return await self.chat_service.process_async_chat_request(req=body)
 
         @router.post("/api/v1/chat-multipart")
         async def run_multipart(
@@ -67,12 +67,14 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             files: Optional[List[UploadFile]] = File(None),
             images: Optional[List[UploadFile]] = File(None),
         ):
-            return await self.chat_service.process_multipart_request_async(
+            # Construct BaseMultimodalRunRequest from form parameters
+            req = BaseMultimodalRunRequest(
                 prompt=prompt,
                 agent=agent,
                 session_id=session_id,
                 files=files,
                 images=images,
             )
+            return await self.chat_service.process_async_chat_request(req=req)
 
         return router

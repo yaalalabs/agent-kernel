@@ -2,6 +2,7 @@ import uuid
 from enum import Enum
 from typing import Any, Callable, List, Literal, Optional, Union
 
+from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict
 
 
@@ -141,27 +142,44 @@ class ImageData(BaseModel):
     mime_type: Optional[str] = None
 
 
-class BaseRunRequest(BaseModel):
+class BaseChatRequest(BaseModel):
+    """Base model for chat requests with common fields."""
+
     prompt: str
     agent: Optional[str] = None
     session_id: Optional[str] = None
+
+
+class BaseRunRequest(BaseChatRequest):
+    """Chat request with file and image attachments (base64/URL format)."""
+
     files: Optional[List[FileData]] = None
     images: Optional[List[ImageData]] = None
+    model_config = ConfigDict(extra="allow")
+
+
+class BaseMultimodalRunRequest(BaseChatRequest):
+    """Chat request with multipart file and image uploads (UploadFile format)."""
+
+    files: Optional[List[UploadFile]] = None
+    images: Optional[List[UploadFile]] = None
     model_config = ConfigDict(extra="allow")
 
 
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
     user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
-    body: Optional[BaseRunRequest] = None
+    body: Optional[Union[BaseRunRequest, BaseMultimodalRunRequest]] = None
     model_config = ConfigDict(extra="allow")
 
     @classmethod
-    def from_payload(cls, payload: "BaseRequest | BaseRunRequest | dict[str, Any]") -> "BaseRequest":
+    def from_payload(
+        cls, payload: "BaseRequest | BaseRunRequest | BaseMultimodalRunRequest | dict[str, Any]", body_model: type[BaseChatRequest] = BaseRunRequest
+    ) -> "BaseRequest":
         if isinstance(payload, cls):
             return payload
 
-        if isinstance(payload, BaseRunRequest):
+        if isinstance(payload, body_model):
             return cls(request_id=str(uuid.uuid4()), body=payload)
 
         if isinstance(payload, dict):
@@ -178,8 +196,8 @@ class BaseRequest(BaseModel):
             if not body:
                 return cls(request_id=request_id, user_id=user_id)
 
-            if not isinstance(body, BaseRunRequest):
-                body = BaseRunRequest.model_validate(body)
+            if not isinstance(body, body_model):
+                body = body_model.model_validate(body)
 
             return cls(request_id=request_id, user_id=user_id, body=body)
 

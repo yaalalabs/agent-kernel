@@ -11,6 +11,7 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    BaseMultimodalRunRequest,
     BaseRunRequest,
 )
 from .service import AgentService
@@ -23,8 +24,8 @@ class RequestBuilder:
     _max_file_size = AKConfig.get().api.max_file_size  # 10 MB
 
     @staticmethod
-    def from_base_request(req: BaseRunRequest) -> List[Any]:
-        """Build agent request list from BaseRunRequest.
+    def from_base_request_sync(req: BaseRunRequest) -> List[Any]:
+        """Build agent request list from BaseRunRequest synchronously.
 
         :param req: Base run request containing prompt, images, files, and additional context
         :return: List of AgentRequest objects for processing
@@ -36,21 +37,24 @@ class RequestBuilder:
         return requests
 
     @staticmethod
-    async def from_multipart_async(
-        prompt: str,
-        files: Optional[List[Any]] = None,
-        images: Optional[List[Any]] = None,
-    ) -> List[Any]:
-        """Build agent request list from multipart form data.
+    async def from_base_request_async(req: Union[BaseRunRequest, BaseMultimodalRunRequest]) -> List[Any]:
+        """Build agent request list from BaseRunRequest or BaseMultimodalRunRequest asynchronously.
 
-        :param prompt: Text prompt for the agent
-        :param files: Optional list of uploaded file objects
-        :param images: Optional list of uploaded image objects
+        :param req: Base run request (with FileData/ImageData) or BaseMultimodalRunRequest (with UploadFile)
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(text=prompt)]
-        await RequestBuilder._add_multipart_files(requests, files)
-        await RequestBuilder._add_multipart_images(requests, images)
+        requests = [AgentRequestText(text=req.prompt)]
+
+        if isinstance(req, BaseMultimodalRunRequest):
+            # Handle multipart UploadFile objects
+            await RequestBuilder._add_multipart_files(requests, req.files)
+            await RequestBuilder._add_multipart_images(requests, req.images)
+        else:
+            # Handle FileData/ImageData objects
+            RequestBuilder._add_images(requests, req.images)
+            RequestBuilder._add_files(requests, req.files)
+            RequestBuilder._attach_additional_context(req, requests)
+
         return requests
 
     @staticmethod
@@ -280,7 +284,7 @@ class ChatService:
         handler = AgentHandler()
         try:
             self._validate(req)
-            requests = RequestBuilder.from_base_request(req)
+            requests = RequestBuilder.from_base_request_sync(req)
             handler.initialize(session_id, req.agent)
             result = handler.run_sync(requests)
             return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
@@ -291,18 +295,23 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.error(500, e, handler.get_response_session_id(None), self.rest_api_mode)
 
-    async def process_chat_request_async(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
-        """Process a chat request asynchronously.
+    async def process_async_chat_request(
+        self, req: Union[BaseRunRequest, BaseMultimodalRunRequest]
+    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+        """Process a chat request asynchronously (unified for both BaseRunRequest and BaseMultimodalRunRequest).
 
-        :param req: Base run request with prompt, session_id, agent, and attachments
+        :param req: Base run request (with FileData/ImageData) or BaseMultimodalRunRequest (with UploadFile)
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
         session_id = req.session_id
         handler = AgentHandler()
         try:
-            self._validate(req)
-            requests = RequestBuilder.from_base_request(req)
+            if not session_id:
+                raise ValueError("No session_id is provided in the request")
+            if not req.prompt:
+                raise ValueError("No prompt provided in the request")
+            requests = await RequestBuilder.from_base_request_async(req)
             handler.initialize(session_id, req.agent)
             result = await handler.run_async(requests)
             return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
@@ -311,41 +320,6 @@ class ChatService:
             return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.error(500, e, handler.get_response_session_id(None), self.rest_api_mode)
-
-    async def process_multipart_request_async(
-        self,
-        prompt: str,
-        agent: Optional[str] = None,
-        session_id: Optional[str] = None,
-        files: Optional[List[Any]] = None,
-        images: Optional[List[Any]] = None,
-    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
-        """Process a multipart form request asynchronously.
-
-        :param prompt: Text prompt for the agent
-        :param agent: Optional agent name/identifier
-        :param session_id: Session identifier (required)
-        :param files: Optional list of uploaded file objects
-        :param images: Optional list of uploaded image objects
-        :return: When rest_api_mode=False: tuple of (status_code, response_dict).
-                 When rest_api_mode=True: response_dict only.
-        """
-        handler = AgentHandler()
-        try:
-            if not session_id:
-                raise ValueError("No session_id is provided in the request")
-            if not prompt:
-                raise ValueError("No prompt provided in the request")
-            requests = await RequestBuilder.from_multipart_async(prompt, files, images)
-            handler.initialize(session_id, agent)
-            result = await handler.run_async(requests)
-            return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
-        except ValueError as ve:
-            self._log.error(f"ValueError processing multipart request: {ve}")
-            return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
-        except Exception as e:
-            self._log.error(f"Error processing multipart request: {e}")
             return ResponseBuilder.error(500, e, handler.get_response_session_id(session_id), self.rest_api_mode)
 
     @staticmethod
