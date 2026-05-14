@@ -541,8 +541,9 @@ function CoreFeatures() {
 /* ─── Framework Support ─────────────────────────────────────────────────── */
 
 function FrameworkSupport() {
-  const frameworks = [
+  const integrations = [
     {
+      key: 'openai',
       name: 'OpenAI Agents SDK',
       description: 'Official OpenAI agents framework with full support for tools, handoffs, and streaming.',
       link: '/docs/frameworks/openai',
@@ -557,6 +558,7 @@ function FrameworkSupport() {
       ),
     },
     {
+      key: 'langgraph',
       name: 'LangGraph',
       description: 'Graph-based agent orchestration for complex stateful multi-actor applications.',
       link: '/docs/frameworks/langgraph',
@@ -568,6 +570,7 @@ function FrameworkSupport() {
       ),
     },
     {
+      key: 'google-adk',
       name: 'Google ADK',
       description: "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
       link: '/docs/frameworks/google-adk',
@@ -579,6 +582,7 @@ function FrameworkSupport() {
       ),
     },
     {
+      key: 'crewai',
       name: 'CrewAI',
       description: 'Role-based multi-agent framework for orchestrating collaborative AI workflows.',
       link: '/docs/frameworks/crewai',
@@ -593,6 +597,7 @@ function FrameworkSupport() {
       ),
     },
     {
+      key: 'smolagents',
       name: 'Smolagents',
       description:
         "Hugging Face's Smolagents with first-class support for writing your own coding agents.",
@@ -606,6 +611,7 @@ function FrameworkSupport() {
       ),
     },
     {
+      key: 'livekit',
       name: 'LiveKit',
       description: 'LiveKit provides the complete stack for voice-based AI agents.',
       link: 'https://docs.livekit.io/',
@@ -620,22 +626,51 @@ function FrameworkSupport() {
         />
       ),
     },
-    {
-      name: 'Multi-Framework',
-      description: 'Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.',
-      link: '/docs/frameworks/multi-framework',
-      featured: true,
-      logo: (
-        <img
-          src="/img/branding/agent-kernel-icon-color.svg"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={48}
-          height={48}
-        />
-      ),
-    },
   ];
+
+  const multiFramework = {
+    name: 'Multi-Framework',
+    description: 'Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.',
+    link: '/docs/frameworks/multi-framework',
+    badge: 'Agent Kernel',
+    logo: (
+      <img
+        src="/img/branding/agent-kernel-icon-color.svg"
+        alt=""
+        className={styles.frameworkLogoImg}
+        width={48}
+        height={48}
+      />
+    ),
+  };
+
+  const cardInner = (f: (typeof integrations)[number]) => (
+    <>
+      <div className={styles.frameworkCardHeader}>
+        <div className={styles.frameworkLogo}>{f.logo}</div>
+        <h3 className={styles.frameworkName}>{f.name}</h3>
+      </div>
+      <p className={styles.frameworkDescription}>{f.description}</p>
+      <span className={`${styles.frameworkLink} ${styles.frameworkLinkInline}`}>Learn more →</span>
+    </>
+  );
+
+  const featuredInner = (
+    <>
+      <div className={styles.frameworkFeaturedAccent} aria-hidden />
+      <div className={styles.frameworkFeaturedContent}>
+        <div className={styles.frameworkFeaturedMain}>
+          <div className={styles.frameworkFeaturedMark}>{multiFramework.logo}</div>
+          <div className={styles.frameworkFeaturedText}>
+            <p className={styles.frameworkFeaturedBadge}>{multiFramework.badge}</p>
+            <h3 className={styles.frameworkFeaturedHeading}>{multiFramework.name}</h3>
+            <p className={styles.frameworkFeaturedLead}>{multiFramework.description}</p>
+          </div>
+        </div>
+        <span className={`${styles.frameworkLink} ${styles.frameworkFeaturedCta}`}>Learn more →</span>
+      </div>
+    </>
+  );
 
   return (
     <section id={FEATURE_ANCHORS.frameworks} className={`${styles.section} ${styles.pageAnchor}`}>
@@ -647,35 +682,31 @@ function FrameworkSupport() {
             Use the best framework for each job — and run them all together in a single deployment.
           </p>
         </div>
-        <div className={styles.frameworksGrid}>
-          {frameworks.map((f, i) => {
-            const cardClass = `${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''}`;
-            const inner = (
-              <>
-                <div className={styles.frameworkLogo}>{f.logo}</div>
-                <h3 className={styles.frameworkName}>{f.name}</h3>
-                <p className={styles.frameworkDescription}>{f.description}</p>
-                <span className={styles.frameworkLink}>Learn more →</span>
-              </>
-            );
-            if (f.external) {
-              return (
-                <a
-                  key={i}
-                  href={f.link}
-                  className={cardClass}
-                  target="_blank"
-                  rel="noopener noreferrer">
-                  {inner}
-                </a>
-              );
-            }
-            return (
-              <Link key={i} to={f.link} className={cardClass}>
-                {inner}
-              </Link>
-            );
-          })}
+
+        <div className={styles.frameworkBlock}>
+          <ul className={styles.frameworksGrid}>
+            {integrations.map((f) => (
+              <li key={f.key} className={styles.frameworkGridCell}>
+                {f.external ? (
+                  <a
+                    href={f.link}
+                    className={styles.frameworkCard}
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    {cardInner(f)}
+                  </a>
+                ) : (
+                  <Link to={f.link} className={styles.frameworkCard}>
+                    {cardInner(f)}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <Link to={multiFramework.link} className={styles.frameworkFeaturedRow}>
+            {featuredInner}
+          </Link>
         </div>
       </div>
     </section>
