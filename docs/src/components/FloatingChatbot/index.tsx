@@ -179,22 +179,11 @@ const FloatingChatbot: React.FC = () => {
           {/* Header */}
           <div className={styles.chatHeader}>
             <div className={styles.headerLeft}>
-              <div className={styles.agentAvatar}>
-                <img
-                  src="/img/branding/agent-kernel-icon-color.svg"
-                  alt="Agent Kernel"
-                  className={styles.avatarLogo}
-                />
-              </div>
-              <div className={styles.headerMeta}>
-                <div className={styles.headerEyebrow}>
-                  <h3 className={styles.chatTitle}>Agent Kernel</h3>
-                </div>
-                <p className={styles.chatStatus}>
-                  <span className={styles.statusDot} />
-                  Online · Ready to help
-                </p>
-              </div>
+              <img
+                src="/img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg"
+                alt="Agent Kernel"
+                className={styles.headerLogo}
+              />
             </div>
             <div className={styles.headerActions}>
               <button
