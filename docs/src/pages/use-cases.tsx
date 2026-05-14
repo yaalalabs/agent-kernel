@@ -40,9 +40,11 @@ function Hero() {
           </p>
           <div className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/features">
+              <span className={styles.btnIconSecondary}>→</span>
               Explore Features
             </Link>
           </div>

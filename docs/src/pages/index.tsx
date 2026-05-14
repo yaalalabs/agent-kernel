@@ -95,17 +95,19 @@ function Hero() {
           </p>
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
-              <FaGithub style={{ marginRight: '8px' }} />
+              <span className={styles.btnIconSecondary}><FaGithub /></span>
               View on GitHub
             </Link>
-            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/features">
+            <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/features">
+              <span className={styles.btnIconSecondary}>→</span>
               Explore Features
             </Link>
           </div>
@@ -354,13 +356,6 @@ function Deployment() {
 /* ─── Community / CTA ───────────────────────────────────────────────────── */
 
 function Community() {
-  const links = [
-    { icon: <FaGithub />, name: 'GitHub', description: 'Star us and contribute', url: 'https://github.com/yaalalabs/agent-kernel' },
-    { icon: <FaDiscord />, name: 'Discord', description: 'Join the community', url: 'https://discord.gg/snrPzb46uu' },
-    { icon: <FaPython />, name: 'PyPI', description: 'pip install agentkernel', url: 'https://pypi.org/project/agentkernel/' },
-    { icon: <SiTerraform />, name: 'Terraform', description: 'Official registry modules', url: 'https://registry.terraform.io/modules/yaalalabs' },
-  ];
-
   return (
     <section className={styles.ctaSection}>
       {/* <div className={styles.ctaGlow} /> */}
@@ -373,32 +368,17 @@ function Community() {
           </p>
           <div className={styles.ctaButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
-              <FaGithub style={{ marginRight: '8px' }} />
+              <span className={styles.btnIconSecondary}><FaGithub /></span>
               View on GitHub
             </Link>
-          </div>
-          <div className={styles.communityLinks}>
-            {links.map((l, i) => (
-              <Link
-                key={i}
-                to={l.url}
-                className={styles.communityLink}
-                target="_blank"
-                rel="noopener noreferrer">
-                <span className={styles.communityLinkIcon}>{l.icon}</span>
-                <div>
-                  <div className={styles.communityLinkName}>{l.name}</div>
-                  <div className={styles.communityLinkDesc}>{l.description}</div>
-                </div>
-              </Link>
-            ))}
           </div>
         </div>
       </div>

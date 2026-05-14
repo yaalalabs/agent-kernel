@@ -18,7 +18,7 @@ import {
   MdHealthAndSafety,
   MdCheck,
 } from 'react-icons/md';
-import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
+import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaGithub } from 'react-icons/fa';
 import { SiGmail } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
@@ -98,10 +98,12 @@ function Hero() {
           </p>
           <div className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/use-cases">
-              Find Your Use Case →
+              <span className={styles.btnIconSecondary}>→</span>
+              Find Your Use Case
             </Link>
           </div>
         </div>
@@ -668,16 +670,19 @@ function CTASection() {
           </p>
           <div className={styles.ctaButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/use-cases">
-              Find Your Use Case →
+              <span className={styles.btnIconSecondary}>→</span>
+              Find Your Use Case
             </Link>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
+              <span className={styles.btnIconSecondary}><FaGithub /></span>
               View on GitHub
             </Link>
           </div>
