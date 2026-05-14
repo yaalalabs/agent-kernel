@@ -169,15 +169,19 @@ function FeaturesPageMap() {
   const topGlowId = `${gradId}TGlow`;
   const botGlowId = `${gradId}BGlow`;
 
+  const TEAL      = 'rgba(0,213,190,1)';
+  const TEAL_LINE = 'rgba(0,213,190,0.28)';
+  const TEAL_HALO = 'rgba(0,213,190,0.1)';
+
   const topParticles = [
-    { pathId: `${gradId}T0`, delay: '0.9s', dur: '1.8s', color: '#4f7df7' },
-    { pathId: `${gradId}T1`, delay: '1.5s', dur: '1.4s', color: '#00d4ff' },
-    { pathId: `${gradId}T2`, delay: '1.2s', dur: '1.8s', color: '#8b5cf6' },
+    { pathId: `${gradId}T0`, delay: '0.9s',  dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}T1`, delay: '1.5s',  dur: '1.4s', color: TEAL },
+    { pathId: `${gradId}T2`, delay: '1.2s',  dur: '1.8s', color: TEAL },
   ];
   const botParticles = [
-    { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: '#4f7df7' },
-    { pathId: `${gradId}B1`, delay: '2.5s', dur: '1.4s', color: '#00d4ff' },
-    { pathId: `${gradId}B2`, delay: '1.8s', dur: '1.8s', color: '#8b5cf6' },
+    { pathId: `${gradId}B0`, delay: '2.0s',  dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}B1`, delay: '2.5s',  dur: '1.4s', color: TEAL },
+    { pathId: `${gradId}B2`, delay: '1.8s',  dur: '1.8s', color: TEAL },
   ];
 
   return (
@@ -214,21 +218,33 @@ function FeaturesPageMap() {
           {/* ── Connector: top nodes → hub ── */}
           <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
             <defs>
-              <filter id={topGlowId} x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="2" result="blur" />
+              <filter id={topGlowId} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id={`${topGlowId}Halo`} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               {topLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
             </defs>
+            {/* Halo lines */}
+            {topLines.map(l => (
+              <path key={`halo-${l.id}`} d={l.d} fill="none"
+                stroke={TEAL_HALO} strokeWidth="8"
+                filter={`url(#${topGlowId}Halo)`}
+              />
+            ))}
+            {/* Main lines */}
             {topLines.map(l => (
               <path key={l.id} d={l.d} fill="none"
-                stroke="rgba(79, 125, 247, 0.4)" strokeWidth="1.5"
+                stroke={TEAL_LINE} strokeWidth="1.5"
                 strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
                 style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
               />
             ))}
             {visible && !reducedMotion && topParticles.map((p, i) => (
-              <circle key={i} r="3" fill={p.color} filter={`url(#${topGlowId})`} opacity="0.9">
+              <circle key={i} r="3.5" fill={p.color} filter={`url(#${topGlowId})`} opacity="0.9">
                 <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
                   <mpath href={`#${p.pathId}`} />
                 </animateMotion>
@@ -238,27 +254,43 @@ function FeaturesPageMap() {
 
           {/* ── Hub ── */}
           <div className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ''}`}>
-            <span className={styles.pageMapHubLabel}>Overview</span>
+            <img
+              src="/img/branding/agent-kernel-icon-color.svg"
+              alt="Agent Kernel"
+              className={styles.pageMapHubIcon}
+            />
           </div>
 
           {/* ── Connector: hub → bottom nodes ── */}
           <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
             <defs>
-              <filter id={botGlowId} x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="2" result="blur" />
+              <filter id={botGlowId} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id={`${botGlowId}Halo`} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               {botLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
             </defs>
+            {/* Halo lines */}
+            {botLines.map(l => (
+              <path key={`halo-${l.id}`} d={l.d} fill="none"
+                stroke={TEAL_HALO} strokeWidth="8"
+                filter={`url(#${botGlowId}Halo)`}
+              />
+            ))}
+            {/* Main lines */}
             {botLines.map(l => (
               <path key={l.id} d={l.d} fill="none"
-                stroke="rgba(79, 125, 247, 0.4)" strokeWidth="1.5"
+                stroke={TEAL_LINE} strokeWidth="1.5"
                 strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
                 style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
               />
             ))}
             {visible && !reducedMotion && botParticles.map((p, i) => (
-              <circle key={i} r="3" fill={p.color} filter={`url(#${botGlowId})`} opacity="0.9">
+              <circle key={i} r="3.5" fill={p.color} filter={`url(#${botGlowId})`} opacity="0.9">
                 <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
                   <mpath href={`#${p.pathId}`} />
                 </animateMotion>

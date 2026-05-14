@@ -258,6 +258,9 @@
 
 .pageMapSection {
   padding: 5rem 0 4.5rem;
+  backdrop-filter: blur(4px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .pageMapDiagram {
@@ -285,8 +288,9 @@
   gap: 1.25rem;
 }
 
-/* Center hub */
+/* Center hub — dark glass circle with teal glow */
 .pageMapHub {
+  position: relative;
   align-self: center;
   flex-shrink: 0;
   width: 7.25rem;
@@ -296,32 +300,69 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(14, 16, 23, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.22);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: rgba(8, 12, 28, 0.72);
+  border: 1px solid rgba(0, 213, 190, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 0 28px rgba(0, 213, 190, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   pointer-events: none;
   opacity: 0;
+  overflow: hidden;
+}
+
+/* Pulsing radial core — mirrors orbitHubGlowCore */
+.pageMapHub::before {
+  content: '';
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 213, 190, 0.2) 0%,
+    rgba(0, 213, 190, 0.05) 50%,
+    transparent 70%
+  );
+  animation: pmCorePulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes pmCorePulse {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.12); }
+}
+
+.pageMapHubIcon {
+  position: relative;
+  z-index: 1;
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(0, 213, 190, 0.6));
 }
 
 .pageMapHubLabel {
+  position: relative;
+  z-index: 1;
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #ffffff;
+  color: #00d5be;
+  text-shadow: 0 0 10px rgba(0, 213, 190, 0.6);
 }
 
 .pageMapHubSub {
+  position: relative;
+  z-index: 1;
   font-size: 0.72rem;
   font-weight: 600;
-  color: #5e627d;
+  color: #94a3b8;
   margin-top: 0.2rem;
   letter-spacing: 0.06em;
   text-transform: lowercase;
 }
 
+/* Node cards — dark glassmorphism matching orbitCard */
 .pageMapSection .pageMapNode {
   appearance: none;
   -webkit-appearance: none;
@@ -333,14 +374,14 @@
   text-align: left;
   cursor: pointer;
   font-family: var(--ifm-font-family-base);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0.875rem;
+  background: rgba(8, 12, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
   padding: 1.5rem 1.25rem;
-  background: rgba(14, 16, 23, 0.1);
   color: #dfe1f0;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -349,25 +390,26 @@
 }
 
 .pageMapSection .pageMapNode:hover {
-  transform: translateY(-4px);
-  border-color: rgba(79, 125, 247, 0.25);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, rgba(0, 213, 190, 1) 30%, transparent);
+  box-shadow: 0 8px 28px rgba(0, 213, 190, 0.08);
 }
 
 .pageMapSection .pageMapNode:focus-visible {
-  outline: 2px solid #4f7df7;
+  outline: 2px solid rgba(0, 213, 190, 0.8);
   outline-offset: 3px;
 }
 
-/* Section index pills */
+/* Section index pills — teal accent */
 .pageMapNodeNumber {
   display: inline-block;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
-  border: 1px solid rgba(0, 212, 255, 0.18);
+  color: #00d5be;
+  background: rgba(0, 213, 190, 0.08);
+  border: 1px solid rgba(0, 213, 190, 0.2);
   border-radius: 999px;
   padding: 0.15rem 0.5rem;
   margin-bottom: 0.1rem;
@@ -407,13 +449,14 @@
 }
 
 [data-theme='light'] .pageMapSection .pageMapNode {
-  background: #ffffff;
-  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(0, 213, 190, 0.18);
   color: #0f172a;
 }
 
 [data-theme='light'] .pageMapSection .pageMapNode:hover {
-  border-color: rgba(79, 125, 247, 0.35);
+  border-color: rgba(0, 180, 160, 0.4);
+  box-shadow: 0 8px 28px rgba(0, 180, 160, 0.1);
 }
 
 [data-theme='light'] .pageMapNodeTitle {
@@ -425,29 +468,30 @@
 }
 
 [data-theme='light'] .pageMapNodeNumber {
-  color: #0d6c82;
-  background: rgba(0, 180, 216, 0.1);
-  border-color: rgba(0, 180, 216, 0.22);
+  color: #00897b;
+  background: rgba(0, 180, 160, 0.1);
+  border-color: rgba(0, 180, 160, 0.24);
 }
 
 [data-theme='light'] .pageMapHub {
-  background: rgba(79, 125, 247, 0.08);
-  border-color: rgba(79, 125, 247, 0.28);
+  background: rgba(0, 213, 190, 0.06);
+  border-color: rgba(0, 180, 160, 0.35);
 }
 
 [data-theme='light'] .pageMapHubLabel {
-  color: #3d63c9;
+  color: #00897b;
+  text-shadow: none;
 }
 
 [data-theme='light'] .pageMapHubSub {
   color: #64748b;
 }
 
-/* ─── Page map entrance animations ──────────────────────────────────────────── */
+/* ─── Page map entrance animations — scale + opacity (mirrors differentiators) */
 
 @keyframes pageMapNodeReveal {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: scale(0.88) translateY(14px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 
 @keyframes pageMapHubReveal {
