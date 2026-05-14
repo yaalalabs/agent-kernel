@@ -21,9 +21,15 @@ async def mcp_client():
         stderr=sys.stderr,
     )
     await asyncio.sleep(10)
-    test_endpnt = os.getenv("AK_TEST_ENDPOINT")
-    log.info(f"Test endpoint: {test_endpnt}")
-    client = MCPHttpClient(server_url=test_endpnt)
+    test_endpoint = os.getenv("AK_TEST_ENDPOINT")
+    log.info(f"Test endpoint: {test_endpoint}")
+
+    if test_endpoint and "/api/v1/chat" in test_endpoint:
+        mcp_endpoint = test_endpoint.replace("/api/v1/chat", "/api/v1/mcp")
+    else:
+        mcp_endpoint = test_endpoint
+    log.info(f"MCP endpoint: {mcp_endpoint}")
+    client = MCPHttpClient(server_url=mcp_endpoint)
     await client.init()
     try:
         yield client
