@@ -2,7 +2,6 @@ import uuid
 from enum import Enum
 from typing import Any, Callable, List, Literal, Optional, Union
 
-from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict
 
 
@@ -157,29 +156,18 @@ class BaseRunRequest(BaseChatRequest):
     images: Optional[List[ImageData]] = None
     model_config = ConfigDict(extra="allow")
 
-
-class BaseMultimodalRunRequest(BaseChatRequest):
-    """Chat request with multipart file and image uploads (UploadFile format)."""
-
-    files: Optional[List[UploadFile]] = None
-    images: Optional[List[UploadFile]] = None
-    model_config = ConfigDict(extra="allow")
-
-
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
     user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
-    body: Optional[Union[BaseRunRequest, BaseMultimodalRunRequest]] = None
+    body: Optional[BaseRunRequest] = None
     model_config = ConfigDict(extra="allow")
 
     @classmethod
-    def from_payload(
-        cls, payload: "BaseRequest | BaseRunRequest | BaseMultimodalRunRequest | dict[str, Any]", body_model: type[BaseChatRequest] = BaseRunRequest
-    ) -> "BaseRequest":
+    def from_payload(cls, payload: "BaseRequest | BaseRunRequest | dict[str, Any]") -> "BaseRequest":
         if isinstance(payload, cls):
             return payload
 
-        if isinstance(payload, body_model):
+        if isinstance(payload, BaseRunRequest):
             return cls(request_id=str(uuid.uuid4()), body=payload)
 
         if isinstance(payload, dict):
@@ -196,8 +184,8 @@ class BaseRequest(BaseModel):
             if not body:
                 return cls(request_id=request_id, user_id=user_id)
 
-            if not isinstance(body, body_model):
-                body = body_model.model_validate(body)
+            if not isinstance(body, BaseRunRequest):
+                body = BaseRunRequest.model_validate(body)
 
             return cls(request_id=request_id, user_id=user_id, body=body)
 
