@@ -6,9 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[api,crewai,redis,mcp]>=0.4.0",
-    "openai<1.107.1",
-    "openai-agents<=0.3.3",
-    "crewai==0.165.1",
+    
     
 ]
 
@@ -18,6 +16,12 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+]
+
+mcp=[
+    "openai<1.107.1",
+    "openai-agents<=0.3.3",
+    "crewai==0.165.1",
 ]
 
 [tool.uv]

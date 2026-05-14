@@ -10,7 +10,8 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-     
+      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[redis,langgraph,test] || true
+      uv pip install --group langgraph --target=dist/data
     fi
     cp -r lambda.py custom_agent.py config.yaml dist/data
     popd || exit 1

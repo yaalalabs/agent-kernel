@@ -6,14 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "agentkernel[langgraph,redis]>=0.4.0",
-    "langchain-litellm>=0.2.2",
-    "langchain-openai==1.1.6",          
-    "langgraph-checkpoint==3.0.1",
-    "langgraph-prebuilt==1.0.5",  
-    "langgraph-sdk==0.3.1",
-    "langgraph-supervisor>=0.0.29",
-    "langsmith==0.5.0",
-    "openai>=1.99.1",             
+          
 ]
 
 [dependency-groups]
@@ -22,6 +15,17 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+]
+
+langgraph=[
+    "langchain-litellm>=0.2.2",
+    "langchain-openai==1.1.6",          
+    "langgraph-checkpoint==3.0.1",
+    "langgraph-prebuilt==1.0.5",  
+    "langgraph-sdk==0.3.1",
+    "langgraph-supervisor>=0.0.29",
+    "langsmith==0.5.0",
+    "openai>=1.99.1",       
 ]
 
 [tool.uv]

@@ -184,6 +184,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+crewai = [
+    { name = "crewai" },
+]
 dev = [
     { name = "agentkernel", extra = ["test"] },
     { name = "black" },
@@ -198,6 +201,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+crewai = [{ name = "crewai", specifier = "==0.165.1" }]
 dev = [
     { name = "agentkernel", extras = ["test"], specifier = ">=0.4.0" },
     { name = "black", specifier = ">=23.0.0" },

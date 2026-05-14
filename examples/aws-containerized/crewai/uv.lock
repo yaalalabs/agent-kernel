@@ -230,11 +230,13 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["api", "crewai", "redis"] },
-    { name = "crewai" },
-    { name = "python-multipart" },
 ]
 
 [package.dev-dependencies]
+crewai = [
+    { name = "crewai" },
+    { name = "python-multipart" },
+]
 dev = [
     { name = "agentkernel", extra = ["test"] },
     { name = "black" },
@@ -243,13 +245,13 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "agentkernel", extras = ["crewai", "api", "redis"], specifier = ">=0.4.0" },
+requires-dist = [{ name = "agentkernel", extras = ["crewai", "api", "redis"], specifier = ">=0.4.0" }]
+
+[package.metadata.requires-dev]
+crewai = [
     { name = "crewai", specifier = "==0.165.1" },
     { name = "python-multipart" },
 ]
-
-[package.metadata.requires-dev]
 dev = [
     { name = "agentkernel", extras = ["test"], specifier = ">=0.4.0" },
     { name = "black", specifier = ">=23.0.0" },
