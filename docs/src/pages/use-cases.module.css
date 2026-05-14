@@ -854,16 +854,21 @@
 
 @media (max-width: 768px) {
   .hero {
-    padding: clamp(3rem, 10vw, 5rem) 1rem;
+    padding: clamp(3.5rem, 9vw, 5rem) 1.5rem;
     min-height: auto;
   }
 
+  .heroContent {
+    max-width: 34rem;
+  }
+
   .heroTitle {
-    font-size: clamp(1.75rem, 6vw, 3rem);
+    font-size: clamp(2rem, 6vw, 3.2rem);
   }
 
   .heroSubtitle {
-    font-size: clamp(0.85rem, 2vw, 1rem);
+    font-size: clamp(0.9rem, 2.5vw, 1rem);
+    margin-bottom: 2rem;
   }
 
   .diffGrid {
@@ -920,16 +925,19 @@
   }
 
   .heroContent {
-    padding: 0 1rem;
+    padding: 0;
+    max-width: 100%;
   }
 
   .heroTitle {
-    font-size: clamp(1.5rem, 5vw, 2.5rem);
+    font-size: clamp(1.75rem, 7vw, 2.5rem);
   }
 
   .heroSubtitle {
-    font-size: clamp(0.8rem, 1.8vw, 0.95rem);
+    font-size: clamp(0.875rem, 4vw, 0.975rem);
     max-width: 100%;
+    line-height: 1.7;
+    margin-bottom: 1.75rem;
   }
 
   .modalContainer {
@@ -1060,20 +1068,37 @@
 }
 
 @media (max-width: 480px) {
+  .hero {
+    padding: 2.75rem 1rem;
+  }
+
+  .heroTitle {
+    font-size: clamp(1.5rem, 8.5vw, 1.875rem);
+    margin-bottom: 0.65rem;
+  }
+
+  .heroSubtitle {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    margin-bottom: 1.5rem;
+  }
+
   .heroButtons {
     flex-direction: column;
     gap: 0.5rem;
+    width: 100%;
   }
 
   .heroButtons a {
     width: 100%;
+    min-width: 0 !important;
     text-align: center;
   }
 
   .btnPrimary, .btnSecondary {
-    padding: 0.6rem 1rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.1em;
+    padding: 0.7rem 1rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
   }
 
   .bentoCard {
