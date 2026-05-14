@@ -7,9 +7,8 @@
 # /api/v1/app             - Custom GET endpoint
 # /api/v1/app_info        - Custom POST endpoint
 module "serverless_agents" {
-  source = "../../../../ak-deployment/ak-gcp/serverless"
-  # source  = "yaalalabs/ak-serverless/google"  # uncomment for registry
-  # version = "0.2.14"                          # uncomment for registry
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   # Basic Cloud Run configuration
   project_id           = var.project_id

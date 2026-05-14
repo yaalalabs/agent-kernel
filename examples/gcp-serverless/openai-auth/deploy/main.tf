@@ -1,20 +1,6 @@
-# Cloud Run (serverless) module configuration for deploying OpenAI Agent with authentication.
-#
-# GCP equivalent of AWS Lambda Authorizer — auth is enforced at the API Gateway level
-# using Google Identity Tokens (OIDC). The gateway validates the JWT against Google's
-# public keys before forwarding to Cloud Run, so no auth code is needed in the app.
-#
-# AWS:  Client → API Gateway → Lambda Authorizer (custom code) → Lambda (app)
-# GCP:  Client → API Gateway (ESPv2 JWT validation) → Cloud Run (app)
-#
-# Endpoints exposed via API Gateway:
-# /api/v1/chat     - Agent execution (requires valid Google Identity Token)
-# /api/v1/app      - Custom GET endpoint (requires valid Google Identity Token)
-# /api/v1/app_info - Custom POST endpoint (requires valid Google Identity Token)
 module "serverless_agents" {
-  source = "../../../../ak-deployment/ak-gcp/serverless"
-  # source  = "yaalalabs/ak-serverless/google"  # uncomment for registry
-  # version = "0.2.14"                          # uncomment for registry
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   # Basic Cloud Run configuration
   project_id           = var.project_id

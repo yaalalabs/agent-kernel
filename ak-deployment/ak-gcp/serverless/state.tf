@@ -72,8 +72,7 @@ locals {
 
 # VPC — only create if no network_id provided
 module "vpc" {
-  source = "../common/modules/vpc"
-  # source = "yaalalabs/ak-common/google//modules/vpc"  # uncomment for registry
+  source = "yaalalabs/ak-common/google//modules/vpc"
   count = var.network_id == null ? 1 : 0
 
   project_id          = var.project_id
@@ -86,8 +85,7 @@ module "vpc" {
 
 # Docker image — build and push to Artifact Registry, then deploy to Cloud Run
 module "docker_image" {
-  source = "../common/modules/artifact-registry"
-  # source = "yaalalabs/ak-common/google//modules/artifact-registry"  # uncomment for registry
+  source = "yaalalabs/ak-common/google//modules/artifact-registry"
 
   project_id    = var.project_id
   region        = var.region
@@ -99,8 +97,7 @@ module "docker_image" {
 
 # Redis — optional session cache
 module "redis" {
-  source = "../common/modules/memorystore"
-  # source = "yaalalabs/ak-common/google//modules/memorystore"  # uncomment for registry
+  source = "yaalalabs/ak-common/google//modules/memorystore"
   count = var.create_redis_cluster ? 1 : 0
 
   project_id    = var.project_id
@@ -113,8 +110,7 @@ module "redis" {
 
 # Firestore — optional session storage (GCP equivalent of DynamoDB)
 module "firestore" {
-  source = "../common/modules/firestore"
-  # source = "yaalalabs/ak-common/google//modules/firestore"  # uncomment for registry
+  source = "yaalalabs/ak-common/google//modules/firestore"
   count = var.create_firestore_database ? 1 : 0
 
   project_id    = var.project_id

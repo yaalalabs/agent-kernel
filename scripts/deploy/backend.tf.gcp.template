@@ -1,0 +1,7 @@
+terraform {
+  backend "gcs" {
+    bucket = "{bucket_name}"
+    project = "{project_id}"
+    prefix = "{state_key}"
+  }
+}

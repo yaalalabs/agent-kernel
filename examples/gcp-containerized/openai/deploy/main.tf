@@ -4,9 +4,8 @@
 # /api/v1/app - Custom endpoint created via a direct route addition
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containerized_agents" {
-  source = "../../../../ak-deployment/ak-gcp/containerized"
-  # source  = "yaalalabs/ak-containerized/google"  # uncomment for registry
-  # version = "0.2.14"                             # uncomment for registry
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.2.14"
 
   # Basic Cloud Run configuration
   project_id           = var.project_id

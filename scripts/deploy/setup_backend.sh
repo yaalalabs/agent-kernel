@@ -201,6 +201,46 @@ setup_azure() {
 }
 
 ########################################
+# GCP SETUP
+########################################
+setup_gcp() {
+	GCP_BUCKET=${GCP_BUCKET:-$(yq e '.gcp.state.bucket_name' "$CONFIG_FILE")}
+	GCP_PROJECT=${GCP_PROJECT:-$(yq e '.gcp.state.project_id' "$CONFIG_FILE")}
+	GCP_REGION=${GCP_REGION:-$(yq e '.gcp.state.region' "$CONFIG_FILE")}
+
+	echo "Setting up GCP backend..."
+	echo "Bucket: $GCP_BUCKET"
+	echo "Project: $GCP_PROJECT"
+	echo "Region: $GCP_REGION"
+
+	# Check bucket
+	if gcloud storage buckets describe "gs://$GCP_BUCKET" --project "$GCP_PROJECT" >/dev/null 2>&1; then
+		echo "GCS bucket exists"
+	else
+		echo "Creating GCS bucket..."
+
+		gcloud storage buckets create "gs://$GCP_BUCKET" \
+			--project="$GCP_PROJECT" \
+			--location="$GCP_REGION" \
+			--uniform-bucket-level-access
+
+		echo "Enabling versioning..."
+		gcloud storage buckets update "gs://$GCP_BUCKET" \
+			--versioning
+
+		echo "GCS bucket created"
+	fi
+
+	echo ""
+	echo "terraform {"
+	echo "  backend \"gcs\" {"
+	echo "    bucket = \"$GCP_BUCKET\""
+	echo "    prefix = \"your-project\""
+	echo "  }"
+	echo "}"
+}
+
+########################################
 # MAIN
 ########################################
 # Default override variables (empty)
