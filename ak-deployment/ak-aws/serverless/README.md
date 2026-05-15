@@ -438,11 +438,11 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 |------|-------------|
 | `agent_invoke_url` | Invoke URL for the agent chat endpoint |
 | `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
-| `lambda_function_arn` | ARN of the request-handler Lambda function |
-| `lambda_function_name` | Name of the request-handler Lambda function |
-| `lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
-| `lambda_role_arn` | ARN of the request-handler Lambda execution role |
-| `lambda_role_name` | Name of the request-handler Lambda execution role |
+| `request_handler_lambda_function_arn` | ARN of the request-handler Lambda function |
+| `request_handler_lambda_function_name` | Name of the request-handler Lambda function |
+| `request_handler_lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
+| `request_handler_lambda_role_arn` | ARN of the request-handler Lambda execution role |
+| `request_handler_lambda_role_name` | Name of the request-handler Lambda execution role |
 | `api_gateway_id` | API Gateway REST API ID |
 | `api_gateway_stage_name` | API Gateway stage name |
 | `api_gateway_execution_arn` | Execution ARN of the API Gateway REST API |
