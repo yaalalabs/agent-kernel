@@ -1471,40 +1471,241 @@
   margin: 0;
 }
 
-/* ─── Messaging ───────────────────────────────────────────────────────────── */
+/* ─── Messaging hub & spokes (orbit) ──────────────────────────────────────── */
 
-.messagingGrid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 1rem;
+.messagingSection {
+  position: relative;
+  backdrop-filter: blur(4px);
 }
 
-.messagingCard {
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0.875rem;
-  padding: 1.75rem 1rem;
-  text-decoration: none;
+.messagingSection::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: min(520px, 75vh);
+  pointer-events: none;
+}
+
+.msgOrbitScene {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    'hub hub hub'
+    'c0 c1 c2'
+    'c3 c4 c5'
+    '. c6 .';
+  gap: 1.35rem 1.25rem;
+  align-items: stretch;
+  justify-items: stretch;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0.75rem 0 0.5rem;
+}
+
+.msgOrbitSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+.msgOrbitHub {
+  grid-area: hub;
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  align-self: center;
+  justify-self: center;
+  text-align: center;
 }
 
-.messagingCard:hover {
-  transform: translateY(-4px);
+.msgOrbitHubAnchor {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msgOrbitHubGlow {
+  position: absolute;
+  inset: -36px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(139, 92, 246, 0.22) 0%,
+    rgba(0, 213, 190, 0.1) 45%,
+    transparent 68%
+  );
+  animation: msgCorePulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.msgOrbitHubIcon {
+  position: relative;
+  z-index: 1;
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.45));
+}
+
+.msgOrbitHubCaption {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e8c468;
+  text-shadow: 0 0 24px rgba(232, 196, 104, 0.25);
+}
+
+.msgOrbitCard {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 0.35rem;
+  border: none;
+  border-radius: 0;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
   text-decoration: none;
 }
 
-.messagingIcon {
-  font-size: 2rem;
+.msgOrbitCard:hover {
+  text-decoration: none;
 }
 
-.messagingName {
-  font-size: 0.875rem;
+.msgOrbitGlyph {
+  width: 84px;
+  height: 84px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.35rem;
+  line-height: 0;
+  color: var(--msg-brand, #00d4ff);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--msg-brand, #00d4ff) 12%, rgba(8, 12, 28, 0.55)) 0%,
+    rgba(8, 12, 28, 0.5) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--msg-brand, #00d4ff) 35%, rgba(255, 255, 255, 0.12));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 1px color-mix(in srgb, var(--msg-brand, #00d4ff) 8%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.25, 0.64, 1),
+    border-color 0.22s ease,
+    background 0.22s ease,
+    box-shadow 0.28s ease,
+    filter 0.22s ease;
+}
+
+.msgOrbitGlyph svg {
+  display: block;
+  filter: saturate(1.22) brightness(1.12)
+    drop-shadow(0 0 9px color-mix(in srgb, currentColor 30%, transparent));
+}
+
+.msgOrbitCard:hover .msgOrbitGlyph svg {
+  filter: saturate(1.35) brightness(1.2)
+    drop-shadow(0 0 14px color-mix(in srgb, currentColor 40%, transparent));
+}
+
+.msgOrbitCard:hover .msgOrbitGlyph {
+  transform: scale(1.06) translateY(-4px);
+  border-color: color-mix(in srgb, var(--msg-brand, #00d4ff) 70%, rgba(255, 255, 255, 0.2));
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--msg-brand, #00d4ff) 22%, rgba(8, 12, 28, 0.45)) 0%,
+    color-mix(in srgb, var(--msg-brand, #00d4ff) 8%, rgba(8, 12, 28, 0.55)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 14px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in srgb, var(--msg-brand, #00d4ff) 35%, transparent),
+    0 0 20px color-mix(in srgb, var(--msg-brand, #00d4ff) 18%, transparent);
+  filter: none;
+}
+
+.msgOrbitCard:active .msgOrbitGlyph {
+  transform: scale(1.02) translateY(-1px);
+  transition-duration: 0.08s;
+}
+
+.msgOrbitCard:focus-visible {
+  outline: none;
+}
+
+.msgOrbitCard:focus-visible .msgOrbitGlyph {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 4px;
+}
+
+.msgOrbitLabel {
+  font-size: 0.82rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #e2e8f0;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.msgOrbitPos0 {
+  grid-area: c0;
+}
+.msgOrbitPos1 {
+  grid-area: c1;
+}
+.msgOrbitPos2 {
+  grid-area: c2;
+}
+.msgOrbitPos3 {
+  grid-area: c3;
+}
+.msgOrbitPos4 {
+  grid-area: c4;
+}
+.msgOrbitPos5 {
+  grid-area: c5;
+}
+.msgOrbitPos6 {
+  grid-area: c6;
+}
+
+.msgOrbitFooter {
+  text-align: center;
+  margin-top: 2.25rem;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes msgCorePulse {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }
 
 /* ─── CTA ─────────────────────────────────────────────────────────────────── */
@@ -1576,10 +1777,6 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .messagingGrid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
   .observabilityLayout {
     grid-template-columns: 1fr;
   }
@@ -1594,6 +1791,38 @@
 
   .problemTabBar {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .msgOrbitScene {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'hub hub'
+      'c0 c1'
+      'c2 c3'
+      'c4 c5'
+      'c6 c6';
+    max-width: 520px;
+    gap: 1rem;
+  }
+
+  .msgOrbitPos6 {
+    justify-self: center;
+    max-width: 280px;
+    width: 100%;
+  }
+
+  .msgOrbitSvg {
+    display: none;
+  }
+
+  .msgOrbitHubAnchor {
+    width: 88px;
+    height: 88px;
+  }
+
+  .msgOrbitHubIcon {
+    width: 64px;
+    height: 64px;
   }
 }
 
@@ -1652,8 +1881,25 @@
     white-space: normal;
   }
 
-  .messagingGrid {
-    grid-template-columns: repeat(2, 1fr);
+  .msgOrbitScene {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'hub'
+      'c0'
+      'c1'
+      'c2'
+      'c3'
+      'c4'
+      'c5'
+      'c6';
+    max-width: 320px;
+    gap: 0.85rem;
+  }
+
+  .msgOrbitPos6 {
+    justify-self: stretch;
+    max-width: none;
+    width: 100%;
   }
 
   .section {

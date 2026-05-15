@@ -1,4 +1,4 @@
-import React, { useId, useState, useEffect, useRef } from 'react';
+import React, { useId, useState, useEffect, useRef, useCallback } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './features.module.css';
@@ -30,6 +30,9 @@ import { FaFacebookMessenger } from 'react-icons/fa6';
 import { TbBrandTeams } from 'react-icons/tb';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 /** Stable fragment ids for in-page navigation (diagram + deep links). */
 const FEATURE_ANCHORS = {
@@ -917,41 +920,195 @@ function TestingSection() {
   );
 }
 
+const MESSAGING_ORBIT_PLATFORMS = [
+  { name: 'Slack', icon: <FaSlack />, color: '#EC407A', link: '/docs/integrations/slack' },
+  { name: 'Microsoft Teams', icon: <TbBrandTeams />, color: '#A8B2FF', link: '/docs/integrations/teams' },
+  { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#3DFF9A', link: '/docs/integrations/whatsapp' },
+  { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#1AACFF', link: '/docs/integrations/messenger' },
+  { name: 'Telegram', icon: <FaTelegram />, color: '#40BFFF', link: '/docs/integrations/telegram' },
+  { name: 'Instagram', icon: <FaInstagram />, color: '#FF6BA3', link: '/docs/integrations/instagram' },
+  { name: 'Gmail', icon: <SiGmail />, color: '#FF7B6E', link: '/docs/integrations/gmail' },
+] as const;
+
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
 
 function MessagingSection() {
-  const platforms = [
-    { name: 'Slack', icon: <FaSlack />, color: '#4A154B', link: '/docs/integrations/slack' },
-    { name: 'Microsoft Teams', icon: <TbBrandTeams />, color: '#6264A7', link: '/docs/integrations/teams' },
-    { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#25D366', link: '/docs/integrations/whatsapp' },
-    { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#0084FF', link: '/docs/integrations/messenger' },
-    { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
-    { name: 'Instagram', icon: <FaInstagram />, color: '#E4405F', link: '/docs/integrations/instagram' },
-    { name: 'Gmail', icon: <SiGmail />, color: '#EA4335', link: '/docs/integrations/gmail' },
-  ];
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hubRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const drawLines = useCallback(() => {
+    const container = containerRef.current;
+    const hub = hubRef.current;
+    const svg = svgRef.current;
+    if (!container || !hub || !svg) return;
+
+    const cRect = container.getBoundingClientRect();
+    const hRect = hub.getBoundingClientRect();
+    if (hRect.width === 0 || cRect.width === 0) return;
+
+    const hx = hRect.left + hRect.width / 2 - cRect.left;
+    const hy = hRect.top + hRect.height / 2 - cRect.top;
+
+    svg.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
+
+    svg.innerHTML = `
+      <defs>
+        <filter id="msgLineGlow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="5" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="msgDotGlow" x="-300%" y="-300%" width="700%" height="700%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>`;
+
+    const durations = [2.8, 3.4, 2.5, 3.1, 2.9, 3.6, 2.6];
+
+    cardRefs.current.forEach((card, i) => {
+      if (!card) return;
+      const r = card.getBoundingClientRect();
+      if (r.width === 0) return;
+      const cx = r.left + r.width / 2 - cRect.left;
+      const cy = r.top + r.height / 2 - cRect.top;
+
+      const midX = (hx + cx) / 2;
+      const midY = (hy + cy) / 2;
+      const dx = cx - hx;
+      const dy = cy - hy;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const cpX = midX + (-dy / len) * 35;
+      const cpY = midY + (dx / len) * 35;
+      const pathD = `M ${hx} ${hy} Q ${cpX} ${cpY} ${cx} ${cy}`;
+      const pathId = `msgOp${i}`;
+
+      const haloPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      haloPath.setAttribute('d', pathD);
+      haloPath.setAttribute('stroke', 'rgba(0,213,190,0.1)');
+      haloPath.setAttribute('stroke-width', '8');
+      haloPath.setAttribute('fill', 'none');
+      haloPath.setAttribute('filter', 'url(#msgLineGlow)');
+      svg.appendChild(haloPath);
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('id', pathId);
+      path.setAttribute('d', pathD);
+      path.setAttribute('stroke', 'rgba(0,213,190,0.28)');
+      path.setAttribute('stroke-width', '1.5');
+      path.setAttribute('fill', 'none');
+      svg.appendChild(path);
+
+      const endDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      endDot.setAttribute('cx', String(cx));
+      endDot.setAttribute('cy', String(cy));
+      endDot.setAttribute('r', '4');
+      endDot.setAttribute('fill', 'rgba(0,213,190,0.55)');
+      endDot.setAttribute('filter', 'url(#msgDotGlow)');
+      svg.appendChild(endDot);
+
+      const traveler = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      traveler.setAttribute('r', '3.5');
+      traveler.setAttribute('fill', 'rgba(0,230,210,1)');
+      traveler.setAttribute('filter', 'url(#msgDotGlow)');
+      const motion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+      motion.setAttribute('dur', `${durations[i] ?? 3}s`);
+      motion.setAttribute('repeatCount', 'indefinite');
+      motion.setAttribute('begin', `${i * 0.38}s`);
+      const mpath = document.createElementNS('http://www.w3.org/2000/svg', 'mpath');
+      mpath.setAttribute('href', `#${pathId}`);
+      motion.appendChild(mpath);
+      traveler.appendChild(motion);
+      svg.appendChild(traveler);
+    });
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(drawLines, 80);
+    const ro = new ResizeObserver(drawLines);
+    if (containerRef.current) ro.observe(containerRef.current);
+    window.addEventListener('resize', drawLines);
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+      window.removeEventListener('resize', drawLines);
+    };
+  }, [drawLines]);
+
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const els = containerRef.current?.querySelectorAll(
+        `.${styles.msgOrbitCard}, .${styles.msgOrbitHub}`
+      );
+      if (!els?.length) return;
+      gsap.fromTo(
+        els,
+        { opacity: 0, scale: 0.88 },
+        {
+          opacity: 1,
+          scale: 1,
+          duration: 0.5,
+          stagger: 0.07,
+          ease: 'back.out(1.2)',
+          scrollTrigger: {
+            trigger: containerRef.current,
+            start: 'top 75%',
+            once: true,
+          },
+          onComplete: drawLines,
+        }
+      );
+    }, containerRef);
+    return () => ctx.revert();
+  }, [drawLines]);
 
   return (
-    <section id={FEATURE_ANCHORS.messaging} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.messaging}
+      className={`${styles.section} ${styles.pageAnchor} ${styles.messagingSection}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>05</span>
-          <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
+          <h2 className={styles.sectionTitle}>Messaging integrations</h2>
           <p className={styles.sectionSubtitle}>
-            Built-in handlers for the world's most popular messaging platforms.
-            No custom bot code required — just plug and play.
+            Your agents meet users on the channels they already use. Lines show how each app links back to the same
+            Agent Kernel runtime — tap a channel for setup steps.
           </p>
         </div>
-        <div className={styles.messagingGrid}>
-          {platforms.map((p, i) => (
-            <Link key={i} to={p.link} className={styles.messagingCard}>
-              <div className={styles.messagingIcon} style={{ color: p.color }}>{p.icon}</div>
-              <h3 className={styles.messagingName}>{p.name}</h3>
+
+        <div ref={containerRef} className={styles.msgOrbitScene}>
+          <svg ref={svgRef} className={styles.msgOrbitSvg} aria-hidden />
+
+          {MESSAGING_ORBIT_PLATFORMS.map((p, i) => (
+            <Link
+              key={p.name}
+              ref={(el) => {
+                cardRefs.current[i] = el;
+              }}
+              to={p.link}
+              className={`${styles.msgOrbitCard} ${styles[`msgOrbitPos${i}`]}`}
+              style={{ '--msg-brand': p.color } as React.CSSProperties}>
+              <div className={styles.msgOrbitGlyph}>{p.icon}</div>
+              <span className={styles.msgOrbitLabel}>{p.name}</span>
             </Link>
           ))}
+
+          <div className={styles.msgOrbitHub}>
+            <div ref={hubRef} className={styles.msgOrbitHubAnchor}>
+              <div className={styles.msgOrbitHubGlow} />
+              <img
+                src="/img/branding/agent-kernel-icon-color.svg"
+                alt="Agent Kernel"
+                className={styles.msgOrbitHubIcon}
+              />
+            </div>
+          </div>
         </div>
-        <div className={styles.sectionFooter}>
+
+        <div className={styles.msgOrbitFooter}>
           <Link to="/docs/integrations/overview" className={styles.sectionLink}>
-            View integration docs →
+            Full integrations overview →
           </Link>
         </div>
       </div>
