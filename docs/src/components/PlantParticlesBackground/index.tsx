@@ -29,7 +29,7 @@ const coreFragmentShader = `
   void main() {
     float d = distance(gl_PointCoord, vec2(0.5));
     float strength = 0.05 / d - 0.1;
-    vec3 color = vec3(0.0, 1.867, 1.0);
+    vec3 color = vec3(0.0, 0.867, 1.0);
     gl_FragColor = vec4(color, strength * length(vPos));
   }
 `;

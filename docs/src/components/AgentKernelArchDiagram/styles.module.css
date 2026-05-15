@@ -2,22 +2,22 @@
   AgentKernelArchDiagram — vertical three-layer architecture with SVG particle flow.
   Visual language matches the Differentiators / orbit section:
     • dark glassmorphism cards  (rgba(8,12,28,0.72))
-    • teal accent               (rgba(0,213,190,…))
+    • cyan accent               (rgba(0,221,255,…))
     • pulsing icon glows & hub core
     • scale+opacity entrance animations
 */
 
 :root {
-  --ak-teal: #00d5be;
-  --ak-teal-glow: rgba(0, 213, 190, 0.6);
+  --ak-teal: #00DDFF;
+  --ak-teal-glow: rgba(0, 221, 255, 0.6);
 }
 
 .archSection {
   padding: 2rem 0;
   position: relative;
   background: transparent;
-  --ak-blue: #00d5be;
-  --ak-purple: #00b8a4;
+  --ak-blue: #00DDFF;
+  --ak-purple: #00B8E6;
 }
 
 .header {
@@ -92,8 +92,8 @@
 }
 
 .topBox:hover {
-  border-color: rgba(0, 213, 190, 0.3);
-  box-shadow: 0 8px 28px rgba(0, 213, 190, 0.07);
+  border-color: rgba(0, 221, 255, 0.3);
+  box-shadow: 0 8px 28px rgba(0, 221, 255, 0.07);
   transform: translateY(-2px);
 }
 
@@ -113,6 +113,15 @@
 .topBoxSub {
   font-size: 0.9rem;
   color: #94a3b8;
+  line-height: 1.6;
+}
+
+.topBoxSubSep {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.65em;
+  vertical-align: middle;
+  margin: 0 0.625rem;
+  user-select: none;
 }
 
 /* ─── Hub card ───────────────────────────────────────────────────────────── */
@@ -131,8 +140,8 @@
 }
 
 .hubCard:hover {
-  border-color: rgba(0, 213, 190, 0.25);
-  box-shadow: 0 8px 32px rgba(0, 213, 190, 0.06);
+  border-color: rgba(0, 221, 255, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 221, 255, 0.06);
 }
 
 .hubHeader {
@@ -158,8 +167,8 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at center,
-    rgba(0, 213, 190, 0.22) 0%,
-    rgba(0, 213, 190, 0.05) 50%,
+    rgba(0, 221, 255, 0.22) 0%,
+    rgba(0, 221, 255, 0.05) 50%,
     transparent 70%
   );
   animation: corePulse 3s ease-in-out infinite;
@@ -177,7 +186,7 @@
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 10px rgba(0, 213, 190, 0.55));
+  filter: drop-shadow(0 0 10px rgba(0, 221, 255, 0.55));
 }
 
 .hubLabel {
@@ -215,8 +224,8 @@
 }
 
 .moduleChip:hover {
-  border-color: rgba(0, 213, 190, 0.28);
-  box-shadow: 0 4px 16px rgba(0, 213, 190, 0.07);
+  border-color: rgba(0, 221, 255, 0.28);
+  box-shadow: 0 4px 16px rgba(0, 221, 255, 0.07);
   transform: translateY(-1px);
 }
 
@@ -242,7 +251,7 @@
   border-radius: 0.3rem;
   background: radial-gradient(
     circle at 50% 60%,
-    rgba(0, 213, 190, 0.22) 0%,
+    rgba(0, 221, 255, 0.22) 0%,
     transparent 75%
   );
   animation: iconPulse 2.8s ease-in-out infinite;
@@ -258,16 +267,16 @@
   position: relative;
   z-index: 1;
   font-size: 1rem;
-  color: #00d5be;
+  color: #00DDFF;
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 5px rgba(0, 213, 190, 0.55));
+  filter: drop-shadow(0 0 5px rgba(0, 221, 255, 0.55));
   transition: filter 0.22s ease;
 }
 
 .moduleChip:hover .moduleIcon {
-  filter: drop-shadow(0 0 9px rgba(0, 213, 190, 0.85));
+  filter: drop-shadow(0 0 9px rgba(0, 221, 255, 0.85));
 }
 
 .moduleChip:hover .moduleIconBg {
@@ -322,9 +331,9 @@
 }
 
 .deployBox:hover {
-  border-color: rgba(0, 213, 190, 0.28);
+  border-color: rgba(0, 221, 255, 0.28);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 213, 190, 0.07);
+  box-shadow: 0 6px 20px rgba(0, 221, 255, 0.07);
 }
 
 .deployIn {
@@ -334,16 +343,16 @@
 
 .deployIcon {
   font-size: 1.35rem;
-  color: #00d5be;
+  color: #00DDFF;
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 0 6px rgba(0, 213, 190, 0.45));
+  filter: drop-shadow(0 0 6px rgba(0, 221, 255, 0.45));
   transition: filter 0.22s ease;
 }
 
 .deployBox:hover .deployIcon {
-  filter: drop-shadow(0 0 10px rgba(0, 213, 190, 0.75));
+  filter: drop-shadow(0 0 10px rgba(0, 221, 255, 0.75));
 }
 
 .deployLabel {

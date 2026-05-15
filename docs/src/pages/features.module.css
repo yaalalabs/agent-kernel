@@ -1711,7 +1711,7 @@
 /* ─── CTA ─────────────────────────────────────────────────────────────────── */
 
 .ctaSection {
-  padding: 7rem 0;
+  padding: 7rem 0 4rem;
   position: relative;
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.06);

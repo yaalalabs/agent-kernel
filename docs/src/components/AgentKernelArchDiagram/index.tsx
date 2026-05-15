@@ -33,10 +33,10 @@ const deployTargets = [
 // 5 deploy targets; their x-center positions spread across 900px
 const DEPLOY_X = [90, 225, 450, 675, 810];
 
-/* ─── Teal accent tokens (match differentiators palette) ────────────────── */
-const TEAL      = 'rgba(0,213,190,1)';
-const TEAL_LINE = 'rgba(0,213,190,0.28)';
-const TEAL_HALO = 'rgba(0,213,190,0.1)';
+/* ─── Cyan accent tokens (match differentiators palette) ───────────────── */
+const TEAL      = 'rgba(0,221,255,1)';
+const TEAL_LINE = 'rgba(0,221,255,0.28)';
+const TEAL_HALO = 'rgba(0,221,255,0.1)';
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 
@@ -81,7 +81,18 @@ export default function AgentKernelArchDiagram() {
           >
             <div className={styles.topBoxContent}>
               <span className={styles.topBoxLabel}>Your Agent Logic</span>
-              <span className={styles.topBoxSub}>OpenAI · LangGraph · CrewAI · Google ADK</span>
+              <span className={styles.topBoxSub}>
+                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK'].map((item, idx) => (
+                  <React.Fragment key={item}>
+                    {idx > 0 && (
+                      <span className={styles.topBoxSubSep} aria-hidden="true">
+                        ●
+                      </span>
+                    )}
+                    {item}
+                  </React.Fragment>
+                ))}
+              </span>
             </div>
           </div>
 

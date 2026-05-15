@@ -36,6 +36,8 @@ import {
   MdScience,
   MdLink,
   MdSmartToy,
+  MdPermMedia,
+  MdLanguage,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
@@ -91,9 +93,13 @@ function Hero() {
       <div className="container">
         <div className={styles.heroContent}>
           <h1 ref={titleRef} className={styles.heroTitle}>Agent Kernel</h1>
-          <p ref={taglineRef} className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
+          <p ref={taglineRef} className={styles.heroTagline}>
+            An Open Source Operating System for
+            <br />
+            Scalable & Compliant Enterprise AI Agents.
+          </p>
           <p ref={bodyRef} className={styles.heroBody}>
-            Agent Kernel is the open-source platform for building and deploying AI-powered assistants without months of engineering work. Works with any major AI technology, runs on any cloud, connects to Slack, WhatsApp, and more out of the box.
+            Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale. Agent Kernel reduces months of engineering work to minutes. Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework / platform lock-in, production ready from day one.
           </p>
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
@@ -419,7 +425,7 @@ function BusinessLeaderScenarios() {
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'The agent connects to the order system, shipping carriers, and payment gateway. It looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps the conversation memory across channels and sessions.',
+        body: 'The agent connects to the order system, shipping carriers, and payment gateway. It looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps the conversation memory across communication channels and sessions.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
@@ -462,7 +468,7 @@ function BusinessLeaderScenarios() {
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'Hooks, guardrails, and audit-ready session tracking make action-taking safe and traceable.',
+        body: 'Customizable workflows via hooks, guardrails, and audit-ready session tracking make action-taking safe and traceable.',
       },
     },
     insurance: {
@@ -481,7 +487,7 @@ function BusinessLeaderScenarios() {
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'This use case proves multimodal input, multi-agent pipelines, guardrails for regulated data, and persistent sessions.',
+        body: 'This use case proves multimodal (images and files) input, multi-agent pipelines, guardrails for regulated data, and persistent, long running user sessions.',
       },
     },
     logistics: {
@@ -514,7 +520,7 @@ function BusinessLeaderScenarios() {
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'When a candidate enters the interview stage, the agent checks availability, sends scheduling links over email, confirms bookings, creates meeting rooms, sends reminders, prompts interviewers for feedback in Slack, compiles summaries, and updates the ATS.',
+        body: 'When a candidate enters the interview stage, the agent checks availability, sends scheduling links over email, confirms bookings, creates meeting rooms, sends reminders, prompts interviewers for feedback in Slack, compiles summaries, and updates the Application Tracking System (ATS).',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
@@ -576,6 +582,98 @@ interface Level {
 interface ScrollTriggerInstance {
   kill: () => void;
 }
+
+const DEV_FEATURE_GROUPS = [
+  {
+    title: 'Build & Interface',
+    cols: 4 as const,
+    features: [
+      {
+        icon: MdTerminal,
+        title: 'CLI for Prototyping',
+        body: 'Easy interfacing your agents on your laptop via Agent Kernel’s command line interface.',
+      },
+      {
+        icon: MdBolt,
+        title: 'REST API Server',
+        body: 'FastAPI-based server out of the box. No boilerplate. Just run your agent.',
+      },
+      {
+        icon: MdCode,
+        title: 'Native MCP and A2A support',
+        body: 'Expose agents as tools (MCP) and enable agent-to-agent collaboration (A2A). Makes integration with external AI systems straightforward.',
+      },
+      {
+        icon: MdAutoAwesome,
+        title: 'Multi-Framework Support',
+        body: 'Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.',
+      },
+    ],
+  },
+  {
+    title: 'Runtime & Extensibility',
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdSmartToy,
+        title: 'Pluggable Session & Memory',
+        body: 'Start local in-memory, scale to Redis, DynamoDB, or Cosmos DB in production. Switch via config, not code rewrites.',
+      },
+      {
+        icon: MdLink,
+        title: 'Execution Hooks',
+        body: 'Pre/post hooks for RAG injection, input validation, response moderation, analytics.',
+      },
+      {
+        icon: MdPermMedia,
+        title: 'Multimodal Support',
+        body: 'In-built framework-neutral multimodal support across all integration channels. Handle files/images cleanly and keep sessions lightweight. Additional voice and video support via LiveKit.',
+      },
+    ],
+  },
+  {
+    title: 'Ship & Secure',
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdSecurity,
+        title: 'Guardrails and Content Safety',
+        body: 'Input and output protection in the same runtime pipeline. Supports policy checks for safety, PII handling, and jailbreak defense.',
+      },
+      {
+        icon: MdCloud,
+        title: 'Cloud Deployment',
+        body: 'Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions.',
+      },
+      {
+        icon: MdLanguage,
+        title: 'Reliability',
+        body: 'Built for resilient cloud deployments with health checks and failover patterns.',
+      },
+    ],
+  },
+  {
+    title: 'Integrate & Observe',
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdMessage,
+        title: 'Messaging Integrations',
+        body: 'Slack, WhatsApp, Instagram, Telegram, Gmail, Teams, Messenger plug and play.',
+      },
+      {
+        icon: MdScience,
+        title: 'Testing Framework',
+        body: 'pytest-integrated test runner. Write deterministic automated test scenarios for your AI agents like any other code.',
+      },
+      {
+        icon: MdVisibility,
+        title: 'Observability',
+        body: 'Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.',
+      },
+    ],
+  },
+];
 
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -843,7 +941,7 @@ function Levels() {
         const neutralLabelColor = '#ffffff';
         const neutralDescColor = 'rgba(255, 255, 255, 0.7)';
         const neutralArrowColor = 'rgba(255, 255, 255, 0.6)';
-        const activeColor = '#00d4ff';
+        const activeColor = '#00DDFF';
 
         // Progressive highlight to make the execution flow obvious
         const flowPulseTl = gsap.timeline({
@@ -1252,7 +1350,7 @@ function Levels() {
                   <ul className={styles.bulletList}>
                     <li>Thousands of customer queries handled by an overstretched team</li>
                     <li>Knowledge locked across systems and documents</li>
-                    <li>Cross-team hand offs are slow and error-prone</li>
+                    <li>Cross-team hand-offs are slow and error-prone</li>
                   </ul>
                 </div>
                 <div className={styles.contentCard}>
@@ -1262,6 +1360,7 @@ function Levels() {
                     <li>You see an opportunity for an AI-powered service in your industry</li>
                     <li>You're not sure which AI technology to commit to</li>
                     <li>Building from scratch feels like months before anything reaches users</li>
+                    <li>You want to build a prototype / proof-of-concept quickly without having to invest too much on it</li>
                   </ul>
                 </div>
               </div>
@@ -1331,14 +1430,14 @@ function Levels() {
               <div style={{ marginTop: '2rem' }}>
                 <p className={styles.stepLabel}>Step 03 / Agent Kernel</p>
                 <h2 className={styles.contentTitle}>
-                  Agent Kernel is the engine that powers it at scale
+                  Agent Kernel is the engine that powers it at scale to run compliant AI agents
                 </h2>
           
                 {/* OS analogy highlight card */}
                 <div className={styles.blHighlightCard}>
                   <p className={styles.blHighlightEyebrow}>For Your Business</p>
                   <h3 className={styles.blHighlightTitle}>
-                    Agent Kernel is like an Operating System for AI agents.
+                    Agent Kernel is like the Operating System for AI agents.
                   </h3>
                   <p className={styles.blHighlightBody}>
                     You don't need to understand how an operating system works to use the Internet. It runs behind the scenes, powering websites, servers, and cloud systems.
@@ -1356,7 +1455,7 @@ function Levels() {
                     </div>
                     <h4 className={styles.blValueTitle}>Days, not months</h4>
                     <p className={styles.blValueBody}>
-                      No one has to build agent infrastructure from scratch. Go from idea to enterprise-grade working agent ideas.
+                       No one must build agent infrastructure from scratch. Go from idea to enterprise-grade working scalable AI agents in  days.
                     </p>
                   </div>
                   <div className={styles.blValueCard}>
@@ -1374,7 +1473,7 @@ function Levels() {
                     </div>
                     <h4 className={styles.blValueTitle}>Runs on any cloud</h4>
                     <p className={styles.blValueBody}>
-                      Deploy on AWS, Azure, or your own on-prem Docker. No vendor lock-in. You stay in control of your data and infrastructure.
+                      Deploy on AWS, GCP, Azure, or your own on-prem Docker. No vendor lock-in. You stay in control of your data and infrastructure.
                     </p>
                   </div>
                 </div>
@@ -1416,23 +1515,23 @@ function Levels() {
             <div ref={contentRef} className={styles.developerContent}>
 
               {/* Step 01 — Developer Analogy */}
-              <div className={styles.developerAnalogy}>
+              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`}>
                 <p className={styles.devStepLabel}>Developer Analogy</p>
                 <h2 className={styles.devTitle}>
-                  Like an Operating System and Deployment Infrastructure for your AI Agent.
+                  Building blocks and and deployment infrastructure for your AI Agent.
                 </h2>
                 <div className={styles.devDescription}>
                   <p className={styles.devIntro}>
-                    Agent Kernel is like an operating system for AI assistants.
+                    Agent Kernel is like the operating system for the AI assistants, think Linux for your agents.
                   </p>
                   <div className={styles.devBulletList}>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
-                      <span className={styles.devBulletText}>Install it on your laptop, server, or cloud, and run AI agents hassle-free.</span>
+                      <span className={styles.devBulletText}>Install it on your laptop, sever, or cloud and run AI agents hassle-free.</span>
                     </div>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
-                      <span className={styles.devBulletText}>No need to build infrastructure, APIs, or integrations.</span>
+                      <span className={styles.devBulletText}>No need to build infrastructure, APIs, or messaging and other integrations.</span>
                     </div>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
@@ -1448,35 +1547,62 @@ function Levels() {
                     </div>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
-                      <span className={styles.devBulletText}>Just define what your assistant should do.</span>
+                      <span className={styles.devBulletText}>Just define what your agent should do.</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Architecture flow — 4 stacked layers */}
-              <div className={styles.architectureWrapper}>
+              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`}>
                 <div className={styles.architectureStack}>
                   {[
                     {
                       num: '01',
                       label: 'Your Agent Logic',
-                      sub: 'instructions · tools · framework SDK',
+                      items: ['Instructions', 'Tools', 'Framework SDK'],
                     },
                     {
                       num: '02',
                       label: 'Agent Kernel Runtime',
-                      sub: 'CLI · REST API · sessions · hooks · observability',
+                      items: ['Agents', 'Agent Runner', 'Session Management', 'Hooks'],
                     },
                     {
                       num: '03',
-                      label: 'Cloud Infrastructure',
-                      sub: 'AWS Lambda · ECS · Azure Functions · Container Apps',
+                      label: 'Storage & Memory',
+                      items: ['In-Memory', 'Redis', 'DynamoDB', 'CosmosDB', 'Firestore'],
                     },
                     {
                       num: '04',
-                      label: 'Channels & Data',
-                      sub: 'Slack · WhatsApp · Telegram · Gmail · Redis · DynamoDB',
+                      label: 'Knowledge Bases',
+                      items: ['ChromaDB', 'Neo4j', 'Starburst', 'SQLDB'],
+                    },
+                    {
+                      num: '05',
+                      label: 'Observability',
+                      items: ['LangFuse', 'OpenLLMetry'],
+                    },
+                    {
+                      num: '06',
+                      label: 'Cloud Infrastructure',
+                      items: [
+                        'AWS Lambda',
+                        'ECS',
+                        'Azure Functions',
+                        'Container Apps',
+                        'GCP Cloud Run',
+                        'GCP Cloud Run Functions',
+                      ],
+                    },
+                    {
+                      num: '07',
+                      label: 'Interfacing',
+                      items: ['CLI', 'MCP', 'A2A', 'REST API'],
+                    },
+                    {
+                      num: '08',
+                      label: 'Channels',
+                      items: ['Slack', 'Teams', 'WhatsApp', 'Telegram', 'Messenger', 'Instagram', 'Gmail'],
                     },
                   ].map((layer, i, arr) => (
                     <div key={layer.label} className={styles.architectureLayerGroup}>
@@ -1493,7 +1619,18 @@ function Levels() {
                       <div className={styles.layerContentWrapper}>
                         <div className={styles.layerContentBox}>
                           <h3 className={styles.layerLabel}>{layer.label}</h3>
-                          <p className={styles.layerSub}>{layer.sub}</p>
+                          <p className={styles.layerSub}>
+                            {layer.items.map((item, idx) => (
+                              <React.Fragment key={item}>
+                                {idx > 0 && (
+                                  <span className={styles.layerSubSep} aria-hidden="true">
+                                    ●
+                                  </span>
+                                )}
+                                {item}
+                              </React.Fragment>
+                            ))}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1508,74 +1645,38 @@ function Levels() {
                   Focus on Agent Logic. We Handle the Rest.
                 </h2>
 
-                <div className={styles.devFeaturesGrid}>
-                  {[
-                    {
-                      icon: MdBolt,
-                      title: 'REST API Server',
-                      body: 'FastAPI-based server out of the box. No boilerplate. Just run your agent.',
-                      tag: 'FastAPI',
-                    },
-                    {
-                      icon: MdAutoAwesome,
-                      title: 'Multi-Framework Support',
-                      body: 'OpenAI Agents, LangGraph, CrewAI, Google ADK.',
-                      tag: '4 frameworks',
-                    },
-                    {
-                      icon: MdSmartToy,
-                      title: 'Session & Memory',
-                      body: 'Built-in conversation state. Redis, DynamoDB, Cosmos DB or in-memory—your choice.',
-                      tag: 'Pluggable',
-                    },
-                    {
-                      icon: MdCloud,
-                      title: 'Cloud Deployment',
-                      body: 'Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps.',
-                      tag: 'Terraform',
-                    },
-                    {
-                      icon: MdMessage,
-                      title: 'Messaging Integrations',
-                      body: 'Slack, WhatsApp, Instagram, Telegram, Gmail, Teams—plug and play.',
-                      tag: '6+ channels',
-                    },
-                    {
-                      icon: MdScience,
-                      title: 'Testing Framework',
-                      body: 'pytest-integrated test runner. Write automated tests for your AI agents like any other code.',
-                      tag: 'pytest',
-                    },
-                    {
-                      icon: MdLink,
-                      title: 'Execution Hooks',
-                      body: 'Pre/post hooks for RAG injection, input validation, response moderation, analytics.',
-                      tag: 'Hooks',
-                    },
-                    {
-                      icon: MdVisibility,
-                      title: 'Observability',
-                      body: 'Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation.',
-                      tag: '1 config line',
-                    },
-                  ].map((feature) => {
-                    const IconComponent = feature.icon;
-                    return (
-                      <div key={feature.title} className={styles.devFeatureCard}>
-                        <IconComponent className={styles.devFeatureIcon} />
-                        <h3 className={styles.devFeatureCardTitle}>{feature.title}</h3>
-                        <p className={styles.devFeatureCardBody}>{feature.body}</p>
-                        <span className={styles.devFeatureTag}>
-                          {feature.tag}
-                        </span>
+                <div className={styles.devFeatureGroups}>
+                  {DEV_FEATURE_GROUPS.map((group) => (
+                    <div key={group.title} className={styles.devFeatureGroup}>
+                      <h3 className={styles.devFeatureGroupTitle}>{group.title}</h3>
+                      <div
+                        className={`${styles.devFeaturesGrid} ${
+                          group.cols === 4 ? styles.devFeaturesGrid4 : styles.devFeaturesGrid3
+                        }`}
+                      >
+                        {group.features.map((feature) => {
+                          const IconComponent = feature.icon;
+                          return (
+                            <div key={feature.title} className={styles.devFeatureCard}>
+                              <div className={styles.devFeatureCardHeader}>
+                                <div className={styles.devFeatureIconWrap}>
+                                  <IconComponent className={styles.devFeatureIcon} aria-hidden />
+                                </div>
+                                <h4 className={styles.devFeatureCardTitle}>{feature.title}</h4>
+                              </div>
+                              <p className={styles.devFeatureCardBody}>{feature.body}</p>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
 
+
               {/* Step 03 — Framework Selection */}
-              <div className={styles.devFrameworkSection}>
+              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
 
