@@ -162,13 +162,28 @@ const FloatingChatbot: React.FC = () => {
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             ) : (
-              <img
-                src="/img/branding/agent-kernel-icon-mono-white.svg"
-                alt="Agent Kernel"
-                className={styles.buttonLogo}
-              />
+              <span className={styles.chatButtonInner}>
+                <span className={styles.pulseRing} aria-hidden="true" />
+                <span className={styles.pulseRingDelayed} aria-hidden="true" />
+                <div className={styles.orb} aria-hidden="true">
+                  <span className={styles.orbGradient} />
+                  <span className={styles.orbGradientReverse} />
+                  <span className={styles.orbBlobField}>
+                    <span className={`${styles.orbBlob} ${styles.orbBlob1}`} />
+                    <span className={`${styles.orbBlob} ${styles.orbBlob2}`} />
+                    <span className={`${styles.orbBlob} ${styles.orbBlob3}`} />
+                    <span className={`${styles.orbBlob} ${styles.orbBlob4}`} />
+                  </span>
+                  <span className={styles.orbShine} />
+                  <span className={styles.orbVignette} />
+                </div>
+                <img
+                  src="/img/branding/agent-kernel-icon-mono-white.svg"
+                  alt=""
+                  className={styles.buttonLogo}
+                />
+              </span>
             )}
-            {!isOpen && <span className={styles.pulseRing} />}
           </button>
         </div>
       )}
