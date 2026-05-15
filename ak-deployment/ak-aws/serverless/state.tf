@@ -410,9 +410,7 @@ module "request_handler" {
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
   docker_image_uri                        = var.request_handler.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
-  environment_variables = merge(var.request_handler.environment_variables, {
-    AK_EXECUTION__MODE = var.execution_mode
-  })
+  environment_variables = merge(var.request_handler.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
 
   depends_on = [module.request_handler_source_package]
 }
@@ -428,9 +426,7 @@ module "agent_runner" {
   module_type   = var.module_type
 
   agent_runner = merge(var.agent_runner, {
-    environment_variables = merge(var.agent_runner.environment_variables, {
-      AK_EXECUTION__MODE = var.execution_mode
-    })
+    environment_variables = merge(var.agent_runner.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
   })
 
   source_bucket                     = var.agent_runner.package_type == "S3Zip" ? module.agent_runner_source_storage[0].source_storage_s3_bucket : null
@@ -481,9 +477,7 @@ module "response_handler" {
   docker_image_uri                  = var.response_handler.package_type == "Image" ? module.response_handler_docker_image[0].docker_image_uri : null
 
   response_handler = merge(var.response_handler, {
-    environment_variables = merge(var.response_handler.environment_variables, {
-      AK_EXECUTION__MODE = var.execution_mode
-    })
+    environment_variables = merge(var.response_handler.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
   })
 
   queue_config = {
