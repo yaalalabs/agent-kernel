@@ -6,6 +6,7 @@ on:
       - test-dep
     paths:
       - 'docs/**'
+      - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
 permissions:
