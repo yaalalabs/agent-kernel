@@ -8,8 +8,8 @@ This module provides a complete serverless deployment solution:
 
 - ⚡ **AWS Lambda**: Configurable functions with multiple deployment options
 - 🌐 **API Gateway**: REST API with Three-Level Resource Creation and Routing
-- � **WebSocket API**: Real-time bidirectional communication with connection lifecycle management
-- � **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
+- 🔌 **WebSocket API**: Real-time bidirectional communication with connection lifecycle management
+- 📦 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
 - 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
 - 📦 **Queue Mode**: SQS-driven async processing with agent runner and response handler functions
