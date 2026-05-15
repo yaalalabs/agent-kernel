@@ -600,19 +600,19 @@ function Levels() {
       id: '01',
       title: 'Business Leader',
       image: '/img/business_leader.png',
-      description: 'You run or work in a business and want AI assistants that actually work without needing to understand the tech.',
+      description: 'You run or work in a business / enterprise and want to incorporate AI agentsassistants that actually work into your business workflows without needing to understand the tech.',
     },
     {
       id: '02',
       title: 'Developer',
       image: '/img/developer.png',
-      description: 'You write software but haven\'t built AI agents yet. You want to ship something real without learning a new stack from scratch.',
+      description: 'You buildwrite software but haven\'t built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.',
     },
     {
       id: '03',
       title: 'AI Engineer',
       image: '/img/ai.png',
-      description: 'You already work with LLMs and agentic frameworks. You need a production-grade runtime that doesn\'t get in your way.',
+      description: 'You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework runtime that doesn\'t get in your way.',
     },
   ];
 
@@ -1192,11 +1192,11 @@ function Levels() {
       <div className="container">
         <div className={styles.levelsContainer}>
           <p ref={subtitleRef} className={styles.levelsSubtitle}>
-            Choose your level
+            Which path describes you the best
           </p>
 
           <h2 ref={titleRef} className={styles.levelsTitle}>
-            Agent Kernel fits your experience
+            Agent Kernel is designed to adapt to your level of expertise
           </h2>
 
           <div ref={cardsRef} className={styles.levelsGrid}>
@@ -1207,8 +1207,6 @@ function Levels() {
                 onClick={() => handleLevelSelect(level.id)}
                 className={`${styles.levelCard} ${selectedLevel === level.id ? styles.levelCardSelected : ''}`}
               >
-                <div className={styles.levelNumber}>Level {level.id}</div>
-
                 <div className={styles.levelImage}>
                   <img src={level.image} alt={level.title} />
                 </div>
@@ -1220,7 +1218,7 @@ function Levels() {
           </div>
 
           <div className={styles.levelsHint}>
-            Select a level to continue
+            Select a path that best describes you to continue
           </div>
 
           {/* ── BUSINESS LEADER CONTENT ── */}
