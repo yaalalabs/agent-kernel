@@ -199,9 +199,21 @@
 /* ─── Module chips grid ──────────────────────────────────────────────────── */
 
 .modulesGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 0.55rem;
+}
+
+.modulesRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+/* Center row 2 (3 chips) under row 1 (4 chips) */
+.modulesRowSecond {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-inline: calc((100% - 3 * 0.55rem) / 8 + 0.275rem);
 }
 
 @keyframes moduleReveal {
@@ -370,8 +382,19 @@
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  .modulesGrid {
-    grid-template-columns: repeat(2, 1fr);
+  .modulesRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modulesRowSecond {
+    padding-inline: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modulesRowSecond .moduleChip:last-child {
+    grid-column: 1 / -1;
+    max-width: calc(50% - 0.275rem);
+    justify-self: center;
   }
 
   .topBox {
@@ -388,10 +411,6 @@
 }
 
 @media (max-width: 400px) {
-  .modulesGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .deployRow {
     gap: 0.4rem;
   }

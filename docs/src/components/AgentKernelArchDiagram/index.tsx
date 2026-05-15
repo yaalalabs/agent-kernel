@@ -7,16 +7,21 @@ import {
   MdVisibility,
   MdSecurity,
   MdMessage,
+  MdMenuBook,
 } from 'react-icons/md';
 import { FaAws, FaDocker } from 'react-icons/fa';
 import { FaMicrosoft } from 'react-icons/fa';
 
 /* ─── Data ───────────────────────────────────────────────────────────────── */
 
-const capabilityModules = [
+const capabilityModulesRow1 = [
   { id: 'adapters',   label: 'Framework Adapters', icon: <MdSwapHoriz /> },
   { id: 'memory',     label: 'Session & Memory',   icon: <MdMemory /> },
   { id: 'hooks',      label: 'Execution Hooks',    icon: <MdSettings /> },
+  { id: 'knowledge',  label: 'Knowledge Bases',    icon: <MdMenuBook /> },
+];
+
+const capabilityModulesRow2 = [
   { id: 'messaging',  label: 'Messaging',          icon: <MdMessage /> },
   { id: 'observ',     label: 'Observability',      icon: <MdVisibility /> },
   { id: 'guardrails', label: 'Guardrails',         icon: <MdSecurity /> },
@@ -82,7 +87,7 @@ export default function AgentKernelArchDiagram() {
             <div className={styles.topBoxContent}>
               <span className={styles.topBoxLabel}>Your Agent Logic</span>
               <span className={styles.topBoxSub}>
-                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK'].map((item, idx) => (
+                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK', 'Smolagents', 'LiveKit'].map((item, idx) => (
                   <React.Fragment key={item}>
                     {idx > 0 && (
                       <span className={styles.topBoxSubSep} aria-hidden="true">
@@ -168,20 +173,36 @@ export default function AgentKernelArchDiagram() {
               <span className={styles.hubLabel}>Agent Kernel Runtime</span>
             </div>
             <div className={styles.modulesGrid}>
-              {capabilityModules.map((mod, i) => (
-                <div
-                  key={mod.id}
-                  className={`${styles.moduleChip} ${visible ? styles.moduleIn : ''}`}
-                  style={{ '--mod-delay': `${280 + i * 65}ms` } as React.CSSProperties}
-                >
-                  {/* Icon cell with pulsing bg — mirrors iconCell / iconCellBg */}
-                  <div className={styles.moduleIconCell}>
-                    <div className={styles.moduleIconBg} />
-                    <span className={styles.moduleIcon}>{mod.icon}</span>
+              <div className={styles.modulesRow}>
+                {capabilityModulesRow1.map((mod, i) => (
+                  <div
+                    key={mod.id}
+                    className={`${styles.moduleChip} ${visible ? styles.moduleIn : ''}`}
+                    style={{ '--mod-delay': `${280 + i * 65}ms` } as React.CSSProperties}
+                  >
+                    <div className={styles.moduleIconCell}>
+                      <div className={styles.moduleIconBg} />
+                      <span className={styles.moduleIcon}>{mod.icon}</span>
+                    </div>
+                    <span className={styles.moduleLabel}>{mod.label}</span>
                   </div>
-                  <span className={styles.moduleLabel}>{mod.label}</span>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className={`${styles.modulesRow} ${styles.modulesRowSecond}`}>
+                {capabilityModulesRow2.map((mod, i) => (
+                  <div
+                    key={mod.id}
+                    className={`${styles.moduleChip} ${visible ? styles.moduleIn : ''}`}
+                    style={{ '--mod-delay': `${540 + i * 65}ms` } as React.CSSProperties}
+                  >
+                    <div className={styles.moduleIconCell}>
+                      <div className={styles.moduleIconBg} />
+                      <span className={styles.moduleIcon}>{mod.icon}</span>
+                    </div>
+                    <span className={styles.moduleLabel}>{mod.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

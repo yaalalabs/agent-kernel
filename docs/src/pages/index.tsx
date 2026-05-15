@@ -1324,17 +1324,18 @@ function Levels() {
             <div ref={contentRef} className={styles.levelContent}>
           
               {/* ── STEP 01 ── */}
-              <div className={styles.contentStep}>
-                <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
-                <h2 className={styles.contentTitle}>
-                  Where is the gap in your business?
-                </h2>
-                <p className={styles.contentBody}>
-                  Most businesses have processes that still depend too much on people. They are repetitive, slow, and hard to scale. The gap looks different depending on where you are.
-                </p>
-              </div>
-          
-              <div className={styles.contentGrid}>
+              <div className={styles.blStepBlock}>
+                <div className={styles.contentStep}>
+                  <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
+                  <h2 className={styles.contentTitle}>
+                    Where is the gap in your business?
+                  </h2>
+                  <p className={styles.contentBody}>
+                    Most businesses have processes that still depend too much on people. They are repetitive, slow, and hard to scale. The gap looks different depending on where you are.
+                  </p>
+                </div>
+
+                <div className={styles.contentGrid}>
                 <div className={styles.contentCard}>
                   <h3 className={styles.contentCardLabel}>SaaS / Product</h3>
                   <p className={styles.contentCardTitle}>Do you have an existing product?</p>
@@ -1363,8 +1364,9 @@ function Levels() {
                     <li>You want to build a prototype / proof-of-concept quickly without having to invest too much on it</li>
                   </ul>
                 </div>
+                </div>
               </div>
-          
+
               {/* ── STEP 02 ── */}
               <div style={{ marginTop: '2rem' }}>
                 <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
@@ -1499,7 +1501,7 @@ function Levels() {
                   Agent Kernel is the engine that powers it all
                 </h2>
                 <p className={styles.contentBody}>
-                  See how Agent Kernel connects your agent logic to production infrastructure, messaging channels, and data storage—all without rewrites or complexity.
+                  You write your AI agent's logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
                 </p>
 
                 <div className={styles.devArchitectureWrapper}>
@@ -1976,7 +1978,7 @@ if __name__ == "__main__":
                 <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
 
                 <p className={styles.devFrameworkBody}>
-                  Agent Kernel sits between your agent logic and cloud deployment, providing the production-ready runtime layer that handles everything except what makes your agents unique. One consistent API, any framework, any cloud.
+                    You write your AI agent’s logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
                 </p>
 
                 <div className={styles.devArchitectureWrapper}>
@@ -2065,7 +2067,7 @@ if __name__ == "__main__":
               <div className={styles.contentStep}>
                 <h2 className={styles.contentTitle}>How Agent Kernel Fits In</h2>
                 <p className={styles.contentBody}>
-                  Agent Kernel sits between your agent logic and cloud deployment, providing the production-ready runtime layer that handles everything except what makes your agents unique. One consistent API, any framework, any cloud.
+                    You write your AI agent's logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
                 </p>
 
                 <div className={styles.devArchitectureWrapper}>

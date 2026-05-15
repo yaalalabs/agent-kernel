@@ -1534,6 +1534,13 @@
   text-align: left;
 }
 
+.blStepBlock {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
 .contentStep {
   display: flex;
   flex-direction: column;
@@ -1571,8 +1578,7 @@
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 2rem;
-  max-width: 64rem;
-  margin: 0 auto;
+  width: 100%;
 }
 
 .contentCard {
