@@ -29,3 +29,14 @@ variable "openai_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "vpc_id" {
+  description = "VPC ID for Lambda deployment"
+  type        = string
+}
+
+variable "private_subnet_ids" {
+  description = "List of private subnet IDs for Lambda deployment"
+  type        = list(string)
+  sensitive   = true
+}
