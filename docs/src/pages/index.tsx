@@ -27,6 +27,7 @@ import {
   MdCloudUpload,
   MdGpsFixed,
   MdAssignment,
+  MdHelpOutline,
   MdBolt,
   MdTrendingUp,
   MdRefresh,
@@ -1285,6 +1286,12 @@ function Levels() {
                     <MdAssignment className={styles.flowIcon} />
                     <h4 className={styles.flowLabel}>Plan</h4>
                     <p className={styles.flowDesc}>Plan steps</p>
+                  </div>
+                  <div className={styles.flowArrow}>→</div>
+                  <div className={styles.flowStep}>
+                    <MdHelpOutline className={styles.flowIcon} />
+                    <h4 className={styles.flowLabel}>Question</h4>
+                    <p className={styles.flowDesc}>Clarify what's needed</p>
                   </div>
                   <div className={styles.flowArrow}>→</div>
                   <div className={styles.flowStep}>
