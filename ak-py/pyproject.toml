@@ -133,7 +133,7 @@ a2a = [
     "a2a-sdk[http-server]>=0.3.6",
 ]
 mcp = [
-    "fastmcp<=2.14.7",
+    "fastmcp<=2.14.1",
 ]
 multimodal = [
     "litellm>=1.74.9",
