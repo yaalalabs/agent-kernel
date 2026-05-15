@@ -318,8 +318,8 @@ const ORBIT_CARDS = [
   {
     icon: <MdSwapHoriz />,
     color: '#40BBDE',
-    title: 'Framework-Agnostic',
-    desc: 'Swap between OpenAI, CrewAI, LangGraph, and Google ADK with near-zero code change — run all frameworks simultaneously in one runtime.',
+    title: 'Framework-Neutral',
+    desc: 'The only runtime that lets you bring inswap between  agents written from OpenAI Agents,  CrewAI, LangGraph, and Google ADK, Smolagents, LiveKit with near-zero code change — and run all of them simultaneously in a single runtime.',
   },
   {
     icon: <MdCloud />,
