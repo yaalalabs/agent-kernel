@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from pydantic import ConfigDict
 
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 
 from ..core.model import BaseChatRequest, BaseRunRequest
 from ..core import Config
@@ -67,7 +67,21 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             return await self.chat_service.process_async_chat_request(req=body)
 
         @router.post("/api/v1/chat-multipart")
-        async def run_multipart(req: AgentRESTRequestHandler.BaseMultimodalRunRequest):
+        async def run_multipart(
+            prompt: str = Form(...), 
+            agent: Optional[str] = Form(None),
+            session_id: Optional[str] = Form(None),
+            files: Optional[List[UploadFile]] = File(None),
+            images: Optional[List[UploadFile]] = File(None),
+        ):
+            # Construct BaseMultimodalRunRequest from form parameters
+            req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
+                prompt=prompt,
+                agent=agent,
+                session_id=session_id,
+                files=files,
+                images=images,
+            )
             return await self.chat_service.process_async_chat_request(req=req)
 
         return router
