@@ -387,7 +387,7 @@ module "serverless_api_auth" {
 | `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
 | `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
 | `package_path` | Agent runner deployment package path | `string` | `null` | no |
-| `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
+| `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
