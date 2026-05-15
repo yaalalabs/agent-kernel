@@ -1,13 +1,14 @@
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
+
 from pydantic import ConfigDict
 
 from fastapi import APIRouter, File, Form, UploadFile
 
-from ..core.model import BaseChatRequest, BaseRunRequest
 from ..core import Config
 from ..core.chat_service import ChatService
+from ..core.model import BaseChatRequest, BaseRunRequest
 from ..core.runtime import Runtime
 
 
@@ -68,7 +69,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         @router.post("/api/v1/chat-multipart")
         async def run_multipart(
-            prompt: str = Form(...), 
+            prompt: str = Form(...),
             agent: Optional[str] = Form(None),
             session_id: Optional[str] = Form(None),
             files: Optional[List[UploadFile]] = File(None),

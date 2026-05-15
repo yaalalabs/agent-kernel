@@ -3,10 +3,11 @@ import logging
 import traceback
 
 import httpx
-from fastapi import APIRouter, Request
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
 from slack_bolt.async_app import AsyncApp
 from slack_sdk.errors import SlackApiError
+
+from fastapi import APIRouter, Request
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config

@@ -5,6 +5,7 @@ import traceback
 from typing import Mapping
 
 import httpx
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...api import RESTRequestHandler

@@ -11,8 +11,8 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
-    BaseRunRequest,
     BaseChatRequest,
+    BaseRunRequest,
 )
 from .service import AgentService
 

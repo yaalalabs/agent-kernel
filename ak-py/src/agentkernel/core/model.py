@@ -156,6 +156,7 @@ class BaseRunRequest(BaseChatRequest):
     images: Optional[List[ImageData]] = None
     model_config = ConfigDict(extra="allow")
 
+
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
     user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
