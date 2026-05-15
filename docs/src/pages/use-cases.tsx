@@ -27,18 +27,60 @@ gsap.registerPlugin(ScrollTrigger);
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const buttonsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const tl = gsap.timeline();
+
+    gsap.set([titleRef.current, subtitleRef.current, buttonsRef.current], {
+      opacity: 0,
+      y: 30,
+    });
+
+    tl.to(titleRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.8,
+      ease: 'power2.out',
+    })
+      .to(
+        subtitleRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.6,
+          ease: 'power2.out',
+        },
+        '-=0.4',
+      )
+      .to(
+        buttonsRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.5,
+          ease: 'power2.out',
+        },
+        '-=0.2',
+      );
+  }, []);
+
   return (
     <section className={styles.hero}>
       <div className="container">
         <div className={styles.heroContent}>
-          <h1 className={styles.heroTitle}>Who Is Agent Kernel Built For?</h1>
-          <p className={styles.heroSubtitle}>
+          <h1 ref={titleRef} className={styles.heroTitle}>
+            Who Is Agent Kernel Built For?
+          </h1>
+          <p ref={subtitleRef} className={styles.heroSubtitle}>
             Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents
             to production in days instead of months. It works with any major AI framework — OpenAI,
             LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in
             a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code.
           </p>
-          <div className={styles.heroButtons}>
+          <div ref={buttonsRef} className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
               <span className={styles.btnIcon}>→</span>
               Get Started

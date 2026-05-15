@@ -26,6 +26,7 @@ import { SiGmail, SiGooglegemini, SiLangchain, SiHuggingface } from 'react-icons
 import { FaFacebookMessenger } from 'react-icons/fa6';
 import { TbBrandTeams } from 'react-icons/tb';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
+import gsap from 'gsap';
 
 /** Stable fragment ids for in-page navigation (diagram + deep links). */
 const FEATURE_ANCHORS = {
@@ -99,15 +100,58 @@ function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const buttonsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const tl = gsap.timeline();
+
+    gsap.set([titleRef.current, subtitleRef.current, buttonsRef.current], {
+      opacity: 0,
+      y: 30,
+    });
+
+    tl.to(titleRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.8,
+      ease: 'power2.out',
+    })
+      .to(
+        subtitleRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.6,
+          ease: 'power2.out',
+        },
+        '-=0.4',
+      )
+      .to(
+        buttonsRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.5,
+          ease: 'power2.out',
+        },
+        '-=0.2',
+      );
+  }, []);
+
   return (
     <section className={styles.hero}>
       <div className="container">
         <div className={styles.heroContent}>
-          <h1 className={styles.heroTitle}>Everything You Need to Build,<br />Run, and Scale AI Agents</h1>
-          <p className={styles.heroSubtitle}>
+          <h1 ref={titleRef} className={styles.heroTitle}>
+            Everything You Need to Build,<br />
+            Run, and Scale AI Agents
+          </h1>
+          <p ref={subtitleRef} className={styles.heroSubtitle}>
             From runtime and memory to guardrails, observability, testing, and multi-cloud deployment.
           </p>
-          <div className={styles.heroButtons}>
+          <div ref={buttonsRef} className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
               <span className={styles.btnIcon}>→</span>
               Get Started
