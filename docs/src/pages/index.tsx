@@ -38,6 +38,8 @@ import {
   MdSmartToy,
   MdPermMedia,
   MdLanguage,
+  MdCheck,
+  MdClose,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
@@ -674,6 +676,170 @@ const DEV_FEATURE_GROUPS = [
     ],
   },
 ];
+
+const AI_ENGINEER_ARCH_LAYERS = [
+  {
+    num: '01',
+    label: 'Your Agent Logic',
+    items: ['Domain-Specific Agent Code', 'Business Rules', 'Prompts & Tools'],
+  },
+  {
+    num: '02',
+    label: 'Agent Kernel Core',
+    items: [
+      'Agent Module',
+      'Agent Wrapper',
+      'Framework-Specific Runner',
+      'Session Manager',
+      'Runtime',
+      'Pre / Post Hooks',
+    ],
+  },
+  {
+    num: '03',
+    label: 'Framework Adapters',
+    items: [
+      'LangGraph',
+      'OpenAI Agents',
+      'CrewAI',
+      'Google ADK',
+      'Smolagents',
+      'LiveKit',
+      'Bring your own [advanced]',
+    ],
+  },
+  {
+    num: '04',
+    label: 'Storage & Memory',
+    items: ['In-Memory', 'Redis', 'DynamoDB', 'CosmosDB', 'Firestore'],
+  },
+  {
+    num: '05',
+    label: 'Knowledge Bases',
+    items: ['ChromaDB', 'Neo4j', 'Starburst', 'SQLDB'],
+  },
+  {
+    num: '06',
+    label: 'Observability',
+    items: ['LangFuse', 'OpenLLMetry'],
+  },
+  {
+    num: '07',
+    label: 'Execution Surface',
+    items: [
+      'AWS Lambda',
+      'ECS',
+      'Azure Functions',
+      'Container Apps',
+      'GCP Cloud Run',
+      'GCP Cloud Run Functions',
+    ],
+  },
+  {
+    num: '08',
+    label: 'Interfacing',
+    items: ['CLI', 'MCP', 'A2A', 'REST API'],
+  },
+  {
+    num: '09',
+    label: 'Channels',
+    items: [
+      'Slack',
+      'Teams',
+      'WhatsApp',
+      'Telegram',
+      'Messenger',
+      'Instagram',
+      'Gmail',
+      'Redis',
+      'DynamoDB',
+    ],
+  },
+];
+
+type AkCompareCellStatus = 'positive' | 'negative' | 'partial';
+
+interface AkCompareCell {
+  status: AkCompareCellStatus;
+  text?: string;
+}
+
+const AI_ENGINEER_COMPARE_COLUMNS = {
+  cloud: 'Bedrock AgentCore / Azure AI Foundry / Google Vertex AI',
+  cloudShort: 'Bedrock / Azure / Google',
+  frameworks: 'LangGraph · CrewAI · OpenAI Agents etc',
+  frameworksShort: 'LangGraph · CrewAI · OpenAI',
+  agentKernel: 'Agent Kernel',
+} as const;
+
+const AI_ENGINEER_COMPARISON_ROWS: {
+  feature: string;
+  featureHint?: string;
+  cloud: AkCompareCell;
+  frameworks: AkCompareCell;
+  agentKernel: AkCompareCell;
+}[] = [
+  {
+    feature: 'Switch cloud platform later?',
+    cloud: { status: 'negative', text: 'Rewrite' },
+    frameworks: { status: 'positive', text: 'You build it' },
+    agentKernel: { status: 'positive', text: 'One config change' },
+  },
+  {
+    feature: 'Multi-framework agent execution?',
+    cloud: { status: 'negative', text: 'Not possible' },
+    frameworks: { status: 'negative', text: 'Not possible' },
+    agentKernel: { status: 'positive', text: 'Run in one runtime' },
+  },
+  {
+    feature: 'Out of Box integrations?',
+    featureHint: '(i.e. Slack / Teams / REST / A2A / MCP)',
+    cloud: { status: 'partial', text: 'Partial' },
+    frameworks: { status: 'negative', text: 'DIY' },
+    agentKernel: { status: 'positive', text: 'Built-in' },
+  },
+  {
+    feature: 'Sessions, memory, observability?',
+    cloud: { status: 'positive', text: 'Proprietary' },
+    frameworks: { status: 'negative', text: 'DIY' },
+    agentKernel: { status: 'positive', text: 'Built-in and Pluggable' },
+  },
+  {
+    feature: 'Open-source / no licensing?',
+    cloud: { status: 'negative' },
+    frameworks: { status: 'positive' },
+    agentKernel: { status: 'positive', text: 'Apache 2.0' },
+  },
+  {
+    feature: 'Knowledge bases?',
+    cloud: { status: 'positive', text: 'Proprietary' },
+    frameworks: { status: 'negative', text: 'DIY' },
+    agentKernel: { status: 'positive', text: 'Built-in and Pluggable' },
+  },
+  {
+    feature: 'Lift-and-shift an existing agent?',
+    cloud: { status: 'negative', text: 'Rewrite' },
+    frameworks: { status: 'negative', text: 'Rewrite' },
+    agentKernel: { status: 'positive', text: 'Wrap & ship' },
+  },
+];
+
+function AkCompareCellContent({ cell }: { cell: AkCompareCell }) {
+  if (cell.status === 'partial') {
+    return <span className={styles.akComparePartial}>{cell.text}</span>;
+  }
+
+  const Icon = cell.status === 'positive' ? MdCheck : MdClose;
+  const iconClass =
+    cell.status === 'positive' ? styles.akCompareIconPos : styles.akCompareIconNeg;
+
+  return (
+    <span className={styles.akCompareCellValue}>
+      <Icon className={iconClass} aria-hidden />
+      {cell.text ? <span>{cell.text}</span> : null}
+    </span>
+  );
+}
 
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -1988,90 +2154,179 @@ if __name__ == "__main__":
             </div>
           )}
           {selectedLevel === '03' && (
-            <div ref={contentRef} className={styles.levelContent}>
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>
-                  Advanced Capabilities for Production AI
+            <div ref={contentRef} className={styles.developerContent}>
+
+              {/* Step 01 — AI Engineer Analogy */}
+              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`}>
+                <p className={styles.devStepLabel}>AI Engineer Analogy</p>
+                <h2 className={styles.devTitle}>
+                  Bring your already existing agentic AI code onto a unified Operating System and Deployment Infrastructure for your AI Agents while making it enterprise ready and compliant.
                 </h2>
-                <p className={styles.contentBody}>
-                  Agent Kernel gives you the production-grade features that enterprise AI systems need, without framework lock-in or vendor dependency.
-                </p>
-              </div>
-
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>Core Capabilities</h2>
-
-                <div className={styles.capabilitiesGrid}>
-                  {[
-                    {
-                      icon: MdSwapHoriz,
-                      title: 'Framework Agnostic',
-                      body: 'Run OpenAI Agents, LangGraph, CrewAI, and Google ADK side by side. Switch frameworks with 2 import lines.',
-                    },
-                    {
-                      icon: MdCloud,
-                      title: 'Multi-Cloud',
-                      body: 'Same agent code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps. Zero vendor lock-in.',
-                    },
-                    {
-                      icon: MdMemory,
-                      title: 'Session & Memory',
-                      body: 'Built-in volatile and non-volatile caching. Backends: Redis, DynamoDB, Cosmos DB, in-memory.',
-                    },
-                    {
-                      icon: MdSettings,
-                      title: 'Execution Hooks',
-                      body: 'Pre/post-execution hooks for guardrails, RAG injection, analytics, and response moderation.',
-                    },
-                    {
-                      icon: FaSlack,
-                      title: 'Messaging Integrations',
-                      body: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
-                    },
-                    {
-                      icon: MdBugReport,
-                      title: 'Testing Framework',
-                      body: 'pytest-integrated agent testing with fuzzy, semantic, and fallback comparison modes.',
-                    },
-                    {
-                      icon: MdSecurity,
-                      title: 'Guardrails',
-                      body: 'OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, and moderation.',
-                    },
-                    {
-                      icon: MdVisibility,
-                      title: 'Observability & Tracing',
-                      body: 'LangFuse and OpenLLMetry tracing with one config line. Full visibility into every call.',
-                    },
-                  ].map((feature) => {
-                    const IconComponent = feature.icon;
-                    return (
-                      <div key={feature.title} className={styles.capabilityCard}>
-                        <IconComponent className={styles.capabilityIcon} />
-                        <h3 className={styles.capabilityTitle}>{feature.title}</h3>
-                        <p className={styles.capabilityBody}>{feature.body}</p>
-                      </div>
-                    );
-                  })}
+                <div className={styles.devDescription}>
+                  <p className={styles.devIntro}>
+                    Agent Kernel is a unified, capable runtime for AI agents. Its pluggable architecture lets you attach capabilities to your agents effortlessly. A comprehensive list of pre-built connectors smooths the agent-building process—enabling a capability is a matter of setting configuration. All out of the box.
+                  </p>
+                  <p className={styles.devIntro}>
+                    Agent Kernel takes care of how agents run, scale from single execution to thousands of agent invocations in parallel, and interact with the real world.
+                  </p>
                 </div>
               </div>
 
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>Production Deployment</h2>
-                <p className={styles.contentBody}>
-                  Deploy with full Terraform modules, pre-configured best practices, and zero cloud lock-in. Same code runs everywhere.
-                </p>
+              {/* Architecture flow — 9 stacked layers */}
+              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`}>
+                <div className={styles.architectureStack}>
+                  {AI_ENGINEER_ARCH_LAYERS.map((layer, i, arr) => (
+                    <div key={layer.label} className={styles.architectureLayerGroup}>
+                      <div className={styles.layerNumberWrapper}>
+                        <div className={styles.layerNumberCircle}>
+                          {layer.num}
+                        </div>
+                        {i < arr.length - 1 && (
+                          <div className={styles.layerConnector} />
+                        )}
+                      </div>
+                      <div className={styles.layerContentWrapper}>
+                        <div className={styles.layerContentBox}>
+                          <h3 className={styles.layerLabel}>{layer.label}</h3>
+                          <p className={styles.layerSub}>
+                            {layer.items.map((item, idx) => (
+                              <React.Fragment key={item}>
+                                {idx > 0 && (
+                                  <span className={styles.layerSubSep} aria-hidden="true">
+                                    ●
+                                  </span>
+                                )}
+                                {item}
+                              </React.Fragment>
+                            ))}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* ── How Agent Kernel Fits In ── */}
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>How Agent Kernel Fits In</h2>
-                <p className={styles.contentBody}>
-                    You write your AI agent's logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
-                </p>
+              {/* Step 02 — What Makes Agent Kernel Stand Out */}
+              <div className={`${styles.akStandOutSection} ${styles.developerBlock}`}>
+                <p className={styles.devStepLabel}>Compare alternatives</p>
+                <h2 className={styles.devTitle}>What Makes Agent Kernel Stand Out</h2>
 
-                <div className={styles.devArchitectureWrapper}>
-                  <AgentKernelArchDiagram />
+                <div className={styles.akComparePanel}>
+                  <p className={styles.akCompareScrollHint} aria-hidden="true">
+                    Scroll horizontally to compare all columns
+                  </p>
+
+                  <div className={styles.akCompareTableWrap}>
+                    <table className={styles.akCompareTable}>
+                      <colgroup>
+                        <col className={styles.akCompareColFeature} />
+                        <col className={styles.akCompareColData} />
+                        <col className={styles.akCompareColData} />
+                        <col className={styles.akCompareColData} />
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.akCompareFeatureCol} />
+                          <th
+                            scope="col"
+                            className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
+                          >
+                            <span className={styles.akCompareHeadLong}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.cloud}
+                            </span>
+                            <span className={styles.akCompareHeadShort}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.cloudShort}
+                            </span>
+                          </th>
+                          <th
+                            scope="col"
+                            className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
+                          >
+                            <span className={styles.akCompareHeadLong}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.frameworks}
+                            </span>
+                            <span className={styles.akCompareHeadShort}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.frameworksShort}
+                            </span>
+                          </th>
+                          <th
+                            scope="col"
+                            className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol} ${styles.akCompareHeadCellHighlight}`}
+                          >
+                            {AI_ENGINEER_COMPARE_COLUMNS.agentKernel}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {AI_ENGINEER_COMPARISON_ROWS.map((row, i) => (
+                          <tr
+                            key={row.feature}
+                            className={i % 2 === 1 ? styles.akCompareRowAlt : undefined}
+                          >
+                            <th scope="row" className={styles.akCompareFeatureCell}>
+                              <span className={styles.akCompareFeatureText}>{row.feature}</span>
+                              {row.featureHint ? (
+                                <span className={styles.akCompareFeatureHint}>{row.featureHint}</span>
+                              ) : null}
+                            </th>
+                            <td className={`${styles.akCompareDataCell} ${styles.akCompareDataCol}`}>
+                              <AkCompareCellContent cell={row.cloud} />
+                            </td>
+                            <td className={`${styles.akCompareDataCell} ${styles.akCompareDataCol}`}>
+                              <AkCompareCellContent cell={row.frameworks} />
+                            </td>
+                            <td
+                              className={`${styles.akCompareDataCell} ${styles.akCompareDataCol} ${styles.akCompareDataCellHighlight}`}
+                            >
+                              <AkCompareCellContent cell={row.agentKernel} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className={styles.akCompareMobileList}>
+                    {AI_ENGINEER_COMPARISON_ROWS.map((row) => (
+                      <article key={row.feature} className={styles.akCompareMobileCard}>
+                        <h3 className={styles.akCompareMobileFeature}>
+                          {row.feature}
+                          {row.featureHint ? (
+                            <span className={styles.akCompareFeatureHint}>{row.featureHint}</span>
+                          ) : null}
+                        </h3>
+                        <div className={styles.akCompareMobileRows}>
+                          <div className={styles.akCompareMobileRow}>
+                            <span className={styles.akCompareMobileLabel}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.cloudShort}
+                            </span>
+                            <AkCompareCellContent cell={row.cloud} />
+                          </div>
+                          <div className={styles.akCompareMobileRow}>
+                            <span className={styles.akCompareMobileLabel}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.frameworksShort}
+                            </span>
+                            <AkCompareCellContent cell={row.frameworks} />
+                          </div>
+                          <div
+                            className={`${styles.akCompareMobileRow} ${styles.akCompareMobileRowHighlight}`}
+                          >
+                            <span className={styles.akCompareMobileLabel}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.agentKernel}
+                            </span>
+                            <AkCompareCellContent cell={row.agentKernel} />
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+
+                  <p className={styles.akCompareFooter}>
+                    Bedrock / Foundry give you <strong>runtime</strong> but take your{' '}
+                    <strong>freedom</strong>. LangGraph gives you <strong>freedom</strong> but no{' '}
+                    <strong>runtime</strong>. Agent Kernel gives you <strong>both</strong>.
+                  </p>
                 </div>
               </div>
 
