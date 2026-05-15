@@ -5,7 +5,6 @@ import logging
 import traceback
 
 import httpx
-
 from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler

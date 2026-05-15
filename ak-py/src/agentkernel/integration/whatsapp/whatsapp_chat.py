@@ -6,7 +6,6 @@ import traceback
 from typing import Optional
 
 import httpx
-
 from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler

@@ -2,9 +2,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from pydantic import ConfigDict
-
 from fastapi import APIRouter, File, Form, UploadFile
+from pydantic import ConfigDict
 
 from ..core import Config
 from ..core.chat_service import ChatService

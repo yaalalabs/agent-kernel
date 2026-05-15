@@ -8,7 +8,6 @@ import httpx
 import msal
 from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
 from botbuilder.schema import Activity, ActivityTypes, Attachment
-
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from ...api import RESTRequestHandler

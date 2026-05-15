@@ -4,9 +4,8 @@ from typing import List
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.utils import AGENT_CARD_WELL_KNOWN_PATH
-from pydantic import BaseModel
-
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from .a2a import A2A
 

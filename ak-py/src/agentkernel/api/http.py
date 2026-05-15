@@ -1,10 +1,9 @@
 import logging
 
 import uvicorn
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 
 from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
