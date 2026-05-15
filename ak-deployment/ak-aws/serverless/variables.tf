@@ -198,7 +198,7 @@ variable "authorizer" {
     package_type          = string
     module_name           = string
     result_ttl_in_seconds = optional(number, 150)
-    timeout               = optional(number, 45)
+    timeout               = optional(number, 30)
     memory_size           = optional(number, 128)
     layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
