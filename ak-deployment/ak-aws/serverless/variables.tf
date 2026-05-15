@@ -27,7 +27,7 @@ variable "module_type" {
 
 variable "module_name" {
   type        = string
-  description = "Module name"
+  description = "Module name (used for resource naming). NOTE: must be non-empty when enable_api_gateway is true."
   default     = ""
   validation {
     condition     = !var.enable_api_gateway || var.module_name != ""

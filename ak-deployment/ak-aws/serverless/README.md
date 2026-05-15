@@ -301,7 +301,7 @@ module "serverless_api_auth" {
 | `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource naming (used for other resources, not request handler) | `string` | `""` | no |
+| `module_name` | Module name for resource naming (used for other resources, not request handler). Note: when `enable_api_gateway` is `true`, this top-level `module_name` must be set to a non-empty value to support resource naming and API routing. | `string` | `""` | no |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
