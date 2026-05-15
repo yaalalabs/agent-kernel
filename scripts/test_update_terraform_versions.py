@@ -250,6 +250,56 @@ module docker_image {
         temp_path.unlink()
 
 
+def test_api_version_not_updated():
+    """Test that api_version parameter is not updated, only module version."""
+    content = '''
+module "serverless_agents" {
+  source = "yaalalabs/ak-serverless/aws"
+  version = "0.4.0"
+
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  function_description = "Agent Kernel OpenAI Sample Lambda"
+  function_name        = "openai-agents"
+  handler_path         = "lambda.handler"
+  module_name          = var.module_name
+  package_path         = "../dist"
+  package_type         = "Image"
+  memory_size          = 256
+  create_redis_cluster = true
+  product_display_name = "AK OpenAI Serverless Example"
+  region               = var.region
+
+  # API Gateway configuration
+  api_version    = "0.4.0"
+  api_base_path  = "api"
+  agent_endpoint = "chat"
+}
+'''
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.tf', delete=False) as f:
+        f.write(content)
+        f.flush()
+        temp_path = Path(f.name)
+    
+    try:
+        was_modified, num_updates = update_terraform_versions(temp_path, "0.5.0")
+        
+        assert was_modified, "File should be modified"
+        assert num_updates == 1, f"Expected 1 update, got {num_updates}"
+        
+        with open(temp_path, 'r') as f:
+            result = f.read()
+        
+        # Module version should be updated
+        assert 'version = "0.5.0"' in result
+        # api_version should NOT be updated
+        assert 'api_version    = "0.4.0"' in result
+        print("✅ test_api_version_not_updated passed")
+    finally:
+        temp_path.unlink()
+
+
 if __name__ == "__main__":
     print("Running tests for update_terraform_versions.py...\n")
     
@@ -260,5 +310,6 @@ if __name__ == "__main__":
     test_no_changes_when_no_modules()
     test_update_module_with_count_first()
     test_update_module_without_quotes()
+    test_api_version_not_updated()
     
     print("\n✅ All tests passed!")

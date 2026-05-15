@@ -11,6 +11,7 @@ dependencies = [
     "llama-index-embeddings-openai>=0.2.0",
     "llama-index-llms-openai>=0.2.0",
     "llama-index-readers-file>=0.2.0",
+
 ]
 
 [dependency-groups]
