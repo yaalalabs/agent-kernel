@@ -2330,6 +2330,301 @@ if __name__ == "__main__":
                 </div>
               </div>
 
+              {/* Step 03 — Framework Selection */}
+              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
+                <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
+                <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
+
+                <div className={styles.devFrameworkContainer}>
+                  {/* Left Column - Body & Buttons */}
+                  <div className={styles.devFrameworkButtonsCol}>
+                    <p className={styles.devFrameworkBody}>
+                      Choose a supported framework that fits your team, while Agent Kernel gives you a consistent production-ready layer for deployment, APIs, sessions, and integrations.
+                    </p>
+                    
+                    <div className={styles.devFrameworkButtonsGroup}>
+                      {[
+                        { id: 'openai', label: 'OpenAI Agents' },
+                        { id: 'crewai', label: 'CrewAI' },
+                        { id: 'langgraph', label: 'LangGraph' },
+                        { id: 'adk', label: 'Google ADK' },
+                      ].map((fw) => (
+                        <button
+                          key={fw.id}
+                          onClick={() => setSelectedFramework(fw.id)}
+                          className={`${styles.devFrameworkButton} ${
+                            selectedFramework === fw.id ? styles.devFrameworkButtonActive : ''
+                          }`}
+                        >
+                          {fw.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right Column - Code Display */}
+                  <div className={styles.devFrameworkCodeCol}>
+                    {selectedFramework === 'openai' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[openai]', 'openai-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'openai-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[openai]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+)
+
+OpenAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'openai-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'openai-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+)
+
+OpenAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/openai" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'crewai' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[crewai]', 'crewai-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'crewai-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[crewai]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+agent = CrewAgent(
+    role="assistant",
+    goal="Help users with their questions",
+    backstory="You are a helpful AI assistant",
+    verbose=False,
+)
+
+CrewAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'crewai-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'crewai-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+agent = CrewAgent(
+    role="assistant",
+    goal="Help users with their questions",
+    backstory="You are a helpful AI assistant",
+    verbose=False,
+)
+
+CrewAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/crewai" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'langgraph' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[langgraph]', 'langgraph-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'langgraph-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[langgraph]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    return {"messages": state["messages"] + ["response"]}
+
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()`, 'langgraph-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'langgraph-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    return {"messages": state["messages"] + ["response"]}
+
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/langgraph" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'adk' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[adk]', 'adk-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'adk-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[adk]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import ADKModule
+
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant",
+)
+
+ADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'adk-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'adk-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import ADKModule
+
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant",
+)
+
+ADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/google-adk" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
         </div>
