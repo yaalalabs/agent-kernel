@@ -2958,7 +2958,7 @@ if __name__ == "__main__":
                 </div>
               </div>
 
-              {/* Step 07 â€” Why Agent Kernel is a Powerful Operating System */}
+              {/* Step 07 - Why Agent Kernel is a Powerful Operating System */}
               <div className={`${styles.devFeatureSection} ${styles.developerBlock}`}>
                 <p className={styles.devStepLabel}>Operating system depth</p>
                 <h2 className={styles.devTitle}>

@@ -29,6 +29,7 @@ import { SiGmail, SiGooglegemini, SiLangchain, SiHuggingface } from 'react-icons
 import { FaFacebookMessenger } from 'react-icons/fa6';
 import { TbBrandTeams } from 'react-icons/tb';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
+import AgentKernelRuntimeFlowDiagram from '../components/AgentKernelRuntimeFlowDiagram';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 
@@ -103,27 +104,38 @@ function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/* ─── Hero ──────────────────────────────────────────────────────────────── */
+/* ─── Why Agent Kernel (hero) ───────────────────────────────────────────── */
 
 function Hero() {
+  const labelRef = useRef<HTMLParagraphElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
-  const buttonsRef = useRef<HTMLDivElement>(null);
+  const diagramRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const tl = gsap.timeline();
 
-    gsap.set([titleRef.current, subtitleRef.current, buttonsRef.current], {
+    gsap.set([labelRef.current, titleRef.current, subtitleRef.current, diagramRef.current], {
       opacity: 0,
       y: 30,
     });
 
-    tl.to(titleRef.current, {
+    tl.to(labelRef.current, {
       opacity: 1,
       y: 0,
-      duration: 0.8,
+      duration: 0.6,
       ease: 'power2.out',
     })
+      .to(
+        titleRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.8,
+          ease: 'power2.out',
+        },
+        '-=0.35',
+      )
       .to(
         subtitleRef.current,
         {
@@ -132,40 +144,35 @@ function Hero() {
           duration: 0.6,
           ease: 'power2.out',
         },
-        '-=0.4',
+        '-=0.45',
       )
       .to(
-        buttonsRef.current,
+        diagramRef.current,
         {
           opacity: 1,
           y: 0,
-          duration: 0.5,
+          duration: 0.7,
           ease: 'power2.out',
         },
-        '-=0.2',
+        '-=0.3',
       );
   }, []);
 
   return (
-    <section className={styles.hero}>
+    <section className={styles.whyHero}>
       <div className="container">
-        <div className={styles.heroContent}>
-          <h1 ref={titleRef} className={styles.heroTitle}>
-            Everything You Need to Build,<br />
-            Run, and Scale AI Agents
+        <div className={styles.whyHeroBlock}>
+          <p ref={labelRef} className={styles.whyHeroLabel}>
+            Why Agent Kernel
+          </p>
+          <h1 ref={titleRef} className={styles.whyHeroTitle}>
+            Everything You Need to Build, Run, and Scale AI Agents
           </h1>
-          <p ref={subtitleRef} className={styles.heroSubtitle}>
+          <p ref={subtitleRef} className={styles.whyHeroSubtitle}>
             From runtime and memory to guardrails, observability, testing, and multi-cloud deployment.
           </p>
-          <div ref={buttonsRef} className={styles.heroButtons}>
-            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              <span className={styles.btnIcon}>→</span>
-              Get Started
-            </Link>
-            <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/use-cases">
-              <span className={styles.btnIconSecondary}>→</span>
-              Find Your Use Case
-            </Link>
+          <div ref={diagramRef} className={styles.whyHeroDiagram}>
+            <AgentKernelRuntimeFlowDiagram />
           </div>
         </div>
       </div>

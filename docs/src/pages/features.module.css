@@ -166,7 +166,71 @@
   line-height: 1;
 }
 
-/* ─── Hero ────────────────────────────────────────────────────────────────── */
+/* ─── Why Agent Kernel (hero) ─────────────────────────────────────────────── */
+
+.whyHero {
+  position: relative;
+  padding: 6rem 1.5rem 4rem;
+  overflow: hidden;
+  animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.whyHeroBlock {
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.whyHeroLabel {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.125em;
+  margin: 0 0 0.5rem;
+}
+
+.whyHeroTitle {
+  font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0 0 1rem;
+  max-width: 52rem;
+}
+
+.whyHeroSubtitle {
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.7;
+  margin: 0 0 2rem;
+  max-width: 44rem;
+}
+
+.whyHeroDiagram {
+  width: 100%;
+}
+
+@media (max-width: 996px) {
+  .whyHero {
+    padding: 5rem 1.25rem 3rem;
+  }
+
+  .whyHeroLabel {
+    font-size: 1rem;
+  }
+
+  .whyHeroTitle {
+    font-size: 1.5rem;
+  }
+
+  .whyHeroSubtitle {
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+}
 
 .hero {
   position: relative;
