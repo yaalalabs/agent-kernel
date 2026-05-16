@@ -2238,295 +2238,7 @@
   }
 }
 
-/* ─── AI Engineer — OS depth (memory + hooks) ─────────────────────────────── */
-
-.aiOsSection {
-  width: 100%;
-  max-width: 72rem;
-  margin: 4rem auto 5rem;
-}
-
-.aiOsSubsection {
-  margin-top: 2.5rem;
-}
-
-.aiOsSubsection + .aiOsSubsection {
-  margin-top: 3.5rem;
-  padding-top: 3rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.aiOsHeadline {
-  margin: 0 0 0.5rem;
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: -0.01em;
-}
-
-.aiOsSubtitle {
-  margin: 0 0 1.75rem;
-  max-width: 42rem;
-  font-size: 1.0625rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.aiOsMemoryGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
-}
-
-@media (min-width: 640px) {
-  .aiOsMemoryGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .aiOsMemoryGrid .aiOsCard:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-    max-width: calc(50% - 0.5rem);
-    justify-self: center;
-  }
-}
-
-@media (min-width: 996px) {
-  .aiOsMemoryGrid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .aiOsMemoryGrid .aiOsCard:last-child:nth-child(odd) {
-    grid-column: auto;
-    max-width: none;
-    justify-self: stretch;
-  }
-}
-
-.aiOsCard,
-.aiOsPipelineStep {
-  position: relative;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
-  padding: 1.25rem;
-  height: 100%;
-  transition:
-    border-color 300ms ease,
-    background-color 300ms ease,
-    box-shadow 300ms ease;
-}
-
-.aiOsCard:hover,
-.aiOsPipelineStep:hover {
-  border-color: rgba(255, 255, 255, 0.38);
-  background: rgba(10, 12, 22, 0.55);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-}
-
-.aiOsCardHeader {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  margin-bottom: 0.875rem;
-}
-
-.aiOsPipelineStepHeader {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.875rem;
-}
-
-.aiOsCardIconWrap {
-  flex-shrink: 0;
-  width: 2.25rem;
-  height: 2.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.375rem;
-  background-color: rgba(255, 255, 255, 0.04);
-}
-
-.aiOsCardIcon {
-  width: 1.25rem;
-  height: 1.25rem;
-  color: #ffffff;
-}
-
-.aiOsCardTitle,
-.aiOsPipelineStepTitle {
-  margin: 0;
-  padding-top: 0.2rem;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  line-height: 1.35;
-  color: #ffffff;
-}
-
-.aiOsBulletList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.aiOsBulletItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.aiOsBulletDot {
-  flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.45);
-  line-height: 1.55;
-}
-
-.aiOsPipelineScrollHint {
-  display: none;
-  margin: 0 0 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.aiOsPipelineStep {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.aiOsPipelineBadgeSlot {
-  display: flex;
-  align-items: flex-start;
-  min-height: 1.625rem;
-  margin-bottom: 0.5rem;
-}
-
-.aiOsPipelineBulletList {
-  flex: 1;
-}
-
-.aiOsPipeline {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-}
-
-.aiOsPipelineConnector {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  padding: 0.35rem 0;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 1.125rem;
-  line-height: 1;
-}
-
-.aiOsPipelineArrowH {
-  display: none;
-}
-
-.aiOsPipelineArrowV {
-  display: inline;
-}
-
-.aiOsHighlightBadge {
-  display: inline-block;
-  margin: 0;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  border: 1px solid rgba(167, 139, 250, 0.45);
-  background: rgba(139, 92, 246, 0.14);
-  color: #c4b5fd;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.aiOsPipelineStepHighlight {
-  border-color: rgba(167, 139, 250, 0.45);
-  background: rgba(22, 14, 42, 0.58);
-}
-
-@media (min-width: 768px) {
-  .aiOsPipelineScrollHint {
-    display: block;
-  }
-
-  .aiOsPipeline {
-    display: grid;
-    grid-template-columns: minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
-    align-items: stretch;
-    gap: 0 0.5rem;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 0.35rem;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
-  }
-
-  .aiOsPipelineStep {
-    min-width: 0;
-    height: 100%;
-  }
-
-  .aiOsPipelineConnector {
-    align-self: center;
-    padding: 0;
-    min-height: 0;
-  }
-
-  .aiOsPipelineArrowH {
-    display: inline;
-  }
-
-  .aiOsPipelineArrowV {
-    display: none;
-  }
-}
-
-@media (min-width: 996px) {
-  .aiOsPipelineScrollHint {
-    display: none;
-  }
-
-  .aiOsPipeline {
-    grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr);
-    gap: 0 0.65rem;
-    overflow-x: visible;
-    padding-bottom: 0;
-  }
-}
-
-@media (max-width: 640px) {
-  .aiOsSection .devTitle {
-    font-size: 1.25rem;
-  }
-
-  .aiOsHeadline {
-    font-size: 1.0625rem;
-  }
-
-  .aiOsSubtitle {
-    font-size: 1rem;
-  }
-}
-
-.devArchitectureSection + .aiOsSection {
+.devArchitectureSection + .devFeatureSection {
   margin-top: 5rem;
 }
 
@@ -2684,6 +2396,176 @@
   font-size: 0.8125rem;
   line-height: 1.55;
   margin: 0;
+}
+
+.devFeatureGroupHeadline {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.devFeatureGroupIntro {
+  margin: 0 0 1.75rem;
+  max-width: 42rem;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.devFeatureCardBodyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.devFeatureCardBodyList li {
+  position: relative;
+  padding-left: 0.875rem;
+}
+
+.devFeatureCardBodyList li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.devFeatureCardBadgeSlot {
+  display: flex;
+  align-items: flex-start;
+  min-height: 1.625rem;
+}
+
+.devFeatureHighlightBadge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  background: rgba(139, 92, 246, 0.14);
+  color: #c4b5fd;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.devFeatureCardHighlight {
+  border-color: rgba(167, 139, 250, 0.45);
+}
+
+.devFeatureCardHighlight:hover {
+  border-color: rgba(167, 139, 250, 0.55);
+  background-color: rgba(139, 92, 246, 0.08);
+}
+
+/* Hook pipeline — flow arrows between devFeatureCards */
+.devHookPipelineScrollHint {
+  display: none;
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.devHookPipelineScroll {
+  width: 100%;
+}
+
+.devHookPipeline {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.devHookPipeline .devFeatureCard {
+  min-height: 100%;
+}
+
+.devHookPipelineConnector {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.devHookPipelineArrowH {
+  display: none;
+}
+
+.devHookPipelineArrowV {
+  display: inline;
+}
+
+@media (min-width: 768px) {
+  .devHookPipelineScrollHint {
+    display: block;
+  }
+
+  .devHookPipelineScroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.35rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
+
+  .devHookPipeline {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
+    align-items: stretch;
+    gap: 0 0.5rem;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .devHookPipeline .devFeatureCard {
+    min-width: 0;
+  }
+
+  .devHookPipelineConnector {
+    align-self: center;
+    padding: 0;
+  }
+
+  .devHookPipelineArrowH {
+    display: inline;
+  }
+
+  .devHookPipelineArrowV {
+    display: none;
+  }
+}
+
+@media (min-width: 996px) {
+  .devHookPipelineScrollHint {
+    display: none;
+  }
+
+  .devHookPipelineScroll {
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+
+  .devHookPipeline {
+    grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr);
+    gap: 0 0.65rem;
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 /* ─── Developer Framework Section ──────────────────────────────────────────── */
