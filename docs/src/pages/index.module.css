@@ -2189,6 +2189,54 @@
   }
 }
 
+/* ─── AI Engineer — Build flow section ────────────────────────────────────── */
+
+.aiEngineerBuildSection {
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto 5rem;
+}
+
+.aiBuildSubsection {
+  margin-top: 2.5rem;
+}
+
+.aiBuildSubsection + .aiBuildSubsection {
+  margin-top: 3.5rem;
+  padding-top: 3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.aiBuildSubTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.aiBuildSubBody {
+  margin: 0 0 1.5rem;
+  max-width: 42rem;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+@media (max-width: 640px) {
+  .aiEngineerBuildSection .devTitle {
+    font-size: 1.25rem;
+  }
+
+  .aiBuildSubTitle {
+    font-size: 1.125rem;
+  }
+
+  .aiBuildSubBody {
+    font-size: 1rem;
+  }
+}
+
 /* ─── Developer Features Section ──────────────────────────────────────────── */
 
 .devFeatureSection {

@@ -7,6 +7,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/dist/ScrollToPlugin';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
+import BuildingAgentsFlowDiagram from '../components/BuildingAgentsFlowDiagram';
 import ParticleSphere from '../components/ParticleSphere';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import {
@@ -1459,6 +1460,59 @@ function Levels() {
         }
       }
 
+      // Animate AI Engineer build flow section
+      const aiBuildSection = contentRef.current?.querySelector(`.${styles.aiEngineerBuildSection}`);
+      if (aiBuildSection) {
+        const buildLabel = aiBuildSection.querySelector(`.${styles.devStepLabel}`);
+        const buildTitle = aiBuildSection.querySelector(`.${styles.devTitle}`);
+        if (buildLabel && buildTitle) {
+          gsap.fromTo(
+            [buildLabel, buildTitle],
+            { opacity: 0, y: 30 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 1,
+              ease: 'power2.out',
+              stagger: 0.1,
+              scrollTrigger: {
+                trigger: aiBuildSection,
+                start: 'top 82%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        const buildSubsections = aiBuildSection.querySelectorAll(`.${styles.aiBuildSubsection}`);
+        buildSubsections.forEach((subsection) => {
+          // Animate title/body only — opacity/transform on the subsection breaks
+          // backdrop-filter on the diagram panel inside it.
+          const buildCopy = subsection.querySelectorAll(
+            `.${styles.aiBuildSubTitle}, .${styles.aiBuildSubBody}`
+          );
+          if (buildCopy.length > 0) {
+            gsap.fromTo(
+              buildCopy,
+              { opacity: 0, y: 28 },
+              {
+                opacity: 1,
+                y: 0,
+                duration: 0.95,
+                ease: 'power2.out',
+                stagger: 0.08,
+                scrollTrigger: {
+                  trigger: subsection,
+                  start: 'top 85%',
+                  toggleActions: 'play none none none',
+                },
+                clearProps: 'transform',
+              }
+            );
+          }
+        });
+      }
+
       // Animate developer framework section
       const devFrameworkSection = contentRef.current?.querySelector(`.${styles.devFrameworkSection}`);
       if (devFrameworkSection) {
@@ -2490,7 +2544,23 @@ if __name__ == "__main__":
                 </div>
               </div>
 
-              {/* Step 04 — Framework Selection */}
+              {/* Step 04 — Production-ready compliant agents */}
+              <div className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}>
+                <p className={styles.devStepLabel}>Build with confidence</p>
+                <h2 className={styles.devTitle}>
+                  How Agent Kernel Helps You Build Production-Ready Compliant AI Agents
+                </h2>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Building AI Agents</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Designing a compliant multi-agent architecture carries multiple components.
+                  </p>
+                  <BuildingAgentsFlowDiagram />
+                </article>
+              </div>
+
+              {/* Step 05 — Framework Selection */}
               <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
