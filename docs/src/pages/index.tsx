@@ -2454,7 +2454,43 @@ if __name__ == "__main__":
                 </div>
               </div>
 
-              {/* Step 03 — Framework Selection */}
+              {/* Step 03 — Available Features */}
+              <div className={styles.devFeatureSection}>
+                <p className={styles.devFeatureLabel}>All Enterprise Features Available Free And Open-Source</p>
+                <h2 className={styles.devFeatureTitle}>
+                  Focus on Agent Logic. We Handle the Rest.
+                </h2>
+
+                <div className={styles.devFeatureGroups}>
+                  {DEV_FEATURE_GROUPS.map((group) => (
+                    <div key={group.title} className={styles.devFeatureGroup}>
+                      <h3 className={styles.devFeatureGroupTitle}>{group.title}</h3>
+                      <div
+                        className={`${styles.devFeaturesGrid} ${
+                          group.cols === 4 ? styles.devFeaturesGrid4 : styles.devFeaturesGrid3
+                        }`}
+                      >
+                        {group.features.map((feature) => {
+                          const IconComponent = feature.icon;
+                          return (
+                            <div key={feature.title} className={styles.devFeatureCard}>
+                              <div className={styles.devFeatureCardHeader}>
+                                <div className={styles.devFeatureIconWrap}>
+                                  <IconComponent className={styles.devFeatureIcon} aria-hidden />
+                                </div>
+                                <h4 className={styles.devFeatureCardTitle}>{feature.title}</h4>
+                              </div>
+                              <p className={styles.devFeatureCardBody}>{feature.body}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 04 — Framework Selection */}
               <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
