@@ -1942,6 +1942,7 @@
 
 .akCompareTableWrap {
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }

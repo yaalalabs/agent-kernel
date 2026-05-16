@@ -1335,6 +1335,130 @@ function Levels() {
         );
       });
 
+      // Animate AI Engineer comparison section
+      const akStandOutSection = contentRef.current?.querySelector(`.${styles.akStandOutSection}`);
+      if (akStandOutSection) {
+        const standOutLabel = akStandOutSection.querySelector(`.${styles.devStepLabel}`);
+        const standOutTitle = akStandOutSection.querySelector(`.${styles.devTitle}`);
+        const comparePanel = akStandOutSection.querySelector(`.${styles.akComparePanel}`);
+        const compareFooter = akStandOutSection.querySelector(`.${styles.akCompareFooter}`);
+        const compareTableHead = akStandOutSection.querySelector(`.${styles.akCompareTable} thead tr`);
+        const compareRows = akStandOutSection.querySelectorAll(`.${styles.akCompareTable} tbody tr`);
+        const compareMobileCards = akStandOutSection.querySelectorAll(`.${styles.akCompareMobileCard}`);
+        const isCompareMobile = window.matchMedia('(max-width: 640px)').matches;
+
+        if (standOutLabel && standOutTitle) {
+          gsap.fromTo(
+            [standOutLabel, standOutTitle],
+            { opacity: 0, y: 30 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 1,
+              ease: 'power2.out',
+              stagger: 0.1,
+              scrollTrigger: {
+                trigger: akStandOutSection,
+                start: 'top 82%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        if (comparePanel) {
+          gsap.fromTo(
+            comparePanel,
+            { opacity: 0, scale: 0.98 },
+            {
+              opacity: 1,
+              scale: 1,
+              duration: 1.1,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: comparePanel,
+                start: 'top 85%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        if (!isCompareMobile && comparePanel && compareRows.length > 0) {
+          const tableRevealTargets = compareTableHead
+            ? [compareTableHead, ...compareRows]
+            : [...compareRows];
+          gsap.set(tableRevealTargets, { opacity: 0 });
+
+          const compareTl = gsap.timeline({
+            scrollTrigger: {
+              trigger: comparePanel,
+              start: 'top 80%',
+              toggleActions: 'play none none none',
+            },
+          });
+
+          if (compareTableHead) {
+            compareTl.to(compareTableHead, {
+              opacity: 1,
+              duration: 0.6,
+              ease: 'power2.out',
+            });
+          }
+
+          compareTl.to(
+            compareRows,
+            {
+              opacity: 1,
+              duration: 0.55,
+              ease: 'power2.out',
+              stagger: 0.06,
+            },
+            compareTableHead ? '-=0.2' : 0
+          );
+        }
+
+        if (isCompareMobile) {
+          compareMobileCards.forEach((card, idx) => {
+            gsap.fromTo(
+              card,
+              { opacity: 0, y: 25, scale: 0.96 },
+              {
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                duration: 0.85,
+                ease: 'power2.out',
+                delay: idx * 0.08,
+                scrollTrigger: {
+                  trigger: card,
+                  start: 'top 88%',
+                  toggleActions: 'play none none none',
+                },
+              }
+            );
+          });
+        }
+
+        if (compareFooter) {
+          gsap.fromTo(
+            compareFooter,
+            { opacity: 0, y: 20 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.9,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: compareFooter,
+                start: 'top 90%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+      }
+
       // Animate developer framework section
       const devFrameworkSection = contentRef.current?.querySelector(`.${styles.devFrameworkSection}`);
       if (devFrameworkSection) {
