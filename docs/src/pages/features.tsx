@@ -90,12 +90,6 @@ const FEATURE_PAGE_MAP: {
     title: 'Protocol Support',
     hint: 'MCP and A2A out of the box',
   },
-  {
-    anchor: 'cta',
-    number: '07',
-    title: 'Get Started',
-    hint: 'Docs, use cases, GitHub',
-  },
 ];
 
 function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
@@ -187,7 +181,7 @@ function FeaturesPageMap() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const topRow = FEATURE_PAGE_MAP.slice(0, 3);
-  const bottomRow = FEATURE_PAGE_MAP.slice(3, 7);
+  const bottomRow = FEATURE_PAGE_MAP.slice(3);
 
   useEffect(() => {
     if (
@@ -217,7 +211,7 @@ function FeaturesPageMap() {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const COL_X_TOP = [143, 450, 757] as const;
-  const COL_X_BOT = [113, 338, 563, 788] as const;
+  const COL_X_BOT = [143, 450, 757] as const;
 
   // Top strip
   const topLines = COL_X_TOP.map((x, i) => ({
@@ -238,9 +232,9 @@ function FeaturesPageMap() {
   const topGlowId = `${gradId}TGlow`;
   const botGlowId = `${gradId}BGlow`;
 
-  const TEAL      = 'rgba(0,213,190,1)';
-  const TEAL_LINE = 'rgba(0,213,190,0.28)';
-  const TEAL_HALO = 'rgba(0,213,190,0.1)';
+  const TEAL      = 'rgba(0,221,255,1)';
+  const TEAL_LINE = 'rgba(0,221,255,0.28)';
+  const TEAL_HALO = 'rgba(0,221,255,0.1)';
 
   const topParticles = [
     { pathId: `${gradId}T0`, delay: '0.9s',  dur: '1.8s', color: TEAL },
@@ -251,7 +245,6 @@ function FeaturesPageMap() {
     { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: TEAL },
     { pathId: `${gradId}B1`, delay: '2.35s', dur: '1.4s', color: TEAL },
     { pathId: `${gradId}B2`, delay: '2.1s', dur: '1.8s', color: TEAL },
-    { pathId: `${gradId}B3`, delay: '2.55s', dur: '1.5s', color: TEAL },
   ];
 
   return (
@@ -263,7 +256,7 @@ function FeaturesPageMap() {
             Everything Agent Kernel Does
           </h2>
           <p className={styles.sectionSubtitle}>
-            Seven production-ready capabilities — explore any area below.
+            Six production-ready capabilities — explore any area below.
           </p>
         </div>
 
@@ -826,7 +819,6 @@ function FrameworkSupport() {
 
   const featuredInner = (
     <>
-      <div className={styles.frameworkFeaturedAccent} aria-hidden />
       <div className={styles.frameworkFeaturedContent}>
         <div className={styles.frameworkFeaturedMain}>
           <div className={styles.frameworkFeaturedMark}>{multiFramework.logo}</div>
@@ -885,77 +877,120 @@ function FrameworkSupport() {
 /* ─── Testing Section ───────────────────────────────────────────────────── */
 
 function TestingSection() {
+  const approaches = [
+    {
+      key: 'cli',
+      icon: <MdTerminal />,
+      title: 'CLI Testing',
+      description: 'Interactive sessions for rapid development iteration and multi-agent testing.',
+      highlights: [
+        'Interactive chat sessions',
+        'Real-time feedback',
+        'Persistent CLI sessions',
+        'Multi-agent support',
+      ],
+      link: '/docs/testing/cli-testing',
+    },
+    {
+      key: 'automated',
+      icon: <MdCode />,
+      title: 'Automated Tests',
+      description: 'pytest-integrated test suites that run in CI/CD with session-scoped fixtures.',
+      highlights: [
+        'pytest integration',
+        'Session-scoped fixtures',
+        'Ordered test execution',
+        'CI/CD ready',
+      ],
+      link: '/docs/testing/automated-testing',
+    },
+  ];
+
   const modes = [
     {
+      key: 'fuzzy',
       icon: <MdSpeed />,
       name: 'Fuzzy Mode',
       description: 'Fast string matching with configurable thresholds using RapidFuzz. Ideal for deterministic outputs.',
       link: '/docs/testing/cli-testing#fuzzy-mode',
     },
     {
+      key: 'judge',
       icon: <MdBugReport />,
       name: 'Judge Mode',
       description: 'LLM-based semantic evaluation using Ragas. Handles paraphrasing and AI-generated variation.',
       link: '/docs/testing/cli-testing#judge-mode',
     },
     {
+      key: 'fallback',
       icon: <MdTimer />,
       name: 'Fallback Mode',
-      description: 'Tries fuzzy first, falls back to judge. The default -best of both worlds.',
+      description: 'Tries fuzzy first, falls back to judge. The default — best of both worlds.',
       link: '/docs/testing/cli-testing#fallback-mode-default',
     },
   ];
 
   return (
-    <section id={FEATURE_ANCHORS.testing} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.testing}
+      className={`${styles.section} ${styles.testingSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>04</span>
           <h2 className={styles.sectionTitle}>Testing Framework</h2>
           <p className={styles.sectionSubtitle}>
-            Test your agents like any other code. CLI testing for development, automated suites for CI/CD.
-            Three comparison modes for every use case.
+            Test your agents like any other code. CLI testing for development, automated suites for CI/CD,
+            and three comparison modes for every use case.
           </p>
         </div>
-        <div className={styles.testingLayout}>
-          <Link to="/docs/testing/cli-testing" className={styles.testingCard}>
-            <MdTerminal className={styles.testingBigIcon} />
-            <h3>CLI Testing</h3>
-            <p>Interactive sessions for rapid development iteration and multi-agent testing.</p>
-            <ul>
-              <li>Interactive chat sessions</li>
-              <li>Real-time feedback</li>
-              <li>Persistent CLI sessions</li>
-              <li>Multi-agent support</li>
+        <div className={styles.testingBlock}>
+          <ul className={styles.testingApproachesGrid}>
+            {approaches.map((a) => (
+              <li key={a.key} className={styles.testingApproachCell}>
+                <Link to={a.link} className={styles.testingApproachCard}>
+                  <div className={styles.testingApproachHeader}>
+                    <div className={styles.testingIconWrap} aria-hidden="true">
+                      {a.icon}
+                    </div>
+                    <h3 className={styles.testingApproachTitle}>{a.title}</h3>
+                  </div>
+                  <p className={styles.testingApproachDescription}>{a.description}</p>
+                  <ul className={styles.testingHighlights}>
+                    {a.highlights.map((h) => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                  <span className={styles.testingLink}>Learn more →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <div className={styles.testingModesPanel}>
+            <p className={styles.testingGroupLabel}>Comparison modes</p>
+            <ul className={styles.testingModesGrid}>
+              {modes.map((m) => (
+                <li key={m.key} className={styles.testingModeCell}>
+                  <Link to={m.link} className={styles.testingModeCard}>
+                    <div className={styles.testingModeHeader}>
+                      <div className={styles.testingIconWrap} aria-hidden="true">
+                        {m.icon}
+                      </div>
+                      <h4 className={styles.testingModeName}>{m.name}</h4>
+                    </div>
+                    <p className={styles.testingModeDescription}>{m.description}</p>
+                  </Link>
+                </li>
+              ))}
             </ul>
-            <span className={styles.featureLink}>Learn more →</span>
-          </Link>
-          <Link to="/docs/testing/automated-testing" className={styles.testingCard}>
-            <MdCode className={styles.testingBigIcon} />
-            <h3>Automated Tests</h3>
-            <p>pytest-integrated test suites that run in CI/CD with session-scoped fixtures.</p>
-            <ul>
-              <li>pytest integration</li>
-              <li>Session-scoped fixtures</li>
-              <li>Ordered test execution</li>
-              <li>CI/CD ready</li>
-            </ul>
-            <span className={styles.featureLink}>Learn more →</span>
-          </Link>
-        </div>
-        <div className={styles.modesGrid}>
-          {modes.map((m, i) => (
-            <Link key={i} to={m.link} className={styles.modeCard}>
-              <div className={styles.modeIcon}>{m.icon}</div>
-              <h4 className={styles.modeName}>{m.name}</h4>
-              <p className={styles.modeDescription}>{m.description}</p>
-            </Link>
-          ))}
+          </div>
         </div>
       </div>
     </section>
   );
 }
+
 
 const MESSAGING_ORBIT_PLATFORMS = [
   { name: 'Slack', icon: <FaSlack />, color: '#EC407A', link: '/docs/integrations/slack' },
@@ -1156,8 +1191,32 @@ function MessagingSection() {
 /* ─── Protocol Support ──────────────────────────────────────────────────── */
 
 function ProtocolSupport() {
+  const protocols = [
+    {
+      key: 'mcp',
+      icon: <MdExtension />,
+      title: 'MCP — Model Context Protocol',
+      description:
+        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
+      link: '/docs/api/mcp-server',
+      linkLabel: 'MCP server docs →',
+    },
+    {
+      key: 'a2a',
+      icon: <MdHub />,
+      title: 'A2A — Agent-to-Agent',
+      description:
+        'Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.',
+      link: '/docs/api/a2a-server',
+      linkLabel: 'A2A server docs →',
+    },
+  ];
+
   return (
-    <section id={FEATURE_ANCHORS.protocols} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.protocols}
+      className={`${styles.section} ${styles.protocolSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>06</span>
@@ -1166,35 +1225,27 @@ function ProtocolSupport() {
             Standard protocols for tool connectivity and multi-agent coordination — wired into the runtime.
           </p>
         </div>
-        <div className={styles.testingLayout}>
-          <Link to="/docs/api/mcp-server" className={styles.testingCard}>
-            <MdExtension className={styles.testingBigIcon} />
-            <h3>MCP — Model Context Protocol</h3>
-            <p>
-              Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external
-              tools, data sources, and services in a structured, consistent way. It acts as a bridge between an
-              AI&apos;s reasoning and real-world actions, enabling agents to retrieve information and execute tasks
-              reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP
-              tools.
-            </p>
-            <span className={styles.featureLink}>MCP server docs →</span>
-          </Link>
-          <Link to="/docs/api/a2a-server" className={styles.testingCard}>
-            <MdHub className={styles.testingBigIcon} />
-            <h3>A2A — Agent-to-Agent</h3>
-            <p>
-              Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each
-              other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by
-              allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent
-              Kernel natively supports exposing any agent over the A2A protocol by switching configuration.
-            </p>
-            <span className={styles.featureLink}>A2A server docs →</span>
-          </Link>
-        </div>
+        <ul className={styles.protocolGrid}>
+          {protocols.map((p) => (
+            <li key={p.key} className={styles.protocolCell}>
+              <Link to={p.link} className={styles.protocolCard}>
+                <div className={styles.protocolCardHeader}>
+                  <div className={styles.protocolIconWrap} aria-hidden="true">
+                    {p.icon}
+                  </div>
+                  <h3 className={styles.protocolTitle}>{p.title}</h3>
+                </div>
+                <p className={styles.protocolDescription}>{p.description}</p>
+                <span className={styles.protocolLink}>{p.linkLabel}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
 }
+
 
 /* ─── CTA ───────────────────────────────────────────────────────────────── */
 

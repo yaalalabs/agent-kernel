@@ -353,11 +353,11 @@
 
 .pageMapBottomRow {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
 }
 
-/* Center hub — dark glass circle with teal glow */
+/* Center hub — dark glass circle with cyan glow */
 .pageMapHub {
   position: relative;
   align-self: center;
@@ -370,10 +370,10 @@
   align-items: center;
   justify-content: center;
   background: rgba(8, 12, 28, 0.72);
-  border: 1px solid rgba(0, 213, 190, 0.28);
+  border: 1px solid rgba(0, 221, 255, 0.28);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 0 28px rgba(0, 213, 190, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 28px rgba(0, 221, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   pointer-events: none;
   opacity: 0;
   overflow: hidden;
@@ -387,8 +387,8 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at center,
-    rgba(0, 213, 190, 0.2) 0%,
-    rgba(0, 213, 190, 0.05) 50%,
+    rgba(0, 221, 255, 0.2) 0%,
+    rgba(0, 221, 255, 0.05) 50%,
     transparent 70%
   );
   animation: pmCorePulse 3s ease-in-out infinite;
@@ -406,7 +406,7 @@
   width: 80px;
   height: 80px;
   object-fit: contain;
-  filter: drop-shadow(0 0 12px rgba(0, 213, 190, 0.6));
+  filter: drop-shadow(0 0 12px rgba(0, 221, 255, 0.6));
 }
 
 .pageMapHubLabel {
@@ -416,8 +416,8 @@
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #00d5be;
-  text-shadow: 0 0 10px rgba(0, 213, 190, 0.6);
+  color: #00ddff;
+  text-shadow: 0 0 10px rgba(0, 221, 255, 0.6);
 }
 
 .pageMapHubSub {
@@ -460,25 +460,25 @@
 
 .pageMapSection .pageMapNode:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, rgba(0, 213, 190, 1) 30%, transparent);
-  box-shadow: 0 8px 28px rgba(0, 213, 190, 0.08);
+  border-color: color-mix(in srgb, rgba(0, 221, 255, 1) 30%, transparent);
+  box-shadow: 0 8px 28px rgba(0, 221, 255, 0.08);
 }
 
 .pageMapSection .pageMapNode:focus-visible {
-  outline: 2px solid rgba(0, 213, 190, 0.8);
+  outline: 2px solid rgba(0, 221, 255, 0.8);
   outline-offset: 3px;
 }
 
-/* Section index pills — teal accent */
+/* Section index pills — cyan accent */
 .pageMapNodeNumber {
   display: inline-block;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #00d5be;
-  background: rgba(0, 213, 190, 0.08);
-  border: 1px solid rgba(0, 213, 190, 0.2);
+  color: #00ddff;
+  background: rgba(0, 221, 255, 0.08);
+  border: 1px solid rgba(0, 221, 255, 0.2);
   border-radius: 999px;
   padding: 0.15rem 0.5rem;
   margin-bottom: 0.1rem;
@@ -519,13 +519,13 @@
 
 [data-theme='light'] .pageMapSection .pageMapNode {
   background: rgba(255, 255, 255, 0.85);
-  border-color: rgba(0, 213, 190, 0.18);
+  border-color: rgba(0, 221, 255, 0.18);
   color: #0f172a;
 }
 
 [data-theme='light'] .pageMapSection .pageMapNode:hover {
-  border-color: rgba(0, 180, 160, 0.4);
-  box-shadow: 0 8px 28px rgba(0, 180, 160, 0.1);
+  border-color: rgba(0, 180, 220, 0.4);
+  box-shadow: 0 8px 28px rgba(0, 180, 220, 0.1);
 }
 
 [data-theme='light'] .pageMapNodeTitle {
@@ -537,18 +537,18 @@
 }
 
 [data-theme='light'] .pageMapNodeNumber {
-  color: #00897b;
-  background: rgba(0, 180, 160, 0.1);
-  border-color: rgba(0, 180, 160, 0.24);
+  color: #00a8cc;
+  background: rgba(0, 180, 220, 0.1);
+  border-color: rgba(0, 180, 220, 0.24);
 }
 
 [data-theme='light'] .pageMapHub {
-  background: rgba(0, 213, 190, 0.06);
-  border-color: rgba(0, 180, 160, 0.35);
+  background: rgba(0, 221, 255, 0.06);
+  border-color: rgba(0, 180, 220, 0.35);
 }
 
 [data-theme='light'] .pageMapHubLabel {
-  color: #00897b;
+  color: #00a8cc;
   text-shadow: none;
 }
 
@@ -1316,10 +1316,8 @@
 }
 
 .frameworkFeaturedRow {
-  display: grid;
-  grid-template-columns: 4px minmax(0, 1fr);
+  display: block;
   width: 100%;
-  align-items: stretch;
   box-sizing: border-box;
   border-radius: 0.875rem;
   border: 1px solid rgba(79, 125, 247, 0.25);
@@ -1327,12 +1325,6 @@
   text-decoration: none;
   overflow: hidden;
   transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.frameworkFeaturedAccent {
-  width: 4px;
-  min-height: 100%;
-  background: linear-gradient(180deg, #00d4ff 0%, #4f7df7 55%, rgba(139, 92, 246, 0.9) 100%);
 }
 
 .frameworkFeaturedContent {
@@ -1479,7 +1471,8 @@
 
 .frameworkLinkInline {
   margin-top: auto;
-  padding-top: 1rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .frameworkName {
@@ -1513,116 +1506,372 @@
 
 /* ─── Testing ─────────────────────────────────────────────────────────────── */
 
-.testingLayout {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.25rem;
-  margin-bottom: 2rem;
+.testingSection .sectionHeader {
+  margin-bottom: 2.5rem;
 }
 
-.testingCard {
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0.875rem;
-  padding: 2rem 1.75rem;
-  text-decoration: none;
+.testingBlock {
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  gap: 2.25rem;
+  width: 100%;
 }
 
-.testingCard:hover {
-  transform: translateY(-4px);
-  border-color: rgba(79, 125, 247, 0.25);
-  text-decoration: none;
-}
-
-.testingCard h3 {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #dfe1f0;
-  margin-bottom: 0.5rem;
-  letter-spacing: -0.02em;
-}
-
-.testingCard p {
-  font-size: 0.9rem;
-  color: #94a3b8;
-  line-height: 1.6;
-  margin-bottom: 1rem;
-}
-
-.testingCard ul {
-  list-style: none;
-  padding: 0;
+.testingGroupLabel {
   margin: 0 0 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  flex-grow: 1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0, 212, 255, 0.75);
 }
 
-.testingCard ul li {
-  font-size: 0.85rem;
-  color: #5e627d;
+.testingModesIntro {
+  margin: -0.5rem 0 1.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 42rem;
+}
+
+.testingApproachesGrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+@media (min-width: 768px) {
+  .testingApproachesGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1.5rem;
+  }
+}
+
+.testingApproachCell {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.testingApproachCard {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 1.35rem 1.25rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 22, 0.48);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  text-decoration: none;
+  transition:
+    border-color 280ms ease,
+    box-shadow 280ms ease,
+    transform 280ms ease;
+}
+
+.testingApproachCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.28);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  text-decoration: none;
+}
+
+.testingApproachHeader {
   display: flex;
   align-items: center;
+  gap: 0.875rem;
+  margin-bottom: 0.875rem;
+}
+
+.testingIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.18);
+  background: rgba(0, 221, 255, 0.06);
+  color: #00d4ff;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  transition: background-color 280ms ease, border-color 280ms ease;
+}
+
+.testingApproachCard:hover .testingIconWrap,
+.testingModeCard:hover .testingIconWrap {
+  border-color: rgba(0, 221, 255, 0.35);
+  background: rgba(0, 221, 255, 0.1);
+}
+
+.testingApproachTitle {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.testingApproachDescription {
+  margin: 0 0 0.875rem;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.testingHighlights {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
   gap: 0.4rem;
+  flex: 1 1 auto;
 }
 
-.testingCard ul li::before {
-  content: '→';
-  color: #4f7df7;
-  font-size: 0.75rem;
+.testingHighlights li {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.52);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
-.testingBigIcon {
-  font-size: 2rem;
-  color: #00D4FF;
+.testingHighlights li::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.65);
+  flex-shrink: 0;
+}
+
+.testingLink {
+  margin-top: auto;
+  padding-top: 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #00d4ff;
+  line-height: 1.4;
+  transition: color 0.15s ease;
+}
+
+.testingApproachCard:hover .testingLink {
+  color: #00ecff;
+}
+
+.testingModesPanel {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(10, 12, 22, 0.36);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 1.35rem 1.25rem 1.25rem;
+  transition: border-color 300ms ease;
+}
+
+.testingModesPanel:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.testingModesGrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+@media (min-width: 768px) {
+  .testingModesGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.testingModeCell {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.testingModeCard {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 1.15rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  text-decoration: none;
+  transition:
+    border-color 280ms ease,
+    background-color 280ms ease,
+    transform 280ms ease;
+}
+
+.testingModeCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.25);
+  background: rgba(0, 221, 255, 0.05);
+  text-decoration: none;
+}
+
+.testingModeHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.testingModeName {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.3;
+}
+
+.testingModeDescription {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ─── Protocol support ────────────────────────────────────────────────────── */
+
+.protocolSection .sectionHeader {
+  margin-bottom: 2.5rem;
+}
+
+.protocolGrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  align-items: stretch;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .protocolGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1.5rem;
+  }
+}
+
+.protocolCell {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.protocolCard {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 1.35rem 1.25rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 22, 0.48);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  text-decoration: none;
+  transition:
+    border-color 280ms ease,
+    box-shadow 280ms ease,
+    transform 280ms ease;
+}
+
+.protocolCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.28);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  text-decoration: none;
+}
+
+.protocolCardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
   margin-bottom: 1rem;
 }
 
-.modesGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-}
-
-.modeCard {
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(79, 125, 247, 0.12);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  text-decoration: none;
+.protocolIconWrap {
   display: flex;
-  flex-direction: column;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.18);
+  background: rgba(0, 221, 255, 0.06);
+  color: #00d4ff;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  transition: background-color 280ms ease, border-color 280ms ease;
 }
 
-.modeCard:hover {
-  border-color: rgba(79, 125, 247, 0.3);
-  backdrop-filter: blur(6px);
-  text-decoration: none;
+.protocolCard:hover .protocolIconWrap {
+  border-color: rgba(0, 221, 255, 0.35);
+  background: rgba(0, 221, 255, 0.1);
 }
 
-.modeIcon {
-  font-size: 1.4rem;
-  color: #00D4FF;
-  margin-bottom: 0.75rem;
-}
-
-.modeName {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #dfe1f0;
-  margin-bottom: 0.4rem;
-}
-
-.modeDescription {
-  font-size: 0.85rem;
-  color: #94a3b8;
-  line-height: 1.6;
+.protocolTitle {
   margin: 0;
+  padding-top: 0.35rem;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.protocolDescription {
+  margin: 0;
+  padding-bottom: 1.25rem;
+  flex: 1 1 auto;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.protocolLink {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #00d4ff;
+  line-height: 1.4;
+  transition: color 0.15s ease;
+}
+
+.protocolCard:hover .protocolLink {
+  color: #00ecff;
 }
 
 /* ─── Messaging hub & spokes (orbit) ──────────────────────────────────────── */
@@ -2004,11 +2253,15 @@
     grid-template-columns: 1fr;
   }
 
-  .testingLayout {
+  .testingApproachesGrid {
     grid-template-columns: 1fr;
   }
 
-  .modesGrid {
+  .testingModesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .protocolGrid {
     grid-template-columns: 1fr;
   }
 
