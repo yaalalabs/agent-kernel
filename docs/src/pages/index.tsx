@@ -8,6 +8,8 @@ import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/dist/ScrollToPlugin';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
 import BuildingAgentsFlowDiagram from '../components/BuildingAgentsFlowDiagram';
+import RunningAgentsFlowDiagram from '../components/RunningAgentsFlowDiagram';
+import AgentKernelSitsInFlowDiagram from '../components/AgentKernelSitsInFlowDiagram';
 import ParticleSphere from '../components/ParticleSphere';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import {
@@ -2557,6 +2559,22 @@ if __name__ == "__main__":
                     Designing a compliant multi-agent architecture carries multiple components.
                   </p>
                   <BuildingAgentsFlowDiagram />
+                </article>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Running AI Agents</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Running a production-grade AI agent requires considering several design aspects and information flows.
+                  </p>
+                  <RunningAgentsFlowDiagram />
+                </article>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>How Agent Kernel Sit In</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Agent Kernel handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.
+                  </p>
+                  <AgentKernelSitsInFlowDiagram />
                 </article>
               </div>
 
