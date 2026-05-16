@@ -43,6 +43,11 @@ import {
   MdLanguage,
   MdCheck,
   MdClose,
+  MdForum,
+  MdCached,
+  MdStorage,
+  MdShield,
+  MdStopCircle,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
@@ -759,6 +764,72 @@ const AI_ENGINEER_ARCH_LAYERS = [
     ],
   },
 ];
+
+const AI_ENGINEER_MEMORY_LAYERS = [
+  {
+    title: 'Conversational State (Session)',
+    icon: MdForum,
+    bullets: [
+      'The agent remembers the conversation naturally across turns.',
+      'This is the memory that keeps chat continuity.',
+    ],
+  },
+  {
+    title: 'Volatile Cache (Per Request)',
+    icon: MdCached,
+    bullets: [
+      'A scratchpad for one request only.',
+      'Great for RAG snippets, temporary file reads, and intermediate results.',
+      'Auto-clears after every response.',
+    ],
+  },
+  {
+    title: 'Non-Volatile Cache (Session)',
+    icon: MdStorage,
+    bullets: [
+      'Session memory for supporting data that should persist.',
+      'Perfect for user preferences, auth context, and running counters.',
+      'Available to tools/hooks without spending LLM tokens.',
+    ],
+  },
+] as const;
+
+const AI_ENGINEER_HOOK_PIPELINE = [
+  {
+    title: 'Pre-Execution Hooks',
+    icon: MdShield,
+    bullets: [
+      'Validate and enrich input before the LLM runs.',
+      'Typical uses: guardrails, redaction, RAG injection, request shaping.',
+    ],
+    highlight: false,
+  },
+  {
+    title: 'Agent Execution',
+    icon: MdSmartToy,
+    bullets: ['Your existing framework logic runs as-is.'],
+    highlight: false,
+  },
+  {
+    title: 'Post-Execution Hooks',
+    icon: MdSecurity,
+    bullets: [
+      'Apply output checks and final formatting before returning to users.',
+      'Typical uses: moderation, compliance notes, analytics, audit logging.',
+    ],
+    highlight: false,
+  },
+  {
+    title: 'Early Termination',
+    icon: MdStopCircle,
+    badge: 'Early termination',
+    bullets: [
+      'Stop unsafe or invalid requests early and return a controlled response.',
+      'Useful for input guardrails, rate limits, cached shortcuts, and circuit breakers.',
+    ],
+    highlight: true,
+  },
+] as const;
 
 type AkCompareCellStatus = 'positive' | 'negative' | 'partial';
 
@@ -1512,6 +1583,79 @@ function Levels() {
               }
             );
           }
+        });
+      }
+
+      // Animate AI Engineer OS section (memory + hooks)
+      const aiOsSection = contentRef.current?.querySelector(`.${styles.aiOsSection}`);
+      if (aiOsSection) {
+        const osLabel = aiOsSection.querySelector(`.${styles.devStepLabel}`);
+        const osTitle = aiOsSection.querySelector(`.${styles.devTitle}`);
+        if (osLabel && osTitle) {
+          gsap.fromTo(
+            [osLabel, osTitle],
+            { opacity: 0, y: 30 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 1,
+              ease: 'power2.out',
+              stagger: 0.1,
+              scrollTrigger: {
+                trigger: aiOsSection,
+                start: 'top 82%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        const osSubsections = aiOsSection.querySelectorAll(`.${styles.aiOsSubsection}`);
+        osSubsections.forEach((subsection) => {
+          const osCopy = subsection.querySelectorAll(
+            `.${styles.aiBuildSubTitle}, .${styles.aiOsHeadline}, .${styles.aiOsSubtitle}`
+          );
+          if (osCopy.length > 0) {
+            gsap.fromTo(
+              osCopy,
+              { opacity: 0, y: 28 },
+              {
+                opacity: 1,
+                y: 0,
+                duration: 0.95,
+                ease: 'power2.out',
+                stagger: 0.08,
+                scrollTrigger: {
+                  trigger: subsection,
+                  start: 'top 85%',
+                  toggleActions: 'play none none none',
+                },
+                clearProps: 'transform',
+              }
+            );
+          }
+        });
+
+        const osCards = aiOsSection.querySelectorAll(`.${styles.aiOsCard}, .${styles.aiOsPipelineStep}`);
+        osCards.forEach((card, idx) => {
+          // Opacity/y only — transform on the card breaks backdrop-filter (same as flow diagrams).
+          gsap.fromTo(
+            card,
+            { opacity: 0, y: 24 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.9,
+              ease: 'power2.out',
+              delay: (idx % 4) * 0.06,
+              scrollTrigger: {
+                trigger: card,
+                start: 'top 88%',
+                toggleActions: 'play none none none',
+              },
+              clearProps: 'transform',
+            }
+          );
         });
       }
 
@@ -2885,6 +3029,109 @@ if __name__ == "__main__":
                 <div className={styles.devArchitectureWrapper}>
                   <AgentKernelArchDiagram />
                 </div>
+              </div>
+
+              {/* Step 07 — Why Agent Kernel is a Powerful Operating System */}
+              <div className={`${styles.aiOsSection} ${styles.developerBlock}`}>
+                <p className={styles.devStepLabel}>Operating system depth</p>
+                <h2 className={styles.devTitle}>
+                  Why Agent Kernel is a Powerful Operating System
+                </h2>
+
+                <article className={styles.aiOsSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Three-Layer Memory</h3>
+                  <h4 className={styles.aiOsHeadline}>Three Memory Layers, Zero Context Chaos</h4>
+                  <p className={styles.aiOsSubtitle}>
+                    Keep conversations coherent, enrich each request, and carry useful session data
+                    forward without bloating the model context window.
+                  </p>
+
+                  <div className={styles.aiOsMemoryGrid}>
+                    {AI_ENGINEER_MEMORY_LAYERS.map((layer) => {
+                      const IconComponent = layer.icon;
+                      return (
+                        <div key={layer.title} className={styles.aiOsCard}>
+                          <div className={styles.aiOsCardHeader}>
+                            <div className={styles.aiOsCardIconWrap}>
+                              <IconComponent className={styles.aiOsCardIcon} aria-hidden />
+                            </div>
+                            <h5 className={styles.aiOsCardTitle}>{layer.title}</h5>
+                          </div>
+                          <ul className={styles.aiOsBulletList}>
+                            {layer.bullets.map((bullet) => (
+                              <li key={bullet} className={styles.aiOsBulletItem}>
+                                <span className={styles.aiOsBulletDot} aria-hidden="true">
+                                  •
+                                </span>
+                                <span>{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+
+                <article className={styles.aiOsSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Execution Hook Pipeline</h3>
+                  <h4 className={styles.aiOsHeadline}>
+                    Control Every Request Without Rewriting Agent Logic
+                  </h4>
+                  <p className={styles.aiOsSubtitle}>
+                    Use hooks before and after agent execution to enforce safety, enrich inputs, and
+                    polish outputs.
+                  </p>
+
+                  <p className={styles.aiOsPipelineScrollHint} aria-hidden="true">
+                    Scroll horizontally to see the full pipeline
+                  </p>
+
+                  <div className={styles.aiOsPipeline}>
+                    {AI_ENGINEER_HOOK_PIPELINE.map((step, index, arr) => {
+                      const IconComponent = step.icon;
+                      return (
+                        <React.Fragment key={step.title}>
+                          <div
+                            className={`${styles.aiOsPipelineStep} ${
+                              step.highlight ? styles.aiOsPipelineStepHighlight : ''
+                            }`}
+                          >
+                            <div className={styles.aiOsPipelineBadgeSlot}>
+                              {'badge' in step && step.badge ? (
+                                <span className={styles.aiOsHighlightBadge}>{step.badge}</span>
+                              ) : null}
+                            </div>
+                            <div className={styles.aiOsPipelineStepHeader}>
+                              <div className={styles.aiOsCardIconWrap}>
+                                <IconComponent className={styles.aiOsCardIcon} aria-hidden />
+                              </div>
+                              <h5 className={styles.aiOsPipelineStepTitle}>{step.title}</h5>
+                            </div>
+                            <ul
+                              className={`${styles.aiOsBulletList} ${styles.aiOsPipelineBulletList}`}
+                            >
+                              {step.bullets.map((bullet) => (
+                                <li key={bullet} className={styles.aiOsBulletItem}>
+                                  <span className={styles.aiOsBulletDot} aria-hidden="true">
+                                    •
+                                  </span>
+                                  <span>{bullet}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          {index < arr.length - 1 ? (
+                            <div className={styles.aiOsPipelineConnector} aria-hidden="true">
+                              <span className={styles.aiOsPipelineArrowH}>→</span>
+                              <span className={styles.aiOsPipelineArrowV}>↓</span>
+                            </div>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </article>
               </div>
             </div>
           )}
