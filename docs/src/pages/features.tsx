@@ -607,7 +607,12 @@ function CoreFeatures() {
       title: 'Knowledge Bases',
       description:
         'Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, and custom SQL data sources.',
-      highlights: ['ChromaDB — vector/semantic search','Neo4j — entity and relationship graphs','Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL','semantic_map keeps agent prompts portable',],
+      highlights: [
+        'ChromaDB — vector/semantic search',
+        'Neo4j — entity and relationship graphs',
+        'Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL',
+        'semantic_map keeps agent prompts portable',
+      ],
       link: '/docs/architecture/memory-management',
     },
     {
@@ -648,7 +653,10 @@ function CoreFeatures() {
   ];
 
   return (
-    <section id={FEATURE_ANCHORS.core} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.core}
+      className={`${styles.section} ${styles.coreFeaturesSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>02</span>
@@ -657,21 +665,34 @@ function CoreFeatures() {
             Everything you need to build, run, and scale production AI agents without building platform code.
           </p>
         </div>
-        <div className={styles.featuresGrid}>
+        <ul className={styles.featuresGrid}>
           {features.map((f, i) => (
-            <div key={i} className={styles.featureCard}>
-              <div className={styles.featureIcon}>{f.icon}</div>
-              <h3 className={styles.featureTitle}>{f.title}</h3>
-              <p className={styles.featureDescription}>{f.description}</p>
-              <ul className={styles.featureHighlights}>
-                {f.highlights.map((h, j) => <li key={j}>{h}</li>)}
-              </ul>
-              {f.link && (
-                <Link to={f.link} className={styles.featureLink}>Learn more →</Link>
-              )}
-            </div>
+            <li key={f.title} className={styles.featureGridCell}>
+              <article className={styles.featureCard}>
+                <div className={styles.featureCardHeader}>
+                  <span className={styles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
+                  <div className={styles.featureIconWrap} aria-hidden="true">
+                    {f.icon}
+                  </div>
+                </div>
+                <div className={styles.featureCardBody}>
+                  <h3 className={styles.featureTitle}>{f.title}</h3>
+                  <p className={styles.featureDescription}>{f.description}</p>
+                  <ul className={styles.featureHighlights}>
+                    {f.highlights.map((h) => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                </div>
+                {f.link ? (
+                  <Link to={f.link} className={styles.featureLink}>
+                    Learn more →
+                  </Link>
+                ) : null}
+              </article>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   );
@@ -691,8 +712,8 @@ function FrameworkSupport() {
           src="/img/integrations/chatgpt.png"
           alt=""
           className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
-          width={150}
-          height={50}
+          width={145}
+          height={45}
         />
       ),
     },

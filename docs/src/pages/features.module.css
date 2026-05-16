@@ -1113,72 +1113,162 @@
   color: #0e7490;
 }
 
-/* ─── Core Features ───────────────────────────────────────────────────────── */
+/* ─── Core Features (10-card grid) ─────────────────────────────────────────── */
+
+.coreFeaturesSection .sectionHeader {
+  margin-bottom: 2.75rem;
+}
 
 .featuresGrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
+  grid-auto-rows: 1fr;
+  align-items: stretch;
   gap: 1.25rem;
+  width: 100%;
+}
+
+.featureGridCell {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .featureCard {
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 0.875rem;
-  padding: 1.75rem 1.5rem;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  padding: 1.35rem 1.25rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 22, 0.48);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    border-color 280ms ease,
+    box-shadow 280ms ease,
+    transform 280ms ease;
 }
 
 .featureCard:hover {
-  transform: translateY(-4px);
-  border-color: rgba(79, 125, 247, 0.25);
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.28);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
 }
 
-.featureIcon {
-  font-size: 1.8rem;
-  color: #dfe1f0;
-  margin-bottom: 0.875rem;
+.featureCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+  min-height: 2.5rem;
+}
+
+.featureCardBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.featureIndex {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: rgba(0, 212, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.featureIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.18);
+  background: rgba(0, 221, 255, 0.06);
+  color: #00d4ff;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  transition: background-color 280ms ease, border-color 280ms ease;
+}
+
+.featureCard:hover .featureIconWrap {
+  border-color: rgba(0, 221, 255, 0.35);
+  background: rgba(0, 221, 255, 0.1);
 }
 
 .featureTitle {
-  font-size: 1rem;
+  font-size: 1.0625rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #ffffff;
   letter-spacing: -0.01em;
-  margin-bottom: 0.5rem;
+  line-height: 1.3;
+  margin: 0 0 0.5rem;
 }
 
 .featureDescription {
-  font-size: 0.875rem;
-  color: #94a3b8;
-  line-height: 1.6;
-  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.55;
+  margin: 0 0 0.875rem;
 }
 
 .featureHighlights {
   list-style: none;
-  padding: 0;
-  margin: 0 0 auto;
+  padding: 0 0 1rem;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.4rem;
+  flex: 1 1 auto;
 }
 
 .featureHighlights li {
-  font-size: 0.8rem;
-  color: #94a3b8;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.52);
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
 .featureHighlights li::before {
-  content: '→';
-  color: #4f7df7;
-  font-size: 0.75rem;
+  content: '';
+  width: 4px;
+  height: 4px;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.65);
   flex-shrink: 0;
+}
+
+.coreFeaturesSection .featureLink {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* Two equal columns × five rows — clean fit for 10 feature cards */
+@media (min-width: 768px) {
+  .featuresGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1.5rem;
+    row-gap: 1.25rem;
+  }
 }
 
 /* ─── Framework Support ───────────────────────────────────────────────────── */
@@ -1825,10 +1915,6 @@
 /* ─── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 996px) {
-  .featuresGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .memoryGrid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1911,6 +1997,7 @@
 
   .featuresGrid {
     grid-template-columns: 1fr;
+    max-width: none;
   }
 
   .memoryGrid {
