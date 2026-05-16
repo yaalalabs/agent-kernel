@@ -461,8 +461,13 @@ function ProblemTable() {
     MdCloudUpload,
   ] as const;
 
+  const ActiveIcon = problemChipIcons[active];
+
   return (
-    <section id={FEATURE_ANCHORS.problem} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.problem}
+      className={`${styles.section} ${styles.problemSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>01</span>
@@ -472,88 +477,94 @@ function ProblemTable() {
             to do with the actual agent intelligence.
           </p>
         </div>
-        <div className={styles.problemCompare}>
-          <p className={styles.problemStepLabel}>Topic / Pick a focus</p>
-          <p className={styles.problemCompareIntro}>
-            Choose one area at a time — each topic loads a focused before and after, so nothing feels
-            like a wall of text.
-          </p>
-          <div className={styles.problemTabBar} role="tablist" aria-label="Areas to compare">
+        <div className={styles.problemBlock}>
+          <ul className={styles.problemTopicGrid} role="tablist" aria-label="Areas to compare">
             {rows.map((row, i) => {
               const ChipIcon = problemChipIcons[i];
               return (
-                <button
-                  key={row.problem}
-                  type="button"
-                  role="tab"
-                  id={`feature-problem-tab-${i}`}
-                  aria-selected={active === i}
-                  aria-controls="feature-problem-panel"
-                  className={`${styles.problemTab} ${active === i ? styles.problemTabActive : ''}`}
-                  onClick={() => setActive(i)}>
-                  <span className={styles.problemTabInner}>
-                    <ChipIcon className={styles.problemTabIcon} aria-hidden />
-                    <span className={styles.problemTabLabel}>{row.problem}</span>
-                  </span>
-                </button>
+                <li key={row.problem} className={styles.problemTopicCell}>
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`feature-problem-tab-${i}`}
+                    aria-selected={active === i}
+                    aria-controls="feature-problem-panel"
+                    className={`${styles.problemTopicBtn} ${active === i ? styles.problemTopicBtnActive : ''}`}
+                    onClick={() => setActive(i)}
+                  >
+                    <span className={styles.problemTopicIconWrap} aria-hidden="true">
+                      <ChipIcon className={styles.problemTopicIcon} />
+                    </span>
+                    <span className={styles.problemTopicLabel}>{row.problem}</span>
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
           <div
             id="feature-problem-panel"
             role="tabpanel"
             aria-labelledby={`feature-problem-tab-${active}`}
-            className={styles.problemCompareDetail}>
+            className={styles.problemComparePanel}
+          >
             <div key={active} className={styles.problemComparePanelInner}>
-              <h3 className={styles.problemCompareTopic}>{activeRow.problem}</h3>
-              <p className={styles.problemCompareMeta}>Typical path vs Agent Kernel</p>
-              <div className={styles.problemCompareSplit}>
-                <div className={`${styles.problemCompareCard} ${styles.problemCompareCardNeg}`}>
-                  <p className={styles.problemCompareCardHeading}>Without Agent Kernel</p>
-                  <p className={styles.problemCompareCardSub}>What you take on today</p>
-                  <div className={`${styles.problemCompareStatement} ${styles.problemCompareStatementNeg}`}>
-                    <span className={styles.problemCompareStatementIcon} aria-hidden>
+              <div className={styles.problemComparePanelHeader}>
+                <span className={styles.problemComparePanelIconWrap} aria-hidden="true">
+                  <ActiveIcon className={styles.problemComparePanelIcon} />
+                </span>
+                <div>
+                  <h3 className={styles.problemComparePanelTitle}>{activeRow.problem}</h3>
+                  <p className={styles.problemComparePanelMeta}>Without vs with Agent Kernel</p>
+                </div>
+              </div>
+              <div className={styles.problemCompareGrid}>
+                <article className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}>
+                  <p className={styles.problemCompareSideLabel}>Without Agent Kernel</p>
+                  <p className={styles.problemCompareSideSub}>What you take on today</p>
+                  <div className={`${styles.problemCompareBody} ${styles.problemCompareBodyNeg}`}>
+                    <span className={styles.problemCompareBodyIcon} aria-hidden="true">
                       <MdClose />
                     </span>
-                    <p className={styles.problemCompareStatementText}>{activeRow.without}</p>
+                    <p className={styles.problemCompareBodyText}>{activeRow.without}</p>
                   </div>
-                </div>
-                <div className={`${styles.problemCompareCard} ${styles.problemCompareCardPositive}`}>
-                  <p className={styles.problemCompareCardHeading}>With Agent Kernel</p>
-                  <p className={styles.problemCompareCardSub}>What the platform covers</p>
-                  <div className={`${styles.problemCompareStatement} ${styles.problemCompareStatementPos}`}>
-                    <span className={styles.problemCompareStatementIcon} aria-hidden>
+                </article>
+                <article className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}>
+                  <p className={styles.problemCompareSideLabel}>With Agent Kernel</p>
+                  <p className={styles.problemCompareSideSub}>What the platform covers</p>
+                  <div className={`${styles.problemCompareBody} ${styles.problemCompareBodyPos}`}>
+                    <span className={styles.problemCompareBodyIcon} aria-hidden="true">
                       <MdCheck />
                     </span>
-                    <p className={styles.problemCompareStatementText}>{activeRow.with}</p>
+                    <p className={styles.problemCompareBodyText}>{activeRow.with}</p>
                   </div>
-                </div>
+                </article>
               </div>
             </div>
           </div>
           <aside
-            className={styles.problemImpactCallout}
-            aria-label={`${impactRow.problem}: ${impactRow.without} versus ${impactRow.with}`}>
-            <div className={styles.problemImpactCalloutTop}>
-              <span className={styles.problemImpactCalloutIconWrap} aria-hidden>
-                <MdTimer className={styles.problemImpactCalloutGlyph} />
+            className={styles.problemImpactPanel}
+            aria-label={`${impactRow.problem}: ${impactRow.without} versus ${impactRow.with}`}
+          >
+            <div className={styles.problemImpactHeader}>
+              <span className={styles.problemImpactIconWrap} aria-hidden="true">
+                <MdTimer className={styles.problemImpactIcon} />
               </span>
-              <div className={styles.problemImpactCalloutTitles}>
-                <p className={styles.problemImpactCalloutEyebrow}>Bottom line</p>
-                <h3 className={styles.problemImpactCalloutTitle}>{impactRow.problem}</h3>
+              <div className={styles.problemImpactHeading}>
+                <p className={styles.problemImpactEyebrow}>Bottom line</p>
+                <h3 className={styles.problemImpactTitle}>{impactRow.problem}</h3>
+                <p className={styles.problemImpactSub}>
+                  The effect on your timeline when Agent Kernel owns the platform work.
+                </p>
               </div>
             </div>
-            <p className={styles.problemImpactCalloutSub}>
-              The effect on your timeline when Agent Kernel owns the platform work.
-            </p>
-            <div className={styles.problemImpactSplit}>
-              <div className={`${styles.problemImpactPill} ${styles.problemImpactPillNeg}`}>
-                <span className={styles.problemImpactPillLabel}>Without Agent Kernel</span>
-                <p className={styles.problemImpactPillValue}>{impactRow.without}</p>
+            <div className={styles.problemImpactGrid}>
+              <div className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}>
+                <span className={styles.problemImpactStatLabel}>Without Agent Kernel</span>
+                <p className={styles.problemImpactStatValue}>{impactRow.without}</p>
               </div>
-              <div className={`${styles.problemImpactPill} ${styles.problemImpactPillPos}`}>
-                <span className={styles.problemImpactPillLabel}>With Agent Kernel</span>
-                <p className={styles.problemImpactPillValue}>{impactRow.with}</p>
+              <div className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}>
+                <span className={styles.problemImpactStatLabel}>With Agent Kernel</span>
+                <p className={styles.problemImpactStatValue}>{impactRow.with}</p>
               </div>
             </div>
           </aside>

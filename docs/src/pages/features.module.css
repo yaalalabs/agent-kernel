@@ -578,121 +578,138 @@
   animation-delay: 180ms;
 }
 
-/* ─── Problem comparison (index Business Leader: step + blTab + scenario cols) ─ */
+/* ─── Problem comparison ──────────────────────────────────────────────────── */
 
-.problemCompare {
-  max-width: 80rem;
-  margin: 0 auto;
+.problemSection .sectionHeader {
+  margin-bottom: 2.5rem;
+}
+
+.problemBlock {
   display: flex;
   flex-direction: column;
-  gap: 1.65rem;
-  text-align: left;
+  gap: 2rem;
   width: 100%;
 }
 
-/* mirrors .stepLabel on index levels / Business Leader */
-.problemStepLabel {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.6);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin: 0;
+.problemIntro {
+  margin: -0.5rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 42rem;
 }
 
-/* mirrors .contentBody */
-.problemCompareIntro {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.6;
+.problemTopicGrid {
+  list-style: none;
   margin: 0;
-  max-width: min(62rem, 100%);
-}
-
-/* Equal-width tabs — grid on desktop; same spec as .blTabBar / .blTab */
-.problemTabBar {
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
   align-items: stretch;
 }
 
-.problemTab {
+@media (min-width: 640px) {
+  .problemTopicGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .problemTopicGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.problemTopicCell {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.problemTopicBtn {
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  min-height: 3.35rem;
-  height: 100%;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.65rem 0.9rem;
-  background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  gap: 0.5rem;
+  min-height: 4.5rem;
+  padding: 0.75rem 0.65rem;
   border-radius: 0.5rem;
-  font-size: 0.825rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 22, 0.48);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.72);
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-  text-align: center;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  font-family: var(--ifm-font-family-base);
+  transition:
+    border-color 280ms ease,
+    box-shadow 280ms ease,
+    transform 280ms ease,
+    color 280ms ease;
 }
 
-.problemTab:hover {
-  color: rgba(255, 255, 255, 0.85);
-  border-color: rgba(255, 255, 255, 0.55);
+.problemTopicBtn:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.28);
+  color: #ffffff;
 }
 
-.problemTab:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.9);
+.problemTopicBtn:focus-visible {
+  outline: 2px solid rgba(0, 221, 255, 0.55);
   outline-offset: 2px;
 }
 
-.problemTabActive {
-  color: #ffffff !important;
-  border-color: #ffffff !important;
-  background: transparent;
+.problemTopicBtnActive {
+  border-color: rgba(0, 221, 255, 0.42);
+  background: rgba(0, 221, 255, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  color: #ffffff;
 }
 
-.problemTabInner {
+.problemTopicBtnActive .problemTopicIconWrap {
+  border-color: rgba(0, 221, 255, 0.38);
+  background: rgba(0, 221, 255, 0.12);
+}
+
+.problemTopicIconWrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.16);
+  background: rgba(0, 221, 255, 0.06);
+  color: #00d4ff;
+  transition: background-color 280ms ease, border-color 280ms ease;
 }
 
-.problemTabIcon {
-  width: 1.22rem;
-  height: 1.22rem;
-  flex-shrink: 0;
-  opacity: 0.9;
-  color: inherit;
+.problemTopicIcon {
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
-.problemTabLabel {
-  display: block;
+.problemTopicLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25;
   text-align: center;
   text-wrap: balance;
+  letter-spacing: 0.01em;
 }
 
-/* Detail shell */
-.problemCompareDetail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+.problemComparePanel {
   border-radius: 0.5rem;
-  padding: 1.65rem;
-  background: rgba(10, 12, 22, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 22, 0.48);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  padding: 1.5rem 1.35rem 1.35rem;
 }
 
 .problemComparePanelInner {
@@ -710,406 +727,330 @@
   }
 }
 
-.problemCompareTopic {
-  font-size: 1.45rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  line-height: 1.2;
-}
-
-.problemCompareMeta {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.45);
-  margin: 0 0 1.25rem 0;
-  font-weight: 400;
-}
-
-.problemCompareSplit {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: stretch;
-}
-.problemCompareCard {
-  background: rgba(8, 10, 20, 0.35);
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
-  border-radius: 0.75rem;
-  padding: 1.65rem 1.4rem;
+.problemComparePanelHeader {
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  text-align: left;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  min-width: 0;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.problemCompareCardPositive {
-  border-color: rgba(0, 221, 255, 0.22);
+.problemComparePanelIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.22);
+  background: rgba(0, 221, 255, 0.08);
+  color: #00d4ff;
 }
 
-.problemCompareCardNeg {
-  border-color: rgba(255, 255, 255, 0.15);
+.problemComparePanelIcon {
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
-/* mirrors .blScenarioColHeading / Sub */
-.problemCompareCardHeading {
-  font-size: 1.05rem;
+.problemComparePanelTitle {
+  margin: 0 0 0.2rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #ffffff;
-  margin: 0 0 0.25rem 0;
+  letter-spacing: -0.01em;
   line-height: 1.3;
 }
 
-.problemCompareCardSub {
-  font-size: 0.95rem;
+.problemComparePanelMeta {
+  margin: 0;
+  font-size: 0.875rem;
   color: rgba(255, 255, 255, 0.5);
-  margin: 0 0 0.85rem 0;
-  font-weight: 400;
+  line-height: 1.4;
 }
 
-/* Single integrated “statement” block — icon + copy read as one unit */
-.problemCompareStatement {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  margin: 0;
-  padding: 0.9rem 1rem 0.9rem 0.9rem;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-left: 3px solid transparent;
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.problemCompareStatementNeg {
-  /* index .xMark — #ef4444 */
-  border-left-color: rgba(239, 68, 68, 0.95);
-  background: rgba(239, 68, 68, 0.09);
-  border-color: rgba(239, 68, 68, 0.22);
-}
-
-.problemCompareStatementPos {
-  /* index cyan — rgba(0, 221, 255) / #00DDFF */
-  border-left-color: rgba(0, 221, 255, 0.9);
-  background: rgba(0, 221, 255, 0.07);
-  border-color: rgba(0, 221, 255, 0.22);
-}
-
-.problemCompareStatementIcon {
-  flex-shrink: 0;
-  width: 1.875rem;
-  height: 1.875rem;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 0.2rem;
-}
-
-.problemCompareStatementNeg .problemCompareStatementIcon {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
-.problemCompareStatementPos .problemCompareStatementIcon {
-  background: rgba(0, 221, 255, 0.14);
-  color: #00ddff;
-}
-
-.problemCompareStatementIcon svg {
-  width: 1.05rem;
-  height: 1.05rem;
-  display: block;
-}
-
-.problemCompareStatementText {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  font-size: 0.9rem;
-  color: #ffffff;
-  line-height: 1.6;
-}
-
-.problemCompareStatementPos .problemCompareStatementText {
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 500;
-}
-
-/* Bottom line — same shell + card language as .problemCompareDetail */
-.problemImpactCallout {
-  margin-top: 0.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
-  padding: 1.65rem;
-  background: rgba(10, 12, 22, 0.52);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.problemImpactCalloutTop {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  margin-bottom: 0;
-}
-
-.problemImpactCalloutIconWrap {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 0.12rem;
-  background: rgba(0, 221, 255, 0.14);
-  border: 1px solid rgba(0, 221, 255, 0.38);
-  box-shadow:
-    0 0 0 1px rgba(0, 221, 255, 0.06),
-    0 0 28px rgba(0, 221, 255, 0.18);
-}
-
-.problemImpactCalloutGlyph {
-  width: 1.1rem;
-  height: 1.1rem;
-  color: #00ddff;
-}
-
-.problemImpactCalloutTitles {
-  min-width: 0;
-}
-
-.problemImpactCalloutEyebrow {
-  margin: 0 0 0.2rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.problemImpactCalloutTitle {
-  margin: 0;
-  font-size: 1.45rem;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
-.problemImpactCalloutSub {
-  margin: 0 0 1rem;
-  padding-left: 0;
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.45);
-  line-height: 1.55;
-  font-weight: 400;
-}
-
-.problemImpactSplit {
+.problemCompareGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   align-items: stretch;
 }
 
-.problemImpactPill {
+.problemCompareSide {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  padding: 1.25rem 1.2rem;
-  border-radius: 0.75rem;
-  text-align: center;
+  padding: 1.15rem 1.1rem 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(8, 10, 20, 0.35);
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
-.problemImpactPillNeg {
-  border-color: rgba(255, 255, 255, 0.15);
+.problemCompareSideNeg {
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
-.problemImpactPillPos {
+.problemCompareSidePos {
   border-color: rgba(0, 221, 255, 0.22);
 }
 
-.problemImpactPillLabel {
+.problemCompareSideLabel {
+  margin: 0 0 0.2rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.3;
+}
+
+.problemCompareSideSub {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.48);
+  line-height: 1.4;
+}
+
+.problemCompareBody {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0;
+  margin-top: auto;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+}
+
+.problemCompareBodyNeg {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.problemCompareBodyPos {
+  border-color: rgba(0, 221, 255, 0.2);
+  background: rgba(0, 221, 255, 0.06);
+}
+
+.problemCompareBodyIcon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  margin-top: 0.1rem;
+}
+
+.problemCompareBodyNeg .problemCompareBodyIcon {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+.problemCompareBodyPos .problemCompareBodyIcon {
+  background: rgba(0, 221, 255, 0.14);
+  color: #00ddff;
+}
+
+.problemCompareBodyIcon svg {
+  width: 1rem;
+  height: 1rem;
   display: block;
-  font-size: 0.6rem;
+}
+
+.problemCompareBodyText {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.problemImpactPanel {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.18);
+  background: rgba(10, 12, 22, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 1.5rem 1.35rem 1.25rem;
+}
+
+.problemImpactHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.15rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.problemImpactIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 221, 255, 0.28);
+  background: rgba(0, 221, 255, 0.08);
+  color: #00d4ff;
+}
+
+.problemImpactIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.problemImpactHeading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.problemImpactEyebrow {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0, 221, 255, 0.85);
+  line-height: 1.2;
+}
+
+.problemImpactTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.problemImpactSub {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 36rem;
+}
+
+.problemImpactGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.problemImpactStat {
+  padding: 1.1rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 10, 20, 0.35);
+  text-align: center;
+}
+
+.problemImpactStatNeg {
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.problemImpactStatPos {
+  border-color: rgba(0, 221, 255, 0.24);
+}
+
+.problemImpactStatLabel {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.48);
-  margin-bottom: 0.4rem;
+  color: rgba(255, 255, 255, 0.45);
 }
 
-.problemImpactPillValue {
+.problemImpactStatValue {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.25;
 }
 
-.problemImpactPillNeg .problemImpactPillValue {
+.problemImpactStatNeg .problemImpactStatValue {
   color: #ef4444;
 }
 
-.problemImpactPillPos .problemImpactPillValue {
+.problemImpactStatPos .problemImpactStatValue {
   color: #00ddff;
 }
 
-[data-theme='light'] .problemStepLabel {
-  color: #64748b;
-}
-
-[data-theme='light'] .problemCompareIntro {
+[data-theme='light'] .problemIntro {
   color: #475569;
 }
 
-[data-theme='light'] .problemTab {
-  border-color: rgba(15, 23, 42, 0.22);
-  color: #64748b;
-}
-
-[data-theme='light'] .problemTab:hover {
-  color: #334155;
-  border-color: rgba(15, 23, 42, 0.4);
-}
-
-[data-theme='light'] .problemTabActive {
-  color: #0f172a !important;
-  border-color: #0f172a !important;
-}
-
-[data-theme='light'] .problemCompareDetail {
-  border-color: rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-[data-theme='light'] .problemCompareTopic {
-  color: #0f172a;
-}
-
-[data-theme='light'] .problemCompareMeta {
-  color: #64748b;
-}
-
-[data-theme='light'] .problemCompareCard {
+[data-theme='light'] .problemTopicBtn {
+  background: rgba(255, 255, 255, 0.85);
   border-color: rgba(15, 23, 42, 0.12);
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-[data-theme='light'] .problemCompareCardPositive {
-  border-color: rgba(0, 221, 255, 0.28);
-}
-
-[data-theme='light'] .problemCompareCardHeading {
-  color: #0f172a;
-}
-
-[data-theme='light'] .problemCompareCardSub {
   color: #64748b;
 }
 
-[data-theme='light'] .problemCompareStatement {
-  background: rgba(248, 250, 252, 0.72);
-  border-color: rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+[data-theme='light'] .problemTopicBtn:hover {
+  border-color: rgba(0, 180, 220, 0.35);
+  color: #0f172a;
 }
 
-[data-theme='light'] .problemCompareStatementNeg {
-  border-left-color: rgba(239, 68, 68, 0.85);
-  background: rgba(254, 242, 242, 0.58);
-  border-color: rgba(239, 68, 68, 0.18);
+[data-theme='light'] .problemTopicBtnActive {
+  border-color: rgba(0, 180, 220, 0.45);
+  background: rgba(224, 247, 255, 0.65);
+  color: #0f172a;
 }
 
-[data-theme='light'] .problemCompareStatementPos {
-  border-left-color: rgba(0, 184, 212, 0.85);
-  background: rgba(224, 247, 255, 0.52);
-  border-color: rgba(0, 221, 255, 0.28);
+[data-theme='light'] .problemComparePanel,
+[data-theme='light'] .problemImpactPanel {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.12);
 }
 
-[data-theme='light'] .problemCompareStatementText {
+[data-theme='light'] .problemComparePanelTitle,
+[data-theme='light'] .problemCompareSideLabel,
+[data-theme='light'] .problemImpactTitle {
+  color: #0f172a;
+}
+
+[data-theme='light'] .problemComparePanelMeta,
+[data-theme='light'] .problemCompareSideSub,
+[data-theme='light'] .problemImpactSub {
+  color: #64748b;
+}
+
+[data-theme='light'] .problemImpactEyebrow {
+  color: #0891b2;
+}
+
+[data-theme='light'] .problemCompareSide,
+[data-theme='light'] .problemImpactStat {
+  background: rgba(248, 250, 252, 0.9);
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+[data-theme='light'] .problemCompareSidePos,
+[data-theme='light'] .problemImpactStatPos {
+  border-color: rgba(0, 180, 220, 0.3);
+}
+
+[data-theme='light'] .problemCompareBodyText {
   color: #475569;
 }
 
-[data-theme='light'] .problemCompareStatementPos .problemCompareStatementText {
-  color: #334155;
-}
-
-[data-theme='light'] .problemCompareStatementNeg .problemCompareStatementIcon {
-  background: rgba(254, 226, 226, 0.95);
-  color: #ef4444;
-}
-
-[data-theme='light'] .problemCompareStatementPos .problemCompareStatementIcon {
-  background: rgba(224, 247, 255, 0.95);
-  color: #0891b2;
-}
-
-[data-theme='light'] .problemImpactCallout {
-  border-color: rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-[data-theme='light'] .problemImpactCalloutEyebrow {
-  color: #64748b;
-}
-
-[data-theme='light'] .problemImpactCalloutTitle {
-  color: #0f172a;
-}
-
-[data-theme='light'] .problemImpactCalloutSub {
-  color: #64748b;
-}
-
-[data-theme='light'] .problemImpactCalloutIconWrap {
-  background: rgba(224, 247, 255, 0.98);
-  border-color: rgba(8, 145, 178, 0.4);
-  box-shadow:
-    0 0 0 1px rgba(14, 116, 144, 0.06),
-    0 0 20px rgba(14, 116, 144, 0.12);
-}
-
-[data-theme='light'] .problemImpactCalloutGlyph {
-  color: #0891b2;
-}
-
-[data-theme='light'] .problemImpactPill {
-  background: rgba(255, 255, 255, 0.62);
-  border-color: rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-[data-theme='light'] .problemImpactPillPos {
-  border-color: rgba(0, 221, 255, 0.28);
-}
-
-[data-theme='light'] .problemImpactPillLabel {
-  color: #64748b;
-}
-
-[data-theme='light'] .problemImpactPillNeg .problemImpactPillValue {
+[data-theme='light'] .problemImpactStatNeg .problemImpactStatValue {
   color: #dc2626;
 }
 
-[data-theme='light'] .problemImpactPillPos .problemImpactPillValue {
+[data-theme='light'] .problemImpactStatPos .problemImpactStatValue {
   color: #0e7490;
 }
 
@@ -2180,15 +2121,15 @@
     grid-template-columns: 1fr;
   }
 
-  .problemCompareSplit {
+  .problemCompareGrid {
     grid-template-columns: 1fr;
   }
 
-  .problemImpactSplit {
+  .problemImpactGrid {
     grid-template-columns: 1fr;
   }
 
-  .problemTabBar {
+  .problemTopicGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -2314,7 +2255,7 @@
     font-size: 1.9rem;
   }
 
-  .problemTabBar {
+  .problemTopicGrid {
     display: flex;
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -2324,67 +2265,50 @@
     padding-bottom: 2px;
   }
 
-  .problemTabBar::-webkit-scrollbar {
+  .problemTopicGrid::-webkit-scrollbar {
     display: none;
   }
 
-  .problemTab {
+  .problemTopicCell {
     flex: 0 0 auto;
-    width: 12.75rem;
-    min-height: 3.5rem;
-    height: auto;
-    padding: 0.55rem 1rem;
-    font-size: 0.8rem;
+    width: 9.5rem;
   }
 
-  .problemCompareDetail {
-    padding: 1.5rem 1.25rem;
+  .problemTopicBtn {
+    min-height: 4rem;
+    padding: 0.6rem 0.5rem;
   }
 
-  .problemCompareTopic {
-    font-size: 1.2rem;
+  .problemTopicLabel {
+    font-size: 0.7rem;
   }
 
-  .problemCompareMeta {
-    font-size: 0.9rem;
-    margin-bottom: 1.1rem;
+  .problemComparePanel {
+    padding: 1.25rem 1.1rem 1.1rem;
   }
 
-  .problemCompareCard {
-    padding: 1.5rem 1.25rem;
-    text-align: left;
+  .problemComparePanelTitle {
+    font-size: 1.1rem;
   }
 
-  .problemCompareCardHeading {
-    font-size: 1rem;
+  .problemCompareSide {
+    padding: 1rem;
   }
 
-  .problemCompareCardSub {
-    font-size: 0.9rem;
+  .problemCompareBodyText {
+    font-size: 0.875rem;
   }
 
-  .problemCompareStatement {
-    padding: 0.9rem 1rem;
+  .problemImpactPanel {
+    padding: 1.25rem 1.1rem 1.1rem;
   }
 
-  .problemCompareStatementText {
-    font-size: 0.9rem;
-  }
-
-  .problemImpactCallout {
-    padding: 1.35rem 1.15rem;
-  }
-
-  .problemImpactCalloutTitle {
-    font-size: 1.2rem;
-  }
-
-  .problemImpactSplit {
-    grid-template-columns: 1fr;
-  }
-
-  .problemImpactPillValue {
+  .problemImpactTitle {
     font-size: 1.05rem;
+  }
+
+  .problemImpactStatValue {
+    font-size: 1.1rem;
   }
 
   .terraformBanner {
@@ -2427,17 +2351,11 @@
 }
 
 @media (max-width: 480px) {
-  .problemTab {
-    width: 11rem;
-    padding: 0.5rem 0.85rem;
-    font-size: 0.75rem;
+  .problemTopicCell {
+    width: 8.5rem;
   }
 
-  .problemStepLabel {
-    font-size: 0.95rem;
-  }
-
-  .problemCompareTopic {
+  .problemComparePanelTitle {
     font-size: 1.05rem;
     line-height: 1.3;
   }
