@@ -2872,6 +2872,20 @@ if __name__ == "__main__":
                   <AgentKernelSitsInFlowDiagram />
                 </article>
               </div>
+
+              {/* Step 06 — How Agent Kernel Fits In */}
+              <div className={`${styles.devArchitectureSection} ${styles.developerBlock}`}>
+                <p className={styles.devStepLabel}>The complete picture</p>
+                <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
+
+                <p className={styles.devFrameworkBody}>
+                  You write your AI agent’s logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
+                </p>
+
+                <div className={styles.devArchitectureWrapper}>
+                  <AgentKernelArchDiagram />
+                </div>
+              </div>
             </div>
           )}
         </div>
