@@ -55,12 +55,15 @@
 }
 
 .inputNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  line-height: 1.55;
+  line-height: 1.45;
   color: rgba(255, 255, 255, 0.42);
 }
 

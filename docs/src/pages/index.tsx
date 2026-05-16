@@ -2546,39 +2546,7 @@ if __name__ == "__main__":
                 </div>
               </div>
 
-              {/* Step 04 — Production-ready compliant agents */}
-              <div className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}>
-                <p className={styles.devStepLabel}>Build with confidence</p>
-                <h2 className={styles.devTitle}>
-                  How Agent Kernel Helps You Build Production-Ready Compliant AI Agents
-                </h2>
-
-                <article className={styles.aiBuildSubsection}>
-                  <h3 className={styles.aiBuildSubTitle}>Building AI Agents</h3>
-                  <p className={styles.aiBuildSubBody}>
-                    Designing a compliant multi-agent architecture carries multiple components.
-                  </p>
-                  <BuildingAgentsFlowDiagram />
-                </article>
-
-                <article className={styles.aiBuildSubsection}>
-                  <h3 className={styles.aiBuildSubTitle}>Running AI Agents</h3>
-                  <p className={styles.aiBuildSubBody}>
-                    Running a production-grade AI agent requires considering several design aspects and information flows.
-                  </p>
-                  <RunningAgentsFlowDiagram />
-                </article>
-
-                <article className={styles.aiBuildSubsection}>
-                  <h3 className={styles.aiBuildSubTitle}>How Agent Kernel Sit In</h3>
-                  <p className={styles.aiBuildSubBody}>
-                    Agent Kernel handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.
-                  </p>
-                  <AgentKernelSitsInFlowDiagram />
-                </article>
-              </div>
-
-              {/* Step 05 — Framework Selection */}
+              {/* Step 04 — Framework Selection */}
               <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
@@ -2873,6 +2841,37 @@ if __name__ == "__main__":
                 </div>
               </div>
 
+              {/* Step 05 — Production-ready compliant agents */}
+              <div className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}>
+                <p className={styles.devStepLabel}>Build with confidence</p>
+                <h2 className={styles.devTitle}>
+                  How Agent Kernel Helps You Build Production-Ready Compliant AI Agents
+                </h2>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Building AI Agents</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Designing a compliant multi-agent architecture carries multiple components.
+                  </p>
+                  <BuildingAgentsFlowDiagram />
+                </article>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Running AI Agents</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Running a production-grade AI agent requires considering several design aspects and information flows.
+                  </p>
+                  <RunningAgentsFlowDiagram />
+                </article>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>How Agent Kernel Sit In</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Agent Kernel handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.
+                  </p>
+                  <AgentKernelSitsInFlowDiagram />
+                </article>
+              </div>
             </div>
           )}
         </div>
