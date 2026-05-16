@@ -688,11 +688,11 @@ function FrameworkSupport() {
       link: '/docs/frameworks/openai',
       logo: (
         <img
-          src="/img/integrations/openai.svg"
+          src="/img/integrations/chatgpt.png"
           alt=""
           className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
-          width={120}
-          height={32}
+          width={150}
+          height={50}
         />
       ),
     },
@@ -702,9 +702,12 @@ function FrameworkSupport() {
       description: 'Graph-based agent orchestration for complex stateful multi-actor applications.',
       link: '/docs/frameworks/langgraph',
       logo: (
-        <SiLangchain
-          className={`${styles.frameworkLogoIcon} ${styles.frameworkLogoLangchain}`}
-          aria-hidden
+        <img
+          src="/img/integrations/langgraph.png"
+          alt=""
+          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
+          width={150}
+          height={50}
         />
       ),
     },
@@ -714,9 +717,12 @@ function FrameworkSupport() {
       description: "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
       link: '/docs/frameworks/google-adk',
       logo: (
-        <SiGooglegemini
-          className={`${styles.frameworkLogoIcon} ${styles.frameworkLogoGemini}`}
-          aria-hidden
+        <img
+          src="/img/integrations/googleADK.png"
+          alt=""
+          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
+          width={150}
+          height={50}
         />
       ),
     },
@@ -727,11 +733,11 @@ function FrameworkSupport() {
       link: '/docs/frameworks/crewai',
       logo: (
         <img
-          src="/img/integrations/crewai.svg"
+          src="/img/integrations/crewai.png"
           alt=""
           className={styles.frameworkLogoImg}
-          width={140}
-          height={48}
+          width={168}
+          height={58}
         />
       ),
     },
@@ -743,9 +749,12 @@ function FrameworkSupport() {
       link: 'https://huggingface.co/docs/smolagents/index',
       external: true,
       logo: (
-        <SiHuggingface
-          className={`${styles.frameworkLogoIcon} ${styles.frameworkLogoHf}`}
-          aria-hidden
+        <img
+          src="/img/integrations/smolagents.png"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={150}
+          height={50}
         />
       ),
     },
@@ -757,7 +766,7 @@ function FrameworkSupport() {
       external: true,
       logo: (
         <img
-          src="/img/integrations/livekit-mark.svg"
+          src="/img/integrations/livekit.png"
           alt=""
           className={styles.frameworkLogoImg}
           width={38}
@@ -777,8 +786,8 @@ function FrameworkSupport() {
         src="/img/branding/agent-kernel-icon-color.svg"
         alt=""
         className={styles.frameworkLogoImg}
-        width={48}
-        height={48}
+        width={100}
+        height={100}
       />
     ),
   };

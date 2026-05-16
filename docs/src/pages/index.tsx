@@ -147,6 +147,8 @@ function FrameworksStrip() {
     { name: 'LangGraph', logo: '/img/integrations/langgraph.png', link: '/docs/frameworks/langgraph' },
     { name: 'CrewAI', logo: '/img/integrations/crewai.png', link: '/docs/frameworks/crewai' },
     { name: 'Google ADK', logo: '/img/integrations/googleADK.png', link: '/docs/frameworks/google-adk' },
+    { name: 'Smolagents', logo: '/img/integrations/smolagents.png', link: 'https://huggingface.co/docs/smolagents/index' },
+    { name: 'LiveKit', logo: '/img/integrations/livekit.png', link: 'https://docs.livekit.io/' },
   ];
 
   useEffect(() => {
