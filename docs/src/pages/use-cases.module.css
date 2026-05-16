@@ -459,8 +459,8 @@
   border-radius: 50%;
   background: radial-gradient(
     circle at center,
-    rgba(0, 213, 190, 0.18) 0%,
-    rgba(0, 213, 190, 0.04) 50%,
+    rgba(0, 221, 255, 0.18) 0%,
+    rgba(0, 221, 255, 0.04) 50%,
     transparent 70%
   );
   animation: corePulse 3s ease-in-out infinite;
@@ -474,7 +474,7 @@
   width: 100px;
   height: 100px;
   object-fit: contain;
-  filter: drop-shadow(0 0 14px rgba(0, 213, 190, 0.6));
+  filter: drop-shadow(0 0 14px rgba(0, 221, 255, 0.6));
 }
 
 @keyframes corePulse {
@@ -500,9 +500,9 @@
 }
 
 .orbitCard:hover {
-  border-color: rgba(0, 213, 190, 0.3);
+  border-color: rgba(0, 221, 255, 0.3);
   transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(0, 213, 190, 0.07);
+  box-shadow: 0 8px 28px rgba(0, 221, 255, 0.07);
 }
 
 
@@ -1194,5 +1194,54 @@
 
   .sectionSubtitle {
     font-size: clamp(0.75rem, 1.5vw, 0.9rem);
+  }
+}
+
+/* ─── Real world use cases (feature-card grid) ─────────────────────────────── */
+
+.realWorldSection {
+  padding-top: 4rem;
+  padding-bottom: 4rem;
+}
+
+.realWorldSection :global(.container) {
+  max-width: 1200px;
+}
+
+.realWorldCardLink,
+.realWorldCardLink:hover,
+.realWorldCardLink:focus,
+.realWorldCardLink:active,
+.realWorldCardLink:visited {
+  text-decoration: none !important;
+  color: inherit;
+  cursor: pointer;
+}
+
+.realWorldCardLink:hover h3,
+.realWorldCardLink:hover p,
+.realWorldCardLink:hover span {
+  text-decoration: none !important;
+}
+
+.realWorldSection .realWorldCardLink:hover {
+  text-decoration: none !important;
+}
+
+.realWorldCardLink:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.65);
+  outline-offset: 3px;
+}
+
+.realWorldCasesGrid {
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 768px) {
+  .realWorldCasesGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    column-gap: 1.5rem;
   }
 }

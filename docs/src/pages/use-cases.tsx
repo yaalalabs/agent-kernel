@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
+import featureStyles from './features.module.css';
 import UseCaseJourneyMap from '../components/UseCaseJourneyMap';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -335,7 +336,7 @@ const ORBIT_CARDS = [
   },
   {
     icon: <MdCode />,
-    color: '#4ADB76',
+    color: '#00DDFF',
     title: 'Lightweight',
     desc: 'A thin adapter layer, not a heavy abstraction. Bring your existing agent code and wrap it in minutes, not days.',
   },
@@ -374,6 +375,60 @@ function IconCell({ color, children }: { color: string; children: React.ReactNod
       <div className={styles.iconCellBg} />
       <span className={styles.iconCellGlyph}>{children}</span>
     </div>
+  );
+}
+
+const REAL_WORLD_USE_CASES = [
+  {
+    title: 'Agentic AI Assisted Market Surveillance',
+    description:
+      'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. Agent Kernel enables, AI agents to monitor orders and flag potential / suspicious trades which violate regulations.',
+    link: '#',
+  },
+  {
+    title: 'AI First SDLC',
+    description:
+      'A team of Agents looking at various artifacts at each phase of the SDLC and orchestrate humans to unblock for a smooth transition. Can overcome the speedbumps created by the weakest links (i.e., humans) in the SDLC chain.',
+    link: '#',
+  },
+  {
+    title: 'Troubleshooter Agent',
+    description:
+      'A system troubleshooter (L1 to L3) which can give a comprehensive issue analysis, root-cause determination and resolution of a complex, distributed trading system. Responds to a system alert by looking at application logs, resource and related metrics. AI agent is able to improve the issue resolution time 20x.',
+    link: '#',
+  },
+];
+
+function RealWorldUseCases() {
+  return (
+    <section
+      className={`${featureStyles.section} ${featureStyles.coreFeaturesSection} ${styles.realWorldSection}`}
+    >
+      <div className="container">
+        <div className={featureStyles.sectionHeader}>
+          <h2 className={featureStyles.sectionTitle}>Real world use cases</h2>
+        </div>
+        <ul className={`${featureStyles.featuresGrid} ${styles.realWorldCasesGrid}`}>
+          {REAL_WORLD_USE_CASES.map((useCase, i) => (
+            <li key={useCase.title} className={featureStyles.featureGridCell}>
+              <Link
+                to={useCase.link}
+                className={`${featureStyles.featureCard} ${styles.realWorldCardLink}`}
+              >
+                <div className={featureStyles.featureCardHeader}>
+                  <span className={featureStyles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
+                </div>
+                <div className={featureStyles.featureCardBody}>
+                  <h3 className={featureStyles.featureTitle}>{useCase.title}</h3>
+                  <p className={featureStyles.featureDescription}>{useCase.description}</p>
+                </div>
+                <span className={featureStyles.featureLink}>Read blog →</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -431,7 +486,7 @@ function Differentiators() {
       // Halo line
       const haloPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       haloPath.setAttribute('d', pathD);
-      haloPath.setAttribute('stroke', 'rgba(0,213,190,0.1)');
+      haloPath.setAttribute('stroke', 'rgba(0,221,255,0.1)');
       haloPath.setAttribute('stroke-width', '8');
       haloPath.setAttribute('fill', 'none');
       haloPath.setAttribute('filter', 'url(#lineGlow)');
@@ -441,7 +496,7 @@ function Differentiators() {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('id', pathId);
       path.setAttribute('d', pathD);
-      path.setAttribute('stroke', 'rgba(0,213,190,0.28)');
+      path.setAttribute('stroke', 'rgba(0,221,255,0.28)');
       path.setAttribute('stroke-width', '1.5');
       path.setAttribute('fill', 'none');
       svg.appendChild(path);
@@ -451,14 +506,14 @@ function Differentiators() {
       endDot.setAttribute('cx', String(cx));
       endDot.setAttribute('cy', String(cy));
       endDot.setAttribute('r', '4');
-      endDot.setAttribute('fill', 'rgba(0,213,190,0.55)');
+      endDot.setAttribute('fill', 'rgba(0,221,255,0.55)');
       endDot.setAttribute('filter', 'url(#dotGlow)');
       svg.appendChild(endDot);
 
       // Traveling dot
       const traveler = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       traveler.setAttribute('r', '3.5');
-      traveler.setAttribute('fill', 'rgba(0,230,210,1)');
+      traveler.setAttribute('fill', '#00DDFF');
       traveler.setAttribute('filter', 'url(#dotGlow)');
       const motion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
       motion.setAttribute('dur', `${durations[i]}s`);
@@ -564,6 +619,7 @@ export default function UseCases() {
       <Hero />
       <main>
         <UseCaseJourneyMap />
+        <RealWorldUseCases />
         <Differentiators />
       </main>
       {activeSegment && (
