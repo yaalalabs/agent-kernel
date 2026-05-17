@@ -1,4 +1,4 @@
-import React, { useId, useState, useEffect, useRef, useCallback } from 'react';
+import React, { useId, useState, useEffect, useRef } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './features.module.css';
@@ -1003,9 +1003,9 @@ function TestingSection() {
 }
 
 
-const MESSAGING_ORBIT_PLATFORMS = [
+const MESSAGING_PLATFORMS = [
   { name: 'Slack', icon: <FaSlack />, color: '#EC407A', link: '/docs/integrations/slack' },
-  { name: 'Microsoft Teams', icon: <TbBrandTeams />, color: '#A8B2FF', link: '/docs/integrations/teams' },
+  { name: 'Teams', icon: <TbBrandTeams />, color: '#A8B2FF', link: '/docs/integrations/teams' },
   { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#3DFF9A', link: '/docs/integrations/whatsapp' },
   { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#1AACFF', link: '/docs/integrations/messenger' },
   { name: 'Telegram', icon: <FaTelegram />, color: '#40BFFF', link: '/docs/integrations/telegram' },
@@ -1016,135 +1016,42 @@ const MESSAGING_ORBIT_PLATFORMS = [
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
 
 function MessagingSection() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hubRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<(HTMLAnchorElement | null)[]>([]);
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  const drawLines = useCallback(() => {
-    const container = containerRef.current;
-    const hub = hubRef.current;
-    const svg = svgRef.current;
-    if (!container || !hub || !svg) return;
-
-    const cRect = container.getBoundingClientRect();
-    const hRect = hub.getBoundingClientRect();
-    if (hRect.width === 0 || cRect.width === 0) return;
-
-    const hx = hRect.left + hRect.width / 2 - cRect.left;
-    const hy = hRect.top + hRect.height / 2 - cRect.top;
-
-    svg.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
-
-    svg.innerHTML = `
-      <defs>
-        <filter id="msgLineGlow" x="-80%" y="-80%" width="260%" height="260%">
-          <feGaussianBlur stdDeviation="5" result="blur"/>
-          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-        <filter id="msgDotGlow" x="-300%" y="-300%" width="700%" height="700%">
-          <feGaussianBlur stdDeviation="4" result="blur"/>
-          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-      </defs>`;
-
-    const durations = [2.8, 3.4, 2.5, 3.1, 2.9, 3.6, 2.6];
-
-    cardRefs.current.forEach((card, i) => {
-      if (!card) return;
-      const r = card.getBoundingClientRect();
-      if (r.width === 0) return;
-      const cx = r.left + r.width / 2 - cRect.left;
-      const cy = r.top + r.height / 2 - cRect.top;
-
-      const midX = (hx + cx) / 2;
-      const midY = (hy + cy) / 2;
-      const dx = cx - hx;
-      const dy = cy - hy;
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      const cpX = midX + (-dy / len) * 35;
-      const cpY = midY + (dx / len) * 35;
-      const pathD = `M ${hx} ${hy} Q ${cpX} ${cpY} ${cx} ${cy}`;
-      const pathId = `msgOp${i}`;
-
-      const haloPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      haloPath.setAttribute('d', pathD);
-      haloPath.setAttribute('stroke', 'rgba(0,213,190,0.1)');
-      haloPath.setAttribute('stroke-width', '8');
-      haloPath.setAttribute('fill', 'none');
-      haloPath.setAttribute('filter', 'url(#msgLineGlow)');
-      svg.appendChild(haloPath);
-
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('id', pathId);
-      path.setAttribute('d', pathD);
-      path.setAttribute('stroke', 'rgba(0,213,190,0.28)');
-      path.setAttribute('stroke-width', '1.5');
-      path.setAttribute('fill', 'none');
-      svg.appendChild(path);
-
-      const endDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      endDot.setAttribute('cx', String(cx));
-      endDot.setAttribute('cy', String(cy));
-      endDot.setAttribute('r', '4');
-      endDot.setAttribute('fill', 'rgba(0,213,190,0.55)');
-      endDot.setAttribute('filter', 'url(#msgDotGlow)');
-      svg.appendChild(endDot);
-
-      const traveler = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      traveler.setAttribute('r', '3.5');
-      traveler.setAttribute('fill', 'rgba(0,230,210,1)');
-      traveler.setAttribute('filter', 'url(#msgDotGlow)');
-      const motion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
-      motion.setAttribute('dur', `${durations[i] ?? 3}s`);
-      motion.setAttribute('repeatCount', 'indefinite');
-      motion.setAttribute('begin', `${i * 0.38}s`);
-      const mpath = document.createElementNS('http://www.w3.org/2000/svg', 'mpath');
-      mpath.setAttribute('href', `#${pathId}`);
-      motion.appendChild(mpath);
-      traveler.appendChild(motion);
-      svg.appendChild(traveler);
-    });
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(drawLines, 80);
-    const ro = new ResizeObserver(drawLines);
-    if (containerRef.current) ro.observe(containerRef.current);
-    window.addEventListener('resize', drawLines);
-    return () => {
-      clearTimeout(timer);
-      ro.disconnect();
-      window.removeEventListener('resize', drawLines);
-    };
-  }, [drawLines]);
+  const sceneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
-      const els = containerRef.current?.querySelectorAll(
-        `.${styles.msgOrbitCard}, .${styles.msgOrbitHub}`
-      );
-      if (!els?.length) return;
-      gsap.fromTo(
-        els,
-        { opacity: 0, scale: 0.88 },
+      const strip = sceneRef.current?.querySelector(`.${styles.msgRuntimeStrip}`);
+      const cards = sceneRef.current?.querySelectorAll(`.${styles.msgChannelCard}`);
+      if (!strip || !cards?.length) return;
+
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: sceneRef.current,
+          start: 'top 78%',
+          once: true,
+        },
+      });
+
+      tl.fromTo(
+        strip,
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' }
+      ).fromTo(
+        cards,
+        { opacity: 0, y: 18 },
         {
           opacity: 1,
-          scale: 1,
-          duration: 0.5,
-          stagger: 0.07,
-          ease: 'back.out(1.2)',
-          scrollTrigger: {
-            trigger: containerRef.current,
-            start: 'top 75%',
-            once: true,
-          },
-          onComplete: drawLines,
-        }
+          y: 0,
+          duration: 0.42,
+          stagger: 0.055,
+          ease: 'power2.out',
+        },
+        '-=0.28'
       );
-    }, containerRef);
+    }, sceneRef);
+
     return () => ctx.revert();
-  }, [drawLines]);
+  }, []);
 
   return (
     <section
@@ -1155,41 +1062,33 @@ function MessagingSection() {
           <span className={styles.sectionNumber}>05</span>
           <h2 className={styles.sectionTitle}>Messaging integrations</h2>
           <p className={styles.sectionSubtitle}>
-            Your agents meet users on the channels they already use. Lines show how each app links back to the same
-            Agent Kernel runtime — tap a channel for setup steps.
+            Your agents meet users on the channels they already use. Every integration routes through the same Agent
+            Kernel runtime — pick a channel below for setup steps.
           </p>
         </div>
 
-        <div ref={containerRef} className={styles.msgOrbitScene}>
-          <svg ref={svgRef} className={styles.msgOrbitSvg} aria-hidden />
-
-          {MESSAGING_ORBIT_PLATFORMS.map((p, i) => (
-            <Link
-              key={p.name}
-              ref={(el) => {
-                cardRefs.current[i] = el;
-              }}
-              to={p.link}
-              className={`${styles.msgOrbitCard} ${styles[`msgOrbitPos${i}`]}`}
-              style={{ '--msg-brand': p.color } as React.CSSProperties}>
-              <div className={styles.msgOrbitGlyph}>{p.icon}</div>
-              <span className={styles.msgOrbitLabel}>{p.name}</span>
-            </Link>
-          ))}
-
-          <div className={styles.msgOrbitHub}>
-            <div ref={hubRef} className={styles.msgOrbitHubAnchor}>
-              <div className={styles.msgOrbitHubGlow} />
-              <img
-                src="/img/branding/agent-kernel-icon-color.svg"
-                alt="Agent Kernel"
-                className={styles.msgOrbitHubIcon}
-              />
-            </div>
-          </div>
+        <div ref={sceneRef} className={styles.msgChannelScene}>
+          <ul className={styles.msgChannelGrid}>
+            {MESSAGING_PLATFORMS.map((p) => (
+              <li key={p.name} className={styles.msgChannelCell}>
+                <Link
+                  to={p.link}
+                  className={styles.msgChannelCard}
+                  style={{ '--msg-brand': p.color } as React.CSSProperties}>
+                  <span className={styles.msgChannelIcon} aria-hidden>
+                    {p.icon}
+                  </span>
+                  <span className={styles.msgChannelMeta}>
+                    <span className={styles.msgChannelName}>{p.name}</span>
+                    <span className={styles.msgChannelCta}>Setup guide →</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <div className={styles.msgOrbitFooter}>
+        <div className={styles.msgChannelFooter}>
           <Link to="/docs/integrations/overview" className={styles.sectionLink}>
             Full integrations overview →
           </Link>
@@ -1198,7 +1097,6 @@ function MessagingSection() {
     </section>
   );
 }
-
 /* ─── Protocol Support ──────────────────────────────────────────────────── */
 
 function ProtocolSupport() {
@@ -1263,7 +1161,6 @@ function ProtocolSupport() {
 function CTASection() {
   return (
     <section id={FEATURE_ANCHORS.cta} className={`${styles.ctaSection} ${styles.pageAnchor}`}>
-      <div className={styles.ctaGlow} />
       <div className="container">
         <div className={styles.ctaContent}>
           <h2 className={styles.ctaTitle}>Ready to Build Your AI Agents?</h2>
