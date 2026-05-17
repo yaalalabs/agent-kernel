@@ -256,7 +256,7 @@ function FeaturesPageMap() {
             Everything Agent Kernel Does
           </h2>
           <p className={styles.sectionSubtitle}>
-            Six production-ready capabilities — explore any area below.
+            Six production-ready capabilities. Explore any area below.
           </p>
         </div>
 
@@ -851,7 +851,7 @@ function FrameworkSupport() {
           <span className={styles.sectionNumber}>03</span>
           <h2 className={styles.sectionTitle}>One Runtime. Any Framework.</h2>
           <p className={styles.sectionSubtitle}>
-            Use the best framework for each job — and run them all together in a single deployment.
+            Use the best framework for each job, and run them all together in a single deployment.
           </p>
         </div>
 
@@ -1063,7 +1063,7 @@ function MessagingSection() {
           <h2 className={styles.sectionTitle}>Messaging integrations</h2>
           <p className={styles.sectionSubtitle}>
             Your agents meet users on the channels they already use. Every integration routes through the same Agent
-            Kernel runtime — pick a channel below for setup steps.
+            Kernel runtime. Pick a channel below for setup steps.
           </p>
         </div>
 
@@ -1131,7 +1131,7 @@ function ProtocolSupport() {
           <span className={styles.sectionNumber}>06</span>
           <h2 className={styles.sectionTitle}>Protocol Support</h2>
           <p className={styles.sectionSubtitle}>
-            Standard protocols for tool connectivity and multi-agent coordination — wired into the runtime.
+            Standard protocols for tool connectivity and multi-agent coordination. Wired into the runtime.
           </p>
         </div>
         <ul className={styles.protocolGrid}>
@@ -1166,7 +1166,7 @@ function CTASection() {
           <h2 className={styles.ctaTitle}>Ready to Build Your AI Agents?</h2>
           <p className={styles.ctaSubtitle}>
             Free, open-source, Apache 2.0. Whether you're an AI startup, an established software company,
-            or a domain expert — Agent Kernel has a path for you.
+            or a domain expert, Agent Kernel has a path for you.
           </p>
           <div className={styles.ctaButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">

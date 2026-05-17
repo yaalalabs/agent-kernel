@@ -111,6 +111,14 @@ function Hero() {
               <span className={styles.btnIcon}>→</span>
               Get Started
             </Link>
+            <button
+              type="button"
+              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              onClick={() => document.getElementById('agent-skills')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              <span className={styles.btnIconSecondary}>→</span>
+              Agent Skills
+            </button>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
@@ -262,6 +270,122 @@ function AffiliationsStrip() {
             className={styles.affiliationItem}>
             <img src="/img/aaif_membership.svg" alt="Agentic AI Foundation Member" className={styles.affiliationLogo} />
           </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Agent Skills ────────────────────────────────────────────────────── */
+
+const AGENT_SKILLS = [
+  {
+    icon: MdRocketLaunch,
+    name: 'ak-init',
+    description:
+      'Scaffolds a clean, ready-to-build project structure so you can skip the setup and start building straight away. Works with any framework or deployment target.',
+    pills: ['Any framework', 'Any deployment target', 'Guided setup'],
+  },
+  {
+    icon: MdBuild,
+    name: 'ak-build',
+    description:
+      'Adds tools, agents, and task handoffs to your project. Your coding assistant understands your framework, so the code it generates actually works.',
+    pills: ['Tool integration', 'Agent handoffs', 'Framework-aware'],
+  },
+  {
+    icon: MdExtension,
+    name: 'ak-add-capabilities',
+    description:
+      'Plugs in production-grade features like guardrails, tracing, session memory, and multimodal support without having to build them from scratch.',
+    pills: ['Guardrails', 'Tracing', 'Session memory', 'MCP support', 'Multimodal'],
+  },
+  {
+    icon: MdIntegrationInstructions,
+    name: 'ak-add-integration',
+    description:
+      'Connects your agent to the messaging platforms your users already rely on, with authentication and message handling taken care of for each one.',
+    pills: ['Slack', 'WhatsApp', 'Messenger', 'Instagram', 'Telegram', 'Gmail'],
+  },
+  {
+    icon: MdCloudUpload,
+    name: 'ak-cloud-deploy',
+    description:
+      'Deploys your agent to the cloud with full Terraform configuration included. Pick your platform and it handles the infrastructure, no manual setup needed.',
+    pills: ['AWS Lambda', 'ECS', 'Azure Functions', 'Container Apps', 'Full Terraform'],
+  },
+  {
+    icon: MdBugReport,
+    name: 'ak-test',
+    description:
+      'Tests your agent across multiple modes including fuzzy, judge, and fallback. When something breaks, a step-by-step debugging playbook helps you fix it fast.',
+    pills: ['Fuzzy testing', 'Judge mode', 'Fallback testing', 'Debugging playbook'],
+  },
+] as const;
+
+function AgentSkills() {
+  return (
+    <section id="agent-skills" className={styles.agentSkillsSection}>
+      <div className="container">
+        <div className={styles.agentSkillsContainer}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Your coding assistant, supercharged.</h2>
+            <p className={styles.sectionSubtitle}>
+              Agent Skills works with the tools you already use, like Copilot, Claude, Cursor, or
+              Windsurf, to help you build and ship AI agents faster. No more guesswork, no more
+              broken code suggestions.
+            </p>
+          </div>
+
+          <div className={styles.agentSkillsSectionLabel}>Get started in two commands</div>
+          <div className={styles.agentSkillsCodeBlock}>
+            <div className={styles.agentSkillsCodeComment}># 1. Install the CLI</div>
+            <div>
+              <span className={styles.agentSkillsCodeCmd}>$</span>{' '}
+              <span className={styles.agentSkillsCodeArg}>pip install agentkernel</span>
+            </div>
+            <br />
+            <div className={styles.agentSkillsCodeComment}># 2. Install skills for your coding assistant</div>
+            <div>
+              <span className={styles.agentSkillsCodeCmd}>$</span>{' '}
+              <span className={styles.agentSkillsCodeArg}>ak skill install</span>
+            </div>
+            <div className={styles.agentSkillsCodeComment}>&nbsp;&nbsp;or target a specific assistant:</div>
+            <div>
+              <span className={styles.agentSkillsCodeCmd}>$</span>{' '}
+              <span className={styles.agentSkillsCodeArg}>ak skill install --assistant claude</span>
+            </div>
+          </div>
+
+          <div className={styles.agentSkillsSectionLabel}>What each skill does</div>
+          <div className={styles.agentSkillsSkillList}>
+            {AGENT_SKILLS.map((skill) => {
+              const Icon = skill.icon;
+
+              return (
+                <article key={skill.name} className={styles.agentSkillsSkillCard}>
+                  <div className={styles.agentSkillsSkillHeader}>
+                    <Icon aria-hidden className={styles.agentSkillsSkillIcon} />
+                    <p className={styles.agentSkillsSkillName}>{skill.name}</p>
+                  </div>
+                  <p className={styles.agentSkillsSkillBody}>{skill.description}</p>
+                  <div className={styles.agentSkillsPillRow}>
+                    {skill.pills.map((pill) => (
+                      <span key={pill} className={styles.agentSkillsPill}>
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className={styles.agentSkillsFooter}>
+            <Link className={styles.agentSkillsCtaLink} to="/docs">
+              Learn more about Agent Skills <span aria-hidden>→</span>
+            </Link>
+          </div>
         </div>
       </div>
     </section>
@@ -2890,6 +3014,7 @@ export default function Home() {
         <FrameworksStrip />
         <AffiliationsStrip />
         <Levels />
+        <AgentSkills />
         <Deployment />
         <Community />
       </main>
