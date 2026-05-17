@@ -630,6 +630,7 @@ module "response_handler" {
     table_arn  = module.websocket_connections[0].table_arn
   } : null
   websocket_api_execution_arn = local.websocket_api_enabled ? module.websocket_api_gateway[0].websocket_api_execution_arn : null
+  websocket_api_enabled       = local.websocket_api_enabled
 
   depends_on = [module.websocket_api_gateway, module.queues, module.dynamodb_response_store]
 }
