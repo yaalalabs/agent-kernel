@@ -10,6 +10,7 @@ import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
 import BuildingAgentsFlowDiagram from '../components/BuildingAgentsFlowDiagram';
 import RunningAgentsFlowDiagram from '../components/RunningAgentsFlowDiagram';
 import AgentKernelSitsInFlowDiagram from '../components/AgentKernelSitsInFlowDiagram';
+import AgentExecutionFlowDiagram from '../components/AgentExecutionFlowDiagram';
 import ParticleSphere from '../components/ParticleSphere';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import {
@@ -28,13 +29,7 @@ import {
   MdExtension,
   MdIntegrationInstructions,
   MdCloudUpload,
-  MdGpsFixed,
-  MdAssignment,
-  MdHelpOutline,
   MdBolt,
-  MdTrendingUp,
-  MdRefresh,
-  MdFeedback,
   MdMessage,
   MdScience,
   MdLink,
@@ -1142,147 +1137,6 @@ function Levels() {
         );
       });
 
-      // Animate agent flow with sequential color highlighting
-      const flowSection = contentRef.current?.querySelector(`.${styles.agentFlow}`);
-      const flowSteps = contentRef.current?.querySelectorAll(`.${styles.flowStep}`) || [];
-      const flowArrows = contentRef.current?.querySelectorAll(`.${styles.flowArrow}`) || [];
-      if (flowSection && flowSteps.length > 0) {
-        gsap.set(flowSteps, { opacity: 0, y: 24, scale: 0.96 });
-        gsap.set(flowArrows, { opacity: 0, x: -6 });
-
-        const flowTl = gsap.timeline({
-          scrollTrigger: {
-            trigger: flowSection,
-            start: 'top 85%',
-            toggleActions: 'play none none none',
-          },
-        });
-
-        flowTl
-          .to(flowSteps, {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.65,
-            ease: 'power2.out',
-            stagger: 0.09,
-          })
-          .to(
-            flowArrows,
-            {
-              opacity: 1,
-              x: 0,
-              duration: 0.35,
-              ease: 'power2.out',
-              stagger: 0.06,
-            },
-            '-=0.45'
-          );
-
-        const neutralIconColor = '#ffffff';
-        const neutralLabelColor = '#ffffff';
-        const neutralDescColor = 'rgba(255, 255, 255, 0.7)';
-        const neutralArrowColor = 'rgba(255, 255, 255, 0.6)';
-        const activeColor = '#00DDFF';
-
-        // Progressive highlight to make the execution flow obvious
-        const flowPulseTl = gsap.timeline({
-          paused: true,
-          repeat: -1,
-          repeatDelay: 0.15,
-        });
-
-        flowSteps.forEach((step, index) => {
-          const icon = step.querySelector(`.${styles.flowIcon}`);
-          const label = step.querySelector(`.${styles.flowLabel}`);
-          const desc = step.querySelector(`.${styles.flowDesc}`);
-          const arrow = flowArrows[index] ?? null;
-
-          const textTargets = [icon, label, desc].filter(Boolean) as Element[];
-
-          flowPulseTl
-            .to(step, {
-              duration: 0.22,
-              ease: 'power2.out',
-            })
-            .to(
-              textTargets,
-              {
-                color: (_target, i) => (i === 2 ? '#e4eeff' : activeColor),
-                duration: 0.22,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              arrow,
-              {
-                color: activeColor,
-                x: 4,
-                opacity: 1,
-                duration: 0.2,
-                ease: 'power2.out',
-              },
-              '<0.05'
-            )
-            .to({}, { duration: 0.2 })
-            .to(step, {
-              backgroundColor: 'transparent',
-              boxShadow: 'none',
-              y: 0,
-              duration: 0.25,
-              ease: 'power2.out',
-            })
-            .to(
-              icon,
-              {
-                color: neutralIconColor,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              label,
-              {
-                color: neutralLabelColor,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              desc,
-              {
-                color: neutralDescColor,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              arrow,
-              {
-                color: neutralArrowColor,
-                x: 0,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            );
-        });
-
-        ScrollTrigger.create({
-          trigger: flowSection,
-          start: 'top 80%',
-          end: 'bottom 20%',
-          onEnter: () => flowPulseTl.play(),
-          onLeave: () => flowPulseTl.pause(),
-          onEnterBack: () => flowPulseTl.play(),
-          onLeaveBack: () => flowPulseTl.pause(),
-        });
-      }
-
       // Animate highlight cards - Smooth entrance with subtle scale
       const highlightCards = contentRef.current?.querySelectorAll(
         `.${styles.blHighlightCard}`
@@ -1793,58 +1647,7 @@ function Levels() {
                   An AI agent doesn't just answer, it gets things done.
                 </h2>
           
-                <div className={styles.agentFlow}>
-                  <div className={styles.flowStep}>
-                    <MdGpsFixed className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Goal</h4>
-                    <p className={styles.flowDesc}>Understand the goal</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdAssignment className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Plan</h4>
-                    <p className={styles.flowDesc}>Plan steps</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdHelpOutline className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Question</h4>
-                    <p className={styles.flowDesc}>Clarify what's needed</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdBolt className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Act</h4>
-                    <p className={styles.flowDesc}>Take actions</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowSplit}>
-                    <div className={styles.flowSplitPair}>
-                      <div className={styles.flowStep}>
-                        <MdVisibility className={styles.flowIcon} />
-                        <h4 className={styles.flowLabel}>Observe</h4>
-                        <p className={styles.flowDesc}>Observe the results</p>
-                      </div>
-                      <div className={styles.flowStep}>
-                        <MdFeedback className={styles.flowIcon} />
-                        <h4 className={styles.flowLabel}>Get Feedback</h4>
-                        <p className={styles.flowDesc}>Capture signals and outcomes</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdTrendingUp className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Improve</h4>
-                    <p className={styles.flowDesc}>Gets smarter</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdRefresh className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Repeat</h4>
-                    <p className={styles.flowDesc}>Always on, always learning</p>
-                  </div>
-                </div>
+                <AgentExecutionFlowDiagram />
               </div>
           
               {/* ── STEP 03 ── */}

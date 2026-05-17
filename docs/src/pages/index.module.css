@@ -1665,78 +1665,6 @@
   font-weight: 700;
 }
 
-.agentFlow {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  max-width: 72rem;
-  margin: 0 auto;
-  margin-top: 2rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
-  padding: 2rem;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-.flowStep {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  min-width: 120px;
-  border: none;
-  background: transparent;
-}
-
-.flowIcon {
-  width: 2rem;
-  height: 2rem;
-  margin-bottom: 0.5rem;
-  color: #ffffff;
-}
-
-.flowLabel {
-  font-weight: 700;
-  color: #ffffff;
-  font-size: 1rem;
-  margin: 0;
-}
-
-.flowDesc {
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0;
-}
-
-.flowArrow {
-  font-size: 1.5rem;
-  color: rgba(255, 255, 255, 0.6);
-  margin: 0 0.5rem;
-}
-
-.flowSplit {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.flowSplitPair {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: stretch;
-  justify-content: center;
-  gap: 0.75rem 1.25rem;
-}
-
-.flowSplitPair .flowStep {
-  min-width: 108px;
-}
-
 /* ─── Developer Analogy Styles ────────────────────────────────────────────── */
 
 .developerContent {
@@ -2869,10 +2797,6 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .agentFlow {
-    gap: 1rem;
-  }
-
   .architectureStack {
     max-width: 100%;
   }
@@ -2962,18 +2886,6 @@
     grid-template-columns: 1fr;
   }
 
-  .agentFlow {
-    padding: 1.5rem 1rem;
-  }
-
-  .flowStep {
-    min-width: 70px;
-  }
-
-  .flowIcon {
-    font-size: 1.4rem;
-  }
-
   .featuresGrid {
     grid-template-columns: 1fr;
   }
@@ -2997,9 +2909,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .agentFlow {
-    flex-direction: row;
-  }
 }
 
 @media (max-width: 1100px) {
@@ -3145,21 +3054,6 @@
     font-size: 1.4rem;
   }
 
-  /* agentFlow — column on mobile */
-  .agentFlow {
-    flex-direction: column;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-
-  .flowSplitPair {
-    flex-direction: column;
-  }
-
-  .flowArrow {
-    transform: rotate(90deg);
-    margin: 0;
-  }
 
   /* CTA section */
   .ctaSection {
