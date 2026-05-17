@@ -34,6 +34,8 @@ class BaseWSHandler:
     def __init__(self):
         """Initialize base WebSocket handler."""
         self._config = AKConfig.get()
+        if not self._config.websocket_api.connection_table or not self._config.websocket_api.connection_table.table_name:
+            raise ValueError("websocket_api.connection_table.table_name is required for WebSocket handler")
         self.ws_handler = WebSocketHandler(
             conn_table_name=self._config.websocket_api.connection_table.table_name,
             ttl=self._config.websocket_api.connection_table.ttl,
