@@ -15,7 +15,7 @@ class BaseLambdaRouter(ABC):
     def __init__(self):
         """Initialize base Lambda router."""
         self._log = logging.getLogger("ak.aws.lambda.router")
-        self._config = AKConfig().get()
+        self._config = AKConfig.get()
 
     @staticmethod
     def _normalize_path(path: str) -> str:

@@ -22,7 +22,7 @@ class Lambda:
     @classmethod
     def _get_config(cls) -> AKConfig:
         if cls._config is None:
-            cls._config = AKConfig().get()
+            cls._config = AKConfig.get()
         return cls._config
 
     @classmethod
