@@ -1,10 +1,9 @@
 # WebSocket API Gateway Module
 
-This module creates a WebSocket API Gateway for real-time bidirectional communication and wires it to two Lambda functions: a connection handler for connection lifecycle events and a routes handler for message routing. It also creates a DynamoDB table to store WebSocket connection mappings.
+This module creates a WebSocket API Gateway for real-time bidirectional communication and wires it to two Lambda functions: a connection handler for connection lifecycle events and a routes handler for message routing.
 
 This module uses:
 - `terraform-aws-modules/apigateway-v2/aws` for the WebSocket API Gateway
-- The common DynamoDB module from `../../../common/modules/dynamodb` for the connection table
 
 This is an internal submodule used by the root serverless stack in `state.tf`; the example below shows wiring, not an independent deployment entrypoint.
 
@@ -15,9 +14,6 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 - Supports configurable chat route (default: `chat`) and additional custom routes
 - Uses a connection handler Lambda for `$connect` and `$disconnect` routes
 - Uses a routes handler Lambda for `$default` and custom routes (e.g., `chat`, custom routes)
-- Creates a DynamoDB table for storing user-to-connection-id mappings
-- Includes a Global Secondary Index (GSI) for connection_id lookups
-- Supports TTL for automatic cleanup of stale connections
 - Creates CloudWatch log groups and stage logging
 - Configures Lambda permissions for both Lambda functions
 
@@ -45,12 +41,6 @@ module "websocket_api_gateway" {
   logging_level              = "ERROR"
   enable_detailed_metrics    = false
   cloudwatch_logs_retention_in_days = 90
-
-  # DynamoDB Configuration
-  dynamodb_billing_mode      = "PAY_PER_REQUEST"
-  enable_ttl                 = true
-  enable_point_in_time_recovery = true
-  enable_encryption          = true
 }
 ```
 
@@ -72,13 +62,6 @@ module "websocket_api_gateway" {
 | `enable_detailed_metrics` | Enable detailed metrics |
 | `cloudwatch_logs_retention_in_days` | CloudWatch logs retention period |
 | `cloudwatch_kms_key_arn` | Optional CloudWatch log encryption key |
-| `dynamodb_billing_mode` | DynamoDB billing mode (PAY_PER_REQUEST or PROVISIONED) |
-| `dynamodb_read_capacity` | Read capacity for PROVISIONED mode |
-| `dynamodb_write_capacity` | Write capacity for PROVISIONED mode |
-| `enable_ttl` | Enable TTL on DynamoDB table |
-| `enable_point_in_time_recovery` | Enable point-in-time recovery |
-| `enable_encryption` | Enable server-side encryption |
-| `encryption_kms_key_arn` | KMS key ARN for encryption |
 | `tags` | Resource tags |
 
 ## Outputs
@@ -90,20 +73,8 @@ module "websocket_api_gateway" {
 | `websocket_api_execution_arn` | WebSocket API execution ARN |
 | `websocket_api_stage_name` | WebSocket API stage name |
 | `websocket_api_stage_arn` | WebSocket API stage ARN |
-| `websocket_connection_table_name` | DynamoDB table name for connection mapping |
-| `websocket_connection_table_arn` | DynamoDB table ARN for connection mapping |
-| `websocket_connection_table_gsi_name` | GSI name for connection_id lookups |
 | `websocket_cloudwatch_log_group_arn` | CloudWatch log group ARN |
 | `websocket_cloudwatch_log_group_name` | CloudWatch log group name |
-
-## DynamoDB Table Schema
-
-The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
-
-- **Partition Key**: `user_id` (String) - User identifier
-- **Sort Key**: `connection_id` (String) - WebSocket connection ID
-- **GSI**: `connection_id-index` - Allows lookups by connection_id
-- **TTL Attribute**: `expiry_time` - Optional timestamp for automatic cleanup
 
 ## Notes
 
@@ -113,6 +84,5 @@ The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
   - **Routes handler Lambda**: Handles `$default` and custom routes (configurable chat route and additional custom routes) for message routing and processing
 - Both Lambda functions use AWS_PROXY integration and receive route information in the event context
 - Lambda permissions are configured for both Lambda functions to allow WebSocket API invocation
-- TTL is optional and can be disabled if not needed for connection cleanup
 - Custom routes are configured at the parent serverless module level via `ws_chat_route` and `ws_routes` variables
 - Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)

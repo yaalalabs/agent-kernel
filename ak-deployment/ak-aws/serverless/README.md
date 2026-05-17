@@ -682,6 +682,15 @@ When `execution_mode = "async"`, the module creates a WebSocket API Gateway for 
 - Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
 - Route names cannot contain '/' and cannot be empty or whitespace-only
 
+**WebSocket Connection Table Schema**:
+
+The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
+
+- **Partition Key**: `user_id` (String) - User identifier
+- **Sort Key**: `connection_id` (String) - WebSocket connection ID
+- **GSI**: `connection_id-index` - Allows lookups by connection_id
+- **TTL Attribute**: `expiry_time` - Optional timestamp for automatic cleanup
+
 ### 💾 Multi-Storage Support
 
 The module supports the current Agent Kernel storage wiring for both session state and response persistence.
