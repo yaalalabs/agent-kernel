@@ -247,13 +247,6 @@ Alternatively, use `config.json`:
       }
     }
   },
-  "websocket_api": {
-    "connection_table": {
-      "table_name": "websocket-connections",
-      "ttl": 3600
-    },
-    "chat_route": "chat"
-  },
   "test": {
     "mode": "fallback",
     "judge": {
