@@ -36,7 +36,7 @@ module "ws_connection_handler" {
     }
   }
 
-  websocket_connection_table_arn = module.websocket_api_gateway.websocket_connection_table_arn
+  websocket_connection_table_arn = module.websocket_connections.table_arn
 }
 ```
 
@@ -44,7 +44,7 @@ module "ws_connection_handler" {
 
 - The Lambda function must be packaged as a LocalZip (package_path pointing to a local zip file)
 - The handler must implement `$connect` and `$disconnect` route handling logic
-- DynamoDB connection table must exist (created by `websocket-api-gateway` module)
+- DynamoDB connection table must exist (created by `websocket-connections` module in the root stack)
 
 ## Inputs
 
