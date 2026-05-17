@@ -371,7 +371,7 @@ module "serverless_api_auth" {
 | `package_path` | Path to Lambda deployment package or S3 URI (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
-| `execution_mode` | Execution mode for the deployment: `rest_sync`, `rest_async`, or `async` (WebSocket). Required when queue_mode is true, must be null when queue_mode is false | `string` | `null` | no |
+| `execution_mode` | Execution mode for the deployment: `rest_sync`, `rest_async`, or `async` (WebSocket). Default is `rest_sync`. When queue_mode is false, must be `rest_sync` or `async`. When queue_mode is true, all modes are allowed | `string` | `"rest_sync"` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
 | `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
