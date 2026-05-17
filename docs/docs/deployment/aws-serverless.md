@@ -222,26 +222,27 @@ handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
 For WebSocket mode, authentication is handled by the WebSocket connection handler Lambda. The connection handler validates the bearer token during the `$connect` route:
 
 ```python
-from typing import Optional
-from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
-from agentkernel.aws.serverless import WSConnectionHandler
 import jwt
+from agentkernel.aws import WebsocketConnectionHandler
+from agentkernel.auth import AuthValidator, ValidationResult
 
-class CustomWSAuthTokenValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
-        """Validate JWT token and return validation result for WebSocket connections."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        print("Payload", payload)
-        user_id = payload.get("userId", "")
-        email = payload.get("email", "")
-        if email == "test@test.com" and user_id:
-            return ValidationResult(is_valid=True, user_id=user_id)
-        return ValidationResult(is_valid=False)
+class CustomAuthTokenValidator(AuthValidator):
+    def validate(self, token: str) -> ValidationResult:
+        """Validate JWT token and return validation result."""
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            user_id = payload.get("userId", "")
+            if user_id == "user-1" and email == "test@test.com":
+                return ValidationResult(is_valid=True, claims={"userId": user_id})
+            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
+        except Exception as e:
+            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
 
-handler = WSConnectionHandler(validator=CustomWSAuthTokenValidator()).handle
+handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
 ```
 
-**Important**: The bearer token must include a `userId` claim for WebSocket connections. This `userId` is used to map WebSocket connections to users in the DynamoDB connection table.
+**Important: The bearer token must include a `userId` claim for WebSocket connections. This `userId` is used to map WebSocket connections to users in the DynamoDB connection table. The `userId` should be returned in the `claims` dictionary of the `ValidationResult`.**
 
 ### Terraform Configuration
 
@@ -468,25 +469,27 @@ See [examples/aws-serverless/scalable-openai/lambda_response_handler.py](https:/
 This Lambda handles WebSocket connection lifecycle events (`$connect` and `$disconnect` routes), stores connection metadata in DynamoDB, and validates authentication tokens.
 
 ```python
-from typing import Optional
-from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
-from agentkernel.aws.serverless import WSConnectionHandler
 import jwt
+from agentkernel.aws import WebsocketConnectionHandler
+from agentkernel.auth import AuthValidator, ValidationResult
 
-class CustomWSAuthTokenValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
-        """Validate JWT token and return validation result for WebSocket connections."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        user_id = payload.get("userId", "")
-        email = payload.get("email", "")
-        if email == "test@test.com" and user_id:
-            return ValidationResult(is_valid=True, user_id=user_id)
-        return ValidationResult(is_valid=False)
+class CustomAuthTokenValidator(AuthValidator):
+    def validate(self, token: str) -> ValidationResult:
+        """Validate JWT token and return validation result."""
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            user_id = payload.get("userId", "")
+            if user_id == "user-1" and email == "test@test.com":
+                return ValidationResult(is_valid=True, claims={"userId": user_id})
+            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
+        except Exception as e:
+            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
 
-handler = WSConnectionHandler(validator=CustomWSAuthTokenValidator()).handle
+handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
 ```
 
-See [examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py) for the reference implementation.
+See [examples/aws-serverless/websocket-openai-copy/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai-copy/lambda_ws_connection_handler.py) for the reference implementation.
 
 ### Lambda Package Creation
 
