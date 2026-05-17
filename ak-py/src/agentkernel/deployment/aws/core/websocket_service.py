@@ -17,6 +17,13 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
     """
 
     def __init__(self, table_name: str, ttl: int):
+        """
+        Initialize the WebSocket connection store.
+
+        :param table_name: DynamoDB table name for storing connections
+        :param ttl: Time-to-live in seconds for automatic cleanup of stale connections
+        :return: None
+        """
         self._table = boto3.resource("dynamodb").Table(table_name)
         self._ttl = ttl
         self._log = logging.getLogger("ak.websocket.connection_store")
@@ -24,6 +31,9 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
     def add_connection(self, user_id: str, connection_id: str) -> None:
         """
         Store a WebSocket connection for a user.
+
+        Stores the connection with an expiry_time attribute for automatic cleanup
+        via DynamoDB TTL.
 
         :param user_id: User identifier
         :param connection_id: WebSocket connection identifier
@@ -112,6 +122,13 @@ class WebSocketHandler:
     """
 
     def __init__(self, conn_table_name: str, ttl: int):
+        """
+        Initialize the WebSocket handler.
+
+        :param conn_table_name: DynamoDB table name for storing connections
+        :param ttl: Time-to-live in seconds for automatic cleanup of stale connections
+        :return: None
+        """
         self._connection_store = WebSocketConnectionStore(conn_table_name, ttl)
         self._clients: Dict[str, any] = {}
         self._log = logging.getLogger("ak.websocket.manager")

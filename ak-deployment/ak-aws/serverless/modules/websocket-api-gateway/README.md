@@ -103,7 +103,7 @@ The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
 - **Partition Key**: `user_id` (String) - User identifier
 - **Sort Key**: `connection_id` (String) - WebSocket connection ID
 - **GSI**: `connection_id-index` - Allows lookups by connection_id
-- **TTL Attribute**: `expires_at` - Optional timestamp for automatic cleanup
+- **TTL Attribute**: `expiry_time` - Optional timestamp for automatic cleanup
 
 ## Notes
 
