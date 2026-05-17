@@ -48,6 +48,29 @@ import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTele
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
 
+/* ─── What's New Banner ─────────────────────────────────────────────────── */
+
+function WhatsNewBanner() {
+  return (
+    <div className={styles.whatsNewBanner}>
+      <div className={styles.whatsNewInner}>
+        <span className={styles.whatsNewIconWrap}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </span>
+        <span className={styles.whatsNewText}>
+          <strong>Knowledge Base Support</strong> — ChromaDB, Neo4j &amp; Starburst Galaxy built-in, plus a <strong>custom adapter API</strong> to plug in any backend.
+        </span>
+        <Link to="/docs/next/architecture/knowledge-bases" className={styles.whatsNewLink}>
+          Read More →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
@@ -3009,6 +3032,7 @@ export default function Home() {
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
       <PlantParticlesBackground />
+      <WhatsNewBanner />
       <Hero />
       <main>
         <FrameworksStrip />

@@ -238,7 +238,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5rem 1.5rem;
+  padding: 2rem 1.5rem;
   overflow: hidden;
   text-align: center;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;

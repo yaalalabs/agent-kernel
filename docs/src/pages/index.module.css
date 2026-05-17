@@ -165,6 +165,130 @@
   border-color: rgba(0, 221, 255, 0.3) !important;
 }
 
+/* ─── What's New Banner ──────────────────────────────────────────────────── */
+
+.whatsNewBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0.75rem;
+}
+
+.whatsNewInner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 1.1rem 0.45rem 0.45rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+}
+
+.whatsNewIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00DDFF 0%, #0099bb 100%);
+  color: #06121a;
+  flex-shrink: 0;
+}
+
+/* Bell animation: swing the SVG and nudge the clapper */
+.whatsNewIconWrap svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+  transform-origin: 50% 25%;
+  animation: bell-swing 1s ease-in-out infinite;
+}
+
+.whatsNewIconWrap svg path:nth-of-type(2) {
+  transform-origin: 50% 50%;
+  animation: bell-clapper 1s ease-in-out infinite;
+}
+
+@keyframes bell-swing {
+  0% { transform: rotate(0deg); }
+  10% { transform: rotate(-18deg); }
+  30% { transform: rotate(12deg); }
+  50% { transform: rotate(-10deg); }
+  70% { transform: rotate(6deg); }
+  90% { transform: rotate(-3deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes bell-clapper {
+  0% { transform: translateY(0); }
+  25% { transform: translateY(2px); }
+  50% { transform: translateY(0); }
+  75% { transform: translateY(1px); }
+  100% { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whatsNewIconWrap svg,
+  .whatsNewIconWrap svg path:nth-of-type(2) {
+    animation: none !important;
+  }
+}
+
+.whatsNewText {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.4;
+}
+
+.whatsNewText strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.whatsNewLink {
+  font-size: 0.875rem;
+  color: #00DDFF;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.whatsNewLink:hover {
+  color: #00bbdd;
+  text-decoration: none;
+}
+
+/* ─── Light theme ────────────────────────────────────────────────────────── */
+
+[data-theme='light'] .whatsNewBanner {
+  background-color: #f0f4f8;
+  background-image: none;
+}
+
+[data-theme='light'] .whatsNewInner {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='light'] .whatsNewText {
+  color: rgba(0, 0, 0, 0.75);
+}
+
+[data-theme='light'] .whatsNewText strong {
+  color: #000000;
+}
+
+[data-theme='light'] .whatsNewLink {
+  color: rgba(0, 0, 0, 0.75);
+}
+
+[data-theme='light'] .whatsNewLink:hover {
+  color: #000000;
+}
+
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
 
 .hero {
@@ -173,7 +297,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5rem 1.5rem;
+  padding-bottom: 2rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
   overflow: hidden;
   text-align: center;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -261,6 +387,19 @@
   justify-content: center;
   flex-wrap: wrap;
   margin-bottom: 2.5rem;
+}
+
+@media (max-width: 768px) {
+  .announcementBanner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+    border-radius: 1.25rem;
+  }
+
+  .announcementLink {
+    width: 100%;
+  }
 }
 
 /* ─── Affiliations Strip ───────────────────────────────────────────────────── */
