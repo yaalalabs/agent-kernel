@@ -12,6 +12,7 @@ import RunningAgentsFlowDiagram from '../components/RunningAgentsFlowDiagram';
 import AgentKernelSitsInFlowDiagram from '../components/AgentKernelSitsInFlowDiagram';
 import AgentExecutionFlowDiagram from '../components/AgentExecutionFlowDiagram';
 import ParticleSphere from '../components/ParticleSphere';
+import { StepTimeline } from '../components/StepTimeline';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import {
   MdRocketLaunch,
@@ -1707,6 +1708,7 @@ function Levels() {
       ref={sectionRef}
       className={`${styles.levelsSection} ${!selectedLevel ? styles.levelsPinned : ''}`}
     >
+      <StepTimeline levelId={selectedLevel} contentRef={contentRef} />
       <div className="container">
         <div className={styles.levelsContainer}>
           <p ref={subtitleRef} className={styles.levelsSubtitle}>
@@ -1744,7 +1746,7 @@ function Levels() {
             <div ref={contentRef} className={styles.levelContent}>
           
               {/* ── STEP 01 ── */}
-              <div className={styles.blStepBlock}>
+              <div className={styles.blStepBlock} data-step="bl-01">
                 <div className={styles.contentStep}>
                   <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
                   <h2 className={styles.contentTitle}>
@@ -1788,7 +1790,7 @@ function Levels() {
               </div>
 
               {/* ── STEP 02 ── */}
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem' }} data-step="bl-02">
                 <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
                 <h2 className={styles.contentTitle}>
                   An AI agent doesn't just answer, it gets things done.
@@ -1798,7 +1800,7 @@ function Levels() {
               </div>
           
               {/* ── STEP 03 ── */}
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem' }} data-step="bl-03">
                 <p className={styles.stepLabel}>Step 03 / Agent Kernel</p>
                 <h2 className={styles.contentTitle}>
                   Agent Kernel is the engine that powers it at scale to run compliant AI agents
@@ -1851,7 +1853,7 @@ function Levels() {
               </div>
           
               {/* ── STEP 04 ── */}
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem' }} data-step="bl-04">
                 <p className={styles.stepLabel}>Step 04 / See it in action</p>
                 <h2 className={styles.contentTitle}>
                   See your Agent Kernel in action
@@ -1864,7 +1866,7 @@ function Levels() {
               </div>
 
               {/* ── STEP 05 — Architecture Overview ── */}
-              <div style={{ marginTop: '3rem' }}>
+              <div style={{ marginTop: '3rem' }} data-step="bl-05">
                 <p className={styles.stepLabel}>Step 05 / How it works</p>
                 <h2 className={styles.contentTitle}>
                   Agent Kernel is the engine that powers it all
@@ -1886,7 +1888,7 @@ function Levels() {
             <div ref={contentRef} className={styles.developerContent}>
 
               {/* Step 01 — Developer Analogy */}
-              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`}>
+              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`} data-step="dev-01">
                 <p className={styles.devStepLabel}>Developer Analogy</p>
                 <h2 className={styles.devTitle}>
                   Building blocks and and deployment infrastructure for your AI Agent.
@@ -1925,7 +1927,7 @@ function Levels() {
               </div>
 
               {/* Architecture flow — 4 stacked layers */}
-              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`}>
+              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`} data-step="dev-02">
                 <div className={styles.architectureStack}>
                   {[
                     {
@@ -2010,7 +2012,7 @@ function Levels() {
               </div>
               
               {/* Step 02 — Available Features */}
-              <div className={styles.devFeatureSection}>
+              <div className={styles.devFeatureSection} data-step="dev-03">
                 <p className={styles.devFeatureLabel}>All Enterprise Features Available Free And Open-Source</p>
                 <h2 className={styles.devFeatureTitle}>
                   Focus on Agent Logic. We Handle the Rest.
@@ -2047,7 +2049,7 @@ function Levels() {
 
 
               {/* Step 03 — Framework Selection */}
-              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
+              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`} data-step="dev-04">
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
 
@@ -2342,7 +2344,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 04 — How Agent Kernel Fits In */}
-              <div className={styles.devArchitectureSection}>
+              <div className={styles.devArchitectureSection} data-step="dev-05">
                 <p className={styles.devStepLabel}>The complete picture</p>
                 <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
 
@@ -2360,7 +2362,7 @@ if __name__ == "__main__":
             <div ref={contentRef} className={styles.developerContent}>
 
               {/* Step 01 — AI Engineer Analogy */}
-              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`}>
+              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`} data-step="ai-01">
                 <p className={styles.devStepLabel}>AI Engineer Analogy</p>
                 <h2 className={styles.devTitle}>
                   Bring your already existing agentic AI code onto a unified Operating System and Deployment Infrastructure for your AI Agents while making it enterprise ready and compliant.
@@ -2376,7 +2378,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Architecture flow — 9 stacked layers */}
-              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`}>
+              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`} data-step="ai-02">
                 <div className={styles.architectureStack}>
                   {AI_ENGINEER_ARCH_LAYERS.map((layer, i, arr) => (
                     <div key={layer.label} className={styles.architectureLayerGroup}>
@@ -2411,7 +2413,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 02 — What Makes Agent Kernel Stand Out */}
-              <div className={`${styles.akStandOutSection} ${styles.developerBlock}`}>
+              <div className={`${styles.akStandOutSection} ${styles.developerBlock}`} data-step="ai-03">
                 <p className={styles.devStepLabel}>Compare alternatives</p>
                 <h2 className={styles.devTitle}>What Makes Agent Kernel Stand Out</h2>
 
@@ -2534,7 +2536,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 03 — Available Features */}
-              <div className={styles.devFeatureSection}>
+              <div className={styles.devFeatureSection} data-step="ai-04">
                 <p className={styles.devFeatureLabel}>All Enterprise Features Available Free And Open-Source</p>
                 <h2 className={styles.devFeatureTitle}>
                   Focus on Agent Logic. We Handle the Rest.
@@ -2570,7 +2572,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 04 — Framework Selection */}
-              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`}>
+              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`} data-step="ai-05">
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
 
@@ -2865,7 +2867,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 05 — Production-ready compliant agents */}
-              <div className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}>
+              <div className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`} data-step="ai-06">
                 <p className={styles.devStepLabel}>Build with confidence</p>
                 <h2 className={styles.devTitle}>
                   How Agent Kernel Helps You Build Production-Ready Compliant AI Agents
@@ -2897,7 +2899,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 06 — How Agent Kernel Fits In */}
-              <div className={`${styles.devArchitectureSection} ${styles.developerBlock}`}>
+              <div className={`${styles.devArchitectureSection} ${styles.developerBlock}`} data-step="ai-07">
                 <p className={styles.devStepLabel}>The complete picture</p>
                 <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
 
@@ -2911,7 +2913,7 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 07 - Why Agent Kernel is a Powerful Operating System */}
-              <div className={`${styles.devFeatureSection} ${styles.developerBlock}`}>
+              <div className={`${styles.devFeatureSection} ${styles.developerBlock}`} data-step="ai-08">
                 <p className={styles.devStepLabel}>Operating system depth</p>
                 <h2 className={styles.devTitle}>
                   Why Agent Kernel is a Powerful Operating System
