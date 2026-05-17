@@ -14,11 +14,10 @@ graph LR
     A --> C[CrewAI]
     A --> D[LangGraph]
     A --> E[Google ADK]
-    A -.->|coming soon| SA[Smol Agents]
+    A --> F[Smolagents]
     A -.->|coming soon| LK[LiveKit Agents]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style SA fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
     style LK fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
 ```
 
@@ -30,7 +29,7 @@ graph LR
 | **CrewAI** | Role-based collaboration | Medium | Yes |
 | **LangGraph** | Complex workflows | High | Yes |
 | **Google ADK** | Google ecosystem | Low | Yes |
-| **Smol Agents** *(coming soon)* | Lightweight, Hugging Face models | Low | Yes |
+| **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 | **LiveKit Agents** *(coming soon)* | Real-time voice/video agents | Medium | Yes |
 
 ## Choosing a Framework
@@ -67,11 +66,13 @@ graph LR
 
 [Learn more →](./google-adk)
 
-### Smol Agents *(coming soon)*
-- Hugging Face's lightweight agentic framework
-- Supports any Hugging Face model or API
-- Minimal boilerplate, code-first agent design
-- Ideal for experimentation and open-source model deployments
+### Smolagents
+- Lightweight and composable design
+- ToolCalling and CodeAgent support
+- Managed-agent routing patterns
+- Great for fast experimentation and mixed-agent setups
+
+[Learn more →](./smolagents)
 
 ### LiveKit Agents *(coming soon)*
 - Real-time audio and video agent framework
@@ -113,9 +114,11 @@ def get_weather(city: str) -> str:
 # Same function, any framework
 from agentkernel.openai import OpenAIToolBuilder
 from agentkernel.crewai import CrewAIToolBuilder
+from agentkernel.smolagents import SmolagentsToolBuilder
 
 openai_tools = OpenAIToolBuilder.bind([get_weather])
 crewai_tools = CrewAIToolBuilder.bind([get_weather])
+smolagents_tools = SmolagentsToolBuilder.bind([get_weather])
 ```
 
 [Learn more about Tools →](../core-concepts/tools)
