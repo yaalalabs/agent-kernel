@@ -1199,7 +1199,7 @@ export default function Features() {
     <Layout
       title="Features"
       description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations.">
-      <PlantParticlesBackground />
+      <PlantParticlesBackground modelUrl='/models/leaf.glb' />
       <Hero />
       <main>
         <FeaturesPageMap />

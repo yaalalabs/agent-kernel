@@ -615,7 +615,7 @@ export default function UseCases() {
     <Layout
       title="Use Cases"
       description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
-      <PlantParticlesBackground />
+      <PlantParticlesBackground modelUrl='models/brain.glb' />
       <Hero />
       <main>
         <UseCaseJourneyMap />

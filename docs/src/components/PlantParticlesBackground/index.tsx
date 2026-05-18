@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 const PLANT_MAX_EXTENT = 2.8;
 const MAX_PARTICLES = 2_000;
 const PARTICLE_CORE_ALPHA = 0.18;
-const PARTICLE_GLOW_ALPHA = 0.12;
+const PARTICLE_GLOW_ALPHA = 0.10;
 const PARTICLE_OVERLAY_OPACITY = 0.12;
 const INTRO_ANIMATION_DURATION = 2.0; // seconds
 const INTRO_ANIMATION_SCATTER_RADIUS = 6.0; // how far particles scatter initially
@@ -155,8 +155,17 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; triggerScatterIn: () => void }>(
-  (_, ref) => {
+interface PlantParticlesBackgroundProps {
+  modelUrl?: string;
+}
+
+interface PlantParticlesBackgroundHandle {
+  triggerScatterOut: () => void;
+  triggerScatterIn: () => void;
+}
+
+const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, PlantParticlesBackgroundProps>(
+  ({ modelUrl }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const { siteConfig } = useDocusaurusContext();
     const triggerScatterOutRef = useRef<() => void>(() => {});
@@ -168,11 +177,15 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
     }));
 
     const indexModelUrl = useMemo(() => {
+      // Use provided modelUrl or construct default
+      if (modelUrl) {
+        return modelUrl;
+      }
       const base = siteConfig.baseUrl.endsWith('/')
         ? siteConfig.baseUrl
         : `${siteConfig.baseUrl}/`;
       return `${base}models/index.glb`;
-    }, [siteConfig.baseUrl]);
+    }, [modelUrl, siteConfig.baseUrl]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -229,7 +242,7 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
 
     const coreMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 160.0 },
+        uSize: { value: 110.0 },
         uResolutionY: { value: window.innerHeight },
         uTime: { value: 0 },
         uAlpha: { value: 1.0 },
@@ -245,7 +258,7 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
     // Halo is ~5× larger and uses a smooth cubic falloff to mimic a bloom halo
     const glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 200.0 },
+        uSize: { value: 180.0 },
         uResolutionY: { value: window.innerHeight },
         uTime: { value: 0 },
         uAlpha: { value: 1.0 },
@@ -300,12 +313,9 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
       animationId = requestAnimationFrame(animate);
       elapsedTime += 0.016;
 
-      // Constant rotation speed - only apply after intro animation completes
-      const rotationSpeed = 0.001;
-
       // Apply rotation only when not animating intro, scatter-out, or fade-out
       if (!isAnimatingIntro && !isAnimatingScatterOut && !isAnimatingFadeOut) {
-        coreParticles.rotation.y += rotationSpeed;
+        coreParticles.rotation.y += 0.001;
         glowParticles.rotation.y = coreParticles.rotation.y;
       }
 
