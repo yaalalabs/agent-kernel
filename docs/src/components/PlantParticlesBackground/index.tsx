@@ -6,16 +6,28 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-const PLANT_MAX_EXTENT = 3.2;
-const MAX_PARTICLES = 8_000;
+const PLANT_MAX_EXTENT = 3.0;
+const MAX_PARTICLES = 7_000;
+const PARTICLE_CORE_ALPHA = 0.48;
+const PARTICLE_GLOW_ALPHA = 0.10;
+const PARTICLE_OVERLAY_OPACITY = 0.10;
+// Color palette
+const PALETTE: [number, number, number][] = [
+  [0.0, 221 / 255, 1.0], // #00DDFF (brand color)
+  [0.0, 170 / 255, 222 / 255], // #00AADE (blue shade)
+  [242 / 255, 0.0, 1.0], // #F200FF (accent)
+];
 
 const vertexShader = `
+  attribute vec3 aColor;
   uniform float uSize;
   uniform float uResolutionY;
   varying vec3 vPos;
+  varying vec3 vColor;
 
   void main() {
     vPos = position;
+    vColor = aColor;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     gl_PointSize = uSize * uResolutionY * 0.0013 * (1.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
@@ -25,25 +37,27 @@ const vertexShader = `
 // Sharp bright core of each particle
 const coreFragmentShader = `
   varying vec3 vPos;
+  varying vec3 vColor;
 
   void main() {
     float d = distance(gl_PointCoord, vec2(0.5));
     float strength = 0.05 / d - 0.1;
-    vec3 color = vec3(0.0, 0.867, 1.0);
-    gl_FragColor = vec4(color, strength * length(vPos));
+    vec3 color = vColor;
+    gl_FragColor = vec4(color, strength * length(vPos) * ${PARTICLE_CORE_ALPHA.toFixed(2)});
   }
 `;
 
 // Large soft halo drawn on top of the core — simulates bloom without post-processing
 const glowFragmentShader = `
   varying vec3 vPos;
+  varying vec3 vColor;
 
   void main() {
     float d = distance(gl_PointCoord, vec2(0.5));
     if (d > 0.5) discard;
-    float strength = pow(max(0.0, 1.0 - d * 2.0), 3.0) * 0.25;
-    vec3 color = vec3(0.0, 0.867, 1.0);
-    gl_FragColor = vec4(color, strength * clamp(length(vPos) * 0.6, 0.0, 1.0));
+    float strength = pow(max(0.0, 1.0 - d * 2.0), 3.0) * 0.22;
+    vec3 color = vColor;
+    gl_FragColor = vec4(color, strength * clamp(length(vPos) * 0.5, 0.0, 1.0) * ${PARTICLE_GLOW_ALPHA.toFixed(2)});
   }
 `;
 
@@ -79,6 +93,22 @@ function normalizePlantGeometry(geo: THREE.BufferGeometry): void {
   const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
   geo.scale(PLANT_MAX_EXTENT / maxDim, PLANT_MAX_EXTENT / maxDim, PLANT_MAX_EXTENT / maxDim);
   geo.translate(0, -1.5, 0);
+}
+
+function assignColorsToGeometry(geo: THREE.BufferGeometry, count: number) {
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = Math.random();
+    let idx = 0;
+    if (r < 0.6) idx = 0; // primary
+    else if (r < 0.9) idx = 1; // blue shade
+    else idx = 2; // accent
+    const c = PALETTE[idx];
+    colors[i * 3] = c[0];
+    colors[i * 3 + 1] = c[1];
+    colors[i * 3 + 2] = c[2];
+  }
+  geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
 }
 
 const PlantParticlesBackground = () => {
@@ -119,7 +149,7 @@ const PlantParticlesBackground = () => {
 
     const coreMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 12.0 },
+        uSize: { value: 22.5 },
         uResolutionY: { value: window.innerHeight },
       },
       vertexShader,
@@ -132,7 +162,7 @@ const PlantParticlesBackground = () => {
     // Halo is ~5× larger and uses a smooth cubic falloff to mimic a bloom halo
     const glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 60.0 },
+        uSize: { value: 92.0 },
         uResolutionY: { value: window.innerHeight },
       },
       vertexShader,
@@ -146,6 +176,14 @@ const PlantParticlesBackground = () => {
     const glowParticles = new THREE.Points(geometry, glowMaterial);
     scene.add(glowParticles); // draw halo first (behind core)
     scene.add(coreParticles);
+
+    const overlay = document.createElement('div');
+    overlay.style.position = 'absolute';
+    overlay.style.inset = '0';
+    overlay.style.pointerEvents = 'none';
+    overlay.style.background = `linear-gradient(180deg, rgba(13, 0, 26, 0.08) 0%, rgba(13, 0, 26, ${PARTICLE_OVERLAY_OPACITY}) 100%)`;
+    overlay.style.mixBlendMode = 'multiply';
+    container.appendChild(overlay);
 
     const handleResize = () => {
       const pr = Math.min(window.devicePixelRatio, 1.5);
@@ -192,6 +230,7 @@ const PlantParticlesBackground = () => {
         positions[i * 3 + 2] = r * Math.cos(phi);
       }
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      assignColorsToGeometry(geometry, COUNT);
     };
 
     (async () => {
@@ -222,6 +261,7 @@ const PlantParticlesBackground = () => {
           }
           merged.dispose();
           geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          assignColorsToGeometry(geometry, particleCount);
         }
       } catch {
         if (cancelled) return;
@@ -243,6 +283,9 @@ const PlantParticlesBackground = () => {
       glowMaterial.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
+      }
+      if (container.contains(overlay)) {
+        container.removeChild(overlay);
       }
     };
   }, [plantModelUrl]);
