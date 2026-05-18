@@ -1,7 +1,7 @@
-import React, { useId, useState, useEffect, useRef } from 'react';
-import Link from '@docusaurus/Link';
-import Layout from '@theme/Layout';
-import styles from './features.module.css';
+import React, { useId, useState, useEffect, useRef } from "react";
+import Link from "@docusaurus/Link";
+import Layout from "@theme/Layout";
+import styles from "./features.module.css";
 import {
   MdMemory,
   MdSwapHoriz,
@@ -23,27 +23,38 @@ import {
   MdHub,
   MdMessage,
   MdCloudUpload,
-} from 'react-icons/md';
-import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaGithub } from 'react-icons/fa';
-import { SiGmail, SiGooglegemini, SiLangchain, SiHuggingface } from 'react-icons/si';
-import { FaFacebookMessenger } from 'react-icons/fa6';
-import { TbBrandTeams } from 'react-icons/tb';
-import PlantParticlesBackground from '../components/PlantParticlesBackground';
-import AgentKernelRuntimeFlowDiagram from '../components/AgentKernelRuntimeFlowDiagram';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
+} from "react-icons/md";
+import {
+  FaSlack,
+  FaWhatsapp,
+  FaInstagram,
+  FaTelegram,
+  FaGithub,
+} from "react-icons/fa";
+import {
+  SiGmail,
+  SiGooglegemini,
+  SiLangchain,
+  SiHuggingface,
+} from "react-icons/si";
+import { FaFacebookMessenger } from "react-icons/fa6";
+import { TbBrandTeams } from "react-icons/tb";
+import PlantParticlesBackground from "../components/PlantParticlesBackground";
+import AgentKernelRuntimeFlowDiagram from "../components/AgentKernelRuntimeFlowDiagram";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
 
 /** Stable fragment ids for in-page navigation (diagram + deep links). */
 const FEATURE_ANCHORS = {
-  problem: 'features-problem',
-  core: 'features-core',
-  frameworks: 'features-frameworks',
-  testing: 'features-testing',
-  messaging: 'features-messaging',
-  protocols: 'features-protocols',
-  cta: 'features-cta',
+  problem: "features-problem",
+  core: "features-core",
+  frameworks: "features-frameworks",
+  testing: "features-testing",
+  messaging: "features-messaging",
+  protocols: "features-protocols",
+  cta: "features-cta",
 } as const;
 
 type FeatureAnchorKey = keyof typeof FEATURE_ANCHORS;
@@ -55,47 +66,48 @@ const FEATURE_PAGE_MAP: {
   hint: string;
 }[] = [
   {
-    anchor: 'problem',
-    number: '01',
-    title: 'The Problem',
-    hint: 'What Agent Kernel solves',
+    anchor: "problem",
+    number: "01",
+    title: "The Problem",
+    hint: "What Agent Kernel solves",
   },
   {
-    anchor: 'core',
-    number: '02',
-    title: 'Core Capabilities',
-    hint: 'Runtime, memory, hooks, and more',
+    anchor: "core",
+    number: "02",
+    title: "Core Capabilities",
+    hint: "Runtime, memory, hooks, and more",
   },
   {
-    anchor: 'frameworks',
-    number: '03',
-    title: 'Framework Support',
-    hint: 'One runtime, any framework',
+    anchor: "frameworks",
+    number: "03",
+    title: "Framework Support",
+    hint: "One runtime, any framework",
   },
   {
-    anchor: 'testing',
-    number: '04',
-    title: 'Testing',
-    hint: 'CLI, pytest, comparison modes',
+    anchor: "testing",
+    number: "04",
+    title: "Testing",
+    hint: "CLI, pytest, comparison modes",
   },
   {
-    anchor: 'messaging',
-    number: '05',
-    title: 'Messaging',
-    hint: 'Slack, WhatsApp, and more',
+    anchor: "messaging",
+    number: "05",
+    title: "Messaging",
+    hint: "Slack, WhatsApp, and more",
   },
   {
-    anchor: 'protocols',
-    number: '06',
-    title: 'Protocol Support',
-    hint: 'MCP and A2A out of the box',
+    anchor: "protocols",
+    number: "06",
+    title: "Protocol Support",
+    hint: "MCP and A2A out of the box",
   },
 ];
 
 function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
   const id = FEATURE_ANCHORS[anchor];
-  const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
-  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const el =
+    typeof document !== "undefined" ? document.getElementById(id) : null;
+  el?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ─── Why Agent Kernel (hero) ───────────────────────────────────────────── */
@@ -109,16 +121,24 @@ function Hero() {
   useEffect(() => {
     const tl = gsap.timeline();
 
-    gsap.set([labelRef.current, titleRef.current, subtitleRef.current, diagramRef.current], {
-      opacity: 0,
-      y: 30,
-    });
+    gsap.set(
+      [
+        labelRef.current,
+        titleRef.current,
+        subtitleRef.current,
+        diagramRef.current,
+      ],
+      {
+        opacity: 0,
+        y: 30,
+      },
+    );
 
     tl.to(labelRef.current, {
       opacity: 1,
       y: 0,
       duration: 0.6,
-      ease: 'power2.out',
+      ease: "power2.out",
     })
       .to(
         titleRef.current,
@@ -126,9 +146,9 @@ function Hero() {
           opacity: 1,
           y: 0,
           duration: 0.8,
-          ease: 'power2.out',
+          ease: "power2.out",
         },
-        '-=0.35',
+        "-=0.35",
       )
       .to(
         subtitleRef.current,
@@ -136,9 +156,9 @@ function Hero() {
           opacity: 1,
           y: 0,
           duration: 0.6,
-          ease: 'power2.out',
+          ease: "power2.out",
         },
-        '-=0.45',
+        "-=0.45",
       )
       .to(
         diagramRef.current,
@@ -146,9 +166,9 @@ function Hero() {
           opacity: 1,
           y: 0,
           duration: 0.7,
-          ease: 'power2.out',
+          ease: "power2.out",
         },
-        '-=0.3',
+        "-=0.3",
       );
   }, []);
 
@@ -163,7 +183,8 @@ function Hero() {
             Everything You Need to Build, Run, and Scale AI Agents
           </h1>
           <p ref={subtitleRef} className={styles.whyHeroSubtitle}>
-            From runtime and memory to guardrails, observability, testing, and multi-cloud deployment.
+            From runtime and memory to guardrails, observability, testing, and
+            multi-cloud deployment.
           </p>
           <div ref={diagramRef} className={styles.whyHeroDiagram}>
             <AgentKernelRuntimeFlowDiagram />
@@ -177,7 +198,7 @@ function Hero() {
 /* ─── Page map (diagram) ────────────────────────────────────────────────── */
 
 function FeaturesPageMap() {
-  const gradId = useId().replace(/:/g, '');
+  const gradId = useId().replace(/:/g, "");
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const topRow = FEATURE_PAGE_MAP.slice(0, 3);
@@ -185,8 +206,8 @@ function FeaturesPageMap() {
 
   useEffect(() => {
     if (
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
       setVisible(true);
       return;
@@ -200,15 +221,15 @@ function FeaturesPageMap() {
           observer.disconnect();
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     );
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
   const reducedMotion =
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const COL_X_TOP = [143, 450, 757] as const;
   const COL_X_BOT = [143, 450, 757] as const;
@@ -218,7 +239,7 @@ function FeaturesPageMap() {
     id: `${gradId}T${i}`,
     d: `M ${x} 0 L 450 60`,
     len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
-    delay: 0.20 + i * 0.07,
+    delay: 0.2 + i * 0.07,
   }));
 
   // Bottom strip
@@ -232,23 +253,28 @@ function FeaturesPageMap() {
   const topGlowId = `${gradId}TGlow`;
   const botGlowId = `${gradId}BGlow`;
 
-  const TEAL      = 'rgba(0,221,255,1)';
-  const TEAL_LINE = 'rgba(0,221,255,0.28)';
-  const TEAL_HALO = 'rgba(0,221,255,0.1)';
+  const TEAL = "rgba(0,221,255,1)";
+  const TEAL_LINE = "rgba(0,221,255,0.28)";
+  const TEAL_HALO = "rgba(0,221,255,0.1)";
 
   const topParticles = [
-    { pathId: `${gradId}T0`, delay: '0.9s',  dur: '1.8s', color: TEAL },
-    { pathId: `${gradId}T1`, delay: '1.5s',  dur: '1.4s', color: TEAL },
-    { pathId: `${gradId}T2`, delay: '1.2s',  dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}T0`, delay: "0.9s", dur: "1.8s", color: TEAL },
+    { pathId: `${gradId}T1`, delay: "1.5s", dur: "1.4s", color: TEAL },
+    { pathId: `${gradId}T2`, delay: "1.2s", dur: "1.8s", color: TEAL },
   ];
   const botParticles = [
-    { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: TEAL },
-    { pathId: `${gradId}B1`, delay: '2.35s', dur: '1.4s', color: TEAL },
-    { pathId: `${gradId}B2`, delay: '2.1s', dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}B0`, delay: "2.0s", dur: "1.8s", color: TEAL },
+    { pathId: `${gradId}B1`, delay: "2.35s", dur: "1.4s", color: TEAL },
+    { pathId: `${gradId}B2`, delay: "2.1s", dur: "1.8s", color: TEAL },
   ];
 
   return (
-    <div ref={sectionRef} className={styles.pageMapSection} role="region" aria-labelledby="features-page-map-heading">
+    <div
+      ref={sectionRef}
+      className={styles.pageMapSection}
+      role="region"
+      aria-labelledby="features-page-map-heading"
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>Feature Map</span>
@@ -261,16 +287,16 @@ function FeaturesPageMap() {
         </div>
 
         <div className={styles.pageMapDiagram}>
-
           {/* ── Layer 1: top row nodes ── */}
           <div className={styles.pageMapTopRow}>
             {topRow.map((item, i) => (
               <button
                 key={item.anchor}
                 type="button"
-                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ''}`}
-                style={{ '--node-delay': `${i * 80}ms` } as React.CSSProperties}
-                onClick={() => scrollToFeaturesSection(item.anchor)}>
+                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ""}`}
+                style={{ "--node-delay": `${i * 80}ms` } as React.CSSProperties}
+                onClick={() => scrollToFeaturesSection(item.anchor)}
+              >
                 <span className={styles.pageMapNodeNumber}>{item.number}</span>
                 <span className={styles.pageMapNodeTitle}>{item.title}</span>
                 <span className={styles.pageMapNodeHint}>{item.hint}</span>
@@ -279,44 +305,94 @@ function FeaturesPageMap() {
           </div>
 
           {/* ── Connector: top nodes → hub ── */}
-          <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
+          <svg
+            className={styles.pageMapConnector}
+            viewBox="0 0 900 60"
+            preserveAspectRatio="none"
+            aria-hidden
+          >
             <defs>
-              <filter id={topGlowId} x="-80%" y="-80%" width="260%" height="260%">
+              <filter
+                id={topGlowId}
+                x="-80%"
+                y="-80%"
+                width="260%"
+                height="260%"
+              >
                 <feGaussianBlur stdDeviation="4" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
               </filter>
-              <filter id={`${topGlowId}Halo`} x="-80%" y="-80%" width="260%" height="260%">
+              <filter
+                id={`${topGlowId}Halo`}
+                x="-80%"
+                y="-80%"
+                width="260%"
+                height="260%"
+              >
                 <feGaussianBlur stdDeviation="5" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
               </filter>
-              {topLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
+              {topLines.map((l) => (
+                <path key={l.id} id={l.id} d={l.d} />
+              ))}
             </defs>
             {/* Halo lines */}
-            {topLines.map(l => (
-              <path key={`halo-${l.id}`} d={l.d} fill="none"
-                stroke={TEAL_HALO} strokeWidth="8"
+            {topLines.map((l) => (
+              <path
+                key={`halo-${l.id}`}
+                d={l.d}
+                fill="none"
+                stroke={TEAL_HALO}
+                strokeWidth="8"
                 filter={`url(#${topGlowId}Halo)`}
               />
             ))}
             {/* Main lines */}
-            {topLines.map(l => (
-              <path key={l.id} d={l.d} fill="none"
-                stroke={TEAL_LINE} strokeWidth="1.5"
-                strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
-                style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
+            {topLines.map((l) => (
+              <path
+                key={l.id}
+                d={l.d}
+                fill="none"
+                stroke={TEAL_LINE}
+                strokeWidth="1.5"
+                strokeDasharray={l.len}
+                strokeDashoffset={visible ? 0 : l.len}
+                style={{
+                  transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s`,
+                }}
               />
             ))}
-            {visible && !reducedMotion && topParticles.map((p, i) => (
-              <circle key={i} r="3.5" fill={p.color} filter={`url(#${topGlowId})`} opacity="0.9">
-                <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
-                  <mpath href={`#${p.pathId}`} />
-                </animateMotion>
-              </circle>
-            ))}
+            {visible &&
+              !reducedMotion &&
+              topParticles.map((p, i) => (
+                <circle
+                  key={i}
+                  r="3.5"
+                  fill={p.color}
+                  filter={`url(#${topGlowId})`}
+                  opacity="0.9"
+                >
+                  <animateMotion
+                    dur={p.dur}
+                    repeatCount="indefinite"
+                    begin={p.delay}
+                  >
+                    <mpath href={`#${p.pathId}`} />
+                  </animateMotion>
+                </circle>
+              ))}
           </svg>
 
           {/* ── Hub ── */}
-          <div className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ''}`}>
+          <div
+            className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ""}`}
+          >
             <img
               src="/img/branding/agent-kernel-icon-color.svg"
               alt="Agent Kernel"
@@ -325,40 +401,88 @@ function FeaturesPageMap() {
           </div>
 
           {/* ── Connector: hub → bottom nodes ── */}
-          <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
+          <svg
+            className={styles.pageMapConnector}
+            viewBox="0 0 900 60"
+            preserveAspectRatio="none"
+            aria-hidden
+          >
             <defs>
-              <filter id={botGlowId} x="-80%" y="-80%" width="260%" height="260%">
+              <filter
+                id={botGlowId}
+                x="-80%"
+                y="-80%"
+                width="260%"
+                height="260%"
+              >
                 <feGaussianBlur stdDeviation="4" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
               </filter>
-              <filter id={`${botGlowId}Halo`} x="-80%" y="-80%" width="260%" height="260%">
+              <filter
+                id={`${botGlowId}Halo`}
+                x="-80%"
+                y="-80%"
+                width="260%"
+                height="260%"
+              >
                 <feGaussianBlur stdDeviation="5" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
               </filter>
-              {botLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
+              {botLines.map((l) => (
+                <path key={l.id} id={l.id} d={l.d} />
+              ))}
             </defs>
             {/* Halo lines */}
-            {botLines.map(l => (
-              <path key={`halo-${l.id}`} d={l.d} fill="none"
-                stroke={TEAL_HALO} strokeWidth="8"
+            {botLines.map((l) => (
+              <path
+                key={`halo-${l.id}`}
+                d={l.d}
+                fill="none"
+                stroke={TEAL_HALO}
+                strokeWidth="8"
                 filter={`url(#${botGlowId}Halo)`}
               />
             ))}
             {/* Main lines */}
-            {botLines.map(l => (
-              <path key={l.id} d={l.d} fill="none"
-                stroke={TEAL_LINE} strokeWidth="1.5"
-                strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
-                style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
+            {botLines.map((l) => (
+              <path
+                key={l.id}
+                d={l.d}
+                fill="none"
+                stroke={TEAL_LINE}
+                strokeWidth="1.5"
+                strokeDasharray={l.len}
+                strokeDashoffset={visible ? 0 : l.len}
+                style={{
+                  transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s`,
+                }}
               />
             ))}
-            {visible && !reducedMotion && botParticles.map((p, i) => (
-              <circle key={i} r="3.5" fill={p.color} filter={`url(#${botGlowId})`} opacity="0.9">
-                <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
-                  <mpath href={`#${p.pathId}`} />
-                </animateMotion>
-              </circle>
-            ))}
+            {visible &&
+              !reducedMotion &&
+              botParticles.map((p, i) => (
+                <circle
+                  key={i}
+                  r="3.5"
+                  fill={p.color}
+                  filter={`url(#${botGlowId})`}
+                  opacity="0.9"
+                >
+                  <animateMotion
+                    dur={p.dur}
+                    repeatCount="indefinite"
+                    begin={p.delay}
+                  >
+                    <mpath href={`#${p.pathId}`} />
+                  </animateMotion>
+                </circle>
+              ))}
           </svg>
 
           {/* ── Layer 3: bottom row nodes ── */}
@@ -367,16 +491,18 @@ function FeaturesPageMap() {
               <button
                 key={item.anchor}
                 type="button"
-                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ''}`}
-                style={{ '--node-delay': `${300 + i * 80}ms` } as React.CSSProperties}
-                onClick={() => scrollToFeaturesSection(item.anchor)}>
+                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ""}`}
+                style={
+                  { "--node-delay": `${300 + i * 80}ms` } as React.CSSProperties
+                }
+                onClick={() => scrollToFeaturesSection(item.anchor)}
+              >
                 <span className={styles.pageMapNodeNumber}>{item.number}</span>
                 <span className={styles.pageMapNodeTitle}>{item.title}</span>
                 <span className={styles.pageMapNodeHint}>{item.hint}</span>
               </button>
             ))}
           </div>
-
         </div>
       </div>
     </div>
@@ -388,61 +514,63 @@ function FeaturesPageMap() {
 function ProblemTable() {
   const rows = [
     {
-      problem: 'Platform engineering',
-      without: 'Build REST APIs, auth, session management, deployment pipelines from scratch',
-      with: 'All included out of the box',
+      problem: "Platform engineering",
+      without:
+        "Build REST APIs, auth, session management, deployment pipelines from scratch",
+      with: "All included out of the box",
     },
     {
-      problem: 'Framework lock-in',
-      without: 'Rewrite everything if you switch from LangGraph to OpenAI',
-      with: 'Change 2 import lines — everything else stays',
+      problem: "Framework lock-in",
+      without: "Rewrite everything if you switch from LangGraph to OpenAI",
+      with: "Change 2 import lines — everything else stays",
     },
     {
-      problem: 'Cloud lock-in',
-      without: 'AWS-specific code everywhere',
-      with: 'Same code deploys to AWS, Azure, or on-prem',
+      problem: "Cloud lock-in",
+      without: "AWS-specific code everywhere",
+      with: "Same code deploys to AWS, Azure, or on-prem",
     },
     {
-      problem: 'Memory & state',
-      without: 'Build your own conversation tracking, caching, and persistence',
-      with: 'Built-in with multiple backends',
+      problem: "Memory & state",
+      without: "Build your own conversation tracking, caching, and persistence",
+      with: "Built-in with multiple backends",
     },
     {
-      problem: 'Knowledge Bases',
-      without: 'Build your own database connectors. Handle data complexity, separate tools for storage and retrieval',
-      with: 'Built-in with multiple knowledge sources',
+      problem: "Knowledge Bases",
+      without:
+        "Build your own database connectors. Handle data complexity, separate tools for storage and retrieval",
+      with: "Built-in with multiple knowledge sources",
     },
     {
-      problem: 'Messaging integrations',
-      without: 'Build custom Slack/WhatsApp bots from scratch',
-      with: 'Built-in handlers, plug and play',
+      problem: "Messaging integrations",
+      without: "Build custom Slack/WhatsApp bots from scratch",
+      with: "Built-in handlers, plug and play",
     },
     {
-      problem: 'Testing',
-      without: 'No standard way to test AI agents',
-      with: 'pytest-integrated test framework',
+      problem: "Testing",
+      without: "No standard way to test AI agents",
+      with: "pytest-integrated test framework",
     },
     {
-      problem: 'Observability',
-      without: 'Manual instrumentation',
-      with: 'LangFuse/OpenLLMetry with one config line',
+      problem: "Observability",
+      without: "Manual instrumentation",
+      with: "LangFuse/OpenLLMetry with one config line",
     },
     {
-      problem: 'Guardrails & safety',
-      without: 'Build custom content filters',
-      with: 'OpenAI and Bedrock guardrails built in',
+      problem: "Guardrails & safety",
+      without: "Build custom content filters",
+      with: "OpenAI and Bedrock guardrails built in",
     },
     {
-      problem: 'Deployment',
-      without: 'Write Terraform/CDK yourself',
-      with: 'Pre-built Terraform modules for AWS & Azure',
+      problem: "Deployment",
+      without: "Write Terraform/CDK yourself",
+      with: "Pre-built Terraform modules for AWS & Azure",
     },
   ];
 
   const impactRow = {
-    problem: 'Time to production',
-    without: 'Months',
-    with: 'Days to weeks',
+    problem: "Time to production",
+    without: "Months",
+    with: "Days to weeks",
   };
 
   const [active, setActive] = useState(0);
@@ -471,14 +599,20 @@ function ProblemTable() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>01</span>
-          <h2 className={styles.sectionTitle}>The Problem Agent Kernel Solves</h2>
+          <h2 className={styles.sectionTitle}>
+            The Problem Agent Kernel Solves
+          </h2>
           <p className={styles.sectionSubtitle}>
-            Building production AI agents today involves solving many hard problems that have nothing
-            to do with the actual agent intelligence.
+            Building production AI agents today involves solving many hard
+            problems that have nothing to do with the actual agent intelligence.
           </p>
         </div>
         <div className={styles.problemBlock}>
-          <ul className={styles.problemTopicGrid} role="tablist" aria-label="Areas to compare">
+          <ul
+            className={styles.problemTopicGrid}
+            role="tablist"
+            aria-label="Areas to compare"
+          >
             {rows.map((row, i) => {
               const ChipIcon = problemChipIcons[i];
               return (
@@ -489,13 +623,18 @@ function ProblemTable() {
                     id={`feature-problem-tab-${i}`}
                     aria-selected={active === i}
                     aria-controls="feature-problem-panel"
-                    className={`${styles.problemTopicBtn} ${active === i ? styles.problemTopicBtnActive : ''}`}
+                    className={`${styles.problemTopicBtn} ${active === i ? styles.problemTopicBtnActive : ""}`}
                     onClick={() => setActive(i)}
                   >
-                    <span className={styles.problemTopicIconWrap} aria-hidden="true">
+                    <span
+                      className={styles.problemTopicIconWrap}
+                      aria-hidden="true"
+                    >
                       <ChipIcon className={styles.problemTopicIcon} />
                     </span>
-                    <span className={styles.problemTopicLabel}>{row.problem}</span>
+                    <span className={styles.problemTopicLabel}>
+                      {row.problem}
+                    </span>
                   </button>
                 </li>
               );
@@ -509,33 +648,66 @@ function ProblemTable() {
           >
             <div key={active} className={styles.problemComparePanelInner}>
               <div className={styles.problemComparePanelHeader}>
-                <span className={styles.problemComparePanelIconWrap} aria-hidden="true">
+                <span
+                  className={styles.problemComparePanelIconWrap}
+                  aria-hidden="true"
+                >
                   <ActiveIcon className={styles.problemComparePanelIcon} />
                 </span>
                 <div>
-                  <h3 className={styles.problemComparePanelTitle}>{activeRow.problem}</h3>
-                  <p className={styles.problemComparePanelMeta}>Without vs with Agent Kernel</p>
+                  <h3 className={styles.problemComparePanelTitle}>
+                    {activeRow.problem}
+                  </h3>
+                  <p className={styles.problemComparePanelMeta}>
+                    Without vs with Agent Kernel
+                  </p>
                 </div>
               </div>
               <div className={styles.problemCompareGrid}>
-                <article className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}>
-                  <p className={styles.problemCompareSideLabel}>Without Agent Kernel</p>
-                  <p className={styles.problemCompareSideSub}>What you take on today</p>
-                  <div className={`${styles.problemCompareBody} ${styles.problemCompareBodyNeg}`}>
-                    <span className={styles.problemCompareBodyIcon} aria-hidden="true">
+                <article
+                  className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}
+                >
+                  <p className={styles.problemCompareSideLabel}>
+                    Without Agent Kernel
+                  </p>
+                  <p className={styles.problemCompareSideSub}>
+                    What you take on today
+                  </p>
+                  <div
+                    className={`${styles.problemCompareBody} ${styles.problemCompareBodyNeg}`}
+                  >
+                    <span
+                      className={styles.problemCompareBodyIcon}
+                      aria-hidden="true"
+                    >
                       <MdClose />
                     </span>
-                    <p className={styles.problemCompareBodyText}>{activeRow.without}</p>
+                    <p className={styles.problemCompareBodyText}>
+                      {activeRow.without}
+                    </p>
                   </div>
                 </article>
-                <article className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}>
-                  <p className={styles.problemCompareSideLabel}>With Agent Kernel</p>
-                  <p className={styles.problemCompareSideSub}>What the platform covers</p>
-                  <div className={`${styles.problemCompareBody} ${styles.problemCompareBodyPos}`}>
-                    <span className={styles.problemCompareBodyIcon} aria-hidden="true">
+                <article
+                  className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}
+                >
+                  <p className={styles.problemCompareSideLabel}>
+                    With Agent Kernel
+                  </p>
+                  <p className={styles.problemCompareSideSub}>
+                    What the platform covers
+                  </p>
+                  <div
+                    className={`${styles.problemCompareBody} ${styles.problemCompareBodyPos}`}
+                  >
+                    <span
+                      className={styles.problemCompareBodyIcon}
+                      aria-hidden="true"
+                    >
                       <MdCheck />
                     </span>
-                    <p className={styles.problemCompareBodyText}>{activeRow.with}</p>
+                    <p className={styles.problemCompareBodyText}>
+                      {activeRow.with}
+                    </p>
                   </div>
                 </article>
               </div>
@@ -551,20 +723,35 @@ function ProblemTable() {
               </span>
               <div className={styles.problemImpactHeading}>
                 <p className={styles.problemImpactEyebrow}>Bottom line</p>
-                <h3 className={styles.problemImpactTitle}>{impactRow.problem}</h3>
+                <h3 className={styles.problemImpactTitle}>
+                  {impactRow.problem}
+                </h3>
                 <p className={styles.problemImpactSub}>
-                  The effect on your timeline when Agent Kernel owns the platform work.
+                  The effect on your timeline when Agent Kernel owns the
+                  platform work.
                 </p>
               </div>
             </div>
             <div className={styles.problemImpactGrid}>
-              <div className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}>
-                <span className={styles.problemImpactStatLabel}>Without Agent Kernel</span>
-                <p className={styles.problemImpactStatValue}>{impactRow.without}</p>
+              <div
+                className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}
+              >
+                <span className={styles.problemImpactStatLabel}>
+                  Without Agent Kernel
+                </span>
+                <p className={styles.problemImpactStatValue}>
+                  {impactRow.without}
+                </p>
               </div>
-              <div className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}>
-                <span className={styles.problemImpactStatLabel}>With Agent Kernel</span>
-                <p className={styles.problemImpactStatValue}>{impactRow.with}</p>
+              <div
+                className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}
+              >
+                <span className={styles.problemImpactStatLabel}>
+                  With Agent Kernel
+                </span>
+                <p className={styles.problemImpactStatValue}>
+                  {impactRow.with}
+                </p>
               </div>
             </div>
           </aside>
@@ -580,79 +767,128 @@ function CoreFeatures() {
   const features = [
     {
       icon: <MdCode />,
-      title: 'Six Core Abstractions',
-      description: 'Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.',
-      highlights: ['Unified Python API', 'Framework adapters for 4 SDKs', 'Portable tool functions via ToolBuilder', 'Framework-agnostic hooks'],
-      link: '/docs/core-concepts/overview',
+      title: "Six Core Abstractions",
+      description:
+        "Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.",
+      highlights: [
+        "Unified Python API",
+        "Framework adapters for 4 SDKs",
+        "Portable tool functions via ToolBuilder",
+        "Framework-agnostic hooks",
+      ],
+      link: "/docs/core-concepts/overview",
     },
     {
       icon: <MdSwapHoriz />,
-      title: 'Framework-Neutral Runtime',
-      description: 'OpenAI Agents, LangGraph, CrewAI, and Google ADK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.',
-      highlights: ['OpenAI Agents SDK', 'LangGraph', 'CrewAI', 'Google ADK'],
-      link: '/docs/frameworks/overview',
+      title: "Framework-Neutral Runtime",
+      description:
+        "OpenAI Agents, LangGraph, CrewAI, and Google ADK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
+      highlights: ["OpenAI Agents SDK", "LangGraph", "CrewAI", "Google ADK"],
+      link: "/docs/frameworks/overview",
     },
     {
       icon: <MdSettings />,
-      title: 'Execution Hooks',
-      description: 'Pre and post-execution hooks give you surgical control over every agent request, for any framework.',
-      highlights: ['Pre-hooks: guardrails, RAG, auth, validation', 'Post-hooks: moderation, disclaimers, analytics', 'Hook chaining and composition', 'Early termination with custom responses'],
-      link: '/docs/integrations/hooks',
+      title: "Execution Hooks",
+      description:
+        "Pre and post-execution hooks give you surgical control over every agent request, for any framework.",
+      highlights: [
+        "Pre-hooks: guardrails, RAG, auth, validation",
+        "Post-hooks: moderation, disclaimers, analytics",
+        "Hook chaining and composition",
+        "Early termination with custom responses",
+      ],
+      link: "/docs/integrations/hooks",
     },
     {
       icon: <MdMemory />,
-      title: 'Smart Memory Management',
-      description: 'Volatile and non-volatile caching with identical APIs but different lifecycles. Swap backends with just environment variables.',
-      highlights: ['Volatile: request-scoped, auto-clears', 'Non-volatile: session-persistent', 'Backends: In-memory, Redis, DynamoDB, Cosmos DB', 'Clean prompts, reduced token usage'],
-      link: '/docs/architecture/memory-management',
+      title: "Smart Memory Management",
+      description:
+        "Volatile and non-volatile caching with identical APIs but different lifecycles. Swap backends with just environment variables.",
+      highlights: [
+        "Volatile: request-scoped, auto-clears",
+        "Non-volatile: session-persistent",
+        "Backends: In-memory, Redis, DynamoDB, Cosmos DB",
+        "Clean prompts, reduced token usage",
+      ],
+      link: "/docs/architecture/memory-management",
     },
     {
       icon: <MdMenuBook />,
-      title: 'Knowledge Bases',
+      title: "Knowledge Bases",
       description:
-        'Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, and custom SQL data sources.',
+        "Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, and custom SQL data sources.",
       highlights: [
-        'ChromaDB — vector/semantic search',
-        'Neo4j — entity and relationship graphs',
-        'Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL',
-        'semantic_map keeps agent prompts portable',
+        "ChromaDB — vector/semantic search",
+        "Neo4j — entity and relationship graphs",
+        "Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL",
+        "semantic_map keeps agent prompts portable",
       ],
-      link: '/docs/architecture/memory-management',
+      link: "/docs/architecture/memory-management",
     },
     {
       icon: <MdCloud />,
-      title: 'Multi-Cloud Deployment',
-      description: 'One agent codebase deploys to AWS, and Azure and GCP with full Terraform modules. No vendor lock-in, ever.',
-      highlights: ['AWS Lambda (Serverless)', 'AWS ECS/Fargate (Containerized)', 'Azure Functions (Serverless)', 'Azure Container Apps (Containerized)'],
-      link: '/docs/deployment/overview',
+      title: "Multi-Cloud Deployment",
+      description:
+        "One agent codebase deploys to AWS, and Azure and GCP with full Terraform modules. No vendor lock-in, ever.",
+      highlights: [
+        "AWS Lambda (Serverless)",
+        "AWS ECS/Fargate (Containerized)",
+        "Azure Functions (Serverless)",
+        "Azure Container Apps (Containerized)",
+      ],
+      link: "/docs/deployment/overview",
     },
     {
       icon: <MdHealthAndSafety />,
-      title: 'Fault Tolerance',
-      description: 'Production-grade resilience with multi-AZ deployments, auto-recovery, health monitoring, and rolling deployments.',
-      highlights: ['Multi-AZ for high availability', 'Automatic failure recovery', 'Health monitoring', 'Zero-downtime deployments'],
-      link: '/docs/core-concepts/fault-tolerance',
+      title: "Fault Tolerance",
+      description:
+        "Production-grade resilience with multi-AZ deployments, auto-recovery, health monitoring, and rolling deployments.",
+      highlights: [
+        "Multi-AZ for high availability",
+        "Automatic failure recovery",
+        "Health monitoring",
+        "Zero-downtime deployments",
+      ],
+      link: "/docs/core-concepts/fault-tolerance",
     },
     {
       icon: <MdVisibility />,
-      title: 'Observability',
-      description: 'Full visibility into agent execution, LLM calls, and tool invocations. One config line to enable.',
-      highlights: ['LangFuse integration', 'OpenLLMetry (OpenTelemetry-based)', 'Multi-level verbosity', 'Cost and latency tracking'],
-      link: '/docs/advanced/traceability',
+      title: "Observability",
+      description:
+        "Full visibility into agent execution, LLM calls, and tool invocations. One config line to enable.",
+      highlights: [
+        "LangFuse integration",
+        "OpenLLMetry (OpenTelemetry-based)",
+        "Multi-level verbosity",
+        "Cost and latency tracking",
+      ],
+      link: "/docs/advanced/traceability",
     },
     {
       icon: <MdSecurity />,
-      title: 'Content Safety & Guardrails',
-      description: 'Input and output guardrails that protect users and ensure compliance. Plugs in via execution hooks.',
-      highlights: ['PII detection and redaction', 'Jailbreak prevention', 'Content moderation', 'Off-topic filtering'],
-      link: '/docs/advanced/guardrails',
+      title: "Content Safety & Guardrails",
+      description:
+        "Input and output guardrails that protect users and ensure compliance. Plugs in via execution hooks.",
+      highlights: [
+        "PII detection and redaction",
+        "Jailbreak prevention",
+        "Content moderation",
+        "Off-topic filtering",
+      ],
+      link: "/docs/advanced/guardrails",
     },
     {
       icon: <MdNetworkCheck />,
-      title: 'MCP & A2A Protocols',
-      description: 'Expose agents as MCP tools or enable agent-to-agent communication via A2A protocol.',
-      highlights: ['MCP Server mode', 'A2A Server mode', 'Cross-agent coordination', 'Protocol-future-proofed'],
-      link: '/docs/api/mcp-server',
+      title: "MCP & A2A Protocols",
+      description:
+        "Expose agents as MCP tools or enable agent-to-agent communication via A2A protocol.",
+      highlights: [
+        "MCP Server mode",
+        "A2A Server mode",
+        "Cross-agent coordination",
+        "Protocol-future-proofed",
+      ],
+      link: "/docs/api/mcp-server",
     },
   ];
 
@@ -666,7 +902,8 @@ function CoreFeatures() {
           <span className={styles.sectionNumber}>02</span>
           <h2 className={styles.sectionTitle}>Core Capabilities</h2>
           <p className={styles.sectionSubtitle}>
-            Everything you need to build, run, and scale production AI agents without building platform code.
+            Everything you need to build, run, and scale production AI agents
+            without building platform code.
           </p>
         </div>
         <ul className={styles.featuresGrid}>
@@ -674,7 +911,9 @@ function CoreFeatures() {
             <li key={f.title} className={styles.featureGridCell}>
               <article className={styles.featureCard}>
                 <div className={styles.featureCardHeader}>
-                  <span className={styles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
+                  <span className={styles.featureIndex}>
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
                   <div className={styles.featureIconWrap} aria-hidden="true">
                     {f.icon}
                   </div>
@@ -707,10 +946,11 @@ function CoreFeatures() {
 function FrameworkSupport() {
   const integrations = [
     {
-      key: 'openai',
-      name: 'OpenAI Agents SDK',
-      description: 'Official OpenAI agents framework with full support for tools, handoffs, and streaming.',
-      link: '/docs/frameworks/openai',
+      key: "openai",
+      name: "OpenAI Agents SDK",
+      description:
+        "Official OpenAI agents framework with full support for tools, handoffs, and streaming.",
+      link: "/docs/frameworks/openai",
       logo: (
         <img
           src="/img/integrations/chatgpt.png"
@@ -722,10 +962,11 @@ function FrameworkSupport() {
       ),
     },
     {
-      key: 'langgraph',
-      name: 'LangGraph',
-      description: 'Graph-based agent orchestration for complex stateful multi-actor applications.',
-      link: '/docs/frameworks/langgraph',
+      key: "langgraph",
+      name: "LangGraph",
+      description:
+        "Graph-based agent orchestration for complex stateful multi-actor applications.",
+      link: "/docs/frameworks/langgraph",
       logo: (
         <img
           src="/img/integrations/langgraph.png"
@@ -737,10 +978,11 @@ function FrameworkSupport() {
       ),
     },
     {
-      key: 'google-adk',
-      name: 'Google ADK',
-      description: "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
-      link: '/docs/frameworks/google-adk',
+      key: "google-adk",
+      name: "Google ADK",
+      description:
+        "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
+      link: "/docs/frameworks/google-adk",
       logo: (
         <img
           src="/img/integrations/googleADK.png"
@@ -752,10 +994,11 @@ function FrameworkSupport() {
       ),
     },
     {
-      key: 'crewai',
-      name: 'CrewAI',
-      description: 'Role-based multi-agent framework for orchestrating collaborative AI workflows.',
-      link: '/docs/frameworks/crewai',
+      key: "crewai",
+      name: "CrewAI",
+      description:
+        "Role-based multi-agent framework for orchestrating collaborative AI workflows.",
+      link: "/docs/frameworks/crewai",
       logo: (
         <img
           src="/img/integrations/crewai.png"
@@ -767,11 +1010,11 @@ function FrameworkSupport() {
       ),
     },
     {
-      key: 'smolagents',
-      name: 'Smolagents',
+      key: "smolagents",
+      name: "Smolagents",
       description:
         "Hugging Face's Smolagents with first-class support for writing your own coding agents.",
-      link: 'https://huggingface.co/docs/smolagents/index',
+      link: "https://huggingface.co/docs/smolagents/index",
       external: true,
       logo: (
         <img
@@ -784,10 +1027,11 @@ function FrameworkSupport() {
       ),
     },
     {
-      key: 'livekit',
-      name: 'LiveKit',
-      description: 'LiveKit provides the complete stack for voice-based AI agents.',
-      link: 'https://docs.livekit.io/',
+      key: "livekit",
+      name: "LiveKit",
+      description:
+        "LiveKit provides the complete stack for voice-based AI agents.",
+      link: "https://docs.livekit.io/",
       external: true,
       logo: (
         <img
@@ -802,10 +1046,11 @@ function FrameworkSupport() {
   ];
 
   const multiFramework = {
-    name: 'Multi-Framework',
-    description: 'Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.',
-    link: '/docs/frameworks/multi-framework',
-    badge: 'Agent Kernel',
+    name: "Multi-Framework",
+    description:
+      "Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.",
+    link: "/docs/frameworks/multi-framework",
+    badge: "Agent Kernel",
     logo: (
       <img
         src="/img/branding/agent-kernel-icon-color.svg"
@@ -824,7 +1069,9 @@ function FrameworkSupport() {
         <h3 className={styles.frameworkName}>{f.name}</h3>
       </div>
       <p className={styles.frameworkDescription}>{f.description}</p>
-      <span className={`${styles.frameworkLink} ${styles.frameworkLinkInline}`}>Learn more →</span>
+      <span className={`${styles.frameworkLink} ${styles.frameworkLinkInline}`}>
+        Learn more →
+      </span>
     </>
   );
 
@@ -832,26 +1079,42 @@ function FrameworkSupport() {
     <>
       <div className={styles.frameworkFeaturedContent}>
         <div className={styles.frameworkFeaturedMain}>
-          <div className={styles.frameworkFeaturedMark}>{multiFramework.logo}</div>
+          <div className={styles.frameworkFeaturedMark}>
+            {multiFramework.logo}
+          </div>
           <div className={styles.frameworkFeaturedText}>
-            <p className={styles.frameworkFeaturedBadge}>{multiFramework.badge}</p>
-            <h3 className={styles.frameworkFeaturedHeading}>{multiFramework.name}</h3>
-            <p className={styles.frameworkFeaturedLead}>{multiFramework.description}</p>
+            <p className={styles.frameworkFeaturedBadge}>
+              {multiFramework.badge}
+            </p>
+            <h3 className={styles.frameworkFeaturedHeading}>
+              {multiFramework.name}
+            </h3>
+            <p className={styles.frameworkFeaturedLead}>
+              {multiFramework.description}
+            </p>
           </div>
         </div>
-        <span className={`${styles.frameworkLink} ${styles.frameworkFeaturedCta}`}>Learn more →</span>
+        <span
+          className={`${styles.frameworkLink} ${styles.frameworkFeaturedCta}`}
+        >
+          Learn more →
+        </span>
       </div>
     </>
   );
 
   return (
-    <section id={FEATURE_ANCHORS.frameworks} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.frameworks}
+      className={`${styles.section} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>03</span>
           <h2 className={styles.sectionTitle}>One Runtime. Any Framework.</h2>
           <p className={styles.sectionSubtitle}>
-            Use the best framework for each job, and run them all together in a single deployment.
+            Use the best framework for each job, and run them all together in a
+            single deployment.
           </p>
         </div>
 
@@ -864,7 +1127,8 @@ function FrameworkSupport() {
                     href={f.link}
                     className={styles.frameworkCard}
                     target="_blank"
-                    rel="noopener noreferrer">
+                    rel="noopener noreferrer"
+                  >
                     {cardInner(f)}
                   </a>
                 ) : (
@@ -876,7 +1140,10 @@ function FrameworkSupport() {
             ))}
           </ul>
 
-          <Link to={multiFramework.link} className={styles.frameworkFeaturedRow}>
+          <Link
+            to={multiFramework.link}
+            className={styles.frameworkFeaturedRow}
+          >
             {featuredInner}
           </Link>
         </div>
@@ -890,54 +1157,59 @@ function FrameworkSupport() {
 function TestingSection() {
   const approaches = [
     {
-      key: 'cli',
+      key: "cli",
       icon: <MdTerminal />,
-      title: 'CLI Testing',
-      description: 'Interactive sessions for rapid development iteration and multi-agent testing.',
+      title: "CLI Testing",
+      description:
+        "Interactive sessions for rapid development iteration and multi-agent testing.",
       highlights: [
-        'Interactive chat sessions',
-        'Real-time feedback',
-        'Persistent CLI sessions',
-        'Multi-agent support',
+        "Interactive chat sessions",
+        "Real-time feedback",
+        "Persistent CLI sessions",
+        "Multi-agent support",
       ],
-      link: '/docs/testing/cli-testing',
+      link: "/docs/testing/cli-testing",
     },
     {
-      key: 'automated',
+      key: "automated",
       icon: <MdCode />,
-      title: 'Automated Tests',
-      description: 'pytest-integrated test suites that run in CI/CD with session-scoped fixtures.',
+      title: "Automated Tests",
+      description:
+        "pytest-integrated test suites that run in CI/CD with session-scoped fixtures.",
       highlights: [
-        'pytest integration',
-        'Session-scoped fixtures',
-        'Ordered test execution',
-        'CI/CD ready',
+        "pytest integration",
+        "Session-scoped fixtures",
+        "Ordered test execution",
+        "CI/CD ready",
       ],
-      link: '/docs/testing/automated-testing',
+      link: "/docs/testing/automated-testing",
     },
   ];
 
   const modes = [
     {
-      key: 'fuzzy',
+      key: "fuzzy",
       icon: <MdSpeed />,
-      name: 'Fuzzy Mode',
-      description: 'Fast string matching with configurable thresholds using RapidFuzz. Ideal for deterministic outputs.',
-      link: '/docs/testing/cli-testing#fuzzy-mode',
+      name: "Fuzzy Mode",
+      description:
+        "Fast string matching with configurable thresholds using RapidFuzz. Ideal for deterministic outputs.",
+      link: "/docs/testing/cli-testing#fuzzy-mode",
     },
     {
-      key: 'judge',
+      key: "judge",
       icon: <MdBugReport />,
-      name: 'Judge Mode',
-      description: 'LLM-based semantic evaluation using Ragas. Handles paraphrasing and AI-generated variation.',
-      link: '/docs/testing/cli-testing#judge-mode',
+      name: "Judge Mode",
+      description:
+        "LLM-based semantic evaluation using Ragas. Handles paraphrasing and AI-generated variation.",
+      link: "/docs/testing/cli-testing#judge-mode",
     },
     {
-      key: 'fallback',
+      key: "fallback",
       icon: <MdTimer />,
-      name: 'Fallback Mode',
-      description: 'Tries fuzzy first, falls back to judge. The default — best of both worlds.',
-      link: '/docs/testing/cli-testing#fallback-mode-default',
+      name: "Fallback Mode",
+      description:
+        "Tries fuzzy first, falls back to judge. The default — best of both worlds.",
+      link: "/docs/testing/cli-testing#fallback-mode-default",
     },
   ];
 
@@ -951,8 +1223,9 @@ function TestingSection() {
           <span className={styles.sectionNumber}>04</span>
           <h2 className={styles.sectionTitle}>Testing Framework</h2>
           <p className={styles.sectionSubtitle}>
-            Test your agents like any other code. CLI testing for development, automated suites for CI/CD,
-            and three comparison modes for every use case.
+            Test your agents like any other code. CLI testing for development,
+            automated suites for CI/CD, and three comparison modes for every use
+            case.
           </p>
         </div>
         <div className={styles.testingBlock}>
@@ -966,7 +1239,9 @@ function TestingSection() {
                     </div>
                     <h3 className={styles.testingApproachTitle}>{a.title}</h3>
                   </div>
-                  <p className={styles.testingApproachDescription}>{a.description}</p>
+                  <p className={styles.testingApproachDescription}>
+                    {a.description}
+                  </p>
                   <ul className={styles.testingHighlights}>
                     {a.highlights.map((h) => (
                       <li key={h}>{h}</li>
@@ -985,12 +1260,17 @@ function TestingSection() {
                 <li key={m.key} className={styles.testingModeCell}>
                   <Link to={m.link} className={styles.testingModeCard}>
                     <div className={styles.testingModeHeader}>
-                      <div className={styles.testingIconWrap} aria-hidden="true">
+                      <div
+                        className={styles.testingIconWrap}
+                        aria-hidden="true"
+                      >
                         {m.icon}
                       </div>
                       <h4 className={styles.testingModeName}>{m.name}</h4>
                     </div>
-                    <p className={styles.testingModeDescription}>{m.description}</p>
+                    <p className={styles.testingModeDescription}>
+                      {m.description}
+                    </p>
                   </Link>
                 </li>
               ))}
@@ -1002,15 +1282,49 @@ function TestingSection() {
   );
 }
 
-
 const MESSAGING_PLATFORMS = [
-  { name: 'Slack', icon: <FaSlack />, color: '#EC407A', link: '/docs/integrations/slack' },
-  { name: 'Teams', icon: <TbBrandTeams />, color: '#A8B2FF', link: '/docs/integrations/teams' },
-  { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#3DFF9A', link: '/docs/integrations/whatsapp' },
-  { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#1AACFF', link: '/docs/integrations/messenger' },
-  { name: 'Telegram', icon: <FaTelegram />, color: '#40BFFF', link: '/docs/integrations/telegram' },
-  { name: 'Instagram', icon: <FaInstagram />, color: '#FF6BA3', link: '/docs/integrations/instagram' },
-  { name: 'Gmail', icon: <SiGmail />, color: '#FF7B6E', link: '/docs/integrations/gmail' },
+  {
+    name: "Slack",
+    icon: <FaSlack />,
+    color: "#EC407A",
+    link: "/docs/integrations/slack",
+  },
+  {
+    name: "Teams",
+    icon: <TbBrandTeams />,
+    color: "#A8B2FF",
+    link: "/docs/next/integrations/teams",
+  },
+  {
+    name: "WhatsApp",
+    icon: <FaWhatsapp />,
+    color: "#3DFF9A",
+    link: "/docs/integrations/whatsapp",
+  },
+  {
+    name: "Messenger",
+    icon: <FaFacebookMessenger />,
+    color: "#1AACFF",
+    link: "/docs/integrations/messenger",
+  },
+  {
+    name: "Telegram",
+    icon: <FaTelegram />,
+    color: "#40BFFF",
+    link: "/docs/integrations/telegram",
+  },
+  {
+    name: "Instagram",
+    icon: <FaInstagram />,
+    color: "#FF6BA3",
+    link: "/docs/integrations/instagram",
+  },
+  {
+    name: "Gmail",
+    icon: <SiGmail />,
+    color: "#FF7B6E",
+    link: "/docs/integrations/gmail",
+  },
 ] as const;
 
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
@@ -1020,14 +1334,18 @@ function MessagingSection() {
 
   useEffect(() => {
     const ctx = gsap.context(() => {
-      const strip = sceneRef.current?.querySelector(`.${styles.msgRuntimeStrip}`);
-      const cards = sceneRef.current?.querySelectorAll(`.${styles.msgChannelCard}`);
+      const strip = sceneRef.current?.querySelector(
+        `.${styles.msgRuntimeStrip}`,
+      );
+      const cards = sceneRef.current?.querySelectorAll(
+        `.${styles.msgChannelCard}`,
+      );
       if (!strip || !cards?.length) return;
 
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: sceneRef.current,
-          start: 'top 78%',
+          start: "top 78%",
           once: true,
         },
       });
@@ -1035,7 +1353,7 @@ function MessagingSection() {
       tl.fromTo(
         strip,
         { opacity: 0, y: 22 },
-        { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' }
+        { opacity: 1, y: 0, duration: 0.55, ease: "power2.out" },
       ).fromTo(
         cards,
         { opacity: 0, y: 18 },
@@ -1044,9 +1362,9 @@ function MessagingSection() {
           y: 0,
           duration: 0.42,
           stagger: 0.055,
-          ease: 'power2.out',
+          ease: "power2.out",
         },
-        '-=0.28'
+        "-=0.28",
       );
     }, sceneRef);
 
@@ -1056,14 +1374,16 @@ function MessagingSection() {
   return (
     <section
       id={FEATURE_ANCHORS.messaging}
-      className={`${styles.section} ${styles.pageAnchor} ${styles.messagingSection}`}>
+      className={`${styles.section} ${styles.pageAnchor} ${styles.messagingSection}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>05</span>
           <h2 className={styles.sectionTitle}>Messaging integrations</h2>
           <p className={styles.sectionSubtitle}>
-            Your agents meet users on the channels they already use. Every integration routes through the same Agent
-            Kernel runtime. Pick a channel below for setup steps.
+            Your agents meet users on the channels they already use. Every
+            integration routes through the same Agent Kernel runtime. Pick a
+            channel below for setup steps.
           </p>
         </div>
 
@@ -1074,7 +1394,8 @@ function MessagingSection() {
                 <Link
                   to={p.link}
                   className={styles.msgChannelCard}
-                  style={{ '--msg-brand': p.color } as React.CSSProperties}>
+                  style={{ "--msg-brand": p.color } as React.CSSProperties}
+                >
                   <span className={styles.msgChannelIcon} aria-hidden>
                     {p.icon}
                   </span>
@@ -1102,22 +1423,22 @@ function MessagingSection() {
 function ProtocolSupport() {
   const protocols = [
     {
-      key: 'mcp',
+      key: "mcp",
       icon: <MdExtension />,
-      title: 'MCP — Model Context Protocol',
+      title: "MCP — Model Context Protocol",
       description:
         "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
-      link: '/docs/api/mcp-server',
-      linkLabel: 'MCP server docs →',
+      link: "/docs/api/mcp-server",
+      linkLabel: "MCP server docs →",
     },
     {
-      key: 'a2a',
+      key: "a2a",
       icon: <MdHub />,
-      title: 'A2A — Agent-to-Agent',
+      title: "A2A — Agent-to-Agent",
       description:
-        'Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.',
-      link: '/docs/api/a2a-server',
-      linkLabel: 'A2A server docs →',
+        "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
+      link: "/docs/api/a2a-server",
+      linkLabel: "A2A server docs →",
     },
   ];
 
@@ -1131,7 +1452,8 @@ function ProtocolSupport() {
           <span className={styles.sectionNumber}>06</span>
           <h2 className={styles.sectionTitle}>Protocol Support</h2>
           <p className={styles.sectionSubtitle}>
-            Standard protocols for tool connectivity and multi-agent coordination. Wired into the runtime.
+            Standard protocols for tool connectivity and multi-agent
+            coordination. Wired into the runtime.
           </p>
         </div>
         <ul className={styles.protocolGrid}>
@@ -1155,25 +1477,34 @@ function ProtocolSupport() {
   );
 }
 
-
 /* ─── CTA ───────────────────────────────────────────────────────────────── */
 
 function CTASection() {
   return (
-    <section id={FEATURE_ANCHORS.cta} className={`${styles.ctaSection} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.cta}
+      className={`${styles.ctaSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.ctaContent}>
           <h2 className={styles.ctaTitle}>Ready to Build Your AI Agents?</h2>
           <p className={styles.ctaSubtitle}>
-            Free, open-source, Apache 2.0. Whether you're an AI startup, an established software company,
-            or a domain expert, Agent Kernel has a path for you.
+            Free, open-source, Apache 2.0. Whether you're an AI startup, an
+            established software company, or a domain expert, Agent Kernel has a
+            path for you.
           </p>
           <div className={styles.ctaButtons}>
-            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
+            <Link
+              className={`button button--primary button--lg ${styles.btnPrimary}`}
+              to="/docs"
+            >
               <span className={styles.btnIcon}>→</span>
               Get Started
             </Link>
-            <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/use-cases">
+            <Link
+              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              to="/use-cases"
+            >
               <span className={styles.btnIconSecondary}>→</span>
               Find Your Use Case
             </Link>
@@ -1181,8 +1512,11 @@ function CTASection() {
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
-              rel="noopener noreferrer">
-              <span className={styles.btnIconSecondary}><FaGithub /></span>
+              rel="noopener noreferrer"
+            >
+              <span className={styles.btnIconSecondary}>
+                <FaGithub />
+              </span>
               View on GitHub
             </Link>
           </div>
@@ -1198,7 +1532,8 @@ export default function Features() {
   return (
     <Layout
       title="Features"
-      description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations.">
+      description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations."
+    >
       <PlantParticlesBackground />
       <Hero />
       <main>
