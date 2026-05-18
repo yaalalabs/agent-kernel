@@ -1,4 +1,4 @@
-project_id    = "your-gcp-project-id"
+project_id    = "agent-kernel-test"
 region        = "us-central1"
 product_alias = "ak-openai-serverless"
 env_alias     = "dev"

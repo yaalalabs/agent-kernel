@@ -24,6 +24,7 @@ Usage:
 Clouds:
   aws       Setup S3 + DynamoDB backend
   azure     Setup Azure Storage backend
+  gcp       Setup GCS backend
 
 Options:
 
@@ -235,7 +236,7 @@ setup_gcp() {
 	echo "terraform {"
 	echo "  backend \"gcs\" {"
 	echo "    bucket = \"$GCP_BUCKET\""
-	echo "    prefix = \"your-project\""
+	echo "    prefix = \"$GCP_PROJECT\""
 	echo "  }"
 	echo "}"
 }
@@ -252,10 +253,12 @@ STORAGE_ACCOUNT=""
 CONTAINER_NAME=""
 RESOURCE_GROUP=""
 
+
+
 # Parse args
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-	aws | azure)
+	aws | azure| gcp)
 		CLOUD="$1"
 		shift
 		;;
@@ -265,14 +268,12 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--bucket)
 		BUCKET_NAME="$2"
-		shift 2
-		;;
-	--dynamodb)
-		DYNAMODB_TABLE="$2"
+		GCP_BUCKET="$2"
 		shift 2
 		;;
 	--region)
 		REGION="$2"
+		GCP_REGION="$2"
 		shift 2
 		;;
 	--storage)
@@ -306,9 +307,12 @@ aws)
 azure)
 	setup_azure
 	;;
+gcp)
+	setup_gcp
+	;;
 *)
 	echo "Unsupported cloud: $CLOUD"
-	echo "Supported: aws | azure"
+	echo "Supported: aws | azure | gcp"
 	help
 	;;
 esac

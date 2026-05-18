@@ -84,6 +84,11 @@ weekly:
       path: examples/gcp-serverless/openai-firestore
       deploy_dir: deploy
     
+    - type: gcp-serverless
+      path: examples/gcp-serverless/openai
+      deploy_dir: deploy
+      
     - type: gcp-containerized
       path: examples/gcp-containerized/openai
       deploy_dir: deploy
+    
