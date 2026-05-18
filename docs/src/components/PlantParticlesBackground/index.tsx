@@ -22,13 +22,28 @@ const vertexShader = `
   attribute vec3 aColor;
   uniform float uSize;
   uniform float uResolutionY;
+  uniform float uTime;
   varying vec3 vPos;
   varying vec3 vColor;
 
   void main() {
-    vPos = position;
+    vec3 pos = position;
+    
+    // Add individual particle movement based on position hash and time
+    // Creates a subtle floating/drifting motion for each particle
+    float hash = sin(pos.x * 12.9898 + pos.y * 78.233 + pos.z * 45.164) * 43758.5453;
+    float frac_hash = fract(hash);
+    
+    // Each particle drifts in a subtle pattern (reduced movement)
+    float drift_x = sin(uTime * 0.3 + frac_hash * 6.28) * 0.03;
+    float drift_y = cos(uTime * 0.25 + frac_hash * 6.28) * 0.03;
+    float drift_z = sin(uTime * 0.2 + frac_hash * 6.28) * 0.02;
+    
+    pos += vec3(drift_x, drift_y, drift_z);
+    
+    vPos = pos;
     vColor = aColor;
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
     gl_PointSize = uSize * uResolutionY * 0.0013 * (1.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -128,6 +143,9 @@ const PlantParticlesBackground = () => {
     let cancelled = false;
     let animationId: number | null = null;
 
+    // Animation state
+    let elapsedTime = 0;
+
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.z = 5;
@@ -151,6 +169,7 @@ const PlantParticlesBackground = () => {
       uniforms: {
         uSize: { value: 22.5 },
         uResolutionY: { value: window.innerHeight },
+        uTime: { value: 0 },
       },
       vertexShader,
       fragmentShader: coreFragmentShader,
@@ -164,6 +183,7 @@ const PlantParticlesBackground = () => {
       uniforms: {
         uSize: { value: 92.0 },
         uResolutionY: { value: window.innerHeight },
+        uTime: { value: 0 },
       },
       vertexShader,
       fragmentShader: glowFragmentShader,
@@ -212,8 +232,19 @@ const PlantParticlesBackground = () => {
     const animate = () => {
       if (cancelled) return;
       animationId = requestAnimationFrame(animate);
-      coreParticles.rotation.y += 0.001;
+      elapsedTime += 0.016;
+
+      // Constant rotation speed
+      const rotationSpeed = 0.001;
+
+      // Apply rotation
+      coreParticles.rotation.y += rotationSpeed;
       glowParticles.rotation.y = coreParticles.rotation.y;
+
+      // Update time uniform for particle shader animations
+      (coreMaterial.uniforms.uTime as THREE.IUniform<number>).value = elapsedTime;
+      (glowMaterial.uniforms.uTime as THREE.IUniform<number>).value = elapsedTime;
+
       renderer.render(scene, camera);
     };
 
