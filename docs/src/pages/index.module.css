@@ -2,69 +2,6 @@
    Homepage — Dark Technical Premium
    ============================================================================= */
 
-/* ─── What's New Banner ──────────────────────────────────────────────────── */
-
-.whatsNewBanner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 0.65rem 1.5rem;
-  background: linear-gradient(90deg, rgba(79, 125, 247, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.2);
-  flex-wrap: wrap;
-  text-align: center;
-}
-
-.whatsNewBadge {
-  display: inline-block;
-  padding: 0.15rem 0.6rem;
-  background: linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #fff;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.whatsNewText {
-  font-size: 0.875rem;
-  color: #b0b8d8;
-}
-
-.whatsNewText strong {
-  color: #dfe1f0;
-}
-
-.whatsNewLink {
-  font-size: 0.875rem;
-  color: #4f7df7;
-  font-weight: 600;
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-.whatsNewLink:hover {
-  color: #8b5cf6;
-  text-decoration: underline;
-}
-
-[data-theme='light'] .whatsNewBanner {
-  background: linear-gradient(90deg, rgba(79, 125, 247, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.18);
-}
-
-[data-theme='light'] .whatsNewText {
-  color: #4a5280;
-}
-
-[data-theme='light'] .whatsNewText strong {
-  color: #1a1f3a;
-}
-
 /* ─── Shared Utilities ────────────────────────────────────────────────────── */
 
 .gradientText {
