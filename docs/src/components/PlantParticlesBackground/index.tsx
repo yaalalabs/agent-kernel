@@ -7,10 +7,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 const PLANT_MAX_EXTENT = 3.0;
-const MAX_PARTICLES = 7_000;
+const MAX_PARTICLES = 8_000;
 const PARTICLE_CORE_ALPHA = 0.48;
-const PARTICLE_GLOW_ALPHA = 0.10;
-const PARTICLE_OVERLAY_OPACITY = 0.10;
+const PARTICLE_GLOW_ALPHA = 0.12;
+const PARTICLE_OVERLAY_OPACITY = 0.12;
 // Color palette
 const PALETTE: [number, number, number][] = [
   [0.0, 221 / 255, 1.0], // #00DDFF (brand color)
