@@ -261,7 +261,210 @@
   text-decoration: none;
 }
 
-/* ─── Light theme ────────────────────────────────────────────────────────── */
+/* ─── What's New Banner Responsive ──────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .whatsNewInner {
+    padding: 0.5rem 1rem 0.5rem 0.5rem;
+    gap: 0.75rem;
+  }
+
+  .whatsNewIconWrap {
+    width: 1.875rem;
+    height: 1.875rem;
+  }
+
+  .whatsNewIconWrap svg {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+
+  .whatsNewText {
+    font-size: 0.85rem;
+    line-height: 1.45;
+  }
+
+  .whatsNewLink {
+    font-size: 0.85rem;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 768px) {
+  .whatsNewBanner {
+    padding-top: 0.75rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .whatsNewInner {
+    max-width: 100%;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 0.625rem;
+  }
+
+  .whatsNewIconWrap {
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+  }
+
+  .whatsNewIconWrap svg {
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  .whatsNewText {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    flex: 1;
+    margin: 0;
+  }
+
+  .whatsNewText strong {
+    color: #ffffff;
+    font-weight: 600;
+    display: inline;
+  }
+
+  .whatsNewLink {
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    padding-left: 0.5rem;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .whatsNewBanner {
+    padding-top: 0.6rem;
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+  }
+
+  .whatsNewInner {
+    padding: 0.7rem 0.95rem;
+    gap: 0.65rem;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .whatsNewIconWrap {
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .whatsNewIconWrap svg {
+    width: 0.8rem;
+    height: 0.8rem;
+  }
+
+  .whatsNewText {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .whatsNewText strong {
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .whatsNewLink {
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 540px) {
+  .whatsNewBanner {
+    padding-top: 0.5rem;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .whatsNewInner {
+    padding: 0.65rem 0.85rem;
+    gap: 0.6rem;
+    justify-content: flex-start;
+    align-items: center;
+  }
+
+  .whatsNewIconWrap {
+    width: 1.4rem;
+    height: 1.4rem;
+    flex-shrink: 0;
+  }
+
+  .whatsNewIconWrap svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  .whatsNewText {
+    font-size: 0.7rem;
+    line-height: 1.3;
+  }
+
+  .whatsNewLink {
+    font-size: 0.7rem;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .whatsNewBanner {
+    padding-top: 0.5rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .whatsNewInner {
+    padding: 0.6rem 0.75rem;
+    gap: 0.55rem;
+    justify-content: flex-start;
+    align-items: center;
+  }
+
+  .whatsNewIconWrap {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .whatsNewIconWrap svg {
+    width: 0.65rem;
+    height: 0.65rem;
+  }
+
+  .whatsNewText {
+    font-size: 0.65rem;
+    line-height: 1.25;
+  }
+
+  .whatsNewLink {
+    font-size: 0.65rem;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+}
 
 [data-theme='light'] .whatsNewBanner {
   background-color: #f0f4f8;
@@ -1010,7 +1213,7 @@
 /* ─── Section wrapper ─────────────────────────────────────────────────────── */
  
 .section {
-  padding: 5rem 1rem;
+  padding: 6rem 1rem;
   color: #ffffff;
 }
  
@@ -1018,22 +1221,23 @@
  
 .sectionHeader {
   text-align: center;
-  margin-bottom: 3rem;
+  margin-bottom: 3.5rem;
 }
  
 .sectionTitle {
-  font-size: 2rem;
+  font-size: 2.25rem;
   font-weight: 800;
   color: #ffffff;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
   letter-spacing: -0.02em;
+  line-height: 1.25;
 }
  
 .sectionSubtitle {
-  font-size: 0.975rem;
+  font-size: 1rem;
   color: rgba(255, 255, 255, 0.65);
-  line-height: 1.7;
-  max-width: 600px;
+  line-height: 1.75;
+  max-width: 650px;
   margin: 0 auto;
 }
  
@@ -1042,12 +1246,14 @@
 .cloudGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
-  max-width: 1100px;
+  gap: 1.75rem;
+  max-width: 1200px;
   margin: 0 auto;
   position: relative;
   z-index: 1;
+  padding: 0 2rem;
 }
+
 
 /* ─── Agent Skills ────────────────────────────────────────────────────────────────── */
 
@@ -1223,12 +1429,12 @@
   text-decoration: none;
 }
  
-/* ─── Card ────────────────────────────────────────────────────────────────── */
+/* ─── Deploy Anywhere ────────────────────────────────────────────────────────────────── */
  
 .cloudCard {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.75rem;
-  padding: 2rem 1.75rem 2rem;
+  padding: 2.25rem 2rem;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1236,9 +1442,13 @@
   -webkit-backdrop-filter: blur(4px);
   position: relative;
   z-index: 0;
+  transition: all 0.3s ease;
 }
- 
-/* ─── Cloud logo icon ─────────────────────────────────────────────────────── */
+
+.cloudCard:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
  
 .cloudIcon {
   margin-bottom: 1.25rem;
@@ -1250,17 +1460,21 @@
   height: 3rem !important;
   color: #ffffff;
   display: block;
+  transition: transform 0.3s ease;
 }
- 
-/* ─── Name row ────────────────────────────────────────────────────────────── */
+
+.cloudCard:hover .cloudIconSvg {
+  transform: scale(1.05);
+}
  
 .cloudNameRow {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.625rem;
+  margin-bottom: 0.75rem;
   flex-wrap: wrap;
 }
+ 
  
 .cloudName {
   font-size: 1.2rem;
@@ -1285,16 +1499,12 @@
   line-height: 1.4;
 }
  
-/* ─── Description ─────────────────────────────────────────────────────────── */
- 
 .cloudDescription {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.65);
   line-height: 1.65;
   margin: 0 0 1rem;
 }
- 
-/* ─── Mode bullets ────────────────────────────────────────────────────────── */
  
 .cloudModes {
   list-style: none;
@@ -1318,8 +1528,6 @@
   font-size: 0.85rem;
   flex-shrink: 0;
 }
- 
-/* ─── Terraform module links ──────────────────────────────────────────────── */
  
 .cloudModules {
   display: flex;
@@ -1352,8 +1560,69 @@
   flex-shrink: 0;
 }
  
-/* ─── Responsive ──────────────────────────────────────────────────────────── */
- 
+/* ─── Tablet Breakpoint (≤ 1024px) ────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .cloudGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    padding: 0 1.5rem;
+    max-width: 900px;
+  }
+
+  .cloudCard {
+    padding: 2rem 1.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .cloudIcon {
+    margin-bottom: 1.25rem;
+  }
+
+  .cloudIconSvg {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+  }
+
+  .cloudName {
+    font-size: 1.15rem;
+    line-height: 1.4;
+  }
+
+  .cloudNameRow {
+    margin-bottom: 0.75rem;
+    gap: 0.6rem;
+  }
+
+  .cloudComingSoonBadge {
+    font-size: 0.65rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .cloudDescription {
+    font-size: 0.9rem;
+    margin: 0 0 1rem;
+    line-height: 1.6;
+  }
+
+  .cloudModes {
+    margin: 0 0 1.25rem;
+    gap: 0.35rem;
+  }
+
+  .cloudModes li {
+    font-size: 0.85rem;
+  }
+
+  .terraformLink {
+    font-size: 0.85rem;
+  }
+
+  .terraformIcon {
+    font-size: 1rem;
+  }
+}
+
+/* ─── Medium Tablet Breakpoint (≤ 900px) ────────────────────────────────── */
 @media (max-width: 900px) {
   .agentSkillsSkillList {
     grid-template-columns: 1fr;
@@ -1361,10 +1630,149 @@
 
   .cloudGrid {
     grid-template-columns: repeat(2, 1fr);
-    max-width: 100%;
+    gap: 1.25rem;
+    padding: 0 1.25rem;
+    max-width: 800px;
+  }
+
+  .cloudCard {
+    padding: 1.75rem 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .cloudIcon {
+    margin-bottom: 1rem;
+  }
+
+  .cloudIconSvg {
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+  }
+
+  .cloudName {
+    font-size: 1.05rem;
+  }
+
+  .cloudNameRow {
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .cloudComingSoonBadge {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .cloudDescription {
+    font-size: 0.85rem;
+    margin: 0 0 0.85rem;
+    line-height: 1.55;
+  }
+
+  .cloudModes {
+    margin: 0 0 1.1rem;
+    gap: 0.3rem;
+  }
+
+  .cloudModes li {
+    font-size: 0.8rem;
+  }
+
+  .terraformLink {
+    font-size: 0.8rem;
+  }
+
+  .terraformIcon {
+    font-size: 0.95rem;
   }
 }
 
+/* ─── Small Device Breakpoint (≤ 768px) ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .section {
+    padding: 4.5rem 0;
+  }
+
+  .sectionHeader {
+    margin-bottom: 2.5rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.85rem;
+    line-height: 1.35;
+    margin-bottom: 0.75rem;
+  }
+
+  .sectionSubtitle {
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .cloudGrid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 0 1rem;
+    max-width: 100%;
+  }
+
+  .cloudCard {
+    padding: 1.5rem 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .cloudIcon {
+    margin-bottom: 1rem;
+  }
+
+  .cloudIconSvg {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+  }
+
+  .cloudName {
+    font-size: 1rem;
+  }
+
+  .cloudNameRow {
+    margin-bottom: 0.55rem;
+    gap: 0.55rem;
+  }
+
+  .cloudComingSoonBadge {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .cloudDescription {
+    font-size: 0.8rem;
+    margin: 0 0 0.8rem;
+    line-height: 1.55;
+  }
+
+  .cloudModes {
+    margin: 0 0 1rem;
+    gap: 0.3rem;
+  }
+
+  .cloudModes li {
+    font-size: 0.75rem;
+  }
+
+  .cloudModules {
+    gap: 0.5rem;
+  }
+
+  .terraformLink {
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .terraformIcon {
+    font-size: 0.9rem;
+  }
+}
+
+/* ─── Mobile Breakpoint (≤ 640px) ──────────────────────────────────────── */
 @media (max-width: 640px) {
   .agentSkillsSection {
     padding: 5rem 0;
@@ -1376,9 +1784,189 @@
     overflow-x: auto;
   }
 
+  .section {
+    padding: 4rem 0;
+  }
+
+  .sectionHeader {
+    margin-bottom: 2.25rem;
+    padding: 0 1rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.65rem;
+    line-height: 1.3;
+    margin-bottom: 0.75rem;
+    letter-spacing: -0.015em;
+  }
+
+  .sectionSubtitle {
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
   .cloudGrid {
     grid-template-columns: 1fr;
-    max-width: 100%;
+    gap: 1rem;
+    padding: 0 1rem;
+  }
+
+  .cloudCard {
+    padding: 1.5rem 1.25rem;
+    gap: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .cloudIcon {
+    margin-bottom: 1rem;
+  }
+
+  .cloudIconSvg {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+  }
+
+  .cloudNameRow {
+    margin-bottom: 0.6rem;
+    gap: 0.6rem;
+  }
+
+  .cloudName {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .cloudComingSoonBadge {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.5rem;
+    letter-spacing: 0.08em;
+  }
+
+  .cloudDescription {
+    font-size: 0.8rem;
+    margin: 0 0 0.75rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  .cloudModes {
+    margin: 0 0 1rem;
+    gap: 0.3rem;
+  }
+
+  .cloudModes li {
+    font-size: 0.75rem;
+    gap: 0.35rem;
+  }
+
+  .arrow {
+    font-size: 0.7rem;
+  }
+
+  .cloudModules {
+    gap: 0.5rem;
+  }
+
+  .terraformLink {
+    font-size: 0.75rem;
+    gap: 0.35rem;
+    font-weight: 600;
+  }
+
+  .terraformIcon {
+    font-size: 0.9rem;
+  }
+}
+
+/* ─── Extra Small Device Breakpoint (≤ 480px) ──────────────────────────────── */
+@media (max-width: 480px) {
+  .section {
+    padding: 3.5rem 0;
+  }
+
+  .sectionHeader {
+    margin-bottom: 2rem;
+    padding: 0 0.875rem;
+  }
+
+  .sectionTitle {
+    font-size: 1.4rem;
+    line-height: 1.25;
+    margin-bottom: 0.6rem;
+  }
+
+  .sectionSubtitle {
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .cloudGrid {
+    gap: 0.875rem;
+    padding: 0 0.875rem;
+  }
+
+  .cloudCard {
+    padding: 1.25rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .cloudIcon {
+    margin-bottom: 0.875rem;
+  }
+
+  .cloudIconSvg {
+    width: 2rem !important;
+    height: 2rem !important;
+  }
+
+  .cloudNameRow {
+    margin-bottom: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .cloudName {
+    font-size: 0.9rem;
+    line-height: 1.25;
+  }
+
+  .cloudComingSoonBadge {
+    font-size: 0.55rem;
+    padding: 0.15rem 0.45rem;
+  }
+
+  .cloudDescription {
+    font-size: 0.75rem;
+    margin: 0 0 0.65rem;
+    line-height: 1.45;
+  }
+
+  .cloudModes {
+    margin: 0 0 0.85rem;
+    gap: 0.25rem;
+  }
+
+  .cloudModes li {
+    font-size: 0.7rem;
+    gap: 0.3rem;
+  }
+
+  .arrow {
+    font-size: 0.65rem;
+  }
+
+  .cloudModules {
+    gap: 0.45rem;
+  }
+
+  .terraformLink {
+    font-size: 0.7rem;
+    gap: 0.3rem;
+    font-weight: 600;
+  }
+
+  .terraformIcon {
+    font-size: 0.85rem;
   }
 }
 
