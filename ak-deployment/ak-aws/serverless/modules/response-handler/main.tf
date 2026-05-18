@@ -187,7 +187,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_websocket_connection
 
 # WebSocket API Gateway permissions for PostToConnection
 resource "aws_iam_policy" "response_handler_websocket_api_policy" {
-  count = var.websocket_api_enabled ? 1 : 0
+  count = var.websocket_mode ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-websocket-api"
 
   policy = jsonencode({
@@ -205,7 +205,7 @@ resource "aws_iam_policy" "response_handler_websocket_api_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "response_handler_websocket_api_attachment" {
-  count      = var.websocket_api_enabled ? 1 : 0
+  count      = var.websocket_mode ? 1 : 0
   role       = aws_iam_role.response_handler_lambda_role.name
   policy_arn = aws_iam_policy.response_handler_websocket_api_policy[0].arn
 }

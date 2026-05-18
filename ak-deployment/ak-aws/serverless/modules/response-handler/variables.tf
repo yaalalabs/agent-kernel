@@ -138,7 +138,7 @@ variable "websocket_api_execution_arn" {
   default     = null
 }
 
-variable "websocket_api_enabled" {
+variable "websocket_mode" {
   description = "Whether WebSocket API is enabled (known at plan time)"
   type        = bool
   default     = false
