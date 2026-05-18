@@ -427,6 +427,7 @@
   width: auto;
   height: auto;
   border-radius: 10px;
+  z-index: 10050;
 }
 
 /* =============================================================================
@@ -441,6 +442,8 @@
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 :global([data-theme='light']) .chatHeader {
@@ -1072,7 +1075,7 @@
   .chatButtonContainer {
     bottom: 20px;
     right: 20px;
-    z-index: 150;
+    z-index: 10060;
   }
 
   .chatButtonLabel {
@@ -1085,7 +1088,7 @@
     bottom: 88px;
     right: 16px;
     left: 16px;
-    z-index: 149;
+    z-index: 10050;
   }
 
   .chatWindow.maximized {
@@ -1096,5 +1099,6 @@
     width: auto;
     height: auto;
     border-radius: 10px;
+    z-index: 10050;
   }
 }
