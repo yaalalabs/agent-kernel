@@ -1,0 +1,184 @@
+/* AgentExecutionFlowDiagram — horizontal agent loop with parallel branch */
+
+.figure {
+  margin: 0;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.flowScene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 11rem;
+  min-width: min(100%, 72rem);
+  padding: 2.5rem 2.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(10, 12, 22, 0.28);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.flowSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.mainRow {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  column-gap: 3.5rem;
+  row-gap: 1.75rem;
+  flex-wrap: nowrap;
+}
+
+.parallelCol {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3rem;
+  padding: 0.35rem 0;
+  margin: 0 0.5rem;
+  flex-shrink: 0;
+}
+
+.flowNode {
+  --node-surface: #12182e;
+  --node-color: #00ddff;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  max-width: 7.25rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.875rem;
+  background: var(--node-surface);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.flowNode:hover {
+  border-color: color-mix(in srgb, var(--node-color, #00d5be) 35%, transparent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--node-color, #00d5be) 12%, transparent);
+}
+
+.flowIcon {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-bottom: 0.28rem;
+  color: var(--node-color, #00ddff);
+  flex-shrink: 0;
+}
+
+.flowLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #dfe1f0;
+  margin: 0 0 0.1rem;
+}
+
+.flowDesc {
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.28;
+  color: rgba(223, 225, 240, 0.65);
+  margin: 0;
+}
+
+.node_goal {
+  --node-color: #00ddff;
+  --node-surface: #0f2a35;
+  border-color: rgba(0, 221, 255, 0.35);
+}
+
+.node_plan {
+  --node-color: #c084fc;
+  --node-surface: #221938;
+  border-color: rgba(192, 132, 252, 0.35);
+}
+
+.node_question {
+  --node-color: #60a5fa;
+  --node-surface: #12202e;
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.node_act {
+  --node-color: #facc15;
+  --node-surface: #2b2510;
+  border-color: rgba(250, 204, 21, 0.35);
+}
+
+.node_feedback {
+  --node-color: #f472b6;
+  --node-surface: #2a1520;
+  border-color: rgba(244, 114, 182, 0.35);
+}
+
+.node_observe {
+  --node-color: #4ade80;
+  --node-surface: #162b22;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.node_improve {
+  --node-color: #00ddff;
+  --node-surface: #0f2a35;
+  border-color: rgba(0, 221, 255, 0.35);
+}
+
+.node_repeat {
+  --node-color: #c084fc;
+  --node-surface: #221938;
+  border-color: rgba(192, 132, 252, 0.45);
+  box-shadow: 0 0 20px rgba(192, 132, 252, 0.1);
+}
+
+@media (max-width: 900px) {
+  .flowScene {
+    justify-content: flex-start;
+    padding: 1.5rem 1rem;
+  }
+
+  .mainRow {
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: 1.25rem;
+    row-gap: 1.25rem;
+    max-width: 22rem;
+  }
+
+  .parallelCol {
+    gap: 1.5rem;
+  }
+
+  .parallelCol {
+    width: 100%;
+    align-items: center;
+  }
+
+  .flowSvg {
+    display: none;
+  }
+}

@@ -17,11 +17,23 @@ import {
   MdSettings,
   MdHealthAndSafety,
   MdCheck,
+  MdClose,
+  MdMenuBook,
+  MdExtension,
+  MdHub,
+  MdMessage,
+  MdCloudUpload,
 } from 'react-icons/md';
-import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram } from 'react-icons/fa';
-import { SiGmail } from 'react-icons/si';
+import { FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaGithub } from 'react-icons/fa';
+import { SiGmail, SiGooglegemini, SiLangchain, SiHuggingface } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
+import { TbBrandTeams } from 'react-icons/tb';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
+import AgentKernelRuntimeFlowDiagram from '../components/AgentKernelRuntimeFlowDiagram';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
+
+gsap.registerPlugin(ScrollTrigger);
 
 /** Stable fragment ids for in-page navigation (diagram + deep links). */
 const FEATURE_ANCHORS = {
@@ -30,6 +42,7 @@ const FEATURE_ANCHORS = {
   frameworks: 'features-frameworks',
   testing: 'features-testing',
   messaging: 'features-messaging',
+  protocols: 'features-protocols',
   cta: 'features-cta',
 } as const;
 
@@ -72,10 +85,10 @@ const FEATURE_PAGE_MAP: {
     hint: 'Slack, WhatsApp, and more',
   },
   {
-    anchor: 'cta',
+    anchor: 'protocols',
     number: '06',
-    title: 'Get Started',
-    hint: 'Docs, use cases, GitHub',
+    title: 'Protocol Support',
+    hint: 'MCP and A2A out of the box',
   },
 ];
 
@@ -85,24 +98,75 @@ function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/* ─── Hero ──────────────────────────────────────────────────────────────── */
+/* ─── Why Agent Kernel (hero) ───────────────────────────────────────────── */
 
 function Hero() {
+  const labelRef = useRef<HTMLParagraphElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const subtitleRef = useRef<HTMLParagraphElement>(null);
+  const diagramRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const tl = gsap.timeline();
+
+    gsap.set([labelRef.current, titleRef.current, subtitleRef.current, diagramRef.current], {
+      opacity: 0,
+      y: 30,
+    });
+
+    tl.to(labelRef.current, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: 'power2.out',
+    })
+      .to(
+        titleRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.8,
+          ease: 'power2.out',
+        },
+        '-=0.35',
+      )
+      .to(
+        subtitleRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.6,
+          ease: 'power2.out',
+        },
+        '-=0.45',
+      )
+      .to(
+        diagramRef.current,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.7,
+          ease: 'power2.out',
+        },
+        '-=0.3',
+      );
+  }, []);
+
   return (
-    <section className={styles.hero}>
+    <section className={styles.whyHero}>
       <div className="container">
-        <div className={styles.heroContent}>
-          <h1 className={styles.heroTitle}>Everything You Need to Build,<br />Run, and Scale AI Agents</h1>
-          <p className={styles.heroSubtitle}>
+        <div className={styles.whyHeroBlock}>
+          <p ref={labelRef} className={styles.whyHeroLabel}>
+            Why Agent Kernel
+          </p>
+          <h1 ref={titleRef} className={styles.whyHeroTitle}>
+            Everything You Need to Build, Run, and Scale AI Agents
+          </h1>
+          <p ref={subtitleRef} className={styles.whyHeroSubtitle}>
             From runtime and memory to guardrails, observability, testing, and multi-cloud deployment.
           </p>
-          <div className={styles.heroButtons}>
-            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
-            </Link>
-            <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/use-cases">
-              Find Your Use Case →
-            </Link>
+          <div ref={diagramRef} className={styles.whyHeroDiagram}>
+            <AgentKernelRuntimeFlowDiagram />
           </div>
         </div>
       </div>
@@ -117,7 +181,7 @@ function FeaturesPageMap() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const topRow = FEATURE_PAGE_MAP.slice(0, 3);
-  const bottomRow = FEATURE_PAGE_MAP.slice(3, 6);
+  const bottomRow = FEATURE_PAGE_MAP.slice(3);
 
   useEffect(() => {
     if (
@@ -146,10 +210,11 @@ function FeaturesPageMap() {
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const COL_X = [143, 450, 757] as const;
+  const COL_X_TOP = [143, 450, 757] as const;
+  const COL_X_BOT = [143, 450, 757] as const;
 
   // Top strip
-  const topLines = COL_X.map((x, i) => ({
+  const topLines = COL_X_TOP.map((x, i) => ({
     id: `${gradId}T${i}`,
     d: `M ${x} 0 L 450 60`,
     len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
@@ -157,7 +222,7 @@ function FeaturesPageMap() {
   }));
 
   // Bottom strip
-  const botLines = COL_X.map((x, i) => ({
+  const botLines = COL_X_BOT.map((x, i) => ({
     id: `${gradId}B${i}`,
     d: `M 450 0 L ${x} 60`,
     len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
@@ -167,15 +232,19 @@ function FeaturesPageMap() {
   const topGlowId = `${gradId}TGlow`;
   const botGlowId = `${gradId}BGlow`;
 
+  const TEAL      = 'rgba(0,221,255,1)';
+  const TEAL_LINE = 'rgba(0,221,255,0.28)';
+  const TEAL_HALO = 'rgba(0,221,255,0.1)';
+
   const topParticles = [
-    { pathId: `${gradId}T0`, delay: '0.9s', dur: '1.8s', color: '#4f7df7' },
-    { pathId: `${gradId}T1`, delay: '1.5s', dur: '1.4s', color: '#00d4ff' },
-    { pathId: `${gradId}T2`, delay: '1.2s', dur: '1.8s', color: '#8b5cf6' },
+    { pathId: `${gradId}T0`, delay: '0.9s',  dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}T1`, delay: '1.5s',  dur: '1.4s', color: TEAL },
+    { pathId: `${gradId}T2`, delay: '1.2s',  dur: '1.8s', color: TEAL },
   ];
   const botParticles = [
-    { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: '#4f7df7' },
-    { pathId: `${gradId}B1`, delay: '2.5s', dur: '1.4s', color: '#00d4ff' },
-    { pathId: `${gradId}B2`, delay: '1.8s', dur: '1.8s', color: '#8b5cf6' },
+    { pathId: `${gradId}B0`, delay: '2.0s', dur: '1.8s', color: TEAL },
+    { pathId: `${gradId}B1`, delay: '2.35s', dur: '1.4s', color: TEAL },
+    { pathId: `${gradId}B2`, delay: '2.1s', dur: '1.8s', color: TEAL },
   ];
 
   return (
@@ -187,7 +256,7 @@ function FeaturesPageMap() {
             Everything Agent Kernel Does
           </h2>
           <p className={styles.sectionSubtitle}>
-            Six production-ready capabilities — explore any area below.
+            Six production-ready capabilities. Explore any area below.
           </p>
         </div>
 
@@ -212,21 +281,33 @@ function FeaturesPageMap() {
           {/* ── Connector: top nodes → hub ── */}
           <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
             <defs>
-              <filter id={topGlowId} x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="2" result="blur" />
+              <filter id={topGlowId} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id={`${topGlowId}Halo`} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               {topLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
             </defs>
+            {/* Halo lines */}
+            {topLines.map(l => (
+              <path key={`halo-${l.id}`} d={l.d} fill="none"
+                stroke={TEAL_HALO} strokeWidth="8"
+                filter={`url(#${topGlowId}Halo)`}
+              />
+            ))}
+            {/* Main lines */}
             {topLines.map(l => (
               <path key={l.id} d={l.d} fill="none"
-                stroke="rgba(79, 125, 247, 0.4)" strokeWidth="1.5"
+                stroke={TEAL_LINE} strokeWidth="1.5"
                 strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
                 style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
               />
             ))}
             {visible && !reducedMotion && topParticles.map((p, i) => (
-              <circle key={i} r="3" fill={p.color} filter={`url(#${topGlowId})`} opacity="0.9">
+              <circle key={i} r="3.5" fill={p.color} filter={`url(#${topGlowId})`} opacity="0.9">
                 <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
                   <mpath href={`#${p.pathId}`} />
                 </animateMotion>
@@ -236,27 +317,43 @@ function FeaturesPageMap() {
 
           {/* ── Hub ── */}
           <div className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ''}`}>
-            <span className={styles.pageMapHubLabel}>Overview</span>
+            <img
+              src="/img/branding/agent-kernel-icon-color.svg"
+              alt="Agent Kernel"
+              className={styles.pageMapHubIcon}
+            />
           </div>
 
           {/* ── Connector: hub → bottom nodes ── */}
           <svg className={styles.pageMapConnector} viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden>
             <defs>
-              <filter id={botGlowId} x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="2" result="blur" />
+              <filter id={botGlowId} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id={`${botGlowId}Halo`} x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               {botLines.map(l => <path key={l.id} id={l.id} d={l.d} />)}
             </defs>
+            {/* Halo lines */}
+            {botLines.map(l => (
+              <path key={`halo-${l.id}`} d={l.d} fill="none"
+                stroke={TEAL_HALO} strokeWidth="8"
+                filter={`url(#${botGlowId}Halo)`}
+              />
+            ))}
+            {/* Main lines */}
             {botLines.map(l => (
               <path key={l.id} d={l.d} fill="none"
-                stroke="rgba(79, 125, 247, 0.4)" strokeWidth="1.5"
+                stroke={TEAL_LINE} strokeWidth="1.5"
                 strokeDasharray={l.len} strokeDashoffset={visible ? 0 : l.len}
                 style={{ transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s` }}
               />
             ))}
             {visible && !reducedMotion && botParticles.map((p, i) => (
-              <circle key={i} r="3" fill={p.color} filter={`url(#${botGlowId})`} opacity="0.9">
+              <circle key={i} r="3.5" fill={p.color} filter={`url(#${botGlowId})`} opacity="0.9">
                 <animateMotion dur={p.dur} repeatCount="indefinite" begin={p.delay}>
                   <mpath href={`#${p.pathId}`} />
                 </animateMotion>
@@ -286,7 +383,7 @@ function FeaturesPageMap() {
   );
 }
 
-/* ─── Problem Table ─────────────────────────────────────────────────────── */
+/* ─── Problem comparison (orbit-style UI) ─────────────────────────────────── */
 
 function ProblemTable() {
   const rows = [
@@ -309,6 +406,11 @@ function ProblemTable() {
       problem: 'Memory & state',
       without: 'Build your own conversation tracking, caching, and persistence',
       with: 'Built-in with multiple backends',
+    },
+    {
+      problem: 'Knowledge Bases',
+      without: 'Build your own database connectors. Handle data complexity, separate tools for storage and retrieval',
+      with: 'Built-in with multiple knowledge sources',
     },
     {
       problem: 'Messaging integrations',
@@ -335,16 +437,37 @@ function ProblemTable() {
       without: 'Write Terraform/CDK yourself',
       with: 'Pre-built Terraform modules for AWS & Azure',
     },
-    {
-      problem: 'Time to production',
-      without: 'Months',
-      with: 'Days to weeks',
-      highlight: true,
-    },
   ];
 
+  const impactRow = {
+    problem: 'Time to production',
+    without: 'Months',
+    with: 'Days to weeks',
+  };
+
+  const [active, setActive] = useState(0);
+  const activeRow = rows[active];
+
+  const problemChipIcons = [
+    MdHub,
+    MdSwapHoriz,
+    MdCloud,
+    MdMemory,
+    MdMenuBook,
+    MdMessage,
+    MdBugReport,
+    MdVisibility,
+    MdSecurity,
+    MdCloudUpload,
+  ] as const;
+
+  const ActiveIcon = problemChipIcons[active];
+
   return (
-    <section id={FEATURE_ANCHORS.problem} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.problem}
+      className={`${styles.section} ${styles.problemSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>01</span>
@@ -354,25 +477,97 @@ function ProblemTable() {
             to do with the actual agent intelligence.
           </p>
         </div>
-        <div className={styles.problemTable}>
-          <div className={styles.problemTableHeader}>
-            <div className={styles.problemCol}>Area</div>
-            <div className={styles.problemCol}>Without Agent Kernel</div>
-            <div className={styles.problemCol}>With Agent Kernel</div>
-          </div>
-          {rows.map((row, i) => (
-            <div key={i} className={`${styles.problemRow} ${row.highlight ? styles.problemRowHighlight : ''}`}>
-              <div className={`${styles.problemColLabel}`}>{row.problem}</div>
-              <div className={styles.problemColBad}>
-                <span className={styles.xIcon}>✕</span>
-                {row.without}
+        <div className={styles.problemBlock}>
+          <ul className={styles.problemTopicGrid} role="tablist" aria-label="Areas to compare">
+            {rows.map((row, i) => {
+              const ChipIcon = problemChipIcons[i];
+              return (
+                <li key={row.problem} className={styles.problemTopicCell}>
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`feature-problem-tab-${i}`}
+                    aria-selected={active === i}
+                    aria-controls="feature-problem-panel"
+                    className={`${styles.problemTopicBtn} ${active === i ? styles.problemTopicBtnActive : ''}`}
+                    onClick={() => setActive(i)}
+                  >
+                    <span className={styles.problemTopicIconWrap} aria-hidden="true">
+                      <ChipIcon className={styles.problemTopicIcon} />
+                    </span>
+                    <span className={styles.problemTopicLabel}>{row.problem}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div
+            id="feature-problem-panel"
+            role="tabpanel"
+            aria-labelledby={`feature-problem-tab-${active}`}
+            className={styles.problemComparePanel}
+          >
+            <div key={active} className={styles.problemComparePanelInner}>
+              <div className={styles.problemComparePanelHeader}>
+                <span className={styles.problemComparePanelIconWrap} aria-hidden="true">
+                  <ActiveIcon className={styles.problemComparePanelIcon} />
+                </span>
+                <div>
+                  <h3 className={styles.problemComparePanelTitle}>{activeRow.problem}</h3>
+                  <p className={styles.problemComparePanelMeta}>Without vs with Agent Kernel</p>
+                </div>
               </div>
-              <div className={styles.problemColGood}>
-                <span className={styles.checkIcon}><MdCheck /></span>
-                {row.with}
+              <div className={styles.problemCompareGrid}>
+                <article className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}>
+                  <p className={styles.problemCompareSideLabel}>Without Agent Kernel</p>
+                  <p className={styles.problemCompareSideSub}>What you take on today</p>
+                  <div className={`${styles.problemCompareBody} ${styles.problemCompareBodyNeg}`}>
+                    <span className={styles.problemCompareBodyIcon} aria-hidden="true">
+                      <MdClose />
+                    </span>
+                    <p className={styles.problemCompareBodyText}>{activeRow.without}</p>
+                  </div>
+                </article>
+                <article className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}>
+                  <p className={styles.problemCompareSideLabel}>With Agent Kernel</p>
+                  <p className={styles.problemCompareSideSub}>What the platform covers</p>
+                  <div className={`${styles.problemCompareBody} ${styles.problemCompareBodyPos}`}>
+                    <span className={styles.problemCompareBodyIcon} aria-hidden="true">
+                      <MdCheck />
+                    </span>
+                    <p className={styles.problemCompareBodyText}>{activeRow.with}</p>
+                  </div>
+                </article>
               </div>
             </div>
-          ))}
+          </div>
+          <aside
+            className={styles.problemImpactPanel}
+            aria-label={`${impactRow.problem}: ${impactRow.without} versus ${impactRow.with}`}
+          >
+            <div className={styles.problemImpactHeader}>
+              <span className={styles.problemImpactIconWrap} aria-hidden="true">
+                <MdTimer className={styles.problemImpactIcon} />
+              </span>
+              <div className={styles.problemImpactHeading}>
+                <p className={styles.problemImpactEyebrow}>Bottom line</p>
+                <h3 className={styles.problemImpactTitle}>{impactRow.problem}</h3>
+                <p className={styles.problemImpactSub}>
+                  The effect on your timeline when Agent Kernel owns the platform work.
+                </p>
+              </div>
+            </div>
+            <div className={styles.problemImpactGrid}>
+              <div className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}>
+                <span className={styles.problemImpactStatLabel}>Without Agent Kernel</span>
+                <p className={styles.problemImpactStatValue}>{impactRow.without}</p>
+              </div>
+              <div className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}>
+                <span className={styles.problemImpactStatLabel}>With Agent Kernel</span>
+                <p className={styles.problemImpactStatValue}>{impactRow.with}</p>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
     </section>
@@ -386,21 +581,21 @@ function CoreFeatures() {
     {
       icon: <MdCode />,
       title: 'Six Core Abstractions',
-      description: 'Agent, Runner, Session, Module, Runtime, and Tools — a unified API across all frameworks. Build once, run on any supported framework.',
+      description: 'Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.',
       highlights: ['Unified Python API', 'Framework adapters for 4 SDKs', 'Portable tool functions via ToolBuilder', 'Framework-agnostic hooks'],
       link: '/docs/core-concepts/overview',
     },
     {
       icon: <MdSwapHoriz />,
-      title: 'Framework-Agnostic Runtime',
-      description: 'OpenAI Agents, LangGraph, CrewAI, and Google ADK — run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.',
+      title: 'Framework-Neutral Runtime',
+      description: 'OpenAI Agents, LangGraph, CrewAI, and Google ADK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.',
       highlights: ['OpenAI Agents SDK', 'LangGraph', 'CrewAI', 'Google ADK'],
       link: '/docs/frameworks/overview',
     },
     {
       icon: <MdSettings />,
       title: 'Execution Hooks',
-      description: 'Pre and post-execution hooks give you surgical control over every agent request — for any framework.',
+      description: 'Pre and post-execution hooks give you surgical control over every agent request, for any framework.',
       highlights: ['Pre-hooks: guardrails, RAG, auth, validation', 'Post-hooks: moderation, disclaimers, analytics', 'Hook chaining and composition', 'Early termination with custom responses'],
       link: '/docs/integrations/hooks',
     },
@@ -412,9 +607,22 @@ function CoreFeatures() {
       link: '/docs/architecture/memory-management',
     },
     {
+      icon: <MdMenuBook />,
+      title: 'Knowledge Bases',
+      description:
+        'Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, and custom SQL data sources.',
+      highlights: [
+        'ChromaDB — vector/semantic search',
+        'Neo4j — entity and relationship graphs',
+        'Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL',
+        'semantic_map keeps agent prompts portable',
+      ],
+      link: '/docs/architecture/memory-management',
+    },
+    {
       icon: <MdCloud />,
       title: 'Multi-Cloud Deployment',
-      description: 'One agent codebase deploys to AWS and Azure with full Terraform modules. No vendor lock-in, ever.',
+      description: 'One agent codebase deploys to AWS, and Azure and GCP with full Terraform modules. No vendor lock-in, ever.',
       highlights: ['AWS Lambda (Serverless)', 'AWS ECS/Fargate (Containerized)', 'Azure Functions (Serverless)', 'Azure Container Apps (Containerized)'],
       link: '/docs/deployment/overview',
     },
@@ -449,30 +657,46 @@ function CoreFeatures() {
   ];
 
   return (
-    <section id={FEATURE_ANCHORS.core} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.core}
+      className={`${styles.section} ${styles.coreFeaturesSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>02</span>
           <h2 className={styles.sectionTitle}>Core Capabilities</h2>
           <p className={styles.sectionSubtitle}>
-            Everything you need to build, run, and scale production AI agents — without building platform code.
+            Everything you need to build, run, and scale production AI agents without building platform code.
           </p>
         </div>
-        <div className={styles.featuresGrid}>
+        <ul className={styles.featuresGrid}>
           {features.map((f, i) => (
-            <div key={i} className={styles.featureCard}>
-              <div className={styles.featureIcon}>{f.icon}</div>
-              <h3 className={styles.featureTitle}>{f.title}</h3>
-              <p className={styles.featureDescription}>{f.description}</p>
-              <ul className={styles.featureHighlights}>
-                {f.highlights.map((h, j) => <li key={j}>{h}</li>)}
-              </ul>
-              {f.link && (
-                <Link to={f.link} className={styles.featureLink}>Learn more →</Link>
-              )}
-            </div>
+            <li key={f.title} className={styles.featureGridCell}>
+              <article className={styles.featureCard}>
+                <div className={styles.featureCardHeader}>
+                  <span className={styles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
+                  <div className={styles.featureIconWrap} aria-hidden="true">
+                    {f.icon}
+                  </div>
+                </div>
+                <div className={styles.featureCardBody}>
+                  <h3 className={styles.featureTitle}>{f.title}</h3>
+                  <p className={styles.featureDescription}>{f.description}</p>
+                  <ul className={styles.featureHighlights}>
+                    {f.highlights.map((h) => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                </div>
+                {f.link ? (
+                  <Link to={f.link} className={styles.featureLink}>
+                    Learn more →
+                  </Link>
+                ) : null}
+              </article>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   );
@@ -481,34 +705,144 @@ function CoreFeatures() {
 /* ─── Framework Support ─────────────────────────────────────────────────── */
 
 function FrameworkSupport() {
-  const frameworks = [
+  const integrations = [
     {
+      key: 'openai',
       name: 'OpenAI Agents SDK',
       description: 'Official OpenAI agents framework with full support for tools, handoffs, and streaming.',
       link: '/docs/frameworks/openai',
+      logo: (
+        <img
+          src="/img/integrations/chatgpt.png"
+          alt=""
+          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
+          width={145}
+          height={45}
+        />
+      ),
     },
     {
+      key: 'langgraph',
       name: 'LangGraph',
       description: 'Graph-based agent orchestration for complex stateful multi-actor applications.',
       link: '/docs/frameworks/langgraph',
+      logo: (
+        <img
+          src="/img/integrations/langgraph.png"
+          alt=""
+          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
+          width={150}
+          height={50}
+        />
+      ),
     },
     {
+      key: 'google-adk',
       name: 'Google ADK',
       description: "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
       link: '/docs/frameworks/google-adk',
+      logo: (
+        <img
+          src="/img/integrations/googleADK.png"
+          alt=""
+          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
+          width={150}
+          height={50}
+        />
+      ),
     },
     {
+      key: 'crewai',
       name: 'CrewAI',
       description: 'Role-based multi-agent framework for orchestrating collaborative AI workflows.',
       link: '/docs/frameworks/crewai',
+      logo: (
+        <img
+          src="/img/integrations/crewai.png"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={168}
+          height={58}
+        />
+      ),
     },
     {
-      name: 'Multi-Framework',
-      description: 'Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.',
-      link: '/docs/frameworks/multi-framework',
-      featured: true,
+      key: 'smolagents',
+      name: 'Smolagents',
+      description:
+        "Hugging Face's Smolagents with first-class support for writing your own coding agents.",
+      link: 'https://huggingface.co/docs/smolagents/index',
+      external: true,
+      logo: (
+        <img
+          src="/img/integrations/smolagents.png"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={150}
+          height={50}
+        />
+      ),
+    },
+    {
+      key: 'livekit',
+      name: 'LiveKit',
+      description: 'LiveKit provides the complete stack for voice-based AI agents.',
+      link: 'https://docs.livekit.io/',
+      external: true,
+      logo: (
+        <img
+          src="/img/integrations/livekit.png"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={38}
+          height={38}
+        />
+      ),
     },
   ];
+
+  const multiFramework = {
+    name: 'Multi-Framework',
+    description: 'Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.',
+    link: '/docs/frameworks/multi-framework',
+    badge: 'Agent Kernel',
+    logo: (
+      <img
+        src="/img/branding/agent-kernel-icon-color.svg"
+        alt=""
+        className={styles.frameworkLogoImg}
+        width={100}
+        height={100}
+      />
+    ),
+  };
+
+  const cardInner = (f: (typeof integrations)[number]) => (
+    <>
+      <div className={styles.frameworkCardHeader}>
+        <div className={styles.frameworkLogo}>{f.logo}</div>
+        <h3 className={styles.frameworkName}>{f.name}</h3>
+      </div>
+      <p className={styles.frameworkDescription}>{f.description}</p>
+      <span className={`${styles.frameworkLink} ${styles.frameworkLinkInline}`}>Learn more →</span>
+    </>
+  );
+
+  const featuredInner = (
+    <>
+      <div className={styles.frameworkFeaturedContent}>
+        <div className={styles.frameworkFeaturedMain}>
+          <div className={styles.frameworkFeaturedMark}>{multiFramework.logo}</div>
+          <div className={styles.frameworkFeaturedText}>
+            <p className={styles.frameworkFeaturedBadge}>{multiFramework.badge}</p>
+            <h3 className={styles.frameworkFeaturedHeading}>{multiFramework.name}</h3>
+            <p className={styles.frameworkFeaturedLead}>{multiFramework.description}</p>
+          </div>
+        </div>
+        <span className={`${styles.frameworkLink} ${styles.frameworkFeaturedCta}`}>Learn more →</span>
+      </div>
+    </>
+  );
 
   return (
     <section id={FEATURE_ANCHORS.frameworks} className={`${styles.section} ${styles.pageAnchor}`}>
@@ -517,20 +851,34 @@ function FrameworkSupport() {
           <span className={styles.sectionNumber}>03</span>
           <h2 className={styles.sectionTitle}>One Runtime. Any Framework.</h2>
           <p className={styles.sectionSubtitle}>
-            Use the best framework for each job — and run them all together in a single deployment.
+            Use the best framework for each job, and run them all together in a single deployment.
           </p>
         </div>
-        <div className={styles.frameworksGrid}>
-          {frameworks.map((f, i) => (
-            <Link
-              key={i}
-              to={f.link}
-              className={`${styles.frameworkCard} ${f.featured ? styles.frameworkFeatured : ''}`}>
-              <h3 className={styles.frameworkName}>{f.name}</h3>
-              <p className={styles.frameworkDescription}>{f.description}</p>
-              <span className={styles.frameworkLink}>Learn more →</span>
-            </Link>
-          ))}
+
+        <div className={styles.frameworkBlock}>
+          <ul className={styles.frameworksGrid}>
+            {integrations.map((f) => (
+              <li key={f.key} className={styles.frameworkGridCell}>
+                {f.external ? (
+                  <a
+                    href={f.link}
+                    className={styles.frameworkCard}
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    {cardInner(f)}
+                  </a>
+                ) : (
+                  <Link to={f.link} className={styles.frameworkCard}>
+                    {cardInner(f)}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <Link to={multiFramework.link} className={styles.frameworkFeaturedRow}>
+            {featuredInner}
+          </Link>
         </div>
       </div>
     </section>
@@ -540,20 +888,52 @@ function FrameworkSupport() {
 /* ─── Testing Section ───────────────────────────────────────────────────── */
 
 function TestingSection() {
+  const approaches = [
+    {
+      key: 'cli',
+      icon: <MdTerminal />,
+      title: 'CLI Testing',
+      description: 'Interactive sessions for rapid development iteration and multi-agent testing.',
+      highlights: [
+        'Interactive chat sessions',
+        'Real-time feedback',
+        'Persistent CLI sessions',
+        'Multi-agent support',
+      ],
+      link: '/docs/testing/cli-testing',
+    },
+    {
+      key: 'automated',
+      icon: <MdCode />,
+      title: 'Automated Tests',
+      description: 'pytest-integrated test suites that run in CI/CD with session-scoped fixtures.',
+      highlights: [
+        'pytest integration',
+        'Session-scoped fixtures',
+        'Ordered test execution',
+        'CI/CD ready',
+      ],
+      link: '/docs/testing/automated-testing',
+    },
+  ];
+
   const modes = [
     {
+      key: 'fuzzy',
       icon: <MdSpeed />,
       name: 'Fuzzy Mode',
       description: 'Fast string matching with configurable thresholds using RapidFuzz. Ideal for deterministic outputs.',
       link: '/docs/testing/cli-testing#fuzzy-mode',
     },
     {
+      key: 'judge',
       icon: <MdBugReport />,
       name: 'Judge Mode',
       description: 'LLM-based semantic evaluation using Ragas. Handles paraphrasing and AI-generated variation.',
       link: '/docs/testing/cli-testing#judge-mode',
     },
     {
+      key: 'fallback',
       icon: <MdTimer />,
       name: 'Fallback Mode',
       description: 'Tries fuzzy first, falls back to judge. The default — best of both worlds.',
@@ -562,122 +942,247 @@ function TestingSection() {
   ];
 
   return (
-    <section id={FEATURE_ANCHORS.testing} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.testing}
+      className={`${styles.section} ${styles.testingSection} ${styles.pageAnchor}`}
+    >
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>04</span>
           <h2 className={styles.sectionTitle}>Testing Framework</h2>
           <p className={styles.sectionSubtitle}>
-            Test your agents like any other code. CLI testing for development, automated suites for CI/CD.
-            Three comparison modes for every use case.
+            Test your agents like any other code. CLI testing for development, automated suites for CI/CD,
+            and three comparison modes for every use case.
           </p>
         </div>
-        <div className={styles.testingLayout}>
-          <Link to="/docs/testing/cli-testing" className={styles.testingCard}>
-            <MdTerminal className={styles.testingBigIcon} />
-            <h3>CLI Testing</h3>
-            <p>Interactive sessions for rapid development iteration and multi-agent testing.</p>
-            <ul>
-              <li>Interactive chat sessions</li>
-              <li>Real-time feedback</li>
-              <li>Persistent CLI sessions</li>
-              <li>Multi-agent support</li>
+        <div className={styles.testingBlock}>
+          <ul className={styles.testingApproachesGrid}>
+            {approaches.map((a) => (
+              <li key={a.key} className={styles.testingApproachCell}>
+                <Link to={a.link} className={styles.testingApproachCard}>
+                  <div className={styles.testingApproachHeader}>
+                    <div className={styles.testingIconWrap} aria-hidden="true">
+                      {a.icon}
+                    </div>
+                    <h3 className={styles.testingApproachTitle}>{a.title}</h3>
+                  </div>
+                  <p className={styles.testingApproachDescription}>{a.description}</p>
+                  <ul className={styles.testingHighlights}>
+                    {a.highlights.map((h) => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                  <span className={styles.testingLink}>Learn more →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <div className={styles.testingModesPanel}>
+            <p className={styles.testingGroupLabel}>Comparison modes</p>
+            <ul className={styles.testingModesGrid}>
+              {modes.map((m) => (
+                <li key={m.key} className={styles.testingModeCell}>
+                  <Link to={m.link} className={styles.testingModeCard}>
+                    <div className={styles.testingModeHeader}>
+                      <div className={styles.testingIconWrap} aria-hidden="true">
+                        {m.icon}
+                      </div>
+                      <h4 className={styles.testingModeName}>{m.name}</h4>
+                    </div>
+                    <p className={styles.testingModeDescription}>{m.description}</p>
+                  </Link>
+                </li>
+              ))}
             </ul>
-            <span className={styles.featureLink}>Learn more →</span>
-          </Link>
-          <Link to="/docs/testing/automated-testing" className={styles.testingCard}>
-            <MdCode className={styles.testingBigIcon} />
-            <h3>Automated Tests</h3>
-            <p>pytest-integrated test suites that run in CI/CD with session-scoped fixtures.</p>
-            <ul>
-              <li>pytest integration</li>
-              <li>Session-scoped fixtures</li>
-              <li>Ordered test execution</li>
-              <li>CI/CD ready</li>
-            </ul>
-            <span className={styles.featureLink}>Learn more →</span>
-          </Link>
-        </div>
-        <div className={styles.modesGrid}>
-          {modes.map((m, i) => (
-            <Link key={i} to={m.link} className={styles.modeCard}>
-              <div className={styles.modeIcon}>{m.icon}</div>
-              <h4 className={styles.modeName}>{m.name}</h4>
-              <p className={styles.modeDescription}>{m.description}</p>
-            </Link>
-          ))}
+          </div>
         </div>
       </div>
     </section>
   );
 }
+
+
+const MESSAGING_PLATFORMS = [
+  { name: 'Slack', icon: <FaSlack />, color: '#EC407A', link: '/docs/integrations/slack' },
+  { name: 'Teams', icon: <TbBrandTeams />, color: '#A8B2FF', link: '/docs/integrations/teams' },
+  { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#3DFF9A', link: '/docs/integrations/whatsapp' },
+  { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#1AACFF', link: '/docs/integrations/messenger' },
+  { name: 'Telegram', icon: <FaTelegram />, color: '#40BFFF', link: '/docs/integrations/telegram' },
+  { name: 'Instagram', icon: <FaInstagram />, color: '#FF6BA3', link: '/docs/integrations/instagram' },
+  { name: 'Gmail', icon: <SiGmail />, color: '#FF7B6E', link: '/docs/integrations/gmail' },
+] as const;
 
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
 
 function MessagingSection() {
-  const platforms = [
-    { name: 'Slack', icon: <FaSlack />, color: '#4A154B', link: '/docs/integrations/slack' },
-    { name: 'WhatsApp', icon: <FaWhatsapp />, color: '#25D366', link: '/docs/integrations/whatsapp' },
-    { name: 'Messenger', icon: <FaFacebookMessenger />, color: '#0084FF', link: '/docs/integrations/messenger' },
-    { name: 'Telegram', icon: <FaTelegram />, color: '#0088CC', link: '/docs/integrations/telegram' },
-    { name: 'Instagram', icon: <FaInstagram />, color: '#E4405F', link: '/docs/integrations/instagram' },
-    { name: 'Gmail', icon: <SiGmail />, color: '#EA4335', link: '/docs/integrations/gmail' },
-  ];
+  const sceneRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      const strip = sceneRef.current?.querySelector(`.${styles.msgRuntimeStrip}`);
+      const cards = sceneRef.current?.querySelectorAll(`.${styles.msgChannelCard}`);
+      if (!strip || !cards?.length) return;
+
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: sceneRef.current,
+          start: 'top 78%',
+          once: true,
+        },
+      });
+
+      tl.fromTo(
+        strip,
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' }
+      ).fromTo(
+        cards,
+        { opacity: 0, y: 18 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.42,
+          stagger: 0.055,
+          ease: 'power2.out',
+        },
+        '-=0.28'
+      );
+    }, sceneRef);
+
+    return () => ctx.revert();
+  }, []);
 
   return (
-    <section id={FEATURE_ANCHORS.messaging} className={`${styles.section} ${styles.pageAnchor}`}>
+    <section
+      id={FEATURE_ANCHORS.messaging}
+      className={`${styles.section} ${styles.pageAnchor} ${styles.messagingSection}`}>
       <div className="container">
         <div className={styles.sectionHeader}>
           <span className={styles.sectionNumber}>05</span>
-          <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
+          <h2 className={styles.sectionTitle}>Messaging integrations</h2>
           <p className={styles.sectionSubtitle}>
-            Built-in handlers for the world's most popular messaging platforms.
-            No custom bot code required — just plug and play.
+            Your agents meet users on the channels they already use. Every integration routes through the same Agent
+            Kernel runtime. Pick a channel below for setup steps.
           </p>
         </div>
-        <div className={styles.messagingGrid}>
-          {platforms.map((p, i) => (
-            <Link key={i} to={p.link} className={styles.messagingCard}>
-              <div className={styles.messagingIcon} style={{ color: p.color }}>{p.icon}</div>
-              <h3 className={styles.messagingName}>{p.name}</h3>
-            </Link>
-          ))}
+
+        <div ref={sceneRef} className={styles.msgChannelScene}>
+          <ul className={styles.msgChannelGrid}>
+            {MESSAGING_PLATFORMS.map((p) => (
+              <li key={p.name} className={styles.msgChannelCell}>
+                <Link
+                  to={p.link}
+                  className={styles.msgChannelCard}
+                  style={{ '--msg-brand': p.color } as React.CSSProperties}>
+                  <span className={styles.msgChannelIcon} aria-hidden>
+                    {p.icon}
+                  </span>
+                  <span className={styles.msgChannelMeta}>
+                    <span className={styles.msgChannelName}>{p.name}</span>
+                    <span className={styles.msgChannelCta}>Setup guide →</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
-        <div className={styles.sectionFooter}>
+
+        <div className={styles.msgChannelFooter}>
           <Link to="/docs/integrations/overview" className={styles.sectionLink}>
-            View integration docs →
+            Full integrations overview →
           </Link>
         </div>
       </div>
     </section>
   );
 }
+/* ─── Protocol Support ──────────────────────────────────────────────────── */
+
+function ProtocolSupport() {
+  const protocols = [
+    {
+      key: 'mcp',
+      icon: <MdExtension />,
+      title: 'MCP — Model Context Protocol',
+      description:
+        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
+      link: '/docs/api/mcp-server',
+      linkLabel: 'MCP server docs →',
+    },
+    {
+      key: 'a2a',
+      icon: <MdHub />,
+      title: 'A2A — Agent-to-Agent',
+      description:
+        'Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.',
+      link: '/docs/api/a2a-server',
+      linkLabel: 'A2A server docs →',
+    },
+  ];
+
+  return (
+    <section
+      id={FEATURE_ANCHORS.protocols}
+      className={`${styles.section} ${styles.protocolSection} ${styles.pageAnchor}`}
+    >
+      <div className="container">
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionNumber}>06</span>
+          <h2 className={styles.sectionTitle}>Protocol Support</h2>
+          <p className={styles.sectionSubtitle}>
+            Standard protocols for tool connectivity and multi-agent coordination. Wired into the runtime.
+          </p>
+        </div>
+        <ul className={styles.protocolGrid}>
+          {protocols.map((p) => (
+            <li key={p.key} className={styles.protocolCell}>
+              <Link to={p.link} className={styles.protocolCard}>
+                <div className={styles.protocolCardHeader}>
+                  <div className={styles.protocolIconWrap} aria-hidden="true">
+                    {p.icon}
+                  </div>
+                  <h3 className={styles.protocolTitle}>{p.title}</h3>
+                </div>
+                <p className={styles.protocolDescription}>{p.description}</p>
+                <span className={styles.protocolLink}>{p.linkLabel}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
 
 /* ─── CTA ───────────────────────────────────────────────────────────────── */
 
 function CTASection() {
   return (
     <section id={FEATURE_ANCHORS.cta} className={`${styles.ctaSection} ${styles.pageAnchor}`}>
-      <div className={styles.ctaGlow} />
       <div className="container">
         <div className={styles.ctaContent}>
           <h2 className={styles.ctaTitle}>Ready to Build Your AI Agents?</h2>
           <p className={styles.ctaSubtitle}>
             Free, open-source, Apache 2.0. Whether you're an AI startup, an established software company,
-            or a domain expert — Agent Kernel has a path for you.
+            or a domain expert, Agent Kernel has a path for you.
           </p>
           <div className={styles.ctaButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/use-cases">
-              Find Your Use Case →
+              <span className={styles.btnIconSecondary}>→</span>
+              Find Your Use Case
             </Link>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
+              <span className={styles.btnIconSecondary}><FaGithub /></span>
               View on GitHub
             </Link>
           </div>
@@ -703,6 +1208,7 @@ export default function Features() {
         <FrameworkSupport />
         <TestingSection />
         <MessagingSection />
+        <ProtocolSupport />
         <CTASection />
       </main>
     </Layout>

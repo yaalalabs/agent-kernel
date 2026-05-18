@@ -7,7 +7,12 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/dist/ScrollToPlugin';
 import AgentKernelArchDiagram from '../components/AgentKernelArchDiagram';
+import BuildingAgentsFlowDiagram from '../components/BuildingAgentsFlowDiagram';
+import RunningAgentsFlowDiagram from '../components/RunningAgentsFlowDiagram';
+import AgentKernelSitsInFlowDiagram from '../components/AgentKernelSitsInFlowDiagram';
+import AgentExecutionFlowDiagram from '../components/AgentExecutionFlowDiagram';
 import ParticleSphere from '../components/ParticleSphere';
+import { StepTimeline } from '../components/StepTimeline';
 import PlantParticlesBackground from '../components/PlantParticlesBackground';
 import {
   MdRocketLaunch,
@@ -25,19 +30,47 @@ import {
   MdExtension,
   MdIntegrationInstructions,
   MdCloudUpload,
-  MdGpsFixed,
-  MdAssignment,
   MdBolt,
-  MdTrendingUp,
-  MdRefresh,
   MdMessage,
   MdScience,
   MdLink,
   MdSmartToy,
+  MdPermMedia,
+  MdLanguage,
+  MdCheck,
+  MdClose,
+  MdForum,
+  MdCached,
+  MdStorage,
+  MdShield,
+  MdStopCircle,
 } from 'react-icons/md';
 import { FaGithub, FaDiscord, FaPython, FaSlack, FaWhatsapp, FaInstagram, FaTelegram, FaAws, FaMicrosoft } from 'react-icons/fa';
 import { SiTerraform, SiGmail, SiGooglecloud } from 'react-icons/si';
 import { FaFacebookMessenger } from 'react-icons/fa6';
+
+/* ─── What's New Banner ─────────────────────────────────────────────────── */
+
+function WhatsNewBanner() {
+  return (
+    <div className={styles.whatsNewBanner}>
+      <div className={styles.whatsNewInner}>
+        <span className={styles.whatsNewIconWrap}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </span>
+        <span className={styles.whatsNewText}>
+          <strong>Knowledge Base Support</strong> — ChromaDB, Neo4j &amp; Starburst Galaxy built-in, plus a <strong>custom adapter API</strong> to plug in any backend.
+        </span>
+        <Link to="/docs/next/architecture/knowledge-bases" className={styles.whatsNewLink}>
+          Read More →
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
@@ -89,23 +122,37 @@ function Hero() {
       <div className="container">
         <div className={styles.heroContent}>
           <h1 ref={titleRef} className={styles.heroTitle}>Agent Kernel</h1>
-          <p ref={taglineRef} className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
+          <p ref={taglineRef} className={styles.heroTagline}>
+            An Open Source Operating System for
+            <br />
+            Scalable & Compliant Enterprise AI Agents.
+          </p>
           <p ref={bodyRef} className={styles.heroBody}>
-            Agent Kernel is the open-source platform for building and deploying AI-powered assistants without months of engineering work. Works with any major AI technology, runs on any cloud, connects to Slack, WhatsApp, and more out of the box.
+            Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale. Agent Kernel reduces months of engineering work to minutes. Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework / platform lock-in, production ready from day one.
           </p>
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
+            <button
+              type="button"
+              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              onClick={() => document.getElementById('agent-skills')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              <span className={styles.btnIconSecondary}>→</span>
+              Agent Skills
+            </button>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
-              <FaGithub style={{ marginRight: '8px' }} />
+              <span className={styles.btnIconSecondary}><FaGithub /></span>
               View on GitHub
             </Link>
-            <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/features">
+            <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="/features">
+              <span className={styles.btnIconSecondary}>→</span>
               Explore Features
             </Link>
           </div>
@@ -127,6 +174,8 @@ function FrameworksStrip() {
     { name: 'LangGraph', logo: '/img/integrations/langgraph.png', link: '/docs/frameworks/langgraph' },
     { name: 'CrewAI', logo: '/img/integrations/crewai.png', link: '/docs/frameworks/crewai' },
     { name: 'Google ADK', logo: '/img/integrations/googleADK.png', link: '/docs/frameworks/google-adk' },
+    { name: 'Smolagents', logo: '/img/integrations/smolagents.png', link: 'https://huggingface.co/docs/smolagents/index' },
+    { name: 'LiveKit', logo: '/img/integrations/livekit.png', link: 'https://docs.livekit.io/' },
   ];
 
   useEffect(() => {
@@ -237,6 +286,7 @@ function AffiliationsStrip() {
             className={styles.affiliationItem}>
             <img src="/img/lf_membership.svg" alt="Linux Foundation Member" className={styles.affiliationLogo} />
           </a>
+          <span className={styles.affiliationSeparator}>●</span>
           <a
             href="https://aaif.io"
             target="_blank"
@@ -244,6 +294,122 @@ function AffiliationsStrip() {
             className={styles.affiliationItem}>
             <img src="/img/aaif_membership.svg" alt="Agentic AI Foundation Member" className={styles.affiliationLogo} />
           </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Agent Skills ────────────────────────────────────────────────────── */
+
+const AGENT_SKILLS = [
+  {
+    icon: MdRocketLaunch,
+    name: 'ak-init',
+    description:
+      'Scaffolds a clean, ready-to-build project structure so you can skip the setup and start building straight away. Works with any framework or deployment target.',
+    pills: ['Any framework', 'Any deployment target', 'Guided setup'],
+  },
+  {
+    icon: MdBuild,
+    name: 'ak-build',
+    description:
+      'Adds tools, agents, and task handoffs to your project. Your coding assistant understands your framework, so the code it generates actually works.',
+    pills: ['Tool integration', 'Agent handoffs', 'Framework-aware'],
+  },
+  {
+    icon: MdExtension,
+    name: 'ak-add-capabilities',
+    description:
+      'Plugs in production-grade features like guardrails, tracing, session memory, and multimodal support without having to build them from scratch.',
+    pills: ['Guardrails', 'Tracing', 'Session memory', 'MCP support', 'Multimodal'],
+  },
+  {
+    icon: MdIntegrationInstructions,
+    name: 'ak-add-integration',
+    description:
+      'Connects your agent to the messaging platforms your users already rely on, with authentication and message handling taken care of for each one.',
+    pills: ['Slack', 'WhatsApp', 'Messenger', 'Instagram', 'Telegram', 'Gmail'],
+  },
+  {
+    icon: MdCloudUpload,
+    name: 'ak-cloud-deploy',
+    description:
+      'Deploys your agent to the cloud with full Terraform configuration included. Pick your platform and it handles the infrastructure, no manual setup needed.',
+    pills: ['AWS Lambda', 'ECS', 'Azure Functions', 'Container Apps', 'Full Terraform'],
+  },
+  {
+    icon: MdBugReport,
+    name: 'ak-test',
+    description:
+      'Tests your agent across multiple modes including fuzzy, judge, and fallback. When something breaks, a step-by-step debugging playbook helps you fix it fast.',
+    pills: ['Fuzzy testing', 'Judge mode', 'Fallback testing', 'Debugging playbook'],
+  },
+] as const;
+
+function AgentSkills() {
+  return (
+    <section id="agent-skills" className={styles.agentSkillsSection}>
+      <div className="container">
+        <div className={styles.agentSkillsContainer}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Your coding assistant, supercharged.</h2>
+            <p className={styles.sectionSubtitle}>
+              Agent Skills works with the tools you already use, like Copilot, Claude, Cursor, or
+              Windsurf, to help you build and ship AI agents faster. No more guesswork, no more
+              broken code suggestions.
+            </p>
+          </div>
+
+          <div className={styles.agentSkillsSectionLabel}>Get started in two commands</div>
+          <div className={styles.agentSkillsCodeBlock}>
+            <div className={styles.agentSkillsCodeComment}># 1. Install the CLI</div>
+            <div>
+              <span className={styles.agentSkillsCodeCmd}>$</span>{' '}
+              <span className={styles.agentSkillsCodeArg}>pip install agentkernel</span>
+            </div>
+            <br />
+            <div className={styles.agentSkillsCodeComment}># 2. Install skills for your coding assistant</div>
+            <div>
+              <span className={styles.agentSkillsCodeCmd}>$</span>{' '}
+              <span className={styles.agentSkillsCodeArg}>ak skill install</span>
+            </div>
+            <div className={styles.agentSkillsCodeComment}>&nbsp;&nbsp;or target a specific assistant:</div>
+            <div>
+              <span className={styles.agentSkillsCodeCmd}>$</span>{' '}
+              <span className={styles.agentSkillsCodeArg}>ak skill install --assistant claude</span>
+            </div>
+          </div>
+
+          <div className={styles.agentSkillsSectionLabel}>What each skill does</div>
+          <div className={styles.agentSkillsSkillList}>
+            {AGENT_SKILLS.map((skill) => {
+              const Icon = skill.icon;
+
+              return (
+                <article key={skill.name} className={styles.agentSkillsSkillCard}>
+                  <div className={styles.agentSkillsSkillHeader}>
+                    <Icon aria-hidden className={styles.agentSkillsSkillIcon} />
+                    <p className={styles.agentSkillsSkillName}>{skill.name}</p>
+                  </div>
+                  <p className={styles.agentSkillsSkillBody}>{skill.description}</p>
+                  <div className={styles.agentSkillsPillRow}>
+                    {skill.pills.map((pill) => (
+                      <span key={pill} className={styles.agentSkillsPill}>
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className={styles.agentSkillsFooter}>
+            <Link className={styles.agentSkillsCtaLink} to="/docs">
+              Learn more about Agent Skills <span aria-hidden>→</span>
+            </Link>
+          </div>
         </div>
       </div>
     </section>
@@ -353,13 +519,6 @@ function Deployment() {
 /* ─── Community / CTA ───────────────────────────────────────────────────── */
 
 function Community() {
-  const links = [
-    { icon: <FaGithub />, name: 'GitHub', description: 'Star us and contribute', url: 'https://github.com/yaalalabs/agent-kernel' },
-    { icon: <FaDiscord />, name: 'Discord', description: 'Join the community', url: 'https://discord.gg/snrPzb46uu' },
-    { icon: <FaPython />, name: 'PyPI', description: 'pip install agentkernel', url: 'https://pypi.org/project/agentkernel/' },
-    { icon: <SiTerraform />, name: 'Terraform', description: 'Official registry modules', url: 'https://registry.terraform.io/modules/yaalalabs' },
-  ];
-
   return (
     <section className={styles.ctaSection}>
       {/* <div className={styles.ctaGlow} /> */}
@@ -372,32 +531,17 @@ function Community() {
           </p>
           <div className={styles.ctaButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
-              Get Started →
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer">
-              <FaGithub style={{ marginRight: '8px' }} />
+              <span className={styles.btnIconSecondary}><FaGithub /></span>
               View on GitHub
             </Link>
-          </div>
-          <div className={styles.communityLinks}>
-            {links.map((l, i) => (
-              <Link
-                key={i}
-                to={l.url}
-                className={styles.communityLink}
-                target="_blank"
-                rel="noopener noreferrer">
-                <span className={styles.communityLinkIcon}>{l.icon}</span>
-                <div>
-                  <div className={styles.communityLinkName}>{l.name}</div>
-                  <div className={styles.communityLinkDesc}>{l.description}</div>
-                </div>
-              </Link>
-            ))}
           </div>
         </div>
       </div>
@@ -436,7 +580,7 @@ function BusinessLeaderScenarios() {
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'The agent connects to the order system, shipping carriers, and payment gateway. It looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps the conversation memory across channels and sessions.',
+        body: 'The agent connects to the order system, shipping carriers, and payment gateway. It looks up orders in real time, tracks shipments, processes returns or exchanges, triggers refunds, and keeps the conversation memory across communication channels and sessions.',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
@@ -479,7 +623,7 @@ function BusinessLeaderScenarios() {
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'Hooks, guardrails, and audit-ready session tracking make action-taking safe and traceable.',
+        body: 'Customizable workflows via hooks, guardrails, and audit-ready session tracking make action-taking safe and traceable.',
       },
     },
     insurance: {
@@ -498,7 +642,7 @@ function BusinessLeaderScenarios() {
       whyAk: {
         heading: 'Why Agent Kernel',
         sub: 'The Agent Kernel advantage',
-        body: 'This use case proves multimodal input, multi-agent pipelines, guardrails for regulated data, and persistent sessions.',
+        body: 'This use case proves multimodal (images and files) input, multi-agent pipelines, guardrails for regulated data, and persistent, long running user sessions.',
       },
     },
     logistics: {
@@ -531,7 +675,7 @@ function BusinessLeaderScenarios() {
       agent: {
         heading: 'The Agent',
         sub: 'What it actually does',
-        body: 'When a candidate enters the interview stage, the agent checks availability, sends scheduling links over email, confirms bookings, creates meeting rooms, sends reminders, prompts interviewers for feedback in Slack, compiles summaries, and updates the ATS.',
+        body: 'When a candidate enters the interview stage, the agent checks availability, sends scheduling links over email, confirms bookings, creates meeting rooms, sends reminders, prompts interviewers for feedback in Slack, compiles summaries, and updates the Application Tracking System (ATS).',
       },
       whyAk: {
         heading: 'Why Agent Kernel',
@@ -546,11 +690,13 @@ function BusinessLeaderScenarios() {
   return (
     <div className={styles.blScenarios}>
  
-      {/* ── Tab buttons — big rounded bordered buttons like in the image ── */}
-      <div className={styles.blTabBar}>
+      {/* ── Tab buttons — horizontally scrollable on mobile ── */}
+      <div className={styles.blTabBar} role="tablist" aria-label="Industry scenarios">
         {tabs.map((t) => (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={activeTab === t.id}
             onClick={() => setActiveTab(t.id)}
             className={`${styles.blTab} ${activeTab === t.id ? styles.blTabActive : ''}`}
           >
@@ -592,6 +738,328 @@ interface ScrollTriggerInstance {
   kill: () => void;
 }
 
+const DEV_FEATURE_GROUPS = [
+  {
+    title: 'Build & Interface',
+    cols: 4 as const,
+    features: [
+      {
+        icon: MdTerminal,
+        title: 'CLI for Prototyping',
+        body: 'Easy interfacing your agents on your laptop via Agent Kernel’s command line interface.',
+      },
+      {
+        icon: MdBolt,
+        title: 'REST API Server',
+        body: 'FastAPI-based server out of the box. No boilerplate. Just run your agent.',
+      },
+      {
+        icon: MdCode,
+        title: 'Native MCP and A2A support',
+        body: 'Expose agents as tools (MCP) and enable agent-to-agent collaboration (A2A). Makes integration with external AI systems straightforward.',
+      },
+      {
+        icon: MdAutoAwesome,
+        title: 'Multi-Framework Support',
+        body: 'Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.',
+      },
+    ],
+  },
+  {
+    title: 'Runtime & Extensibility',
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdSmartToy,
+        title: 'Pluggable Session & Memory',
+        body: 'Start local in-memory, scale to Redis, DynamoDB, or Cosmos DB in production. Switch via config, not code rewrites.',
+      },
+      {
+        icon: MdLink,
+        title: 'Execution Hooks',
+        body: 'Pre/post hooks for RAG injection, input validation, response moderation, analytics.',
+      },
+      {
+        icon: MdPermMedia,
+        title: 'Multimodal Support',
+        body: 'In-built framework-neutral multimodal support across all integration channels. Handle files/images cleanly and keep sessions lightweight. Additional voice and video support via LiveKit.',
+      },
+    ],
+  },
+  {
+    title: 'Ship & Secure',
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdSecurity,
+        title: 'Guardrails and Content Safety',
+        body: 'Input and output protection in the same runtime pipeline. Supports policy checks for safety, PII handling, and jailbreak defense.',
+      },
+      {
+        icon: MdCloud,
+        title: 'Cloud Deployment',
+        body: 'Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions.',
+      },
+      {
+        icon: MdLanguage,
+        title: 'Reliability',
+        body: 'Built for resilient cloud deployments with health checks and failover patterns.',
+      },
+    ],
+  },
+  {
+    title: 'Integrate & Observe',
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdMessage,
+        title: 'Messaging Integrations',
+        body: 'Slack, WhatsApp, Instagram, Telegram, Gmail, Teams, Messenger plug and play.',
+      },
+      {
+        icon: MdScience,
+        title: 'Testing Framework',
+        body: 'pytest-integrated test runner. Write deterministic automated test scenarios for your AI agents like any other code.',
+      },
+      {
+        icon: MdVisibility,
+        title: 'Observability',
+        body: 'Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.',
+      },
+    ],
+  },
+];
+
+const AI_ENGINEER_ARCH_LAYERS = [
+  {
+    num: '01',
+    label: 'Your Agent Logic',
+    items: ['Domain-Specific Agent Code', 'Business Rules', 'Prompts & Tools'],
+  },
+  {
+    num: '02',
+    label: 'Agent Kernel Core',
+    items: [
+      'Agent Module',
+      'Agent Wrapper',
+      'Framework-Specific Runner',
+      'Session Manager',
+      'Runtime',
+      'Pre / Post Hooks',
+    ],
+  },
+  {
+    num: '03',
+    label: 'Framework Adapters',
+    items: [
+      'LangGraph',
+      'OpenAI Agents',
+      'CrewAI',
+      'Google ADK',
+      'Smolagents',
+      'LiveKit',
+      'Bring your own [advanced]',
+    ],
+  },
+  {
+    num: '04',
+    label: 'Storage & Memory',
+    items: ['In-Memory', 'Redis', 'DynamoDB', 'CosmosDB', 'Firestore'],
+  },
+  {
+    num: '05',
+    label: 'Knowledge Bases',
+    items: ['ChromaDB', 'Neo4j', 'Starburst', 'SQLDB'],
+  },
+  {
+    num: '06',
+    label: 'Observability',
+    items: ['LangFuse', 'OpenLLMetry'],
+  },
+  {
+    num: '07',
+    label: 'Execution Surface',
+    items: [
+      'AWS Lambda',
+      'ECS',
+      'Azure Functions',
+      'Container Apps',
+      'GCP Cloud Run',
+      'GCP Cloud Run Functions',
+    ],
+  },
+  {
+    num: '08',
+    label: 'Interfacing',
+    items: ['CLI', 'MCP', 'A2A', 'REST API'],
+  },
+  {
+    num: '09',
+    label: 'Channels',
+    items: [
+      'Slack',
+      'Teams',
+      'WhatsApp',
+      'Telegram',
+      'Messenger',
+      'Instagram',
+      'Gmail',
+      'Redis',
+      'DynamoDB',
+    ],
+  },
+];
+
+const AI_ENGINEER_MEMORY_LAYERS = [
+  {
+    title: 'Conversational State (Session)',
+    icon: MdForum,
+    bullets: [
+      'The agent remembers the conversation naturally across turns.',
+      'This is the memory that keeps chat continuity.',
+    ],
+  },
+  {
+    title: 'Volatile Cache (Per Request)',
+    icon: MdCached,
+    bullets: [
+      'A scratchpad for one request only.',
+      'Great for RAG snippets, temporary file reads, and intermediate results.',
+      'Auto-clears after every response.',
+    ],
+  },
+  {
+    title: 'Non-Volatile Cache (Session)',
+    icon: MdStorage,
+    bullets: [
+      'Session memory for supporting data that should persist.',
+      'Perfect for user preferences, auth context, and running counters.',
+      'Available to tools/hooks without spending LLM tokens.',
+    ],
+  },
+] as const;
+
+const AI_ENGINEER_HOOK_PIPELINE = [
+  {
+    title: 'Pre-Execution Hooks',
+    icon: MdShield,
+    bullets: [
+      'Validate and enrich input before the LLM runs.',
+      'Typical uses: guardrails, redaction, RAG injection, request shaping.',
+    ],
+    highlight: false,
+  },
+  {
+    title: 'Agent Execution',
+    icon: MdSmartToy,
+    bullets: ['Your existing framework logic runs as-is.'],
+    highlight: false,
+  },
+  {
+    title: 'Post-Execution Hooks',
+    icon: MdSecurity,
+    bullets: [
+      'Apply output checks and final formatting before returning to users.',
+      'Typical uses: moderation, compliance notes, analytics, audit logging.',
+    ],
+    highlight: false,
+  },
+  {
+    title: 'Early Termination',
+    icon: MdStopCircle,
+    badge: 'Early termination',
+    bullets: [
+      'Stop unsafe or invalid requests early and return a controlled response.',
+      'Useful for input guardrails, rate limits, cached shortcuts, and circuit breakers.',
+    ],
+    highlight: true,
+  },
+] as const;
+
+type AkCompareCellStatus = 'positive' | 'negative' | 'partial';
+
+interface AkCompareCell {
+  status: AkCompareCellStatus;
+  text?: string;
+}
+
+const AI_ENGINEER_COMPARE_COLUMNS = {
+  cloud: 'Bedrock AgentCore / Azure AI Foundry / Google Vertex AI',
+  cloudShort: 'Bedrock / Azure / Google',
+  frameworks: 'LangGraph · CrewAI · OpenAI Agents etc',
+  frameworksShort: 'LangGraph · CrewAI · OpenAI',
+  agentKernel: 'Agent Kernel',
+} as const;
+
+const AI_ENGINEER_COMPARISON_ROWS: {
+  feature: string;
+  featureHint?: string;
+  cloud: AkCompareCell;
+  frameworks: AkCompareCell;
+  agentKernel: AkCompareCell;
+}[] = [
+  {
+    feature: 'Switch cloud platform later?',
+    cloud: { status: 'negative', text: 'Rewrite' },
+    frameworks: { status: 'positive', text: 'You build it' },
+    agentKernel: { status: 'positive', text: 'One config change' },
+  },
+  {
+    feature: 'Multi-framework agent execution?',
+    cloud: { status: 'negative', text: 'Not possible' },
+    frameworks: { status: 'negative', text: 'Not possible' },
+    agentKernel: { status: 'positive', text: 'Run in one runtime' },
+  },
+  {
+    feature: 'Out of Box integrations?',
+    featureHint: '(i.e. Slack / Teams / REST / A2A / MCP)',
+    cloud: { status: 'partial', text: 'Partial' },
+    frameworks: { status: 'negative', text: 'DIY' },
+    agentKernel: { status: 'positive', text: 'Built-in' },
+  },
+  {
+    feature: 'Sessions, memory, observability?',
+    cloud: { status: 'positive', text: 'Proprietary' },
+    frameworks: { status: 'negative', text: 'DIY' },
+    agentKernel: { status: 'positive', text: 'Built-in and Pluggable' },
+  },
+  {
+    feature: 'Open-source / no licensing?',
+    cloud: { status: 'negative' },
+    frameworks: { status: 'positive' },
+    agentKernel: { status: 'positive', text: 'Apache 2.0' },
+  },
+  {
+    feature: 'Knowledge bases?',
+    cloud: { status: 'positive', text: 'Proprietary' },
+    frameworks: { status: 'negative', text: 'DIY' },
+    agentKernel: { status: 'positive', text: 'Built-in and Pluggable' },
+  },
+  {
+    feature: 'Lift-and-shift an existing agent?',
+    cloud: { status: 'negative', text: 'Rewrite' },
+    frameworks: { status: 'negative', text: 'Rewrite' },
+    agentKernel: { status: 'positive', text: 'Wrap & ship' },
+  },
+];
+
+function AkCompareCellContent({ cell }: { cell: AkCompareCell }) {
+  if (cell.status === 'partial') {
+    return <span className={styles.akComparePartial}>{cell.text}</span>;
+  }
+
+  const Icon = cell.status === 'positive' ? MdCheck : MdClose;
+  const iconClass =
+    cell.status === 'positive' ? styles.akCompareIconPos : styles.akCompareIconNeg;
+
+  return (
+    <span className={styles.akCompareCellValue}>
+      <Icon className={iconClass} aria-hidden />
+      {cell.text ? <span>{cell.text}</span> : null}
+    </span>
+  );
+}
+
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -615,19 +1083,19 @@ function Levels() {
       id: '01',
       title: 'Business Leader',
       image: '/img/business_leader.png',
-      description: 'You run or work in a business and want AI assistants that actually work without needing to understand the tech.',
+      description: 'You run or work in a business / enterprise and want to incorporate AI agentsassistants that actually work into your business workflows without needing to understand the tech.',
     },
     {
       id: '02',
       title: 'Developer',
       image: '/img/developer.png',
-      description: 'You write software but haven\'t built AI agents yet. You want to ship something real without learning a new stack from scratch.',
+      description: 'You buildwrite software but haven\'t built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.',
     },
     {
       id: '03',
       title: 'AI Engineer',
       image: '/img/ai.png',
-      description: 'You already work with LLMs and agentic frameworks. You need a production-grade runtime that doesn\'t get in your way.',
+      description: 'You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework runtime that doesn\'t get in your way.',
     },
   ];
 
@@ -675,9 +1143,7 @@ function Levels() {
     if (!selectedLevel) {
       gsap.registerPlugin(ScrollTrigger);
 
-      gsap.set(sectionRef.current, { height: '100vh' });
-      ScrollTrigger.refresh();
-      ScrollTrigger.refresh();
+      const isDesktop = window.innerWidth > 996;
 
       gsap.fromTo(
         [titleRef.current, subtitleRef.current, cardsRef.current],
@@ -695,22 +1161,27 @@ function Levels() {
         }
       );
 
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: sectionRef.current,
-          start: 'top top',
-          end: '+=100%',
-          pin: true,
-          pinSpacing: true,
-          scrub: false,
-        },
-      });
+      if (isDesktop) {
+        gsap.set(sectionRef.current, { height: '100vh' });
+        ScrollTrigger.refresh();
 
-      scrollTriggerRef.current = tl.scrollTrigger as ScrollTriggerInstance | null;
+        const tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: 'top top',
+            end: '+=100%',
+            pin: true,
+            pinSpacing: true,
+            scrub: false,
+          },
+        });
 
-      window.addEventListener('wheel', handleWheel, { passive: false });
-      window.addEventListener('touchmove', handleTouchMove, { passive: false });
-      window.addEventListener('keydown', handleKeyDown);
+        scrollTriggerRef.current = tl.scrollTrigger as ScrollTriggerInstance | null;
+
+        window.addEventListener('wheel', handleWheel, { passive: false });
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('keydown', handleKeyDown);
+      }
     }
 
     return () => {
@@ -813,147 +1284,6 @@ function Levels() {
           }
         );
       });
-
-      // Animate agent flow with sequential color highlighting
-      const flowSection = contentRef.current?.querySelector(`.${styles.agentFlow}`);
-      const flowSteps = contentRef.current?.querySelectorAll(`.${styles.flowStep}`) || [];
-      const flowArrows = contentRef.current?.querySelectorAll(`.${styles.flowArrow}`) || [];
-      if (flowSection && flowSteps.length > 0) {
-        gsap.set(flowSteps, { opacity: 0, y: 24, scale: 0.96 });
-        gsap.set(flowArrows, { opacity: 0, x: -6 });
-
-        const flowTl = gsap.timeline({
-          scrollTrigger: {
-            trigger: flowSection,
-            start: 'top 85%',
-            toggleActions: 'play none none none',
-          },
-        });
-
-        flowTl
-          .to(flowSteps, {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.65,
-            ease: 'power2.out',
-            stagger: 0.09,
-          })
-          .to(
-            flowArrows,
-            {
-              opacity: 1,
-              x: 0,
-              duration: 0.35,
-              ease: 'power2.out',
-              stagger: 0.06,
-            },
-            '-=0.45'
-          );
-
-        const neutralIconColor = '#ffffff';
-        const neutralLabelColor = '#ffffff';
-        const neutralDescColor = 'rgba(255, 255, 255, 0.7)';
-        const neutralArrowColor = 'rgba(255, 255, 255, 0.6)';
-        const activeColor = '#00d4ff';
-
-        // Progressive highlight to make the execution flow obvious
-        const flowPulseTl = gsap.timeline({
-          paused: true,
-          repeat: -1,
-          repeatDelay: 0.15,
-        });
-
-        flowSteps.forEach((step, index) => {
-          const icon = step.querySelector(`.${styles.flowIcon}`);
-          const label = step.querySelector(`.${styles.flowLabel}`);
-          const desc = step.querySelector(`.${styles.flowDesc}`);
-          const arrow = flowArrows[index] ?? null;
-
-          const textTargets = [icon, label, desc].filter(Boolean) as Element[];
-
-          flowPulseTl
-            .to(step, {
-              duration: 0.22,
-              ease: 'power2.out',
-            })
-            .to(
-              textTargets,
-              {
-                color: (_target, i) => (i === 2 ? '#e4eeff' : activeColor),
-                duration: 0.22,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              arrow,
-              {
-                color: activeColor,
-                x: 4,
-                opacity: 1,
-                duration: 0.2,
-                ease: 'power2.out',
-              },
-              '<0.05'
-            )
-            .to({}, { duration: 0.2 })
-            .to(step, {
-              backgroundColor: 'transparent',
-              boxShadow: 'none',
-              y: 0,
-              duration: 0.25,
-              ease: 'power2.out',
-            })
-            .to(
-              icon,
-              {
-                color: neutralIconColor,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              label,
-              {
-                color: neutralLabelColor,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              desc,
-              {
-                color: neutralDescColor,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            )
-            .to(
-              arrow,
-              {
-                color: neutralArrowColor,
-                x: 0,
-                duration: 0.25,
-                ease: 'power2.out',
-              },
-              '<'
-            );
-        });
-
-        ScrollTrigger.create({
-          trigger: flowSection,
-          start: 'top 80%',
-          end: 'bottom 20%',
-          onEnter: () => flowPulseTl.play(),
-          onLeave: () => flowPulseTl.pause(),
-          onEnterBack: () => flowPulseTl.play(),
-          onLeaveBack: () => flowPulseTl.pause(),
-        });
-      }
 
       // Animate highlight cards - Smooth entrance with subtle scale
       const highlightCards = contentRef.current?.querySelectorAll(
@@ -1083,6 +1413,183 @@ function Levels() {
         );
       });
 
+      // Animate AI Engineer comparison section
+      const akStandOutSection = contentRef.current?.querySelector(`.${styles.akStandOutSection}`);
+      if (akStandOutSection) {
+        const standOutLabel = akStandOutSection.querySelector(`.${styles.devStepLabel}`);
+        const standOutTitle = akStandOutSection.querySelector(`.${styles.devTitle}`);
+        const comparePanel = akStandOutSection.querySelector(`.${styles.akComparePanel}`);
+        const compareFooter = akStandOutSection.querySelector(`.${styles.akCompareFooter}`);
+        const compareTableHead = akStandOutSection.querySelector(`.${styles.akCompareTable} thead tr`);
+        const compareRows = akStandOutSection.querySelectorAll(`.${styles.akCompareTable} tbody tr`);
+        const compareMobileCards = akStandOutSection.querySelectorAll(`.${styles.akCompareMobileCard}`);
+        const isCompareMobile = window.matchMedia('(max-width: 640px)').matches;
+
+        if (standOutLabel && standOutTitle) {
+          gsap.fromTo(
+            [standOutLabel, standOutTitle],
+            { opacity: 0, y: 30 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 1,
+              ease: 'power2.out',
+              stagger: 0.1,
+              scrollTrigger: {
+                trigger: akStandOutSection,
+                start: 'top 82%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        if (comparePanel) {
+          gsap.fromTo(
+            comparePanel,
+            { opacity: 0, scale: 0.98 },
+            {
+              opacity: 1,
+              scale: 1,
+              duration: 1.1,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: comparePanel,
+                start: 'top 85%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        if (!isCompareMobile && comparePanel && compareRows.length > 0) {
+          const tableRevealTargets = compareTableHead
+            ? [compareTableHead, ...compareRows]
+            : [...compareRows];
+          gsap.set(tableRevealTargets, { opacity: 0 });
+
+          const compareTl = gsap.timeline({
+            scrollTrigger: {
+              trigger: comparePanel,
+              start: 'top 80%',
+              toggleActions: 'play none none none',
+            },
+          });
+
+          if (compareTableHead) {
+            compareTl.to(compareTableHead, {
+              opacity: 1,
+              duration: 0.6,
+              ease: 'power2.out',
+            });
+          }
+
+          compareTl.to(
+            compareRows,
+            {
+              opacity: 1,
+              duration: 0.55,
+              ease: 'power2.out',
+              stagger: 0.06,
+            },
+            compareTableHead ? '-=0.2' : 0
+          );
+        }
+
+        if (isCompareMobile) {
+          compareMobileCards.forEach((card, idx) => {
+            gsap.fromTo(
+              card,
+              { opacity: 0, y: 25, scale: 0.96 },
+              {
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                duration: 0.85,
+                ease: 'power2.out',
+                delay: idx * 0.08,
+                scrollTrigger: {
+                  trigger: card,
+                  start: 'top 88%',
+                  toggleActions: 'play none none none',
+                },
+              }
+            );
+          });
+        }
+
+        if (compareFooter) {
+          gsap.fromTo(
+            compareFooter,
+            { opacity: 0, y: 20 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.9,
+              ease: 'power2.out',
+              scrollTrigger: {
+                trigger: compareFooter,
+                start: 'top 90%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+      }
+
+      // Animate AI Engineer build flow section
+      const aiBuildSection = contentRef.current?.querySelector(`.${styles.aiEngineerBuildSection}`);
+      if (aiBuildSection) {
+        const buildLabel = aiBuildSection.querySelector(`.${styles.devStepLabel}`);
+        const buildTitle = aiBuildSection.querySelector(`.${styles.devTitle}`);
+        if (buildLabel && buildTitle) {
+          gsap.fromTo(
+            [buildLabel, buildTitle],
+            { opacity: 0, y: 30 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 1,
+              ease: 'power2.out',
+              stagger: 0.1,
+              scrollTrigger: {
+                trigger: aiBuildSection,
+                start: 'top 82%',
+                toggleActions: 'play none none none',
+              },
+            }
+          );
+        }
+
+        const buildSubsections = aiBuildSection.querySelectorAll(`.${styles.aiBuildSubsection}`);
+        buildSubsections.forEach((subsection) => {
+          // Animate title/body only — opacity/transform on the subsection breaks
+          // backdrop-filter on the diagram panel inside it.
+          const buildCopy = subsection.querySelectorAll(
+            `.${styles.aiBuildSubTitle}, .${styles.aiBuildSubBody}`
+          );
+          if (buildCopy.length > 0) {
+            gsap.fromTo(
+              buildCopy,
+              { opacity: 0, y: 28 },
+              {
+                opacity: 1,
+                y: 0,
+                duration: 0.95,
+                ease: 'power2.out',
+                stagger: 0.08,
+                scrollTrigger: {
+                  trigger: subsection,
+                  start: 'top 85%',
+                  toggleActions: 'play none none none',
+                },
+                clearProps: 'transform',
+              }
+            );
+          }
+        });
+      }
+
       // Animate developer framework section
       const devFrameworkSection = contentRef.current?.querySelector(`.${styles.devFrameworkSection}`);
       if (devFrameworkSection) {
@@ -1201,14 +1708,15 @@ function Levels() {
       ref={sectionRef}
       className={`${styles.levelsSection} ${!selectedLevel ? styles.levelsPinned : ''}`}
     >
+      <StepTimeline levelId={selectedLevel} contentRef={contentRef} />
       <div className="container">
         <div className={styles.levelsContainer}>
           <p ref={subtitleRef} className={styles.levelsSubtitle}>
-            Choose your level
+            Which path describes you the best
           </p>
 
           <h2 ref={titleRef} className={styles.levelsTitle}>
-            Agent Kernel fits your experience
+            Agent Kernel is designed to adapt to your level of expertise
           </h2>
 
           <div ref={cardsRef} className={styles.levelsGrid}>
@@ -1219,8 +1727,6 @@ function Levels() {
                 onClick={() => handleLevelSelect(level.id)}
                 className={`${styles.levelCard} ${selectedLevel === level.id ? styles.levelCardSelected : ''}`}
               >
-                <div className={styles.levelNumber}>Level {level.id}</div>
-
                 <div className={styles.levelImage}>
                   <img src={level.image} alt={level.title} />
                 </div>
@@ -1232,7 +1738,7 @@ function Levels() {
           </div>
 
           <div className={styles.levelsHint}>
-            Select a level to continue
+            Select a path that best describes you to continue
           </div>
 
           {/* ── BUSINESS LEADER CONTENT ── */}
@@ -1240,17 +1746,18 @@ function Levels() {
             <div ref={contentRef} className={styles.levelContent}>
           
               {/* ── STEP 01 ── */}
-              <div className={styles.contentStep}>
-                <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
-                <h2 className={styles.contentTitle}>
-                  Where is the gap in your business?
-                </h2>
-                <p className={styles.contentBody}>
-                  Most businesses have processes that still depend too much on people. They are repetitive, slow, and hard to scale. The gap looks different depending on where you are.
-                </p>
-              </div>
-          
-              <div className={styles.contentGrid}>
+              <div className={styles.blStepBlock} data-step="bl-01">
+                <div className={styles.contentStep}>
+                  <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
+                  <h2 className={styles.contentTitle}>
+                    Where is the gap in your business?
+                  </h2>
+                  <p className={styles.contentBody}>
+                    Most businesses have processes that still depend too much on people. They are repetitive, slow, and hard to scale. The gap looks different depending on where you are.
+                  </p>
+                </div>
+
+                <div className={styles.contentGrid}>
                 <div className={styles.contentCard}>
                   <h3 className={styles.contentCardLabel}>SaaS / Product</h3>
                   <p className={styles.contentCardTitle}>Do you have an existing product?</p>
@@ -1266,7 +1773,7 @@ function Levels() {
                   <ul className={styles.bulletList}>
                     <li>Thousands of customer queries handled by an overstretched team</li>
                     <li>Knowledge locked across systems and documents</li>
-                    <li>Cross-team hand offs are slow and error-prone</li>
+                    <li>Cross-team hand-offs are slow and error-prone</li>
                   </ul>
                 </div>
                 <div className={styles.contentCard}>
@@ -1276,68 +1783,34 @@ function Levels() {
                     <li>You see an opportunity for an AI-powered service in your industry</li>
                     <li>You're not sure which AI technology to commit to</li>
                     <li>Building from scratch feels like months before anything reaches users</li>
+                    <li>You want to build a prototype / proof-of-concept quickly without having to invest too much on it</li>
                   </ul>
                 </div>
+                </div>
               </div>
-          
+
               {/* ── STEP 02 ── */}
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem' }} data-step="bl-02">
                 <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
                 <h2 className={styles.contentTitle}>
                   An AI agent doesn't just answer, it gets things done.
                 </h2>
           
-                <div className={styles.agentFlow}>
-                  <div className={styles.flowStep}>
-                    <MdGpsFixed className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Goal</h4>
-                    <p className={styles.flowDesc}>Understand the goal</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdAssignment className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Plan</h4>
-                    <p className={styles.flowDesc}>Plan steps</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdBolt className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Act</h4>
-                    <p className={styles.flowDesc}>Take actions</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdVisibility className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Observe</h4>
-                    <p className={styles.flowDesc}>Observe the results</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdTrendingUp className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Improve</h4>
-                    <p className={styles.flowDesc}>Gets smarter</p>
-                  </div>
-                  <div className={styles.flowArrow}>→</div>
-                  <div className={styles.flowStep}>
-                    <MdRefresh className={styles.flowIcon} />
-                    <h4 className={styles.flowLabel}>Repeat</h4>
-                    <p className={styles.flowDesc}>Always on, always learning</p>
-                  </div>
-                </div>
+                <AgentExecutionFlowDiagram />
               </div>
           
               {/* ── STEP 03 ── */}
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem' }} data-step="bl-03">
                 <p className={styles.stepLabel}>Step 03 / Agent Kernel</p>
                 <h2 className={styles.contentTitle}>
-                  Agent Kernel is the engine that powers it at scale
+                  Agent Kernel is the engine that powers it at scale to run compliant AI agents
                 </h2>
           
                 {/* OS analogy highlight card */}
                 <div className={styles.blHighlightCard}>
                   <p className={styles.blHighlightEyebrow}>For Your Business</p>
                   <h3 className={styles.blHighlightTitle}>
-                    Agent Kernel is like an Operating System for AI agents.
+                    Agent Kernel is like the Operating System for AI agents.
                   </h3>
                   <p className={styles.blHighlightBody}>
                     You don't need to understand how an operating system works to use the Internet. It runs behind the scenes, powering websites, servers, and cloud systems.
@@ -1355,7 +1828,7 @@ function Levels() {
                     </div>
                     <h4 className={styles.blValueTitle}>Days, not months</h4>
                     <p className={styles.blValueBody}>
-                      No one has to build agent infrastructure from scratch. Go from idea to enterprise-grade working agent ideas.
+                       No one must build agent infrastructure from scratch. Go from idea to enterprise-grade working scalable AI agents in  days.
                     </p>
                   </div>
                   <div className={styles.blValueCard}>
@@ -1373,14 +1846,14 @@ function Levels() {
                     </div>
                     <h4 className={styles.blValueTitle}>Runs on any cloud</h4>
                     <p className={styles.blValueBody}>
-                      Deploy on AWS, Azure, or your own on-prem Docker. No vendor lock-in. You stay in control of your data and infrastructure.
+                      Deploy on AWS, GCP, Azure, or your own on-prem Docker. No vendor lock-in. You stay in control of your data and infrastructure.
                     </p>
                   </div>
                 </div>
               </div>
           
               {/* ── STEP 04 ── */}
-              <div style={{ marginTop: '2rem' }}>
+              <div style={{ marginTop: '2rem' }} data-step="bl-04">
                 <p className={styles.stepLabel}>Step 04 / See it in action</p>
                 <h2 className={styles.contentTitle}>
                   See your Agent Kernel in action
@@ -1393,13 +1866,13 @@ function Levels() {
               </div>
 
               {/* ── STEP 05 — Architecture Overview ── */}
-              <div style={{ marginTop: '3rem' }}>
+              <div style={{ marginTop: '3rem' }} data-step="bl-05">
                 <p className={styles.stepLabel}>Step 05 / How it works</p>
                 <h2 className={styles.contentTitle}>
                   Agent Kernel is the engine that powers it all
                 </h2>
                 <p className={styles.contentBody}>
-                  See how Agent Kernel connects your agent logic to production infrastructure, messaging channels, and data storage—all without rewrites or complexity.
+                  You write your AI agent's logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
                 </p>
 
                 <div className={styles.devArchitectureWrapper}>
@@ -1415,23 +1888,23 @@ function Levels() {
             <div ref={contentRef} className={styles.developerContent}>
 
               {/* Step 01 — Developer Analogy */}
-              <div className={styles.developerAnalogy}>
+              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`} data-step="dev-01">
                 <p className={styles.devStepLabel}>Developer Analogy</p>
                 <h2 className={styles.devTitle}>
-                  Like an Operating System and Deployment Infrastructure for your AI Agent.
+                  Building blocks and and deployment infrastructure for your AI Agent.
                 </h2>
                 <div className={styles.devDescription}>
                   <p className={styles.devIntro}>
-                    Agent Kernel is like an operating system for AI assistants.
+                    Agent Kernel is like the operating system for the AI assistants, think Linux for your agents.
                   </p>
                   <div className={styles.devBulletList}>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
-                      <span className={styles.devBulletText}>Install it on your laptop, server, or cloud, and run AI agents hassle-free.</span>
+                      <span className={styles.devBulletText}>Install it on your laptop, sever, or cloud and run AI agents hassle-free.</span>
                     </div>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
-                      <span className={styles.devBulletText}>No need to build infrastructure, APIs, or integrations.</span>
+                      <span className={styles.devBulletText}>No need to build infrastructure, APIs, or messaging and other integrations.</span>
                     </div>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
@@ -1447,35 +1920,62 @@ function Levels() {
                     </div>
                     <div className={styles.devBulletItem}>
                       <span className={styles.devBullet}>•</span>
-                      <span className={styles.devBulletText}>Just define what your assistant should do.</span>
+                      <span className={styles.devBulletText}>Just define what your agent should do.</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Architecture flow — 4 stacked layers */}
-              <div className={styles.architectureWrapper}>
+              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`} data-step="dev-02">
                 <div className={styles.architectureStack}>
                   {[
                     {
                       num: '01',
                       label: 'Your Agent Logic',
-                      sub: 'instructions · tools · framework SDK',
+                      items: ['Instructions', 'Tools', 'Framework SDK'],
                     },
                     {
                       num: '02',
                       label: 'Agent Kernel Runtime',
-                      sub: 'CLI · REST API · sessions · hooks · observability',
+                      items: ['Agents', 'Agent Runner', 'Session Management', 'Hooks'],
                     },
                     {
                       num: '03',
-                      label: 'Cloud Infrastructure',
-                      sub: 'AWS Lambda · ECS · Azure Functions · Container Apps',
+                      label: 'Storage & Memory',
+                      items: ['In-Memory', 'Redis', 'DynamoDB', 'CosmosDB', 'Firestore'],
                     },
                     {
                       num: '04',
-                      label: 'Channels & Data',
-                      sub: 'Slack · WhatsApp · Telegram · Gmail · Redis · DynamoDB',
+                      label: 'Knowledge Bases',
+                      items: ['ChromaDB', 'Neo4j', 'Starburst', 'SQLDB'],
+                    },
+                    {
+                      num: '05',
+                      label: 'Observability',
+                      items: ['LangFuse', 'OpenLLMetry'],
+                    },
+                    {
+                      num: '06',
+                      label: 'Cloud Infrastructure',
+                      items: [
+                        'AWS Lambda',
+                        'ECS',
+                        'Azure Functions',
+                        'Container Apps',
+                        'GCP Cloud Run',
+                        'GCP Cloud Run Functions',
+                      ],
+                    },
+                    {
+                      num: '07',
+                      label: 'Interfacing',
+                      items: ['CLI', 'MCP', 'A2A', 'REST API'],
+                    },
+                    {
+                      num: '08',
+                      label: 'Channels',
+                      items: ['Slack', 'Teams', 'WhatsApp', 'Telegram', 'Messenger', 'Instagram', 'Gmail'],
                     },
                   ].map((layer, i, arr) => (
                     <div key={layer.label} className={styles.architectureLayerGroup}>
@@ -1492,7 +1992,18 @@ function Levels() {
                       <div className={styles.layerContentWrapper}>
                         <div className={styles.layerContentBox}>
                           <h3 className={styles.layerLabel}>{layer.label}</h3>
-                          <p className={styles.layerSub}>{layer.sub}</p>
+                          <p className={styles.layerSub}>
+                            {layer.items.map((item, idx) => (
+                              <React.Fragment key={item}>
+                                {idx > 0 && (
+                                  <span className={styles.layerSubSep} aria-hidden="true">
+                                    ●
+                                  </span>
+                                )}
+                                {item}
+                              </React.Fragment>
+                            ))}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1501,80 +2012,44 @@ function Levels() {
               </div>
               
               {/* Step 02 — Available Features */}
-              <div className={styles.devFeatureSection}>
+              <div className={styles.devFeatureSection} data-step="dev-03">
                 <p className={styles.devFeatureLabel}>All Enterprise Features Available Free And Open-Source</p>
                 <h2 className={styles.devFeatureTitle}>
                   Focus on Agent Logic. We Handle the Rest.
                 </h2>
 
-                <div className={styles.devFeaturesGrid}>
-                  {[
-                    {
-                      icon: MdBolt,
-                      title: 'REST API Server',
-                      body: 'FastAPI-based server out of the box. No boilerplate. Just run your agent.',
-                      tag: 'FastAPI',
-                    },
-                    {
-                      icon: MdAutoAwesome,
-                      title: 'Multi-Framework Support',
-                      body: 'OpenAI Agents, LangGraph, CrewAI, Google ADK.',
-                      tag: '4 frameworks',
-                    },
-                    {
-                      icon: MdSmartToy,
-                      title: 'Session & Memory',
-                      body: 'Built-in conversation state. Redis, DynamoDB, Cosmos DB or in-memory—your choice.',
-                      tag: 'Pluggable',
-                    },
-                    {
-                      icon: MdCloud,
-                      title: 'Cloud Deployment',
-                      body: 'Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps.',
-                      tag: 'Terraform',
-                    },
-                    {
-                      icon: MdMessage,
-                      title: 'Messaging Integrations',
-                      body: 'Slack, WhatsApp, Instagram, Telegram, Gmail, Teams—plug and play.',
-                      tag: '6+ channels',
-                    },
-                    {
-                      icon: MdScience,
-                      title: 'Testing Framework',
-                      body: 'pytest-integrated test runner. Write automated tests for your AI agents like any other code.',
-                      tag: 'pytest',
-                    },
-                    {
-                      icon: MdLink,
-                      title: 'Execution Hooks',
-                      body: 'Pre/post hooks for RAG injection, input validation, response moderation, analytics.',
-                      tag: 'Hooks',
-                    },
-                    {
-                      icon: MdVisibility,
-                      title: 'Observability',
-                      body: 'Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation.',
-                      tag: '1 config line',
-                    },
-                  ].map((feature) => {
-                    const IconComponent = feature.icon;
-                    return (
-                      <div key={feature.title} className={styles.devFeatureCard}>
-                        <IconComponent className={styles.devFeatureIcon} />
-                        <h3 className={styles.devFeatureCardTitle}>{feature.title}</h3>
-                        <p className={styles.devFeatureCardBody}>{feature.body}</p>
-                        <span className={styles.devFeatureTag}>
-                          {feature.tag}
-                        </span>
+                <div className={styles.devFeatureGroups}>
+                  {DEV_FEATURE_GROUPS.map((group) => (
+                    <div key={group.title} className={styles.devFeatureGroup}>
+                      <h3 className={styles.devFeatureGroupTitle}>{group.title}</h3>
+                      <div
+                        className={`${styles.devFeaturesGrid} ${
+                          group.cols === 4 ? styles.devFeaturesGrid4 : styles.devFeaturesGrid3
+                        }`}
+                      >
+                        {group.features.map((feature) => {
+                          const IconComponent = feature.icon;
+                          return (
+                            <div key={feature.title} className={styles.devFeatureCard}>
+                              <div className={styles.devFeatureCardHeader}>
+                                <div className={styles.devFeatureIconWrap}>
+                                  <IconComponent className={styles.devFeatureIcon} aria-hidden />
+                                </div>
+                                <h4 className={styles.devFeatureCardTitle}>{feature.title}</h4>
+                              </div>
+                              <p className={styles.devFeatureCardBody}>{feature.body}</p>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
 
+
               {/* Step 03 — Framework Selection */}
-              <div className={styles.devFrameworkSection}>
+              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`} data-step="dev-04">
                 <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
                 <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
 
@@ -1869,12 +2344,12 @@ if __name__ == "__main__":
               </div>
 
               {/* Step 04 — How Agent Kernel Fits In */}
-              <div className={styles.devArchitectureSection}>
+              <div className={styles.devArchitectureSection} data-step="dev-05">
                 <p className={styles.devStepLabel}>The complete picture</p>
                 <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
 
                 <p className={styles.devFrameworkBody}>
-                  Agent Kernel sits between your agent logic and cloud deployment, providing the production-ready runtime layer that handles everything except what makes your agents unique. One consistent API, any framework, any cloud.
+                    You write your AI agent’s logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
                 </p>
 
                 <div className={styles.devArchitectureWrapper}>
@@ -1884,90 +2359,661 @@ if __name__ == "__main__":
             </div>
           )}
           {selectedLevel === '03' && (
-            <div ref={contentRef} className={styles.levelContent}>
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>
-                  Advanced Capabilities for Production AI
+            <div ref={contentRef} className={styles.developerContent}>
+
+              {/* Step 01 — AI Engineer Analogy */}
+              <div className={`${styles.developerAnalogy} ${styles.developerBlock}`} data-step="ai-01">
+                <p className={styles.devStepLabel}>AI Engineer Analogy</p>
+                <h2 className={styles.devTitle}>
+                  Bring your already existing agentic AI code onto a unified Operating System and Deployment Infrastructure for your AI Agents while making it enterprise ready and compliant.
                 </h2>
-                <p className={styles.contentBody}>
-                  Agent Kernel gives you the production-grade features that enterprise AI systems need, without framework lock-in or vendor dependency.
-                </p>
-              </div>
-
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>Core Capabilities</h2>
-
-                <div className={styles.capabilitiesGrid}>
-                  {[
-                    {
-                      icon: MdSwapHoriz,
-                      title: 'Framework Agnostic',
-                      body: 'Run OpenAI Agents, LangGraph, CrewAI, and Google ADK side by side. Switch frameworks with 2 import lines.',
-                    },
-                    {
-                      icon: MdCloud,
-                      title: 'Multi-Cloud',
-                      body: 'Same agent code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps. Zero vendor lock-in.',
-                    },
-                    {
-                      icon: MdMemory,
-                      title: 'Session & Memory',
-                      body: 'Built-in volatile and non-volatile caching. Backends: Redis, DynamoDB, Cosmos DB, in-memory.',
-                    },
-                    {
-                      icon: MdSettings,
-                      title: 'Execution Hooks',
-                      body: 'Pre/post-execution hooks for guardrails, RAG injection, analytics, and response moderation.',
-                    },
-                    {
-                      icon: FaSlack,
-                      title: 'Messaging Integrations',
-                      body: 'Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail — built-in. Plug and play.',
-                    },
-                    {
-                      icon: MdBugReport,
-                      title: 'Testing Framework',
-                      body: 'pytest-integrated agent testing with fuzzy, semantic, and fallback comparison modes.',
-                    },
-                    {
-                      icon: MdSecurity,
-                      title: 'Guardrails',
-                      body: 'OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, and moderation.',
-                    },
-                    {
-                      icon: MdVisibility,
-                      title: 'Observability & Tracing',
-                      body: 'LangFuse and OpenLLMetry tracing with one config line. Full visibility into every call.',
-                    },
-                  ].map((feature) => {
-                    const IconComponent = feature.icon;
-                    return (
-                      <div key={feature.title} className={styles.capabilityCard}>
-                        <IconComponent className={styles.capabilityIcon} />
-                        <h3 className={styles.capabilityTitle}>{feature.title}</h3>
-                        <p className={styles.capabilityBody}>{feature.body}</p>
-                      </div>
-                    );
-                  })}
+                <div className={styles.devDescription}>
+                  <p className={styles.devIntro}>
+                    Agent Kernel is a unified, capable runtime for AI agents. Its pluggable architecture lets you attach capabilities to your agents effortlessly. A comprehensive list of pre-built connectors smooths the agent-building process—enabling a capability is a matter of setting configuration. All out of the box.
+                  </p>
+                  <p className={styles.devIntro}>
+                    Agent Kernel takes care of how agents run, scale from single execution to thousands of agent invocations in parallel, and interact with the real world.
+                  </p>
                 </div>
               </div>
 
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>Production Deployment</h2>
-                <p className={styles.contentBody}>
-                  Deploy with full Terraform modules, pre-configured best practices, and zero cloud lock-in. Same code runs everywhere.
-                </p>
+              {/* Architecture flow — 9 stacked layers */}
+              <div className={`${styles.architectureWrapper} ${styles.developerBlock}`} data-step="ai-02">
+                <div className={styles.architectureStack}>
+                  {AI_ENGINEER_ARCH_LAYERS.map((layer, i, arr) => (
+                    <div key={layer.label} className={styles.architectureLayerGroup}>
+                      <div className={styles.layerNumberWrapper}>
+                        <div className={styles.layerNumberCircle}>
+                          {layer.num}
+                        </div>
+                        {i < arr.length - 1 && (
+                          <div className={styles.layerConnector} />
+                        )}
+                      </div>
+                      <div className={styles.layerContentWrapper}>
+                        <div className={styles.layerContentBox}>
+                          <h3 className={styles.layerLabel}>{layer.label}</h3>
+                          <p className={styles.layerSub}>
+                            {layer.items.map((item, idx) => (
+                              <React.Fragment key={item}>
+                                {idx > 0 && (
+                                  <span className={styles.layerSubSep} aria-hidden="true">
+                                    ●
+                                  </span>
+                                )}
+                                {item}
+                              </React.Fragment>
+                            ))}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* ── How Agent Kernel Fits In ── */}
-              <div className={styles.contentStep}>
-                <h2 className={styles.contentTitle}>How Agent Kernel Fits In</h2>
-                <p className={styles.contentBody}>
-                  Agent Kernel sits between your agent logic and cloud deployment, providing the production-ready runtime layer that handles everything except what makes your agents unique. One consistent API, any framework, any cloud.
+              {/* Step 02 — What Makes Agent Kernel Stand Out */}
+              <div className={`${styles.akStandOutSection} ${styles.developerBlock}`} data-step="ai-03">
+                <p className={styles.devStepLabel}>Compare alternatives</p>
+                <h2 className={styles.devTitle}>What Makes Agent Kernel Stand Out</h2>
+
+                <div className={styles.akComparePanel}>
+                  <p className={styles.akCompareScrollHint} aria-hidden="true">
+                    Scroll horizontally to compare all columns
+                  </p>
+
+                  <div className={styles.akCompareTableWrap}>
+                    <table className={styles.akCompareTable}>
+                      <colgroup>
+                        <col className={styles.akCompareColFeature} />
+                        <col className={styles.akCompareColData} />
+                        <col className={styles.akCompareColData} />
+                        <col className={styles.akCompareColData} />
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.akCompareFeatureCol} />
+                          <th
+                            scope="col"
+                            className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
+                          >
+                            <span className={styles.akCompareHeadLong}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.cloud}
+                            </span>
+                            <span className={styles.akCompareHeadShort}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.cloudShort}
+                            </span>
+                          </th>
+                          <th
+                            scope="col"
+                            className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
+                          >
+                            <span className={styles.akCompareHeadLong}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.frameworks}
+                            </span>
+                            <span className={styles.akCompareHeadShort}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.frameworksShort}
+                            </span>
+                          </th>
+                          <th
+                            scope="col"
+                            className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol} ${styles.akCompareHeadCellHighlight}`}
+                          >
+                            {AI_ENGINEER_COMPARE_COLUMNS.agentKernel}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {AI_ENGINEER_COMPARISON_ROWS.map((row, i) => (
+                          <tr
+                            key={row.feature}
+                            className={i % 2 === 1 ? styles.akCompareRowAlt : undefined}
+                          >
+                            <th scope="row" className={styles.akCompareFeatureCell}>
+                              <span className={styles.akCompareFeatureText}>{row.feature}</span>
+                              {row.featureHint ? (
+                                <span className={styles.akCompareFeatureHint}>{row.featureHint}</span>
+                              ) : null}
+                            </th>
+                            <td className={`${styles.akCompareDataCell} ${styles.akCompareDataCol}`}>
+                              <AkCompareCellContent cell={row.cloud} />
+                            </td>
+                            <td className={`${styles.akCompareDataCell} ${styles.akCompareDataCol}`}>
+                              <AkCompareCellContent cell={row.frameworks} />
+                            </td>
+                            <td
+                              className={`${styles.akCompareDataCell} ${styles.akCompareDataCol} ${styles.akCompareDataCellHighlight}`}
+                            >
+                              <AkCompareCellContent cell={row.agentKernel} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className={styles.akCompareMobileList}>
+                    {AI_ENGINEER_COMPARISON_ROWS.map((row) => (
+                      <article key={row.feature} className={styles.akCompareMobileCard}>
+                        <h3 className={styles.akCompareMobileFeature}>
+                          {row.feature}
+                          {row.featureHint ? (
+                            <span className={styles.akCompareFeatureHint}>{row.featureHint}</span>
+                          ) : null}
+                        </h3>
+                        <div className={styles.akCompareMobileRows}>
+                          <div className={styles.akCompareMobileRow}>
+                            <span className={styles.akCompareMobileLabel}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.cloudShort}
+                            </span>
+                            <AkCompareCellContent cell={row.cloud} />
+                          </div>
+                          <div className={styles.akCompareMobileRow}>
+                            <span className={styles.akCompareMobileLabel}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.frameworksShort}
+                            </span>
+                            <AkCompareCellContent cell={row.frameworks} />
+                          </div>
+                          <div
+                            className={`${styles.akCompareMobileRow} ${styles.akCompareMobileRowHighlight}`}
+                          >
+                            <span className={styles.akCompareMobileLabel}>
+                              {AI_ENGINEER_COMPARE_COLUMNS.agentKernel}
+                            </span>
+                            <AkCompareCellContent cell={row.agentKernel} />
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+
+                  <p className={styles.akCompareFooter}>
+                    Bedrock / Foundry give you <strong>runtime</strong> but take your{' '}
+                    <strong>freedom</strong>. LangGraph gives you <strong>freedom</strong> but no{' '}
+                    <strong>runtime</strong>. Agent Kernel gives you <strong>both</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 03 — Available Features */}
+              <div className={styles.devFeatureSection} data-step="ai-04">
+                <p className={styles.devFeatureLabel}>All Enterprise Features Available Free And Open-Source</p>
+                <h2 className={styles.devFeatureTitle}>
+                  Focus on Agent Logic. We Handle the Rest.
+                </h2>
+
+                <div className={styles.devFeatureGroups}>
+                  {DEV_FEATURE_GROUPS.map((group) => (
+                    <div key={group.title} className={styles.devFeatureGroup}>
+                      <h3 className={styles.devFeatureGroupTitle}>{group.title}</h3>
+                      <div
+                        className={`${styles.devFeaturesGrid} ${
+                          group.cols === 4 ? styles.devFeaturesGrid4 : styles.devFeaturesGrid3
+                        }`}
+                      >
+                        {group.features.map((feature) => {
+                          const IconComponent = feature.icon;
+                          return (
+                            <div key={feature.title} className={styles.devFeatureCard}>
+                              <div className={styles.devFeatureCardHeader}>
+                                <div className={styles.devFeatureIconWrap}>
+                                  <IconComponent className={styles.devFeatureIcon} aria-hidden />
+                                </div>
+                                <h4 className={styles.devFeatureCardTitle}>{feature.title}</h4>
+                              </div>
+                              <p className={styles.devFeatureCardBody}>{feature.body}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 04 — Framework Selection */}
+              <div className={`${styles.devFrameworkSection} ${styles.developerBlock}`} data-step="ai-05">
+                <p className={styles.devFrameworkLabel}>No lock-in. Your choice</p>
+                <h2 className={styles.devFrameworkTitle}>Use The Framework You Prefer</h2>
+
+                <div className={styles.devFrameworkContainer}>
+                  {/* Left Column - Body & Buttons */}
+                  <div className={styles.devFrameworkButtonsCol}>
+                    <p className={styles.devFrameworkBody}>
+                      Choose a supported framework that fits your team, while Agent Kernel gives you a consistent production-ready layer for deployment, APIs, sessions, and integrations.
+                    </p>
+                    
+                    <div className={styles.devFrameworkButtonsGroup}>
+                      {[
+                        { id: 'openai', label: 'OpenAI Agents' },
+                        { id: 'crewai', label: 'CrewAI' },
+                        { id: 'langgraph', label: 'LangGraph' },
+                        { id: 'adk', label: 'Google ADK' },
+                      ].map((fw) => (
+                        <button
+                          key={fw.id}
+                          onClick={() => setSelectedFramework(fw.id)}
+                          className={`${styles.devFrameworkButton} ${
+                            selectedFramework === fw.id ? styles.devFrameworkButtonActive : ''
+                          }`}
+                        >
+                          {fw.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right Column - Code Display */}
+                  <div className={styles.devFrameworkCodeCol}>
+                    {selectedFramework === 'openai' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[openai]', 'openai-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'openai-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[openai]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+)
+
+OpenAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'openai-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'openai-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+agent = OpenAIAgent(
+    name="assistant",
+    instructions="You are a helpful assistant.",
+)
+
+OpenAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/openai" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'crewai' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[crewai]', 'crewai-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'crewai-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[crewai]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+agent = CrewAgent(
+    role="assistant",
+    goal="Help users with their questions",
+    backstory="You are a helpful AI assistant",
+    verbose=False,
+)
+
+CrewAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'crewai-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'crewai-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+agent = CrewAgent(
+    role="assistant",
+    goal="Help users with their questions",
+    backstory="You are a helpful AI assistant",
+    verbose=False,
+)
+
+CrewAIModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/crewai" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'langgraph' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[langgraph]', 'langgraph-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'langgraph-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[langgraph]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    return {"messages": state["messages"] + ["response"]}
+
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()`, 'langgraph-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'langgraph-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    return {"messages": state["messages"] + ["response"]}
+
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/langgraph" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+
+                    {selectedFramework === 'adk' && (
+                      <div className={styles.devFrameworkCodeBlock}>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Installation:</p>
+                          <button
+                            onClick={() => copyToClipboard('pip install agentkernel[adk]', 'adk-install')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'adk-install' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>pip install agentkernel[adk]</code>
+                        </pre>
+                        <div className={styles.devFrameworkCodeHeader}>
+                          <p className={styles.devFrameworkCodeLabel}>Basic Usage:</p>
+                          <button
+                            onClick={() => copyToClipboard(`from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import ADKModule
+
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant",
+)
+
+ADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`, 'adk-usage')}
+                            className={styles.devFrameworkCopyBtn}
+                            title="Copy code"
+                          >
+                            {copiedCode === 'adk-usage' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <pre className={styles.devFrameworkCodePre}>
+                          <code>{`from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import ADKModule
+
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant",
+)
+
+ADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()`}</code>
+                        </pre>
+                        <Link to="/docs/frameworks/google-adk" className={styles.devFrameworkDocLink}>
+                          View Full Documentation →
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 05 — Production-ready compliant agents */}
+              <div className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`} data-step="ai-06">
+                <p className={styles.devStepLabel}>Build with confidence</p>
+                <h2 className={styles.devTitle}>
+                  How Agent Kernel Helps You Build Production-Ready Compliant AI Agents
+                </h2>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Building AI Agents</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Designing a compliant multi-agent architecture carries multiple components.
+                  </p>
+                  <BuildingAgentsFlowDiagram />
+                </article>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>Running AI Agents</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Running a production-grade AI agent requires considering several design aspects and information flows.
+                  </p>
+                  <RunningAgentsFlowDiagram />
+                </article>
+
+                <article className={styles.aiBuildSubsection}>
+                  <h3 className={styles.aiBuildSubTitle}>How Agent Kernel Sit In</h3>
+                  <p className={styles.aiBuildSubBody}>
+                    Agent Kernel handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.
+                  </p>
+                  <AgentKernelSitsInFlowDiagram />
+                </article>
+              </div>
+
+              {/* Step 06 — How Agent Kernel Fits In */}
+              <div className={`${styles.devArchitectureSection} ${styles.developerBlock}`} data-step="ai-07">
+                <p className={styles.devStepLabel}>The complete picture</p>
+                <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
+
+                <p className={styles.devFrameworkBody}>
+                  You write your AI agent’s logic. Agent Kernel handles everything else: the infrastructure, the cloud deployment, memory, knowledge bases, hooks, observability & traceability, LLM cost tracking, the integrations so your agent is live and talking to real users in days.
                 </p>
 
                 <div className={styles.devArchitectureWrapper}>
                   <AgentKernelArchDiagram />
+                </div>
+              </div>
+
+              {/* Step 07 - Why Agent Kernel is a Powerful Operating System */}
+              <div className={`${styles.devFeatureSection} ${styles.developerBlock}`} data-step="ai-08">
+                <p className={styles.devStepLabel}>Operating system depth</p>
+                <h2 className={styles.devTitle}>
+                  Why Agent Kernel is a Powerful Operating System
+                </h2>
+
+                <div className={styles.devFeatureGroups}>
+                  <div className={styles.devFeatureGroup}>
+                    <h3 className={styles.devFeatureGroupTitle}>Three-Layer Memory</h3>
+                    <p className={styles.devFeatureGroupHeadline}>
+                      Three Memory Layers, Zero Context Chaos
+                    </p>
+                    <p className={styles.devFeatureGroupIntro}>
+                      Keep conversations coherent, enrich each request, and carry useful session data
+                      forward without bloating the model context window.
+                    </p>
+
+                    <div className={`${styles.devFeaturesGrid} ${styles.devFeaturesGrid3}`}>
+                      {AI_ENGINEER_MEMORY_LAYERS.map((layer) => {
+                        const IconComponent = layer.icon;
+                        return (
+                          <div key={layer.title} className={styles.devFeatureCard}>
+                            <div className={styles.devFeatureCardHeader}>
+                              <div className={styles.devFeatureIconWrap}>
+                                <IconComponent className={styles.devFeatureIcon} aria-hidden />
+                              </div>
+                              <h4 className={styles.devFeatureCardTitle}>{layer.title}</h4>
+                            </div>
+                            <ul className={styles.devFeatureCardBodyList}>
+                              {layer.bullets.map((bullet) => (
+                                <li key={bullet}>{bullet}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className={styles.devFeatureGroup}>
+                    <h3 className={styles.devFeatureGroupTitle}>Execution Hook Pipeline</h3>
+                    <p className={styles.devFeatureGroupHeadline}>
+                      Control Every Request Without Rewriting Agent Logic
+                    </p>
+                    <p className={styles.devFeatureGroupIntro}>
+                      Use hooks before and after agent execution to enforce safety, enrich inputs,
+                      and polish outputs.
+                    </p>
+
+                    <p className={styles.devHookPipelineScrollHint} aria-hidden="true">
+                      Scroll horizontally to see the full pipeline
+                    </p>
+
+                    <div className={styles.devHookPipelineScroll}>
+                      <div className={styles.devHookPipeline}>
+                        {AI_ENGINEER_HOOK_PIPELINE.map((step, index, arr) => {
+                          const IconComponent = step.icon;
+                          return (
+                            <React.Fragment key={step.title}>
+                              <div
+                                className={`${styles.devFeatureCard} ${
+                                  step.highlight ? styles.devFeatureCardHighlight : ''
+                                }`}
+                              >
+                                <div className={styles.devFeatureCardBadgeSlot}>
+                                  {'badge' in step && step.badge ? (
+                                    <span className={styles.devFeatureHighlightBadge}>
+                                      {step.badge}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className={styles.devFeatureCardHeader}>
+                                  <div className={styles.devFeatureIconWrap}>
+                                    <IconComponent
+                                      className={styles.devFeatureIcon}
+                                      aria-hidden
+                                    />
+                                  </div>
+                                  <h4 className={styles.devFeatureCardTitle}>{step.title}</h4>
+                                </div>
+                                <ul className={styles.devFeatureCardBodyList}>
+                                  {step.bullets.map((bullet) => (
+                                    <li key={bullet}>{bullet}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                              {index < arr.length - 1 ? (
+                                <div
+                                  className={styles.devHookPipelineConnector}
+                                  aria-hidden="true"
+                                >
+                                  <span className={styles.devHookPipelineArrowH}>→</span>
+                                  <span className={styles.devHookPipelineArrowV}>↓</span>
+                                </div>
+                              ) : null}
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1988,10 +3034,13 @@ export default function Home() {
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
       <PlantParticlesBackground />
+      <WhatsNewBanner />
       <Hero />
       <main>
         <FrameworksStrip />
+        <AffiliationsStrip />
         <Levels />
+        <AgentSkills />
         <Deployment />
         <Community />
       </main>

@@ -29,36 +29,87 @@
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btnPrimary {
-  padding: 0.6rem 1.75rem;
-  background: rgba(15, 21, 35, 0.8) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.625rem;
+  padding: 0.4rem 1.375rem 0.4rem 0.4rem !important;
+  background: rgba(14, 8, 28, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   color: #ffffff !important;
-  border: 1.5px solid rgba(255, 255, 255, 0.35) !important;
-  border-radius: 0.375rem;
-  font-weight: 900 !important;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap;
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease !important;
 }
 
 .btnPrimary:hover {
-  background: rgba(255, 255, 255, 0.04) !important;
-  transform: translateY(-1px);
+  background: rgba(26, 14, 46, 0.88) !important;
+  border-color: rgba(0, 221, 255, 0.35) !important;
+  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 221, 255, 0.12) !important;
+  transform: translateY(-1px) !important;
+  color: #ffffff !important;
+}
+
+.btnIcon {
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4facfe 0%, #2979ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: #ffffff;
+  font-style: normal;
+  line-height: 1;
 }
 
 .btnSecondary {
-  padding: 0.6rem 1.75rem;
-  background: #ffffff !important;
-  color: #0F1523 !important;
-  border: none !important;
-  border-radius: 0.375rem;
-  font-weight: 900 !important;
-  font-size: 0.875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.625rem;
+  padding: 0.4rem 1.375rem 0.4rem 0.4rem !important;
+  background: rgba(14, 8, 28, 0.5) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap;
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease !important;
 }
 
 .btnSecondary:hover {
-  background: #f3f4f6 !important;
+  background: rgba(0, 221, 255, 0.07) !important;
+  border-color: rgba(0, 221, 255, 0.4) !important;
+  transform: translateY(-1px) !important;
+  color: #ffffff !important;
+}
+
+.btnIconSecondary {
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-style: normal;
+  line-height: 1;
 }
 
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
@@ -225,7 +276,7 @@
 
 .diffSection {
   padding: clamp(2.5rem, 8vw, 5rem) 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(4px);
 }
 
 .bentoGrid {
@@ -268,6 +319,62 @@
   flex-shrink: 0;
 }
 
+/* ── Icon cell ───────────────────────────────────────────────── */
+.iconCell {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: filter 0.22s ease, transform 0.22s ease;
+}
+
+/* Pulsing radial bg */
+.iconCellBg {
+  position: absolute;
+  inset: 4px;
+  border-radius: 0.35rem;
+  background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--icon-color, #40bbde) 22%, transparent) 0%, transparent 75%);
+  animation: iconPulse 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* The icon itself */
+.iconCellGlyph {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.55rem;
+  color: var(--icon-color, #40bbde);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--icon-color, #40bbde) 60%, transparent));
+  transition: filter 0.22s ease;
+}
+
+/* Hover state — glow brightens */
+.orbitCard:hover .iconCellGlyph {
+  filter: drop-shadow(0 0 11px color-mix(in srgb, var(--icon-color, #40bbde) 85%, transparent));
+}
+
+.orbitCard:hover .iconCellBg {
+  animation-play-state: paused;
+  opacity: 1;
+}
+
+/* Card border tints to match icon accent on hover */
+.orbitCard:hover {
+  border-color: color-mix(in srgb, var(--card-color, #40bbde) 30%, transparent);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--card-color, #40bbde) 12%, transparent);
+}
+
+@keyframes iconPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50%       { opacity: 1;    transform: scale(1.06); }
+}
+
 .bentoTag {
   display: inline-block;
   font-size: 0.7rem;
@@ -306,6 +413,139 @@
 
 @media (max-width: 640px) {
   .bentoThird { grid-column: span 12; }
+}
+
+/* ─── Orbit Scene ─────────────────────────────────────────────────────────── */
+
+.orbitScene {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas:
+    "c0 c1 c2"
+    "c3 hub c4"
+    "c5 c6 c7";
+  gap: 1.25rem 1.5rem;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
+.orbitSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+/* ── Hub ─────────────────────────────────────────────────────── */
+.orbitHub {
+  grid-area: hub;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  justify-self: center;
+}
+
+/* Radial glow behind the logo */
+.orbitHubGlowCore {
+  position: absolute;
+  inset: -40px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 221, 255, 0.18) 0%,
+    rgba(0, 221, 255, 0.04) 50%,
+    transparent 70%
+  );
+  animation: corePulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+
+.orbitHubIcon {
+  position: relative;
+  z-index: 3;
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(0, 221, 255, 0.6));
+}
+
+@keyframes corePulse {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.1); }
+}
+
+
+/* ── Orbit cards ─────────────────────────────────────────────── */
+.orbitCard {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: 148px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  padding: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(8, 12, 28, 0.72);
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.orbitCard:hover {
+  border-color: rgba(0, 221, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0, 221, 255, 0.07);
+}
+
+
+/* Grid area assignments */
+.orbitPos0 { grid-area: c0; }
+.orbitPos1 { grid-area: c1; }
+.orbitPos2 { grid-area: c2; }
+.orbitPos3 { grid-area: c3; }
+.orbitPos4 { grid-area: c4; }
+.orbitPos5 { grid-area: c5; }
+.orbitPos6 { grid-area: c6; }
+.orbitPos7 { grid-area: c7; }
+
+/* Tablet */
+@media (max-width: 996px) {
+  .orbitScene {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "hub hub"
+      "c0 c1"
+      "c2 c3"
+      "c4 c5"
+      "c6 c7";
+    justify-items: stretch;
+  }
+  .orbitHub {
+    width: 150px;
+    height: 150px;
+    margin: 0 auto 0.5rem;
+  }
+  .orbitHubIcon { width: 60px; height: 60px; }
+  .orbitSvg { display: none; }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .orbitScene {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "hub"
+      "c0" "c1" "c2" "c3"
+      "c4" "c5" "c6" "c7";
+  }
 }
 
 /* ─── Modal ───────────────────────────────────────────────────────────────── */
@@ -483,7 +723,10 @@
   margin-bottom: 1.75rem;
 }
 
-.segmentColumn {}
+.segmentColumn {
+  display: flex;
+  flex-direction: column;
+}
 
 .segmentColumnTitle {
   font-size: 0.75rem;
@@ -662,16 +905,21 @@
 
 @media (max-width: 768px) {
   .hero {
-    padding: clamp(3rem, 10vw, 5rem) 1rem;
+    padding: clamp(3.5rem, 9vw, 5rem) 1.5rem;
     min-height: auto;
   }
 
+  .heroContent {
+    max-width: 34rem;
+  }
+
   .heroTitle {
-    font-size: clamp(1.75rem, 6vw, 3rem);
+    font-size: clamp(2rem, 6vw, 3.2rem);
   }
 
   .heroSubtitle {
-    font-size: clamp(0.85rem, 2vw, 1rem);
+    font-size: clamp(0.9rem, 2.5vw, 1rem);
+    margin-bottom: 2rem;
   }
 
   .diffGrid {
@@ -703,13 +951,22 @@
     font-size: 1.4rem;
   }
 
+  .iconCell {
+    width: 46px;
+    height: 46px;
+  }
+
+  .iconCellGlyph {
+    font-size: 1.4rem;
+  }
+
   .ctaButtons {
     gap: clamp(0.5rem, 2vw, 0.75rem);
   }
 
   .btnPrimary, .btnSecondary {
-    font-size: 0.8rem;
-    padding: 0.5rem 1.25rem;
+    font-size: 0.82rem;
+    padding: 0.55rem 1.35rem;
   }
 }
 
@@ -719,16 +976,19 @@
   }
 
   .heroContent {
-    padding: 0 1rem;
+    padding: 0;
+    max-width: 100%;
   }
 
   .heroTitle {
-    font-size: clamp(1.5rem, 5vw, 2.5rem);
+    font-size: clamp(1.75rem, 7vw, 2.5rem);
   }
 
   .heroSubtitle {
-    font-size: clamp(0.8rem, 1.8vw, 0.95rem);
+    font-size: clamp(0.875rem, 4vw, 0.975rem);
     max-width: 100%;
+    line-height: 1.7;
+    margin-bottom: 1.75rem;
   }
 
   .modalContainer {
@@ -790,6 +1050,15 @@
     border-radius: 0.375rem;
   }
 
+  .iconCell {
+    width: 42px;
+    height: 42px;
+  }
+
+  .iconCellGlyph {
+    font-size: 1.25rem;
+  }
+
   .bentoTitle {
     font-size: 0.875rem;
   }
@@ -842,28 +1111,53 @@
     flex-direction: column;
     gap: clamp(0.5rem, 2vw, 0.75rem);
     align-items: stretch;
+    max-width: 320px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .ctaButtons a {
     width: 100%;
+    text-align: center;
   }
 }
 
 @media (max-width: 480px) {
+  .hero {
+    padding: 2.75rem 1rem;
+  }
+
+  .heroTitle {
+    font-size: clamp(1.5rem, 8.5vw, 1.875rem);
+    margin-bottom: 0.65rem;
+  }
+
+  .heroSubtitle {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    margin-bottom: 1.5rem;
+  }
+
   .heroButtons {
     flex-direction: column;
     gap: 0.5rem;
+    width: 100%;
+    max-width: 320px;
+    margin-left: auto;
+    margin-right: auto;
+    align-items: stretch;
   }
 
   .heroButtons a {
     width: 100%;
+    min-width: 0 !important;
     text-align: center;
   }
 
   .btnPrimary, .btnSecondary {
-    padding: 0.6rem 1rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.1em;
+    padding: 0.7rem 1rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
   }
 
   .bentoCard {
@@ -874,6 +1168,15 @@
     width: 36px;
     height: 36px;
     font-size: 1rem;
+  }
+
+  .iconCell {
+    width: 38px;
+    height: 38px;
+  }
+
+  .iconCellGlyph {
+    font-size: 1.1rem;
   }
 
   .bentoTitle {
@@ -891,5 +1194,54 @@
 
   .sectionSubtitle {
     font-size: clamp(0.75rem, 1.5vw, 0.9rem);
+  }
+}
+
+/* ─── Real world use cases (feature-card grid) ─────────────────────────────── */
+
+.realWorldSection {
+  padding-top: 4rem;
+  padding-bottom: 4rem;
+}
+
+.realWorldSection :global(.container) {
+  max-width: 1200px;
+}
+
+.realWorldCardLink,
+.realWorldCardLink:hover,
+.realWorldCardLink:focus,
+.realWorldCardLink:active,
+.realWorldCardLink:visited {
+  text-decoration: none !important;
+  color: inherit;
+  cursor: pointer;
+}
+
+.realWorldCardLink:hover h3,
+.realWorldCardLink:hover p,
+.realWorldCardLink:hover span {
+  text-decoration: none !important;
+}
+
+.realWorldSection .realWorldCardLink:hover {
+  text-decoration: none !important;
+}
+
+.realWorldCardLink:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.65);
+  outline-offset: 3px;
+}
+
+.realWorldCasesGrid {
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 768px) {
+  .realWorldCasesGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    column-gap: 1.5rem;
   }
 }

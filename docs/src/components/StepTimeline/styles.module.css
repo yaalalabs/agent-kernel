@@ -1,0 +1,135 @@
+/* ─── Timeline Bar ─────────────────────────────────────────────────────── */
+
+.bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  margin-top: 60px;
+  background-color: #0d001a;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.06);
+  padding: 0 24px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+/* ─── Connector Line & Fill ────────────────────────────────────────────── */
+
+.connectorWrapper {
+  flex: 1;
+  height: 4px;
+  background: rgba(0, 170, 222, 0.1);
+  border-radius: 4px;
+  position: relative;
+  min-width: 16px;
+  margin: 0 8px;
+}
+
+.connectorFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--fill-width, 0%);
+  border-radius: 4px;
+  background: linear-gradient(90deg, #00ddff 0%, #f200ff 100%);
+  transition: width 120ms linear;
+}
+
+/* ─── Step Button ──────────────────────────────────────────────────────── */
+
+.stepBtn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: opacity 0.3s ease;
+}
+
+.stepBtn--upcoming {
+  opacity: 0.45;
+}
+
+.stepBtn--done,
+.stepBtn--active {
+  opacity: 1;
+}
+
+/* ─── Step Dot ─────────────────────────────────────────────────────────── */
+
+.dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+  background: transparent;
+  border: 1px solid rgba(0, 170, 222, 0.4);
+  color: rgba(0, 221, 255, 0.7);
+}
+
+.dot--done {
+  background: rgba(242, 0, 255, 0.9);
+  color: #fff;
+  border: none;
+}
+
+.dot--active {
+  background: #f200ff;
+  color: #fff;
+  border: none;
+}
+
+/* ─── Step Label ───────────────────────────────────────────────────────── */
+
+.label {
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: color 0.3s ease;
+  display: var(--timeline-label-display, inline);
+}
+
+.label--done {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.label--active {
+  font-weight: 600;
+  color: #c4b5fd;
+}
+
+/* ─── Mobile & Tablet Responsiveness ────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .bar {
+    display: none;
+  }
+}
