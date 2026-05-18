@@ -63,7 +63,7 @@ def update_terraform_versions(file_path: Path, new_version: str) -> Tuple[bool, 
             return module_block
         
         # Check if this module has a version attribute
-        version_pattern = r'(version\s*=\s*)"[^"]+"'
+        version_pattern = r'(\bversion\s*=\s*)"[^"]+"'
         if not re.search(version_pattern, module_block):
             # No version attribute, return unchanged
             return module_block
@@ -145,7 +145,7 @@ def main():
             with open(tf_file, 'r') as f:
                 content = f.read()
             pattern = re.compile(
-                r'source\s*=\s*"(?:app\.terraform\.io/|registry\.terraform\.io/)?yaalalabs/ak-[^"]+"\s*\n\s*version\s*=\s*"[^"]+"',
+                r'source\s*=\s*"(?:app\.terraform\.io/|registry\.terraform\.io/)?yaalalabs/ak-[^"]+"\s*\n\s*\bversion\s*=\s*"[^"]+"',
                 re.MULTILINE
             )
             matches = pattern.findall(content)

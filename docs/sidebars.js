@@ -53,6 +53,7 @@ const sidebars = {
         'frameworks/crewai',
         'frameworks/langgraph',
         'frameworks/google-adk',
+        'frameworks/smolagents',
         'frameworks/multi-framework',
       ],
     },
