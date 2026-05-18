@@ -167,11 +167,11 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
       triggerScatterIn: () => triggerScatterInRef.current(),
     }));
 
-    const plantModelUrl = useMemo(() => {
+    const indexModelUrl = useMemo(() => {
       const base = siteConfig.baseUrl.endsWith('/')
         ? siteConfig.baseUrl
         : `${siteConfig.baseUrl}/`;
-      return `${base}models/plant.glb`;
+      return `${base}models/index.glb`;
     }, [siteConfig.baseUrl]);
 
   useEffect(() => {
@@ -529,7 +529,7 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
     (async () => {
       try {
         const loader = new GLTFLoader();
-        const gltf = await loader.loadAsync(plantModelUrl);
+        const gltf = await loader.loadAsync(indexModelUrl);
         if (cancelled) return;
 
         const merged = mergePlantFromGltf(gltf.scene);
@@ -591,7 +591,7 @@ const PlantParticlesBackground = forwardRef<{ triggerScatterOut: () => void; tri
         container.removeChild(overlay);
       }
     };
-  }, [plantModelUrl]);
+  }, [indexModelUrl]);
 
   return (
     <div
