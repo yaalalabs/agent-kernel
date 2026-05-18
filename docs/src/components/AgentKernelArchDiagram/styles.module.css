@@ -382,6 +382,15 @@
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  .diagram {
+    gap: 1.5rem;
+  }
+
+  /* Ensure connector SVGs have a controlled height on small screens
+     so the visual connectors scale with the new gaps and don't overlap */
+  .connectorSvg {
+    height: 28px;
+  }
   .modulesRow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -399,6 +408,8 @@
 
   .topBox {
     padding: 0.85rem 1.5rem;
+    width: 100%;
+    justify-content: center;
   }
 
   .hubCard {
@@ -411,6 +422,13 @@
 }
 
 @media (max-width: 400px) {
+  .diagram {
+    gap: 2rem;
+  }
+  .connectorSvg {
+    height: 20px;
+  }
+
   .deployRow {
     gap: 0.4rem;
   }
