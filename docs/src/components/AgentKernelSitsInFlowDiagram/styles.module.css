@@ -206,63 +206,20 @@
   line-height: 1.35;
 }
 
-/* ── Tablet ───────────────────────────────────────────────────────────────── */
+/* ── Tablet/Mobile Horizontal Scroll ──────────────────────────────────────── */
 
 @media (max-width: 900px) {
   .flowScene {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      'memory memory'
-      'api logic'
-      'testAuto testAuto'
-      'deployment deployment';
-    column-gap: 1.5rem;
-    row-gap: 1.25rem;
-    min-height: auto;
-  }
-
-  .slotTestAuto {
-    justify-self: center;
-    margin-top: 0;
-  }
-
-  .deploymentZone {
-    max-width: 18rem;
-    justify-self: center;
-  }
-}
-
-/* ── Mobile ───────────────────────────────────────────────────────────────── */
-
-@media (max-width: 640px) {
-  .flowScene {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'logic'
-      'api'
-      'memory'
-      'testAuto'
-      'deployment';
+    width: 100%;
     padding: 1.5rem 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .flowSvg {
-    display: none;
-  }
-
-  .slotMemory {
-    margin-left: 0;
-  }
-
-  .deploymentZone {
-    max-width: 100%;
-  }
-
-  .node_logic,
-  .node_kernel,
-  .node_memory,
-  .node_test {
-    width: 100%;
-    max-width: 16rem;
+    display: block;
   }
 }
+
+

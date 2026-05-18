@@ -20,6 +20,7 @@
   background: rgba(10, 12, 22, 0.28);
   overflow-x: auto;
   overflow-y: hidden;
+  width: 100%;
 }
 
 .flowSvg {
@@ -159,26 +160,27 @@
   .flowScene {
     justify-content: flex-start;
     padding: 1.5rem 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    min-width: unset;
+    width: 100%;
   }
 
   .mainRow {
-    flex-wrap: wrap;
-    justify-content: center;
-    column-gap: 1.25rem;
-    row-gap: 1.25rem;
-    max-width: 22rem;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    column-gap: 3.5rem;
+    row-gap: 1.75rem;
+    width: max-content;
   }
 
   .parallelCol {
-    gap: 1.5rem;
-  }
-
-  .parallelCol {
-    width: 100%;
-    align-items: center;
+    gap: 3rem;
+    flex-shrink: 0;
   }
 
   .flowSvg {
-    display: none;
+    display: block;
   }
 }

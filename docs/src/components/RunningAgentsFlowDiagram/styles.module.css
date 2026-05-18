@@ -203,59 +203,20 @@
   padding: 0.6rem 0.875rem;
 }
 
-/* ── Tablet ───────────────────────────────────────────────────────────────── */
+/* ── Tablet/Mobile Horizontal Scroll ──────────────────────────────────────── */
 
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
   .flowScene {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      'inputNotes inputNotes'
-      'api input'
-      'runner memory'
-      'output output'
-      'external external';
-    min-height: auto;
-    column-gap: 1.5rem;
-  }
-
-  .externalCol {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    min-width: 0;
-  }
-}
-
-/* ── Mobile ───────────────────────────────────────────────────────────────── */
-
-@media (max-width: 640px) {
-  .flowScene {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'inputNotes'
-      'api'
-      'input'
-      'runner'
-      'memory'
-      'output'
-      'external';
+    width: 100%;
     padding: 1.5rem 1rem;
-    min-height: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .flowSvg {
-    display: none;
-  }
-
-  .externalCol {
-    grid-template-columns: 1fr;
-  }
-
-  .node_api,
-  .node_message,
-  .node_runner {
-    width: 100%;
-    max-width: 16rem;
-    justify-self: center;
+    display: block;
   }
 }
+
+

@@ -224,82 +224,20 @@
   line-height: 1.35;
 }
 
-/* ── Tablet ───────────────────────────────────────────────────────────────── */
+/* ── Tablet/Mobile Horizontal Scroll ──────────────────────────────────────── */
 
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
   .flowScene {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      'input guardIn'
-      'core core'
-      'outputStack outputStack';
-    min-height: auto;
-    column-gap: 1.5rem;
-    row-gap: 1.5rem;
-  }
-
-  .coreZone {
-    min-width: 0;
-  }
-
-  .coreRow {
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-    column-gap: 2rem;
-  }
-
-  .toolsCol {
-    grid-column: 1 / -1;
-    min-width: 0;
-  }
-
-  .node_supervisor,
-  .node_agent {
-    width: 5.75rem;
-    height: 5.75rem;
-  }
-}
-
-/* ── Mobile ───────────────────────────────────────────────────────────────── */
-
-@media (max-width: 640px) {
-  .flowScene {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'input'
-      'guardIn'
-      'core'
-      'outputStack';
+    width: 100%;
     padding: 1.5rem 1rem;
-    min-height: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .flowSvg {
-    display: none;
-  }
-
-  .coreRow {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-
-  .agentsCol {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .node_message,
-  .node_guardrail {
-    width: 100%;
-    max-width: 16rem;
-  }
-
-  .flowNodeLabel {
-    font-size: 0.9375rem;
-  }
-
-  .outputStack {
-    width: 100%;
+    display: block;
   }
 }
+
+
