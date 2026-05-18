@@ -3029,17 +3029,51 @@ if __name__ == "__main__":
 
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
+  const backgroundRef = useRef<{ triggerScatterOut: () => void; triggerScatterIn: () => void }>(null);
+  const levelsRef = useRef<HTMLDivElement>(null);
+  const observerStateRef = useRef<boolean>(false); // Track previous intersection state, initialize to false (Levels not in view on page load)
+
+  useEffect(() => {
+    if (!backgroundRef.current || !levelsRef.current) return;
+
+    // Create intersection observer to trigger animations based on Levels section visibility
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        // Only trigger when the state actually changes (prevents multiple fires at threshold)
+        if (entry.isIntersecting && !observerStateRef.current) {
+          observerStateRef.current = true;
+          // Trigger scatter out animation when Levels section becomes visible
+          backgroundRef.current?.triggerScatterOut();
+        } else if (!entry.isIntersecting && observerStateRef.current) {
+          observerStateRef.current = false;
+          // Trigger scatter in animation when user has completely scrolled past Levels
+          backgroundRef.current?.triggerScatterIn();
+        }
+      },
+      { threshold: 0.0 } // Trigger when element completely enters or leaves viewport
+    );
+
+    observer.observe(levelsRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <Layout
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months.">
-      <PlantParticlesBackground />
+      <PlantParticlesBackground ref={backgroundRef} />
+      {/* <ParticleSphere /> */}
       <WhatsNewBanner />
       <Hero />
       <main>
         <FrameworksStrip />
         <AffiliationsStrip />
-        <Levels />
+        <div ref={levelsRef}>
+          <Levels />
+        </div>
         <AgentSkills />
         <Deployment />
         <Community />

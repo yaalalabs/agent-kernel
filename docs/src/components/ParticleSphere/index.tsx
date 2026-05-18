@@ -1,14 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-const PLANT_MAX_EXTENT = 36;
-const PLANT_Y_OFFSET = -15;
-const MAX_PARTICLES = 10_000;
+const SPHERE_PARTICLE_COUNT = 5000;
+const SPHERE_RADIUS = 15;
 
 const buildPermTable = (): Uint8Array => {
   const p = new Uint8Array(256);
@@ -90,40 +86,7 @@ function sampleParticlePalette(out: Float32Array, i: number): void {
   out[i * 3 + 2] = pb;
 }
 
-function mergePlantFromGltf(root: THREE.Object3D): THREE.BufferGeometry {
-  root.updateMatrixWorld(true);
-  const parts: THREE.BufferGeometry[] = [];
-  root.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.geometry) {
-      let g = child.geometry.clone();
-      if (g.index) g = g.toNonIndexed();
-      g.applyMatrix4(child.matrixWorld);
-      for (const key of Object.keys(g.attributes)) {
-        if (key !== 'position') g.deleteAttribute(key);
-      }
-      parts.push(g);
-    }
-  });
-  if (parts.length === 0) return new THREE.BufferGeometry();
-  const merged = mergeGeometries(parts);
-  return merged ?? parts[0]!.clone();
-}
 
-function normalizePlantGeometry(geo: THREE.BufferGeometry): void {
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  if (!bb) return;
-  geo.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
-  geo.computeBoundingBox();
-  const bb2 = geo.boundingBox;
-  if (!bb2) return;
-  const size = new THREE.Vector3();
-  bb2.getSize(size);
-  const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
-  const s = PLANT_MAX_EXTENT / maxDim;
-  geo.scale(s, s, s);
-  geo.translate(0, PLANT_Y_OFFSET, 0);
-}
 
 const vertexShader = `
   attribute vec3 pColor;
@@ -153,11 +116,6 @@ const fragmentShader = `
 
 const ParticleSphere = () => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { siteConfig } = useDocusaurusContext();
-  const plantModelUrl = useMemo(() => {
-    const base = siteConfig.baseUrl.endsWith('/') ? siteConfig.baseUrl : `${siteConfig.baseUrl}/`;
-    return `${base}models/plant.glb`;
-  }, [siteConfig.baseUrl]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -241,9 +199,9 @@ const ParticleSphere = () => {
       renderer.render(scene, camera);
     };
 
-    const startSphereFallback = () => {
-      const COUNT = 7000;
-      const RADIUS = 15;
+    const initializeSphere = () => {
+      const COUNT = SPHERE_PARTICLE_COUNT;
+      const RADIUS = SPHERE_RADIUS;
       const positions = new Float32Array(COUNT * 3);
       const pColors = new Float32Array(COUNT * 3);
       basePos = new Float32Array(COUNT * 3);
@@ -275,59 +233,9 @@ const ParticleSphere = () => {
       posAttr = geometry.attributes.position as THREE.BufferAttribute;
     };
 
-    const startFromPlantGeometry = (plantGeo: THREE.BufferGeometry) => {
-      normalizePlantGeometry(plantGeo);
-      const attr = plantGeo.attributes.position as THREE.BufferAttribute;
-      const totalVerts = attr.count;
-      if (totalVerts === 0) {
-        plantGeo.dispose();
-        startSphereFallback();
-        return;
-      }
-
-      const step = Math.max(1, Math.floor(totalVerts / MAX_PARTICLES));
-      particleCount = Math.ceil(totalVerts / step);
-
-      const positions = new Float32Array(particleCount * 3);
-      const pColors = new Float32Array(particleCount * 3);
-      basePos = new Float32Array(particleCount * 3);
-      randValues = new Float32Array(particleCount);
-      speeds = new Float32Array(particleCount);
-
-      const src = attr.array as Float32Array;
-      for (let i = 0, j = 0; j < particleCount; i += step, j++) {
-        const o = j * 3;
-        const si = Math.min(i, totalVerts - 1) * 3;
-        positions[o] = basePos[o] = src[si];
-        positions[o + 1] = basePos[o + 1] = src[si + 1];
-        positions[o + 2] = basePos[o + 2] = src[si + 2];
-        randValues[j] = Math.random() * Math.PI * 2;
-        speeds[j] = 0.3 + Math.random() * 0.7;
-        sampleParticlePalette(pColors, j);
-      }
-
-      plantGeo.dispose();
-
-      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geometry.setAttribute('pColor', new THREE.BufferAttribute(pColors, 3));
-      geometry.setAttribute('randomValue', new THREE.BufferAttribute(randValues, 1));
-      posAttr = geometry.attributes.position as THREE.BufferAttribute;
-    };
-
-    (async () => {
-      try {
-        const loader = new GLTFLoader();
-        const gltf = await loader.loadAsync(plantModelUrl);
-        if (cancelled) return;
-        const merged = mergePlantFromGltf(gltf.scene);
-        startFromPlantGeometry(merged);
-      } catch {
-        if (cancelled) return;
-        startSphereFallback();
-      }
-      if (cancelled) return;
-      animate();
-    })();
+    if (cancelled) return;
+    initializeSphere();
+    animate();
 
     return () => {
       cancelled = true;
@@ -340,7 +248,7 @@ const ParticleSphere = () => {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [plantModelUrl]);
+  }, []);
 
   return (
     <div
