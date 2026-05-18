@@ -321,10 +321,18 @@
 /* ─── Page map (post-hero diagram) ───────────────────────────────────────────── */
 
 .pageMapSection {
+  display: none;
   padding: 5rem 0 4.5rem;
   backdrop-filter: blur(4px);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Show on desktop only */
+@media (min-width: 1200px) {
+  .pageMapSection {
+    display: block;
+  }
 }
 
 .pageMapDiagram {
