@@ -25,6 +25,11 @@ import PlantParticlesBackground from '../components/PlantParticlesBackground';
 
 gsap.registerPlugin(ScrollTrigger);
 
+type ParticleBackgroundHandle = {
+  triggerScatterOut: () => void;
+  triggerScatterIn: () => void;
+};
+
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
@@ -432,11 +437,12 @@ function RealWorldUseCases() {
   );
 }
 
-function Differentiators() {
+function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<ParticleBackgroundHandle | null> }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hubRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
+  const observerStateRef = useRef(false);
 
   const drawLines = useCallback(() => {
     const container = containerRef.current;
@@ -540,6 +546,29 @@ function Differentiators() {
   }, [drawLines]);
 
   useEffect(() => {
+    if (!backgroundRef.current || !containerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !observerStateRef.current) {
+          observerStateRef.current = true;
+          backgroundRef.current?.triggerScatterOut();
+        } else if (!entry.isIntersecting && observerStateRef.current) {
+          observerStateRef.current = false;
+          backgroundRef.current?.triggerScatterIn();
+        }
+      },
+      { threshold: 0.0 },
+    );
+
+    observer.observe(containerRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [backgroundRef]);
+
+  useEffect(() => {
     const els = containerRef.current?.querySelectorAll(
       `.${styles.orbitCard}, .${styles.orbitHub}`
     );
@@ -610,17 +639,18 @@ function Differentiators() {
 
 export default function UseCases() {
   const [activeSegment, setActiveSegment] = useState<typeof segments[0] | null>(null);
+  const backgroundRef = useRef<ParticleBackgroundHandle | null>(null);
 
   return (
     <Layout
       title="Use Cases"
       description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
-      <PlantParticlesBackground modelUrl='models/brain.glb' />
+      <PlantParticlesBackground ref={backgroundRef} modelUrl='models/brain.glb' />
       <Hero />
       <main>
         <UseCaseJourneyMap />
         <RealWorldUseCases />
-        <Differentiators />
+        <Differentiators backgroundRef={backgroundRef} />
       </main>
       {activeSegment && (
         <SegmentModal segment={activeSegment} onClose={() => setActiveSegment(null)} />
