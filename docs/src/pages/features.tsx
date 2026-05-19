@@ -1340,7 +1340,7 @@ function MessagingSection() {
       const cards = sceneRef.current?.querySelectorAll(
         `.${styles.msgChannelCard}`,
       );
-      if (!strip || !cards?.length) return;
+      if (!cards?.length) return;
 
       const tl = gsap.timeline({
         scrollTrigger: {
@@ -1350,11 +1350,15 @@ function MessagingSection() {
         },
       });
 
+      if (strip) {
+        tl.fromTo(
+          strip,
+          { opacity: 0, y: 22 },
+          { opacity: 1, y: 0, duration: 0.55, ease: "power2.out" },
+        );
+      }
+
       tl.fromTo(
-        strip,
-        { opacity: 0, y: 22 },
-        { opacity: 1, y: 0, duration: 0.55, ease: "power2.out" },
-      ).fromTo(
         cards,
         { opacity: 0, y: 18 },
         {
@@ -1364,7 +1368,7 @@ function MessagingSection() {
           stagger: 0.055,
           ease: "power2.out",
         },
-        "-=0.28",
+        strip ? "-=0.28" : "0",
       );
     }, sceneRef);
 
@@ -1393,9 +1397,12 @@ function MessagingSection() {
               <li key={p.name} className={styles.msgChannelCell}>
                 <Link
                   to={p.link}
-                  className={styles.msgChannelCard}
+                  className={`${styles.msgChannelCard}${(p as { featured?: boolean }).featured ? ` ${styles.msgChannelCardFeatured}` : ""}`}
                   style={{ "--msg-brand": p.color } as React.CSSProperties}
                 >
+                  {(p as { featured?: boolean }).featured && (
+                    <span className={styles.msgFeaturedBadge}>Popular</span>
+                  )}
                   <span className={styles.msgChannelIcon} aria-hidden>
                     {p.icon}
                   </span>
@@ -1422,6 +1429,7 @@ function MessagingSection() {
     </section>
   );
 }
+
 /* ─── Protocol Support ──────────────────────────────────────────────────── */
 
 function ProtocolSupport() {
