@@ -3712,7 +3712,7 @@ export default function Home() {
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months."
     >
-      <PlantParticlesBackground />
+      <PlantParticlesBackground ref={backgroundRef} />
       <WhatsNewBanner />
       <Hero />
       <main>
