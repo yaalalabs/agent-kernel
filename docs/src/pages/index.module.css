@@ -51,7 +51,9 @@
   text-decoration: none;
   border-bottom: 1px solid rgba(79, 125, 247, 0.3);
   padding-bottom: 1px;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .sectionLink:hover {
@@ -77,13 +79,19 @@
   text-transform: none !important;
   letter-spacing: 0.01em !important;
   white-space: nowrap;
-  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease !important;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.2s ease,
+    box-shadow 0.25s ease !important;
 }
 
 .btnPrimary:hover {
   background: rgba(26, 14, 46, 0.88) !important;
   border-color: rgba(0, 221, 255, 0.35) !important;
-  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 221, 255, 0.12) !important;
+  box-shadow:
+    0 6px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 221, 255, 0.12) !important;
   transform: translateY(-1px) !important;
   color: #ffffff !important;
 }
@@ -119,7 +127,10 @@
   text-transform: none !important;
   letter-spacing: 0.01em !important;
   white-space: nowrap;
-  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease !important;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.2s ease !important;
 }
 
 .btnSecondary:hover {
@@ -156,12 +167,15 @@
   color: #94a3b8 !important;
   border-radius: 9999px !important;
   font-weight: 500 !important;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease !important;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease !important;
 }
 
 .btnGhost:hover {
   background: rgba(0, 221, 255, 0.06) !important;
-  color: #00DDFF !important;
+  color: #00ddff !important;
   border-color: rgba(0, 221, 255, 0.3) !important;
 }
 
@@ -191,7 +205,7 @@
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00DDFF 0%, #0099bb 100%);
+  background: linear-gradient(135deg, #00ddff 0%, #0099bb 100%);
   color: #06121a;
   flex-shrink: 0;
 }
@@ -211,21 +225,45 @@
 }
 
 @keyframes bell-swing {
-  0% { transform: rotate(0deg); }
-  10% { transform: rotate(-18deg); }
-  30% { transform: rotate(12deg); }
-  50% { transform: rotate(-10deg); }
-  70% { transform: rotate(6deg); }
-  90% { transform: rotate(-3deg); }
-  100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(-18deg);
+  }
+  30% {
+    transform: rotate(12deg);
+  }
+  50% {
+    transform: rotate(-10deg);
+  }
+  70% {
+    transform: rotate(6deg);
+  }
+  90% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 @keyframes bell-clapper {
-  0% { transform: translateY(0); }
-  25% { transform: translateY(2px); }
-  50% { transform: translateY(0); }
-  75% { transform: translateY(1px); }
-  100% { transform: translateY(0); }
+  0% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(2px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+  75% {
+    transform: translateY(1px);
+  }
+  100% {
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -248,7 +286,7 @@
 
 .whatsNewLink {
   font-size: 0.875rem;
-  color: #00DDFF;
+  color: #00ddff;
   font-weight: 500;
   white-space: nowrap;
   text-decoration: none;
@@ -465,29 +503,29 @@
   }
 }
 
-[data-theme='light'] .whatsNewBanner {
+[data-theme="light"] .whatsNewBanner {
   background-color: #f0f4f8;
   background-image: none;
 }
 
-[data-theme='light'] .whatsNewInner {
+[data-theme="light"] .whatsNewInner {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.1);
 }
 
-[data-theme='light'] .whatsNewText {
+[data-theme="light"] .whatsNewText {
   color: rgba(0, 0, 0, 0.75);
 }
 
-[data-theme='light'] .whatsNewText strong {
+[data-theme="light"] .whatsNewText strong {
   color: #000000;
 }
 
-[data-theme='light'] .whatsNewLink {
+[data-theme="light"] .whatsNewLink {
   color: rgba(0, 0, 0, 0.75);
 }
 
-[data-theme='light'] .whatsNewLink:hover {
+[data-theme="light"] .whatsNewLink:hover {
   color: #000000;
 }
 
@@ -505,9 +543,9 @@
   overflow: hidden;
   text-align: center;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans', 'Liberation Sans', sans-serif;
-  
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", "Liberation Sans", sans-serif;
 }
 
 .heroOrb {
@@ -517,7 +555,12 @@
   transform: translateX(-50%);
   width: 900px;
   height: 700px;
-  background: radial-gradient(ellipse at center, rgba(79,125,247,0.12) 0%, rgba(139,92,246,0.08) 50%, transparent 70%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(79, 125, 247, 0.12) 0%,
+    rgba(139, 92, 246, 0.08) 50%,
+    transparent 70%
+  );
   pointer-events: none;
   z-index: 0;
 }
@@ -526,11 +569,19 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
   background-size: 60px 60px;
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, black 40%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, black 40%, transparent 100%);
+  mask-image: radial-gradient(
+    ellipse 80% 70% at 50% 0%,
+    black 40%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 80% 70% at 50% 0%,
+    black 40%,
+    transparent 100%
+  );
   pointer-events: none;
   z-index: 0;
 }
@@ -552,8 +603,13 @@
 }
 
 @keyframes heroLogoPulse {
-  0%, 100% { filter: drop-shadow(0 0 20px rgba(79, 125, 247, 0.25)); }
-  50% { filter: drop-shadow(0 0 36px rgba(79, 125, 247, 0.45)); }
+  0%,
+  100% {
+    filter: drop-shadow(0 0 20px rgba(79, 125, 247, 0.25));
+  }
+  50% {
+    filter: drop-shadow(0 0 36px rgba(79, 125, 247, 0.45));
+  }
 }
 
 .heroTitle {
@@ -579,7 +635,16 @@
   color: #ffffff;
   line-height: 1.8;
   max-width: 40rem; /* similar to max-w-md */
+  min-height: 5.5rem;
   margin: 0 auto 2.25rem;
+}
+
+.heroBodySentence {
+  display: block;
+}
+
+.heroBodySentence + .heroBodySentence {
+  margin-top: 0.45rem;
 }
 
 .heroButtons {
@@ -633,7 +698,9 @@
   align-items: center;
   justify-content: center;
   opacity: 0.9;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .affiliationItem:hover {
@@ -803,7 +870,10 @@
   display: flex;
   flex-direction: column;
   text-decoration: none;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
   cursor: pointer;
 }
 
@@ -818,7 +888,9 @@
 
 .accent_cyan:hover {
   border-color: #4f7df7;
-  box-shadow: 0 8px 32px rgba(79, 125, 247, 0.12), 0 0 0 1px rgba(79, 125, 247, 0.15);
+  box-shadow:
+    0 8px 32px rgba(79, 125, 247, 0.12),
+    0 0 0 1px rgba(79, 125, 247, 0.15);
 }
 
 .accent_violet {
@@ -827,7 +899,9 @@
 
 .accent_violet:hover {
   border-color: #8b5cf6;
-  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.12), 0 0 0 1px rgba(139, 92, 246, 0.15);
+  box-shadow:
+    0 8px 32px rgba(139, 92, 246, 0.12),
+    0 0 0 1px rgba(139, 92, 246, 0.15);
 }
 
 .segmentIcon {
@@ -868,7 +942,7 @@
 }
 
 /* ─── Business Leader Step 03 — Highlight Card ─────────────────────────────── */
- 
+
 .blHighlightCard {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 0.5rem;
@@ -877,7 +951,7 @@
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
- 
+
 .blHighlightEyebrow {
   font-size: 0.75rem;
   font-weight: 600;
@@ -886,7 +960,7 @@
   letter-spacing: 0.1em;
   margin: 0 0 0.75rem 0;
 }
- 
+
 .blHighlightTitle {
   font-size: 1.75rem;
   font-weight: 700;
@@ -894,7 +968,7 @@
   margin: 0 0 1rem 0;
   line-height: 1.3;
 }
- 
+
 .blHighlightBody {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.7);
@@ -902,19 +976,19 @@
   margin: 0 0 0.75rem 0;
   max-width: 680px;
 }
- 
+
 .blHighlightBody:last-child {
   margin-bottom: 0;
 }
- 
+
 /* ─── Business Leader Step 03 — Value Grid ──────────────────────────────────── */
- 
+
 .blValueGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
 }
- 
+
 .blValueCard {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -929,17 +1003,17 @@
   -webkit-backdrop-filter: blur(4px);
   transition: border-color 0.2s ease;
 }
- 
+
 .blValueCard:hover {
   border-color: rgba(255, 255, 255, 0.25);
 }
- 
+
 .blValueIcon {
   font-size: 3rem;
   color: #ffffff;
   opacity: 0.8;
 }
- 
+
 .blValueTitle {
   font-size: 1.25rem;
   font-weight: 700;
@@ -947,31 +1021,31 @@
   margin: 0;
   line-height: 1.3;
 }
- 
+
 .blValueBody {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.65);
   line-height: 1.6;
   margin: 0;
 }
- 
+
 /* ─── Step 04 — Scenarios wrapper ───────────────────────────────────────────── */
- 
+
 .blScenarios {
   display: flex;
   flex-direction: column;
   gap: 2.5rem;
   margin-top: 1.5rem;
 }
- 
+
 /* ─── Tab buttons ────────────────────────────────────────────────────────────── */
- 
+
 .blTabBar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
 }
- 
+
 .blTab {
   background: transparent;
   border: 1.5px solid rgba(255, 255, 255, 0.3);
@@ -981,33 +1055,36 @@
   font-weight: 700;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
   white-space: nowrap;
   letter-spacing: 0.01em;
   line-height: 1;
   backdrop-filter: blur(4px);
 }
- 
+
 .blTab:hover {
   color: rgba(255, 255, 255, 0.85);
   border-color: rgba(255, 255, 255, 0.55);
 }
- 
+
 /* Active tab: white border + white text, matches the image */
 .blTabActive {
   color: #ffffff !important;
   border-color: #ffffff !important;
   background: transparent;
 }
- 
+
 /* ─── Scenario content area ──────────────────────────────────────────────────── */
- 
+
 .blScenarioContent {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
- 
+
 .blScenarioTitle {
   font-size: 1.75rem;
   font-weight: 700;
@@ -1015,22 +1092,22 @@
   margin: 0;
   line-height: 1.2;
 }
- 
+
 .blScenarioChannels {
   font-size: 1.125rem;
   color: rgba(255, 255, 255, 0.45);
   margin: 0 0 1.5rem 0;
   font-weight: 400;
 }
- 
+
 /* ─── Three columns ──────────────────────────────────────────────────────────── */
- 
+
 .blScenarioCols {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.25rem;
 }
- 
+
 .blScenarioCol {
   background: transparent;
   border: 1.5px solid rgba(255, 255, 255, 0.15);
@@ -1042,7 +1119,7 @@
   text-align: center;
   backdrop-filter: blur(4px);
 }
- 
+
 .blScenarioColHeading {
   font-size: 1.25rem;
   font-weight: 700;
@@ -1050,21 +1127,21 @@
   margin: 0 0 0.25rem 0;
   line-height: 1.3;
 }
- 
+
 .blScenarioColSub {
   font-size: 1.125rem;
   color: rgba(255, 255, 255, 0.5);
   margin: 0 0 1rem 0;
   font-weight: 400;
 }
- 
+
 .blScenarioColBody {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.7;
   margin: 0;
 }
- 
+
 /* ─── Responsive ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -1073,16 +1150,16 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;       /* Firefox */
+    scrollbar-width: none; /* Firefox */
     gap: 0.5rem;
-    padding-bottom: 2px;         /* keep bottom border of focused tab visible */
+    padding-bottom: 2px; /* keep bottom border of focused tab visible */
   }
   .blTabBar::-webkit-scrollbar {
-    display: none;               /* Chrome / Safari */
+    display: none; /* Chrome / Safari */
   }
 
   .blTab {
-    flex-shrink: 0;              /* prevent tabs from squishing */
+    flex-shrink: 0; /* prevent tabs from squishing */
     padding: 0.55rem 1rem;
     font-size: 0.8rem;
   }
@@ -1174,7 +1251,10 @@
   text-decoration: none;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .bentoCard:hover {
@@ -1210,19 +1290,19 @@
 }
 
 /* ─── Section wrapper ─────────────────────────────────────────────────────── */
- 
+
 .section {
   padding: 6rem 1rem;
   color: #ffffff;
 }
- 
+
 /* ─── Header ──────────────────────────────────────────────────────────────── */
- 
+
 .sectionHeader {
   text-align: center;
   margin-bottom: 3.5rem;
 }
- 
+
 .sectionTitle {
   font-size: 2.25rem;
   font-weight: 800;
@@ -1231,7 +1311,7 @@
   letter-spacing: -0.02em;
   line-height: 1.25;
 }
- 
+
 .sectionSubtitle {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.65);
@@ -1239,9 +1319,9 @@
   max-width: 650px;
   margin: 0 auto;
 }
- 
+
 /* ─── Grid ────────────────────────────────────────────────────────────────── */
- 
+
 .cloudGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1252,7 +1332,6 @@
   z-index: 1;
   padding: 0 2rem;
 }
-
 
 /* ─── Agent Skills ────────────────────────────────────────────────────────────────── */
 
@@ -1291,7 +1370,7 @@
 
 .agentSkillsBadgeIcon {
   font-size: 0.9rem;
-  color: #00DDFF;
+  color: #00ddff;
 }
 
 .agentSkillsDivider {
@@ -1316,7 +1395,7 @@
   border-radius: 0.5rem;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.75rem;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.92rem;
   line-height: 1.9;
   color: #dfe1f0;
@@ -1331,7 +1410,7 @@
 }
 
 .agentSkillsCodeArg {
-  color: #00DDFF;
+  color: #00ddff;
 }
 
 .agentSkillsSkillList {
@@ -1340,6 +1419,54 @@
   gap: 2rem;
   max-width: 64rem;
   margin: 0 auto 3rem;
+}
+
+.agentSkillsTopicsRow {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.agentSkillsTopicButton {
+  background: rgba(255, 255, 255, 0.04);
+  color: #dfe1f0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.agentSkillsTopicButton:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.2);
+}
+
+.agentSkillsTopicActive {
+  background: linear-gradient(
+    135deg,
+    rgba(79, 125, 247, 0.12),
+    rgba(139, 92, 246, 0.08)
+  );
+  border-color: rgba(0, 221, 255, 0.35) !important;
+  color: #ffffff;
+}
+
+.agentSkillsDetailWrap {
+  display: flex;
+  justify-content: center;
+}
+
+.agentSkillsDetailBox {
+  max-width: 64rem;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 1.75rem;
+  backdrop-filter: blur(6px);
+  background: rgba(14, 16, 23, 0.55);
 }
 
 .agentSkillsSkillCard {
@@ -1370,7 +1497,7 @@
 
 .agentSkillsSkillIcon {
   font-size: 1.75rem;
-  color: #00DDFF;
+  color: #00ddff;
   flex-shrink: 0;
 }
 
@@ -1404,8 +1531,6 @@
   border: 1px solid rgba(0, 221, 255, 0.06);
 }
 
-
-
 .agentSkillsFooter {
   text-align: center;
   margin-top: 1.75rem;
@@ -1417,9 +1542,11 @@
   gap: 0.4rem;
   font-size: 0.92rem;
   font-weight: 700;
-  color: #00DDFF;
+  color: #00ddff;
   text-decoration: none;
-  transition: color 0.2s ease, transform 0.2s ease;
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .agentSkillsCtaLink:hover {
@@ -1427,9 +1554,9 @@
   transform: translateY(-1px);
   text-decoration: none;
 }
- 
+
 /* ─── Deploy Anywhere ────────────────────────────────────────────────────────────────── */
- 
+
 .cloudCard {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.75rem;
@@ -1448,11 +1575,11 @@
   border-color: rgba(255, 255, 255, 0.2);
   transform: translateY(-2px);
 }
- 
+
 .cloudIcon {
   margin-bottom: 1.25rem;
 }
- 
+
 /* Make the react-icon large and white, matching the screenshot */
 .cloudIconSvg {
   width: 3rem !important;
@@ -1465,7 +1592,7 @@
 .cloudCard:hover .cloudIconSvg {
   transform: scale(1.05);
 }
- 
+
 .cloudNameRow {
   display: flex;
   align-items: center;
@@ -1473,8 +1600,7 @@
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
 }
- 
- 
+
 .cloudName {
   font-size: 1.2rem;
   font-weight: 700;
@@ -1482,7 +1608,7 @@
   margin: 0;
   letter-spacing: -0.015em;
 }
- 
+
 /* Rectangular outlined badge — matches screenshot exactly */
 .cloudComingSoonBadge {
   font-size: 0.65rem;
@@ -1497,14 +1623,14 @@
   flex-shrink: 0;
   line-height: 1.4;
 }
- 
+
 .cloudDescription {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.65);
   line-height: 1.65;
   margin: 0 0 1rem;
 }
- 
+
 .cloudModes {
   list-style: none;
   padding: 0;
@@ -1513,7 +1639,7 @@
   flex-direction: column;
   gap: 0.4rem;
 }
- 
+
 .cloudModes li {
   font-size: 0.875rem;
   color: rgba(255, 255, 255, 0.75);
@@ -1521,20 +1647,20 @@
   align-items: center;
   gap: 0.55rem;
 }
- 
+
 .arrow {
   color: rgba(255, 255, 255, 0.9);
   font-size: 0.85rem;
   flex-shrink: 0;
 }
- 
+
 .cloudModules {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
   margin-top: auto; /* push to bottom of card */
 }
- 
+
 .terraformLink {
   display: flex;
   align-items: center;
@@ -1546,19 +1672,19 @@
   text-underline-offset: 2px;
   transition: opacity 0.15s ease;
 }
- 
+
 .terraformLink:hover {
   opacity: 0.75;
   text-decoration: underline;
 }
- 
+
 /* Terraform icon — purple, matches the Terraform brand color in screenshot */
 .terraformIcon {
   font-size: 1rem;
   color: #7b42bc;
   flex-shrink: 0;
 }
- 
+
 /* ─── Tablet Breakpoint (≤ 1024px) ────────────────────────────────────── */
 @media (max-width: 1024px) {
   .cloudGrid {
@@ -1981,8 +2107,20 @@
 
 .messagingTrackWrapper {
   overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 10%,
+    black 90%,
+    transparent
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 10%,
+    black 90%,
+    transparent
+  );
 }
 
 .messagingTrack {
@@ -1997,8 +2135,12 @@
 }
 
 @keyframes scrollTrack {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 .messagingCard {
@@ -2012,7 +2154,9 @@
   padding: 1.25rem 1.5rem;
   min-width: 140px;
   text-decoration: none;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
   cursor: pointer;
 }
 
@@ -2074,7 +2218,11 @@
   transform: translate(-50%, -50%);
   width: 800px;
   height: 400px;
-  background: radial-gradient(ellipse, rgba(79,125,247,0.08) 0%, transparent 70%);
+  background: radial-gradient(
+    ellipse,
+    rgba(79, 125, 247, 0.08) 0%,
+    transparent 70%
+  );
   pointer-events: none;
 }
 
@@ -2124,7 +2272,9 @@
   border-radius: 0.75rem;
   padding: 0.875rem 1.25rem;
   text-decoration: none;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
   min-width: 180px;
 }
 
@@ -2150,7 +2300,7 @@
   font-size: 0.78rem;
   color: #5e627d;
   margin-top: 0.25rem;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
 /* ─── Levels ──────────────────────────────────────────────────────────────── */
@@ -2392,7 +2542,7 @@
 }
 
 .bulletListLarge li::before {
-  content: '→';
+  content: "→";
   position: absolute;
   left: 0;
   color: #4f7df7;
@@ -3204,7 +3354,9 @@
   flex-direction: column;
   gap: 0.75rem;
   height: 100%;
-  transition: border-color 300ms ease, background-color 300ms ease;
+  transition:
+    border-color 300ms ease,
+    background-color 300ms ease;
 }
 
 .devFeatureCard:hover {
@@ -3286,7 +3438,7 @@
 }
 
 .devFeatureCardBodyList li::before {
-  content: '•';
+  content: "•";
   position: absolute;
   left: 0;
   color: rgba(255, 255, 255, 0.45);
@@ -3379,7 +3531,10 @@
 
   .devHookPipeline {
     display: grid;
-    grid-template-columns: minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
+    grid-template-columns: minmax(12rem, 1fr) auto minmax(
+        12rem,
+        1fr
+      ) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
     align-items: stretch;
     gap: 0 0.5rem;
     width: max-content;
@@ -3415,7 +3570,10 @@
   }
 
   .devHookPipeline {
-    grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(
+        0,
+        1fr
+      ) 1.75rem minmax(0, 1fr);
     gap: 0 0.65rem;
     width: 100%;
     min-width: 0;
@@ -3607,7 +3765,7 @@
   padding: 1rem;
   overflow-x: auto;
   margin: 0;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.8125rem;
   line-height: 1.6;
   backdrop-filter: blur(4px);
@@ -3998,7 +4156,6 @@
   .contentGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-
 }
 
 @media (max-width: 1100px) {
@@ -4144,7 +4301,6 @@
     font-size: 1.4rem;
   }
 
-
   /* CTA section */
   .ctaSection {
     padding: 4rem 0;
@@ -4289,6 +4445,10 @@
 
 @media (max-width: 480px) {
   /* Hero */
+  .heroBody {
+    min-height: 4.5rem;
+  }
+
   .heroTagline {
     font-size: 1.25rem;
   }
