@@ -31,7 +31,7 @@ pip install "agentkernel[livekit]"
 
 You will also need:
 1. A free account on [LiveKit Cloud](https://cloud.livekit.io/).
-2. Your LiveKit API keys (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`).
+2. Your LiveKit API keys (`AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, `AK_LIVEKIT__API_SECRET`).
 3. API keys for your preferred STT/TTS providers (e.g., `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, etc.).
 
 ## Configuration
