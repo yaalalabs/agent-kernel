@@ -505,7 +505,62 @@ const AGENT_SKILLS = [
 
 function AgentSkills() {
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
+  const detailContentRef = useRef<HTMLDivElement>(null);
+  const hasAnimatedSkillChangeRef = useRef(false);
   const ActiveIcon = AGENT_SKILLS[activeSkillIndex].icon;
+
+  useLayoutEffect(() => {
+    if (!detailContentRef.current) {
+      return;
+    }
+
+    if (!hasAnimatedSkillChangeRef.current) {
+      hasAnimatedSkillChangeRef.current = true;
+      return;
+    }
+
+    const content = detailContentRef.current;
+    const motionTargets = content.querySelectorAll(
+      `.${styles.agentSkillsSkillHeader}, .${styles.agentSkillsSkillBody}, .${styles.agentSkillsPill}`,
+    );
+
+    gsap.killTweensOf([content, motionTargets]);
+
+    gsap.fromTo(
+      content,
+      {
+        opacity: 0.55,
+        y: 14,
+        scale: 0.985,
+        filter: "blur(4px)",
+      },
+      {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        filter: "blur(0px)",
+        duration: 0.42,
+        ease: "power3.out",
+      },
+    );
+
+    gsap.fromTo(
+      Array.from(motionTargets),
+      {
+        opacity: 0,
+        y: 10,
+      },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.32,
+        ease: "power2.out",
+        stagger: 0.04,
+        delay: 0.04,
+      },
+    );
+  }, [activeSkillIndex]);
+
   return (
     <section id="agent-skills" className={styles.agentSkillsSection}>
       <div className="container">
@@ -518,7 +573,24 @@ function AgentSkills() {
               Agent Skills works with the tools you already use, like Copilot,
               Claude, Cursor, or Windsurf, to help you build and ship AI agents
               faster. No more guesswork, no more broken code suggestions.
-            </p>
+            </p>          </div>
+
+          <div className={styles.agentSkillsTopicsRow} role="tablist">
+            {AGENT_SKILLS.map((skill, idx) => (
+              <button
+                key={skill.name}
+                role="tab"
+                aria-selected={activeSkillIndex === idx}
+                className={`${styles.agentSkillsTopicButton} ${
+                  activeSkillIndex === idx
+                    ? styles.agentSkillsTopicActive
+                    : ""
+                }`}
+                onClick={() => setActiveSkillIndex(idx)}
+              >
+                {skill.name}
+              </button>
+            ))}
           </div>
 
           <div className={styles.agentSkillsSplitGrid}>
@@ -561,28 +633,12 @@ function AgentSkills() {
             <div className={styles.agentSkillsPanel}>
               <div className={styles.agentSkillsSectionLabel}>
                 What each skill does
-              </div>
-
-              <div className={styles.agentSkillsTopicsRow} role="tablist">
-                {AGENT_SKILLS.map((skill, idx) => (
-                  <button
-                    key={skill.name}
-                    role="tab"
-                    aria-selected={activeSkillIndex === idx}
-                    className={`${styles.agentSkillsTopicButton} ${
-                      activeSkillIndex === idx
-                        ? styles.agentSkillsTopicActive
-                        : ""
-                    }`}
-                    onClick={() => setActiveSkillIndex(idx)}
-                  >
-                    {skill.name}
-                  </button>
-                ))}
-              </div>
-
+              </div>              
               <div className={styles.agentSkillsDetailWrap}>
-                <div className={styles.agentSkillsDetailBox}>
+                <div
+                  ref={detailContentRef}
+                  className={styles.agentSkillsDetailBox}
+                >
                   <div className={styles.agentSkillsSkillHeader}>
                     <ActiveIcon
                       aria-hidden

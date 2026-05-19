@@ -5,7 +5,7 @@
 /* ─── Shared Utilities ────────────────────────────────────────────────────── */
 
 .gradientText {
-  background: linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #4f7df7 0%, #00DDFF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -57,8 +57,8 @@
 }
 
 .sectionLink:hover {
-  color: #6d6af7;
-  border-color: #6d6af7;
+  color: #00DDFF;
+  border-color: #00DDFF;
 }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
@@ -622,7 +622,7 @@
   background: radial-gradient(
     ellipse at center,
     rgba(79, 125, 247, 0.12) 0%,
-    rgba(139, 92, 246, 0.08) 50%,
+    rgba(0, 221, 255, 0.08) 50%,
     transparent 70%
   );
   pointer-events: none;
@@ -958,14 +958,14 @@
 }
 
 .accent_violet {
-  border-top: 2px solid #8b5cf6;
+  border-top: 2px solid #00DDFF;
 }
 
 .accent_violet:hover {
-  border-color: #8b5cf6;
+  border-color: #00DDFF;
   box-shadow:
-    0 8px 32px rgba(139, 92, 246, 0.12),
-    0 0 0 1px rgba(139, 92, 246, 0.15);
+    0 8px 32px rgba(0, 221, 255, 0.12),
+    0 0 0 1px rgba(0, 221, 255, 0.15);
 }
 
 .segmentIcon {
@@ -975,7 +975,7 @@
 }
 
 .accent_violet .segmentIcon {
-  color: #8b5cf6;
+  color: #00DDFF;
 }
 
 .segmentTitle {
@@ -1002,7 +1002,7 @@
 }
 
 .accent_violet .segmentCta {
-  color: #8b5cf6;
+  color: #00DDFF;
 }
 
 /* ─── Business Leader Step 03 — Highlight Card ─────────────────────────────── */
@@ -1489,7 +1489,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.5rem;
-  align-items: start;
+  align-items: stretch;
   margin-bottom: 3rem;
 }
 
@@ -1497,27 +1497,38 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 1rem;
   padding: 1.5rem;
-  background: rgba(14, 16, 23, 0.45);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
 }
 
 .agentSkillsTopicsRow {
   display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  gap: 1rem;
+  flex-wrap: nowrap;
+  justify-content: space-between;
   margin-bottom: 1rem;
 }
 
 .agentSkillsTopicButton {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 221, 255, 0.07);
+  backdrop-filter: blur(12px);
   color: #dfe1f0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  padding: 0.5rem 0.75rem;
+  border: 2px solid rgba(255, 255, 255, 0.06);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
   border-radius: 999px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.18s ease;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .agentSkillsTopicButton:hover {
@@ -1528,8 +1539,8 @@
 .agentSkillsTopicActive {
   background: linear-gradient(
     135deg,
-    rgba(79, 125, 247, 0.12),
-    rgba(139, 92, 246, 0.08)
+    rgba(0, 221, 255, 0.092),
+    rgba(0, 221, 255, 0.06)
   );
   border-color: rgba(0, 221, 255, 0.35) !important;
   color: #ffffff;
@@ -1538,14 +1549,20 @@
 .agentSkillsDetailWrap {
   display: flex;
   justify-content: center;
+  flex: 1 1 auto;
 }
 
 .agentSkillsDetailBox {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1210);
   border-radius: 0.75rem;
+  backdrop-filter: blur(6px);
   padding: 1.25rem;
-  background: rgba(255, 255, 255, 0.03);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .agentSkillsSkillCard {
@@ -1572,6 +1589,7 @@
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.4rem;
+  will-change: transform, opacity, filter;
 }
 
 .agentSkillsSkillIcon {
@@ -1592,6 +1610,7 @@
   color: rgba(255, 255, 255, 0.85);
   line-height: 1.625;
   margin: 0 0 0.6rem;
+  will-change: transform, opacity;
 }
 
 .agentSkillsPillRow {
@@ -1608,6 +1627,7 @@
   background: rgba(0, 221, 255, 0.05);
   color: rgba(255, 255, 255, 0.85);
   border: 1px solid rgba(0, 221, 255, 0.06);
+  will-change: transform, opacity;
 }
 
 .agentSkillsFooter {
