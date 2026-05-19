@@ -73,10 +73,6 @@
   transition: background-color 0.15s ease, opacity 0.2s ease;
 }
 
-.step:hover {
-  background-color: rgba(242, 0, 255, 0.1);
-}
-
 .step:focus-visible {
   box-shadow: 0 0 0 2px rgba(242, 0, 255, 0.5);
 }

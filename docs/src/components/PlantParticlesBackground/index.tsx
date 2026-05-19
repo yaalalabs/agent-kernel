@@ -43,10 +43,10 @@ const vertexShader = `
       float hash = sin(pos.x * 12.9898 + pos.y * 78.233 + pos.z * 45.164) * 43758.5453;
       float frac_hash = fract(hash);
       
-      // Each particle drifts in a subtle pattern (reduced movement)
-      float drift_x = sin(uTime * 0.3 + frac_hash * 6.28) * 0.03;
-      float drift_y = cos(uTime * 0.25 + frac_hash * 6.28) * 0.03;
-      float drift_z = sin(uTime * 0.2 + frac_hash * 6.28) * 0.02;
+      // Each particle drifts in a subtle pattern (speed movement)
+      float drift_x = sin(uTime * 0.5 + frac_hash * 6.28) * 0.045;
+      float drift_y = cos(uTime * 0.4 + frac_hash * 6.28) * 0.045;
+      float drift_z = sin(uTime * 0.35 + frac_hash * 6.28) * 0.035;
       
       pos += vec3(drift_x, drift_y, drift_z);
     }
@@ -242,7 +242,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
 
     const coreMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 100.0 },
+        uSize: { value: 120.0 },
         uResolutionY: { value: window.innerHeight },
         uTime: { value: 0 },
         uAlpha: { value: 1.0 },
@@ -258,7 +258,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
     // Halo is ~5× larger and uses a smooth cubic falloff to mimic a bloom halo
     const glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 120.0 },
+        uSize: { value: 160.0 },
         uResolutionY: { value: window.innerHeight },
         uTime: { value: 0 },
         uAlpha: { value: 1.0 },
