@@ -18,8 +18,7 @@ dev = [
 ]
 
 crewai=[
-    "crewai==0.165.1",
-    "python-multipart",
+    "crewai==0.165.1"
 ]
 
 [tool.uv]
