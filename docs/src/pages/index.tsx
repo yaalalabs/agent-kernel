@@ -174,7 +174,7 @@ function Hero() {
       setActiveSentenceIndex(
         (currentIndex) => (currentIndex + 1) % bodySentences.length,
       );
-    }, 3200);
+    }, 5000);
 
     return () => window.clearInterval(intervalId);
   }, []);

@@ -1654,6 +1654,60 @@
   text-decoration: none;
 }
 
+/* Responsive tweaks for Agent Skills (tablet & mobile) */
+@media (max-width: 1024px) {
+  .agentSkillsSplitGrid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .agentSkillsPanel {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .agentSkillsTopicsRow {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.6rem;
+    justify-content: flex-start;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.25rem;
+  }
+
+  /* hide native scrollbar but keep scroll accessible */
+  .agentSkillsTopicsRow {
+    scrollbar-width: none; /* Firefox */
+  }
+  .agentSkillsTopicsRow::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Edge */
+  }
+
+  .agentSkillsTopicButton {
+    flex: 0 0 auto;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    min-width: auto;
+  }
+
+  .agentSkillsCodeBlock,
+  .agentSkillsDetailBox {
+    padding: 0.85rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .agentSkillsTopicButton {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+  }
+  .agentSkillsSkillIcon {
+    font-size: 1.4rem;
+  }
+}
+
 /* ─── Deploy Anywhere ────────────────────────────────────────────────────────────────── */
 
 .cloudCard {
