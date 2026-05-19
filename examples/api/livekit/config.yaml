@@ -1,0 +1,9 @@
+livekit:
+  agent: "my-voice-agent"
+  stt_provider: "deepgram"
+  tts_provider: "openai"
+  vision_enabled: true
+
+multimodal:
+  enabled: true
+  description_model: "gpt-4o"

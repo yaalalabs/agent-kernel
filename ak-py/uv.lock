@@ -125,6 +125,7 @@ livekit = [
     { name = "livekit-plugins-openai", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
     { name = "livekit-plugins-silero", version = "1.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
     { name = "livekit-plugins-silero", version = "1.5.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and sys_platform == 'win32'" },
+    { name = "pillow" },
 ]
 mcp = [
     { name = "fastmcp" },
@@ -243,6 +244,7 @@ requires-dist = [
     { name = "openinference-instrumentation-litellm", marker = "extra == 'crewai'", specifier = ">=0.1.28" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'openai'", specifier = ">=1.4.0" },
     { name = "pandas", marker = "extra == 'test'", specifier = ">=2.0.0" },
+    { name = "pillow", marker = "extra == 'livekit'", specifier = ">=10.0.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "pyjwt", marker = "extra == 'auth'", specifier = ">=2.0.0" },

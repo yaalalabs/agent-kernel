@@ -122,6 +122,7 @@ livekit = [
     "livekit-plugins-elevenlabs>=1.0.0",
     "livekit-plugins-google>=1.0.0",
     "livekit-api>=0.2.0",
+    "Pillow>=10.0.0",
 ]
 test = [
     "pytest>=8.4.1",

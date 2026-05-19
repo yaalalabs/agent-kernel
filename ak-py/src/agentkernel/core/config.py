@@ -141,6 +141,10 @@ class _LiveKitConfig(BaseModel):
     tts_provider: str = Field(
         default="openai", pattern="^(openai|elevenlabs|google)$", description="Text-to-Speech provider (openai, elevenlabs, or google)"
     )
+    vision_enabled: bool = Field(
+        default=False,
+        description="Enable webcam vision capture. When enabled, the latest video frame is captured on each voice turn and processed through the multimodal pipeline.",
+    )
 
 
 class _MultimodalStorageRedisConfig(BaseModel):

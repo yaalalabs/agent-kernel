@@ -1,49 +1,102 @@
-# LiveKit Voice Integration Demo
+# LiveKit Voice & Vision Integration Example
 
-This example demonstrates how to use **LiveKit** as a voice interface for your Agent Kernel agents, running identically to the Slack and WhatsApp integrations.
+This example demonstrates how to use **LiveKit** as a voice and vision interface for your Agent Kernel agents. It provides a real-time, low-latency conversational experience with optional webcam support.
 
-By passing `AgentLiveKitRequestHandler` to `RESTAPI.run()`, Agent Kernel automatically:
-1. Exposes a `/livekit/token` endpoint for your frontend client to connect securely.
-2. Runs the LiveKit `VoicePipelineAgent` in the background within the FastAPI event loop.
+## Overview
 
-## How it works
+This integration allows users to talk to an agent using their microphone and optionally show things via their webcam. The agent responds with a synthesized voice (TTS).
 
-1. Your frontend fetches a secure token from `GET /livekit/token?room=my-room&identity=user1`.
-2. The frontend connects to the LiveKit Room.
-3. The background LiveKit Worker uses your configured Speech-to-Text provider (e.g. Deepgram or OpenAI) to transcribe the user's voice to text.
-4. The custom `AgentKernelLLM` intercepts this text and hands it over to **Agent Kernel**.
-5. Agent Kernel routes the text to your configured agent (with all memory/hooks preserved).
-6. The generated text reply is sent to your configured Text-to-Speech provider (e.g. OpenAI or ElevenLabs), which synthesizes it into a voice stream and plays it to the user.
+- **Voice**: STT (Deepgram/OpenAI) -> Agent Kernel -> TTS (OpenAI/ElevenLabs/Google)
+- **Vision**: Webcam frames captured per voice turn -> Agent Kernel Multimodal Pipeline -> Agent Response
+
+## Prerequisites
+
+1. **LiveKit Cloud Account**: Create a project at [cloud.livekit.io](https://cloud.livekit.io/)
+2. **LiveKit Credentials**: URL, API Key, and API Secret from your project settings.
+3. **STT/TTS Provider API Keys**:
+   - OpenAI (for TTS and optionally STT)
+   - Deepgram (recommended for STT)
+   - ElevenLabs or Google (optional for TTS)
 
 ## Setup
 
-1. Create a free account on [LiveKit Cloud](https://cloud.livekit.io/) and create a project.
-2. Generate API Keys in the project settings.
-3. Get API keys for OpenAI and Deepgram.
-4. Copy `.env.example` to `.env` and fill in the values:
+### 1. Configure Environment Variables
+
+Create a `.env` file or export these variables:
 
 ```bash
-LIVEKIT_URL=wss://your-project-id.livekit.cloud
-LIVEKIT_API_KEY=your_livekit_api_key
-LIVEKIT_API_SECRET=your_livekit_api_secret
+# LiveKit Credentials
+export AK_LIVEKIT__URL="wss://your-project.livekit.cloud"
+export AK_LIVEKIT__API_KEY="your_api_key"
+export AK_LIVEKIT__API_SECRET="your_api_secret"
 
-OPENAI_API_KEY=your_openai_api_key
-DEEPGRAM_API_KEY=your_deepgram_api_key
+# Provider Keys
+export OPENAI_API_KEY="your_openai_key"
+export DEEPGRAM_API_KEY="your_deepgram_key"
 ```
 
-## Running the Demo
+### 2. Configure Agent Kernel
 
-1. Install dependencies:
+Create `config.yaml`:
+
+```yaml
+livekit:
+  agent: "my-voice-agent"
+  stt_provider: "deepgram"       # deepgram or openai
+  tts_provider: "openai"         # openai, elevenlabs, or google
+  vision_enabled: true           # Set to true to enable webcam vision
+
+# Required when vision_enabled is true
+multimodal:
+  enabled: true                  # Required to process webcam frames
+  description_model: "gpt-4o"    # Vision model to describe frames
+```
+
+## Build & Run
+
+Install dependencies:
+
 ```bash
-uv sync
+./build.sh
 ```
 
-2. Run the REST API:
+Start the server:
+
 ```bash
 uv run server.py
 ```
 
-3. The server will start on `http://0.0.0.0:8000`. You can get a test token by visiting:
-   `http://localhost:8000/livekit/token?room=my-room&identity=test-user`
+The server will start on `http://localhost:8000`.
 
-4. To actually test the voice call, open the LiveKit Console in your browser (LiveKit Cloud dashboard -> Agents -> Playground), or build a simple React frontend using `@livekit/components-react`, and connect to the room. The agent will greet you and you can start talking!
+## Testing
+
+### 1. Get a Token
+Visit: `http://localhost:8000/livekit/token?room=demo-room&identity=user1`
+Copy the returned `token`.
+
+### 2. Connect via LiveKit Playground
+1. Go to your [LiveKit Cloud Console](https://cloud.livekit.io/).
+2. Select your project -> **Agents** -> **Playground**.
+3. Click **Connect** and paste your token (or join the room `demo-room` as `user1`).
+4. **Talk**: Start speaking. The agent should respond.
+5. **Vision**: Turn on your camera. Ask "What do you see?". The agent should describe your surroundings.
+
+## Troubleshooting
+
+### Connection Errors
+- Ensure `AK_LIVEKIT__URL` starts with `wss://`.
+- Check if your API Key and Secret are correct in the console.
+
+### No Voice Response
+- Check server logs for STT/TTS errors (e.g., "Authentication Fails" or "Quota Exceeded").
+- Ensure your microphone is not muted and permissions are granted in the browser.
+
+### Vision Not Working
+- Ensure `vision_enabled: true` AND `multimodal.enabled: true` are set in `config.yaml`.
+- Verify you have provided a vision-capable model in `multimodal.description_model` (like `gpt-4o`).
+- Check server logs for "Attaching webcam frame" messages.
+
+## Resources
+
+- [LiveKit Agents Documentation](https://docs.livekit.io/agents/)
+- [Agent Kernel Documentation](../../../docs/)

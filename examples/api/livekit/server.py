@@ -1,15 +1,16 @@
 from agentkernel.api import RESTAPI
-from agentkernel.livekit import AgentLiveKitRequestHandler
+from agentkernel.integration.livekit import AgentLiveKitRequestHandler
 from agentkernel.openai import OpenAIModule
-from agents import Agent as OpenAIAgent
+from agents import Agent
 
-voice_agent = OpenAIAgent(
+general_agent = Agent(
     name="my-voice-agent",
-    handoff_description="Agent for voice interactions",
-    instructions="You are a helpful and concise voice assistant. Do not use markdown or emojis.",
+    instructions="You are a helpful and concise voice assistant. Do not use markdown or emojis. You may receive images from the user's webcam. If an image is attached, incorporate what you see into your response naturally.",
 )
 
-OpenAIModule([voice_agent])
+OpenAIModule([general_agent])
+
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentLiveKitRequestHandler()])
+    handler = AgentLiveKitRequestHandler()
+    RESTAPI.run([handler])

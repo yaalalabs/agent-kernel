@@ -1,5 +1,5 @@
 """
-Agent Kernel Integrations with LiveKit
+Agent Kernel Integration with LiveKit
 
 This package contains the Agent Kernel integration implementations for LiveKit Voice Agents.
 """
@@ -11,6 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .livekit_handler import AgentKernelLLM, AgentLiveKitRequestHandler
-
-__all__ = ["AgentLiveKitRequestHandler", "AgentKernelLLM"]
+from .livekit_handler import AgentLiveKitRequestHandler, LiveKitLLM
