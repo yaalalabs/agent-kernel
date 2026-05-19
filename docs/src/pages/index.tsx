@@ -4,6 +4,7 @@ import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
 import styles from "./index.module.css";
 import gsap from "gsap";
+import { ScrambleTextPlugin } from "gsap/dist/ScrambleTextPlugin";
 import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { ScrollToPlugin } from "gsap/dist/ScrollToPlugin";
 import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
@@ -509,6 +510,49 @@ function AgentSkills() {
   const hasAnimatedSkillChangeRef = useRef(false);
   const ActiveIcon = AGENT_SKILLS[activeSkillIndex].icon;
 
+  gsap.registerPlugin(ScrambleTextPlugin);
+
+  const cmd1Ref = useRef<HTMLSpanElement>(null); // pip install agentkernel
+  const cmd2Ref = useRef<HTMLSpanElement>(null); // ak skill install
+  const cmd3Ref = useRef<HTMLSpanElement>(null); // ak skill install --assistant claude
+
+  useLayoutEffect(() => {
+    const targets = [
+      { ref: cmd1Ref, text: "pip install agentkernel" },
+      { ref: cmd2Ref, text: "ak skill install" },
+      { ref: cmd3Ref, text: "ak skill install --assistant claude" },
+    ];
+
+    const playScramble = () => {
+      targets.forEach(({ ref, text }, i) => {
+        if (!ref.current) return;
+        ref.current.textContent = "";
+        gsap.to(ref.current, {
+          scrambleText: {
+            text,
+            chars: "lowerCase", // keeps it feeling like a terminal
+            revealDelay: 0.3,
+            tweenLength: false, // text length is already correct
+          },
+          duration: 1.6,
+          delay: 0.3 + i * 0.5, // stagger each command 0.5s apart
+          ease: "power2.inOut",
+        });
+      });
+    };
+
+    const trigger = ScrollTrigger.create({
+      trigger: "#agent-skills",
+      start: "top 65%",
+      onEnter: playScramble,
+      onEnterBack: playScramble,
+    });
+
+    return () => {
+      trigger.kill();
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!detailContentRef.current) {
       return;
@@ -604,7 +648,7 @@ function AgentSkills() {
                 </div>
                 <div>
                   <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                  <span className={styles.agentSkillsCodeArg}>
+                  <span ref={cmd1Ref} className={styles.agentSkillsCodeArg}>
                     pip install agentkernel
                   </span>
                 </div>
@@ -614,7 +658,7 @@ function AgentSkills() {
                 </div>
                 <div>
                   <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                  <span className={styles.agentSkillsCodeArg}>
+                  <span ref={cmd2Ref} className={styles.agentSkillsCodeArg}>
                     ak skill install
                   </span>
                 </div>
@@ -623,7 +667,7 @@ function AgentSkills() {
                 </div>
                 <div>
                   <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                  <span className={styles.agentSkillsCodeArg}>
+                  <span ref={cmd3Ref}className={styles.agentSkillsCodeArg}>
                     ak skill install --assistant claude
                   </span>
                 </div>
