@@ -1024,74 +1024,81 @@ function CoreFeatures() {
 
   useLayoutEffect(() => {
     const section = sectionRef.current;
-    if (!section) {
-      return;
-    }
+    if (!section) return;
 
     const reducedMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const header = section.querySelector(`.${styles.sectionHeader}`);
-    const grid = section.querySelector(`.${styles.featuresGrid}`);
-    const cards = Array.from(
+    const cardEls = Array.from(
       section.querySelectorAll(`.${styles.featureGridCell}`),
-    );
+    ) as HTMLElement[];
 
-    if (!header || !grid || !cards.length) {
-      return;
-    }
+    if (!header || !cardEls.length) return;
 
     if (reducedMotion) {
-      gsap.set([header, grid, ...cards], { opacity: 1, y: 0, scale: 1 });
+      gsap.set([header, ...cardEls], { opacity: 1, y: 0, scale: 1 });
       return;
     }
 
+    // Header: fade + slide up
     gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(grid, { opacity: 0, y: 22 });
-    gsap.set(cards, { opacity: 0, y: 32, scale: 0.94 });
-
-    const tl = gsap.timeline({
+    gsap.to(header, {
+      opacity: 1,
+      y: 0,
+      duration: 0.65,
+      ease: "power2.out",
       scrollTrigger: {
-        trigger: section,
-        start: "top 50%",
+        trigger: header,
+        start: "top 82%",
         once: true,
-        toggleActions: "play none none none",
       },
     });
 
-    tl.to(header, {
-      opacity: 1,
-      y: 0,
-      duration: 0.6,
-      ease: "power2.out",
-    })
-      .to(
-        grid,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.42,
-          ease: "power2.out",
+    // Group cards into rows by actual DOM top position (layout-agnostic)
+    const rows: HTMLElement[][] = [];
+    let currentRowTop = -1;
+    let currentRow: HTMLElement[] = [];
+
+    cardEls.forEach((card) => {
+      const top = Math.round(card.getBoundingClientRect().top);
+      if (Math.abs(top - currentRowTop) > 4) {
+        if (currentRow.length) rows.push(currentRow);
+        currentRow = [card];
+        currentRowTop = top;
+      } else {
+        currentRow.push(card);
+      }
+    });
+    if (currentRow.length) rows.push(currentRow);
+
+    // Animate each row when its first card scrolls into view
+    rows.forEach((rowCards) => {
+      gsap.set(rowCards, {
+        opacity: 0,
+        y: 32,
+        scale: 0.88,
+        transformOrigin: "center bottom",
+      });
+
+      gsap.to(rowCards, {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+        duration: 0.52,
+        stagger: 0.07,
+        ease: "back.out(1.5)",
+        scrollTrigger: {
+          trigger: rowCards[0],
+          start: "top 88%",
+          once: true,
         },
-        "-=0.15",
-      )
-      .to(
-        cards,
-        {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.55,
-          stagger: 0.08,
-          ease: "power2.out",
-        },
-        "-=0.1",
-      );
+      });
+    });
 
     return () => {
-      tl.scrollTrigger?.kill();
-      tl.kill();
+      ScrollTrigger.getAll().forEach((t) => t.kill());
     };
   }, []);
 
