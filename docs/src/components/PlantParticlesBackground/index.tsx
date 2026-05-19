@@ -162,6 +162,7 @@ interface PlantParticlesBackgroundProps {
 interface PlantParticlesBackgroundHandle {
   triggerScatterOut: () => void;
   triggerScatterIn: () => void;
+  triggerReverseScatterIn: () => void;
 }
 
 const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, PlantParticlesBackgroundProps>(
@@ -170,10 +171,12 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
     const { siteConfig } = useDocusaurusContext();
     const triggerScatterOutRef = useRef<() => void>(() => {});
     const triggerScatterInRef = useRef<() => void>(() => {});
+    const triggerReverseScatterInRef = useRef<() => void>(() => {});
 
     useImperativeHandle(ref, () => ({
       triggerScatterOut: () => triggerScatterOutRef.current(),
       triggerScatterIn: () => triggerScatterInRef.current(),
+      triggerReverseScatterIn: () => triggerReverseScatterInRef.current(),
     }));
 
     const indexModelUrl = useMemo(() => {
@@ -199,9 +202,12 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
     let introAnimationTime = 0;
     let startPositions: Float32Array | null = null;
     let endPositions: Float32Array | null = null;
+    let introScatterPositions: Float32Array | null = null;
     let isAnimatingScatterOut = false;
     let scatterOutAnimationTime = 0;
     let scatterOutStartTime = 0;
+    let isAnimatingReverseScatterIn = false;
+    let reverseScatterInAnimationTime = 0;
     let modelPositions: Float32Array | null = null;
     let hasScatteredOut = false; // Track if scatter out has completed
     let shouldTriggerScatterOut = false; // Track external trigger
@@ -209,6 +215,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
     let fadeOutAnimationTime = 0;
     let scatteredPositions: Float32Array | null = null; // Save positions at end of scatter-out
     let shouldTriggerScatterIn = false; // Track external trigger for scatter-in reset
+    let shouldTriggerReverseScatterIn = false;
     let hasScatteredIn = true; // Initialize to true - only allow scatter-in after scatter-out has happened
 
     const scene = new THREE.Scene();
@@ -236,6 +243,11 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
     // Expose scatter in trigger (to reset animation when scrolling back)
     triggerScatterInRef.current = () => {
       shouldTriggerScatterIn = true;
+    };
+
+    // Expose reverse scatter-in trigger (for Community section)
+    triggerReverseScatterInRef.current = () => {
+      shouldTriggerReverseScatterIn = true;
     };
 
     const geometry = new THREE.BufferGeometry();
@@ -347,7 +359,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         // Stop intro animation when complete
         if (progress >= 1.0) {
           isAnimatingIntro = false;
-          startPositions = null;
+          const scatterPositions = startPositions ? startPositions.slice() : null;
           // Ensure alpha is at full opacity
           (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
           (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
@@ -357,7 +369,30 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
           posAttr.needsUpdate = true;
           // Save model positions as a proper copy
           modelPositions = endPositions.slice();
+          introScatterPositions = scatterPositions;
+          startPositions = null;
         }
+      }
+
+      // Handle external trigger for reverse scatter-in (when user reaches Community)
+      if (
+        shouldTriggerReverseScatterIn &&
+        !isAnimatingReverseScatterIn &&
+        modelPositions &&
+        introScatterPositions
+      ) {
+        shouldTriggerReverseScatterIn = false;
+        isAnimatingReverseScatterIn = true;
+        reverseScatterInAnimationTime = 0;
+        startPositions = modelPositions.slice();
+        endPositions = introScatterPositions.slice();
+        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+        posAttr.array = startPositions.slice();
+        posAttr.needsUpdate = true;
+        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
+        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
+        hasScatteredOut = false;
+        hasScatteredIn = false;
       }
 
       // Handle external trigger for scatter in (when user scrolls back to hero)
@@ -390,6 +425,34 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         startPositions = modelPositions.slice();
         shouldTriggerScatterOut = false;
         hasScatteredIn = false; // Reset so scatter-in can happen again after scatter-out
+      }
+
+      if (isAnimatingReverseScatterIn && startPositions && endPositions) {
+        reverseScatterInAnimationTime += 0.016;
+        const progress = Math.min(reverseScatterInAnimationTime / INTRO_ANIMATION_DURATION, 1.0);
+        const easedProgress = easeInOutCubic(progress);
+
+        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+        const positions = posAttr.array as Float32Array;
+        const positionCount = positions.length / 3;
+
+        for (let i = 0; i < positionCount; i++) {
+          const startIdx = i * 3;
+          positions[startIdx] = startPositions[startIdx] + (endPositions[startIdx] - startPositions[startIdx]) * easedProgress;
+          positions[startIdx + 1] = startPositions[startIdx + 1] + (endPositions[startIdx + 1] - startPositions[startIdx + 1]) * easedProgress;
+          positions[startIdx + 2] = startPositions[startIdx + 2] + (endPositions[startIdx + 2] - startPositions[startIdx + 2]) * easedProgress;
+        }
+        posAttr.needsUpdate = true;
+
+        const fadeOutAlpha = 1.0 - easedProgress;
+        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadeOutAlpha;
+        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadeOutAlpha;
+
+        if (progress >= 1.0) {
+          isAnimatingReverseScatterIn = false;
+          startPositions = null;
+          endPositions = modelPositions ? modelPositions.slice() : null;
+        }
       }
 
       if (isAnimatingScatterOut && startPositions && endPositions) {

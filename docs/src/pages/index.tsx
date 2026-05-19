@@ -845,9 +845,13 @@ function Deployment() {
 
 /* ─── Community / CTA ───────────────────────────────────────────────────── */
 
-function Community() {
+interface CommunityProps {
+  sectionRef?: React.Ref<HTMLElement>;
+}
+
+function Community({ sectionRef }: CommunityProps) {
   return (
-    <section className={styles.ctaSection}>
+    <section ref={sectionRef} className={styles.ctaSection}>
       {/* <div className={styles.ctaGlow} /> */}
       <div className="container">
         <div className={styles.ctaContent}>
@@ -3837,24 +3841,24 @@ export default function Home() {
   const backgroundRef = useRef<{
     triggerScatterOut: () => void;
     triggerScatterIn: () => void;
+    triggerReverseScatterIn: () => void;
   }>(null);
   const levelsRef = useRef<HTMLDivElement>(null);
-  const observerStateRef = useRef<boolean>(false); // Track previous intersection state, initialize to false (Levels not in view on page load)
+  const communityRef = useRef<HTMLElement>(null);
+  const levelsObserverStateRef = useRef<boolean>(false);
+  const communityObserverStateRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!backgroundRef.current || !levelsRef.current) return;
 
-    // Create intersection observer to trigger animations based on Levels section visibility
+    // Preserve the original Levels-triggered scatter animation.
     const observer = new IntersectionObserver(
       ([entry]) => {
-        // Only trigger when the state actually changes (prevents multiple fires at threshold)
-        if (entry.isIntersecting && !observerStateRef.current) {
-          observerStateRef.current = true;
-          // Trigger scatter out animation when Levels section becomes visible
+        if (entry.isIntersecting && !levelsObserverStateRef.current) {
+          levelsObserverStateRef.current = true;
           backgroundRef.current?.triggerScatterOut();
-        } else if (!entry.isIntersecting && observerStateRef.current) {
-          observerStateRef.current = false;
-          // Trigger scatter in animation when user has completely scrolled past Levels
+        } else if (!entry.isIntersecting && levelsObserverStateRef.current) {
+          levelsObserverStateRef.current = false;
           backgroundRef.current?.triggerScatterIn();
         }
       },
@@ -3862,6 +3866,30 @@ export default function Home() {
     );
 
     observer.observe(levelsRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!backgroundRef.current || !communityRef.current) return;
+
+    // Trigger the reverse scatter-in animation when the Community section comes into view.
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !communityObserverStateRef.current) {
+          communityObserverStateRef.current = true;
+          backgroundRef.current?.triggerReverseScatterIn();
+        } else if (!entry.isIntersecting && communityObserverStateRef.current) {
+          communityObserverStateRef.current = false;
+          backgroundRef.current?.triggerScatterIn();
+        }
+      },
+      { threshold: 0.4 },
+    );
+
+    observer.observe(communityRef.current);
 
     return () => {
       observer.disconnect();
@@ -3884,7 +3912,7 @@ export default function Home() {
         </div>
         <AgentSkills />
         <Deployment />
-        <Community />
+        <Community sectionRef={communityRef} />
       </main>
     </Layout>
   );
