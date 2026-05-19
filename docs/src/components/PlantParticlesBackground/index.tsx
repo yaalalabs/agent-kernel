@@ -299,7 +299,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       const geometry = new THREE.BufferGeometry();
 
       const makeUniforms = () => ({
-        uSize:        { value: 120.0 },
+        uSize:        { value: 110.0 },
         uResolutionY: { value: window.innerHeight },
         uTime:        { value: 0 },
         uAlpha:       { value: 1.0 },
@@ -314,7 +314,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
-      coreMaterial.uniforms.uSize.value = 120.0;
+      coreMaterial.uniforms.uSize.value = 110.0;
 
       const glowMaterial = new THREE.ShaderMaterial({
         uniforms: makeUniforms(),

@@ -531,11 +531,11 @@ function AgentSkills() {
           scrambleText: {
             text,
             chars: "lowerCase", // keeps it feeling like a terminal
-            revealDelay: 0.3,
+            revealDelay: 0.5, // slightly longer reveal for readability
             tweenLength: false, // text length is already correct
           },
-          duration: 1.6,
-          delay: 0.3 + i * 0.5, // stagger each command 0.5s apart
+          duration: 2.2, // slower overall scramble
+          delay: 0.6 + i * 0.7, // increased stagger so commands feel paced
           ease: "power2.inOut",
         });
       });
