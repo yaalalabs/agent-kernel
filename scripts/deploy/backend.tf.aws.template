@@ -7,7 +7,7 @@ terraform {
     bucket         = "{bucket_name}"
     key            = "{state_key}"
     region         = "{region}"
-    dynamodb_table = "{dynamodb_table}"
+    use_lockfile     = true
     encrypt        = true
   }
 }

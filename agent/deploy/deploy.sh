@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 # Create a zip file of the app code
 create_deployment_package() {
     pushd ../
