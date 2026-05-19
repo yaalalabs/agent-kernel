@@ -4,7 +4,7 @@ import io
 import logging
 from typing import Awaitable, Callable, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from livekit import agents, api, rtc
 from livekit.agents import AgentServer, JobContext, WorkerOptions, WorkerType, llm
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN, APIConnectOptions, NotGivenOr
@@ -285,9 +285,14 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
     This handler also runs a LiveKit Worker as a background asyncio task seamlessly tied to the FastAPI lifecycle.
     """
 
-    def __init__(self, entrypoint_fnc: Optional[Callable[[JobContext], Awaitable[None]]] = None):
+    def __init__(
+        self,
+        entrypoint_fnc: Optional[Callable[[JobContext], Awaitable[None]]] = None,
+        auth_dependency: Optional[Callable] = None,
+    ):
         self._log = logging.getLogger("ak.api.livekit")
         self._entrypoint = entrypoint_fnc or _default_entrypoint
+        self._auth_dependency = auth_dependency
         self._worker_task = None
         self._server = None
 
@@ -335,7 +340,9 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
 
         router = APIRouter(prefix="/livekit", tags=["LiveKit Integration"], lifespan=lifespan)
 
-        @router.get("/token")
+        dependencies = [Depends(self._auth_dependency)] if self._auth_dependency else []
+
+        @router.get("/token", dependencies=dependencies)
         def get_token(room: str, identity: str):
             """
             Generates a secure LiveKit Access Token for a frontend client to join the voice room.
