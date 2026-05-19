@@ -1,21 +1,31 @@
-/* ─── Timeline Bar ─────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────
+   StepTimeline — styles.module.css
+   Clean, professional fixed top bar.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Bar ─────────────────────────────────────────────────────────────── */
 
 .bar {
   position: fixed;
-  top: 0;
+  top: 60px; /* sits flush below your main nav */
   left: 0;
   right: 0;
   z-index: 200;
-  margin-top: 60px;
-  background-color: #0d001a;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 221, 255, 0.06);
-  padding: 0 24px;
-  height: 48px;
+  height: 56px;
   display: flex;
   align-items: center;
+  padding: 0 28px;
+
+  /* Surface */
+  background-color: rgba(13, 0, 26, 0.94);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.22);
+
+  /* Frosted glass — supported everywhere modern */
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
 }
+
+/* ── Inner layout ────────────────────────────────────────────────────── */
 
 .inner {
   display: flex;
@@ -26,16 +36,14 @@
   overflow: hidden;
 }
 
-/* ─── Connector Line & Fill ────────────────────────────────────────────── */
+/* ── Connector line ──────────────────────────────────────────────────── */
 
-.connectorWrapper {
+.connector {
   flex: 1;
-  height: 4px;
-  background: rgba(0, 170, 222, 0.1);
-  border-radius: 4px;
+  min-width: 12px;
+  height: 1px;
+  background-color: rgba(0, 221, 255, 0.2);
   position: relative;
-  min-width: 16px;
-  margin: 0 8px;
 }
 
 .connectorFill {
@@ -43,90 +51,125 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: var(--fill-width, 0%);
-  border-radius: 4px;
-  background: linear-gradient(90deg, #00ddff 0%, #f200ff 100%);
+  height: 1px;
+  width: var(--fill, 0%);
+  background: linear-gradient(90deg, #00aade 0%, #00ddff 100%);
   transition: width 120ms linear;
 }
 
-/* ─── Step Button ──────────────────────────────────────────────────────── */
+/* ── Step button ─────────────────────────────────────────────────────── */
 
-.stepBtn {
+.step {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   background: none;
   border: none;
-  padding: 0 4px;
+  padding: 7px 10px;
   cursor: pointer;
-  outline: none;
   flex-shrink: 0;
-  transition: opacity 0.3s ease;
+  border-radius: 8px;
+  outline: none;
+  transition: background-color 0.15s ease, opacity 0.2s ease;
 }
 
-.stepBtn--upcoming {
-  opacity: 0.45;
+.step:hover {
+  background-color: rgba(242, 0, 255, 0.1);
 }
 
-.stepBtn--done,
-.stepBtn--active {
+.step:focus-visible {
+  box-shadow: 0 0 0 2px rgba(242, 0, 255, 0.5);
+}
+
+.step--upcoming {
+  opacity: 0.62;
+}
+
+.step--done,
+.step--active {
   opacity: 1;
 }
 
-/* ─── Step Dot ─────────────────────────────────────────────────────────── */
+/* ── Step number ─────────────────────────────────────────────────────── */
 
-.dot {
-  width: 22px;
-  height: 22px;
+.num {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  letter-spacing: 0.03em;
+  min-width: 16px;
+  text-align: right;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.num--upcoming {
+  color: rgba(0, 170, 222, 0.6);
+}
+
+.num--done {
+  color: #00aade;
+}
+
+.num--active {
+  color: #00ddff;
+}
+
+/* ── Pip (state indicator dot / checkmark) ───────────────────────────── */
+
+.pip {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
-  font-weight: 600;
-  font-family: ui-monospace, monospace;
-  letter-spacing: 0;
-  flex-shrink: 0;
-  transition: all 0.3s ease;
-  background: transparent;
-  border: 1px solid rgba(0, 170, 222, 0.4);
-  color: rgba(0, 221, 255, 0.7);
+  transition: background-color 0.2s ease, width 0.2s ease, height 0.2s ease;
+  color: #0d001a;
 }
 
-.dot--done {
-  background: rgba(242, 0, 255, 0.9);
-  color: #fff;
-  border: none;
+.pip--upcoming {
+  background-color: rgba(0, 170, 222, 0.35);
 }
 
-.dot--active {
-  background: #f200ff;
-  color: #fff;
-  border: none;
+.pip--active {
+  width: 10px;
+  height: 10px;
+  background-color: #00ddff;
+  box-shadow: 0 0 0 2px rgba(242, 0, 255, 0.22);
 }
 
-/* ─── Step Label ───────────────────────────────────────────────────────── */
+.pip--done {
+  background-color: #00aade;
+}
+
+/* ── Label ───────────────────────────────────────────────────────────── */
 
 .label {
-  font-size: 11px;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
-  letter-spacing: 0.02em;
-  transition: color 0.3s ease;
-  display: var(--timeline-label-display, inline);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  transition: color 0.2s ease, font-weight 0.2s ease;
+}
+
+.label--upcoming {
+  color: rgba(0, 170, 222, 0.72);
 }
 
 .label--done {
-  color: rgba(255, 255, 255, 0.65);
+  color: #00aade;
 }
 
 .label--active {
   font-weight: 600;
-  color: #c4b5fd;
+  color: #00ddff;
 }
 
-/* ─── Mobile & Tablet Responsiveness ────────────────────────────────── */
+/* ── Responsive ──────────────────────────────────────────────────────── */
 
 @media (max-width: 1024px) {
   .bar {
