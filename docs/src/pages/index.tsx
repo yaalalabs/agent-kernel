@@ -178,8 +178,7 @@ function Hero() {
             enterprise AI agents seamlessly at scale. Agent Kernel reduces
             months of engineering work to minutes. Works with any major Agentic
             technology, runs on any cloud, interfaces with all mainstream
-            communication channels seamlessly out of the box, no framework /
-            platform lock-in, production ready from day one.
+            communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.
           </p>
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link

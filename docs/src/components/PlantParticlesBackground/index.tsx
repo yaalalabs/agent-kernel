@@ -8,7 +8,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 
 const PLANT_MAX_EXTENT = 2.8;
 const MAX_PARTICLES = 2_000;
-const PARTICLE_CORE_ALPHA = 0.18;
+const PARTICLE_CORE_ALPHA = 0.15;
 const PARTICLE_GLOW_ALPHA = 0.10;
 const PARTICLE_OVERLAY_OPACITY = 0.12;
 const INTRO_ANIMATION_DURATION = 2.0; // seconds
