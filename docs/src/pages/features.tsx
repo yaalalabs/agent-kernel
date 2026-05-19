@@ -1,4 +1,10 @@
-import React, { useId, useState, useEffect, useRef } from "react";
+import React, {
+  useId,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import Link from "@docusaurus/Link";
 import Layout from "@theme/Layout";
 import styles from "./features.module.css";
@@ -545,6 +551,7 @@ function FeaturesPageMap({
 /* ─── Problem comparison (orbit-style UI) ─────────────────────────────────── */
 
 function ProblemTable() {
+  const sectionRef = useRef<HTMLElement>(null);
   const rows = [
     {
       problem: "Platform engineering",
@@ -624,10 +631,98 @@ function ProblemTable() {
 
   const ActiveIcon = problemChipIcons[active];
 
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const header = section.querySelector(`.${styles.sectionHeader}`);
+    const topicButtons = Array.from(
+      section.querySelectorAll(`.${styles.problemTopicBtn}`),
+    );
+    const comparePanel = section.querySelector(`.${styles.problemComparePanel}`);
+    const impactPanel = section.querySelector(`.${styles.problemImpactPanel}`);
+
+    if (reducedMotion) {
+      gsap.set([header, ...topicButtons, comparePanel, impactPanel], {
+        opacity: 1,
+        y: 0,
+      });
+      return;
+    }
+
+    gsap.set([header, comparePanel, impactPanel], {
+      opacity: 0,
+      y: 24,
+    });
+    gsap.set(topicButtons, {
+      opacity: 0,
+      y: 16,
+    });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top 50%",
+        once: true,
+        toggleActions: "play none none none",
+      },
+    });
+
+    tl.to(header, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out",
+    })
+      .to(
+        topicButtons,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.45,
+          stagger: 0.05,
+          ease: "power2.out",
+        },
+        "-=0.2",
+      )
+      .to(
+        comparePanel,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.65,
+          ease: "power2.out",
+        },
+        "-=0.15",
+      )
+      .to(
+        impactPanel,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.65,
+          ease: "power2.out",
+        },
+        "-=0.35",
+      );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
+
   return (
     <section
       id={FEATURE_ANCHORS.problem}
       className={`${styles.section} ${styles.problemSection} ${styles.pageAnchor}`}
+      ref={sectionRef}
     >
       <div className="container">
         <div className={styles.sectionHeader}>
@@ -797,6 +892,8 @@ function ProblemTable() {
 /* ─── Core Features ─────────────────────────────────────────────────────── */
 
 function CoreFeatures() {
+  const sectionRef = useRef<HTMLElement>(null);
+
   const features = [
     {
       icon: <MdCode />,
@@ -925,10 +1022,84 @@ function CoreFeatures() {
     },
   ];
 
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const header = section.querySelector(`.${styles.sectionHeader}`);
+    const grid = section.querySelector(`.${styles.featuresGrid}`);
+    const cards = Array.from(
+      section.querySelectorAll(`.${styles.featureGridCell}`),
+    );
+
+    if (!header || !grid || !cards.length) {
+      return;
+    }
+
+    if (reducedMotion) {
+      gsap.set([header, grid, ...cards], { opacity: 1, y: 0, scale: 1 });
+      return;
+    }
+
+    gsap.set(header, { opacity: 0, y: 24 });
+    gsap.set(grid, { opacity: 0, y: 22 });
+    gsap.set(cards, { opacity: 0, y: 32, scale: 0.94 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top 50%",
+        once: true,
+        toggleActions: "play none none none",
+      },
+    });
+
+    tl.to(header, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out",
+    })
+      .to(
+        grid,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.42,
+          ease: "power2.out",
+        },
+        "-=0.15",
+      )
+      .to(
+        cards,
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.55,
+          stagger: 0.08,
+          ease: "power2.out",
+        },
+        "-=0.1",
+      );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
+
   return (
     <section
       id={FEATURE_ANCHORS.core}
       className={`${styles.section} ${styles.coreFeaturesSection} ${styles.pageAnchor}`}
+      ref={sectionRef}
     >
       <div className="container">
         <div className={styles.sectionHeader}>
@@ -977,6 +1148,8 @@ function CoreFeatures() {
 /* ─── Framework Support ─────────────────────────────────────────────────── */
 
 function FrameworkSupport() {
+  const sectionRef = useRef<HTMLElement>(null);
+
   const integrations = [
     {
       key: "openai",
@@ -1136,10 +1309,101 @@ function FrameworkSupport() {
     </>
   );
 
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const header = section.querySelector(`.${styles.sectionHeader}`);
+    const block = section.querySelector(`.${styles.frameworkBlock}`);
+    const cards = Array.from(
+      section.querySelectorAll(`.${styles.frameworkGridCell}`),
+    );
+    const featuredRow = section.querySelector(`.${styles.frameworkFeaturedRow}`);
+
+    if (!header || !block || !cards.length || !featuredRow) {
+      return;
+    }
+
+    if (reducedMotion) {
+      gsap.set([header, block, ...cards, featuredRow], {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+      });
+      return;
+    }
+
+    gsap.set(header, { opacity: 0, y: 24 });
+    gsap.set(block, { opacity: 0, y: 22 });
+    gsap.set(cards, { opacity: 0, y: 28, scale: 0.95 });
+    gsap.set(featuredRow, { opacity: 0, y: 28, scale: 0.98 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top 50%",
+        once: true,
+        toggleActions: "play none none none",
+      },
+    });
+
+    tl.to(header, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out",
+    })
+      .to(
+        block,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.45,
+          ease: "power2.out",
+        },
+        "-=0.12",
+      )
+      .to(
+        cards,
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.5,
+          stagger: 0.07,
+          ease: "power2.out",
+        },
+        "-=0.18",
+      )
+      .to(
+        featuredRow,
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.55,
+          ease: "power2.out",
+        },
+        "-=0.15",
+      );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
+
   return (
     <section
       id={FEATURE_ANCHORS.frameworks}
       className={`${styles.section} ${styles.pageAnchor}`}
+      ref={sectionRef}
     >
       <div className="container">
         <div className={styles.sectionHeader}>
@@ -1188,6 +1452,8 @@ function FrameworkSupport() {
 /* ─── Testing Section ───────────────────────────────────────────────────── */
 
 function TestingSection() {
+  const sectionRef = useRef<HTMLElement>(null);
+
   const approaches = [
     {
       key: "cli",
@@ -1246,10 +1512,116 @@ function TestingSection() {
     },
   ];
 
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) {
+      return;
+    }
+
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const header = section.querySelector(`.${styles.sectionHeader}`);
+    const block = section.querySelector(`.${styles.testingBlock}`);
+    const approachCards = Array.from(
+      section.querySelectorAll(`.${styles.testingApproachCell}`),
+    );
+    const modePanel = section.querySelector(`.${styles.testingModesPanel}`);
+    const modeCards = Array.from(
+      section.querySelectorAll(`.${styles.testingModeCell}`),
+    );
+
+    if (!header || !block || !approachCards.length || !modePanel || !modeCards.length) {
+      return;
+    }
+
+    if (reducedMotion) {
+      gsap.set([header, block, ...approachCards, modePanel, ...modeCards], {
+        opacity: 1,
+        y: 0,
+        scale: 1,
+      });
+      return;
+    }
+
+    gsap.set(header, { opacity: 0, y: 24 });
+    gsap.set(block, { opacity: 0, y: 22 });
+    gsap.set(approachCards, { opacity: 0, y: 28, scale: 0.95 });
+    gsap.set(modePanel, { opacity: 0, y: 24 });
+    gsap.set(modeCards, { opacity: 0, y: 22, scale: 0.96 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top 50%",
+        once: true,
+        toggleActions: "play none none none",
+      },
+    });
+
+    tl.to(header, {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: "power2.out",
+    })
+      .to(
+        block,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.45,
+          ease: "power2.out",
+        },
+        "-=0.12",
+      )
+      .to(
+        approachCards,
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.5,
+          stagger: 0.08,
+          ease: "power2.out",
+        },
+        "-=0.18",
+      )
+      .to(
+        modePanel,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.5,
+          ease: "power2.out",
+        },
+        "-=0.08",
+      )
+      .to(
+        modeCards,
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.45,
+          stagger: 0.07,
+          ease: "power2.out",
+        },
+        "-=0.15",
+      );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
+
   return (
     <section
       id={FEATURE_ANCHORS.testing}
       className={`${styles.section} ${styles.testingSection} ${styles.pageAnchor}`}
+      ref={sectionRef}
     >
       <div className="container">
         <div className={styles.sectionHeader}>
@@ -1466,6 +1838,7 @@ function MessagingSection() {
 /* ─── Protocol Support ──────────────────────────────────────────────────── */
 
 function ProtocolSupport() {
+  const sectionRef = useRef<HTMLElement>(null);
   const protocols = [
     {
       key: "mcp",
@@ -1486,11 +1859,61 @@ function ProtocolSupport() {
       linkLabel: "A2A server docs →",
     },
   ];
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const header = section.querySelector(`.${styles.sectionHeader}`);
+    const grid = section.querySelector(`.${styles.protocolGrid}`);
+    const cells = Array.from(section.querySelectorAll(`.${styles.protocolCell}`));
+
+    if (!header || !grid || !cells.length) return;
+
+    if (reducedMotion) {
+      gsap.set([header, grid, cells], { opacity: 1, y: 0, scale: 1 });
+      return;
+    }
+
+    gsap.set(header, { opacity: 0, y: 24 });
+    gsap.set(grid, { opacity: 0, y: 20 });
+    gsap.set(cells, { opacity: 0, y: 28, scale: 0.98 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: 'top 50%',
+        once: true,
+        toggleActions: 'play none none none',
+      },
+    });
+
+    tl.to(header, { opacity: 1, y: 0, duration: 0.6, ease: 'power2.out' })
+      .to(
+        grid,
+        { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' },
+        '-=0.12',
+      )
+      .to(
+        cells,
+        { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.07, ease: 'power2.out' },
+        '-=0.18',
+      );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
 
   return (
     <section
       id={FEATURE_ANCHORS.protocols}
       className={`${styles.section} ${styles.protocolSection} ${styles.pageAnchor}`}
+      ref={sectionRef}
     >
       <div className="container">
         <div className={styles.sectionHeader}>

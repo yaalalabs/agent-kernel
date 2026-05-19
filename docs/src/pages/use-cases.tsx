@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
@@ -408,9 +408,63 @@ const REAL_WORLD_USE_CASES = [
 ];
 
 function RealWorldUseCases() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const reducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const header = section.querySelector(`.${featureStyles.sectionHeader}`);
+    const grid = section.querySelector(`.${featureStyles.featuresGrid}`);
+    const cells = Array.from(
+      section.querySelectorAll(`.${featureStyles.featureGridCell}`),
+    );
+
+    if (!header || !grid || !cells.length) return;
+
+    if (reducedMotion) {
+      gsap.set([header, grid, cells], { opacity: 1, y: 0, scale: 1 });
+      return;
+    }
+
+    gsap.set(header, { opacity: 0, y: 24 });
+    gsap.set(grid, { opacity: 0, y: 20 });
+    gsap.set(cells, { opacity: 0, y: 28, scale: 0.98 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: 'top 80%',
+        once: true,
+        toggleActions: 'play none none none',
+      },
+    });
+
+    tl.to(header, { opacity: 1, y: 0, duration: 0.6, ease: 'power2.out' })
+      .to(
+        grid,
+        { opacity: 1, y: 0, duration: 0.45, ease: 'power2.out' },
+        '-=0.12',
+      )
+      .to(
+        cells,
+        { opacity: 1, y: 0, scale: 1, duration: 0.5, stagger: 0.07, ease: 'power2.out' },
+        '-=0.18',
+      );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
   return (
     <section
       className={`${featureStyles.section} ${featureStyles.coreFeaturesSection} ${styles.realWorldSection}`}
+      ref={sectionRef}
     >
       <div className="container">
         <div className={featureStyles.sectionHeader}>
