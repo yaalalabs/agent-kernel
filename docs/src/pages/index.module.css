@@ -1357,8 +1357,8 @@
 }
 
 .agentSkillsSkillCard:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 221, 255, 0.05);
+  border-color: rgba(0, 221, 255, 0.4);
   transform: scale(1.03);
 }
 
@@ -2217,8 +2217,8 @@
 }
 
 .levelCard:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(0, 221, 255, 0.1);
+  border-color: rgba(0, 221, 255, 0.4);
   transform: scale(1.05);
 }
 
