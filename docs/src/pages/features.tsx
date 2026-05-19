@@ -1954,9 +1954,14 @@ function ProtocolSupport() {
 
 /* ─── CTA ───────────────────────────────────────────────────────────────── */
 
-function CTASection() {
+function CTASection({
+  sectionRef,
+}: {
+  sectionRef: React.RefObject<HTMLElement>;
+}) {
   return (
     <section
+      ref={sectionRef}
       id={FEATURE_ANCHORS.cta}
       className={`${styles.ctaSection} ${styles.pageAnchor}`}
     >
@@ -2007,6 +2012,31 @@ export default function Features() {
   const plantParticlesBackgroundRef = useRef<PlantParticlesBackgroundHandle>(
     null,
   );
+  const ctaRef = useRef<HTMLElement>(null);
+  const ctaObserverStateRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (!plantParticlesBackgroundRef.current || !ctaRef.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !ctaObserverStateRef.current) {
+          ctaObserverStateRef.current = true;
+          plantParticlesBackgroundRef.current?.triggerReverseScatterIn();
+        } else if (!entry.isIntersecting && ctaObserverStateRef.current) {
+          ctaObserverStateRef.current = false;
+          plantParticlesBackgroundRef.current?.triggerScatterIn();
+        }
+      },
+      { threshold: 0.4 },
+    );
+
+    observer.observe(ctaRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   return (
     <Layout
@@ -2028,7 +2058,7 @@ export default function Features() {
         <TestingSection />
         <MessagingSection />
         <ProtocolSupport />
-        <CTASection />
+        <CTASection sectionRef={ctaRef} />
       </main>
     </Layout>
   );
