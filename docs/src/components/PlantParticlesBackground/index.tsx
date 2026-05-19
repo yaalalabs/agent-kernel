@@ -242,7 +242,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
 
     const coreMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 110.0 },
+        uSize: { value: 100.0 },
         uResolutionY: { value: window.innerHeight },
         uTime: { value: 0 },
         uAlpha: { value: 1.0 },
@@ -258,7 +258,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
     // Halo is ~5× larger and uses a smooth cubic falloff to mimic a bloom halo
     const glowMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        uSize: { value: 180.0 },
+        uSize: { value: 120.0 },
         uResolutionY: { value: window.innerHeight },
         uTime: { value: 0 },
         uAlpha: { value: 1.0 },
