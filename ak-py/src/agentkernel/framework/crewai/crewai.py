@@ -117,6 +117,12 @@ class CrewAIRunner(Runner):
             if prompt.strip() == "":
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
+            ext_memory = self._memory(session)
+
+            # Persist the user's prompt so it is available via external memory search on subsequent turns
+            if ext_memory and ext_memory.storage:
+                ext_memory.storage.save(f"User: {prompt}")
+
             task = Task(
                 description=prompt,
                 expected_output="An answer is plain text",
@@ -126,7 +132,7 @@ class CrewAIRunner(Runner):
                 agents=agent.crew,
                 tasks=[task],
                 verbose=False,
-                external_memory=self._memory(session),
+                external_memory=ext_memory,
             )
             reply = crew.kickoff(inputs={})
             if hasattr(reply, "raw"):
