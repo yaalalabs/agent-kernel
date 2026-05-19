@@ -166,6 +166,70 @@
   line-height: 1;
 }
 
+/* Primary link-style button used for CTAs inside content sections */
+.btnLinkPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(14, 8, 28, 0.1);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 1rem;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: background 0.25s ease, 
+              border-color 0.25s ease, 
+              transform 0.2s ease, 
+              box-shadow 0.25s ease;
+}
+
+.btnLinkPrimary:hover {
+  background: rgba(26, 14, 46, 0.88);
+  border-color: rgba(0, 221, 255, 0.35);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 221, 255, 0.12);
+  transform: translateY(-2px) scale(1.02);
+  color: #ffffff;
+}
+
+.btnLinkIconPrimary{
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4facfe 0%, #2979ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  color: #ffffff;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
+}
+
+/* Icon motion and subtle extra glow on hover */
+.btnLinkPrimary:hover .btnLinkIconPrimary {
+  transform: translateX(6px);
+  box-shadow: 0 6px 18px rgba(47, 112, 255, 0.16);
+}
+
+.btnLinkPrimary:active {
+  transform: translateY(0) scale(0.995);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btnLinkPrimary,
+  .btnLinkPrimary .btnLinkIconPrimary {
+    transition: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+}
+
 /* ─── Why Agent Kernel (hero) ─────────────────────────────────────────────── */
 
 .whyHero {
@@ -1936,7 +2000,7 @@
 
 .msgChannelFooter {
   text-align: center;
-  margin-top: 1.5rem;
+  margin-top: 1.8rem;
 }
 
 @keyframes msgConnectorShimmer {

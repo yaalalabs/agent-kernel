@@ -553,8 +553,12 @@ function AgentSkills() {
           </div>
 
           <div className={styles.agentSkillsFooter}>
-            <Link className={styles.agentSkillsCtaLink} to="/docs">
-              Learn more about Agent Skills <span aria-hidden>→</span>
+            <Link
+              className={`button button--primary button--md ${styles.btnLinkPrimary} ${styles.agentSkillsCtaLink}`}
+              to="/docs"
+            >
+              Learn more about Agent Skills 
+              <span className={styles.btnLinkIconPrimary}>→</span>
             </Link>
           </div>
         </div>

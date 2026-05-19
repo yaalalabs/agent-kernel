@@ -1410,8 +1410,12 @@ function MessagingSection() {
         </div>
 
         <div className={styles.msgChannelFooter}>
-          <Link to="/docs/integrations/overview" className={styles.sectionLink}>
-            Full integrations overview →
+          <Link
+            to="/docs/integrations/overview"
+            className={`button button--primary button--md ${styles.btnLinkPrimary}`}
+          >
+            Full integrations overview
+            <span className={styles.btnLinkIconPrimary}>→</span>
           </Link>
         </div>
       </div>
