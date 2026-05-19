@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from agentkernel.deployment.aws.serverless.core.router import RESTLambdaRouter
@@ -28,7 +30,18 @@ def make_event_without_env_vars(monkeypatch, path, method="GET"):
 
 
 @pytest.fixture  # what fixture does here is it enables every test function to get a new lambda router instance if they want to by just adding router as a parameter
-def router():
+@patch("agentkernel.deployment.aws.serverless.core.router.rest_lambda.DefaultEndpointsHandler")
+@patch("agentkernel.deployment.aws.serverless.core.router.rest_lambda.SQSHandler")
+def router(mock_sqs_handler, mock_default_endpoints_handler):
+    # Mock SQSHandler to return None for queue URL (no queues configured)
+    mock_sqs_handler.get_input_queue_url.return_value = None
+    
+    # Mock DefaultEndpointsHandler to return simple route configuration
+    mock_handler_instance = MagicMock()
+    mock_handler_instance.get_default_endpoint_info.return_value = ("default_chat_path", "POST", None)
+    mock_handler_instance.get_routes.return_value = {"default_chat_path": {"POST": lambda e, c: (200, {"stubbed": True})}}
+    mock_default_endpoints_handler.return_value = mock_handler_instance
+    
     return RESTLambdaRouter()
 
 
