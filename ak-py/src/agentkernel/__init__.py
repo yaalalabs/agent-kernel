@@ -5,7 +5,7 @@ This package provides a unified framework for working with different agent imple
 It includes core functionality for agent execution, modular integration, and runtime management.
 
 Features:
-- Support for multiple agent frameworks (OpenAI, CrewAI, LangGraph)
+- Support for multiple agent frameworks (OpenAI, CrewAI, LangGraph, Smolagents)
 - Modular architecture for easy extension
 - Unified runtime environment
 - CLI interface for agent interaction

@@ -42,6 +42,9 @@ langgraph = [
     "langchain_community~=0.4.1",
     "litellm~=1.74.9"
 ]
+smolagents = [
+    "smolagents>=1.0.0",
+]
 cli = [
 
 ]
@@ -140,7 +143,7 @@ a2a = [
     "a2a-sdk[http-server]>=0.3.6",
 ]
 mcp = [
-    "fastmcp>=2.12.4",
+    "fastmcp>=2.14.2,<3.0.0"
 ]
 multimodal = [
     "litellm>=1.74.9",

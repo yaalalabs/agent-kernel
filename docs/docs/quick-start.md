@@ -232,6 +232,54 @@ python my_agent.py
 ```
 
 </TabItem>
+<TabItem value="smolagents" label="Smolagents">
+
+## Smolagents Quick Start
+
+### 1. Install
+
+```bash
+pip install agentkernel[smolagents]
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from smolagents import LiteLLMModel, ToolCallingAgent
+from agentkernel.cli import CLI
+from agentkernel.smolagents import SmolagentsModule
+
+model = LiteLLMModel(model_id="openai/gpt-4o")
+
+assistant = ToolCallingAgent(
+    tools=[],
+    model=model,
+    name="assistant",
+    description="You are a helpful AI assistant. Provide concise and accurate answers.",
+)
+
+# Register with Agent Kernel
+SmolagentsModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+python my_agent.py
+```
+
+</TabItem>
 </Tabs>
 
 ## Testing Your Agent
@@ -266,7 +314,7 @@ Every Agent Kernel application follows this pattern:
 
 ```mermaid
 graph TB
-    A[Framework Agent<br/>OpenAI/CrewAI/LangGraph/ADK] --> B[Module<br/>OpenAIModule/CrewAIModule/etc]
+    A[Framework Agent<br/>OpenAI/CrewAI/LangGraph/ADK/Smolagents] --> B[Module<br/>OpenAIModule/CrewAIModule/etc]
     B --> C[Runtime<br/>Global Registry]
     C --> D[Execution<br/>CLI/API/Lambda]
     

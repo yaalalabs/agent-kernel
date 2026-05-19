@@ -13,7 +13,6 @@ module "containerd_agent" {
   container_port              = 8000
   container_health_check_path = "/health"
 
-  # api_version             = "0.4.0"
   is_production           = false
   create_redis_cluster    = false
   create_cosmosdb_cluster = true

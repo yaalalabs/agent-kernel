@@ -58,3 +58,11 @@ class LangFuse(BaseTrace):
         from .adk import LangFuseADKRunner
 
         return LangFuseADKRunner(self._client)
+
+    def smolagents(self) -> Runner:
+        """
+        Returns the Langfuse Smolagents runner instance.
+        """
+        from .smolagents import LangFuseSmolagentsRunner
+
+        return LangFuseSmolagentsRunner(self._client)
