@@ -527,7 +527,8 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
 def main():
     parser = argparse.ArgumentParser(description='Run a single test')
     parser.add_argument('--type', required=True, 
-                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless'])
+                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless', 'gcp-containerized', 'gcp-serverless'],
+                       help='Type of test to run')
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
     parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
@@ -545,6 +546,8 @@ def main():
             success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = deploy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
+        elif args.type in ['gcp-serverless', 'gcp-containerized']:
+            success = deploy_gcp_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Deploy action not applicable for type: {args.type}")
             success = True
@@ -553,6 +556,8 @@ def main():
             success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
+        elif args.type in ['gcp-serverless', 'gcp-containerized']:
+            success = destroy_gcp_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         else:
             print(f"⚠️  Destroy action not applicable for type: {args.type}")
             success = True
@@ -569,6 +574,8 @@ def main():
             success = test_aws_deployment(args.path, args.deploy_dir)
         elif args.type in ['azure-containerized', 'azure-serverless']:
             success = test_azure_deployment(args.path, args.deploy_dir)
+        elif args.type in ['gcp-containerized', 'gcp-serverless']:
+            success = test_gcp_deployment(args.path, args.deploy_dir)
         else:
             print(f"  Test action not applicable for type: {args.type}")
             success = False
