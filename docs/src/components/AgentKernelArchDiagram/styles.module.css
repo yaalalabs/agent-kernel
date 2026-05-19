@@ -419,6 +419,14 @@
   .deployBox {
     min-width: 80px;
   }
+
+  /* Make text slightly smaller on small screens for better fit */
+  .topBoxLabel { font-size: 1rem; }
+  .topBoxSub { font-size: 0.82rem; }
+  .hubLabel { font-size: 0.95rem; }
+  .moduleLabel { font-size: 0.75rem; }
+  .moduleIcon { font-size: 0.92rem; }
+  .deployLabel { font-size: 0.72rem; }
 }
 
 @media (max-width: 400px) {
@@ -432,4 +440,11 @@
   .deployRow {
     gap: 0.4rem;
   }
+
+  /* Further reduce text on very small screens */
+  .topBoxLabel { font-size: 0.95rem; }
+  .topBoxSub { font-size: 0.78rem; }
+  .hubLabel { font-size: 0.9rem; }
+  .moduleLabel { font-size: 0.72rem; }
+  .deployLabel { font-size: 0.68rem; }
 }
