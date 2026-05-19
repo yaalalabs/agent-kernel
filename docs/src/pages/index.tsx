@@ -3842,6 +3842,8 @@ export default function Home() {
     triggerScatterOut: () => void;
     triggerScatterIn: () => void;
     triggerReverseScatterIn: () => void;
+    triggerScatterFloat: () => void;
+    triggerFloatReform: () => void;
   }>(null);
   const levelsRef = useRef<HTMLDivElement>(null);
   const communityRef = useRef<HTMLElement>(null);
@@ -3851,7 +3853,7 @@ export default function Home() {
   useEffect(() => {
     if (!backgroundRef.current || !levelsRef.current) return;
 
-    // Preserve the original Levels-triggered scatter animation.
+    // Trigger the scatter-out animation when the Levels section comes into view.
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !levelsObserverStateRef.current) {
@@ -3862,7 +3864,7 @@ export default function Home() {
           backgroundRef.current?.triggerScatterIn();
         }
       },
-      { threshold: 0.0 }, // Trigger when element completely enters or leaves viewport
+      { threshold: 0.0 },
     );
 
     observer.observe(levelsRef.current);

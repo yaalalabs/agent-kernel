@@ -110,6 +110,10 @@ function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
   el?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+type PlantParticlesBackgroundHandle = React.ElementRef<
+  typeof PlantParticlesBackground
+>;
+
 /* ─── Why Agent Kernel (hero) ───────────────────────────────────────────── */
 
 function Hero() {
@@ -197,7 +201,11 @@ function Hero() {
 
 /* ─── Page map (diagram) ────────────────────────────────────────────────── */
 
-function FeaturesPageMap() {
+function FeaturesPageMap({
+  plantParticlesBackgroundRef,
+}: {
+  plantParticlesBackgroundRef: React.RefObject<PlantParticlesBackgroundHandle>;
+}) {
   const gradId = useId().replace(/:/g, "");
   const sectionRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -214,17 +222,42 @@ function FeaturesPageMap() {
     }
     const el = sectionRef.current;
     if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
+    const shouldAnimateParticles =
+      typeof window !== "undefined" &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const triggerScatterOut = () => {
+      if (shouldAnimateParticles) {
+        plantParticlesBackgroundRef.current?.triggerScatterOut();
+      }
+    };
+    const triggerScatterIn = () => {
+      if (shouldAnimateParticles) {
+        plantParticlesBackgroundRef.current?.triggerScatterIn();
+      }
+    };
+    const scrollTrigger = ScrollTrigger.create({
+      trigger: el,
+      start: "top 60%",
+      end: "bottom 40%",
+      onEnter: () => {
+        setVisible(true);
+        triggerScatterOut();
       },
-      { threshold: 0.1 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
+      onEnterBack: () => {
+        setVisible(true);
+        triggerScatterOut();
+      },
+      onLeave: () => {
+        setVisible(false);
+        triggerScatterIn();
+      },
+      onLeaveBack: () => {
+        setVisible(false);
+        triggerScatterIn();
+      },
+    });
+
+    return () => scrollTrigger.kill();
   }, []);
 
   const reducedMotion =
@@ -1541,15 +1574,24 @@ function CTASection() {
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function Features() {
+  const plantParticlesBackgroundRef = useRef<PlantParticlesBackgroundHandle>(
+    null,
+  );
+
   return (
     <Layout
       title="Features"
       description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations."
     >
-      <PlantParticlesBackground modelUrl='/models/leaf.glb' />
+      <PlantParticlesBackground
+        ref={plantParticlesBackgroundRef}
+        modelUrl="/models/leaf.glb"
+      />
       <Hero />
       <main>
-        <FeaturesPageMap />
+        <FeaturesPageMap
+          plantParticlesBackgroundRef={plantParticlesBackgroundRef}
+        />
         <ProblemTable />
         <CoreFeatures />
         <FrameworkSupport />

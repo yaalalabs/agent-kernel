@@ -17,11 +17,18 @@ const SCATTER_OUT_DELAY = 3.5; // delay before scattering out (after intro compl
 const SCATTER_OUT_DURATION = 3.5; // duration of scatter out animation
 const SCATTER_OUT_FADE_DURATION = 1.0; // duration of fade out after scatter completes
 const SCATTER_OUT_RADIUS = 8.0; // how far particles scatter outward
+
+// ── Scatter-float animation constants ────────────────────────────────────────
+const SCATTER_FLOAT_DURATION = 2.5;   // seconds to scatter outward before floating
+const SCATTER_FLOAT_RADIUS   = 5.0;   // how far particles scatter before floating
+const FLOAT_DRIFT_AMPLITUDE  = 0.06;  // max drift distance per axis while floating (firefly-gentle)
+const FLOAT_REFORM_DURATION  = 2.2;   // seconds to ease back into model shape
+
 // Color palette
 const PALETTE: [number, number, number][] = [
-  [0.0, 221 / 255, 1.0], // #00DDFF (brand color)
-  [0.0, 170 / 255, 222 / 255], // #00AADE (blue shade)
-  [242 / 255, 0.0, 1.0], // #F200FF (accent)
+  [0.0, 221 / 255, 1.0],          // #00DDFF (brand color)
+  [0.0, 170 / 255, 222 / 255],    // #00AADE (blue shade)
+  [242 / 255, 0.0, 1.0],          // #F200FF (accent)
 ];
 
 const vertexShader = `
@@ -36,14 +43,10 @@ const vertexShader = `
   void main() {
     vec3 pos = position;
     
-    // Add individual particle movement based on position hash and time
-    // Creates a subtle floating/drifting motion for each particle
-    // Only apply when animations are not active (uDisableDrift = 1.0)
     if (uDisableDrift > 0.5) {
       float hash = sin(pos.x * 12.9898 + pos.y * 78.233 + pos.z * 45.164) * 43758.5453;
       float frac_hash = fract(hash);
       
-      // Each particle drifts in a subtle pattern (speed movement)
       float drift_x = sin(uTime * 0.5 + frac_hash * 6.28) * 0.045;
       float drift_y = cos(uTime * 0.4 + frac_hash * 6.28) * 0.045;
       float drift_z = sin(uTime * 0.35 + frac_hash * 6.28) * 0.035;
@@ -59,7 +62,6 @@ const vertexShader = `
   }
 `;
 
-// Sharp bright core of each particle
 const coreFragmentShader = `
   varying vec3 vPos;
   varying vec3 vColor;
@@ -73,7 +75,6 @@ const coreFragmentShader = `
   }
 `;
 
-// Large soft halo drawn on top of the core — simulates bloom without post-processing
 const glowFragmentShader = `
   varying vec3 vPos;
   varying vec3 vColor;
@@ -127,9 +128,9 @@ function assignColorsToGeometry(geo: THREE.BufferGeometry, count: number) {
   for (let i = 0; i < count; i++) {
     const r = Math.random();
     let idx = 0;
-    if (r < 0.6) idx = 0; // primary
-    else if (r < 0.9) idx = 1; // blue shade
-    else idx = 2; // accent
+    if (r < 0.6) idx = 0;
+    else if (r < 0.9) idx = 1;
+    else idx = 2;
     const c = PALETTE[idx];
     colors[i * 3] = c[0];
     colors[i * 3 + 1] = c[1];
@@ -151,6 +152,31 @@ function generateScatteredPositions(count: number): Float32Array {
   return positions;
 }
 
+/**
+ * Generate per-particle float seeds.
+ * Layout per particle (stride = 6):
+ *   [0] freqX   – oscillation frequency on X  (0.3 – 0.9 Hz)
+ *   [1] freqY   – oscillation frequency on Y
+ *   [2] freqZ   – oscillation frequency on Z
+ *   [3] phaseX  – phase offset X  (0 – 2π)
+ *   [4] phaseY  – phase offset Y
+ *   [5] phaseZ  – phase offset Z
+ */
+function generateFloatSeeds(count: number): Float32Array {
+  const seeds = new Float32Array(count * 6);
+  for (let i = 0; i < count; i++) {
+    const base = i * 6;
+    // Very slow independent frequencies per axis — firefly drift feel
+    seeds[base + 0] = 0.08 + Math.random() * 0.14;  // 0.08–0.22 Hz X
+    seeds[base + 1] = 0.07 + Math.random() * 0.13;  // 0.07–0.20 Hz Y
+    seeds[base + 2] = 0.06 + Math.random() * 0.12;  // 0.06–0.18 Hz Z
+    seeds[base + 3] = Math.random() * Math.PI * 2;   // phase X
+    seeds[base + 4] = Math.random() * Math.PI * 2;   // phase Y
+    seeds[base + 5] = Math.random() * Math.PI * 2;   // phase Z
+  }
+  return seeds;
+}
+
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
@@ -163,525 +189,608 @@ interface PlantParticlesBackgroundHandle {
   triggerScatterOut: () => void;
   triggerScatterIn: () => void;
   triggerReverseScatterIn: () => void;
+  /** New: scatter particles outward then let them float. Particles stay visible. */
+  triggerScatterFloat: () => void;
+  /** New: reform floating particles back into the model shape. */
+  triggerFloatReform: () => void;
 }
 
 const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, PlantParticlesBackgroundProps>(
   ({ modelUrl }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const { siteConfig } = useDocusaurusContext();
-    const triggerScatterOutRef = useRef<() => void>(() => {});
-    const triggerScatterInRef = useRef<() => void>(() => {});
-    const triggerReverseScatterInRef = useRef<() => void>(() => {});
+    const triggerScatterOutRef         = useRef<() => void>(() => {});
+    const triggerScatterInRef          = useRef<() => void>(() => {});
+    const triggerReverseScatterInRef   = useRef<() => void>(() => {});
+    const triggerScatterFloatRef       = useRef<() => void>(() => {});
+    const triggerFloatReformRef        = useRef<() => void>(() => {});
 
     useImperativeHandle(ref, () => ({
-      triggerScatterOut: () => triggerScatterOutRef.current(),
-      triggerScatterIn: () => triggerScatterInRef.current(),
+      triggerScatterOut:       () => triggerScatterOutRef.current(),
+      triggerScatterIn:        () => triggerScatterInRef.current(),
       triggerReverseScatterIn: () => triggerReverseScatterInRef.current(),
+      triggerScatterFloat:     () => triggerScatterFloatRef.current(),
+      triggerFloatReform:      () => triggerFloatReformRef.current(),
     }));
 
     const indexModelUrl = useMemo(() => {
-      // Use provided modelUrl or construct default
-      if (modelUrl) {
-        return modelUrl;
-      }
+      if (modelUrl) return modelUrl;
       const base = siteConfig.baseUrl.endsWith('/')
         ? siteConfig.baseUrl
         : `${siteConfig.baseUrl}/`;
       return `${base}models/index.glb`;
     }, [modelUrl, siteConfig.baseUrl]);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const container = containerRef.current;
-    let cancelled = false;
-    let animationId: number | null = null;
+    useEffect(() => {
+      if (!containerRef.current) return;
+      const container = containerRef.current;
+      let cancelled = false;
+      let animationId: number | null = null;
 
-    // Animation state
-    let elapsedTime = 0;
-    let isAnimatingIntro = false;
-    let introAnimationTime = 0;
-    let startPositions: Float32Array | null = null;
-    let endPositions: Float32Array | null = null;
-    let introScatterPositions: Float32Array | null = null;
-    let isAnimatingScatterOut = false;
-    let scatterOutAnimationTime = 0;
-    let scatterOutStartTime = 0;
-    let isAnimatingReverseScatterIn = false;
-    let reverseScatterInAnimationTime = 0;
-    let modelPositions: Float32Array | null = null;
-    let hasScatteredOut = false; // Track if scatter out has completed
-    let shouldTriggerScatterOut = false; // Track external trigger
-    let isAnimatingFadeOut = false; // Track fade-out phase
-    let fadeOutAnimationTime = 0;
-    let scatteredPositions: Float32Array | null = null; // Save positions at end of scatter-out
-    let shouldTriggerScatterIn = false; // Track external trigger for scatter-in reset
-    let shouldTriggerReverseScatterIn = false;
-    let hasScatteredIn = true; // Initialize to true - only allow scatter-in after scatter-out has happened
+      // ── Shared time ──────────────────────────────────────────────────────────
+      let elapsedTime = 0;
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.z = 5;
+      // ── Intro animation ──────────────────────────────────────────────────────
+      let isAnimatingIntro    = false;
+      let introAnimationTime  = 0;
+      let startPositions: Float32Array | null = null;
+      let endPositions:   Float32Array | null = null;
+      let introScatterPositions: Float32Array | null = null;
 
-    const pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+      // ── Scatter-out (original, with fade) ────────────────────────────────────
+      let isAnimatingScatterOut   = false;
+      let scatterOutAnimationTime = 0;
+      let isAnimatingFadeOut      = false;
+      let fadeOutAnimationTime    = 0;
+      let scatteredPositions: Float32Array | null = null;
+      let hasScatteredOut = false;
+      let shouldTriggerScatterOut = false;
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: false,
-      alpha: false,
-      powerPreference: 'high-performance',
-    });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(pixelRatio);
-    renderer.setClearColor(0x0D001A, 1);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    container.appendChild(renderer.domElement);
+      // ── Scatter-in (original) ────────────────────────────────────────────────
+      let shouldTriggerScatterIn = false;
+      let hasScatteredIn         = true;
 
-    // Expose scatter out trigger
-    triggerScatterOutRef.current = () => {
-      shouldTriggerScatterOut = true;
-    };
+      // ── Reverse scatter-in ───────────────────────────────────────────────────
+      let isAnimatingReverseScatterIn   = false;
+      let reverseScatterInAnimationTime = 0;
+      let shouldTriggerReverseScatterIn = false;
 
-    // Expose scatter in trigger (to reset animation when scrolling back)
-    triggerScatterInRef.current = () => {
-      shouldTriggerScatterIn = true;
-    };
+      // ── Model reference ──────────────────────────────────────────────────────
+      let modelPositions: Float32Array | null = null;
 
-    // Expose reverse scatter-in trigger (for Community section)
-    triggerReverseScatterInRef.current = () => {
-      shouldTriggerReverseScatterIn = true;
-    };
+      // ── NEW: Scatter-float state ─────────────────────────────────────────────
+      let shouldTriggerScatterFloat = false;
+      let isAnimatingScatterFloat   = false;
+      let scatterFloatTime          = 0;
+      let scatterFloatStart: Float32Array | null  = null;  // positions at trigger time
+      let scatterFloatTarget: Float32Array | null = null;  // outward resting positions
+      let isFloating                = false;               // steady-state floating
+      let floatBasePositions: Float32Array | null = null;  // resting centres for drift
+      let floatSeeds: Float32Array | null         = null;  // per-particle freq/phase
 
-    const geometry = new THREE.BufferGeometry();
+      // ── NEW: Float-reform state ──────────────────────────────────────────────
+      let shouldTriggerFloatReform  = false;
+      let isAnimatingFloatReform    = false;
+      let floatReformTime           = 0;
+      let floatReformStart: Float32Array | null = null;   // snapshot at trigger time
 
-    const coreMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uSize: { value: 120.0 },
-        uResolutionY: { value: window.innerHeight },
-        uTime: { value: 0 },
-        uAlpha: { value: 1.0 },
-        uDisableDrift: { value: 0.0 },
-      },
-      vertexShader,
-      fragmentShader: coreFragmentShader,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
+      // ── Scene setup ──────────────────────────────────────────────────────────
+      const scene  = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.z = 5;
 
-    // Halo is ~5× larger and uses a smooth cubic falloff to mimic a bloom halo
-    const glowMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        uSize: { value: 160.0 },
-        uResolutionY: { value: window.innerHeight },
-        uTime: { value: 0 },
-        uAlpha: { value: 1.0 },
-        uDisableDrift: { value: 0.0 },
-      },
-      vertexShader,
-      fragmentShader: glowFragmentShader,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-
-    const coreParticles = new THREE.Points(geometry, coreMaterial);
-    const glowParticles = new THREE.Points(geometry, glowMaterial);
-    scene.add(glowParticles); // draw halo first (behind core)
-    scene.add(coreParticles);
-
-    const overlay = document.createElement('div');
-    overlay.style.position = 'absolute';
-    overlay.style.inset = '0';
-    overlay.style.pointerEvents = 'none';
-    overlay.style.background = `linear-gradient(180deg, rgba(13, 0, 26, 0.08) 0%, rgba(13, 0, 26, ${PARTICLE_OVERLAY_OPACITY}) 100%)`;
-    overlay.style.mixBlendMode = 'multiply';
-    container.appendChild(overlay);
-
-    const handleResize = () => {
-      const pr = Math.min(window.devicePixelRatio, 1.5);
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
+      const pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+      const renderer  = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(pr);
-      (coreMaterial.uniforms.uResolutionY as THREE.IUniform<number>).value = window.innerHeight;
-      (glowMaterial.uniforms.uResolutionY as THREE.IUniform<number>).value = window.innerHeight;
-    };
-    window.addEventListener('resize', handleResize);
+      renderer.setPixelRatio(pixelRatio);
+      renderer.setClearColor(0x0D001A, 1);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      container.appendChild(renderer.domElement);
 
-    // Pause the RAF loop when the tab is hidden, resume when visible
-    const handleVisibility = () => {
-      if (document.hidden) {
-        if (animationId !== null) {
-          cancelAnimationFrame(animationId);
-          animationId = null;
+      // ── Expose triggers ───────────────────────────────────────────────────────
+      triggerScatterOutRef.current = () => { shouldTriggerScatterOut = true; };
+      triggerScatterInRef.current  = () => { shouldTriggerScatterIn  = true; };
+      triggerReverseScatterInRef.current = () => { shouldTriggerReverseScatterIn = true; };
+
+      triggerScatterFloatRef.current = () => { shouldTriggerScatterFloat = true; };
+      triggerFloatReformRef.current  = () => { shouldTriggerFloatReform  = true; };
+
+      // ── Geometry & materials ─────────────────────────────────────────────────
+      const geometry = new THREE.BufferGeometry();
+
+      const makeUniforms = () => ({
+        uSize:        { value: 120.0 },
+        uResolutionY: { value: window.innerHeight },
+        uTime:        { value: 0 },
+        uAlpha:       { value: 1.0 },
+        uDisableDrift:{ value: 0.0 },
+      });
+
+      const coreMaterial = new THREE.ShaderMaterial({
+        uniforms: makeUniforms(),
+        vertexShader,
+        fragmentShader: coreFragmentShader,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      coreMaterial.uniforms.uSize.value = 120.0;
+
+      const glowMaterial = new THREE.ShaderMaterial({
+        uniforms: makeUniforms(),
+        vertexShader,
+        fragmentShader: glowFragmentShader,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      glowMaterial.uniforms.uSize.value = 160.0;
+
+      const coreParticles = new THREE.Points(geometry, coreMaterial);
+      const glowParticles = new THREE.Points(geometry, glowMaterial);
+      scene.add(glowParticles);
+      scene.add(coreParticles);
+
+      // ── Overlay ───────────────────────────────────────────────────────────────
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `position:absolute;inset:0;pointer-events:none;
+        background:linear-gradient(180deg,rgba(13,0,26,0.08) 0%,rgba(13,0,26,${PARTICLE_OVERLAY_OPACITY}) 100%);
+        mix-blend-mode:multiply;`;
+      container.appendChild(overlay);
+
+      // ── Resize / visibility ───────────────────────────────────────────────────
+      const handleResize = () => {
+        const pr = Math.min(window.devicePixelRatio, 1.5);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(pr);
+        coreMaterial.uniforms.uResolutionY.value = window.innerHeight;
+        glowMaterial.uniforms.uResolutionY.value = window.innerHeight;
+      };
+      window.addEventListener('resize', handleResize);
+
+      const handleVisibility = () => {
+        if (document.hidden) {
+          if (animationId !== null) { cancelAnimationFrame(animationId); animationId = null; }
+        } else if (!cancelled) {
+          animationId = requestAnimationFrame(animate);
         }
-      } else if (!cancelled) {
+      };
+      document.addEventListener('visibilitychange', handleVisibility);
+
+      // ── Helper: set alpha on both materials ───────────────────────────────────
+      const setAlpha = (v: number) => {
+        coreMaterial.uniforms.uAlpha.value = v;
+        glowMaterial.uniforms.uAlpha.value = v;
+      };
+
+      // ── Animate ────────────────────────────────────────────────────────────────
+      const animate = () => {
+        if (cancelled) return;
         animationId = requestAnimationFrame(animate);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
+        elapsedTime += 0.016;
 
-    const animate = () => {
-      if (cancelled) return;
-      animationId = requestAnimationFrame(animate);
-      elapsedTime += 0.016;
-
-      // Apply rotation only when not animating intro, scatter-out, or fade-out
-      if (!isAnimatingIntro && !isAnimatingScatterOut && !isAnimatingFadeOut) {
-        coreParticles.rotation.y += 0.001;
-        glowParticles.rotation.y = coreParticles.rotation.y;
-      }
-
-      // Handle intro animation - particles collecting into shape
-      if (isAnimatingIntro && startPositions && endPositions) {
-        introAnimationTime += 0.016;
-        const progress = Math.min(introAnimationTime / INTRO_ANIMATION_DURATION, 1.0);
-        const easedProgress = easeInOutCubic(progress);
-
-        // Interpolate positions from scattered to model shape
-        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-        const positions = posAttr.array as Float32Array;
-        const positionCount = positions.length / 3;
-
-        for (let i = 0; i < positionCount; i++) {
-          const startIdx = i * 3;
-          const endIdx = i * 3;
-          positions[startIdx] = startPositions[startIdx] + (endPositions[endIdx] - startPositions[startIdx]) * easedProgress;
-          positions[startIdx + 1] = startPositions[startIdx + 1] + (endPositions[endIdx + 1] - startPositions[startIdx + 1]) * easedProgress;
-          positions[startIdx + 2] = startPositions[startIdx + 2] + (endPositions[endIdx + 2] - startPositions[startIdx + 2]) * easedProgress;
+        // Rotation when idle
+        if (!isAnimatingIntro && !isAnimatingScatterOut && !isAnimatingFadeOut
+            && !isAnimatingScatterFloat && !isAnimatingFloatReform && !isFloating) {
+          coreParticles.rotation.y += 0.001;
+          glowParticles.rotation.y = coreParticles.rotation.y;
         }
-        posAttr.needsUpdate = true;
 
-        // Fade in particles during intro animation
-        const fadeInAlpha = easedProgress;
-        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadeInAlpha;
-        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadeInAlpha;
-
-        // Stop intro animation when complete
-        if (progress >= 1.0) {
-          isAnimatingIntro = false;
-          const scatterPositions = startPositions ? startPositions.slice() : null;
-          // Ensure alpha is at full opacity
-          (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
-          (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
-          // Ensure geometry is exactly at endPositions for clean scatter-out
-          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-          posAttr.array.set(endPositions);
-          posAttr.needsUpdate = true;
-          // Save model positions as a proper copy
-          modelPositions = endPositions.slice();
-          introScatterPositions = scatterPositions;
-          startPositions = null;
-        }
-      }
-
-      // Handle external trigger for reverse scatter-in (when user reaches Community)
-      if (
-        shouldTriggerReverseScatterIn &&
-        !isAnimatingReverseScatterIn &&
-        modelPositions &&
-        introScatterPositions
-      ) {
-        shouldTriggerReverseScatterIn = false;
-        isAnimatingReverseScatterIn = true;
-        reverseScatterInAnimationTime = 0;
-        startPositions = modelPositions.slice();
-        endPositions = introScatterPositions.slice();
-        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-        posAttr.array = startPositions.slice();
-        posAttr.needsUpdate = true;
-        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
-        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 1.0;
-        hasScatteredOut = false;
-        hasScatteredIn = false;
-      }
-
-      // Handle external trigger for scatter in (when user scrolls back to hero)
-      if (shouldTriggerScatterIn && !hasScatteredIn && modelPositions && endPositions) {
-        shouldTriggerScatterIn = false;
-        hasScatteredIn = true; // Prevent repeat triggers
-        // Reset animation states to allow intro animation to play again
-        isAnimatingScatterOut = false;
-        isAnimatingFadeOut = false;
-        hasScatteredOut = false;
-        fadeOutAnimationTime = 0;
-        scatterOutAnimationTime = 0;
-        // Set positions back to scattered state
-        startPositions = generateScatteredPositions(endPositions.length / 3);
-        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-        posAttr.array = startPositions.slice();
-        posAttr.needsUpdate = true;
-        // Reset alpha to full visibility for the scatter-in animation
-        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 0.0;
-        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = 0.0;
-        // Begin intro animation
-        isAnimatingIntro = true;
-        introAnimationTime = 0;
-      }
-
-      // Handle external trigger for scatter out (from scroll to Levels section)
-      if (shouldTriggerScatterOut && !isAnimatingScatterOut && !hasScatteredOut && modelPositions && endPositions) {
-        isAnimatingScatterOut = true;
-        scatterOutAnimationTime = 0;
-        startPositions = modelPositions.slice();
-        shouldTriggerScatterOut = false;
-        hasScatteredIn = false; // Reset so scatter-in can happen again after scatter-out
-      }
-
-      if (isAnimatingReverseScatterIn && startPositions && endPositions) {
-        reverseScatterInAnimationTime += 0.016;
-        const progress = Math.min(reverseScatterInAnimationTime / INTRO_ANIMATION_DURATION, 1.0);
-        const easedProgress = easeInOutCubic(progress);
-
-        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-        const positions = posAttr.array as Float32Array;
-        const positionCount = positions.length / 3;
-
-        for (let i = 0; i < positionCount; i++) {
-          const startIdx = i * 3;
-          positions[startIdx] = startPositions[startIdx] + (endPositions[startIdx] - startPositions[startIdx]) * easedProgress;
-          positions[startIdx + 1] = startPositions[startIdx + 1] + (endPositions[startIdx + 1] - startPositions[startIdx + 1]) * easedProgress;
-          positions[startIdx + 2] = startPositions[startIdx + 2] + (endPositions[startIdx + 2] - startPositions[startIdx + 2]) * easedProgress;
-        }
-        posAttr.needsUpdate = true;
-
-        const fadeOutAlpha = 1.0 - easedProgress;
-        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadeOutAlpha;
-        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadeOutAlpha;
-
-        if (progress >= 1.0) {
-          isAnimatingReverseScatterIn = false;
-          startPositions = null;
-          endPositions = modelPositions ? modelPositions.slice() : null;
-        }
-      }
-
-      if (isAnimatingScatterOut && startPositions && endPositions) {
-        scatterOutAnimationTime += 0.016;
-        const progress = Math.min(scatterOutAnimationTime / SCATTER_OUT_DURATION, 1.0);
-        const easedProgress = easeInOutCubic(progress);
-
-        // Generate scatter-out positions based on model positions
-        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-        const positions = posAttr.array as Float32Array;
-        const positionCount = positions.length / 3;
-
-        for (let i = 0; i < positionCount; i++) {
-          const idx = i * 3;
-          const x = startPositions[idx];
-          const y = startPositions[idx + 1];
-          const z = startPositions[idx + 2];
-          
-          // Normalize direction from center
-          const distance = Math.sqrt(x * x + y * y + z * z);
-          const dirX = distance > 0.001 ? x / distance : 0;
-          const dirY = distance > 0.001 ? y / distance : 0;
-          const dirZ = distance > 0.001 ? z / distance : 0;
-          
-          // Scatter further out
-          const scatterDistance = SCATTER_OUT_RADIUS + (distance * 0.5);
-          const endX = dirX * scatterDistance;
-          const endY = dirY * scatterDistance;
-          const endZ = dirZ * scatterDistance;
-          
-          positions[idx] = startPositions[idx] + (endX - startPositions[idx]) * easedProgress;
-          positions[idx + 1] = startPositions[idx + 1] + (endY - startPositions[idx + 1]) * easedProgress;
-          positions[idx + 2] = startPositions[idx + 2] + (endZ - startPositions[idx + 2]) * easedProgress;
-        }
-        posAttr.needsUpdate = true;
-
-        // Stop scatter-out animation when complete
-        if (progress >= 1.0) {
-          isAnimatingScatterOut = false;
-          startPositions = null;
-          // Save scattered positions for fade-out phase
-          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-          scatteredPositions = new Float32Array(posAttr.array as Float32Array);
-          // Start fade-out phase instead of immediately hiding
-          isAnimatingFadeOut = true;
-          fadeOutAnimationTime = 0;
-        }
-      }
-
-      // Handle fade-out animation - particles fade and continue moving out
-      if (isAnimatingFadeOut && scatteredPositions) {
-        fadeOutAnimationTime += 0.016;
-        const fadeProgress = Math.min(fadeOutAnimationTime / SCATTER_OUT_FADE_DURATION, 1.0);
-        const fadedAlpha = 1.0 - fadeProgress;
-
-        // Update alpha for smooth disappearance
-        (coreMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadedAlpha;
-        (glowMaterial.uniforms.uAlpha as THREE.IUniform<number>).value = fadedAlpha;
-
-        // Continue moving particles outward during fade from their current scattered positions
-        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-        const positions = posAttr.array as Float32Array;
-        const positionCount = positions.length / 3;
-
-        for (let i = 0; i < positionCount; i++) {
-          const idx = i * 3;
-          const x = scatteredPositions[idx];
-          const y = scatteredPositions[idx + 1];
-          const z = scatteredPositions[idx + 2];
-          
-          // Normalize direction from center
-          const distance = Math.sqrt(x * x + y * y + z * z);
-          const dirX = distance > 0.001 ? x / distance : 0;
-          const dirY = distance > 0.001 ? y / distance : 0;
-          const dirZ = distance > 0.001 ? z / distance : 0;
-          
-          // Slight acceleration outward during fade
-          const additionalDistance = distance * fadeProgress * 0.3;
-          const endX = dirX * (distance + additionalDistance);
-          const endY = dirY * (distance + additionalDistance);
-          const endZ = dirZ * (distance + additionalDistance);
-          
-          positions[idx] = scatteredPositions[idx] + (endX - scatteredPositions[idx]) * fadeProgress;
-          positions[idx + 1] = scatteredPositions[idx + 1] + (endY - scatteredPositions[idx + 1]) * fadeProgress;
-          positions[idx + 2] = scatteredPositions[idx + 2] + (endZ - scatteredPositions[idx + 2]) * fadeProgress;
-        }
-        posAttr.needsUpdate = true;
-
-        // Complete fade-out and move particles out of bounds
-        if (fadeProgress >= 1.0) {
-          isAnimatingFadeOut = false;
-          hasScatteredOut = true;
-          scatteredPositions = null;
-          
-          // Move particles far out of bounds
+        // ── Intro ───────────────────────────────────────────────────────────────
+        if (isAnimatingIntro && startPositions && endPositions) {
+          introAnimationTime += 0.016;
+          const progress = Math.min(introAnimationTime / INTRO_ANIMATION_DURATION, 1.0);
+          const ep = easeInOutCubic(progress);
           const posAttr = geometry.attributes.position as THREE.BufferAttribute;
           const positions = posAttr.array as Float32Array;
-          const positionCount = positions.length / 3;
-          
-          for (let i = 0; i < positionCount; i++) {
+          const n = positions.length / 3;
+          for (let i = 0; i < n; i++) {
             const idx = i * 3;
-            positions[idx] = 10000;
-            positions[idx + 1] = 10000;
-            positions[idx + 2] = 10000;
+            positions[idx]     = startPositions[idx]     + (endPositions[idx]     - startPositions[idx])     * ep;
+            positions[idx + 1] = startPositions[idx + 1] + (endPositions[idx + 1] - startPositions[idx + 1]) * ep;
+            positions[idx + 2] = startPositions[idx + 2] + (endPositions[idx + 2] - startPositions[idx + 2]) * ep;
           }
           posAttr.needsUpdate = true;
-        }
-      }
+          setAlpha(ep);
 
-      // Update time uniform for particle shader animations
-      (coreMaterial.uniforms.uTime as THREE.IUniform<number>).value = elapsedTime;
-      (glowMaterial.uniforms.uTime as THREE.IUniform<number>).value = elapsedTime;
-
-      // Control drift: disable during scatter-out and fade-out, enable for intro animation
-      const isDriftDisabled = isAnimatingScatterOut || isAnimatingFadeOut ? 0.0 : 1.0;
-      (coreMaterial.uniforms.uDisableDrift as THREE.IUniform<number>).value = isDriftDisabled;
-      (glowMaterial.uniforms.uDisableDrift as THREE.IUniform<number>).value = isDriftDisabled;
-
-      renderer.render(scene, camera);
-    };
-
-    const buildFallbackSphere = () => {
-      const COUNT = 5_000;
-      const RADIUS = 2.0;
-      const finalPositions = new Float32Array(COUNT * 3);
-      for (let i = 0; i < COUNT; i++) {
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const r = RADIUS * (0.95 + Math.random() * 0.1);
-        finalPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-        finalPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-        finalPositions[i * 3 + 2] = r * Math.cos(phi);
-      }
-      
-      // Setup intro animation for fallback
-      endPositions = finalPositions;
-      startPositions = generateScatteredPositions(COUNT);
-      
-      geometry.setAttribute('position', new THREE.BufferAttribute(startPositions.slice(), 3));
-      assignColorsToGeometry(geometry, COUNT);
-      
-      // Begin intro animation
-      isAnimatingIntro = true;
-      introAnimationTime = 0;
-    };
-
-    (async () => {
-      try {
-        const loader = new GLTFLoader();
-        const gltf = await loader.loadAsync(indexModelUrl);
-        if (cancelled) return;
-
-        const merged = mergePlantFromGltf(gltf.scene);
-        normalizePlantGeometry(merged);
-
-        const attr = merged.attributes.position as THREE.BufferAttribute;
-        const totalVerts = attr.count;
-
-        if (totalVerts === 0) {
-          merged.dispose();
-          buildFallbackSphere();
-        } else {
-          const step = Math.max(1, Math.floor(totalVerts / MAX_PARTICLES));
-          const particleCount = Math.ceil(totalVerts / step);
-          const finalPositions = new Float32Array(particleCount * 3);
-          const src = attr.array as Float32Array;
-          for (let i = 0, j = 0; j < particleCount; i += step, j++) {
-            const si = Math.min(i, totalVerts - 1) * 3;
-            finalPositions[j * 3] = src[si];
-            finalPositions[j * 3 + 1] = src[si + 1];
-            finalPositions[j * 3 + 2] = src[si + 2];
+          if (progress >= 1.0) {
+            isAnimatingIntro = false;
+            setAlpha(1.0);
+            const posAttr2 = geometry.attributes.position as THREE.BufferAttribute;
+            posAttr2.array.set(endPositions);
+            posAttr2.needsUpdate = true;
+            modelPositions = endPositions.slice();
+            introScatterPositions = startPositions.slice();
+            startPositions = null;
           }
-          merged.dispose();
+        }
 
-          // Setup intro animation
-          endPositions = finalPositions;
-          startPositions = generateScatteredPositions(particleCount);
-          
-          // Start with scattered positions
-          geometry.setAttribute('position', new THREE.BufferAttribute(startPositions.slice(), 3));
-          assignColorsToGeometry(geometry, particleCount);
-          
-          // Begin intro animation
-          isAnimatingIntro = true;
+        // ── Reverse scatter-in trigger ──────────────────────────────────────────
+        if (shouldTriggerReverseScatterIn && !isAnimatingReverseScatterIn
+            && modelPositions && introScatterPositions) {
+          shouldTriggerReverseScatterIn = false;
+          isAnimatingReverseScatterIn   = true;
+          reverseScatterInAnimationTime = 0;
+          startPositions = modelPositions.slice();
+          endPositions   = introScatterPositions.slice();
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          (posAttr.array as Float32Array).set(startPositions);
+          posAttr.needsUpdate = true;
+          setAlpha(1.0);
+          hasScatteredOut = false;
+          hasScatteredIn  = false;
+        }
+
+        // ── Scatter-in trigger (scroll back to hero) ────────────────────────────
+        if (shouldTriggerScatterIn && !hasScatteredIn && modelPositions && endPositions) {
+          shouldTriggerScatterIn = false;
+          hasScatteredIn         = true;
+          isAnimatingScatterOut  = false;
+          isAnimatingFadeOut     = false;
+          hasScatteredOut        = false;
+          fadeOutAnimationTime   = 0;
+          scatterOutAnimationTime= 0;
+          startPositions = generateScatteredPositions(endPositions.length / 3);
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          (posAttr.array as Float32Array).set(startPositions);
+          posAttr.needsUpdate = true;
+          setAlpha(0.0);
+          isAnimatingIntro  = true;
           introAnimationTime = 0;
         }
-      } catch {
+
+        // ── Scatter-out trigger (original, with fade) ───────────────────────────
+        if (shouldTriggerScatterOut && !isAnimatingScatterOut && !hasScatteredOut
+            && modelPositions && endPositions) {
+          isAnimatingScatterOut   = true;
+          scatterOutAnimationTime = 0;
+          startPositions          = modelPositions.slice();
+          shouldTriggerScatterOut = false;
+          hasScatteredIn          = false;
+        }
+
+        // ── Reverse scatter-in animation ────────────────────────────────────────
+        if (isAnimatingReverseScatterIn && startPositions && endPositions) {
+          reverseScatterInAnimationTime += 0.016;
+          const progress = Math.min(reverseScatterInAnimationTime / INTRO_ANIMATION_DURATION, 1.0);
+          const ep = easeInOutCubic(progress);
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          const positions = posAttr.array as Float32Array;
+          const n = positions.length / 3;
+          for (let i = 0; i < n; i++) {
+            const idx = i * 3;
+            positions[idx]     = startPositions[idx]     + (endPositions[idx]     - startPositions[idx])     * ep;
+            positions[idx + 1] = startPositions[idx + 1] + (endPositions[idx + 1] - startPositions[idx + 1]) * ep;
+            positions[idx + 2] = startPositions[idx + 2] + (endPositions[idx + 2] - startPositions[idx + 2]) * ep;
+          }
+          posAttr.needsUpdate = true;
+          setAlpha(1.0 - ep);
+          if (progress >= 1.0) {
+            isAnimatingReverseScatterIn = false;
+            startPositions = null;
+            endPositions   = modelPositions ? modelPositions.slice() : null;
+          }
+        }
+
+        // ── Original scatter-out animation ──────────────────────────────────────
+        if (isAnimatingScatterOut && startPositions && endPositions) {
+          scatterOutAnimationTime += 0.016;
+          const progress = Math.min(scatterOutAnimationTime / SCATTER_OUT_DURATION, 1.0);
+          const ep = easeInOutCubic(progress);
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          const positions = posAttr.array as Float32Array;
+          const n = positions.length / 3;
+          for (let i = 0; i < n; i++) {
+            const idx = i * 3;
+            const x = startPositions[idx], y = startPositions[idx + 1], z = startPositions[idx + 2];
+            const dist = Math.sqrt(x * x + y * y + z * z);
+            const dx = dist > 0.001 ? x / dist : 0;
+            const dy = dist > 0.001 ? y / dist : 0;
+            const dz = dist > 0.001 ? z / dist : 0;
+            const sd = SCATTER_OUT_RADIUS + dist * 0.5;
+            positions[idx]     = startPositions[idx]     + (dx * sd - startPositions[idx])     * ep;
+            positions[idx + 1] = startPositions[idx + 1] + (dy * sd - startPositions[idx + 1]) * ep;
+            positions[idx + 2] = startPositions[idx + 2] + (dz * sd - startPositions[idx + 2]) * ep;
+          }
+          posAttr.needsUpdate = true;
+          if (progress >= 1.0) {
+            isAnimatingScatterOut = false;
+            startPositions = null;
+            const pa = geometry.attributes.position as THREE.BufferAttribute;
+            scatteredPositions = new Float32Array(pa.array as Float32Array);
+            isAnimatingFadeOut = true;
+            fadeOutAnimationTime = 0;
+          }
+        }
+
+        // ── Original fade-out ────────────────────────────────────────────────────
+        if (isAnimatingFadeOut && scatteredPositions) {
+          fadeOutAnimationTime += 0.016;
+          const fp = Math.min(fadeOutAnimationTime / SCATTER_OUT_FADE_DURATION, 1.0);
+          setAlpha(1.0 - fp);
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          const positions = posAttr.array as Float32Array;
+          const n = positions.length / 3;
+          for (let i = 0; i < n; i++) {
+            const idx = i * 3;
+            const x = scatteredPositions[idx], y = scatteredPositions[idx + 1], z = scatteredPositions[idx + 2];
+            const dist = Math.sqrt(x * x + y * y + z * z);
+            const dx = dist > 0.001 ? x / dist : 0;
+            const dy = dist > 0.001 ? y / dist : 0;
+            const dz = dist > 0.001 ? z / dist : 0;
+            const add = dist * fp * 0.3;
+            positions[idx]     = scatteredPositions[idx]     + (dx * (dist + add) - scatteredPositions[idx])     * fp;
+            positions[idx + 1] = scatteredPositions[idx + 1] + (dy * (dist + add) - scatteredPositions[idx + 1]) * fp;
+            positions[idx + 2] = scatteredPositions[idx + 2] + (dz * (dist + add) - scatteredPositions[idx + 2]) * fp;
+          }
+          posAttr.needsUpdate = true;
+          if (fp >= 1.0) {
+            isAnimatingFadeOut = false;
+            hasScatteredOut    = true;
+            scatteredPositions = null;
+            const pa = geometry.attributes.position as THREE.BufferAttribute;
+            const pos = pa.array as Float32Array;
+            for (let i = 0; i < pos.length / 3; i++) {
+              pos[i * 3] = pos[i * 3 + 1] = pos[i * 3 + 2] = 10000;
+            }
+            pa.needsUpdate = true;
+          }
+        }
+
+        // ────────────────────────────────────────────────────────────────────────
+        // NEW: Scatter-float trigger
+        // ────────────────────────────────────────────────────────────────────────
+        if (shouldTriggerScatterFloat && !isAnimatingScatterFloat && !isFloating
+            && !isAnimatingFloatReform && modelPositions) {
+          shouldTriggerScatterFloat = false;
+          isAnimatingScatterFloat   = true;
+          scatterFloatTime          = 0;
+
+          // Snapshot current positions as scatter origin
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          scatterFloatStart = new Float32Array(posAttr.array as Float32Array);
+
+          // Compute outward resting positions using the same logic as triggerScatterOut:
+          // normalize each particle's direction from centre, push to SCATTER_FLOAT_RADIUS
+          const n = scatterFloatStart.length / 3;
+          scatterFloatTarget = new Float32Array(scatterFloatStart.length);
+          for (let i = 0; i < n; i++) {
+            const idx  = i * 3;
+            const x    = scatterFloatStart[idx];
+            const y    = scatterFloatStart[idx + 1];
+            const z    = scatterFloatStart[idx + 2];
+            const dist = Math.sqrt(x * x + y * y + z * z);
+            // Normalised outward direction (fall back to random unit if at origin)
+            const nx   = dist > 0.001 ? x / dist : (Math.random() - 0.5) * 2;
+            const ny   = dist > 0.001 ? y / dist : (Math.random() - 0.5) * 2;
+            const nz   = dist > 0.001 ? z / dist : (Math.random() - 0.5) * 2;
+            // Target radius: base scatter radius + proportional to original distance
+            const r    = SCATTER_FLOAT_RADIUS + dist * 0.5;
+            scatterFloatTarget[idx]     = nx * r;
+            scatterFloatTarget[idx + 1] = ny * r;
+            scatterFloatTarget[idx + 2] = nz * r;
+          }
+
+          // Generate per-particle float seeds once — reused for the whole float phase
+          floatSeeds = generateFloatSeeds(n);
+
+          setAlpha(1.0);
+        }
+
+        // ── Scatter-float animation ──────────────────────────────────────────────
+        if (isAnimatingScatterFloat && scatterFloatStart && scatterFloatTarget) {
+          scatterFloatTime += 0.016;
+          const progress = Math.min(scatterFloatTime / SCATTER_FLOAT_DURATION, 1.0);
+          const ep       = easeInOutCubic(progress);
+
+          const posAttr  = geometry.attributes.position as THREE.BufferAttribute;
+          const positions = posAttr.array as Float32Array;
+          const n = positions.length / 3;
+
+          for (let i = 0; i < n; i++) {
+            const idx = i * 3;
+            positions[idx]     = scatterFloatStart[idx]     + (scatterFloatTarget[idx]     - scatterFloatStart[idx])     * ep;
+            positions[idx + 1] = scatterFloatStart[idx + 1] + (scatterFloatTarget[idx + 1] - scatterFloatStart[idx + 1]) * ep;
+            positions[idx + 2] = scatterFloatStart[idx + 2] + (scatterFloatTarget[idx + 2] - scatterFloatStart[idx + 2]) * ep;
+          }
+          posAttr.needsUpdate = true;
+          setAlpha(1.0);
+
+          if (progress >= 1.0) {
+            isAnimatingScatterFloat = false;
+            scatterFloatStart = null;
+            // Save resting positions for the float loop
+            floatBasePositions = scatterFloatTarget!.slice();
+            scatterFloatTarget = null;
+            isFloating = true;
+          }
+        }
+
+        // ── Floating (steady-state) ──────────────────────────────────────────────
+        if (isFloating && floatBasePositions && floatSeeds) {
+          const posAttr  = geometry.attributes.position as THREE.BufferAttribute;
+          const positions = posAttr.array as Float32Array;
+          const n = positions.length / 3;
+
+          for (let i = 0; i < n; i++) {
+            const idx  = i * 3;
+            const seed = i * 6;
+            positions[idx]     = floatBasePositions[idx]     + Math.sin(elapsedTime * floatSeeds[seed]     + floatSeeds[seed + 3]) * FLOAT_DRIFT_AMPLITUDE;
+            positions[idx + 1] = floatBasePositions[idx + 1] + Math.sin(elapsedTime * floatSeeds[seed + 1] + floatSeeds[seed + 4]) * FLOAT_DRIFT_AMPLITUDE;
+            positions[idx + 2] = floatBasePositions[idx + 2] + Math.sin(elapsedTime * floatSeeds[seed + 2] + floatSeeds[seed + 5]) * FLOAT_DRIFT_AMPLITUDE;
+          }
+          posAttr.needsUpdate = true;
+          setAlpha(1.0);
+        }
+
+        // ────────────────────────────────────────────────────────────────────────
+        // NEW: Float-reform trigger
+        // ────────────────────────────────────────────────────────────────────────
+        if (shouldTriggerFloatReform && (isFloating || isAnimatingScatterFloat) && modelPositions) {
+          shouldTriggerFloatReform  = false;
+          // Stop any active states
+          isFloating              = false;
+          isAnimatingScatterFloat = false;
+          isAnimatingFloatReform  = true;
+          floatReformTime         = 0;
+
+          // Snapshot wherever particles are right now
+          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+          floatReformStart = new Float32Array(posAttr.array as Float32Array);
+
+          // endPositions must point at modelPositions for the reform lerp
+          endPositions = modelPositions.slice();
+
+          setAlpha(1.0);
+        }
+
+        // ── Float-reform animation ───────────────────────────────────────────────
+        if (isAnimatingFloatReform && floatReformStart && endPositions) {
+          floatReformTime += 0.016;
+          const progress = Math.min(floatReformTime / FLOAT_REFORM_DURATION, 1.0);
+          const ep       = easeInOutCubic(progress);
+
+          const posAttr  = geometry.attributes.position as THREE.BufferAttribute;
+          const positions = posAttr.array as Float32Array;
+          const n = positions.length / 3;
+
+          for (let i = 0; i < n; i++) {
+            const idx = i * 3;
+            positions[idx]     = floatReformStart[idx]     + (endPositions[idx]     - floatReformStart[idx])     * ep;
+            positions[idx + 1] = floatReformStart[idx + 1] + (endPositions[idx + 1] - floatReformStart[idx + 1]) * ep;
+            positions[idx + 2] = floatReformStart[idx + 2] + (endPositions[idx + 2] - floatReformStart[idx + 2]) * ep;
+          }
+          posAttr.needsUpdate = true;
+          setAlpha(1.0);
+
+          if (progress >= 1.0) {
+            isAnimatingFloatReform = false;
+            floatReformStart       = null;
+            floatBasePositions     = null;
+            floatSeeds             = null;
+            // Snap exactly to model positions
+            const pa = geometry.attributes.position as THREE.BufferAttribute;
+            pa.array.set(endPositions);
+            pa.needsUpdate = true;
+            setAlpha(1.0);
+          }
+        }
+
+        // ── Shader uniform updates ───────────────────────────────────────────────
+        coreMaterial.uniforms.uTime.value = elapsedTime;
+        glowMaterial.uniforms.uTime.value = elapsedTime;
+
+        // Disable GPU-side drift during scatter-out / fade-out / scatter-float / float
+        // (CPU is driving positions during those phases)
+        const driftOn = (isAnimatingScatterOut || isAnimatingFadeOut
+                      || isAnimatingScatterFloat || isAnimatingFloatReform
+                      || isFloating) ? 0.0 : 1.0;
+        coreMaterial.uniforms.uDisableDrift.value = driftOn;
+        glowMaterial.uniforms.uDisableDrift.value = driftOn;
+
+        renderer.render(scene, camera);
+      };
+
+      // ── Fallback sphere ──────────────────────────────────────────────────────
+      const buildFallbackSphere = () => {
+        const COUNT  = 5_000;
+        const RADIUS = 2.0;
+        const finalPositions = new Float32Array(COUNT * 3);
+        for (let i = 0; i < COUNT; i++) {
+          const theta = Math.random() * Math.PI * 2;
+          const phi   = Math.acos(2 * Math.random() - 1);
+          const r     = RADIUS * (0.95 + Math.random() * 0.1);
+          finalPositions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+          finalPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+          finalPositions[i * 3 + 2] = r * Math.cos(phi);
+        }
+        endPositions   = finalPositions;
+        startPositions = generateScatteredPositions(COUNT);
+        geometry.setAttribute('position', new THREE.BufferAttribute(startPositions.slice(), 3));
+        assignColorsToGeometry(geometry, COUNT);
+        isAnimatingIntro  = true;
+        introAnimationTime = 0;
+      };
+
+      // ── Load model ────────────────────────────────────────────────────────────
+      (async () => {
+        try {
+          const loader = new GLTFLoader();
+          const gltf   = await loader.loadAsync(indexModelUrl);
+          if (cancelled) return;
+
+          const merged = mergePlantFromGltf(gltf.scene);
+          normalizePlantGeometry(merged);
+
+          const attr       = merged.attributes.position as THREE.BufferAttribute;
+          const totalVerts = attr.count;
+
+          if (totalVerts === 0) {
+            merged.dispose();
+            buildFallbackSphere();
+          } else {
+            const step          = Math.max(1, Math.floor(totalVerts / MAX_PARTICLES));
+            const particleCount = Math.ceil(totalVerts / step);
+            const finalPositions = new Float32Array(particleCount * 3);
+            const src = attr.array as Float32Array;
+            for (let i = 0, j = 0; j < particleCount; i += step, j++) {
+              const si = Math.min(i, totalVerts - 1) * 3;
+              finalPositions[j * 3]     = src[si];
+              finalPositions[j * 3 + 1] = src[si + 1];
+              finalPositions[j * 3 + 2] = src[si + 2];
+            }
+            merged.dispose();
+
+            endPositions   = finalPositions;
+            startPositions = generateScatteredPositions(particleCount);
+            geometry.setAttribute('position', new THREE.BufferAttribute(startPositions.slice(), 3));
+            assignColorsToGeometry(geometry, particleCount);
+            isAnimatingIntro  = true;
+            introAnimationTime = 0;
+          }
+        } catch {
+          if (cancelled) return;
+          buildFallbackSphere();
+        }
+
         if (cancelled) return;
-        buildFallbackSphere();
-      }
+        animate();
+      })();
 
-      if (cancelled) return;
-      animate();
-    })();
+      // ── Cleanup ───────────────────────────────────────────────────────────────
+      return () => {
+        cancelled = true;
+        window.removeEventListener('resize', handleResize);
+        document.removeEventListener('visibilitychange', handleVisibility);
+        if (animationId !== null) cancelAnimationFrame(animationId);
+        renderer.dispose();
+        geometry.dispose();
+        coreMaterial.dispose();
+        glowMaterial.dispose();
+        if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
+        if (container.contains(overlay))              container.removeChild(overlay);
+      };
+    }, [indexModelUrl]);
 
-    return () => {
-      cancelled = true;
-      window.removeEventListener('resize', handleResize);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      if (animationId !== null) cancelAnimationFrame(animationId);
-      renderer.dispose();
-      geometry.dispose();
-      coreMaterial.dispose();
-      glowMaterial.dispose();
-      if (container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
-      }
-      if (container.contains(overlay)) {
-        container.removeChild(overlay);
-      }
-    };
-  }, [indexModelUrl]);
-
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100vh',
-        zIndex: -1,
-        pointerEvents: 'none',
-        background: '#0D001A',
-      }}
-    />
-  );
-});
+    return (
+      <div
+        ref={containerRef}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100vh',
+          zIndex: -1,
+          pointerEvents: 'none',
+          background: '#0D001A',
+        }}
+      />
+    );
+  }
+);
 
 PlantParticlesBackground.displayName = 'PlantParticlesBackground';
 

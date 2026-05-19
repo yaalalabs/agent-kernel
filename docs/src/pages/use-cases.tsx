@@ -28,6 +28,9 @@ gsap.registerPlugin(ScrollTrigger);
 type ParticleBackgroundHandle = {
   triggerScatterOut: () => void;
   triggerScatterIn: () => void;
+  triggerReverseScatterIn: () => void;
+  triggerScatterFloat: () => void;
+  triggerFloatReform: () => void;
 };
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
