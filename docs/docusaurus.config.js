@@ -11,11 +11,11 @@ const config = {
   title: 'Agent Kernel',
   tagline: 'From Agent Logic to Production in Minutes.',
   favicon: 'img/branding/agent-kernel-icon-color.svg',
-  url: 'https://dreamgen-labs.github.io',
-  baseUrl: '/agent-kernel/',
+  url: 'https://kernel.yaala.ai',
+  baseUrl: '/',
 
-  // GitHub Pages project site: https://dreamgen-labs.github.io/agent-kernel/
-  organizationName: 'dreamgen-labs',
+  // GitHub pages deployment config.
+  organizationName: 'yaalalabs',
   projectName: 'agent-kernel',
   trailingSlash: false,
 
