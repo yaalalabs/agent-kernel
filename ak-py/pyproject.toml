@@ -136,7 +136,7 @@ a2a = [
     "a2a-sdk[http-server]>=0.3.6",
 ]
 mcp = [
-    "fastmcp>=2.12.4",
+    "fastmcp>=2.14.2,<3.0.0"
 ]
 
 [project.scripts]
