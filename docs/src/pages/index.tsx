@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
 import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
@@ -102,10 +102,17 @@ function WhatsNewBanner() {
 function Hero() {
   const titleRef = useRef(null);
   const taglineRef = useRef(null);
-  const bodyRef = useRef(null);
+  const bodySentenceRef = useRef(null);
   const buttonsRef = useRef(null);
+  const [activeSentenceIndex, setActiveSentenceIndex] = useState(0);
 
-  useEffect(() => {
+  const bodySentences = [
+    "Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
+    "Agent Kernel reduces months of engineering work to minutes.",
+    "Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.",
+  ];
+
+  useLayoutEffect(() => {
     const tl = gsap.timeline();
 
     // Set initial states
@@ -113,7 +120,7 @@ function Hero() {
       [
         titleRef.current,
         taglineRef.current,
-        bodyRef.current,
+        bodySentenceRef.current,
         buttonsRef.current,
       ],
       {
@@ -140,14 +147,14 @@ function Hero() {
         "-=0.4",
       )
       .to(
-        bodyRef.current,
+        bodySentenceRef.current,
         {
           opacity: 1,
           y: 0,
-          duration: 0.6,
+          duration: 0.55,
           ease: "power2.out",
         },
-        "-=0.3",
+        "-=0.15",
       )
       .to(
         buttonsRef.current,
@@ -157,9 +164,36 @@ function Hero() {
           duration: 0.5,
           ease: "power2.out",
         },
-        "-=0.2",
+        "-=0.3",
       );
   }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setActiveSentenceIndex(
+        (currentIndex) => (currentIndex + 1) % bodySentences.length,
+      );
+    }, 3200);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    if (!bodySentenceRef.current) {
+      return;
+    }
+
+    gsap.fromTo(
+      bodySentenceRef.current,
+      { opacity: 0, y: 14 },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.55,
+        ease: "power2.out",
+      },
+    );
+  }, [activeSentenceIndex]);
 
   return (
     <section className={styles.hero}>
@@ -173,12 +207,10 @@ function Hero() {
             <br />
             Scalable & Compliant Enterprise AI Agents.
           </p>
-          <p ref={bodyRef} className={styles.heroBody}>
-            Agent Kernel is the open source platform for building and deploying
-            enterprise AI agents seamlessly at scale. Agent Kernel reduces
-            months of engineering work to minutes. Works with any major Agentic
-            technology, runs on any cloud, interfaces with all mainstream
-            communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.
+          <p className={styles.heroBody}>
+            <span ref={bodySentenceRef} className={styles.heroBodySentence}>
+              {bodySentences[activeSentenceIndex]}
+            </span>
           </p>
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link
@@ -472,6 +504,8 @@ const AGENT_SKILLS = [
 ] as const;
 
 function AgentSkills() {
+  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
+  const ActiveIcon = AGENT_SKILLS[activeSkillIndex].icon;
   return (
     <section id="agent-skills" className={styles.agentSkillsSection}>
       <div className="container">
@@ -487,69 +521,90 @@ function AgentSkills() {
             </p>
           </div>
 
-          <div className={styles.agentSkillsSectionLabel}>
-            Get started in two commands
-          </div>
-          <div className={styles.agentSkillsCodeBlock}>
-            <div className={styles.agentSkillsCodeComment}>
-              # 1. Install the CLI
+          <div className={styles.agentSkillsSplitGrid}>
+            <div className={styles.agentSkillsPanel}>
+              <div className={styles.agentSkillsSectionLabel}>
+                Get started in two commands
+              </div>
+              <div className={styles.agentSkillsCodeBlock}>
+                <div className={styles.agentSkillsCodeComment}>
+                  # 1. Install the CLI
+                </div>
+                <div>
+                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                  <span className={styles.agentSkillsCodeArg}>
+                    pip install agentkernel
+                  </span>
+                </div>
+                <br />
+                <div className={styles.agentSkillsCodeComment}>
+                  # 2. Install skills for your coding assistant
+                </div>
+                <div>
+                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                  <span className={styles.agentSkillsCodeArg}>
+                    ak skill install
+                  </span>
+                </div>
+                <div className={styles.agentSkillsCodeComment}>
+                  &nbsp;&nbsp;or target a specific assistant:
+                </div>
+                <div>
+                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                  <span className={styles.agentSkillsCodeArg}>
+                    ak skill install --assistant claude
+                  </span>
+                </div>
+              </div>
             </div>
-            <div>
-              <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-              <span className={styles.agentSkillsCodeArg}>
-                pip install agentkernel
-              </span>
-            </div>
-            <br />
-            <div className={styles.agentSkillsCodeComment}>
-              # 2. Install skills for your coding assistant
-            </div>
-            <div>
-              <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-              <span className={styles.agentSkillsCodeArg}>
-                ak skill install
-              </span>
-            </div>
-            <div className={styles.agentSkillsCodeComment}>
-              &nbsp;&nbsp;or target a specific assistant:
-            </div>
-            <div>
-              <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-              <span className={styles.agentSkillsCodeArg}>
-                ak skill install --assistant claude
-              </span>
-            </div>
-          </div>
 
-          <div className={styles.agentSkillsSectionLabel}>
-            What each skill does
-          </div>
-          <div className={styles.agentSkillsSkillList}>
-            {AGENT_SKILLS.map((skill) => {
-              const Icon = skill.icon;
+            <div className={styles.agentSkillsPanel}>
+              <div className={styles.agentSkillsSectionLabel}>
+                What each skill does
+              </div>
 
-              return (
-                <article
-                  key={skill.name}
-                  className={styles.agentSkillsSkillCard}
-                >
+              <div className={styles.agentSkillsTopicsRow} role="tablist">
+                {AGENT_SKILLS.map((skill, idx) => (
+                  <button
+                    key={skill.name}
+                    role="tab"
+                    aria-selected={activeSkillIndex === idx}
+                    className={`${styles.agentSkillsTopicButton} ${
+                      activeSkillIndex === idx
+                        ? styles.agentSkillsTopicActive
+                        : ""
+                    }`}
+                    onClick={() => setActiveSkillIndex(idx)}
+                  >
+                    {skill.name}
+                  </button>
+                ))}
+              </div>
+
+              <div className={styles.agentSkillsDetailWrap}>
+                <div className={styles.agentSkillsDetailBox}>
                   <div className={styles.agentSkillsSkillHeader}>
-                    <Icon aria-hidden className={styles.agentSkillsSkillIcon} />
-                    <p className={styles.agentSkillsSkillName}>{skill.name}</p>
+                    <ActiveIcon
+                      aria-hidden
+                      className={styles.agentSkillsSkillIcon}
+                    />
+                    <p className={styles.agentSkillsSkillName}>
+                      {AGENT_SKILLS[activeSkillIndex].name}
+                    </p>
                   </div>
                   <p className={styles.agentSkillsSkillBody}>
-                    {skill.description}
+                    {AGENT_SKILLS[activeSkillIndex].description}
                   </p>
                   <div className={styles.agentSkillsPillRow}>
-                    {skill.pills.map((pill) => (
+                    {AGENT_SKILLS[activeSkillIndex].pills.map((pill) => (
                       <span key={pill} className={styles.agentSkillsPill}>
                         {pill}
                       </span>
                     ))}
                   </div>
-                </article>
-              );
-            })}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className={styles.agentSkillsFooter}>
@@ -3679,7 +3734,10 @@ if __name__ == "__main__":
 
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
-  const backgroundRef = useRef<{ triggerScatterOut: () => void; triggerScatterIn: () => void }>(null);
+  const backgroundRef = useRef<{
+    triggerScatterOut: () => void;
+    triggerScatterIn: () => void;
+  }>(null);
   const levelsRef = useRef<HTMLDivElement>(null);
   const observerStateRef = useRef<boolean>(false); // Track previous intersection state, initialize to false (Levels not in view on page load)
 
@@ -3700,7 +3758,7 @@ export default function Home() {
           backgroundRef.current?.triggerScatterIn();
         }
       },
-      { threshold: 0.0 } // Trigger when element completely enters or leaves viewport
+      { threshold: 0.0 }, // Trigger when element completely enters or leaves viewport
     );
 
     observer.observe(levelsRef.current);
