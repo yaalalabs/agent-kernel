@@ -79,12 +79,11 @@ EOF
 ########################################
 setup_aws() {
 	BUCKET_NAME=${BUCKET_NAME:-$(yq e '.aws.state.bucket_name' "$CONFIG_FILE")}
-	DYNAMODB_TABLE=${DYNAMODB_TABLE:-$(yq e '.aws.state.dynamodb_table' "$CONFIG_FILE")}
 	REGION=${REGION:-$(yq e '.aws.state.region' "$CONFIG_FILE")}
 
 	echo "Setting up AWS backend..."
 	echo "Bucket: $BUCKET_NAME"
-	echo "DynamoDB Table: $DYNAMODB_TABLE"
+	echo "Using Lockfile in the bucket itself, no separate DynamoDB table"
 	echo "Region: $REGION"
 
 	# S3 bucket
@@ -108,21 +107,6 @@ setup_aws() {
 		echo "S3 bucket created"
 	fi
 
-	# DynamoDB
-	if aws dynamodb describe-table --table-name "$DYNAMODB_TABLE" --region "$REGION" >/dev/null 2>&1; then
-		echo "DynamoDB table exists"
-	else
-		echo "Creating DynamoDB table..."
-		aws dynamodb create-table \
-			--table-name "$DYNAMODB_TABLE" \
-			--attribute-definitions AttributeName=LockID,AttributeType=S \
-			--key-schema AttributeName=LockID,KeyType=HASH \
-			--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
-			--region "$REGION"
-
-		aws dynamodb wait table-exists --table-name "$DYNAMODB_TABLE" --region "$REGION"
-		echo "DynamoDB table created"
-	fi
 
 	echo ""
 	echo "terraform {"
@@ -130,7 +114,6 @@ setup_aws() {
 	echo "    bucket         = \"$BUCKET_NAME\""
 	echo "    key            = \"your-project/terraform.tfstate\""
 	echo "    region         = \"$REGION\""
-	echo "    dynamodb_table = \"$DYNAMODB_TABLE\""
 	echo "    encrypt        = true"
 	echo "  }"
 	echo "}"
