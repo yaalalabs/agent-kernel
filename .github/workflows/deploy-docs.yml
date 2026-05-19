@@ -3,9 +3,10 @@ name: Deploy GitHub Pages
 on:
   push:
     branches:
-      - develop
+      - test-dep
     paths:
       - 'docs/**'
+      - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
 permissions:
