@@ -15,7 +15,7 @@ LiveKit handles the WebRTC voice connection, Speech-to-Text (STT), and Text-to-S
 When you use the LiveKit integration:
 1. The user speaks into their microphone via a LiveKit frontend.
 2. LiveKit's **Speech-to-Text (STT)** plugin transcribes the voice into text.
-3. The transcribed text is intercepted by our custom `AgentKernelLLM` bridge.
+3. The transcribed text is intercepted by our custom `LiveKitLLM` bridge.
 4. The bridge forwards the text to **Agent Kernel** (`AgentService().run(text)`).
 5. Agent Kernel's selected agent processes the text and generates a response.
 6. The response is sent back to LiveKit's **Text-to-Speech (TTS)** plugin.
@@ -43,9 +43,9 @@ livekit:
   agent: "my-voice-agent"
   stt_provider: "deepgram"   # Options: deepgram, openai
   tts_provider: "openai"     # Options: openai, elevenlabs, google
-  url: "wss://your-project-id.livekit.cloud" # Optional, can use LIVEKIT_URL env var
-  api_key: "your_api_key"                    # Optional, can use LIVEKIT_API_KEY env var
-  api_secret: "your_api_secret"              # Optional, can use LIVEKIT_API_SECRET env var
+  url: "wss://your-project-id.livekit.cloud" # Optional, can use AK_LIVEKIT__URL env var
+  api_key: "your_api_key"                    # Optional, can use AK_LIVEKIT__API_KEY env var
+  api_secret: "your_api_secret"              # Optional, can use AK_LIVEKIT__API_SECRET env var
 ```
 
 You can also set these via environment variables:

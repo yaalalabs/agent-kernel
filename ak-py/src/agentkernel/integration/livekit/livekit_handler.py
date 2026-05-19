@@ -339,9 +339,20 @@ class AgentLiveKitRequestHandler(RESTRequestHandler):
         def get_token(room: str, identity: str):
             """
             Generates a secure LiveKit Access Token for a frontend client to join the voice room.
+            :param room: The name of the room the client is joining.
+            :param identity: The identity of the client.
+            :return: A dictionary containing the generated JWT token.
+
             """
             if not self.api_key or not self.api_secret:
-                raise HTTPException(status_code=500, detail="LiveKit API Key or Secret not configured in config.yaml under 'livekit'")
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "LiveKit API key or secret not configured. Set them in config.yaml under "
+                        "'livekit' or via environment variables such as "
+                        "AK_LIVEKIT__API_KEY and AK_LIVEKIT__API_SECRET."
+                    ),
+                )
 
             token = api.AccessToken(self.api_key, self.api_secret)
             token.with_identity(identity)

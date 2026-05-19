@@ -1,5 +1,5 @@
 from agentkernel.api import RESTAPI
-from agentkernel.integration.livekit import AgentLiveKitRequestHandler
+from agentkernel.livekit import AgentLiveKitRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
