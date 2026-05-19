@@ -521,80 +521,88 @@ function AgentSkills() {
             </p>
           </div>
 
-          <div className={styles.agentSkillsSectionLabel}>
-            Get started in two commands
-          </div>
-          <div className={styles.agentSkillsCodeBlock}>
-            <div className={styles.agentSkillsCodeComment}>
-              # 1. Install the CLI
-            </div>
-            <div>
-              <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-              <span className={styles.agentSkillsCodeArg}>
-                pip install agentkernel
-              </span>
-            </div>
-            <br />
-            <div className={styles.agentSkillsCodeComment}>
-              # 2. Install skills for your coding assistant
-            </div>
-            <div>
-              <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-              <span className={styles.agentSkillsCodeArg}>
-                ak skill install
-              </span>
-            </div>
-            <div className={styles.agentSkillsCodeComment}>
-              &nbsp;&nbsp;or target a specific assistant:
-            </div>
-            <div>
-              <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-              <span className={styles.agentSkillsCodeArg}>
-                ak skill install --assistant claude
-              </span>
-            </div>
-          </div>
-
-          <div className={styles.agentSkillsSectionLabel}>
-            What each skill does
-          </div>
-
-          <div className={styles.agentSkillsTopicsRow} role="tablist">
-            {AGENT_SKILLS.map((skill, idx) => (
-              <button
-                key={skill.name}
-                role="tab"
-                aria-selected={activeSkillIndex === idx}
-                className={`${styles.agentSkillsTopicButton} ${
-                  activeSkillIndex === idx ? styles.agentSkillsTopicActive : ""
-                }`}
-                onClick={() => setActiveSkillIndex(idx)}
-              >
-                {skill.name}
-              </button>
-            ))}
-          </div>
-
-          <div className={styles.agentSkillsDetailWrap}>
-            <div className={styles.agentSkillsDetailBox}>
-              <div className={styles.agentSkillsSkillHeader}>
-                <ActiveIcon
-                  aria-hidden
-                  className={styles.agentSkillsSkillIcon}
-                />
-                <p className={styles.agentSkillsSkillName}>
-                  {AGENT_SKILLS[activeSkillIndex].name}
-                </p>
+          <div className={styles.agentSkillsSplitGrid}>
+            <div className={styles.agentSkillsPanel}>
+              <div className={styles.agentSkillsSectionLabel}>
+                Get started in two commands
               </div>
-              <p className={styles.agentSkillsSkillBody}>
-                {AGENT_SKILLS[activeSkillIndex].description}
-              </p>
-              <div className={styles.agentSkillsPillRow}>
-                {AGENT_SKILLS[activeSkillIndex].pills.map((pill) => (
-                  <span key={pill} className={styles.agentSkillsPill}>
-                    {pill}
+              <div className={styles.agentSkillsCodeBlock}>
+                <div className={styles.agentSkillsCodeComment}>
+                  # 1. Install the CLI
+                </div>
+                <div>
+                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                  <span className={styles.agentSkillsCodeArg}>
+                    pip install agentkernel
                   </span>
+                </div>
+                <br />
+                <div className={styles.agentSkillsCodeComment}>
+                  # 2. Install skills for your coding assistant
+                </div>
+                <div>
+                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                  <span className={styles.agentSkillsCodeArg}>
+                    ak skill install
+                  </span>
+                </div>
+                <div className={styles.agentSkillsCodeComment}>
+                  &nbsp;&nbsp;or target a specific assistant:
+                </div>
+                <div>
+                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                  <span className={styles.agentSkillsCodeArg}>
+                    ak skill install --assistant claude
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.agentSkillsPanel}>
+              <div className={styles.agentSkillsSectionLabel}>
+                What each skill does
+              </div>
+
+              <div className={styles.agentSkillsTopicsRow} role="tablist">
+                {AGENT_SKILLS.map((skill, idx) => (
+                  <button
+                    key={skill.name}
+                    role="tab"
+                    aria-selected={activeSkillIndex === idx}
+                    className={`${styles.agentSkillsTopicButton} ${
+                      activeSkillIndex === idx
+                        ? styles.agentSkillsTopicActive
+                        : ""
+                    }`}
+                    onClick={() => setActiveSkillIndex(idx)}
+                  >
+                    {skill.name}
+                  </button>
                 ))}
+              </div>
+
+              <div className={styles.agentSkillsDetailWrap}>
+                <div className={styles.agentSkillsDetailBox}>
+                  <div className={styles.agentSkillsSkillHeader}>
+                    <ActiveIcon
+                      aria-hidden
+                      className={styles.agentSkillsSkillIcon}
+                    />
+                    <p className={styles.agentSkillsSkillName}>
+                      {AGENT_SKILLS[activeSkillIndex].name}
+                    </p>
+                  </div>
+                  <p className={styles.agentSkillsSkillBody}>
+                    {AGENT_SKILLS[activeSkillIndex].description}
+                  </p>
+                  <div className={styles.agentSkillsPillRow}>
+                    {AGENT_SKILLS[activeSkillIndex].pills.map((pill) => (
+                      <span key={pill} className={styles.agentSkillsPill}>
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

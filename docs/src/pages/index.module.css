@@ -1421,6 +1421,23 @@
   margin: 0 auto 3rem;
 }
 
+.agentSkillsSplitGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  margin-bottom: 3rem;
+}
+
+.agentSkillsPanel {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background: rgba(14, 16, 23, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
 .agentSkillsTopicsRow {
   display: flex;
   gap: 0.75rem;
@@ -1460,13 +1477,11 @@
 }
 
 .agentSkillsDetailBox {
-  max-width: 64rem;
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.75rem;
-  padding: 1.75rem;
-  backdrop-filter: blur(6px);
-  background: rgba(14, 16, 23, 0.55);
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .agentSkillsSkillCard {
@@ -3531,10 +3546,9 @@
 
   .devHookPipeline {
     display: grid;
-    grid-template-columns: minmax(12rem, 1fr) auto minmax(
-        12rem,
-        1fr
-      ) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
+    grid-template-columns:
+      minmax(12rem, 1fr) auto minmax(12rem, 1fr)
+      auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
     align-items: stretch;
     gap: 0 0.5rem;
     width: max-content;
@@ -3570,10 +3584,9 @@
   }
 
   .devHookPipeline {
-    grid-template-columns: minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(
-        0,
-        1fr
-      ) 1.75rem minmax(0, 1fr);
+    grid-template-columns:
+      minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr)
+      1.75rem minmax(0, 1fr);
     gap: 0 0.65rem;
     width: 100%;
     min-width: 0;
@@ -4221,6 +4234,10 @@
    ============================================================================= */
 
 @media (max-width: 768px) {
+  .agentSkillsSplitGrid {
+    grid-template-columns: 1fr;
+  }
+
   /* Hero */
   .heroTagline {
     font-size: 1.6rem;
@@ -4244,6 +4261,14 @@
   .heroButtons .btnSecondary {
     text-align: center;
     width: 100%;
+  }
+
+  .agentSkillsPanel {
+    padding: 1.25rem;
+  }
+
+  .agentSkillsSectionLabel {
+    font-size: 1.1rem;
   }
 
   /* FrameworksStrip — 2 per row */
@@ -4447,6 +4472,18 @@
   /* Hero */
   .heroBody {
     min-height: 4.5rem;
+  }
+
+  .agentSkillsPanel {
+    padding: 1rem;
+  }
+
+  .agentSkillsCodeBlock {
+    padding: 1rem;
+  }
+
+  .agentSkillsDetailBox {
+    padding: 1rem;
   }
 
   .heroTagline {
