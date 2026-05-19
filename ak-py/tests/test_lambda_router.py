@@ -35,13 +35,13 @@ def make_event_without_env_vars(monkeypatch, path, method="GET"):
 def router(mock_sqs_handler, mock_default_endpoints_handler):
     # Mock SQSHandler to return None for queue URL (no queues configured)
     mock_sqs_handler.get_input_queue_url.return_value = None
-    
+
     # Mock DefaultEndpointsHandler to return simple route configuration
     mock_handler_instance = MagicMock()
     mock_handler_instance.get_default_endpoint_info.return_value = ("default_chat_path", "POST", None)
     mock_handler_instance.get_routes.return_value = {"default_chat_path": {"POST": lambda e, c: (200, {"stubbed": True})}}
     mock_default_endpoints_handler.return_value = mock_handler_instance
-    
+
     return RESTLambdaRouter()
 
 
