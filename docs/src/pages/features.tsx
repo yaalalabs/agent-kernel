@@ -351,81 +351,41 @@ function FeaturesPageMap({
             aria-hidden
           >
             <defs>
-              <filter
-                id={topGlowId}
-                x="-80%"
-                y="-80%"
-                width="260%"
-                height="260%"
-              >
-                <feGaussianBlur stdDeviation="4" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <filter
-                id={`${topGlowId}Halo`}
-                x="-80%"
-                y="-80%"
-                width="260%"
-                height="260%"
-              >
-                <feGaussianBlur stdDeviation="5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              {topLines.map((l) => (
-                <path key={l.id} id={l.id} d={l.d} />
+              {topLines.map((l, i) => (
+                <linearGradient
+                  key={`grad-${l.id}`}
+                  id={`grad-${l.id}`}
+                  gradientUnits="userSpaceOnUse"
+                  x1={COL_X_TOP[i]}
+                  y1="0"
+                  x2="450"
+                  y2="60"
+                >
+                  <stop offset="0%"   stopColor={TEAL} stopOpacity="0" />
+                  <stop offset="50%"  stopColor={TEAL} stopOpacity="1" />
+                  <stop offset="100%" stopColor={TEAL} stopOpacity="0.3" />
+                </linearGradient>
               ))}
             </defs>
-            {/* Halo lines */}
-            {topLines.map((l) => (
-              <path
-                key={`halo-${l.id}`}
-                d={l.d}
-                fill="none"
-                stroke={TEAL_HALO}
-                strokeWidth="8"
-                filter={`url(#${topGlowId}Halo)`}
-              />
-            ))}
-            {/* Main lines */}
-            {topLines.map((l) => (
-              <path
+
+            {topLines.map((l, i) => (
+              <g
                 key={l.id}
-                d={l.d}
-                fill="none"
-                stroke={TEAL_LINE}
-                strokeWidth="1.5"
-                strokeDasharray={l.len}
-                strokeDashoffset={visible ? 0 : l.len}
+                className={visible && !reducedMotion ? styles.lineBreath : undefined}
                 style={{
-                  transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s`,
-                }}
-              />
+                  opacity: visible ? undefined : 0,
+                  "--breath-dur": `${2.2 + i * 0.4}s`,
+                  "--breath-delay": `${i * 0.3}s`,
+                } as React.CSSProperties}
+              >
+                <path
+                  d={l.d}
+                  fill="none"
+                  stroke={`url(#grad-${l.id})`}
+                  strokeWidth="1.5"
+                />
+              </g>
             ))}
-            {visible &&
-              !reducedMotion &&
-              topParticles.map((p, i) => (
-                <circle
-                  key={i}
-                  r="3.5"
-                  fill={p.color}
-                  filter={`url(#${topGlowId})`}
-                  opacity="0.9"
-                >
-                  <animateMotion
-                    dur={p.dur}
-                    repeatCount="indefinite"
-                    begin={p.delay}
-                  >
-                    <mpath href={`#${p.pathId}`} />
-                  </animateMotion>
-                </circle>
-              ))}
           </svg>
 
           {/* ── Hub ── */}
@@ -447,81 +407,41 @@ function FeaturesPageMap({
             aria-hidden
           >
             <defs>
-              <filter
-                id={botGlowId}
-                x="-80%"
-                y="-80%"
-                width="260%"
-                height="260%"
-              >
-                <feGaussianBlur stdDeviation="4" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <filter
-                id={`${botGlowId}Halo`}
-                x="-80%"
-                y="-80%"
-                width="260%"
-                height="260%"
-              >
-                <feGaussianBlur stdDeviation="5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              {botLines.map((l) => (
-                <path key={l.id} id={l.id} d={l.d} />
+              {botLines.map((l, i) => (
+                <linearGradient
+                  key={`grad-${l.id}`}
+                  id={`grad-${l.id}`}
+                  gradientUnits="userSpaceOnUse"
+                  x1="450"
+                  y1="0"
+                  x2={COL_X_BOT[i]}
+                  y2="60"
+                >
+                  <stop offset="0%"   stopColor={TEAL} stopOpacity="0.3" />
+                  <stop offset="50%"  stopColor={TEAL} stopOpacity="1" />
+                  <stop offset="100%" stopColor={TEAL} stopOpacity="0" />
+                </linearGradient>
               ))}
             </defs>
-            {/* Halo lines */}
-            {botLines.map((l) => (
-              <path
-                key={`halo-${l.id}`}
-                d={l.d}
-                fill="none"
-                stroke={TEAL_HALO}
-                strokeWidth="8"
-                filter={`url(#${botGlowId}Halo)`}
-              />
-            ))}
-            {/* Main lines */}
-            {botLines.map((l) => (
-              <path
+
+            {botLines.map((l, i) => (
+              <g
                 key={l.id}
-                d={l.d}
-                fill="none"
-                stroke={TEAL_LINE}
-                strokeWidth="1.5"
-                strokeDasharray={l.len}
-                strokeDashoffset={visible ? 0 : l.len}
+                className={visible && !reducedMotion ? styles.lineBreath : undefined}
                 style={{
-                  transition: `stroke-dashoffset 0.55s cubic-bezier(0.22, 1, 0.36, 1) ${l.delay}s`,
-                }}
-              />
+                  opacity: visible ? undefined : 0,
+                  "--breath-dur": `${2.2 + i * 0.4}s`,
+                  "--breath-delay": `${0.5 + i * 0.3}s`,
+                } as React.CSSProperties}
+              >
+                <path
+                  d={l.d}
+                  fill="none"
+                  stroke={`url(#grad-${l.id})`}
+                  strokeWidth="1.5"
+                />
+              </g>
             ))}
-            {visible &&
-              !reducedMotion &&
-              botParticles.map((p, i) => (
-                <circle
-                  key={i}
-                  r="3.5"
-                  fill={p.color}
-                  filter={`url(#${botGlowId})`}
-                  opacity="0.9"
-                >
-                  <animateMotion
-                    dur={p.dur}
-                    repeatCount="indefinite"
-                    begin={p.delay}
-                  >
-                    <mpath href={`#${p.pathId}`} />
-                  </animateMotion>
-                </circle>
-              ))}
           </svg>
 
           {/* ── Layer 3: bottom row nodes ── */}

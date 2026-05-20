@@ -650,6 +650,18 @@
   animation-delay: 180ms;
 }
 
+/* ─── Connector line breath animation ── */
+
+@keyframes lineBreath {
+  0%, 100% { opacity: 0.18; }
+  50%       { opacity: 0.75; }
+}
+
+.lineBreath {
+  animation: lineBreath var(--breath-dur, 2.2s) ease-in-out infinite;
+  animation-delay: var(--breath-delay, 0s);
+}
+
 /* ─── Problem comparison ──────────────────────────────────────────────────── */
 
 .problemSection .sectionHeader {
