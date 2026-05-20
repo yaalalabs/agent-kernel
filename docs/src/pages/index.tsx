@@ -810,6 +810,39 @@ function AgentSkills() {
 /* ─── Deployment ────────────────────────────────────────────────────────── */
 
 function Deployment() {
+
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!gridRef.current) return;
+
+    const cards = gridRef.current.querySelectorAll(`.${styles.cloudCard}`);
+
+    gsap.fromTo(
+      cards,
+      {
+        opacity: 0,
+        y: 40,
+      },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.7,
+        ease: "power3.out",
+        stagger: 0.15,
+        scrollTrigger: {
+          trigger: gridRef.current,
+          start: "top 80%",
+          once: true,
+        },
+      }
+    );
+
+    return () => {
+      ScrollTrigger.getAll().forEach((t) => t.kill());
+    };
+  }, []);
+
   const clouds = [
     {
       icon: <FaAws className={styles.cloudIconSvg} />,
@@ -874,7 +907,7 @@ function Deployment() {
           </p>
         </div>
 
-        <div className={styles.cloudGrid}>
+        <div className={styles.cloudGrid} ref={gridRef}>
           {clouds.map((c, i) => (
             <div key={i} className={styles.cloudCard}>
               {/* Logo */}
