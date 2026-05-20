@@ -23,6 +23,7 @@ const SCATTER_FLOAT_DURATION = 2.5;   // seconds to scatter outward before float
 const SCATTER_FLOAT_RADIUS   = 5.0;   // how far particles scatter before floating
 const FLOAT_DRIFT_AMPLITUDE  = 0.06;  // max drift distance per axis while floating (firefly-gentle)
 const FLOAT_REFORM_DURATION  = 2.2;   // seconds to ease back into model shape
+const INTRO_DRIFT_FADE_IN_DURATION = 0.8; // seconds to fade drift in after intro completes
 
 // Color palette
 const PALETTE: [number, number, number][] = [
@@ -37,6 +38,7 @@ const vertexShader = `
   uniform float uResolutionY;
   uniform float uTime;
   uniform float uDisableDrift;
+  uniform float uDriftMix;
   varying vec3 vPos;
   varying vec3 vColor;
 
@@ -51,7 +53,7 @@ const vertexShader = `
       float drift_y = cos(uTime * 0.4 + frac_hash * 6.28) * 0.045;
       float drift_z = sin(uTime * 0.35 + frac_hash * 6.28) * 0.035;
       
-      pos += vec3(drift_x, drift_y, drift_z);
+      pos += vec3(drift_x, drift_y, drift_z) * uDriftMix;
     }
     
     vPos = pos;
@@ -233,6 +235,8 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       // ── Intro animation ──────────────────────────────────────────────────────
       let isAnimatingIntro    = false;
       let introAnimationTime  = 0;
+      let introDriftFadeInTime = 0;
+      let isSettlingAfterIntro = false;
       let startPositions: Float32Array | null = null;
       let endPositions:   Float32Array | null = null;
       let introScatterPositions: Float32Array | null = null;
@@ -244,22 +248,19 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       let fadeOutAnimationTime    = 0;
       let scatteredPositions: Float32Array | null = null;
       let hasScatteredOut = false;
-      let shouldTriggerScatterOut = false;
 
       // ── Scatter-in (original) ────────────────────────────────────────────────
-      let shouldTriggerScatterIn = false;
       let hasScatteredIn         = true;
 
       // ── Reverse scatter-in ───────────────────────────────────────────────────
       let isAnimatingReverseScatterIn   = false;
       let reverseScatterInAnimationTime = 0;
-      let shouldTriggerReverseScatterIn = false;
 
       // ── Model reference ──────────────────────────────────────────────────────
+      let canonicalModelPositions: Float32Array | null = null;
       let modelPositions: Float32Array | null = null;
 
       // ── NEW: Scatter-float state ─────────────────────────────────────────────
-      let shouldTriggerScatterFloat = false;
       let isAnimatingScatterFloat   = false;
       let scatterFloatTime          = 0;
       let scatterFloatStart: Float32Array | null  = null;  // positions at trigger time
@@ -269,7 +270,6 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       let floatSeeds: Float32Array | null         = null;  // per-particle freq/phase
 
       // ── NEW: Float-reform state ──────────────────────────────────────────────
-      let shouldTriggerFloatReform  = false;
       let isAnimatingFloatReform    = false;
       let floatReformTime           = 0;
       let floatReformStart: Float32Array | null = null;   // snapshot at trigger time
@@ -287,14 +287,6 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       container.appendChild(renderer.domElement);
 
-      // ── Expose triggers ───────────────────────────────────────────────────────
-      triggerScatterOutRef.current = () => { shouldTriggerScatterOut = true; };
-      triggerScatterInRef.current  = () => { shouldTriggerScatterIn  = true; };
-      triggerReverseScatterInRef.current = () => { shouldTriggerReverseScatterIn = true; };
-
-      triggerScatterFloatRef.current = () => { shouldTriggerScatterFloat = true; };
-      triggerFloatReformRef.current  = () => { shouldTriggerFloatReform  = true; };
-
       // ── Geometry & materials ─────────────────────────────────────────────────
       const geometry = new THREE.BufferGeometry();
 
@@ -304,6 +296,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         uTime:        { value: 0 },
         uAlpha:       { value: 1.0 },
         uDisableDrift:{ value: 0.0 },
+        uDriftMix:    { value: 0.0 },
       });
 
       const coreMaterial = new THREE.ShaderMaterial({
@@ -365,6 +358,136 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         glowMaterial.uniforms.uAlpha.value = v;
       };
 
+      const readCurrentPositions = () => {
+        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+        return new Float32Array(posAttr.array as Float32Array);
+      };
+
+      const writePositions = (positions: Float32Array) => {
+        const posAttr = geometry.attributes.position as THREE.BufferAttribute;
+        (posAttr.array as Float32Array).set(positions);
+        posAttr.needsUpdate = true;
+      };
+
+      const resetMotionState = () => {
+        isAnimatingIntro = false;
+        introAnimationTime = 0;
+        introDriftFadeInTime = 0;
+        isSettlingAfterIntro = false;
+        startPositions = null;
+
+        isAnimatingScatterOut = false;
+        scatterOutAnimationTime = 0;
+        isAnimatingFadeOut = false;
+        fadeOutAnimationTime = 0;
+        scatteredPositions = null;
+
+        isAnimatingReverseScatterIn = false;
+        reverseScatterInAnimationTime = 0;
+
+        isAnimatingScatterFloat = false;
+        scatterFloatTime = 0;
+        scatterFloatStart = null;
+        scatterFloatTarget = null;
+
+        isAnimatingFloatReform = false;
+        floatReformTime = 0;
+        floatReformStart = null;
+
+        isFloating = false;
+        floatBasePositions = null;
+        floatSeeds = null;
+
+        if (canonicalModelPositions) {
+          endPositions = canonicalModelPositions.slice();
+          modelPositions = canonicalModelPositions.slice();
+        }
+      };
+
+      const startScatterOut = () => {
+        if (!canonicalModelPositions || !endPositions) return;
+        const startFromModel = hasScatteredOut && modelPositions !== null;
+        resetMotionState();
+        hasScatteredIn = false;
+        hasScatteredOut = false;
+        startPositions = startFromModel ? modelPositions.slice() : readCurrentPositions();
+        isAnimatingScatterOut = true;
+        scatterOutAnimationTime = 0;
+        setAlpha(1.0);
+      };
+
+      const startScatterIn = () => {
+        if (!canonicalModelPositions) return;
+        resetMotionState();
+        hasScatteredIn = true;
+        hasScatteredOut = false;
+        endPositions = canonicalModelPositions.slice();
+        startPositions = generateScatteredPositions(endPositions.length / 3);
+        writePositions(startPositions);
+        setAlpha(0.0);
+        isAnimatingIntro = true;
+        introAnimationTime = 0;
+      };
+
+      const startReverseScatterIn = () => {
+        if (!canonicalModelPositions || !introScatterPositions) return;
+        resetMotionState();
+        hasScatteredOut = false;
+        hasScatteredIn = false;
+        startPositions = readCurrentPositions();
+        endPositions = introScatterPositions.slice();
+        writePositions(startPositions);
+        setAlpha(1.0);
+        isAnimatingReverseScatterIn = true;
+        reverseScatterInAnimationTime = 0;
+      };
+
+      const startScatterFloat = () => {
+        if (!modelPositions) return;
+        resetMotionState();
+        scatterFloatStart = readCurrentPositions();
+
+        const n = scatterFloatStart.length / 3;
+        scatterFloatTarget = new Float32Array(scatterFloatStart.length);
+        for (let i = 0; i < n; i++) {
+          const idx = i * 3;
+          const x = scatterFloatStart[idx];
+          const y = scatterFloatStart[idx + 1];
+          const z = scatterFloatStart[idx + 2];
+          const dist = Math.sqrt(x * x + y * y + z * z);
+          const nx = dist > 0.001 ? x / dist : (Math.random() - 0.5) * 2;
+          const ny = dist > 0.001 ? y / dist : (Math.random() - 0.5) * 2;
+          const nz = dist > 0.001 ? z / dist : (Math.random() - 0.5) * 2;
+          const r = SCATTER_FLOAT_RADIUS + dist * 0.5;
+          scatterFloatTarget[idx] = nx * r;
+          scatterFloatTarget[idx + 1] = ny * r;
+          scatterFloatTarget[idx + 2] = nz * r;
+        }
+
+        floatSeeds = generateFloatSeeds(n);
+        isAnimatingScatterFloat = true;
+        scatterFloatTime = 0;
+        setAlpha(1.0);
+      };
+
+      const startFloatReform = () => {
+        if (!modelPositions) return;
+        resetMotionState();
+        floatReformStart = readCurrentPositions();
+        endPositions = modelPositions.slice();
+        isAnimatingFloatReform = true;
+        floatReformTime = 0;
+        setAlpha(1.0);
+      };
+
+      // ── Expose triggers ───────────────────────────────────────────────────────
+      triggerScatterOutRef.current = startScatterOut;
+      triggerScatterInRef.current = startScatterIn;
+      triggerReverseScatterInRef.current = startReverseScatterIn;
+
+      triggerScatterFloatRef.current = startScatterFloat;
+      triggerFloatReformRef.current = startFloatReform;
+
       // ── Animate ────────────────────────────────────────────────────────────────
       const animate = () => {
         if (cancelled) return;
@@ -401,54 +524,13 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
             const posAttr2 = geometry.attributes.position as THREE.BufferAttribute;
             posAttr2.array.set(endPositions);
             posAttr2.needsUpdate = true;
+            canonicalModelPositions = endPositions.slice();
             modelPositions = endPositions.slice();
             introScatterPositions = startPositions.slice();
             startPositions = null;
+            isSettlingAfterIntro = true;
+            introDriftFadeInTime = 0;
           }
-        }
-
-        // ── Reverse scatter-in trigger ──────────────────────────────────────────
-        if (shouldTriggerReverseScatterIn && !isAnimatingReverseScatterIn
-            && modelPositions && introScatterPositions) {
-          shouldTriggerReverseScatterIn = false;
-          isAnimatingReverseScatterIn   = true;
-          reverseScatterInAnimationTime = 0;
-          startPositions = modelPositions.slice();
-          endPositions   = introScatterPositions.slice();
-          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-          (posAttr.array as Float32Array).set(startPositions);
-          posAttr.needsUpdate = true;
-          setAlpha(1.0);
-          hasScatteredOut = false;
-          hasScatteredIn  = false;
-        }
-
-        // ── Scatter-in trigger (scroll back to hero) ────────────────────────────
-        if (shouldTriggerScatterIn && !hasScatteredIn && modelPositions && endPositions) {
-          shouldTriggerScatterIn = false;
-          hasScatteredIn         = true;
-          isAnimatingScatterOut  = false;
-          isAnimatingFadeOut     = false;
-          hasScatteredOut        = false;
-          fadeOutAnimationTime   = 0;
-          scatterOutAnimationTime= 0;
-          startPositions = generateScatteredPositions(endPositions.length / 3);
-          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-          (posAttr.array as Float32Array).set(startPositions);
-          posAttr.needsUpdate = true;
-          setAlpha(0.0);
-          isAnimatingIntro  = true;
-          introAnimationTime = 0;
-        }
-
-        // ── Scatter-out trigger (original, with fade) ───────────────────────────
-        if (shouldTriggerScatterOut && !isAnimatingScatterOut && !hasScatteredOut
-            && modelPositions && endPositions) {
-          isAnimatingScatterOut   = true;
-          scatterOutAnimationTime = 0;
-          startPositions          = modelPositions.slice();
-          shouldTriggerScatterOut = false;
-          hasScatteredIn          = false;
         }
 
         // ── Reverse scatter-in animation ────────────────────────────────────────
@@ -539,46 +621,6 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
           }
         }
 
-        // ────────────────────────────────────────────────────────────────────────
-        // NEW: Scatter-float trigger
-        // ────────────────────────────────────────────────────────────────────────
-        if (shouldTriggerScatterFloat && !isAnimatingScatterFloat && !isFloating
-            && !isAnimatingFloatReform && modelPositions) {
-          shouldTriggerScatterFloat = false;
-          isAnimatingScatterFloat   = true;
-          scatterFloatTime          = 0;
-
-          // Snapshot current positions as scatter origin
-          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-          scatterFloatStart = new Float32Array(posAttr.array as Float32Array);
-
-          // Compute outward resting positions using the same logic as triggerScatterOut:
-          // normalize each particle's direction from centre, push to SCATTER_FLOAT_RADIUS
-          const n = scatterFloatStart.length / 3;
-          scatterFloatTarget = new Float32Array(scatterFloatStart.length);
-          for (let i = 0; i < n; i++) {
-            const idx  = i * 3;
-            const x    = scatterFloatStart[idx];
-            const y    = scatterFloatStart[idx + 1];
-            const z    = scatterFloatStart[idx + 2];
-            const dist = Math.sqrt(x * x + y * y + z * z);
-            // Normalised outward direction (fall back to random unit if at origin)
-            const nx   = dist > 0.001 ? x / dist : (Math.random() - 0.5) * 2;
-            const ny   = dist > 0.001 ? y / dist : (Math.random() - 0.5) * 2;
-            const nz   = dist > 0.001 ? z / dist : (Math.random() - 0.5) * 2;
-            // Target radius: base scatter radius + proportional to original distance
-            const r    = SCATTER_FLOAT_RADIUS + dist * 0.5;
-            scatterFloatTarget[idx]     = nx * r;
-            scatterFloatTarget[idx + 1] = ny * r;
-            scatterFloatTarget[idx + 2] = nz * r;
-          }
-
-          // Generate per-particle float seeds once — reused for the whole float phase
-          floatSeeds = generateFloatSeeds(n);
-
-          setAlpha(1.0);
-        }
-
         // ── Scatter-float animation ──────────────────────────────────────────────
         if (isAnimatingScatterFloat && scatterFloatStart && scatterFloatTarget) {
           scatterFloatTime += 0.016;
@@ -625,27 +667,6 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
           setAlpha(1.0);
         }
 
-        // ────────────────────────────────────────────────────────────────────────
-        // NEW: Float-reform trigger
-        // ────────────────────────────────────────────────────────────────────────
-        if (shouldTriggerFloatReform && (isFloating || isAnimatingScatterFloat) && modelPositions) {
-          shouldTriggerFloatReform  = false;
-          // Stop any active states
-          isFloating              = false;
-          isAnimatingScatterFloat = false;
-          isAnimatingFloatReform  = true;
-          floatReformTime         = 0;
-
-          // Snapshot wherever particles are right now
-          const posAttr = geometry.attributes.position as THREE.BufferAttribute;
-          floatReformStart = new Float32Array(posAttr.array as Float32Array);
-
-          // endPositions must point at modelPositions for the reform lerp
-          endPositions = modelPositions.slice();
-
-          setAlpha(1.0);
-        }
-
         // ── Float-reform animation ───────────────────────────────────────────────
         if (isAnimatingFloatReform && floatReformStart && endPositions) {
           floatReformTime += 0.016;
@@ -682,13 +703,23 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         coreMaterial.uniforms.uTime.value = elapsedTime;
         glowMaterial.uniforms.uTime.value = elapsedTime;
 
-        // Disable GPU-side drift during scatter-out / fade-out / scatter-float / float
-        // (CPU is driving positions during those phases)
-        const driftOn = (isAnimatingScatterOut || isAnimatingFadeOut
-                      || isAnimatingScatterFloat || isAnimatingFloatReform
+        // Fade GPU-side drift back in after intro so idle motion resumes smoothly.
+        let driftMix = 1.0;
+        if (isSettlingAfterIntro) {
+          introDriftFadeInTime += 0.016;
+          const fadeProgress = Math.min(introDriftFadeInTime / INTRO_DRIFT_FADE_IN_DURATION, 1.0);
+          driftMix = easeInOutCubic(fadeProgress);
+          if (fadeProgress >= 1.0) {
+            isSettlingAfterIntro = false;
+          }
+        }
+        const driftDisabled = (isAnimatingIntro || isAnimatingScatterOut || isAnimatingFadeOut
+                || isAnimatingReverseScatterIn || isAnimatingScatterFloat || isAnimatingFloatReform
                       || isFloating) ? 0.0 : 1.0;
-        coreMaterial.uniforms.uDisableDrift.value = driftOn;
-        glowMaterial.uniforms.uDisableDrift.value = driftOn;
+        coreMaterial.uniforms.uDisableDrift.value = driftDisabled;
+        glowMaterial.uniforms.uDisableDrift.value = driftDisabled;
+        coreMaterial.uniforms.uDriftMix.value = driftDisabled > 0.5 ? driftMix : 0.0;
+        glowMaterial.uniforms.uDriftMix.value = driftDisabled > 0.5 ? driftMix : 0.0;
 
         renderer.render(scene, camera);
       };
@@ -708,6 +739,8 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         }
         endPositions   = finalPositions;
         startPositions = generateScatteredPositions(COUNT);
+        canonicalModelPositions = finalPositions.slice();
+        modelPositions = finalPositions.slice();
         geometry.setAttribute('position', new THREE.BufferAttribute(startPositions.slice(), 3));
         assignColorsToGeometry(geometry, COUNT);
         isAnimatingIntro  = true;
