@@ -317,7 +317,7 @@ function FrameworksStrip() {
       scrollTrigger: {
         trigger: frameworksRef.current,
         start: "top 85%",
-        toggleActions: "play none none none",
+        toggleActions: "play none none reverse",
       },
     });
 
@@ -402,8 +402,60 @@ function FrameworksStrip() {
 /* ─── Affiliations Strip ────────────────────────────────────────────────── */
 
 function AffiliationsStrip() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const label = section.querySelector(`.${styles.affiliationsLabel}`);
+    const row = section.querySelector(`.${styles.affiliationsRow}`);
+
+    if (!label || !row) return;
+
+    if (reducedMotion) {
+      gsap.set([label, row], { opacity: 1, y: 0, scale: 1 });
+      return;
+    }
+
+    gsap.set([label, row], { opacity: 0, y: 18 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top 80%",
+        toggleActions: "play none none reverse",
+      },
+    });
+
+    tl.to(label, {
+      opacity: 1,
+      y: 0,
+      duration: 0.45,
+      ease: "power2.out",
+    }).to(
+      row,
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.5,
+        ease: "power2.out",
+      },
+      "-=0.18",
+    );
+
+    return () => {
+      tl.scrollTrigger?.kill();
+      tl.kill();
+    };
+  }, []);
+
   return (
-    <section className={styles.affiliationsStrip}>
+    <section ref={sectionRef} className={styles.affiliationsStrip}>
       <div className="container">
         <p className={styles.affiliationsLabel}>Member of</p>
         <div className={styles.affiliationsRow}>
@@ -521,7 +573,7 @@ function AgentSkills() {
 
     const targets = Array.from(
       panel.querySelectorAll(
-        `.${styles.agentSkillsSectionLabel}, .${styles.agentSkillsCodeComment}, .${styles.agentSkillsCodeArg}`,
+        `.${styles.agentSkillsCodeComment}, .${styles.agentSkillsCodeArg}`,
       ),
     ) as HTMLElement[];
 
@@ -1683,7 +1735,7 @@ function Levels() {
             scrollTrigger: {
               trigger: step,
               start: "top 85%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1706,7 +1758,7 @@ function Levels() {
             scrollTrigger: {
               trigger: card,
               start: "top 88%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1730,7 +1782,7 @@ function Levels() {
             scrollTrigger: {
               trigger: layer,
               start: "top 85%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1755,7 +1807,7 @@ function Levels() {
             scrollTrigger: {
               trigger: card,
               start: "top 88%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1778,7 +1830,7 @@ function Levels() {
             scrollTrigger: {
               trigger: card,
               start: "top 82%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1800,7 +1852,7 @@ function Levels() {
             scrollTrigger: {
               trigger: devAnalogy,
               start: "top 75%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1824,7 +1876,7 @@ function Levels() {
             scrollTrigger: {
               trigger: wrapper,
               start: "top 80%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1846,7 +1898,7 @@ function Levels() {
             scrollTrigger: {
               trigger: tab,
               start: "top 88%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1869,7 +1921,7 @@ function Levels() {
             scrollTrigger: {
               trigger: scenarioContent,
               start: "top 85%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1892,7 +1944,7 @@ function Levels() {
             scrollTrigger: {
               trigger: col,
               start: "top 88%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -1939,7 +1991,7 @@ function Levels() {
               scrollTrigger: {
                 trigger: akStandOutSection,
                 start: "top 82%",
-                toggleActions: "play none none none",
+                toggleActions: "play none none reverse",
               },
             },
           );
@@ -1957,7 +2009,7 @@ function Levels() {
               scrollTrigger: {
                 trigger: comparePanel,
                 start: "top 85%",
-                toggleActions: "play none none none",
+                toggleActions: "play none none reverse",
               },
             },
           );
@@ -1973,7 +2025,7 @@ function Levels() {
             scrollTrigger: {
               trigger: comparePanel,
               start: "top 80%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           });
 
@@ -2012,7 +2064,7 @@ function Levels() {
                 scrollTrigger: {
                   trigger: card,
                   start: "top 88%",
-                  toggleActions: "play none none none",
+                  toggleActions: "play none none reverse",
                 },
               },
             );
@@ -2031,7 +2083,7 @@ function Levels() {
               scrollTrigger: {
                 trigger: compareFooter,
                 start: "top 90%",
-                toggleActions: "play none none none",
+                toggleActions: "play none none reverse",
               },
             },
           );
@@ -2061,7 +2113,7 @@ function Levels() {
               scrollTrigger: {
                 trigger: aiBuildSection,
                 start: "top 82%",
-                toggleActions: "play none none none",
+                toggleActions: "play none none reverse",
               },
             },
           );
@@ -2089,7 +2141,7 @@ function Levels() {
                 scrollTrigger: {
                   trigger: subsection,
                   start: "top 85%",
-                  toggleActions: "play none none none",
+                  toggleActions: "play none none reverse",
                 },
                 clearProps: "transform",
               },
@@ -2114,7 +2166,7 @@ function Levels() {
             scrollTrigger: {
               trigger: devFrameworkSection,
               start: "top 80%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -2138,7 +2190,7 @@ function Levels() {
             scrollTrigger: {
               trigger: btn,
               start: "top 85%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );
@@ -2163,7 +2215,7 @@ function Levels() {
             scrollTrigger: {
               trigger: block,
               start: "top 83%",
-              toggleActions: "play none none none",
+              toggleActions: "play none none reverse",
             },
           },
         );

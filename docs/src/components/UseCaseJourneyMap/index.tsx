@@ -53,6 +53,8 @@ const tracks: Track[] = [
 export default function UseCaseJourneyMap() {
   const sectionRef = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
+  const [animationNonce, setAnimationNonce] = useState(0);
+  const isInViewRef = useRef(false);
 
   useEffect(() => {
     if (
@@ -66,9 +68,12 @@ export default function UseCaseJourneyMap() {
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && !isInViewRef.current) {
+          isInViewRef.current = true;
           setVisible(true);
-          observer.disconnect();
+          setAnimationNonce((nonce) => nonce + 1);
+        } else if (!entry.isIntersecting) {
+          isInViewRef.current = false;
         }
       },
       { threshold: 0.1 }
@@ -83,7 +88,7 @@ export default function UseCaseJourneyMap() {
       className={styles.journeySection}
       aria-label="Time to production comparison"
     >
-      <div className="container">
+      <div className="container" key={animationNonce}>
 
         {/* Header */}
         <div className={styles.header}>

@@ -1280,6 +1280,11 @@
   max-width: 1120px;
   margin-left: auto;
   margin-right: auto;
+  justify-items: center;
+}
+
+.realWorldSection .realWorldCardLink {
+  width: min(100%, 340px);
 }
 
 @media (min-width: 768px) {
