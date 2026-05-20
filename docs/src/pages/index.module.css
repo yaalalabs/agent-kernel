@@ -1477,6 +1477,50 @@
   color: #00ddff;
 }
 
+@keyframes agentSkillsCommandReveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0px);
+  }
+}
+
+.agentSkillsCommandsVisible .agentSkillsSectionLabel,
+.agentSkillsCommandsVisible .agentSkillsCodeComment,
+.agentSkillsCommandsVisible .agentSkillsCodeArg {
+  animation: agentSkillsCommandReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--agent-skills-reveal-delay, 0ms);
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(1) {
+  --agent-skills-reveal-delay: 60ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(2) {
+  --agent-skills-reveal-delay: 240ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(3) {
+  --agent-skills-reveal-delay: 420ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(1) {
+  --agent-skills-reveal-delay: 140ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(2) {
+  --agent-skills-reveal-delay: 320ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(3) {
+  --agent-skills-reveal-delay: 500ms;
+}
+
 .agentSkillsSkillList {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));

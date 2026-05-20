@@ -510,46 +510,81 @@ function AgentSkills() {
   const hasAnimatedSkillChangeRef = useRef(false);
   const ActiveIcon = AGENT_SKILLS[activeSkillIndex].icon;
 
-  gsap.registerPlugin(ScrambleTextPlugin);
+  gsap.registerPlugin(ScrollTrigger, ScrambleTextPlugin);
 
   const cmd1Ref = useRef<HTMLSpanElement>(null); // pip install agentkernel
   const cmd2Ref = useRef<HTMLSpanElement>(null); // ak skill install
   const cmd3Ref = useRef<HTMLSpanElement>(null); // ak skill install --assistant claude
+  const commandsPanelRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
-    const targets = [
-      { ref: cmd1Ref, text: "pip install agentkernel" },
-      { ref: cmd2Ref, text: "ak skill install" },
-      { ref: cmd3Ref, text: "ak skill install --assistant claude" },
-    ];
+  useEffect(() => {
+    const panel = commandsPanelRef.current;
+    if (!panel) return;
+
+    const targets = Array.from(
+      panel.querySelectorAll(
+        `.${styles.agentSkillsSectionLabel}, .${styles.agentSkillsCodeComment}, .${styles.agentSkillsCodeArg}`,
+      ),
+    ) as HTMLElement[];
+
+    targets.forEach((target) => {
+      if (!target.dataset.finalText) {
+        target.dataset.finalText = target.textContent ?? "";
+      }
+    });
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      return;
+    }
 
     const playScramble = () => {
-      targets.forEach(({ ref, text }, i) => {
-        if (!ref.current) return;
-        ref.current.textContent = "";
-        gsap.to(ref.current, {
+      targets.forEach((target, index) => {
+        const text = target.dataset.finalText ?? target.textContent ?? "";
+        gsap.killTweensOf(target);
+        gsap.to(target, {
           scrambleText: {
             text,
-            chars: "lowerCase", // keeps it feeling like a terminal
-            revealDelay: 0.5, // slightly longer reveal for readability
-            tweenLength: false, // text length is already correct
+            chars: "lowerCase",
+            revealDelay: 0.25,
+            tweenLength: false,
           },
-          duration: 2.2, // slower overall scramble
-          delay: 0.6 + i * 0.7, // increased stagger so commands feel paced
-          ease: "power2.inOut",
+          duration: 1.6,
+          delay: index * 0.18,
+          ease: "power2.out",
+          overwrite: "auto",
+          onComplete: () => {
+            target.textContent = text;
+          },
         });
       });
     };
 
-    const trigger = ScrollTrigger.create({
-      trigger: "#agent-skills",
-      start: "top 65%",
-      onEnter: playScramble,
-      onEnterBack: playScramble,
-    });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+
+        if (entry.isIntersecting) {
+          playScramble();
+        }
+      },
+      {
+        threshold: 0.35,
+        rootMargin: "0px 0px -10% 0px",
+      },
+    );
+
+    observer.observe(panel);
+
+    const rect = panel.getBoundingClientRect();
+    const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+    if (isVisible) {
+      playScramble();
+    }
 
     return () => {
-      trigger.kill();
+      observer.disconnect();
     };
   }, []);
 
@@ -638,7 +673,7 @@ function AgentSkills() {
           </div>
 
           <div className={styles.agentSkillsSplitGrid}>
-            <div className={styles.agentSkillsPanel}>
+            <div ref={commandsPanelRef} className={styles.agentSkillsPanel}>
               <div className={styles.agentSkillsSectionLabel}>
                 Get started in two commands
               </div>
@@ -1488,10 +1523,15 @@ function Levels() {
       }
     };
 
+    const levelCards = Array.from(
+      cardsRef.current?.querySelectorAll(`.${styles.levelCard}`) || [],
+    ) as HTMLElement[];
+
     if (!selectedLevel) {
       gsap.registerPlugin(ScrollTrigger);
 
       const isDesktop = window.innerWidth > 996;
+      const middleCard = levelCards[1];
 
       gsap.fromTo(
         [titleRef.current, subtitleRef.current, cardsRef.current],
@@ -1513,25 +1553,88 @@ function Levels() {
         gsap.set(sectionRef.current, { height: "100vh" });
         ScrollTrigger.refresh();
 
-        const tl = gsap.timeline({
-          scrollTrigger: {
+        if (levelCards.length === 3) {
+          gsap.set(levelCards, {
+            opacity: 0,
+            y: 28,
+            scale: 0.94,
+            transformOrigin: "center center",
+          });
+
+          gsap.set(middleCard, {
+            opacity: 1,
+            y: 0,
+            scale: 1.08,
+            zIndex: 3,
+          });
+
+          gsap.set(levelCards[0], {
+            x: 110,
+            zIndex: 2,
+          });
+
+          gsap.set(levelCards[2], {
+            x: -110,
+            zIndex: 2,
+          });
+        }
+
+        if (levelCards.length === 3) {
+          const tl = gsap.timeline({ paused: true });
+
+          tl.to(
+            levelCards[0],
+            {
+              x: 0,
+              y: 0,
+              opacity: 1,
+              scale: 1,
+              duration: 0.8,
+              ease: "power2.out",
+            },
+            0,
+          )
+            .to(
+              middleCard,
+              {
+                y: 0,
+                scale: 1,
+                duration: 0.8,
+                ease: "power2.out",
+              },
+              0,
+            )
+            .to(
+              levelCards[2],
+              {
+                x: 0,
+                y: 0,
+                opacity: 1,
+                scale: 1,
+                duration: 0.8,
+                ease: "power2.out",
+              },
+              0,
+            );
+
+          const scrollTrigger = ScrollTrigger.create({
             trigger: sectionRef.current,
             start: "top top",
             end: "+=100%",
             pin: true,
             pinSpacing: true,
-            scrub: false,
-          },
-        });
+            onEnter: () => tl.restart(),
+            onEnterBack: () => tl.restart(),
+          });
 
-        scrollTriggerRef.current =
-          tl.scrollTrigger as ScrollTriggerInstance | null;
+          scrollTriggerRef.current = scrollTrigger as ScrollTriggerInstance | null;
 
-        window.addEventListener("wheel", handleWheel, { passive: false });
-        window.addEventListener("touchmove", handleTouchMove, {
-          passive: false,
-        });
-        window.addEventListener("keydown", handleKeyDown);
+          window.addEventListener("wheel", handleWheel, { passive: false });
+          window.addEventListener("touchmove", handleTouchMove, {
+            passive: false,
+          });
+          window.addEventListener("keydown", handleKeyDown);
+        }
       }
     }
 
@@ -1548,6 +1651,24 @@ function Levels() {
   useEffect(() => {
     if (selectedLevel) {
       gsap.registerPlugin(ScrollTrigger);
+      const levelCards = Array.from(
+        cardsRef.current?.querySelectorAll(`.${styles.levelCard}`) || [],
+      ) as HTMLElement[];
+      const selectedCard = cardsRef.current?.querySelector(
+        `[data-level="${selectedLevel}"]`,
+      ) as HTMLElement | null;
+
+      if (levelCards.length) {
+        gsap.set(levelCards, { clearProps: "transform,opacity" });
+      }
+
+      if (selectedCard) {
+        gsap.set(selectedCard, {
+          opacity: 1,
+          scale: 1.05,
+          zIndex: 4,
+        });
+      }
 
       // Animate contentStep elements - Smooth fade and slide
       const steps =
@@ -1917,6 +2038,7 @@ function Levels() {
             },
           );
         }
+
       }
 
       // Animate AI Engineer build flow section
