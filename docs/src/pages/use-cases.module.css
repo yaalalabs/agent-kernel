@@ -597,11 +597,18 @@
     justify-items: stretch;
   }
   .orbitHub {
-    width: 150px;
-    height: 150px;
+    width: 120px;
+    height: 120px;
     margin: 0 auto 0.5rem;
   }
-  .orbitHubIcon { width: 60px; height: 60px; }
+  .orbitHubGlowCore {
+    inset: -28px;
+  }
+  .orbitHubIcon { width: 50px; height: 50px; }
+  .pulseRing,
+  .pulseRingDelayed {
+    inset: -16px;
+  }
   .orbitSvg { display: none; }
 }
 
@@ -613,6 +620,22 @@
       "hub"
       "c0" "c1" "c2" "c3"
       "c4" "c5" "c6" "c7";
+  }
+  .orbitHub {
+    width: 108px;
+    height: 108px;
+    margin-bottom: 0.25rem;
+  }
+  .orbitHubGlowCore {
+    inset: -22px;
+  }
+  .orbitHubIcon {
+    width: 80px;
+    height: 80px;
+  }
+  .pulseRing,
+  .pulseRingDelayed {
+    inset: -12px;
   }
 }
 
@@ -1265,56 +1288,186 @@
   }
 }
 
-/* ─── Real world use cases (feature-card grid) ─────────────────────────────── */
+/* ─── Real world use cases ──────────────────────────────────────────────── */
 
 .realWorldSection {
-  padding-top: 4rem;
-  padding-bottom: 4rem;
+  padding: 4rem 0;
 }
 
 .realWorldSection :global(.container) {
   max-width: 1200px;
 }
 
-.realWorldCardLink,
-.realWorldCardLink:hover,
-.realWorldCardLink:focus,
-.realWorldCardLink:active,
-.realWorldCardLink:visited {
-  text-decoration: none !important;
+.realWorldSectionHeader {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 2.75rem;
+}
+
+.realWorldSectionTitle {
+  font-size: 3rem;
+  font-weight: 800;
+  color: #dfe1f0;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  margin-bottom: 0.75rem;
+}
+
+.featuresGrid {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  gap: 1.25rem;
+  max-width: 1120px;
+}
+
+.featureGridCell {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.featureCard {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 1.35rem 1.25rem 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 22, 0.48);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    border-color 280ms ease,
+    box-shadow 280ms ease,
+    transform 280ms ease;
+  text-decoration: none;
   color: inherit;
-  cursor: pointer;
 }
 
-.realWorldCardLink:hover h3,
-.realWorldCardLink:hover p,
-.realWorldCardLink:hover span {
-  text-decoration: none !important;
+.featureCard:hover,
+.featureCard:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.28);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
 }
 
-.realWorldSection .realWorldCardLink:hover {
-  text-decoration: none !important;
-}
-
-.realWorldCardLink:focus-visible {
+.featureCard:focus-visible {
   outline: 2px solid rgba(0, 212, 255, 0.65);
   outline-offset: 3px;
 }
 
-.realWorldCasesGrid {
-  max-width: 1120px;
-  margin-left: auto;
-  margin-right: auto;
-  justify-items: center;
+/* Prevent global link hover rules from underlining card content */
+.featureCard:hover,
+.featureCard:focus-visible {
+  text-decoration: none;
+}
+.featureCard:hover *,
+.featureCard:focus-visible * {
+  text-decoration: none !important;
 }
 
-.realWorldSection .realWorldCardLink {
-  width: min(100%, 340px);
+.featureCardHeader,
+.featureCardBody,
+.featureLink {
+  position: relative;
+  z-index: 1;
+}
+
+.featureCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+  min-height: 2.5rem;
+}
+
+.featureIndex {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(0, 212, 255, 0.55);
+}
+
+.featureCardBody {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.featureTitle {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 0 0 0.5rem;
+}
+
+.featureDescription {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.55;
+  margin: 0 0 0.875rem;
+}
+
+.featureLink {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: 0.875rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #00d4ff;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.featureCard:hover .featureLink,
+.featureCard:focus-visible .featureLink {
+  color: #00ecff;
 }
 
 @media (min-width: 768px) {
-  .realWorldCasesGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  .featuresGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 1.5rem;
+    row-gap: 1.25rem;
+  }
+
+  .featureCard {
+    padding: 1.35rem 1.25rem 1.25rem;
+  }
+}
+
+@media (min-width: 996px) {
+  .featuresGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 1.75rem;
+    row-gap: 1.5rem;
+    max-width: 1200px;
+  }
+
+  .featureCard {
+    padding: 1.5rem 1.5rem 1.5rem;
   }
 }

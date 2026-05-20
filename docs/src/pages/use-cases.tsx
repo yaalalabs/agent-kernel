@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
-import featureStyles from './features.module.css';
 import UseCaseJourneyMap from '../components/UseCaseJourneyMap';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -418,10 +417,10 @@ function RealWorldUseCases() {
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    const header = section.querySelector(`.${featureStyles.sectionHeader}`);
-    const grid = section.querySelector(`.${featureStyles.featuresGrid}`);
+    const header = section.querySelector(`.${styles.realWorldSectionHeader}`);
+    const grid = section.querySelector(`.${styles.featuresGrid}`);
     const cells = Array.from(
-      section.querySelectorAll(`.${featureStyles.featureGridCell}`),
+      section.querySelectorAll(`.${styles.featureGridCell}`),
     );
 
     if (!header || !grid || !cells.length) return;
@@ -462,28 +461,28 @@ function RealWorldUseCases() {
   }, []);
   return (
     <section
-      className={`${featureStyles.section} ${featureStyles.coreFeaturesSection} ${styles.realWorldSection}`}
+      className={styles.realWorldSection}
       ref={sectionRef}
     >
       <div className="container">
-        <div className={featureStyles.sectionHeader}>
-          <h2 className={featureStyles.sectionTitle}>Real world use cases</h2>
+        <div className={styles.realWorldSectionHeader}>
+          <h2 className={styles.realWorldSectionTitle}>Real world use cases</h2>
         </div>
-        <ul className={`${featureStyles.featuresGrid} ${styles.realWorldCasesGrid}`}>
+        <ul className={styles.featuresGrid}>
           {REAL_WORLD_USE_CASES.map((useCase, i) => (
-            <li key={useCase.title} className={featureStyles.featureGridCell}>
+            <li key={useCase.title} className={styles.featureGridCell}>
               <Link
                 to={useCase.link}
-                className={`${featureStyles.featureCard} ${styles.realWorldCardLink}`}
+                className={styles.featureCard}
               >
-                <div className={featureStyles.featureCardHeader}>
-                  <span className={featureStyles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
+                <div className={styles.featureCardHeader}>
+                  <span className={styles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
                 </div>
-                <div className={featureStyles.featureCardBody}>
-                  <h3 className={featureStyles.featureTitle}>{useCase.title}</h3>
-                  <p className={featureStyles.featureDescription}>{useCase.description}</p>
+                <div className={styles.featureCardBody}>
+                  <h3 className={styles.featureTitle}>{useCase.title}</h3>
+                  <p className={styles.featureDescription}>{useCase.description}</p>
                 </div>
-                <span className={featureStyles.featureLink}>Read blog →</span>
+                <span className={styles.featureLink}>Read blog →</span>
               </Link>
             </li>
           ))}
