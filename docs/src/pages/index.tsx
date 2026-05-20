@@ -817,13 +817,11 @@ function Deployment() {
     if (!gridRef.current) return;
 
     const cards = gridRef.current.querySelectorAll(`.${styles.cloudCard}`);
+    const triggers: ScrollTrigger[] = [];
 
     gsap.fromTo(
       cards,
-      {
-        opacity: 0,
-        y: 40,
-      },
+      { opacity: 0, y: 40 },
       {
         opacity: 1,
         y: 0,
@@ -834,12 +832,13 @@ function Deployment() {
           trigger: gridRef.current,
           start: "top 80%",
           once: true,
+          onToggle: (self) => triggers.push(self),
         },
       }
     );
 
     return () => {
-      ScrollTrigger.getAll().forEach((t) => t.kill());
+      triggers.forEach((t) => t.kill()); 
     };
   }, []);
 
