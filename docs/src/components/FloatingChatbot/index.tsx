@@ -46,6 +46,12 @@ const FloatingChatbot: React.FC = () => {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    window.dispatchEvent(new Event(isOpen ? 'chatbot:open' : 'chatbot:close'));
+  }, [isOpen]);
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
