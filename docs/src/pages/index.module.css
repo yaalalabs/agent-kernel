@@ -957,10 +957,6 @@
     0 0 0 1px rgba(79, 125, 247, 0.15);
 }
 
-.accent_violet {
-  border-top: 2px solid #00DDFF;
-}
-
 .accent_violet:hover {
   border-color: #00DDFF;
   box-shadow:
@@ -976,10 +972,14 @@
 
 .accent_violet .segmentIcon {
   color: #00DDFF;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .segmentTitle {
   font-size: 1rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-weight: 700;
   color: #dfe1f0;
   line-height: 1.3;
@@ -988,6 +988,8 @@
 }
 
 .segmentTagline {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 0.875rem;
   color: #94a3b8;
   line-height: 1.6;
@@ -1450,10 +1452,19 @@
   font-size: 0.92rem;
   line-height: 1.9;
   color: #dfe1f0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+}
+
+.agentSkillsCodeBlock > div {
+  min-width: 0;
 }
 
 .agentSkillsCodeComment {
   color: #5e627d;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agentSkillsCodeCmd {
@@ -1462,6 +1473,10 @@
 
 .agentSkillsCodeArg {
   color: #00ddff;
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @keyframes agentSkillsCommandReveal {
@@ -1580,10 +1595,12 @@
   display: flex;
   justify-content: center;
   flex: 1 1 auto;
+  min-width: 0;
 }
 
 .agentSkillsDetailBox {
   width: 100%;
+  min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.1210);
   border-radius: 0.75rem;
   backdrop-filter: blur(6px);
@@ -1726,6 +1743,12 @@
   .agentSkillsDetailBox {
     padding: 0.85rem;
   }
+
+  .agentSkillsCodeBlock {
+    font-size: 0.8rem;
+    line-height: 1.7;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 420px) {
@@ -1735,6 +1758,11 @@
   }
   .agentSkillsSkillIcon {
     font-size: 1.4rem;
+  }
+
+  .agentSkillsCodeBlock {
+    font-size: 0.75rem;
+    line-height: 1.65;
   }
 }
 
