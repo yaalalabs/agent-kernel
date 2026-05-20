@@ -1,11 +1,9 @@
 from agentkernel.api import RESTAPI
+from agentkernel.crewai import CrewAIModule
 from agentkernel.mcp import MCP
 from agentkernel.openai import OpenAIModule
-from agentkernel.smolagents import SmolagentsModule
 from agents import Agent as OpenAIAgent
-from smolagents import LiteLLMModel, ToolCallingAgent
-
-model = LiteLLMModel(model_id="openai/gpt-4o")
+from crewai import Agent as CrewAIAgent
 
 general_agent = OpenAIAgent(
     name="general",
@@ -21,15 +19,15 @@ math_agent = OpenAIAgent(
         If prompted for anything else you refuse to answer.",
 )
 
-history_agent = ToolCallingAgent(
-    tools=[],
-    model=model,
-    name="history",
-    description="You provide assistance with history queries. Give direct and correct answers. Answer the question only. Don't give any explanation",
+history_agent = CrewAIAgent(
+    role="history",
+    goal="Specialist agent for history questions",
+    backstory="You provide assistance with history queries. Give direct and correct answers. Answer the question only. Don't give any explanation",
+    verbose=False,
 )
 
 OpenAIModule([general_agent, math_agent])
-SmolagentsModule([history_agent])
+CrewAIModule([history_agent])
 
 mcp = MCP.get()
 
