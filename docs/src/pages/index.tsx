@@ -367,9 +367,7 @@ function FrameworksStrip() {
     });
 
     // Cleanup
-    return () => {
-      ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
-    };
+    return undefined;
   }, []);
 
   return (
@@ -1488,9 +1486,9 @@ function Levels() {
 
     if (scrollTriggerRef.current) {
       scrollTriggerRef.current.kill();
+      scrollTriggerRef.current = null;
     }
 
-    ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
     gsap.set(sectionRef.current, { height: "auto", clearProps: "height" });
   };
 
@@ -2214,11 +2212,14 @@ function Levels() {
           });
         });
       });
-
-      return () => {
-        ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
-      };
     }
+
+    return () => {
+      if (scrollTriggerRef.current) {
+        scrollTriggerRef.current.kill();
+        scrollTriggerRef.current = null;
+      }
+    };
   }, [selectedLevel, styles]);
 
   return (
