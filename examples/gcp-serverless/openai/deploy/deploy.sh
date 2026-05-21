@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 # Create a deployment package for Cloud Function
 create_deployment_package() {
     pushd ../
@@ -16,6 +16,11 @@ create_deployment_package() {
     popd || exit 1
     cp Dockerfile ../dist/
 }
+
+pushd ../../../../ak-py || exit 1
+rm -rf dist
+./build.sh local
+popd
 
 create_deployment_package $1
 
