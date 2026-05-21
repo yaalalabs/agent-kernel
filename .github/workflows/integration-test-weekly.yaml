@@ -152,7 +152,7 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
         
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.14.3
