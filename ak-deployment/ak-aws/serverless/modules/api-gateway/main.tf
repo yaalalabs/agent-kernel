@@ -151,51 +151,6 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
   kms_key_id        = var.cloudwatch_kms_key_arn
 }
 
-# IAM Role for CloudWatch integration
-resource "aws_iam_role" "cloudwatch" {
-  name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "apigateway.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "cloudwatch" {
-  name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-policy"
-  role = aws_iam_role.cloudwatch.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:DescribeLogGroups",
-          "logs:DescribeLogStreams",
-          "logs:PutLogEvents",
-          "logs:GetLogEvents",
-          "logs:FilterLogEvents"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_api_gateway_account" "api_gateway" {
-  cloudwatch_role_arn = aws_iam_role.cloudwatch.arn
-}
 
 # API Gateway Stage
 resource "aws_api_gateway_stage" "stage" {
@@ -225,8 +180,7 @@ resource "aws_api_gateway_stage" "stage" {
     })
   }
 
-  depends_on = [aws_api_gateway_account.api_gateway]
-}
+  }
 
 # Gateway Response for Unauthorized
 resource "aws_api_gateway_gateway_response" "unauthorized" {

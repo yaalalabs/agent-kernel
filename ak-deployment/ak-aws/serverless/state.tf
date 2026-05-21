@@ -26,22 +26,30 @@ locals {
   request_handler_enabled               = var.enable_api_gateway
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
+  request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
+
+  websocket_api_enabled                  = var.enable_api_gateway && var.execution_mode == "async"
+  rest_api_enabled                       = var.enable_api_gateway && var.execution_mode != "async"
   
   create_authorizer                     = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
   # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
   authorizer_status_message     = !var.enable_api_gateway ? "Did NOT create Authorizer Lambda: enable_api_gateway is false." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
 
+  # Effective response store creation flags (disabled when execution_mode is async)
+  create_dynamodb_response_store_effective = var.create_dynamodb_response_store && var.execution_mode != "async"
+  create_redis_response_store_effective     = var.create_redis_response_store && var.execution_mode != "async"
+
   # DynamoDB response store configuration
-  response_store_dynamodb_table_name     = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_name : null
-  response_store_dynamodb_table_arn      = var.create_dynamodb_response_store ? module.dynamodb_response_store[0].table_arn : null
-  response_handler_response_store_dynamodb = var.create_dynamodb_response_store ? {
+  response_store_dynamodb_table_name     = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_name : null
+  response_store_dynamodb_table_arn      = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_arn : null
+  response_handler_response_store_dynamodb = local.create_dynamodb_response_store_effective ? {
     table_name = local.response_store_dynamodb_table_name
     table_arn  = local.response_store_dynamodb_table_arn
   } : null
   # Redis response store configuration
-  response_store_redis_url            = var.create_redis_response_store ? local.redis_url : null
-  response_handler_response_store_redis = var.create_redis_response_store ? {
+  response_store_redis_url            = local.create_redis_response_store_effective ? local.redis_url : null
+  response_handler_response_store_redis = local.create_redis_response_store_effective ? {
     url = local.response_store_redis_url
   } : null
 
@@ -74,6 +82,14 @@ locals {
     local.chat_endpoint,
     var.gateway_endpoints
   )
+
+  agent_invoke_url = try(module.api_gateway[0].agent_invoke_url, null)
+
+  # WebSocket API Gateway locals
+  websocket_api_endpoint_url      = try(module.websocket_api_gateway[0].websocket_api_endpoint_url, null)
+  websocket_api_endpoint_arn      = try(module.websocket_api_gateway[0].websocket_api_execution_arn, null)
+  websocket_connection_table_name = local.websocket_api_enabled ? module.websocket_connections[0].table_name : null
+  websocket_connection_table_arn  = local.websocket_api_enabled ? module.websocket_connections[0].table_arn : null
 }
 
 resource "aws_security_group" "lambda" {
@@ -151,8 +167,17 @@ module "authorizer" {
   lambda_signing_config_arn  = local.lambda_signing_config_arn
 }
 
+# Shared API Gateway Resources Module
+module "shared_api_gateway_resources" {
+  source = "./modules/shared-api-gateway-resources"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  tags          = var.tags
+}
+
 module "api_gateway" {
-  count  = var.enable_api_gateway ? 1 : 0
+  count  = local.rest_api_enabled ? 1 : 0
   source = "./modules/api-gateway"
 
   region               = var.region
@@ -174,9 +199,32 @@ module "api_gateway" {
   authorizer_lambda_function_invoke_arn = local.create_authorizer ? module.authorizer[0].lambda_function_invoke_arn : ""
   create_authorizer                     = local.create_authorizer
 
-  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+  cloudwatch_kms_key_arn       = local.cloudwatch_kms_key_arn
 
-  depends_on = [module.request_handler]
+  depends_on = [module.shared_api_gateway_resources]
+}
+
+module "websocket_api_gateway" {
+  count  = local.websocket_api_enabled ? 1 : 0
+  source = "./modules/websocket-api-gateway"
+
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  product_display_name = var.product_display_name
+  tags                 = var.tags
+  chat_route           = var.ws_chat_route
+  custom_routes        = var.ws_routes
+
+  route_handler_lambda_invoke_arn      = local.request_handler_lambda_invoke_arn
+  route_handler_lambda_name            = local.request_handler_lambda_function_name
+  route_handler_lambda_role_name        = local.request_handler_enabled ? module.request_handler[0].lambda_role_name : null
+  connection_handler_lambda_invoke_arn = module.ws_connection_handler[0].ws_connection_handler_lambda_function_invoke_arn
+  connection_handler_lambda_name       = module.ws_connection_handler[0].ws_connection_handler_lambda_function_name
+
+  cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
+
+  depends_on = [module.shared_api_gateway_resources]
 }
 
 module "docker_image" {
@@ -262,7 +310,7 @@ module "response_handler_docker_image" {
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
   version       = "0.4.0"
-  count         = (var.create_redis_cluster == true || var.create_redis_response_store) ? 1 : 0
+  count         = (var.create_redis_cluster == true || local.create_redis_response_store_effective) ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -336,11 +384,38 @@ check "queue_visibility_timeouts" {
   }
 }
 
+# WebSocket Connections DynamoDB Table
+module "websocket_connections" {
+  count  = local.websocket_api_enabled ? 1 : 0
+  source = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.3.3"
+  attributes = [
+    { name = "user_id", type = "S" },
+    { name = "connection_id", type = "S" }
+  ]
+  global_secondary_indexes = [
+    {
+      name            = "connection_id-index"
+      hash_key        = "connection_id"
+      range_key       = "user_id"
+      projection_type = "ALL"
+    }
+  ]
+  hash_key           = "user_id"
+  range_key          = "connection_id"
+  env_alias          = var.env_alias
+  module_name        = "${var.module_name}-websocket-connections"
+  product_alias      = var.product_alias
+  table_name         = "websocket-connections"
+  ttl_enabled        = true
+  ttl_attribute_name = "expiry_time"
+}
+
 # DynamoDB response store module
 module "dynamodb_response_store" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
   version = "0.4.0"
-  count   = var.create_dynamodb_response_store ? 1 : 0
+  count   = local.create_dynamodb_response_store_effective ? 1 : 0
 
   attributes = [
     { name = "request_id", type = "S" },
@@ -363,6 +438,32 @@ module "dynamodb_response_store" {
   product_alias      = var.product_alias
   table_name         = "ak-responses"
   ttl_attribute_name = "expiry_time"
+}
+
+module "ws_connection_handler" {
+  count  = local.websocket_api_enabled ? 1 : 0
+  source = "./modules/ws-connection-handler"
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_type          = var.module_type
+  is_production        = var.is_production
+  vpc_id              = local.vpc_id
+  subnet_ids          = local.subnet_ids
+  security_group_id   = local.security_group_id
+  lambda_kms_key_arn     = local.lambda_kms_key_arn
+  cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
+  ws_connection_handler = merge(var.ws_connection_handler, {
+    environment_variables = merge(
+      try(var.ws_connection_handler.environment_variables, {}),
+      {
+        AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = local.websocket_connection_table_name
+      }, local.websocket_api_enabled ? {
+        AK_WEBSOCKET_API__CHAT_ROUTE = var.ws_chat_route,
+      } : {}
+    )
+  })
+  websocket_connection_table_arn = local.websocket_connection_table_arn
 }
 
 # Request Handler Lambda Module
@@ -409,8 +510,16 @@ module "request_handler" {
   dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
+  websocket_connections_dynamodb          = local.websocket_api_enabled ? {
+    table_name = module.websocket_connections[0].table_name
+    table_arn  = module.websocket_connections[0].table_arn
+  } : null
   docker_image_uri                        = var.request_handler.package_type == "Image" ? module.docker_image[0].docker_image_uri : null
-  environment_variables = merge(var.request_handler.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
+  environment_variables = merge(
+    try(var.request_handler.environment_variables, {}),
+    var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {},
+    local.websocket_api_enabled ? { AK_WEBSOCKET_API__CHAT_ROUTE = var.ws_chat_route } : {}
+  )
 
   depends_on = [module.request_handler_source_package]
 }
@@ -489,7 +598,13 @@ module "response_handler" {
 
   response_store_redis    = local.response_handler_response_store_redis
   response_store_dynamodb = local.response_handler_response_store_dynamodb
+  websocket_connections_dynamodb = local.websocket_api_enabled ? {
+    table_name = module.websocket_connections[0].table_name
+    table_arn  = module.websocket_connections[0].table_arn
+  } : null
+  websocket_api_execution_arn = local.websocket_api_enabled ? module.websocket_api_gateway[0].websocket_api_execution_arn : null
+  websocket_mode              = local.websocket_api_enabled
 
-  depends_on = [module.queues, module.dynamodb_response_store]
+  depends_on = [module.websocket_api_gateway, module.queues, module.dynamodb_response_store]
 }
 

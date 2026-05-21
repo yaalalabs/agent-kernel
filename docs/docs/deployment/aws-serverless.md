@@ -49,7 +49,34 @@ graph LR
     style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
+#### ASYNC (WebSocket) mode
+```mermaid
+graph LR
+    A[User] <--> B[WebSocket API Gateway]
+    B --> C[WS Connection Handler Lambda]
+    B --> D[Request Handler Lambda]
+    
+    C --> E[DynamoDB Connection Table]
+    D --> F[SQS Input Queue]
+    F --> G[Agent Runner Lambda]
+    
+    G --> H[SQS Output Queue]
+    H --> I[Response Handler Lambda]
+    I --> J[WebSocket API Gateway]
+    J --> A
+    
+    G <--> K[Session Store]
+    G <--> L[Your Agent]
+    
+    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
 The request handler receives the incoming API request, the agent runner executes the agent logic, and the response handler persists outbound messages to the configured response store. In queue-backed modes, the three-lambda split keeps request ingestion, execution, and response persistence independent.
+
+In WebSocket (async) mode, a WebSocket API Gateway enables real-time bidirectional communication. The connection handler manages connection lifecycle ($connect/$disconnect routes) and stores connection metadata in DynamoDB. The request handler processes incoming WebSocket messages and routes them through the queue-based pipeline, with responses broadcast back through the WebSocket connection.
 
 ## Prerequisites
 
@@ -140,9 +167,9 @@ These environment variables are automatically configured by the Terraform module
 > **NOTE: If you want to override base paths you have to define them in the `main.tf` file. Also note that the chat endpoint path which is defined in the `main.tf` file will be using our default chat lambda handler function, therefore it is not possible to define a custom lambda function for the default chat endpoint path**
 
 
-## API Gateway Authentication (Optional)
+## API Gateway Authentication
 
-Authentication is completely optional. If you want to secure your API Gateway endpoints, you can configure Lambda authorizers. The serverless module supports custom token validation:
+Authentication is now **mandatory** for WebSocket mode and recommended for REST modes. The serverless module supports custom token validation with Lambda authorizers.
 
 ### When Authentication is Enabled
 
@@ -163,7 +190,11 @@ Authentication infrastructure will only be created if you define an `authorizer`
 - `layers` - List of Lambda layer ARNs to attach (default: [])
 - `environment_variables` - Environment variables for authorizer
 
-If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your endpoints will be publicly accessible.
+**Important Notes**:
+- For WebSocket mode (`execution_mode = "async"`), authentication is mandatory and is handled by the WebSocket connection handler Lambda
+- The bearer token must include a `userId` claim for WebSocket connections
+- If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your REST endpoints will be publicly accessible
+- For WebSocket mode, the connection handler Lambda implements its own authentication logic
 
 ### Auth Lambda Handler
 
@@ -188,6 +219,33 @@ class CustomAuthTokenValidator(AuthValidator):
 # APIGatewayAuthorizer defines the auth lambda handler
 handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
 ```
+
+### WebSocket Connection Handler Authentication
+
+For WebSocket mode, authentication is handled by the WebSocket connection handler Lambda. The connection handler validates the bearer token during the `$connect` route:
+
+```python
+import jwt
+from agentkernel.aws import WebsocketConnectionHandler
+from agentkernel.auth import AuthValidator, ValidationResult
+
+class CustomAuthTokenValidator(AuthValidator):
+    def validate(self, token: str) -> ValidationResult:
+        """Validate JWT token and return validation result."""
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            user_id = payload.get("userId", "")
+            if user_id == "user-1" and email == "test@test.com":
+                return ValidationResult(is_valid=True, claims={"userId": user_id})
+            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
+        except Exception as e:
+            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
+
+handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
+```
+
+**Important: The bearer token must include a `userId` claim for WebSocket connections. This `userId` is used to map WebSocket connections to users in the DynamoDB connection table. The `userId` should be returned in the `claims` dictionary of the `ValidationResult`.**
 
 ### Terraform Configuration
 
@@ -306,11 +364,15 @@ terraform apply
 
 The auth package script should run automatically when executing `./deploy.sh`. You can customize the script paths and structure, but you must provide two separate packages to the Terraform configuration via the `package_path` (for main Lambda) and `authorizer.package_path` (for auth Lambda) variables.
 
-## Queue Mode 
+## Queue Mode
+
+Queue mode is a Terraform configuration that enables SQS-driven asynchronous processing. When `queue_mode = true`, the infrastructure creates input and output SQS queues, an agent runner Lambda to process queued requests, and a response handler Lambda to store responses. When `queue_mode = false`, only the request handler Lambda is used for direct synchronous processing.
+
+At runtime, queue mode is determined by whether queue URLs are configured in the execution configuration (`execution.queues.input.url`). This allows the same Lambda code to work in both modes based on configuration.
 
 ### Lambda Handlers
 
-**If queue mode is disabled, only the request handler is needed. If queue mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler.**
+**If queue mode is disabled, only the request handler is needed. If queue mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler. For WebSocket mode (execution_mode = "async"), you additionally need a WebSocket connection handler.**
 
 #### 1. Request Handler
 
@@ -405,6 +467,33 @@ handler = ResponseHandler.handle
 
 See [examples/aws-serverless/scalable-openai/lambda_response_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_response_handler.py) for the reference implementation.
 
+#### 4. WebSocket Connection Handler (for async/WebSocket mode)
+
+This Lambda handles WebSocket connection lifecycle events (`$connect` and `$disconnect` routes), stores connection metadata in DynamoDB, and validates authentication tokens.
+
+```python
+import jwt
+from agentkernel.aws import WebsocketConnectionHandler
+from agentkernel.auth import AuthValidator, ValidationResult
+
+class CustomAuthTokenValidator(AuthValidator):
+    def validate(self, token: str) -> ValidationResult:
+        """Validate JWT token and return validation result."""
+        try:
+            payload = jwt.decode(token, options={"verify_signature": False})
+            email = payload.get("email", "")
+            user_id = payload.get("userId", "")
+            if user_id == "user-1" and email == "test@test.com":
+                return ValidationResult(is_valid=True, claims={"userId": user_id})
+            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
+        except Exception as e:
+            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
+
+handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
+```
+
+See [examples/aws-serverless/websocket-openai-copy/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai-copy/lambda_ws_connection_handler.py) for the reference implementation.
+
 ### Lambda Package Creation
 
 The deployment script creates the Lambda artifacts before Terraform runs.
@@ -470,6 +559,26 @@ create_response_handler_deployment_package() {
 ```
 This creates `dist_response_handler.zip`.
 
+#### WebSocket Connection Handler Package (for async/WebSocket mode)
+
+```bash
+create_ws_connection_handler_deployment_package() {
+    pushd ../
+    rm -rf dist_ws_connection_handler dist_ws_connection_handler.zip
+    mkdir -p dist_ws_connection_handler
+    uv export --no-hashes > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_ws_connection_handler
+    else
+      uv pip install --force-reinstall --target=dist_ws_connection_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
+    fi
+    cp -r lambda_ws_connection_handler.py config.yaml dist_ws_connection_handler/
+    cd dist_ws_connection_handler && zip -r ../dist_ws_connection_handler.zip .
+    popd || exit 1
+}
+```
+This creates `dist_ws_connection_handler.zip`.
+
 The example deployment script runs all package builders before Terraform applies the infrastructure.
 
 ### API Endpoints
@@ -484,7 +593,7 @@ The payload examples below use `BaseRunRequest` unless noted otherwise.
 
 #### `rest_sync`
 
-`rest_sync` sends the request to SQS and waits for the matching response.
+`rest_sync` sends the request to SQS queue and immediately waits for the matching response from the response store. This mode requires both queues and response store to be configured.
 
 **Request**
 
@@ -510,7 +619,7 @@ curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/
 
 #### `rest_async`
 
-`rest_async` uses two requests: one to submit the work, and a second GET request to poll for the response using the returned `request_id`.
+`rest_async` uses two requests: one to submit the work, and a second GET request to poll for the response using the returned `request_id`. This mode requires both queues and response store to be configured.
 
 **1. Submit request**
 
@@ -554,23 +663,120 @@ curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/c
 
 If the response is not available yet, the poll endpoint returns a `NOT_FOUND` body with the same `request_id` so clients can retry.
 
+#### `async` (WebSocket)
+
+`async` mode uses a WebSocket API for real-time bidirectional communication. The WebSocket API supports multiple routes including the default `chat` route and custom routes.
+
+**WebSocket Connection**
+
+Connect to the WebSocket endpoint with a bearer token in the connection URL. The endpoint URL is constructed by combining the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs from the serverless module:
+
+```bash
+{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=your-jwt-token
+```
+
+For example, if the outputs are:
+- `websocket_api_endpoint_url = "wss://abc123.execute-api.us-east-1.amazonaws.com"`
+- `websocket_api_stage_name = "prod"`
+
+The connection URL would be:
+```bash
+wss://abc123.execute-api.us-east-1.amazonaws.com/prod?token=your-jwt-token
+```
+
+The bearer token must include a `userId` claim for authentication.
+
+**Sending Messages**
+
+Send messages to the `chat` route:
+
+```json
+{
+  "route": "chat",
+  "prompt": "Hello!",
+  "agent": "assistant",
+  "session_id": "user-123"
+}
+```
+
+**Receiving Responses**
+
+Responses are broadcast back through the WebSocket connection:
+
+```json
+{
+  "route": "chat",
+  "result": "Agent response here",
+  "session_id": "user-123"
+}
+```
+
+**Custom Routes**
+
+You can register custom WebSocket routes in your request handler and define them in your Terraform configuration:
+
+**1. Define routes in Terraform:**
+```hcl
+module "websocket_deployment" {
+  # ... other configuration
+  
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "custom_handler" }
+  ]
+}
+```
+
+**2. Register handlers in your Lambda code:**
+```python
+from agentkernel.aws import Lambda
+
+@Lambda.register("custom_handler")
+def custom_handler(event, context):
+    return {"response": "Custom route response"}
+
+@Lambda.register("notifications")
+def notifications_handler(event, context):
+    return {"response": "Notification processed"}
+```
+
+**3. Send messages to custom routes:**
+```json
+{
+  "route": "custom_handler",
+  "data": "your data"
+}
+```
+
+**Note**: Custom routes must be defined in both Terraform (`ws_routes`) and registered in your Lambda handler code to function properly.
+
 ### Execution Modes and Response Store
 
-The AWS serverless runtime currently supports these execution modes:
+The AWS serverless runtime supports these execution modes:
 
-- `rest_sync` - POST request to SQS, then wait for the matching response in the response store
-- `rest_async` - POST request to SQS, then poll later with GET and the same `request_id`
+- `rest_sync` - Synchronous REST: sends request to SQS queue and immediately waits for the matching response from the response store
+- `rest_async` - Asynchronous REST: submits request to SQS queue via POST and returns immediately with ACCEPTED status and a request_id, then poll for response via GET using the same request_id
+- `stream` - Streaming mode (not yet implemented)
+- `async` - WebSocket API for real-time bidirectional communication (requires WebSocket connection handler, queues optional, response_store not used)
+
+**Queue Mode Interaction**:
+- When queues are configured (`execution.queues.input.url` is set), the request handler sends messages to the SQS input queue
+- When queues are not configured, the request handler processes requests directly without queuing
+- For WebSocket mode, queue mode can be enabled or disabled based on queue configuration
+  - If queue mode is enabled: WebSocket messages are sent to SQS input queue with endpoint_url attribute for broadcasting
+  - If queue mode is disabled: WebSocket messages are processed directly without queuing
 
 When you use queue-backed execution, configure the `execution` block:
 
-- `execution.mode` - selects the runtime mode
-- `execution.queues.input.url` - input SQS queue for agent requests
-- `execution.queues.output.url` - output SQS queue for agent responses
-- `execution.queues.input.max_receive_count` - input queue receive retry threshold
-- `execution.queues.output.max_receive_count` - output queue receive retry threshold
-- `execution.response_store.retry_count` - number of response-store lookup attempts
-- `execution.response_store.delay` - delay in seconds between lookup attempts
-- `execution.response_store.type` - response-store backend selector configured in `config.yaml` only
+- `execution.mode` - selects the runtime mode (rest_sync, rest_async, stream, or async)
+- `execution.queues.input.url` - input SQS queue for agent requests (required for rest_sync, rest_async, and optional for async/WebSocket)
+- `execution.queues.output.url` - output SQS queue for agent responses (required for rest_sync, rest_async, and optional for async/WebSocket)
+- `execution.queues.input.max_receive_count` - input queue receive retry threshold (default: 3)
+- `execution.queues.output.max_receive_count` - output queue receive retry threshold (default: 3)
+- `execution.response_store.retry_count` - number of response-store lookup attempts (default: 5)
+- `execution.response_store.delay` - delay in seconds between lookup attempts (default: 5)
+- `execution.response_store.type` - response-store backend selector configured in `config.yaml` only (required for rest_sync and rest_async)
 - `execution.response_store.redis.url` - Redis URL for response storage
 - `execution.response_store.redis.prefix` - Redis key prefix for response storage, default `ak:responses:`
 - `execution.response_store.redis.ttl` - Redis TTL in seconds
@@ -578,6 +784,8 @@ When you use queue-backed execution, configure the `execution` block:
 - `execution.response_store.dynamodb.ttl` - DynamoDB TTL in seconds
 
 The response store is configured as a single object with one selected backend:
+
+**Note**: When using WebSocket mode (`execution_mode = "async"`), the response store is not used since responses are broadcast directly through the WebSocket connection instead of being stored. The response store is required for `rest_sync` and `rest_async` modes.
 
 ```json
 {
@@ -619,6 +827,76 @@ export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
 export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
 export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 ```
+
+### WebSocket Configuration
+
+For WebSocket mode (`execution_mode = "async"`), you need to configure WebSocket API settings in your `config.yaml`:
+
+```yaml
+websocket_api:
+  connection_table:
+    table_name: "websocket-connections"
+    ttl: 3600  # Connection TTL in seconds for automatic cleanup
+  chat_route: "chat"  # Default route for chat messages
+```
+
+**Environment Variables**:
+
+```bash
+export AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME=websocket-connections
+export AK_WEBSOCKET_API__CONNECTION_TABLE__TTL=3600
+export AK_WEBSOCKET_API__CHAT_ROUTE=chat
+```
+
+**WebSocket Configuration Parameters**:
+- `connection_table.table_name` - DynamoDB table name for storing WebSocket connection mappings
+- `connection_table.ttl` - TTL in seconds for automatic cleanup of stale connections
+- `chat_route` - The default route name for chat messages (default: "chat")
+
+**Terraform WebSocket Route Configuration**:
+
+In your Terraform configuration, you can customize WebSocket routes:
+
+```hcl
+module "websocket_deployment" {
+  source = "yaalalabs/ak-serverless/aws"
+  
+  execution_mode = "async"
+  
+  # Customize the default chat route name
+  ws_chat_route = "conversation"
+  
+  # Add custom routes beyond the default chat route
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "status_updates" }
+  ]
+  
+  # ... other configuration
+}
+```
+
+**Route Naming Rules**:
+- Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
+- Route names cannot contain '/' and cannot be empty or whitespace-only
+- The `$` prefix is reserved for predefined routes (`$connect`, `$disconnect`, `$default`)
+- Custom routes can only be defined when `execution_mode = "async"`
+
+**Available Routes**:
+- `$connect` - Handled by WebSocket connection handler (predefined)
+- `$disconnect` - Handled by WebSocket connection handler (predefined)  
+- `$default` - Fallback route for unmatched messages (predefined)
+- `ws_chat_route` - Configurable default chat route (default: "chat")
+- `ws_routes` - Additional custom routes as defined in Terraform
+
+The DynamoDB connection table is automatically created by the Terraform module and stores user-to-connection-id mappings for broadcasting messages to the correct WebSocket connections.
+
+### Important: Async Mode with API Gateway Disabled
+
+> **⚠️ WARNING**: When using `execution_mode = "async"` (WebSocket mode) with `enable_api_gateway = false`, the default response handler will fail because it sends responses as WebSocket messages directly through the API Gateway. Without the WebSocket API Gateway, there is no endpoint to send these messages to.
+>
+> **Solution**: If you disable the API Gateway in async mode, you must provide a custom response handler implementation that handles responses differently (e.g., storing them in a database, sending to an external service, or using an alternative messaging system). Override the response handler Lambda to implement your custom response delivery mechanism.
 
 ## Cost Optimization
 
@@ -829,10 +1107,13 @@ CloudWatch metrics automatically available:
 - Use DynamoDB for session storage (serverless-native)
 - Alternatively, use Redis for session storage if already using ElastiCache
 - Set appropriate timeout (30-60s for LLM calls)
-- **Security**: Authentication is optional - only implement Lambda authorizers if you need API authentication
+- **Security**: Authentication is mandatory for WebSocket mode and recommended for REST modes - implement Lambda authorizers for REST API authentication
 - **Performance**: If using authentication, cache authorizer results with appropriate TTL
 - **Monitoring**: Monitor authorizer latency and error rates separately
-- **Deployment**: Always create two separate packages - one for main lambda and one for auth lambda (if authentication is enabled)
+- **Deployment**: Always create separate packages for each Lambda function (request handler, agent runner, response handler, WebSocket connection handler if applicable)
+- **WebSocket**: Ensure your bearer token includes a `userId` claim for WebSocket connections
+- **WebSocket**: Configure appropriate TTL for DynamoDB connection table to clean up stale connections
+- **WebSocket**: Use custom routes to organize different message types in WebSocket mode
 
 ## Example Deployment
 

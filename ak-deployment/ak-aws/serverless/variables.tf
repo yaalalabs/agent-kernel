@@ -59,38 +59,92 @@ variable "enable_api_gateway" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
-  default     = null
+  description = "Execution mode for the deployment. Allowed values: rest_sync, async (always allowed), rest_async and other modes (only when queue_mode is true)."
+  default     = "rest_sync"
   validation {
-    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async or null."
+    condition = contains(["rest_sync", "rest_async", "async"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async."
   }
   validation {
-    condition = !var.queue_mode || var.execution_mode != null
-    error_message = "execution_mode cannot be null when queue_mode is true."
-  }
-  validation {
-    condition = var.queue_mode || var.execution_mode == null
-    error_message = "execution_mode must be null when queue_mode is false."
+    condition = var.queue_mode || contains(["rest_sync", "async"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync or async when queue_mode is false."
   }
 }
 
-variable "api_version" {
-  type        = string
-  description = "API version"
-  default     = "v1"
+variable "event_source_mapping" {
+  description = "Event source mapping"
+  type        = any
+  default = []
 }
 
-variable "agent_endpoint" {
-  type        = string
-  description = "Agent invocation endpoint"
-  default     = "chat"
+variable "environment_variables" {
+  description = "Environment variables"
+  type        = any
+  default = {}
 }
 
-variable "api_base_path" {
+variable "timeout" {
+  description = "Lambda timeout"
+  type        = number
+  default     = 45
+}
+
+variable "memory_size" {
+  description = "Lambda memory size"
+  type        = number
+  default     = 128
+}
+
+variable "function_name" {
+  description = "Lambda function name"
   type        = string
-  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
-  default     = "api"
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.function_name != ""
+    error_message = "function_name must be set to a non-empty value when enable_api_gateway is true."
+  }
+}
+
+variable "function_description" {
+  description = "Lambda function description"
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.function_description != ""
+    error_message = "function_description must be set to a non-empty value when enable_api_gateway is true."
+  }
+}
+
+variable "handler_path" {
+  description = "Lambda handler path"
+  type        = string
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.handler_path != ""
+    error_message = "handler_path must be set to a non-empty value when enable_api_gateway is true."
+  }
+}
+
+variable "package_path" {
+  type        = string
+  description = "Zip package path or Docker image source path"
+  default     = ""
+  validation {
+    condition     = !var.enable_api_gateway || var.package_path != ""
+    error_message = "package_path must be set to a non-empty value when enable_api_gateway is true."
+  }
+}
+
+variable "package_type" {
+  description = "Lambda deployment type Image/LocalZip/S3Zip"
+  type        = string
+  default     = "LocalZip"
+}
+
+variable "layers" {
+  description = "Lambda layers"
+  type = list(string)
+  default = []
 }
 
 variable "tags" {
@@ -165,31 +219,107 @@ variable "private_subnet_cidrs" {
   default = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
+variable "api_version" {
+  type        = string
+  description = "API version"
+  default     = "v1"
+  validation {
+    condition     = var.execution_mode == "async" || (var.api_version != null && length(trimspace(var.api_version)) > 0)
+    error_message = "api_version must not be null, empty, or whitespace-only when execution_mode is not 'async'."
+  }
+}
+
+variable "agent_endpoint" {
+  type        = string
+  description = "Agent invocation endpoint"
+  default     = "chat"
+  validation {
+    condition     = var.execution_mode == "async" || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
+    error_message = "agent_endpoint must not be null, empty, or whitespace-only when execution_mode is not 'async'."
+  }
+}
+
+variable "api_base_path" {
+  type        = string
+  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
+  default     = "api"
+  validation {
+    condition     = var.execution_mode == "async" || (var.api_base_path != null && length(trimspace(var.api_base_path)) > 0)
+    error_message = "api_base_path must not be whitespace-only when provided and execution_mode is not 'async'. Use null or empty string to omit."
+  }
+}
+
+variable "ws_chat_route" {
+  type        = string
+  description = "WebSocket chat route"
+  default     = "chat"
+
+  validation {
+    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
+    error_message = "ws_chat_route must not be null, empty, or whitespace-only."
+  }
+
+  validation {
+    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
+    error_message = "ws_chat_route must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+  }
+}
+
+variable "ws_routes" {
+  type = list(object({
+    route = string
+  }))
+  description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
+  default     = []
+
+  validation {
+    condition     = var.execution_mode == "async" || length(var.ws_routes) == 0
+    error_message = "'ws_routes' can only be defined in 'async' (websocket) execution mode."
+  }
+
+  validation {
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
+    error_message = "Routes in 'ws_routes' must not be null, empty, or whitespace-only."
+  }
+
+  validation {
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    error_message = "Routes in 'ws_routes' must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+  }
+}
+
 variable "gateway_endpoints" {
   description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+
   type = list(object({
     path   = string   # e.g. "/app/check", "/health", "/app/status/test"
     method = string   # GET, POST, PUT, DELETE, ANY
   }))
+
   default = []
+
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
-        length(trimspace(ep.path)) > 0 &&
-        contains(
+        ep.path != null && length(trimspace(ep.path)) > 0 &&
+        ep.method != null && contains(
           ["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"],
           upper(ep.method)
         )
       )
     ])
-    error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
+
+    error_message = "Each gateway_endpoints entry must: have a non-null, non-empty 'path', and a non-null valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
+  }
+
+  validation {
+    condition     = var.execution_mode != "async" || length(var.gateway_endpoints) == 0
+    error_message = "'gateway_endpoints' cannot be defined in 'async' (websocket) execution mode."
   }
 }
 
-
-
 variable "authorizer" {
-  description = "Authorizer configuration object"
+  description = "Authorizer configuration object. Optional when execution_mode is 'rest_sync' or 'rest_async', must be null when execution_mode is 'async'."
   type = object({
     description           = optional(string, "API Gateway Lambda Authorizer")
     function_name         = string
@@ -204,6 +334,31 @@ variable "authorizer" {
     environment_variables = optional(map(string), {})
   })
   default = null
+  validation {
+    condition     = !(var.execution_mode == "async" && var.authorizer != null)
+    error_message = "'authorizer' cannot be defined in 'async' (websocket) execution mode."
+  }
+}
+
+variable "ws_connection_handler" {
+  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be empty ({}) or null when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
+  type = object({
+    function_name         = optional(string, "ws-connection-handler")
+    function_description  = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
+    timeout               = optional(number, 30)
+    memory_size           = optional(number, 256)
+    handler_path          = optional(string, "ws_connection_handler.handler")
+    module_name           = optional(string, "ws-connection-handler")
+    package_path          = optional(string, null)
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+  })
+  default = {}
+  validation {
+    condition     = var.execution_mode != "async" || try(var.ws_connection_handler.package_path, null) != null
+    error_message = "ws_connection_handler.package_path is required when execution_mode is 'async'."
+  }
 }
 
 variable "request_handler" {
