@@ -21,7 +21,7 @@ mcp:
   enabled: true
 ```
 
-> **Endpoint**: The MCP server is always mounted at `/mcp` on the main API server. The full endpoint is `http://{api.host}:{api.port}/mcp`. Use `api.port` (or `AK_API__PORT`) to change the port — there is no separate `mcp.url` setting.
+> **Endpoint**: The MCP server is always mounted at `/mcp` on the main API server. The full endpoint is `http://{api.host}:{api.port}/mcp`. Use `api.port` (or `AK_API__PORT`) to change the port.
 
 ## Starting MCP Server
 
