@@ -466,6 +466,12 @@ Configure the REST API server (if using the API module).
   - **Description**: List of agent names to expose as MCP tools
   - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
 
+- **Stateless HTTP**
+  - **Field**: `mcp.stateless_http`
+  - **Default**: `false`
+  - **Description**: Run MCP in stateless HTTP mode (no `Mcp-Session-Id`)
+  - **Environment Variable**: `AK_MCP__STATELESS_HTTP`
+
 - **Endpoint** (not configurable)
   - The MCP server is always mounted at `/mcp` on the main API server.
   - Full URL: `http://{api.host}:{api.port}/mcp` — use `api.port` / `AK_API__PORT` to change the port.
