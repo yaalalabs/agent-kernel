@@ -7,9 +7,9 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from pydantic import BaseModel
 
 from ......auth.handler import AuthValidator
+from ......core.chat_service import ChatService
 from ......core.config import AKConfig
 from ......core.model import BaseRequest
-from ......core.chat_service import ChatService
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import WebSocketHandler
 from .common import BaseLambdaRouter
