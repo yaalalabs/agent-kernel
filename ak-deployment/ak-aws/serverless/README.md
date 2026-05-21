@@ -1,6 +1,6 @@
 # Agent Kernel - AWS Serverless Module
 
-A comprehensive Terraform module for deploying serverless applications on AWS, combining Lambda functions with API Gateway to create production-ready RESTful APIs.
+A comprehensive Terraform module for deploying serverless applications on AWS, combining Lambda functions with API Gateway to create production-ready RESTful APIs and WebSocket APIs.
 
 ## 📋 Overview
 
@@ -8,14 +8,15 @@ This module provides a complete serverless deployment solution:
 
 - ⚡ **AWS Lambda**: Configurable functions with multiple deployment options
 - 🌐 **API Gateway**: REST API with Three-Level Resource Creation and Routing
-- 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
+- 🔌 **WebSocket API**: Real-time bidirectional communication with connection lifecycle management
+- 📦 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
 - 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
 - 📦 **Queue Mode**: SQS-driven async processing with agent runner and response handler functions
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
 
-Perfect for microservices, API backends, event-driven architectures, and serverless web applications requiring REST endpoints.
+Perfect for microservices, API backends, event-driven architectures, and serverless web applications requiring REST or WebSocket endpoints.
 
 ## 📋 Requirements
 
@@ -119,6 +120,69 @@ module "nodejs_api" {
   
   api_version    = "v2"
   agent_endpoint = "chat"
+}
+```
+
+### WebSocket API with Custom Routes
+
+```hcl
+module "websocket_api" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region              = "us-west-2"
+  product_alias       = "myapp"
+  env_alias           = "prod"
+  product_display_name = "WebSocket API with Custom Routes"
+  
+  module_name          = "chat"
+  function_name        = "handler"
+  function_description = "WebSocket API handler"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
+  
+  package_type = "LocalZip"
+  package_path = "${path.module}/dist/function.zip"
+  
+  # WebSocket configuration
+  execution_mode = "async"
+  queue_mode     = true
+  
+  # Customize WebSocket routes
+  ws_chat_route = "conversation"  # Rename default chat route
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "status_updates" }
+  ]
+  
+  # WebSocket connection handler
+  ws_connection_handler = {
+    package_path = "${path.module}/dist/ws-connection-handler.zip"
+    timeout      = 30
+    memory_size  = 256
+  }
+  
+  # Required for queue mode
+  response_handler = {
+    package_path = "${path.module}/dist/response-handler.zip"
+  }
+  
+  agent_runner = {
+    package_path = "${path.module}/dist/agent-runner.zip"
+  }
+  
+  # Storage for WebSocket connections
+  create_dynamodb_response_store = true
+  
+  environment_variables = {
+    ENVIRONMENT = "production"
+  }
+}
+
+# WebSocket endpoint will be available at:
+# wss://{api-id}.execute-api.us-west-2.amazonaws.com/agents
+output "websocket_url" {
+  value = module.websocket_api.websocket_api_endpoint_url
 }
 ```
 
@@ -307,7 +371,7 @@ module "serverless_api_auth" {
 | `package_path` | Path to Lambda deployment package or S3 URI (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
-| `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async`. Required when queue_mode is true, must be null when queue_mode is false | `string` | `null` | no |
+| `execution_mode` | Execution mode for the deployment: `rest_sync`, `rest_async`, or `async` (WebSocket). Default is `rest_sync`. When queue_mode is false, must be `rest_sync` or `async`. When queue_mode is true, all modes are allowed | `string` | `"rest_sync"` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
 | `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
@@ -320,6 +384,8 @@ module "serverless_api_auth" {
 | `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
 | `api_base_path` | Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit | `string` | `"api"` | no |
+| `ws_chat_route` | WebSocket chat route name (only used in async execution mode) | `string` | `"chat"` | no |
+| `ws_routes` | List of custom WebSocket routes to add beyond the default chat route (only allowed in async execution mode) | `list(object)` | `[]` | no |
 | `gateway_endpoints` | List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. Path values are validated and limited to three resource levels (for example, `app/test/func` or `app/check`) | `list(object)` | `[]` | no |
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
@@ -327,6 +393,7 @@ module "serverless_api_auth" {
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage | `bool` | `false` | no |
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
+| `ws_connection_handler` | WebSocket connection handler configuration object (see table below). Required when execution_mode is 'async' | `object` | `{}` | no |
 | `response_handler` | Response handler configuration object (see table below) | `object` | `{}` | no |
 | `agent_runner` | Agent runner configuration object (see table below) | `object` | `{}` | no |
 | `queue_config` | SQS queues configuration object (see table below) | `object` | `{}` | no |
@@ -349,6 +416,58 @@ module "serverless_api_auth" {
 | `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
+
+### WebSocket Connection Handler Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `function_name` | WebSocket connection handler Lambda function name | `string` | `"ws-connection-handler"` | no |
+| `function_description` | WebSocket connection handler Lambda description | `string` | `"WebSocket connection handler Lambda for $connect and $disconnect routes"` | no |
+| `timeout` | WebSocket connection handler Lambda timeout in seconds | `number` | `30` | no |
+| `memory_size` | WebSocket connection handler Lambda memory size in MB | `number` | `256` | no |
+| `handler_path` | WebSocket connection handler Lambda handler path | `string` | `"ws_connection_handler.handler"` | no |
+| `module_name` | WebSocket connection handler module name | `string` | `"ws-connection-handler"` | no |
+| `package_path` | WebSocket connection handler deployment package path (only LocalZip supported) | `string` | n/a | yes (when execution_mode is 'async') |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
+| `environment_variables` | Environment variables for the WebSocket connection handler | `map(string)` | `{}` | no |
+
+### WebSocket Routes Configuration
+
+When using `execution_mode = "async"`, you can customize WebSocket routes:
+
+| Variable | Description | Type | Default | Validation |
+|----------|-------------|------|---------|------------|
+| `ws_chat_route` | Name of the default chat route | `string` | `"chat"` | Must contain only alphanumeric characters, hyphens (-), and underscores (_). Cannot contain '/' or be empty. |
+| `ws_routes` | List of additional custom routes | `list(object({ route = string }))` | `[]` | Only allowed in async mode. Each route must follow the same naming rules as `ws_chat_route`. |
+
+**Example WebSocket Routes Configuration**:
+```hcl
+module "websocket_api" {
+  source = "yaalalabs/ak-serverless/aws"
+  
+  execution_mode = "async"
+  
+  # Customize the default chat route name
+  ws_chat_route = "conversation"
+  
+  # Add custom routes
+  ws_routes = [
+    { route = "notifications" },
+    { route = "status_updates" },
+    { route = "file_upload" }
+  ]
+  
+  # ... other configuration
+}
+```
+
+This configuration creates WebSocket routes accessible via:
+- `conversation` (custom chat route)
+- `notifications` (custom route)
+- `status_updates` (custom route)  
+- `file_upload` (custom route)
+- `$connect`, `$disconnect`, `$default` (predefined routes)
 
 ### Response Handler Object Structure
 
@@ -458,6 +577,20 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 | `output_queue_name` | Name of the output SQS queue (returns null when `queue_mode = false`) |
 | `output_dlq_arn` | ARN of the output SQS dead-letter queue (returns null when `queue_mode = false`) |
 | `output_dlq_url` | URL of the output SQS dead-letter queue (returns null when `queue_mode = false`) |
+| `websocket_api_endpoint_url` | WebSocket API endpoint URL (returns null when `execution_mode != "async"`) |
+| `websocket_api_id` | WebSocket API ID (returns null when `execution_mode != "async"`) |
+| `websocket_api_execution_arn` | WebSocket API execution ARN (returns null when `execution_mode != "async"`) |
+| `websocket_api_stage_name` | WebSocket API stage name (returns null when `execution_mode != "async"`) |
+| `websocket_api_stage_arn` | WebSocket API stage ARN (returns null when `execution_mode != "async"`) |
+| `websocket_connection_table_name` | DynamoDB table name for WebSocket connection mapping (returns null when `execution_mode != "async"`) |
+| `websocket_connection_table_arn` | DynamoDB table ARN for WebSocket connection mapping (returns null when `execution_mode != "async"`) |
+| `websocket_cloudwatch_log_group_arn` | ARN of the CloudWatch log group for WebSocket API (returns null when `execution_mode != "async"`) |
+| `websocket_cloudwatch_log_group_name` | Name of the CloudWatch log group for WebSocket API (returns null when `execution_mode != "async"`) |
+| `ws_connection_handler_lambda_function_arn` | ARN of the WebSocket connection handler Lambda function (returns null when `execution_mode != "async"`) |
+| `ws_connection_handler_lambda_function_name` | Name of the WebSocket connection handler Lambda function (returns null when `execution_mode != "async"`) |
+| `ws_connection_handler_lambda_function_invoke_arn` | Invoke ARN of the WebSocket connection handler Lambda function (returns null when `execution_mode != "async"`) |
+| `ws_connection_handler_lambda_role_arn` | ARN of the WebSocket connection handler Lambda execution role (returns null when `execution_mode != "async"`) |
+| `ws_connection_handler_lambda_role_name` | Name of the WebSocket connection handler Lambda execution role (returns null when `execution_mode != "async"`) |
 
 ## ✨ Features
 
@@ -506,12 +639,57 @@ When `queue_mode = true`, the module adds an asynchronous queue-driven path alon
 
 **Execution modes**:
 - `rest_sync`: synchronous REST requests
-- `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling 
+- `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling
+- `async`: WebSocket API for real-time bidirectional communication
 
 **Operational rules**:
 - Input queue visibility timeout must be greater than or equal to the agent runner timeout
 - Output queue visibility timeout must be greater than or equal to the response handler timeout
 - FIFO queues are enabled by default, with explicit deduplication controls available when needed
+
+### 🔌 WebSocket API Architecture
+
+When `execution_mode = "async"`, the module creates a WebSocket API Gateway for real-time bidirectional communication.
+
+**What gets created**:
+- WebSocket API Gateway with route selection based on `request.body.route`
+- Predefined routes: `$connect`, `$disconnect`, `$default`, and configurable chat route (default: `chat`)
+- Support for custom routes via `ws_routes` variable
+- Connection handler Lambda for `$connect` and `$disconnect` routes
+- Routes handler Lambda for `$default` and custom routes (e.g., `chat`)
+- DynamoDB table for storing user-to-connection-id mappings
+- Global Secondary Index (GSI) for connection_id lookups
+- Optional TTL for automatic cleanup of stale connections
+- CloudWatch log groups and stage logging
+
+**WebSocket API features**:
+- Real-time bidirectional communication
+- Connection lifecycle management
+- DynamoDB-backed connection mapping
+- Route-based message routing
+- Configurable logging and metrics
+- Support for custom routes beyond the default
+
+**Important notes**:
+- When `execution_mode = "async"`, the `authorizer` must be null (API Gateway authorizer is not used for WebSocket mode)
+- Authentication for WebSocket is handled by the WebSocket connection handler Lambda and is mandatory
+- The bearer token must include a `userId` claim for WebSocket connections
+- The `ws_connection_handler` configuration is required when `execution_mode = "async"`
+- Only LocalZip package type is supported for the WebSocket connection handler
+- The WebSocket API uses `$request.body.route` for route selection
+- The default chat route name can be customized via `ws_chat_route` variable
+- Additional custom routes can be defined via `ws_routes` variable (only in async mode)
+- Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
+- Route names cannot contain '/' and cannot be empty or whitespace-only
+
+**WebSocket Connection Table Schema**:
+
+The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
+
+- **Partition Key**: `user_id` (String) - User identifier
+- **Sort Key**: `connection_id` (String) - WebSocket connection ID
+- **GSI**: `connection_id-index` - Allows lookups by connection_id
+- **TTL Attribute**: `expiry_time` - Optional timestamp for automatic cleanup
 
 ### 💾 Multi-Storage Support
 

@@ -66,6 +66,12 @@ class _APIConfig(BaseModel):
     max_file_size: int = Field(default=20971520, description="Maximum file size in bytes (default: 20 MB)")
 
 
+class _WebSocketAPIConfig(BaseModel):
+    endpoint_url: Optional[str] = Field(default=None, description="WebSocket API endpoint URL")
+    chat_route: Optional[str] = Field(default=None, description="WebSocket chat route")
+    connection_table: Optional[_DynamoDBConfig] = Field(default=None, description="DynamoDB configuration for storing WebSocket connections")
+
+
 class _A2AConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable A2A")
     agents: List[str] = Field(default=["*"], description="List of agent names to enable A2A")
@@ -225,14 +231,14 @@ class _ResponseStoreConfig(BaseModel):
 
 
 class _InputQueueConfig(BaseModel):
-    url: str = Field(default="", description="Input SQS queue URL for async execution mode")
+    url: str = Field(default=None, description="Input SQS queue URL for async execution mode")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
 
 
 class _OutputQueueConfig(BaseModel):
-    url: str = Field(default="", description="Output SQS queue URL for async execution mode")
+    url: str = Field(default=None, description="Output SQS queue URL for async execution mode")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
@@ -262,7 +268,6 @@ class _ExecutionConfig(BaseModel):
         description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST",
     )
     queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
-    # websocket_connection_table: Optional[str] = Field(default=None, description="DynamoDB table name for storing WebSocket connections")
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",
@@ -275,6 +280,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_SessionStoreConfig,
     )
     api: _APIConfig = Field(description="REST API related configurations", default_factory=_APIConfig)
+    websocket_api: _WebSocketAPIConfig = Field(description="WebSocket API related configurations", default_factory=_WebSocketAPIConfig)
     a2a: _A2AConfig = Field(description="Agent to Agent related configurations", default_factory=_A2AConfig)
     mcp: _MCPConfig = Field(
         description="Model Context Protocol related configurations",
