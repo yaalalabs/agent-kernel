@@ -80,8 +80,8 @@ class _MCPConfig(BaseModel):
     stateless_http: bool = Field(
         default=False,
         description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
-                    "Useful for debugging with MCP Inspector and clients that don't support sessions. "
-                    "Trade-off: server-side session features (sampling, mid-call notifications) are unavailable.",
+        "Useful for debugging with MCP Inspector and clients that don't support sessions. "
+        "Trade-off: server-side session features (sampling, mid-call notifications) are unavailable.",
     )
 
 
