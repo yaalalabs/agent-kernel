@@ -77,7 +77,6 @@ class _MCPConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
-    url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
     stateless_http: bool = Field(
         default=False,
         description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "

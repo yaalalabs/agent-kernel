@@ -13,14 +13,15 @@ MCP (Model Context Protocol) is a standardized protocol for AI systems to intera
 ## Enabling MCP
 
 ```bash
-export AK_MCP_ENABLED=true
-export AK_MCP_PORT=8001
+export AK_MCP__ENABLED=true
 ```
 or
 ```yaml
-mcp
+mcp:
   enabled: true
 ```
+
+> **Endpoint**: The MCP server is always mounted at `/mcp` on the main API server. The full endpoint is `http://{api.host}:{api.port}/mcp`. Use `api.port` (or `AK_API__PORT`) to change the port — there is no separate `mcp.url` setting.
 
 ## Starting MCP Server
 

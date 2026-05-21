@@ -466,10 +466,9 @@ Configure the REST API server (if using the API module).
   - **Description**: List of agent names to expose as MCP tools
   - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
 
-- **URL**
-  - **Field**: `mcp.url`
-  - **Default**: `http://localhost:8000/mcp`
-  - **Environment Variable**: `AK_MCP__URL`
+- **Endpoint** (not configurable)
+  - The MCP server is always mounted at `/mcp` on the main API server.
+  - Full URL: `http://{api.host}:{api.port}/mcp` — use `api.port` / `AK_API__PORT` to change the port.
 
 #### Trace (Observability) Configuration
 
@@ -925,7 +924,6 @@ mcp:
   enabled: false
   expose_agents: false
   agents: ["*"]
-  url: http://localhost:8000/mcp
 trace:
   enabled: true
   type: langfuse
@@ -997,8 +995,7 @@ gmail:
   "mcp": {
     "enabled": false,
     "expose_agents": false,
-    "agents": ["*"],
-    "url": "http://localhost:8000/mcp"
+    "agents": ["*"]
   },
   "trace": {
     "enabled": true,
