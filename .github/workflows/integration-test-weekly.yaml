@@ -143,14 +143,21 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-
+      
+      - name: GCP login
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.14.3
       - name: Inject dependencies
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Deploy, Test, and Destroy - ${{ matrix.path }}
@@ -212,7 +219,28 @@ jobs:
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action destroy
           fi
-
+        
+          elif [[ "${{ matrix.type }}" == "gcp-serverless" || "${{ matrix.type }}" == "gcp-containerized" ]]; then
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+            
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
+            
+            # Destroy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action destroy         
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

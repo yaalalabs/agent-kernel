@@ -80,14 +80,15 @@ weekly:
       path: examples/azure-containerized/openai-cosmos
       deploy_dir: deploy
 
+    # GCP Serverless
     - type: gcp-serverless
       path: examples/gcp-serverless/openai-firestore
       deploy_dir: deploy
-    
     - type: gcp-serverless
       path: examples/gcp-serverless/openai
       deploy_dir: deploy
-      
+    
+    # GCP Containerized
     - type: gcp-containerized
       path: examples/gcp-containerized/openai
       deploy_dir: deploy
