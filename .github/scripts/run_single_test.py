@@ -221,6 +221,14 @@ def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
         return False
     
+    delete_config = run_command(
+        ['rm', '-f', 'config.yaml'],
+        cwd=path,
+        description=f"Removing config.yaml for {path}"
+    )
+    
+    if not delete_config:
+        print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
         ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
