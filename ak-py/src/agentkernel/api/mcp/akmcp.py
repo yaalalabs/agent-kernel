@@ -59,7 +59,10 @@ class MCP:
         if cls._built or not AKConfig.get().mcp.enabled:
             return
         if cls._fastmcp is None:
-            cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance")
+            cls._fastmcp = FastMCP(
+                "Agent Kernel FastMCP Instance",
+                stateless_http=AKConfig.get().mcp.stateless_http,
+            )
         if AKConfig.get().mcp.expose_agents:
             agents: dict[str, Agent] = Runtime.current().agents()
             for name, agent in agents.items():

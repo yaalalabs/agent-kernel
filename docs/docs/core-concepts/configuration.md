@@ -53,12 +53,14 @@ a2a:
   task_store_type: redis
 
 # Model Context Protocol
+# The MCP server is always mounted at /mcp on the main API server.
+# Full endpoint: http://{api.host}:{api.port}/mcp — use api.port to change the port.
 mcp:
   enabled: true
   expose_agents: true
-  url: http://localhost:8000/mcp
   agents:
     - "*"  # Expose all agents as MCP tools
+  stateless_http: false  # Run in stateless HTTP mode (default: false)
 
 # Testing configuration
 test:
@@ -181,8 +183,8 @@ Alternatively, use `config.json`:
   "mcp": {
     "enabled": true,
     "expose_agents": true,
-    "url": "http://localhost:8000/mcp",
-    "agents": ["*"]
+    "agents": ["*"],
+    "stateless_http": false
   },
   "test": {
     "mode": "fallback",
@@ -319,8 +321,9 @@ export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 
 # Enable MCP functionality
 export AK_MCP__ENABLED=true  # default: false
 export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
-export AK_MCP__URL=http://localhost:8000/mcp  # default: http://localhost:8000/mcp
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
+# Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
 
 ### Test Configuration
@@ -487,12 +490,14 @@ a2a:
   task_store_type: "in_memory"  # Task storage: 'in_memory' or 'redis'
 
 # Model Context Protocol
+# The MCP server is always mounted at /mcp on the main API server (not configurable).
+# Full endpoint: http://{api.host}:{api.port}/mcp — adjust api.port to move the port.
 mcp:
   enabled: false                # Enable MCP functionality
   expose_agents: false          # Expose agents as MCP tools
-  url: "http://localhost:8000/mcp"  # MCP endpoint URL
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
+  stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
 
 # Test configuration
 test:
