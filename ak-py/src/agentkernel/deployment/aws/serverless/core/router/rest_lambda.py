@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional
 
 from ......core.config import AKConfig
 from ......core.model import BaseRequest, ExecutionMode
-from .....common.chat_service import ChatService
+from ......core.chat_service import ChatService
 from ....core.response_store import ResponseDBHandler
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
@@ -251,7 +251,7 @@ class DefaultEndpointsHandler:
             request = self._parse_body(event)
             if request.body is None:
                 raise ValueError("body is required")
-            status_code, res_body = self._chat_service.process_chat_request(request.body.model_dump(exclude_none=True))
+            status_code, res_body = self._chat_service.process_chat_request(request.body)
 
             return {
                 "statusCode": status_code,
