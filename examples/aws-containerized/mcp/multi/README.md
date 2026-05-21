@@ -81,7 +81,7 @@ mcp:
   agents: ['*']
 ```
 
-> **Endpoint**: The MCP server is always mounted at `/mcp` on the main API server — there is no `mcp.url` config. The full endpoint is `http://{api.host}:{api.port}/mcp`. Use `api.port` to change the port.
+> **Endpoint**: The MCP server is always mounted internally at `/mcp` on the main API server — there is no `mcp.url` config. If you are connecting directly to the app, the internal URL is `http://{api.host}:{api.port}/mcp` (and `api.port` controls that port). In this AWS deployment, the external/public endpoint may include additional gateway or base-path prefixes, for example `/<api_base_path>/<api_version>/mcp`.
 
 ### Configuration Explanation
 
