@@ -218,8 +218,7 @@ jobs:
               --path ${{ matrix.path }} \
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action destroy
-          fi
-        
+
           elif [[ "${{ matrix.type }}" == "gcp-serverless" || "${{ matrix.type }}" == "gcp-containerized" ]]; then
             # Deploy
             python .github/scripts/run_single_test.py \
@@ -241,6 +240,7 @@ jobs:
               --path ${{ matrix.path }} \
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action destroy         
+          fi
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
