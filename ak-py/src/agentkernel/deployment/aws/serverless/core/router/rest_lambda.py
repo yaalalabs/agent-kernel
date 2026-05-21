@@ -3,9 +3,9 @@ import logging
 import traceback
 from typing import Any, Callable, Dict, Optional
 
+from ......core.chat_service import ChatService
 from ......core.config import AKConfig
 from ......core.model import BaseRequest, ExecutionMode
-from ......core.chat_service import ChatService
 from ....core.response_store import ResponseDBHandler
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
