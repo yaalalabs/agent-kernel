@@ -13,7 +13,7 @@ module "serverless_agents" {
   backend_deadline     = 110
   product_display_name = "AK OpenAI Firestore Serverless Example"
   region               = var.region
-  container_port       = 8080
+  container_port       = 8000
 
   # Firestore for session storage (GCP equivalent of DynamoDB)
   create_firestore_database = true

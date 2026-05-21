@@ -20,7 +20,7 @@ module "serverless_agents" {
   create_redis_cluster = true
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region
-  container_port       = 8080
+  container_port       = 8000
 
   # To override the default API version, API base path, and agent endpoint:
   # api_version    = "v2"

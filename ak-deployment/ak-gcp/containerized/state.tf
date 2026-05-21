@@ -8,7 +8,7 @@ locals {
 
   # Naming prefix — used everywhere
   prefix       = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name = "${local.prefix}-service"
+  service_name = "${local.prefix}-svc" #service name cannot exceed 49
 
   # GCP service account IDs must be 6-30 chars.
   # Truncate the prefix to 27 chars max, then append "-run" (= 31... use 26 + "-run" = 30).

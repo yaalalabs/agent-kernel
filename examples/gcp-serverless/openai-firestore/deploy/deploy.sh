@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -e
 # Create a deployment package for Cloud Run
 create_deployment_package() {
     pushd ../
@@ -10,12 +10,18 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,api,gcp] || true
+      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,api,gcp]
     fi
     cp -r app.py config.yaml dist/data
     popd || exit 1
     cp Dockerfile ../dist/
 }
+
+pushd ../../../../ak-py || exit 1
+rm -rf dist
+./build.sh local
+popd
+
 
 create_deployment_package $1
 

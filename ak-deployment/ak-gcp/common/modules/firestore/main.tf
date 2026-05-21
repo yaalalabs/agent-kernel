@@ -25,21 +25,3 @@ resource "google_firestore_field" "ttl" {
 
   ttl_config {}
 }
-
-# Index for querying sessions by expiry_time (used for TTL cleanup queries)
-# Document schema: one document per session_id (document ID), with session keys as fields
-resource "google_firestore_index" "session_expiry" {
-  project    = var.project_id
-  database   = google_firestore_database.db.name
-  collection = var.collection_name
-
-  fields {
-    field_path = "expiry_time"
-    order      = "ASCENDING"
-  }
-
-  fields {
-    field_path = "__name__"
-    order      = "ASCENDING"
-  }
-}

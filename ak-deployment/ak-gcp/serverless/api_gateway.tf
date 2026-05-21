@@ -241,5 +241,5 @@ resource "google_api_gateway_gateway" "gateway" {
   provider   = google-beta
   region     = var.region
   api_config = google_api_gateway_api_config.config.id
-  gateway_id = "${local.prefix}-gateway"
+  gateway_id = "${local.prefix}-gw"
 }

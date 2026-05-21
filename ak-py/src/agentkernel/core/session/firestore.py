@@ -28,6 +28,7 @@ class FirestoreDriver:
             raise ValueError("AKConfig.session.firestore.collection_name must be set to use FirestoreSessionStore")
         self._collection_name = cfg.collection_name
         self._project_id = cfg.project_id
+        self._database_id = cfg.database_id
         self._ttl = cfg.ttl
 
     @property
@@ -58,6 +59,8 @@ class FirestoreDriver:
                 kwargs: dict = {}
                 if self._project_id:
                     kwargs["project"] = self._project_id
+                if self._database_id is not None:
+                    kwargs["database"] = self._database_id
                 self._client = firestore.Client(**kwargs)
                 self._log.debug("Connected to Firestore collection %s", self._collection_name)
                 return

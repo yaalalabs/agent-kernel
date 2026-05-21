@@ -161,6 +161,7 @@ resource "google_cloud_run_v2_service" "service" {
             AK_SESSION__TYPE                       = "firestore"
             AK_SESSION__FIRESTORE__COLLECTION_NAME = module.firestore[0].collection_name
             AK_SESSION__FIRESTORE__PROJECT_ID      = var.project_id
+            AK_SESSION__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
           } : {}
         )
         content {

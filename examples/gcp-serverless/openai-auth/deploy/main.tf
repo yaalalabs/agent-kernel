@@ -14,7 +14,7 @@ module "serverless_agents" {
   create_redis_cluster = true
   product_display_name = "AK OpenAI Auth Serverless Example"
   region               = var.region
-  container_port       = 8080
+  container_port       = 8000
 
   # Defining custom API endpoints
   gateway_endpoints = [

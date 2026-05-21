@@ -55,6 +55,10 @@ class _FirestoreConfig(BaseModel):
         default=None,
         description="GCP project ID. If null, inferred from Application Default Credentials.",
     )
+    database_id: Optional[str] = Field(
+        default=None,
+        description="Firestore database ID. If null, defaults to '(default)' database for backward compatibility.",
+    )
     ttl: int = Field(
         default=604800,
         description="Session TTL in seconds (0 disables). Sets an 'expiry_time' field on each document. "
