@@ -1,2 +1,2 @@
-from .default_endpoints import DefaultEndpointsHandler
+from .router import BaseLambdaRouter, RESTLambdaRouter, WSLambdaRouter
 from .sqs_consumer import LambdaSQSConsumer

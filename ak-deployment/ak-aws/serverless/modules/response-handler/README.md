@@ -63,6 +63,9 @@ module "response_handler" {
 | `security_group_id` | Optional security group ID to reuse |
 | `lambda_kms_key_arn` | Lambda encryption key ARN |
 | `cloudwatch_kms_key_arn` | CloudWatch log encryption key ARN |
+| `websocket_connections_dynamodb` | DynamoDB configuration for websocket connections table |
+| `websocket_api_execution_arn` | Execution ARN of the WebSocket API Gateway |
+| `websocket_mode` | Whether WebSocket API is enabled (known at plan time) |
 
 ## Response Handler Object Structure
 
