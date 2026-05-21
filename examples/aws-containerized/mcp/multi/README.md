@@ -84,12 +84,13 @@ mcp:
 
 ### Configuration Explanation
 
-| Field           | Description                                        |
-| --------------- | -------------------------------------------------- |
-| `enabled`       | Enables the MCP server                             |
-| `port`          | Port MCP listens on (must match container port)    |
-| `expose_agents` | Automatically exposes agents as MCP tools          |
-| `agents`        | List of agent names to expose (`'*'` = all agents) |
+| Field              | Description                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `enabled`          | Enables the MCP server                                                                           |
+| `port`             | Port MCP listens on (must match container port)                                                  |
+| `expose_agents`    | Automatically exposes agents as MCP tools                                                        |
+| `agents`           | List of agent names to expose (`'*'` = all agents)                                               |
+| `stateless_http`   | Stateless HTTP mode — each request is independent, no `Mcp-Session-Id` (default: `false`)        |
 
 
 > **Both Terraform (`enable_mcp_server = true`) and `config.yaml` MCP settings are required** for MCP to work correctly.

@@ -57,9 +57,9 @@ RESTAPI.run()
 ```yaml
 mcp:
   enabled: true
-  port: 8000
   expose_agents: true
   agents: ['*']
+  stateless_http: false  # Set to true for stateless mode (no Mcp-Session-Id)
 ```
 
 ## Integration

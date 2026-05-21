@@ -59,6 +59,7 @@ mcp:
   url: http://localhost:8000/mcp
   agents:
     - "*"  # Expose all agents as MCP tools
+  stateless_http: false  # Run in stateless HTTP mode (default: false)
 
 # Testing configuration
 test:
@@ -182,7 +183,8 @@ Alternatively, use `config.json`:
     "enabled": true,
     "expose_agents": true,
     "url": "http://localhost:8000/mcp",
-    "agents": ["*"]
+    "agents": ["*"],
+    "stateless_http": false
   },
   "test": {
     "mode": "fallback",
@@ -321,6 +323,7 @@ export AK_MCP__ENABLED=true  # default: false
 export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
 export AK_MCP__URL=http://localhost:8000/mcp  # default: http://localhost:8000/mcp
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
 ```
 
 ### Test Configuration
@@ -493,6 +496,7 @@ mcp:
   url: "http://localhost:8000/mcp"  # MCP endpoint URL
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
+  stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
 
 # Test configuration
 test:

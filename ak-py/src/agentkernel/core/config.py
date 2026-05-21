@@ -78,6 +78,12 @@ class _MCPConfig(BaseModel):
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
     agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(default="http://localhost:8000/mcp", description="MCP URL")
+    stateless_http: bool = Field(
+        default=False,
+        description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
+                    "Useful for debugging with MCP Inspector and clients that don't support sessions. "
+                    "Trade-off: server-side session features (sampling, mid-call notifications) are unavailable.",
+    )
 
 
 class _SlackConfig(BaseModel):
