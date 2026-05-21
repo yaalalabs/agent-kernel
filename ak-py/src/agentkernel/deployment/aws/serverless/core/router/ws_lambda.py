@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from ......auth.handler import AuthValidator
 from ......core.config import AKConfig
 from ......core.model import BaseRequest
-from .....common.chat_service import ChatService
+from ......core.chat_service import ChatService
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import WebSocketHandler
 from .common import BaseLambdaRouter
@@ -327,7 +327,7 @@ class SystemRoutesHandler(BaseWSHandler):
             request = ws_message_info.request
             if request.body is None:
                 raise ValueError("body is required")
-            _, res_body = self._chat_service.process_chat_request(request.body.model_dump(exclude_none=True))
+            _, res_body = self._chat_service.process_chat_request(request.body)
             return res_body
 
         return self._handle_msg_and_brdcst(
