@@ -13,6 +13,10 @@ Agent Kernel provides powerful execution hooks that let you customize agent beha
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 
+## Real-time Voice
+
+- **[LiveKit](./livekit)** - Connect your agents to real-time WebRTC voice and video rooms. Use LiveKit's ultra-low latency infrastructure for Speech-to-Text and Text-to-Speech while Agent Kernel handles the intelligence and tools.
+
 ## Social media
 These are built on REST APIs and you can install custom integrations as well.
 
@@ -34,7 +38,7 @@ config:
   elk: true
 ---
 flowchart LR
-    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"] & T["Teams"]
+    D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"] & T["Teams"] & V["LiveKit (Voice)"]
 
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
@@ -43,6 +47,7 @@ flowchart LR
     style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style O fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style T fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style V fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ### Custom
@@ -57,7 +62,7 @@ config:
 ---
 flowchart LR
     
-    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailHandler"] & T["AgentTeamsHandler"] & N["CustomHandler"]
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailHandler"] & T["AgentTeamsHandler"] & L["AgentLiveKitRequestHandler"] & N["CustomHandler"]
 
     style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
@@ -65,6 +70,7 @@ flowchart LR
     style M fill:#484c7a,stroke:#fff,stroke-width:2px,color:#fff
     style O fill:#3a9ecc,stroke:#fff,stroke-width:2px,color:#fff
     style T fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
+    style L fill:#d94c4c,stroke:#fff,stroke-width:2px,color:#fff
     style N fill:#bd7e4a,stroke:#fff,stroke-width:2px,color:#fff
 ```
 

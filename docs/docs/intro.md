@@ -38,14 +38,12 @@ flowchart LR
     E["LangGraph"] --> B
     F["Google ADK"] --> B
     SA["Smol Agents *(soon)*"] --> B
-    LK["LiveKit *(soon)*"] --> B
     G["Test Framework"]
     B --> G
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style SA fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
-    style LK fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
 ```
 
 ## Why Agent Kernel?
@@ -67,6 +65,7 @@ Agent Kernel provides pre-built execution capabilities:
   - Instagram
   - Gmail
   - Microsoft Teams
+  - **LiveKit (Real-time Voice)**
 - **Multi-Cloud Serverless Deployment** for scalable production
   - AWS Lambda
   - Azure Functions
@@ -186,7 +185,6 @@ Agent Kernel currently supports:
 
 Coming soon:
 - **Smol Agents** - Hugging Face's lightweight agentic framework
-- **LiveKit Agents** - Real-time audio/video agent framework for voice-enabled AI applications
 
 ### Flexible Deployment
 
@@ -202,7 +200,7 @@ flowchart LR
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- AWS Cloud --> E["AWS Lambda"] & F["AWS ECS/Fargate"]
     B -- Azure Cloud --> K["Azure Functions"] & L["Azure Container Apps"]
-    D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"] & T["Teams"]
+    D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"] & T["Teams"] & V["LiveKit (Voice)"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
@@ -214,6 +212,7 @@ flowchart LR
     style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style O fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style V fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Quick Example

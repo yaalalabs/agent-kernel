@@ -93,6 +93,7 @@ const sidebars = {
         'integrations/telegram',
         'integrations/gmail',
         'integrations/teams',
+        'integrations/livekit',
         'integrations/hooks',
       ],
     },
