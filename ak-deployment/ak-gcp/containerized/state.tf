@@ -28,13 +28,10 @@ locals {
   sa_id     = "${substr(local.sa_prefix, 0, min(length(local.sa_prefix), 26))}-run"
 
   # VPC Access Connector name must match ^[a-z][-a-z0-9]{0,23}[a-z0-9]$ (max 25 chars).
-  # Format: <prefix>-<deployment_id>-rn-con, truncate prefix to fit
-  # Reserve 13 chars for suffix: -<8hex>-rn-con = 13 chars, leaving 12 for prefix
-  connector_name = substr(
-    "${var.product_alias}-${var.env_alias}-${local.deployment_id}-rn-con",
-    0,
-    25
-  )
+  # Must start with letter, end with alphanumeric, contain only lowercase letters, numbers, hyphens
+  # Strategy: use first letter of product_alias + deployment_id + letter suffix
+  # Format: a<7hex>-<8hex>-c = 1+7+1+8+1+1 = 19 chars (safe)
+  connector_name = "a${substr(local.deployment_id, 0, 7)}-${local.deployment_id}-c"
 
   # Firewall name with unique deployment ID
   firewall_name = "${substr(local.prefix, 0, min(length(local.prefix), 45))}-${local.deployment_id}-fw"
