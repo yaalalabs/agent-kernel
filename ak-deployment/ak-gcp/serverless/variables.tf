@@ -126,11 +126,12 @@ variable "health_check_endpoint" {
 }
 
 # CIDR block for the VPC Access Connector. Must not overlap existing subnets.
+# If null, a unique CIDR is automatically computed based on deployment ID.
 # This CIDR must also be allowed by VPC firewall rules (created automatically).
 variable "connector_cidr" {
   type        = string
-  description = "CIDR block for the VPC Access Connector (e.g. '10.8.1.0/28')"
-  default     = "10.8.1.0/28"
+  description = "CIDR block for the VPC Access Connector. If null, auto-computed to avoid conflicts (e.g. '10.8.1.0/28')"
+  default     = null
 }
 
 # Network

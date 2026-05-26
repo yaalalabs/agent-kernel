@@ -1,6 +1,6 @@
 debug: true
 api:
-  port: 8080
+  port: 8000
 session:
   type: redis
   redis:

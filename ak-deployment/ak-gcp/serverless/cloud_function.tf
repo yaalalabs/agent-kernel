@@ -64,7 +64,7 @@ resource "google_vpc_access_connector" "connector" {
   project       = var.project_id
   region        = var.region
   network       = local.network_id
-  ip_cidr_range = var.connector_cidr
+  ip_cidr_range = local.connector_cidr_computed
 
   min_instances = 2
   max_instances = var.is_production ? 10 : 3
@@ -82,7 +82,7 @@ resource "google_compute_firewall" "allow_connector" {
     ports    = ["0-65535"]
   }
 
-  source_ranges = [var.connector_cidr]
+  source_ranges = [local.connector_cidr_computed]
 }
 
 # Cloud Run service — GCP equivalent of AWS Lambda Image type.
