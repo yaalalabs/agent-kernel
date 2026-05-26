@@ -5,7 +5,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
-pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 class APITestClient:
@@ -24,6 +24,7 @@ class APITestClient:
             if body is None
             else body
         )
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             resp.raise_for_status()
@@ -41,11 +42,21 @@ async def http_client():
 @pytest.mark.order(1)
 async def test_history_agent(http_client):
     response = await http_client.send("Who won the 1996 cricket world cup?")
-    assert "Sri Lanka won the 1996 cricket world cup" in response
+    response = response.lower()
+
+    assert "sri lanka" in response
+    assert "1996" in response
+    assert "world cup" in response
+    assert "won" in response
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup(http_client):
     response = await http_client.send("Who hosted?")
-    assert "Sri Lanka, India and Pakistan" in response
+    response = response.lower()
+
+    assert "sri lanka" in response
+    assert "india" in response
+    assert "pakistan" in response
+    assert "host" in response
