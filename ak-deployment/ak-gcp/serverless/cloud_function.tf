@@ -57,6 +57,7 @@ resource "null_resource" "connector_cleanup" {
   }
 }
 
+
 # VPC connector — lets Cloud Run talk to private resources (Redis, etc.)
 resource "google_vpc_access_connector" "connector" {
   name          = local.connector_name
@@ -72,7 +73,7 @@ resource "google_vpc_access_connector" "connector" {
 # Firewall rule — allow traffic from the VPC connector to reach private resources
 # (e.g. Redis/Memorystore). Without this, Cloud Run → connector → Redis is blocked.
 resource "google_compute_firewall" "allow_connector" {
-  name    = "${local.prefix}-allow-connector"
+  name    = local.firewall_name
   project = var.project_id
   network = local.network_id
 

@@ -68,7 +68,7 @@ resource "google_vpc_access_connector" "connector" {
 
 # Firewall rule — allow traffic from the VPC connector to reach private resources
 resource "google_compute_firewall" "allow_connector" {
-  name    = "${local.prefix}-allow-connector"
+  name    = local.firewall_name
   project = var.project_id
   network = local.network_id
 

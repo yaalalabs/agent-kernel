@@ -22,7 +22,7 @@ locals {
 
   # Throttling
   enable_throttling    = var.throttling_rate_limit != null && var.throttling_burst_limit != null
-  throttle_metric_name = "${local.prefix}-requests"
+  throttle_metric_name = "${substr(local.prefix, 0, min(length(local.prefix), 45))}-${local.deployment_id}-req"
 
   # Per-operation quota cost added when throttling is enabled
   _quota_ext = local.enable_throttling ? {
@@ -170,13 +170,13 @@ locals {
       quota = {
         limits = [
           {
-            name   = "${local.prefix}-rate-limit"
+            name   = "${substr(local.prefix, 0, min(length(local.prefix), 40))}-${local.deployment_id}-rate"
             metric = local.throttle_metric_name
             unit   = "1/min/{project}"
             values = { STANDARD = var.throttling_rate_limit * 60 }
           },
           {
-            name   = "${local.prefix}-burst-limit"
+            name   = "${substr(local.prefix, 0, min(length(local.prefix), 39))}-${local.deployment_id}-burst"
             metric = local.throttle_metric_name
             unit   = "1/min/{project}"
             values = { STANDARD = var.throttling_burst_limit }
@@ -213,7 +213,7 @@ locals {
 resource "google_api_gateway_api" "api" {
   project  = var.project_id
   provider = google-beta
-  api_id   = "${local.prefix}-api"
+  api_id   = local.api_id
 }
 
 # The API config holds the OpenAPI spec.
@@ -243,5 +243,5 @@ resource "google_api_gateway_gateway" "gateway" {
   provider   = google-beta
   region     = var.region
   api_config = google_api_gateway_api_config.config.id
-  gateway_id = "${local.prefix}-gateway"
+  gateway_id = local.gateway_id
 }

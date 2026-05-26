@@ -1,10 +1,22 @@
 # Resolve network — use provided or create new
+
+resource "random_id" "deployment" {
+  byte_length = 4
+}
+
+resource "random_id" "connector" {
+  byte_length = 2
+}
+
 locals {
   network_id        = var.network_id != null ? var.network_id : module.vpc[0].network_id
   network_name      = var.network_id != null ? null : module.vpc[0].network_name
   private_subnet_id = var.network_id != null ? var.private_subnet_id : module.vpc[0].private_subnet_id
   redis_url         = var.create_redis_cluster ? module.redis[0].full_redis_url : null
   firestore_db_name = var.create_firestore_database ? module.firestore[0].database_name : null
+
+  # Unique deployment identifier (8 hex chars)
+  deployment_id = random_id.deployment.hex
 
   # Naming prefix
   prefix       = "${var.product_alias}-${var.env_alias}-${var.module_name}"
@@ -16,9 +28,20 @@ locals {
   sa_id     = "${substr(local.sa_prefix, 0, min(length(local.sa_prefix), 26))}-fn"
 
   # VPC Access Connector name must match ^[a-z][-a-z0-9]{0,23}[a-z0-9]$ (max 25 chars).
-  # Truncate product_alias+env_alias to 20 chars max, then append "-fn-con" (= 27... use 18 + "-fn-con" = 25).
-  connector_base = "${var.product_alias}-${var.env_alias}"
-  connector_name = "${substr(local.connector_base, 0, min(length(local.connector_base), 18))}-fn-con"
+  # Format: <prefix>-<deployment_id>-fn-con, truncate prefix to fit
+  # Reserve 13 chars for suffix: -<8hex>-fn-con = 13 chars, leaving 12 for prefix
+  connector_name = substr(
+    "${var.product_alias}-${var.env_alias}-${local.deployment_id}-fn-con",
+    0,
+    25
+  )
+
+  # Firewall name with unique deployment ID
+  firewall_name = "${substr(local.prefix, 0, min(length(local.prefix), 45))}-${local.deployment_id}-fw"
+
+  # API Gateway names with unique deployment ID (max 63 chars)
+  api_id      = "${substr(local.prefix, 0, min(length(local.prefix), 50))}-${local.deployment_id}-api"
+  gateway_id  = "${substr(local.prefix, 0, min(length(local.prefix), 50))}-${local.deployment_id}-gw"
 
   # Build the endpoint map for API Gateway
   api_base_segment              = trim(var.api_base_path, "/")
