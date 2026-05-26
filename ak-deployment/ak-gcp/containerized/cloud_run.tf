@@ -176,6 +176,7 @@ resource "google_cloud_run_v2_service" "service" {
 
   depends_on = [
     google_project_iam_member.run_logging,
+    module.docker_image
   ]
 }
 
