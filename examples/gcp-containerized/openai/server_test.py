@@ -4,7 +4,6 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
-from agentkernel.test import Test
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
@@ -42,11 +41,11 @@ async def http_client():
 @pytest.mark.order(1)
 async def test_history_agent(http_client):
     response = await http_client.send("Who won the 1996 cricket world cup?")
-    Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
+    assert "Sri Lanka won the 1996 cricket world cup" in response
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup(http_client):
     response = await http_client.send("Who hosted?")
-    Test.compare(response, ["Sri Lanka, India and Pakistan"])
+    assert "Sri Lanka, India and Pakistan" in response
