@@ -21,9 +21,9 @@
 
 <p align="center">
   <a href="https://kernel.yaala.ai/docs">📖 Docs</a> •
-  <a href="#-quick-start">🚀 Quick Start</a> •
-  <a href="#-features">✨ Features</a> •
-  <a href="#-deploy-anywhere">☁️ Deploy</a> •
+  <a href="#quick-start">🚀 Quick Start</a> •
+  <a href="#features">✨ Features</a> •
+  <a href="#deploy-anywhere">☁️ Deploy</a> •
   <a href="https://discord.gg/snrPzb46uu">💬 Discord</a> •
   <a href="DEVELOPER_GUIDE.md">🛠 Developer Guide</a>
 </p>
