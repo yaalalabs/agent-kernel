@@ -55,26 +55,20 @@ function Hero() {
         <div className={styles.heroContent}>
           <img src="/img/branding/agent-kernel-icon-color.svg" alt="Agent Kernel" className={styles.heroLogo} />
           <h1 className={styles.heroTitle}>Agent Kernel</h1>
-          <p className={styles.heroTagline}>From Agent Logic to Production in Minutes.</p>
+          <p className={styles.heroTagline}>The Operating System for Scalable Enterprise AI Agents.</p>
           <p className={styles.heroBody}>
-            The open-source, framework-agnostic, multi-cloud runtime for production AI agents.
-            Works with OpenAI, LangGraph, CrewAI, and Google ADK — simultaneously, in one runtime.
-            Deploys to AWS, Azure, or on-prem with zero platform code.
+              Run, orchestrate, and deploy Compliant Enterprise AI Agents at scale across frameworks, without lock-in,
+              rewrites or fragile glue code. Interface with all mainstream communication channels seamlessly 
+              out of the box, production ready from day one.
+
           </p>
           <div className={styles.heroButtons}>
             <Link className={`button button--primary button--lg ${styles.btnPrimary}`} to="/docs">
               Get Started →
             </Link>
-            <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
-              to="https://github.com/yaalalabs/agent-kernel"
-              target="_blank"
-              rel="noopener noreferrer">
-              <FaGithub style={{ marginRight: '8px' }} />
-              View on GitHub
-            </Link>
-            <Link className={`button button--secondary button--lg ${styles.btnGhost}`} to="/features">
-              Explore Features
+            <Link className={`button button--secondary button--lg ${styles.btnSecondary}`} to="#agent-skills">
+              <MdTerminal style={{ marginRight: '8px' }} />
+              Download Skills
             </Link>
           </div>
         </div>
@@ -506,7 +500,7 @@ function AgentSkills() {
   ];
 
   return (
-    <section className={styles.skillsSection}>
+    <section id="agent-skills" className={styles.skillsSection}>
       <div className={styles.skillsGlow} />
       <div className="container">
         <div className={styles.sectionHeader}>

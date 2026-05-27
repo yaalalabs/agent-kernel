@@ -10,7 +10,7 @@
 }
 
 .section:nth-child(even) {
-  background: rgba(14, 16, 23, 0.3);
+  background: rgba(21, 1, 42, 0.3);
 }
 
 .sectionHeader {
@@ -25,9 +25,9 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #4f7df7;
-  background: rgba(79, 125, 247, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.2);
+  color: #00DDFF;
+  background: rgba(0, 221, 255, 0.1);
+  border: 1px solid rgba(0, 221, 255, 0.2);
   border-radius: 999px;
   padding: 0.2rem 0.7rem;
   margin-bottom: 1rem;
@@ -36,7 +36,7 @@
 .sectionTitle {
   font-size: 2.2rem;
   font-weight: 800;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.03em;
   line-height: 1.2;
   margin-bottom: 0.75rem;
@@ -44,7 +44,7 @@
 
 .sectionSubtitle {
   font-size: 1.05rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
 }
 
@@ -54,18 +54,18 @@
 }
 
 .sectionLink {
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.95rem;
   font-weight: 600;
   text-decoration: none;
-  border-bottom: 1px solid rgba(79, 125, 247, 0.3);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.3);
   padding-bottom: 1px;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .sectionLink:hover {
-  color: #6d6af7;
-  border-color: #6d6af7;
+  color: #4DE6FF;
+  border-color: #4DE6FF;
 }
 
 .featureLink {
@@ -74,40 +74,40 @@
   padding-top: 1rem;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #4f7df7;
+  color: #00DDFF;
   text-decoration: none;
   transition: color 0.15s ease;
 }
 
 .featureLink:hover {
-  color: #6d6af7;
+  color: #4DE6FF;
 }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btnPrimary {
-  background: #4f7df7 !important;
-  color: #07080c !important;
+  background: #00DDFF !important;
+  color: #0D001A !important;
   font-weight: 700 !important;
   border: none !important;
 }
 
 .btnPrimary:hover {
-  background: #6d6af7 !important;
-  color: #07080c !important;
+  background: #4DE6FF !important;
+  color: #0D001A !important;
 }
 
 .btnSecondary {
   background: transparent !important;
-  border: 1px solid rgba(79, 125, 247, 0.35) !important;
-  color: #4f7df7 !important;
+  border: 1px solid rgba(0, 221, 255, 0.35) !important;
+  color: #00DDFF !important;
   font-weight: 600 !important;
 }
 
 .btnSecondary:hover {
-  background: rgba(79, 125, 247, 0.08) !important;
-  border-color: #4f7df7 !important;
-  color: #4f7df7 !important;
+  background: rgba(0, 221, 255, 0.08) !important;
+  border-color: #00DDFF !important;
+  color: #00DDFF !important;
 }
 
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
@@ -117,7 +117,7 @@
   padding: 7rem 0 5rem;
   text-align: center;
   overflow: hidden;
-  background: #07080c;
+  background: #0D001A;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -128,7 +128,7 @@
   transform: translateX(-50%);
   width: 900px;
   height: 700px;
-  background: radial-gradient(ellipse at center, rgba(139,92,246,0.1) 0%, rgba(79,125,247,0.06) 45%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(0, 221, 255,0.12) 0%, rgba(0, 170, 222,0.05) 45%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -157,9 +157,9 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #4f7df7;
-  background: rgba(79, 125, 247, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.2);
+  color: #00DDFF;
+  background: rgba(0, 221, 255, 0.1);
+  border: 1px solid rgba(0, 221, 255, 0.2);
   border-radius: 999px;
   padding: 0.3rem 0.9rem;
   margin-bottom: 1.25rem;
@@ -168,7 +168,7 @@
 .heroTitle {
   font-size: clamp(2.4rem, 5vw, 3.6rem);
   font-weight: 900;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.04em;
   line-height: 1.1;
   margin-bottom: 1.25rem;
@@ -176,7 +176,7 @@
 
 .heroSubtitle {
   font-size: 1.1rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.75;
   max-width: 680px;
   margin: 0 auto 2.25rem;
@@ -192,7 +192,7 @@
 /* ─── Problem Table ───────────────────────────────────────────────────────── */
 
 .problemTable {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 1rem;
   overflow: hidden;
@@ -202,8 +202,8 @@
   display: grid;
   grid-template-columns: 1fr 2fr 2fr;
   gap: 0;
-  background: rgba(79, 125, 247, 0.06);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.15);
+  background: rgba(0, 221, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.15);
   padding: 0.875rem 1.5rem;
 }
 
@@ -212,7 +212,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #5e627d;
+  color: #6B5F85;
 }
 
 .problemRow {
@@ -234,19 +234,19 @@
 }
 
 .problemRowHighlight {
-  background: rgba(79, 125, 247, 0.04);
+  background: rgba(0, 221, 255, 0.04);
 }
 
 .problemColLabel {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #dfe1f0;
+  color: #E8E4F0;
   padding-right: 1rem;
 }
 
 .problemColBad {
   font-size: 0.875rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   gap: 0.5rem;
   align-items: flex-start;
@@ -254,7 +254,7 @@
 }
 
 .xIcon {
-  color: #ef4444;
+  color: #DB4444;
   font-weight: 700;
   flex-shrink: 0;
   font-size: 0.8rem;
@@ -271,7 +271,7 @@
 }
 
 .checkIcon {
-  color: #4f7df7;
+  color: #00DDFF;
   font-weight: 700;
   flex-shrink: 0;
   font-size: 1rem;
@@ -289,9 +289,9 @@
 }
 
 .featureCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-left: 3px solid #4f7df7;
+  border-left: 3px solid #00DDFF;
   border-radius: 0.875rem;
   padding: 1.75rem 1.5rem;
   display: flex;
@@ -301,26 +301,26 @@
 
 .featureCard:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(79, 125, 247, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 221, 255, 0.08);
 }
 
 .featureIcon {
   font-size: 1.6rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 0.875rem;
 }
 
 .featureTitle {
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
   margin-bottom: 0.5rem;
 }
 
 .featureDescription {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -336,7 +336,7 @@
 
 .featureHighlights li {
   font-size: 0.8rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -344,7 +344,7 @@
 
 .featureHighlights li::before {
   content: '→';
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.75rem;
   flex-shrink: 0;
 }
@@ -358,7 +358,7 @@
 }
 
 .frameworkCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1.25rem;
@@ -370,17 +370,17 @@
 
 .frameworkCard:hover {
   transform: translateY(-4px);
-  border-color: rgba(79, 125, 247, 0.25);
+  border-color: rgba(0, 221, 255, 0.25);
   text-decoration: none;
 }
 
 .frameworkFeatured {
-  border-color: rgba(139, 92, 246, 0.3);
-  background: linear-gradient(135deg, rgba(79,125,247,0.04) 0%, rgba(139,92,246,0.04) 100%);
+  border-color: rgba(242, 0, 255, 0.3);
+  background: linear-gradient(135deg, rgba(0, 221, 255,0.04) 0%, rgba(0, 170, 222,0.03) 100%);
 }
 
 .frameworkFeatured:hover {
-  border-color: rgba(139, 92, 246, 0.5);
+  border-color: rgba(242, 0, 255, 0.5);
 }
 
 .frameworkComingSoon {
@@ -392,14 +392,14 @@
 .frameworkName {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
   margin-bottom: 0.5rem;
 }
 
 .frameworkDescription {
   font-size: 0.825rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   flex-grow: 1;
   margin-bottom: 1rem;
@@ -408,7 +408,7 @@
 .frameworkLink {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #4f7df7;
+  color: #00DDFF;
 }
 
 /* ─── Memory ──────────────────────────────────────────────────────────────── */
@@ -420,9 +420,9 @@
 }
 
 .memoryCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-top: 3px solid #4f7df7;
+  border-top: 3px solid #00DDFF;
   border-radius: 0.875rem;
   padding: 1.75rem 1.5rem;
   text-decoration: none;
@@ -433,26 +433,26 @@
 
 .memoryCard:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(79, 125, 247, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 221, 255, 0.08);
   text-decoration: none;
 }
 
 .memoryIcon {
   font-size: 1.6rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 0.875rem;
 }
 
 .memoryName {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   margin-bottom: 0.5rem;
 }
 
 .memoryDescription {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -468,7 +468,7 @@
 
 .memoryUseCases li {
   font-size: 0.8rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -476,7 +476,7 @@
 
 .memoryUseCases li::before {
   content: '·';
-  color: #4f7df7;
+  color: #00DDFF;
 }
 
 /* ─── Testing ─────────────────────────────────────────────────────────────── */
@@ -489,7 +489,7 @@
 }
 
 .testingCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 2rem 1.75rem;
@@ -501,21 +501,21 @@
 
 .testingCard:hover {
   transform: translateY(-4px);
-  border-color: rgba(79, 125, 247, 0.25);
+  border-color: rgba(0, 221, 255, 0.25);
   text-decoration: none;
 }
 
 .testingCard h3 {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   margin-bottom: 0.5rem;
   letter-spacing: -0.02em;
 }
 
 .testingCard p {
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -532,7 +532,7 @@
 
 .testingCard ul li {
   font-size: 0.85rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -540,13 +540,13 @@
 
 .testingCard ul li::before {
   content: '→';
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.75rem;
 }
 
 .testingBigIcon {
   font-size: 2rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 1rem;
 }
 
@@ -557,8 +557,8 @@
 }
 
 .modeCard {
-  background: rgba(79, 125, 247, 0.04);
-  border: 1px solid rgba(79, 125, 247, 0.12);
+  background: rgba(0, 221, 255, 0.04);
+  border: 1px solid rgba(0, 221, 255, 0.12);
   border-radius: 0.75rem;
   padding: 1.5rem;
   text-decoration: none;
@@ -568,27 +568,27 @@
 }
 
 .modeCard:hover {
-  border-color: rgba(79, 125, 247, 0.3);
-  background: rgba(79, 125, 247, 0.07);
+  border-color: rgba(0, 221, 255, 0.3);
+  background: rgba(0, 221, 255, 0.07);
   text-decoration: none;
 }
 
 .modeIcon {
   font-size: 1.4rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 0.75rem;
 }
 
 .modeName {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   margin-bottom: 0.4rem;
 }
 
 .modeDescription {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin: 0;
 }
@@ -603,7 +603,7 @@
 }
 
 .deploymentCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1.5rem;
@@ -615,7 +615,7 @@
 
 .deploymentCard:hover {
   transform: translateY(-4px);
-  border-color: rgba(79, 125, 247, 0.2);
+  border-color: rgba(0, 221, 255, 0.2);
   text-decoration: none;
 }
 
@@ -628,21 +628,21 @@
 
 .deploymentIcon {
   font-size: 1.4rem;
-  color: #4f7df7;
+  color: #00DDFF;
   flex-shrink: 0;
 }
 
 .deploymentTitle {
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
   margin: 0;
 }
 
 .deploymentDescription {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -658,7 +658,7 @@
 
 .deploymentFeatures li {
   font-size: 0.82rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -666,7 +666,7 @@
 
 .deploymentFeatures li::before {
   content: '→';
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.75rem;
 }
 
@@ -674,8 +674,8 @@
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  background: linear-gradient(135deg, rgba(79,125,247,0.06) 0%, rgba(139,92,246,0.06) 100%);
-  border: 1px solid rgba(79, 125, 247, 0.15);
+  background: linear-gradient(135deg, rgba(0, 221, 255,0.06) 0%, rgba(0, 170, 222,0.05) 100%);
+  border: 1px solid rgba(0, 221, 255, 0.15);
   border-radius: 1rem;
   padding: 2rem 2.5rem;
   flex-wrap: wrap;
@@ -683,20 +683,20 @@
 
 .terraformBannerIcon {
   font-size: 2.5rem;
-  color: #8b5cf6;
+  color: #F200FF;
   flex-shrink: 0;
 }
 
 .terraformBanner h3 {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   margin-bottom: 0.3rem;
 }
 
 .terraformBanner p {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   margin: 0;
 }
 
@@ -714,13 +714,13 @@
 /* Azure button sits on a blue-tinted banner — secondary needs a visible surface */
 .terraformBannerButtons :global(.button--secondary) {
   background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(139, 92, 246, 0.55);
-  color: #dfe1f0;
+  border: 1px solid rgba(242, 0, 255, 0.55);
+  color: #E8E4F0;
 }
 
 .terraformBannerButtons :global(.button--secondary):hover {
-  background: rgba(139, 92, 246, 0.18);
-  border-color: #8b5cf6;
+  background: rgba(242, 0, 255, 0.18);
+  border-color: #F200FF;
   color: #ffffff;
   transform: translateY(-1px);
 }
@@ -736,7 +736,7 @@
 }
 
 .observabilityText {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 1rem;
   padding: 2rem 1.75rem;
@@ -745,14 +745,14 @@
 .observabilityText h3 {
   font-size: 1.15rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.02em;
   margin-bottom: 0.5rem;
 }
 
 .observabilityText p {
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -768,7 +768,7 @@
 
 .observabilityText ul li {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -776,13 +776,13 @@
 
 .observabilityText ul li::before {
   content: '→';
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.8rem;
 }
 
 .observabilityBigIcon {
   font-size: 2rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 1rem;
 }
 
@@ -793,7 +793,7 @@
 }
 
 .observabilityTool {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.75rem;
   padding: 1.5rem;
@@ -802,14 +802,14 @@
 .observabilityTool h4 {
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
   margin-bottom: 0.4rem;
 }
 
 .observabilityTool p {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin: 0;
 }
@@ -823,7 +823,7 @@
 }
 
 .messagingCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1rem;
@@ -847,7 +847,7 @@
 .messagingName {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #9A91B8;
 }
 
 /* ─── CTA ─────────────────────────────────────────────────────────────────── */
@@ -856,7 +856,7 @@
   padding: 7rem 0;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, rgba(79,125,247,0.07) 0%, rgba(139,92,246,0.07) 100%);
+  background: linear-gradient(135deg, rgba(0, 221, 255,0.07) 0%, rgba(0, 170, 222,0.05) 100%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -867,7 +867,7 @@
   transform: translate(-50%, -50%);
   width: 700px;
   height: 400px;
-  background: radial-gradient(ellipse, rgba(79,125,247,0.08) 0%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(0, 221, 255,0.08) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -880,14 +880,14 @@
 .ctaTitle {
   font-size: clamp(1.8rem, 3.5vw, 2.8rem);
   font-weight: 800;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.03em;
   margin-bottom: 1rem;
 }
 
 .ctaSubtitle {
   font-size: 1.05rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
   max-width: 560px;
   margin: 0 auto 2.5rem;
