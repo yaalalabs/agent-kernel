@@ -3,10 +3,12 @@ slug: /agent-kernel-live-at-climate-impact-x
 title: Agent Kernel Is Live at Climate Impact X
 authors: [yaala]
 tags: [agent-kernel, climate-impact-x, production, trade-surveillance, enterprise-ai]
-image: /img/card.png
+image: /img/blog/cix-banner.png
 ---
 
 # Agent Kernel is Live at Climate Impact X
+
+![Agent Kernel at Climate Impact X](/img/blog/cix-banner.png)
 
 Climate Impact X (CIX), a leading exchange for environmental products such as carbon credits and renewable energy certificates, is now live with Agent Kernel as part of its trade surveillance workflow.
 
@@ -17,16 +19,6 @@ This marks an important production milestone: bringing AI-augmented surveillance
 An agentic workflow powered by Agent Kernel adds deeper insights and uncovers hidden patterns beyond traditional rule-based alerts. AI agents can review potential issues with speed and confidence, supported by clear, structured, investigation-ready context.
 
 Agent Kernel provided the enterprise foundation to make that possible in production.
-
-At a high level, the workflow looks like this:
-
-```mermaid
-flowchart LR
-	A[Live Exchange Activity] --> B[Surveillance Rules]
-	B --> C[Agent Kernel Analysis]
-	C --> D[Investigation-Ready Insights]
-	D --> E[Compliance Review]
-```
 
 ## From Complexity to Production in Weeks
 
