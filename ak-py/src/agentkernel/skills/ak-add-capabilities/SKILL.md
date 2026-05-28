@@ -2,12 +2,13 @@
 name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
-  adding guardrails, tracing/observability, session persistence, MCP server, A2A server,
-  pre/post hooks, and multimodal support. Generates configuration and code changes needed.
+  adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
+  A2A server, pre/post hooks, and multimodal support. Generates configuration and code
+  changes needed.
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.2.13"
+  version: "0.4.0"
   category: user
 ---
 
@@ -30,10 +31,11 @@ Which capability would you like to add?
 1. **Guardrails** — Content safety filters for input and/or output
 2. **Tracing** — Observability and monitoring (Langfuse or OpenLLMetry)
 3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB)
-4. **MCP Server** — Expose agents as Model Context Protocol tools
-5. **A2A Server** — Agent-to-Agent communication protocol
-6. **Hooks** — Custom pre/post processing (RAG, logging, prompt modification)
-7. **Multimodal** — Image and file attachment support
+4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, or custom backend)
+5. **MCP Server** — Expose agents as Model Context Protocol tools
+6. **A2A Server** — Agent-to-Agent communication protocol
+7. **Hooks** — Custom pre/post processing (RAG, logging, prompt modification)
+8. **Multimodal** — Image and file attachment support
 
 ### Step 3: Generate Changes
 
@@ -272,6 +274,96 @@ session:
 ```
 
 3. Set `AZURE_COSMOS_KEY` environment variable.
+
+---
+
+#### Knowledge Base
+
+Add durable knowledge tools that your agents can query and update across sessions.
+
+**Ask:** Which backend do you want to use?
+- ChromaDB (semantic/vector)
+- Neo4j (graph/relationships)
+- Starburst (read-only SQL via Trino)
+- Custom adapter (developer extension)
+
+**1. Update `pyproject.toml` dependencies based on backend:**
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,chromadb]>=0.4.0",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.4.0"
+  # or "agentkernel[openai,api,trino]>=0.4.0"
+]
+```
+
+**2. Configure backend + `KnowledgeBuilder` in your agent file (OpenAI example):**
+
+```python
+from agents import Agent
+from agentkernel.cli import CLI
+from agentkernel.knowledgebase.chroma import ChromaManager
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+
+backend = ChromaManager(name="ChromaDB").add_schema(
+  {
+    "description": "Semantic vector store for unstructured facts",
+    "store_payload": {"text": "string", "source": "string"},
+    "read_payload": {"query": "string", "limit": "int"},
+  }
+)
+
+kb = KnowledgeBuilder([backend])
+kb_tools = kb.build()  # -> get_schemas, read_kb, write_kb, get_all_kb_descriptions
+
+router = Agent(
+  name="kb_router",
+  instructions="Call get_schemas() first, then route reads/writes to the correct backend.",
+  tools=OpenAIToolBuilder.bind(kb_tools),
+)
+
+OpenAIModule([router])
+
+if __name__ == "__main__":
+  CLI.main()
+```
+
+**3. Multi-backend routing with semantic placeholders (for Starburst or mixed backends):**
+
+```python
+kb = KnowledgeBuilder(
+  [backend_a, backend_b],
+  semantic_map={
+    "<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'SHEET_ID'))",
+    "<MONGO_SOURCE>": "mongodb.default.clients",
+  },
+)
+```
+
+**4. Backend notes:**
+- `ChromaManager`: semantic search and fuzzy retrieval.
+- `Neo4jManager`: entity/relationship graphs and Cypher queries.
+- `StarburstManager`: **read-only**; use `read_kb`, do not route `write_kb`.
+
+**5. Environment variables (examples):**
+
+```bash
+# Neo4j
+export NEO4J_URI="bolt://localhost:7687"
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="password"
+
+# Starburst
+export STARBURST_HOST="<cluster>.trino.galaxy.starburst.io"
+export STARBURST_USER="<user>"
+export STARBURST_PASSWORD="<password-or-token>"
+export STARBURST_PORT=443
+```
+
+**6. If the user asks for a new backend adapter:**
+- Add a custom backend by implementing `KnowledgeBase` under `ak-py/src/agentkernel/knowledgebase/`.
+- Use developer skill `.agents/skills/ak-dev-new-knowledgebase-integration/SKILL.md` for contributor workflows.
 
 ---
 
@@ -537,3 +629,4 @@ You've added new capabilities to your project. Here's what you might do next:
 - **Connect a messaging platform** → Use the `ak-add-integration` skill to add Slack, WhatsApp, Telegram, or other channels so users can interact with your enhanced agents.
 - **Deploy to cloud** → Use the `ak-cloud-deploy` skill to deploy your agent (with all its capabilities) to AWS or Azure.
 - **Set up testing** → Use the `ak-test` skill to verify your capabilities work correctly — especially guardrails and hooks.
+- **Extend knowledge backends** → Contributors can use `.agents/skills/ak-dev-new-knowledgebase-integration/SKILL.md` to add new KnowledgeBase adapters.

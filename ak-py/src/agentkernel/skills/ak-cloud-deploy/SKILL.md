@@ -1,13 +1,14 @@
 ---
 name: ak-cloud-deploy
 description: >
-  Deploy an Agent Kernel project to AWS or Azure cloud. This skill guides you through
-  choosing a cloud provider and deployment mode, generating Terraform configuration,
-  setting up prerequisites, and deploying your agent. Supports AWS Lambda, AWS ECS/Fargate,
-  Azure Functions, and Azure Container Apps.
+  Deploy an Agent Kernel project to AWS or Azure using Terraform modules.
+  Supports serverless and containerized modes, plus AWS execution modes
+  (rest_sync, rest_async, async), queue-based scalable processing, custom
+  API Gateway authorizers, and multi-lambda serverless patterns.
 license: Apache-2.0
 metadata:
   author: yaalalabs
+  version: "0.4.0"
   category: user
 ---
 
@@ -17,365 +18,414 @@ Use this skill to deploy your Agent Kernel project to AWS or Azure.
 
 ## Instructions for the Agent
 
-When the user wants to deploy their agent to the cloud, follow this workflow:
+When the user wants cloud deployment, follow this workflow.
 
 ### Step 1: Identify the Project
 
-Check for an existing Agent Kernel project:
+Check for:
 - `pyproject.toml` with `agentkernel` dependency
-- An agent definition file
-- A `config.yaml`
+- agent entry file (`app.py`, `lambda.py`, or similar)
+- `config.yaml`
 
-If not found, suggest using the `ak-init` skill first.
+If missing, suggest `ak-init` first.
 
 ### Step 2: Ask Deployment Questions
 
-1. **Cloud provider**: AWS or Azure?
+1. Cloud provider: AWS or Azure?
+2. Runtime mode:
+- Serverless
+- Containerized
+3. Execution pattern:
+- Synchronous HTTP (`rest_sync`)
+- Asynchronous REST (`rest_async`, queue-based)
+- WebSocket async (`async`, queue-based)
+4. Scalability: standard or queue/scalable mode?
+5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure)?
+6. Security: custom authorizer required (AWS serverless)?
+7. Environment aliases: `product_alias`, `env_alias`, `module_name`.
 
-2. **Deployment mode**:
-   - **Serverless** (recommended for getting started — auto-scaling, pay-per-use)
-     - AWS: Lambda + API Gateway
-     - Azure: Functions (Flex Consumption) + API Management
-   - **Containerized** (recommended for production — predictable performance, longer timeouts)
-     - AWS: ECS Fargate + ALB + API Gateway
-     - Azure: Container Apps + API Management
+### Step 3: Choose the Correct Terraform Module
 
-3. **Session persistence**: Do you need session persistence? (recommended for production)
-   - AWS Serverless → DynamoDB (recommended) or Redis
-   - AWS Containerized → Redis (recommended) or DynamoDB
-   - Azure Serverless → Cosmos DB (recommended) or Redis
-   - Azure Containerized → Redis (recommended) or Cosmos DB
+Use official modules:
+- AWS serverless: `yaalalabs/ak-serverless/aws`
+- AWS containerized: `yaalalabs/ak-containerized/aws`
+- Azure serverless: `yaalalabs/ak-serverless/azurerm`
+- Azure containerized: `yaalalabs/ak-containerized/azurerm`
 
-4. **Custom domain**: Do you have a custom domain name? (optional)
+Use current module version (`0.4.0`) unless user requests another.
 
-5. **Environment**: What environment name? (e.g., `dev`, `staging`, `prod`)
+## AWS Serverless (Lambda + API Gateway)
 
-### Step 3: Generate Deployment Files
+### Agent Code Pattern
 
-#### AWS Serverless (Lambda)
-
-**1. Update the main agent file to use Lambda handler:**
-
-Rename/create as `lambda.py`:
+Use Lambda handler entrypoint:
 
 ```python
 from agentkernel.aws import Lambda
-from agentkernel.openai import OpenAIModule  # or other framework
-from agents import Agent
+from agentkernel.openai import OpenAIModule
 
-# ... agent definitions ...
-
+# Register agents with your framework module
 OpenAIModule([...])
 
 handler = Lambda.handler
 ```
 
-**2. Update pyproject.toml:**
+### A) Basic Synchronous REST (`rest_sync`)
 
-```toml
-dependencies = [
-    "agentkernel[openai,redis]>=0.2.13",    # or dynamodb via aws extra
-]
-```
+Use this for straightforward request/response APIs.
 
-**3. Update config.yaml:**
-
-```yaml
-session:
-  type: redis     # or dynamodb
-  redis:
-    prefix: "ak:<project>:"
-    url: "${REDIS_URL}"    # will be set by Terraform
-```
-
-Or for DynamoDB:
-```yaml
-session:
-  type: dynamodb
-  dynamodb:
-    table_name: "${DYNAMODB_TABLE}"
-    region: "${AWS_REGION}"
-```
-
-**4. Create deploy/ directory with Terraform files:**
-
-`deploy/main.tf`:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.2.13"
+  version = "0.4.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "<description>"
-  function_name        = "<function-name>"
-  handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist"
-  package_type         = "Image"
-  memory_size          = 256
-  create_redis_cluster = true         # set false if using existing Redis
-  product_display_name = "<display-name>"
+  product_display_name = "AK Serverless"
   region               = var.region
 
+  execution_mode = "rest_sync"
+
+  request_handler = {
+    module_name          = "request-handler"
+    function_name        = "chat-handler"
+    function_description = "AK request handler"
+    handler_path         = "lambda.handler"
+    package_type         = "Image"
+    package_path         = "../dist"
+    timeout              = 45
+    memory_size          = 256
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  gateway_endpoints = [
+    { path = "app", method = "GET" },
+    { path = "app_info", method = "POST" }
+  ]
+}
+```
+
+### B) Scalable Queue Mode (`rest_async`)
+
+Use this for high throughput and long-running requests.
+
+```hcl
+module "serverless_agents" {
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.4.0"
+
+  product_alias      = var.product_alias
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  region             = var.region
+  product_display_name = "AK Scalable REST"
+
+  queue_mode     = true
+  execution_mode = "rest_async"
+
+  create_dynamodb_memory_table   = true
+  create_dynamodb_response_store = true
+
+  request_handler = {
+    module_name          = "rqst-hdlr"
+    function_name        = "request-handler"
+    function_description = "Receives REST requests"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_request_handler.zip"
+    timeout              = 45
+    memory_size          = 256
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  agent_runner = {
+    module_name          = "agent-runner"
+    function_name        = "agent-runner"
+    function_description = "Processes queued requests"
+    handler_path         = "lambda_agent_runner.handler"
+    package_type         = "Image"
+    package_path         = "../dist_agent_runner"
+    timeout              = 45
+    memory_size          = 512
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  response_handler = {
+    module_name          = "response-handler"
+    function_name        = "response-handler"
+    function_description = "Handles async response completion"
+    handler_path         = "lambda_response_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_response_handler.zip"
+    timeout              = 45
+    memory_size          = 256
+  }
+
+  queue_config = {
+    input_queue_visibility_timeout         = 60
+    input_queue_max_receive_count          = 3
+    input_queue_create_dlq                 = false
+    input_queue_message_retention_seconds  = 300
+    output_queue_visibility_timeout        = 60
+    output_queue_max_receive_count         = 3
+    output_queue_create_dlq                = false
+    output_queue_message_retention_seconds = 300
+    batch_size                             = 10
+    maximum_batching_window_in_seconds     = 0
+  }
+}
+```
+
+### C) WebSocket Async (`async`)
+
+Use this for realtime bidirectional interactions.
+
+```hcl
+module "serverless_agents" {
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.4.0"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  region        = var.region
+
+  queue_mode     = true
+  execution_mode = "async"
+
+  create_redis_cluster            = true
+  create_dynamodb_response_store  = true
+
+  request_handler = {
+    module_name          = "request-handler"
+    function_name        = "request-handler"
+    function_description = "WebSocket route request handler"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_request_handler.zip"
+    timeout              = 45
+    memory_size          = 256
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  agent_runner = {
+    module_name          = "agent-runner"
+    function_name        = "agent-runner"
+    function_description = "Processes chat tasks"
+    handler_path         = "lambda_agent_runner.handler"
+    package_type         = "Image"
+    package_path         = "../dist_agent_runner"
+  }
+
+  response_handler = {
+    module_name          = "response-handler"
+    function_name        = "response-handler"
+    function_description = "Sends responses to connections"
+    handler_path         = "lambda_response_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_response_handler.zip"
+  }
+
+  ws_connection_handler = {
+    module_name          = "ws-connection-handler"
+    function_name        = "ws-connection-handler"
+    function_description = "Handles $connect/$disconnect"
+    handler_path         = "lambda_ws_connection_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_ws_connection_handler.zip"
+  }
+
+  ws_routes = [
+    { route = "app" },
+    { route = "app_info" }
+  ]
+}
+```
+
+### D) API Gateway Custom Authorizer (AWS)
+
+If the user needs token verification, include `authorizer` block:
+
+```hcl
+authorizer = {
+  description           = "API Gateway Lambda Authorizer"
+  function_name         = "gateway-authorizer"
+  handler_path          = "lambda_auth.handler"
+  package_path          = "../dist_auth.zip"
+  package_type          = "LocalZip"
+  module_name           = "auth-module"
+  result_ttl_in_seconds = 0
   environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
-    # Add other env vars as needed
+    SOME_OTHER_KEY = "Some Other Value"
   }
 }
 ```
 
-`deploy/variables.tf`:
-```hcl
-variable "region" {
-  type = string
-}
+## AWS Containerized (ECS/Fargate)
 
-variable "product_alias" {
-  type = string
-}
-
-variable "env_alias" {
-  type = string
-}
-
-variable "module_name" {
-  type = string
-}
-
-variable "openai_api_key" {
-  type      = string
-  sensitive = true
-}
-```
-
-`deploy/outputs.tf`:
-```hcl
-output "agent_invoke_url" {
-  description = "The URL to invoke the agent"
-  value       = module.serverless_agents.agent_invoke_url
-}
-```
-
-`deploy/terraform.tfvars`:
-```hcl
-region        = "<aws-region>"          # e.g., us-east-1
-product_alias = "<product-name>"
-env_alias     = "<environment>"         # dev, staging, prod
-module_name   = "<module-name>"
-```
-
-`deploy/backend.tf`:
-```hcl
-terraform {
-  backend "s3" {
-    bucket         = "<your-terraform-state-bucket>"
-    key            = "<project>/terraform.tfstate"
-    region         = "<aws-region>"
-    dynamodb_table = "<your-terraform-lock-table>"
-    encrypt        = true
-  }
-}
-```
-
-`deploy/Dockerfile`:
-```dockerfile
-FROM public.ecr.aws/lambda/python:3.12
-COPY data/ /var/task/
-CMD ["lambda.handler"]
-```
-
-`deploy/deploy.sh`:
-```bash
-#!/bin/bash
-set -e
-
-# Create deployment package
-pushd ../
-rm -rf dist
-mkdir -p dist/data
-uv export --no-hashes > requirements.txt
-uv pip install -r requirements.txt --target=dist/data
-cp -r lambda.py config.yaml dist/data
-# Copy any additional files (tool.py, etc.)
-popd
-cp Dockerfile ../dist/
-
-# Deploy
-terraform init
-terraform apply
-```
-
----
-
-#### AWS Containerized (ECS Fargate)
-
-**1. Use API mode in your agent file (`app.py`):**
+### Agent Code Pattern
 
 ```python
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
 
-# ... agent definitions ...
 OpenAIModule([...])
 
 if __name__ == "__main__":
     RESTAPI.run()
 ```
 
-**2. Create deploy/main.tf:**
+### Terraform Example
 
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.2.13"
+  version = "0.4.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  product_display_name = "<display-name>"
+  module_name          = var.module_name
+  package_path         = "../dist"
   region               = var.region
-  create_redis_cluster = true
-  container_port       = 8000
+  product_display_name = "AK ECS Deployment"
+
+  ecs_container_port = 8000
+  ecs_desired_count  = 2
+
+  create_dynamodb_memory_table = true
 
   environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+    OPENAI_API_KEY = var.openai_api_key
   }
 }
 ```
 
-**3. Create deploy/Dockerfile:**
+## Azure Serverless (Functions + APIM)
 
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["python", "app.py"]
-```
-
----
-
-#### Azure Serverless (Functions)
-
-**1. Update agent file to use Azure handler:**
+### Agent Code Pattern
 
 ```python
 from agentkernel.azure import AzureFunction
 from agentkernel.openai import OpenAIModule
-from agents import Agent
 
-# ... agent definitions ...
 OpenAIModule([...])
 
 handler = AzureFunction.handler
 ```
 
-**2. Create deploy/main.tf:**
+### Terraform Example
 
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.2.13"
+  version = "0.4.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  product_display_name = "<display-name>"
+  module_name          = var.module_name
   region               = var.region
-  create_redis          = true
+  resource_group_name  = var.resource_group_name
+  publisher_email      = var.publisher_email
+  product_display_name = "AK Azure Functions"
+
+  function_name        = "handler"
+  function_description = "AK function handler"
+  handler_path         = "lambda.handler"
+  module_type          = "python"
+  package_type         = "LocalZip"
+  package_path         = "../dist.zip"
+
+  create_cosmosdb_cluster = true
 
   environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+    OPENAI_API_KEY = var.openai_api_key
   }
 }
 ```
 
----
+## Azure Containerized (Container Apps + APIM)
 
-#### Azure Containerized (Container Apps)
-
-**1. Use API mode (same as AWS containerized)**
-
-**2. Create deploy/main.tf:**
+### Terraform Example
 
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.2.13"
+  version = "0.4.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  product_display_name = "<display-name>"
+  module_name          = var.module_name
   region               = var.region
-  create_redis          = true
-  container_port       = 8000
+  resource_group_name  = var.resource_group_name
+  publisher_email      = var.publisher_email
+  package_path         = "../dist"
+  product_display_name = "AK Azure Container Apps"
+
+  container_port = 8000
+
+  create_cosmosdb_cluster = true
 
   environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+    OPENAI_API_KEY = var.openai_api_key
   }
 }
 ```
 
----
+## Config and Packaging Notes
 
-### Step 4: Prerequisites Checklist
+- For AWS async/scalable deployments, split packaging for:
+- request handler
+- agent runner
+- response handler
+- (WebSocket mode) connection handler
+- Ensure `config.yaml` session settings align with Terraform-created stores.
+- Keep Lambda timeout lower than SQS visibility timeout.
 
-Tell the user what they need before deploying:
+## Prerequisites Checklist
 
-**AWS:**
-- [ ] AWS CLI installed and configured (`aws configure`)
-- [ ] Terraform >= 1.9.5 installed
-- [ ] S3 bucket for Terraform state (or remove backend.tf for local state)
-- [ ] DynamoDB table for state locking (optional)
-- [ ] API key for the LLM provider set as environment variable
+### AWS
 
-**Azure:**
-- [ ] Azure CLI installed and logged in (`az login`)
-- [ ] Terraform >= 1.9.5 installed
-- [ ] Azure Storage Account for Terraform state (or local state)
-- [ ] API key for the LLM provider
+- AWS CLI configured (`aws configure`)
+- Terraform >= 1.9.5
+- S3 bucket for remote state (optional but recommended)
+- DynamoDB table for state lock (optional but recommended)
+- Container registry access (if `package_type = "Image"`)
 
-### Step 5: Deploy
+### Azure
 
-```bash
-cd deploy
-chmod +x deploy.sh
-./deploy.sh
-```
+- Azure CLI logged in (`az login`)
+- Terraform >= 1.9.5
+- Resource group and subscription permissions
+- Storage for remote Terraform state (optional but recommended)
 
-Or manually:
+## Deploy
+
 ```bash
 cd deploy
 terraform init
-terraform plan        # Review changes
-terraform apply       # Deploy
+terraform plan
+terraform apply
 ```
 
-After deployment, Terraform outputs the invoke URL. Test it:
+## Teardown
 
-```bash
-curl -X POST <invoke-url>/run \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Hello!", "session_id": "test-1", "agent": "triage"}'
-```
-
-### Step 6: Teardown
-
-To destroy the infrastructure:
 ```bash
 cd deploy
 terraform destroy
 ```
 
----
+## What to Do Next
 
-### What to Do Next
-
-Your agent is deployed. Here's what you might do next:
-
-- **Set up testing** → Use the `ak-test` skill to configure tests against your deployed endpoint (API test mode with `AK_TEST_ENDPOINT`).
-- **Add guardrails & tracing** → Use the `ak-add-capabilities` skill to add production-grade guardrails and observability tracing before your agent handles real traffic.
-- **Connect a messaging platform** → Use the `ak-add-integration` skill to connect Slack, WhatsApp, or other channels to your deployed agent.
-- **Iterate** → Use the `ak-build` skill to add new tools and agents, then re-deploy with `terraform apply`.
+- Add capabilities (`ak-add-capabilities`) before production rollout.
+- Add tests (`ak-test`) against deployed endpoints.
+- Add integrations (`ak-add-integration`) for Slack/WhatsApp/Telegram.
+- Iterate on tools and agents (`ak-build`) and re-run `terraform apply`.

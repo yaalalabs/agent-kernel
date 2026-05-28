@@ -58,6 +58,7 @@ These skills help developers contributing to Agent Kernel itself. They are part 
 | `ak-dev-architecture` | Core abstractions (Session, Agent, Runner, Module, Runtime, AgentService, AKConfig), design principles (framework-agnostic core, adapter pattern, config-driven, session lifecycle, plugin architecture), directory structure, execution flow |
 | `ak-dev-new-framework-integration` | 14-step guide to add a new agent framework adapter: session state class, Runner subclass, Agent wrapper, ToolBuilder, Module, public API, optional deps, tracing, tests, examples |
 | `ak-dev-new-messaging-integration` | 12-step guide to add a new messaging platform: RESTRequestHandler subclass, webhook routes, message parsing, config, webhook verification, message chunking |
+| `ak-dev-new-knowledgebase-integration` | Guide to add a new knowledge backend: `KnowledgeBase` subclass, normalized read/write contract, optional deps, tests, docs, and examples |
 | `ak-dev-new-guardrail-provider` | Adding input/output guardrails: base provider class, InputGuardrail (PreHook), OutputGuardrail (PostHook), factory registration, config, fail-open policy |
 | `ak-dev-new-tracing-provider` | Adding observability/tracing: BaseTrace interface, traced runners, factory registration, transparent tracing |
 | `ak-dev-testing-conventions` | Testing patterns: pytest, async testing, DummyRunner/DummyAgent, monkeypatching config, session context tests, hook testing, Test.compare(), test modes |
@@ -74,8 +75,8 @@ These skills help end users building agent projects with Agent Kernel. They are 
 | `ak-init` | Interactive scaffolding for all 4 frameworks (OpenAI, CrewAI, LangGraph, ADK) × all deployment modes (CLI, API, Lambda, Functions, containerized). Complete code templates for each combination. |
 | `ak-build` | Add tools, agents, and handoffs to an existing project. Reads the project's framework, agents, tools, and config first, then generates context-aware code. Covers all 4 frameworks with gotcha guards. |
 | `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
-| `ak-cloud-deploy` | Deploy to AWS or Azure: 4 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps). Complete Terraform files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh). |
-| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
+| `ak-cloud-deploy` | Deploy to AWS or Azure: 4 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps) plus AWS execution modes (`rest_sync`, `rest_async`, `async`), queue/scalable mode, and API Gateway authorizers. |
+| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB), knowledge bases (ChromaDB/Neo4j/Starburst/custom), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
 | `ak-test` | Test setup (fuzzy/judge/fallback modes, CLI/API patterns) + 8 debugging scenarios: no agents available, session not persisting, ToolContext errors, guardrail blocking, import errors, Redis connection, Terraform failures, webhook issues. |
 
 ## CLI Design
@@ -145,7 +146,7 @@ Package user skills for Claude's marketplace. Submit for review.
 | File | Change |
 |---|---|
 | `ak-py/README.md` | Added "Agent Skills" section before "Extensibility" — CLI commands, skills table, example workflow |
-| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 7 dev skills, usage examples |
+| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 8 dev skills, usage examples |
 | `CONTRIBUTING.md` | Added "Agent Skills" section after "Developer Guide" — brief reference to `.agents/skills/` |
 | `docs/docs/agent-skills.md` | New docs site page — full guide with all skills, CLI usage, compatibility matrix |
 | `docs/sidebars.js` | Added `agent-skills` entry after `quick-start` |
@@ -158,6 +159,7 @@ Package user skills for Claude's marketplace. Submit for review.
 ├── ak-dev-code-quality/SKILL.md
 ├── ak-dev-new-framework-integration/SKILL.md
 ├── ak-dev-new-guardrail-provider/SKILL.md
+├── ak-dev-new-knowledgebase-integration/SKILL.md
 ├── ak-dev-new-messaging-integration/SKILL.md
 ├── ak-dev-new-tracing-provider/SKILL.md
 └── ak-dev-testing-conventions/SKILL.md

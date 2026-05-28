@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
-  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill",
-  "version": "0.2.13",
+  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill with sync/async and scalable modes",
+  "version": "0.4.0",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -11,6 +11,7 @@
         "from agentkernel.aws import Lambda",
         "handler = Lambda.handler",
         "yaalalabs/ak-serverless/aws",
+        "execution_mode",
         "deploy/main.tf",
         "deploy/variables.tf",
         "deploy/deploy.sh",
@@ -24,6 +25,44 @@
       ]
     },
     {
+      "id": "deploy-aws-serverless-rest-async",
+      "name": "Deploy to AWS Lambda rest_async scalable mode",
+      "input": "Deploy to AWS Lambda in rest_async scalable mode with queue processing",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "queue_mode = true",
+        "execution_mode = \"rest_async\"",
+        "request_handler",
+        "agent_runner",
+        "response_handler",
+        "queue_config"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-websocket-async",
+      "name": "Deploy to AWS Lambda async websocket mode",
+      "input": "Deploy to AWS Lambda async websocket mode",
+      "expected_outputs": [
+        "execution_mode = \"async\"",
+        "ws_connection_handler",
+        "ws_routes",
+        "queue_mode = true",
+        "yaalalabs/ak-serverless/aws"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-authorizer",
+      "name": "Deploy to AWS Lambda with custom authorizer",
+      "input": "Deploy to AWS Lambda with API Gateway custom authorizer",
+      "expected_outputs": [
+        "authorizer = {",
+        "function_name",
+        "handler_path",
+        "package_path",
+        "result_ttl_in_seconds"
+      ]
+    },
+    {
       "id": "deploy-aws-containerized",
       "name": "Deploy to AWS ECS Fargate",
       "input": "Deploy my agent to AWS ECS Fargate",
@@ -32,7 +71,7 @@
         "RESTAPI.run()",
         "deploy/main.tf",
         "deploy/Dockerfile",
-        "container_port",
+        "ecs_container_port",
         "8000"
       ],
       "must_not_contain": [
@@ -47,6 +86,7 @@
       "expected_outputs": [
         "from agentkernel.azure import AzureFunction",
         "yaalalabs/ak-serverless/azurerm",
+        "resource_group_name",
         "deploy/main.tf"
       ],
       "must_not_contain": [
@@ -62,7 +102,8 @@
         "yaalalabs/ak-containerized/azurerm",
         "RESTAPI.run()",
         "deploy/main.tf",
-        "container_port"
+        "container_port",
+        "publisher_email"
       ],
       "must_not_contain": [
         "Lambda.handler",
