@@ -158,10 +158,12 @@ jobs:
       - name: Generate identity token for tests
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: |
-          IDENTITY_TOKEN=$(gcloud auth print-identity-token \
-            --impersonate-service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
-            --audiences="32555940559.apps.googleusercontent.com" \
-            --include-email)
+          IDENTITY_TOKEN=$(curl -s -X POST \
+            -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+            -H "Content-Type: application/json" \
+            -d '{"audience":"32555940559.apps.googleusercontent.com","includeEmail":true}' \
+            "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${{ secrets.GCP_SERVICE_ACCOUNT }}:generateIdToken" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
           echo "IDENTITY_TOKEN=$IDENTITY_TOKEN" >> $GITHUB_ENV
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
