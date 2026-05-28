@@ -1,6 +1,6 @@
 import uuid
 from enum import Enum
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -125,10 +125,35 @@ class SystemTool(BaseModel):
     func: Callable
 
 
-class BaseRunRequest(BaseModel):
+class FileData(BaseModel):
+    """Represents a file attachment"""
+
+    file_data: str  # base64 encoded string or URL
+    name: str
+    mime_type: Optional[str] = None
+
+
+class ImageData(BaseModel):
+    """Represents an image attachment"""
+
+    image_data: str  # base64 encoded string
+    name: str
+    mime_type: Optional[str] = None
+
+
+class BaseChatRequest(BaseModel):
+    """Base model for chat requests with common fields."""
+
     prompt: str
     agent: Optional[str] = None
     session_id: Optional[str] = None
+
+
+class BaseRunRequest(BaseChatRequest):
+    """Chat request with file and image attachments (base64/URL format)."""
+
+    files: Optional[List[FileData]] = None
+    images: Optional[List[ImageData]] = None
     model_config = ConfigDict(extra="allow")
 
 
