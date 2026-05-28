@@ -61,6 +61,78 @@ AWS-only features in this skill:
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
+### Step 4: Align App Dependencies and Session Config
+
+When the user selects a session store, always update both app dependencies and `config.yaml`.
+
+#### Redis sessions
+
+- Dependency extras: include `redis`
+- Typical dependency example:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,redis]>=0.4.0"
+]
+```
+
+- `config.yaml` session block:
+
+```yaml
+session:
+  type: redis
+  namespace: chat
+  redis:
+    host: ${REDIS_HOST}
+    port: 6379
+    db: 0
+```
+
+#### DynamoDB sessions (AWS)
+
+- Dependency extras: include `aws`
+- Typical dependency example:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,aws]>=0.4.0"
+]
+```
+
+- `config.yaml` session block:
+
+```yaml
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: ${DYNAMODB_MEMORY_TABLE}
+    region: ${AWS_REGION}
+```
+
+#### Cosmos DB sessions (Azure)
+
+- Dependency extras: include `azure`
+- Typical dependency example:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,azure]>=0.4.0"
+]
+```
+
+- `config.yaml` session block:
+
+```yaml
+session:
+  type: cosmosdb
+  cosmosdb:
+    endpoint: ${AZURE_COSMOS_ENDPOINT}
+    database_name: ${AZURE_COSMOS_DATABASE}
+    container_name: ${AZURE_COSMOS_CONTAINER}
+```
+
+If the Terraform module creates the backing store (for example `create_redis_cluster = true` or `create_dynamodb_memory_table = true`), make sure output values are wired to the app environment variables used by `config.yaml`.
+
 ## AWS Serverless (Lambda + API Gateway)
 
 ### Agent Code Pattern
