@@ -3,6 +3,11 @@ output "agent_invoke_url" {
   value       = module.serverless_agents.agent_invoke_url
 }
 
+output "gateway_url" {
+  description = "API Gateway base URL"
+  value       = "https://${module.serverless_agents.gateway_url}"
+}
+
 output "service_url" {
   description = "Direct Cloud Run service URL (use as AK_TEST_AUDIENCE)"
   value       = module.serverless_agents.service_url

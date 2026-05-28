@@ -193,8 +193,8 @@ resource "google_logging_project_bucket_config" "default_logs" {
 # Allow unauthenticated direct invocation of the Cloud Run service URL.
 # When allow_unauthenticated_invocation = true (default), the Cloud Run URL is publicly
 # accessible. Authentication is enforced at the API Gateway level (JWT authorizer).
-# Set allow_unauthenticated_invocation = false for stricter network-level isolation
-# and grant roles/run.invoker only to the API Gateway service agent.
+# Set allow_unauthenticated_invocation = false for stricter network-level isolation —
+# only the API Gateway service agent will be granted roles/run.invoker.
 resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   count    = var.allow_unauthenticated_invocation ? 1 : 0
   project  = var.project_id
@@ -202,4 +202,21 @@ resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   name     = google_cloud_run_v2_service.service.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# Look up the project number to construct the API Gateway service agent email.
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
+# When allow_unauthenticated_invocation = false, grant the API Gateway service agent
+# roles/run.invoker so the gateway can still reach Cloud Run.
+# Without this, flipping allow_unauthenticated_invocation = false would block all traffic.
+resource "google_cloud_run_v2_service_iam_member" "gateway_invoker" {
+  count    = var.allow_unauthenticated_invocation ? 0 : 1
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.service.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-apigateway.iam.gserviceaccount.com"
 }

@@ -35,6 +35,10 @@ module "containerized_agents" {
     "OPENAI_API_KEY" = var.openai_api_key
   }
 
+  # Block direct Cloud Run access — all traffic must go through the API Gateway.
+  # The gateway_invoker IAM binding is created automatically to keep the gateway working.
+  allow_unauthenticated_invocation = false
+
   # JWT authorizer — GCP equivalent of AWS Lambda Authorizer.
   # API Gateway (ESPv2) validates Google Identity Tokens before forwarding to Cloud Run.
   # Clients must pass: Authorization: Bearer $(gcloud auth print-identity-token)
@@ -45,4 +49,5 @@ module "containerized_agents" {
     # For service-to-service auth (service account tokens), use the Cloud Run service URL instead.
     audiences = ["32555940559.apps.googleusercontent.com"]
   }
+
 }

@@ -23,3 +23,8 @@ create_deployment_package ${2-}
 
 terraform init
 terraform apply -var="openai_api_key=${OPENAI_API_KEY}"
+
+echo ""
+echo "=== Test environment variables ==="
+echo "export AK_TEST_ENDPOINT=$(terraform output -raw agent_invoke_url)"
+echo "export AK_TEST_AUDIENCE=$(terraform output -raw service_url)"
