@@ -211,6 +211,26 @@ jobs:
           
           echo ""
           echo "Example update complete!"
+
+      - name: Update published skills with new version
+        if: inputs.environment == 'production'
+        run: |
+          python scripts/update_skills_version.py \
+            --version ${{ steps.bump_version.outputs.new_version }}
+
+          echo ""
+          echo "Committing skill version changes..."
+          if git diff --quiet ak-py/src/agentkernel/skills/; then
+            echo "No skill version changes"
+          else
+            echo "Skill files updated"
+            git add ak-py/src/agentkernel/skills/
+            git commit -m "chore: update published skills to v${{ steps.bump_version.outputs.new_version }}"
+            git push origin ${{ github.ref_name }}
+          fi
+
+          echo ""
+          echo "Skills update complete!"
       
       - name: Test PyPI Summary
         if: inputs.environment == 'test'

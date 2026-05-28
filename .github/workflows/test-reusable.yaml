@@ -107,6 +107,10 @@ jobs:
         working-directory: scripts
         run: python test_update_terraform_versions.py
 
+      - name: Test update_skills_version script
+        working-directory: scripts
+        run: python test_update_skills_version.py
+
   unit-tests:
     needs: [build-ak-py]
     runs-on: ubuntu-latest
