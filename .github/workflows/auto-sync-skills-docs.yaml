@@ -176,20 +176,52 @@ jobs:
           - Keep catalogs/inventories consistent
           EOF
 
-      - name: Run sync command (Copilot-enabled if configured)
+      - name: Set up Node.js environment
+        uses: actions/setup-node@v4
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Run skill sync with Copilot CLI
         env:
-          COPILOT_SYNC_COMMAND: ${{ vars.COPILOT_SYNC_COMMAND }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           COMMIT_SHA: ${{ needs.detect-eligible-commit.outputs.commit_sha }}
           SOURCE_PR_NUMBER: ${{ needs.detect-eligible-commit.outputs.pr_number }}
         run: |
-          if [ -z "$COPILOT_SYNC_COMMAND" ]; then
-            echo "COPILOT_SYNC_COMMAND repository variable is not configured."
-            echo "Set it to the command that runs your Copilot-driven sync using COMMIT_SHA and SOURCE_PR_NUMBER."
+          if [ -z "$COPILOT_GITHUB_TOKEN" ]; then
+            echo "PERSONAL_ACCESS_TOKEN secret is not configured."
+            echo "Create a fine-grained PAT with Copilot Requests permission and store it as PERSONAL_ACCESS_TOKEN."
             exit 1
           fi
 
-          echo "Running sync command..."
-          eval "$COPILOT_SYNC_COMMAND"
+          PROMPT=$(cat <<EOF
+          You are updating this repository using the workflow skill instructions.
+
+          Primary instructions file:
+          - .agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md
+
+          Context file:
+          - .github/auto-sync-context.md
+
+          Source inputs:
+          - Commit hash: ${COMMIT_SHA}
+          - Source PR number: #${SOURCE_PR_NUMBER}
+          - Base branch: develop
+
+          Task requirements:
+          - Follow the skill instructions exactly.
+          - Sync only what is required from the given commit into skills and docs.
+          - Keep docs/specs skill inventories and counts consistent.
+          - Do not modify unrelated files.
+          - Leave changes staged in the working tree for pull request creation.
+          EOF
+          )
+
+          copilot -p "$PROMPT" \
+            --allow-tool='shell(git:*)' \
+            --allow-tool=read \
+            --allow-tool=write \
+            --no-ask-user
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
