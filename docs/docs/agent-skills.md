@@ -112,7 +112,7 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 
 ## Developer Skills — Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains eleven developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains twelve developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards — eliminating the onboarding curve for new contributors.
 
@@ -127,6 +127,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB) — storage interface, config wiring, tests, and docs |
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
+| `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
 | `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
 
