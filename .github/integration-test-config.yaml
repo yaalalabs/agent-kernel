@@ -95,7 +95,7 @@ weekly:
     - type: gcp-containerized
       path: examples/gcp-containerized/openai
       deploy_dir: deploy
-    -type: gcp-containerized
+    - type: gcp-containerized
       path: examples/gcp-containerized/openai-auth
       deploy_dir: deploy
     
