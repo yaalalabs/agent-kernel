@@ -61,6 +61,7 @@ These skills help developers contributing to Agent Kernel itself. They are part 
 | `ak-dev-new-knowledgebase-integration` | Guide to add a new knowledge backend: `KnowledgeBase` subclass, normalized read/write contract, optional deps, tests, docs, and examples |
 | `ak-dev-new-guardrail-provider` | Adding input/output guardrails: base provider class, InputGuardrail (PreHook), OutputGuardrail (PostHook), factory registration, config, fail-open policy |
 | `ak-dev-new-tracing-provider` | Adding observability/tracing: BaseTrace interface, traced runners, factory registration, transparent tracing |
+| `ak-dev-new-multimodal-storage` | Adding multimodal attachment storage backends: storage interface implementation, configuration registration, factory wiring, tests, docs, and examples |
 | `ak-dev-testing-conventions` | Testing patterns: pytest, async testing, DummyRunner/DummyAgent, monkeypatching config, session context tests, hook testing, Test.compare(), test modes |
 | `ak-dev-code-quality` | Standards: black/isort (150 line length core, 120 examples), conventional commits, PR workflow, version bumping via `scripts/bump_version.py` |
 
@@ -72,9 +73,9 @@ These skills help end users building agent projects with Agent Kernel. They are 
 
 | Skill | Purpose |
 |---|---|
-| `ak-init` | Interactive scaffolding for all 4 frameworks (OpenAI, CrewAI, LangGraph, ADK) × all deployment modes (CLI, API, Lambda, Functions, containerized). Complete code templates for each combination. |
-| `ak-build` | Add tools, agents, and handoffs to an existing project. Reads the project's framework, agents, tools, and config first, then generates context-aware code. Covers all 4 frameworks with gotcha guards. |
-| `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
+| `ak-init` | Interactive scaffolding for all supported frameworks (OpenAI, CrewAI, LangGraph, ADK, Smolagents) × all deployment modes (CLI, API, Lambda, Functions, containerized). Complete code templates for each combination. |
+| `ak-build` | Add tools, agents, and handoffs to an existing project. Reads the project's framework, agents, tools, and config first, then generates context-aware code. Covers all supported frameworks with gotcha guards. |
+| `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
 | `ak-cloud-deploy` | Deploy to AWS or Azure: 4 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps) plus AWS execution modes (`rest_sync`, `rest_async`, `async`), queue/scalable mode, and API Gateway authorizers. |
 | `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB), knowledge bases (ChromaDB/Neo4j/Starburst/custom), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
 | `ak-test` | Test setup (fuzzy/judge/fallback modes, CLI/API patterns) + 8 debugging scenarios: no agents available, session not persisting, ToolContext errors, guardrail blocking, import errors, Redis connection, Terraform failures, webhook issues. |
@@ -135,7 +136,7 @@ Package user skills for Claude's marketplace. Submit for review.
 
 ### Implementation Notes
 
-- Both plugins would contain the same 5 user skills
+- Both plugins would contain the same 6 user skills
 - Plugin metadata wraps the SKILL.md content in platform-specific formats
 - Skills remain the canonical source; plugins are generated from them
 
@@ -146,7 +147,7 @@ Package user skills for Claude's marketplace. Submit for review.
 | File | Change |
 |---|---|
 | `ak-py/README.md` | Added "Agent Skills" section before "Extensibility" — CLI commands, skills table, example workflow |
-| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 8 dev skills, usage examples |
+| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 9 dev skills, usage examples |
 | `CONTRIBUTING.md` | Added "Agent Skills" section after "Developer Guide" — brief reference to `.agents/skills/` |
 | `docs/docs/agent-skills.md` | New docs site page — full guide with all skills, CLI usage, compatibility matrix |
 | `docs/sidebars.js` | Added `agent-skills` entry after `quick-start` |
@@ -161,6 +162,7 @@ Package user skills for Claude's marketplace. Submit for review.
 ├── ak-dev-new-guardrail-provider/SKILL.md
 ├── ak-dev-new-knowledgebase-integration/SKILL.md
 ├── ak-dev-new-messaging-integration/SKILL.md
+├── ak-dev-new-multimodal-storage/SKILL.md
 ├── ak-dev-new-tracing-provider/SKILL.md
 └── ak-dev-testing-conventions/SKILL.md
 
@@ -275,9 +277,9 @@ User skills don't have a prefix — they're the primary audience and should have
 
 ### What's In Each User Skill and Why
 
-- **`ak-init`**: The entry point for new users. Covers 4 frameworks × multiple deployment modes. Each combination has complete, copy-pasteable templates (app.py, config.yaml, pyproject.toml, build.sh). The coding agent asks the user which framework and deployment mode, then generates everything.
+- **`ak-init`**: The entry point for new users. Covers all supported frameworks × multiple deployment modes. Each combination has complete, copy-pasteable templates (app.py, config.yaml, pyproject.toml, build.sh). The coding agent asks the user which framework and deployment mode, then generates everything.
 
-- **`ak-build`**: The workhorse skill for iterative development. After `ak-init` scaffolds a project, users spend most of their time adding tools, agents, and handoffs — that's `ak-build`. It reads the existing project first (framework, agents, tools, config) then generates context-aware code. Includes a gotchas table covering all 4 frameworks (LangGraph `name=`, CrewAI `role=`, ADK `LiteLlm()`, ToolContext usage).
+- **`ak-build`**: The workhorse skill for iterative development. After `ak-init` scaffolds a project, users spend most of their time adding tools, agents, and handoffs — that's `ak-build`. It reads the existing project first (framework, agents, tools, config) then generates context-aware code. Includes a gotchas table covering framework-specific patterns (LangGraph `name=`, CrewAI `role=`, ADK `LiteLlm()`, ToolContext usage).
 
 - **`ak-add-integration`**: After scaffolding, the most common next step is "connect my agent to Slack/WhatsApp/etc." Each platform has its own section with config changes, code changes, env vars, and setup instructions (e.g., creating a Slack app, setting up Meta webhooks).
 

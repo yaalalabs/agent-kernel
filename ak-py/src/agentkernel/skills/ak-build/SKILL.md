@@ -26,6 +26,7 @@ Use this skill to add new tools, agents, or handoffs to an existing Agent Kernel
    - `from agentkernel.langgraph import LangGraphModule` → **LangGraph**
    - `from agentkernel.crewai import CrewAIModule` → **CrewAI**
    - `from agentkernel.adk import GoogleADKModule` → **Google ADK**
+    - `from agentkernel.smolagents import SmolagentsModule` → **Smolagents**
 
 2. **Existing agents** — List every agent already defined (names, roles, instructions).
 
@@ -129,6 +130,19 @@ agent = Agent(name="support", model=LiteLlm(model="openai/gpt-4o-mini"),
               description="...", instruction="...", tools=tools)
 ```
 
+**Smolagents:**
+```python
+from agentkernel.smolagents import SmolagentsToolBuilder
+
+tools = SmolagentsToolBuilder.bind([lookup_order, existing_tool_1])
+agent = ToolCallingAgent(
+    tools=tools,
+    model=model,
+    name="support",
+    description="...",
+)
+```
+
 > **Gotcha:** Always add the new tool to the **existing** `bind()` call for that agent. Don't create a second `bind()`.
 
 ---
@@ -202,6 +216,20 @@ support_agent = Agent(
 
 > **Gotcha (Google ADK):** Use `LiteLlm(model="openai/gpt-4o-mini")` — never pass a bare model string like `"gpt-4o-mini"`.
 
+**Smolagents:**
+```python
+from smolagents import LiteLLMModel, ToolCallingAgent
+from agentkernel.smolagents import SmolagentsToolBuilder
+
+model = LiteLLMModel(model_id="openai/gpt-4o")
+support_agent = ToolCallingAgent(
+    tools=SmolagentsToolBuilder.bind([lookup_order]),
+    model=model,
+    name="support",
+    description="You help customers with order lookups, returns, and general support questions.",
+)
+```
+
 #### 4b. Register with the Module
 
 Add the new agent to the **existing** Module constructor call. Do not create a second Module.
@@ -214,7 +242,7 @@ OpenAIModule([triage_agent, math_agent, general_agent])
 OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 ```
 
-This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule` work the same way.
+This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule` work the same way.
 
 ---
 
@@ -283,6 +311,20 @@ Use transfer_to_agent to delegate:
 )
 ```
 
+**Smolagents:**
+
+Add the new agent to the triage agent's `managed_agents` list:
+
+```python
+triage_agent = ToolCallingAgent(
+    tools=[],
+    model=model,
+    name="triage",
+    description="You determine which agent to use based on the user's question.",
+    managed_agents=[math_agent, general_agent, support_agent],  # Add here
+)
+```
+
 ---
 
 ### Step 6: Add Hooks (Optional)
@@ -312,7 +354,7 @@ If the new tool or agent requires additional packages, update `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.2.13",
+    "agentkernel[openai,api,redis]>=0.4.0",
     "httpx>=0.27.0",        # Add any new deps for your tool
 ]
 ```
