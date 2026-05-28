@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          key: ak-py-${{ inputs.checkout_ref }}
 
   script-tests:
     runs-on: ubuntu-latest
@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          key: ak-py-${{ inputs.checkout_ref }}
 
       - name: Test ak-py
         working-directory: ak-py
@@ -171,7 +171,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          key: ak-py-${{ inputs.checkout_ref }}
 
       - name: Run test - ${{ matrix.path }}
         env:
