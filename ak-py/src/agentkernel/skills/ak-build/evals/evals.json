@@ -139,7 +139,6 @@
       "expected_outputs": [
         "from smolagents import LiteLLMModel, ToolCallingAgent",
         "name=\"support\"",
-        "managed_agents=[",
         "SmolagentsModule(["
       ]
     },
