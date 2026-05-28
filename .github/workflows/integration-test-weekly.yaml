@@ -154,6 +154,11 @@ jobs:
       - name: Setup gcloud
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Configure gcloud for identity tokens
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        run: |
+          gcloud config set auth/impersonate_service_account ${{ secrets.GCP_SERVICE_ACCOUNT }}
         
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
