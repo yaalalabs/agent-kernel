@@ -50,8 +50,7 @@ class DefaultEndpointsHandler:
 
         if self._config.execution.response_store is None:
             raise ValueError(
-                "execution.response_store is required when using queue-based execution. "
-                "Please configure a response store in your configuration."
+                "execution.response_store is required when using queue-based execution. " "Please configure a response store in your configuration."
             )
 
         if exec_mode == ExecutionMode.REST_SYNC:
