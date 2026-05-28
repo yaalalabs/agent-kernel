@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: true
+      enable_cache:
+        description: 'Whether to enable build cache save/restore steps'
+        required: false
+        type: boolean
+        default: true
     secrets:
       APP_ID:
         required: false
@@ -78,6 +83,7 @@ jobs:
         run: ./build.sh
 
       - name: Cache ak-py build
+        if: ${{ inputs.enable_cache }}
         uses: actions/cache/save@v4
         with:
           path: ak-py/dist
@@ -132,6 +138,7 @@ jobs:
         run: pip install uv
 
       - name: Restore ak-py build
+        if: ${{ inputs.enable_cache }}
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
@@ -168,6 +175,7 @@ jobs:
         run: pip install uv
 
       - name: Restore ak-py build
+        if: ${{ inputs.enable_cache }}
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
