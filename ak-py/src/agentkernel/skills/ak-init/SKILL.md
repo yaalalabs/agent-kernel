@@ -28,7 +28,7 @@ Ask the user the following questions (adapt based on context):
    - **CrewAI** (multi-agent collaboration with roles and tasks)
    - **LangGraph** (complex workflow graphs with state management)
    - **Google ADK** (Google's Agent Development Kit)
-    - **Smolagents** (lightweight agent framework with managed-agent routing)
+   - **Smolagents** (lightweight agent framework with managed-agent routing)
 
 2. **Agent purpose**: What should your agent(s) do? (e.g., "customer support bot", "code review assistant", "data analysis agent")
 

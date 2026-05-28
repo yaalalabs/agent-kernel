@@ -26,7 +26,7 @@ Use this skill to add new tools, agents, or handoffs to an existing Agent Kernel
    - `from agentkernel.langgraph import LangGraphModule` → **LangGraph**
    - `from agentkernel.crewai import CrewAIModule` → **CrewAI**
    - `from agentkernel.adk import GoogleADKModule` → **Google ADK**
-    - `from agentkernel.smolagents import SmolagentsModule` → **Smolagents**
+   - `from agentkernel.smolagents import SmolagentsModule` → **Smolagents**
 
 2. **Existing agents** — List every agent already defined (names, roles, instructions).
 

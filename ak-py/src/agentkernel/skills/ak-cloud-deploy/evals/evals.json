@@ -84,7 +84,6 @@
         "yaalalabs/ak-containerized/aws",
         "RESTAPI.run()",
         "deploy/main.tf",
-        "deploy/Dockerfile",
         "ecs_container_port",
         "8000"
       ],
