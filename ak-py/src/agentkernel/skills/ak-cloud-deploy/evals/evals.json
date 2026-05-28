@@ -39,6 +39,20 @@
       ]
     },
     {
+      "id": "deploy-aws-serverless-rest-sync-scalable",
+      "name": "Deploy to AWS Lambda rest_sync scalable queue mode",
+      "input": "Deploy to AWS Lambda in rest_sync scalable mode",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "queue_mode = true",
+        "execution_mode = \"rest_sync\"",
+        "request_handler",
+        "agent_runner",
+        "response_handler",
+        "queue_config"
+      ]
+    },
+    {
       "id": "deploy-aws-serverless-websocket-async",
       "name": "Deploy to AWS Lambda async websocket mode",
       "input": "Deploy to AWS Lambda async websocket mode",
@@ -84,7 +98,8 @@
       "name": "Deploy to Azure Functions",
       "input": "Deploy my agent to Azure Functions",
       "expected_outputs": [
-        "from agentkernel.azure import AzureFunction",
+        "from agentkernel.azure import AzureFunctions",
+        "handler = AzureFunctions.handler",
         "yaalalabs/ak-serverless/azurerm",
         "resource_group_name",
         "deploy/main.tf"

@@ -35,13 +35,13 @@ If missing, suggest `ak-init` first.
 2. Runtime mode:
 - Serverless
 - Containerized
-3. Execution pattern:
-- Synchronous HTTP (`rest_sync`)
-- Asynchronous REST (`rest_async`, queue-based)
-- WebSocket async (`async`, queue-based)
-4. Scalability: standard or queue/scalable mode?
+3. Execution pattern (AWS serverless only):
+- Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode)
+- Asynchronous REST (`rest_async`, queue/scalable mode)
+- WebSocket async (`async`, queue/scalable mode)
+4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure)?
-6. Security: custom authorizer required (AWS serverless)?
+6. Security: custom authorizer required (AWS serverless only)?
 7. Environment aliases: `product_alias`, `env_alias`, `module_name`.
 
 ### Step 3: Choose the Correct Terraform Module
@@ -53,6 +53,13 @@ Use official modules:
 - Azure containerized: `yaalalabs/ak-containerized/azurerm`
 
 Use current module version (`0.4.0`) unless user requests another.
+
+AWS-only features in this skill:
+- `execution_mode`
+- `queue_mode`
+- `authorizer`
+
+Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
 ## AWS Serverless (Lambda + API Gateway)
 
@@ -73,6 +80,8 @@ handler = Lambda.handler
 ### A) Basic Synchronous REST (`rest_sync`)
 
 Use this for straightforward request/response APIs.
+
+This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpoints`. Do not add `agent_runner` or `response_handler` unless you are using queue mode.
 
 ```hcl
 module "serverless_agents" {
@@ -108,9 +117,11 @@ module "serverless_agents" {
 }
 ```
 
-### B) Scalable Queue Mode (`rest_async`)
+### B) Scalable Queue Mode (`rest_sync` or `rest_async`)
 
 Use this for high throughput and long-running requests.
+
+This is the multi-artifact pattern used by the scalable example: a request handler zip, an agent-runner image, and a response-handler zip.
 
 ```hcl
 module "serverless_agents" {
@@ -124,7 +135,7 @@ module "serverless_agents" {
   product_display_name = "AK Scalable REST"
 
   queue_mode     = true
-  execution_mode = "rest_async"
+  execution_mode = "rest_sync" # can also be "rest_async"
 
   create_dynamodb_memory_table   = true
   create_dynamodb_response_store = true
@@ -187,6 +198,8 @@ module "serverless_agents" {
 
 Use this for realtime bidirectional interactions.
 
+This follows the current websocket example shape: the request handler stays on the module's top-level Lambda inputs, then queue workers and WebSocket handlers are added via nested blocks.
+
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
@@ -194,7 +207,14 @@ module "serverless_agents" {
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
+  function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
+  function_name        = "request-handler"
   module_name   = var.module_name
+  handler_path  = "lambda_request_handler.handler"
+  package_path  = "../dist_request_handler.zip"
+  package_type  = "LocalZip"
+  memory_size   = 256
+  timeout       = 45
   region        = var.region
 
   queue_mode     = true
@@ -203,18 +223,8 @@ module "serverless_agents" {
   create_redis_cluster            = true
   create_dynamodb_response_store  = true
 
-  request_handler = {
-    module_name          = "request-handler"
-    function_name        = "request-handler"
-    function_description = "WebSocket route request handler"
-    handler_path         = "lambda_request_handler.handler"
-    package_type         = "LocalZip"
-    package_path         = "../dist_request_handler.zip"
-    timeout              = 45
-    memory_size          = 256
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
   }
 
   agent_runner = {
@@ -314,12 +324,12 @@ module "containerized_agents" {
 ### Agent Code Pattern
 
 ```python
-from agentkernel.azure import AzureFunction
+from agentkernel.azure import AzureFunctions
 from agentkernel.openai import OpenAIModule
 
 OpenAIModule([...])
 
-handler = AzureFunction.handler
+handler = AzureFunctions.handler
 ```
 
 ### Terraform Example
@@ -335,20 +345,32 @@ module "serverless_agents" {
   region               = var.region
   resource_group_name  = var.resource_group_name
   publisher_email      = var.publisher_email
-  product_display_name = "AK Azure Functions"
+  product_display_name = "AK Azure Functions Example"
 
-  function_name        = "handler"
-  function_description = "AK function handler"
-  handler_path         = "lambda.handler"
+  function_name        = "openai-agents"
+  function_description = "Agent Kernel OpenAI Sample Azure Function"
   module_type          = "python"
-  package_type         = "LocalZip"
   package_path         = "../dist.zip"
+  create_redis_cluster = true
 
-  create_cosmosdb_cluster = true
+  create_cosmosdb_cluster = false
 
   environment_variables = {
     OPENAI_API_KEY = var.openai_api_key
   }
+
+  gateway_endpoints = [
+    {
+      function_name = "AgentFunction"
+      path          = "/chat"
+      method        = "POST"
+    },
+    {
+      function_name = "CustomFunction"
+      path          = "/custom"
+      method        = "POST"
+    }
+  ]
 }
 ```
 
@@ -387,6 +409,8 @@ module "containerized_agents" {
 - agent runner
 - response handler
 - (WebSocket mode) connection handler
+- Azure serverless uses a single zip `package_path` for the Functions deployment.
+- Azure containerized uses `package_path` as the Docker build context for Container Apps.
 - Ensure `config.yaml` session settings align with Terraform-created stores.
 - Keep Lambda timeout lower than SQS visibility timeout.
 
@@ -427,5 +451,5 @@ terraform destroy
 
 - Add capabilities (`ak-add-capabilities`) before production rollout.
 - Add tests (`ak-test`) against deployed endpoints.
-- Add integrations (`ak-add-integration`) for Slack/WhatsApp/Telegram.
+- Add integrations (`ak-add-integration`) for Slack/WhatsApp/Telegram/Teams.
 - Iterate on tools and agents (`ak-build`) and re-run `terraform apply`.
