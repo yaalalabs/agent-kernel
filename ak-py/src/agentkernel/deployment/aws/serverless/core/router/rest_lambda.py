@@ -20,7 +20,7 @@ class DefaultEndpointsHandler:
         self._default_chat_path = "default_chat_path"
         self._default_chat_method = "POST"
         self._config = AKConfig.get()
-        self._response_store = ResponseDBHandler().get_store() if self._config.execution.mode != ExecutionMode.ASYNC else None
+        self._response_store = ResponseDBHandler().get_store() if self._config.execution.response_store is not None else None
         self._chat_service = ChatService()
 
     def get_default_endpoint_info(self):
@@ -47,6 +47,11 @@ class DefaultEndpointsHandler:
         if not input_queue_url:
             self._log.info("Queues not configured. Therefore, using Request Handler lambda for chat processing")
             return {self._default_chat_path: {self._default_chat_method: self._handle_agent_chat}}
+
+        if self._config.execution.response_store is None:
+            raise ValueError(
+                "execution.response_store is required when using queue-based execution. " "Please configure a response store in your configuration."
+            )
 
         if exec_mode == ExecutionMode.REST_SYNC:
             self._log.info("Initialized REST_SYNC endpoint.")
