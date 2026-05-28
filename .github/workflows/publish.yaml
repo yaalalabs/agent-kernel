@@ -90,6 +90,14 @@ jobs:
           NEW_VERSION=$(python -c "import tomllib; f = open('pyproject.toml', 'rb'); print(tomllib.load(f)['project']['version'])")
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
+
+      - name: Update published skills with new version
+        run: |
+          python scripts/update_skills_version.py \
+            --version ${{ steps.bump_version.outputs.new_version }}
+
+          echo ""
+          echo "Skill metadata and documentation version references updated."
       
       - name: Build package
         working-directory: ak-py
@@ -114,7 +122,7 @@ jobs:
       - name: Commit version bump
         if: inputs.environment == 'production'
         run: |
-          git add ak-py/pyproject.toml ak-py/uv.lock
+          git add ak-py/pyproject.toml ak-py/uv.lock ak-py/src/agentkernel/skills/
           git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
           git push origin ${{ github.ref_name }}
       
@@ -212,26 +220,6 @@ jobs:
           echo ""
           echo "Example update complete!"
 
-      - name: Update published skills with new version
-        if: inputs.environment == 'production'
-        run: |
-          python scripts/update_skills_version.py \
-            --version ${{ steps.bump_version.outputs.new_version }}
-
-          echo ""
-          echo "Committing skill version changes..."
-          if git diff --quiet ak-py/src/agentkernel/skills/; then
-            echo "No skill version changes"
-          else
-            echo "Skill files updated"
-            git add ak-py/src/agentkernel/skills/
-            git commit -m "chore: update published skills to v${{ steps.bump_version.outputs.new_version }}"
-            git push origin ${{ github.ref_name }}
-          fi
-
-          echo ""
-          echo "Skills update complete!"
-      
       - name: Test PyPI Summary
         if: inputs.environment == 'test'
         run: |
