@@ -62,6 +62,7 @@ These skills help developers contributing to Agent Kernel itself. They are part 
 | `ak-dev-new-guardrail-provider` | Adding input/output guardrails: base provider class, InputGuardrail (PreHook), OutputGuardrail (PostHook), factory registration, config, fail-open policy |
 | `ak-dev-new-tracing-provider` | Adding observability/tracing: BaseTrace interface, traced runners, factory registration, transparent tracing |
 | `ak-dev-new-multimodal-storage` | Adding multimodal attachment storage backends: storage interface implementation, configuration registration, factory wiring, tests, docs, and examples |
+| `ak-dev-sync-skills-from-branch` | Syncing skills from branch deltas: inspect new commits plus staged/unstaged changes, map capability impact, then add/update/remove developer and user skills, evals, and catalogs |
 | `ak-dev-testing-conventions` | Testing patterns: pytest, async testing, DummyRunner/DummyAgent, monkeypatching config, session context tests, hook testing, Test.compare(), test modes |
 | `ak-dev-code-quality` | Standards: black/isort (150 line length core, 120 examples), conventional commits, PR workflow, version bumping via `scripts/bump_version.py` |
 
@@ -147,7 +148,7 @@ Package user skills for Claude's marketplace. Submit for review.
 | File | Change |
 |---|---|
 | `ak-py/README.md` | Added "Agent Skills" section before "Extensibility" — CLI commands, skills table, example workflow |
-| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 9 dev skills, usage examples |
+| `DEVELOPER_GUIDE.md` | Added "Agent Skills for Contributors" section — lists all 10 dev skills, usage examples |
 | `CONTRIBUTING.md` | Added "Agent Skills" section after "Developer Guide" — brief reference to `.agents/skills/` |
 | `docs/docs/agent-skills.md` | New docs site page — full guide with all skills, CLI usage, compatibility matrix |
 | `docs/sidebars.js` | Added `agent-skills` entry after `quick-start` |
@@ -163,6 +164,7 @@ Package user skills for Claude's marketplace. Submit for review.
 ├── ak-dev-new-knowledgebase-integration/SKILL.md
 ├── ak-dev-new-messaging-integration/SKILL.md
 ├── ak-dev-new-multimodal-storage/SKILL.md
+├── ak-dev-sync-skills-from-branch/SKILL.md
 ├── ak-dev-new-tracing-provider/SKILL.md
 └── ak-dev-testing-conventions/SKILL.md
 

@@ -112,7 +112,7 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 
 ## Developer Skills — Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains nine developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains ten developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards — eliminating the onboarding curve for new contributors.
 
@@ -125,6 +125,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI) — input/output guardrails, factory registration, configuration |
 | `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry) — `BaseTrace` interface, traced runners, factory wiring |
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB) — storage interface, config wiring, tests, and docs |
+| `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
 | `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
 
