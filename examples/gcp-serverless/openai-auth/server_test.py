@@ -15,19 +15,22 @@ ENDPOINT = os.getenv("AK_TEST_ENDPOINT")
 AUDIENCE = os.getenv("AK_TEST_AUDIENCE")
 
 
-def get_google_identity_token() -> str:
-    """Get a Google Identity Token using gcloud CLI.
-    Equivalent of: gcloud auth print-identity-token --audiences=<AUDIENCE>
+def get_google_identity_token(audience: str = None):
     """
-    cmd = ["gcloud", "auth", "print-identity-token"]
-    if AUDIENCE:
-        cmd += [f"--audiences={AUDIENCE}"]
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    Get identity token.
+    - In CI (WIF): reads pre-generated IDENTITY_TOKEN env var
+    - Locally (key file): calls gcloud auth print-identity-token
+    """
+    # CI path: token pre-generated in workflow
+    token = os.environ.get("IDENTITY_TOKEN")
+    if token:
+        return token
+
+    # Local path: use gcloud directly
+    cmd = ['gcloud', 'auth', 'print-identity-token']
+    if audience:
+        cmd += ['--audiences', audience]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
 
