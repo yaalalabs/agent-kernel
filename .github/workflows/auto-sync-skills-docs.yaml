@@ -184,13 +184,13 @@ jobs:
 
       - name: Run skill sync with Copilot CLI
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
           COMMIT_SHA: ${{ needs.detect-eligible-commit.outputs.commit_sha }}
           SOURCE_PR_NUMBER: ${{ needs.detect-eligible-commit.outputs.pr_number }}
         run: |
           if [ -z "$COPILOT_GITHUB_TOKEN" ]; then
-            echo "PERSONAL_ACCESS_TOKEN secret is not configured."
-            echo "Create a fine-grained PAT with Copilot Requests permission and store it as PERSONAL_ACCESS_TOKEN."
+            echo "COPILOT_REQUEST_TOKEN secret is not configured."
+            echo "Create a fine-grained PAT with Copilot Requests permission and store it as COPILOT_REQUEST_TOKEN."
             exit 1
           fi
 
