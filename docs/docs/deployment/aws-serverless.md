@@ -185,6 +185,9 @@ Authentication infrastructure will only be created if you define an `authorizer`
 **Optional Fields**:
 - `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
 - `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
+- `timeout` - Authorizer Lambda timeout in seconds (default: 30)
+- `memory_size` - Authorizer Lambda memory size in MB (default: 128)
+- `layers` - List of Lambda layer ARNs to attach (default: [])
 - `environment_variables` - Environment variables for authorizer
 
 **Important Notes**:

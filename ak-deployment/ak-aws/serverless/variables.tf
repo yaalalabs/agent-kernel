@@ -27,7 +27,7 @@ variable "module_type" {
 
 variable "module_name" {
   type        = string
-  description = "Module name"
+  description = "Module name (used for resource naming). NOTE: must be non-empty when enable_api_gateway is true."
   default     = ""
   validation {
     condition     = !var.enable_api_gateway || var.module_name != ""
@@ -41,11 +41,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "cloudwatch_logs_retention_in_days" {
-  type        = number
-  description = "CloudWatch log retention period in days for the request handler Lambda"
-  default     = 90
-}
 variable "queue_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
@@ -151,8 +146,6 @@ variable "layers" {
   type = list(string)
   default = []
 }
-
-
 
 variable "tags" {
   type = map(string)
@@ -335,6 +328,9 @@ variable "authorizer" {
     package_type          = string
     module_name           = string
     result_ttl_in_seconds = optional(number, 150)
+    timeout               = optional(number, 30)
+    memory_size           = optional(number, 128)
+    layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
   })
   default = null
@@ -365,25 +361,26 @@ variable "ws_connection_handler" {
   }
 }
 
-variable "response_handler" {
-  description = "Response handler configuration object"
+variable "request_handler" {
+  description = "Request handler configuration object"
   type = object({
-    function_name         = optional(string, "response-handler")
-    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
+    function_name         = optional(string, "request-handler")
+    function_description   = optional(string, "Request handler Lambda for processing API Gateway requests")
     timeout               = optional(number, 45)
-    memory_size           = optional(number, 256)
-    handler_path          = optional(string, "response_handler.handler")
-    module_name           = optional(string, "response-handler")
+    memory_size           = optional(number, 128)
+    handler_path          = optional(string, "request_handler.handler")
+    module_name           = optional(string, "request-handler")
     package_path          = optional(string, null)
     package_type          = optional(string, "LocalZip")
     layers                = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables = optional(map(string), {})
+    event_source_mapping  = optional(any, [])
   })
   default = {}
   validation {
-    condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
-    error_message = "response_handler.package_path must be set when queue_mode is true."
+    condition     = !var.enable_api_gateway || try(var.request_handler.package_path, null) != null
+    error_message = "request_handler.package_path must be set when enable_api_gateway is true."
   }
 }
 
@@ -406,6 +403,28 @@ variable "agent_runner" {
   validation {
     condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
     error_message = "agent_runner.package_path must be set when queue_mode is true."
+  }
+}
+
+variable "response_handler" {
+  description = "Response handler configuration object"
+  type = object({
+    function_name         = optional(string, "response-handler")
+    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
+    timeout               = optional(number, 45)
+    memory_size           = optional(number, 256)
+    handler_path          = optional(string, "response_handler.handler")
+    module_name           = optional(string, "response-handler")
+    package_path          = optional(string, null)
+    package_type          = optional(string, "LocalZip")
+    layers                = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables = optional(map(string), {})
+  })
+  default = {}
+  validation {
+    condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
+    error_message = "response_handler.package_path must be set when queue_mode is true."
   }
 }
 

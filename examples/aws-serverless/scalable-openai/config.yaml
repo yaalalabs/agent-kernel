@@ -2,10 +2,7 @@ logging:
   ak:
     level: DEBUG
 session:
-  type: redis
-  redis:
-    prefix: "ak:openai:example:"
-    url: "redis://ak-openai-serverless-dev-examples-redis.zinik6.0001.apse2.cache.amazonaws.com:6379"
+  type: dynamodb
 execution:
   mode: rest_sync
   queues:
