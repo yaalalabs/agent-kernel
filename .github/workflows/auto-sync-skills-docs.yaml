@@ -223,6 +223,9 @@ jobs:
             --allow-tool=write \
             --no-ask-user
 
+      - name: Push working branch
+        run: git push origin ${{ steps.branch.outputs.name }}
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
