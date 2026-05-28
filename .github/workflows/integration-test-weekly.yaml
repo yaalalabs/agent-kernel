@@ -145,26 +145,24 @@ jobs:
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
       
       - name: GCP login
+        id: auth          # <-- add this
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: google-github-actions/auth@v1
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: "id_token"
+          id_token_audience: "32555940559.apps.googleusercontent.com"
+          id_token_include_email: true
+
+      - name: Export identity token  
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        run: echo "IDENTITY_TOKEN=${{ steps.auth.outputs.id_token }}" >> $GITHUB_ENV
       
       - name: Setup gcloud
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: google-github-actions/setup-gcloud@v2
      
-      - name: Generate identity token for tests
-        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
-        run: |
-          IDENTITY_TOKEN=$(curl -s -X POST \
-            -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-            -H "Content-Type: application/json" \
-            -d '{"audience":"32555940559.apps.googleusercontent.com","includeEmail":true}' \
-            "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${{ secrets.GCP_SERVICE_ACCOUNT }}:generateIdToken" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-          echo "IDENTITY_TOKEN=$IDENTITY_TOKEN" >> $GITHUB_ENV
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: hashicorp/setup-terraform@v3
