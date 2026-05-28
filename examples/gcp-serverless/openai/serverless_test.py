@@ -42,9 +42,7 @@ async def http_client():
 @pytest.mark.asyncio
 @pytest.mark.order(1)
 async def test_history_agent(http_client):
-    response = await http_client.send(
-        "Who won the 1996 cricket world cup?"
-    )
+    response = await http_client.send("Who won the 1996 cricket world cup?")
 
     response_lower = response.lower()
 
