@@ -154,14 +154,13 @@ jobs:
       - name: Setup gcloud
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: google-github-actions/setup-gcloud@v2
-      
-      - name: Configure gcloud for identity tokens
+     
+      - name: Generate identity token for tests
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: |
-          gcloud config set auth/impersonate_service_account ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          # Generate the identity token and export it for tests
           IDENTITY_TOKEN=$(gcloud auth print-identity-token \
             --impersonate-service-account=${{ secrets.GCP_SERVICE_ACCOUNT }} \
+            --audiences="32555940559.apps.googleusercontent.com" \
             --include-email)
           echo "IDENTITY_TOKEN=$IDENTITY_TOKEN" >> $GITHUB_ENV
       - name: Setup Terraform
