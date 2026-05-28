@@ -3,7 +3,7 @@ name: ak-add-integration
 description: >
   Add a messaging platform integration to an existing Agent Kernel project.
   This skill guides you through adding Slack, WhatsApp, Messenger, Instagram,
-  Telegram, or Gmail integration by generating configuration, updating dependencies,
+  Telegram, Teams, or Gmail integration by generating configuration, updating dependencies,
   and setting up webhook handlers. Designed for users extending their agents.
 license: Apache-2.0
 metadata:
@@ -37,7 +37,8 @@ Which messaging platform would you like to integrate?
 3. **Facebook Messenger** — Bot via Messenger Platform (Meta)
 4. **Instagram** — Bot via Instagram Messaging API (Meta)
 5. **Telegram** — Bot via Telegram Bot API
-6. **Gmail** — Email-based agent via Gmail API (polling)
+6. **Teams** — Bot via Microsoft Teams (Azure Bot Framework)
+7. **Gmail** — Email-based agent via Gmail API (polling)
 
 ### Step 3: Generate Changes
 
@@ -48,7 +49,7 @@ Which messaging platform would you like to integrate?
 Add `slack` to the extras:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack]>=0.2.13",
+    "agentkernel[openai,api,slack]>=0.4.0",
 ]
 ```
 
@@ -93,7 +94,7 @@ export SLACK_SIGNING_SECRET="..."          # App signing secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,whatsapp]>=0.2.13",
+    "agentkernel[openai,api,whatsapp]>=0.4.0",
 ]
 ```
 
@@ -139,7 +140,7 @@ export AK_WHATSAPP__APP_SECRET="..."           # App secret for signature verifi
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,messenger]>=0.2.13",
+    "agentkernel[openai,api,messenger]>=0.4.0",
 ]
 ```
 
@@ -182,7 +183,7 @@ export AK_MESSENGER__APP_SECRET="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,instagram]>=0.2.13",
+    "agentkernel[openai,api,instagram]>=0.4.0",
 ]
 ```
 
@@ -219,7 +220,7 @@ export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,telegram]>=0.2.13",
+    "agentkernel[openai,api,telegram]>=0.4.0",
 ]
 ```
 
@@ -260,7 +261,7 @@ export AK_TELEGRAM__WEBHOOK_SECRET="..."       # Your webhook secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gmail]>=0.2.13",
+    "agentkernel[openai,api,gmail]>=0.4.0",
 ]
 ```
 
@@ -292,6 +293,51 @@ if __name__ == "__main__":
 
 ---
 
+#### For Teams
+
+**1. Update `pyproject.toml`:**
+
+```toml
+dependencies = [
+    "agentkernel[openai,api,teams]>=0.4.0",
+]
+```
+
+**2. Update `config.yaml`:**
+
+```yaml
+teams:
+  agent_acknowledgement: "I'm processing your request"
+  # agent: general
+  # app_id, app_password, tenant_id can be set via env vars
+```
+
+**3. Update the server file:**
+
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.teams import AgentTeamsRequestHandler
+
+if __name__ == "__main__":
+    RESTAPI.run([AgentTeamsRequestHandler()])
+```
+
+**4. Environment variables:**
+
+```bash
+export AK_TEAMS__APP_ID="<azure-app-client-id>"
+export AK_TEAMS__APP_PASSWORD="<azure-app-client-secret>"
+export AK_TEAMS__TENANT_ID="<tenant-id>"   # Optional for single-tenant
+```
+
+**5. Setup instructions:**
+- Create a bot registration in Azure Bot Service
+- Set messaging endpoint to `https://<your-domain>/teams/messages`
+- Add Microsoft Teams channel in Azure Bot configuration
+- Install or publish the Teams app in your tenant via Developer Portal
+
+---
+
 ### Step 4: Multiple Integrations
 
 Multiple integrations can run simultaneously:
@@ -313,7 +359,7 @@ if __name__ == "__main__":
 Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.2.13",
+    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.4.0",
 ]
 ```
 

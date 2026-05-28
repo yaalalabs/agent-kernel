@@ -3,7 +3,7 @@ name: ak-dev-new-messaging-integration
 description: >
   Step-by-step guide for adding a new messaging platform integration to Agent Kernel.
   Use this skill when you need to add support for a new chat platform (beyond Slack,
-  WhatsApp, Messenger, Instagram, Telegram, Gmail). Covers creating the integration
+    WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers creating the integration
   handler, webhook routes, message parsing, configuration, and examples.
 license: Apache-2.0
 metadata:

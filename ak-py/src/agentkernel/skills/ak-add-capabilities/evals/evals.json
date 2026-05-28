@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
-  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, MCP, A2A, hooks, multimodal) skill",
-  "version": "0.2.13",
+  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal) skill",
+  "version": "0.4.0",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -103,6 +103,35 @@
         "endpoint:",
         "AZURE_COSMOS_KEY",
         "agentkernel[", "azure"
+      ]
+    },
+    {
+      "id": "cap-knowledgebase-chroma",
+      "name": "Add Chroma knowledge base",
+      "input": "Add a Chroma knowledge base capability to my project",
+      "expected_outputs": [
+        "KnowledgeBuilder",
+        "ChromaManager",
+        "get_schemas",
+        "read_kb",
+        "write_kb",
+        "agentkernel[",
+        "chromadb"
+      ]
+    },
+    {
+      "id": "cap-knowledgebase-starburst",
+      "name": "Add Starburst knowledge base",
+      "input": "Use Starburst as a knowledge base backend",
+      "expected_outputs": [
+        "StarburstManager",
+        "semantic_map",
+        "read-only",
+        "agentkernel[",
+        "trino"
+      ],
+      "must_not_contain": [
+        "write_kb(\"Starburst"
       ]
     },
     {

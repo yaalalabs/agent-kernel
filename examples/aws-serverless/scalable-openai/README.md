@@ -1,6 +1,6 @@
 # Agent Kernel Scalable OpenAI Agents with AWS Serverless Architecture
 
-This package demonstrates a scalable Agent Kernel implementation running OpenAI Agents SDK with authentication support, using AWS serverless architecture with queue-based processing.
+This package demonstrates a scalable Agent Kernel implementation running OpenAI Agents SDK on AWS serverless infrastructure with queue-based processing.
 
 ## Architecture Overview
 
@@ -10,9 +10,8 @@ This deployment uses a scalable serverless architecture with the following compo
 - **Agent Runner Lambda**: Processes agent requests from the input queue
 - **Response Handler Lambda**: Processes completed responses from the output queue
 - **SQS Queues**: Input and output queues for asynchronous processing
-- **Redis Cluster**: For agent memory and response storage
-- **API Gateway**: REST API endpoint with authentication
-- **WebSocket API**: For real-time response delivery (async mode)
+- **DynamoDB Tables**: For session memory and response storage
+- **API Gateway**: REST API endpoint with custom routes
 
 ## Deployed Resources
 
@@ -20,22 +19,25 @@ This demo deploys the following AWS resources:
 
 - **Lambda Functions**:
   - Request Handler: Handles incoming HTTP requests
-  - Agent Runner: Executes agent logic asynchronously  
+  - Agent Runner: Executes agent logic asynchronously
   - Response Handler: Processes and stores responses
-  - Authorizer: API Gateway authentication
-- **SQS Queues**: Input and output queues with dead letter queues
-- **Redis Cluster**: For session storage and response caching
+- **SQS Queues**: Input and output queues (DLQs disabled in this example)
+- **DynamoDB**: Session storage and response store tables
 - **API Gateway**: REST API with custom endpoints
 - **VPC**: Private networking for Lambda functions
 - **CloudWatch**: Logging and monitoring
 
 ## Execution Mode
 
-This example uses `rest_async` execution mode, which provides:
-- Asynchronous processing for better scalability
-- Queue-based architecture for handling load spikes
-- Separate scaling for request handling and agent processing
-- Response storage for retrieving results
+This example defaults to `rest_sync` execution mode with queue mode enabled (`queue_mode = true`).
+
+You can switch to `rest_async` by updating `deploy/main.tf`:
+
+```hcl
+execution_mode = "rest_async"
+```
+
+Both modes keep the scalable multi-Lambda architecture (`request_handler`, `agent_runner`, `response_handler`).
 
 ## Prerequisites
 
@@ -65,7 +67,7 @@ This example uses `rest_async` execution mode, which provides:
 
 After deployment, you can test the scalable agent:
 
-### REST_SYNC Mode:
+### REST_SYNC Mode (default):
 1. **Submit the request**:
    ```bash
    curl -X POST https://your-api-gateway-url/api/v1/chat \
@@ -92,7 +94,7 @@ After deployment, you can test the scalable agent:
      -d '{"query": "status"}'
    ```
 
-### REST_ASYNC Mode
+### REST_ASYNC Mode (optional)
 
 1. **Submit the request**:
    ```bash
@@ -145,5 +147,5 @@ The architecture automatically scales based on:
 Monitor through CloudWatch:
 - Lambda function metrics and logs
 - SQS queue depth and processing rates
-- Redis cluster performance
+- DynamoDB read/write metrics
 - API Gateway request metrics
