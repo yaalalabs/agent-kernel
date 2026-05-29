@@ -1,7 +1,7 @@
 import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
 import type {Props} from '@theme/Footer/Layout';
-import {FaDiscord, FaGithub} from 'react-icons/fa6';
+import {FaDiscord, FaGithub, FaXTwitter, FaEnvelope} from 'react-icons/fa6';
 import {SiTerraform} from 'react-icons/si';
 
 type SocialLink = {
@@ -27,9 +27,9 @@ function PypiIcon(): ReactNode {
 
 const SOCIAL_LINKS: SocialLink[] = [
   {
-    href: 'https://discord.gg/snrPzb46uu',
-    label: 'Discord Community',
-    icon: <FaDiscord aria-hidden="true" />,
+    href: 'https://x.com/yaalalabs',
+    label: 'X (Twitter)',
+    icon: <FaXTwitter aria-hidden="true" />,
   },
   {
     href: 'https://pypi.org/project/agentkernel/',
@@ -37,14 +37,14 @@ const SOCIAL_LINKS: SocialLink[] = [
     icon: <PypiIcon />,
   },
   {
-    href: 'https://registry.terraform.io/modules/yaalalabs',
-    label: 'Terraform registry',
-    icon: <SiTerraform aria-hidden="true" />,
+    href: 'https://discord.gg/snrPzb46uu',
+    label: 'Discord Community',
+    icon: <FaDiscord aria-hidden="true" />,
   },
   {
-    href: 'https://github.com/yaalalabs/agent-kernel',
-    label: 'GitHub repository',
-    icon: <FaGithub aria-hidden="true" />,
+    href: 'mailto:hello@yaalalabs.com',
+    label: 'Email',
+    icon: <FaEnvelope aria-hidden="true" />,
   },
 ];
 
@@ -60,35 +60,82 @@ export default function FooterLayout({
         'footer--dark': style === 'dark',
       })}>
       <div className="footer__inner">
-        {links}
-        {(logo || copyright) && (
-          <div className="footer__bottom">
-            <div className="footer__bottom-left">
-              {logo}
-            </div>
-            <div className="footer__bottom-center">
-              {copyright}
-            </div>
-            <div className="footer__bottom-right">
-              <ul className="footer__social-links" aria-label="Social media">
-                {SOCIAL_LINKS.map((link) => (
-                  <li key={link.label}>
-                    <a
-                      href={link.href}
-                      className="footer__social-link"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={link.label}>
-                      <span className="footer__social-icon" aria-hidden="true">
-                        {link.icon}
-                      </span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+        <div className="footer__top">
+          {/* Left brand column */}
+          <div className="footer__brand">
+            <a href="/" className="footer__brand-logo-link" aria-label="Agent Kernel home">
+              <img
+                src="/img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg"
+                alt="Agent Kernel"
+                className="footer__brand-logo"
+                width={140}
+              />
+            </a>
+            <p className="footer__brand-tagline">
+              The open-source runtime and orchestration layer for scalable, compliant enterprise AI agents.
+            </p>
+            <ul className="footer__social-links" aria-label="Social media">
+              {SOCIAL_LINKS.map((link) => (
+                <li key={link.label}>
+                  <a
+                    href={link.href}
+                    className="footer__social-link"
+                    target={link.href.startsWith('mailto') ? undefined : '_blank'}
+                    rel="noopener noreferrer"
+                    aria-label={link.label}>
+                    <span className="footer__social-icon" aria-hidden="true">
+                      {link.icon}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="footer__member-of">
+              <span className="footer__member-label">Member of</span>
+              <div className="footer__member-badges">
+                <a
+                  href="https://www.linuxfoundation.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="footer__badge-link">
+                  <img
+                    src="/img/lf_membership.svg"
+                    alt="Linux Foundation Member"
+                    className="footer__badge"
+                  />
+                </a>
+                <a
+                  href="https://aaif.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="footer__badge-link">
+                  <img
+                    src="/img/aaif_membership.svg"
+                    alt="Agentic AI Foundation Member"
+                    className="footer__badge"
+                  />
+                </a>
+              </div>
             </div>
           </div>
-        )}
+
+          {/* Link columns */}
+          <div className="footer__links-grid">
+            {links}
+          </div>
+        </div>
+
+        {/* Bottom bar */}
+        <div className="footer__bottom">
+          <div className="footer__copyright">
+            {copyright}
+          </div>
+          <div className="footer__legal-links">
+            <a href="/privacy-policy" className="footer__legal-link">Privacy Policy</a>
+            <a href="/terms-of-use" className="footer__legal-link">Terms of Use</a>
+            <a href="/cookie-policy" className="footer__legal-link">Cookie Policy</a>
+          </div>
+        </div>
       </div>
     </footer>
   );

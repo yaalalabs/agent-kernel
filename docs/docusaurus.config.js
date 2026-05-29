@@ -374,87 +374,38 @@ const config = {
       },
       footer: {
         style: 'dark',
-        logo: {
-          alt: 'Yaala Labs Logo',
-          src: 'img/yaala_white.png',
-          href: 'https://www.yaalalabs.com/',
-          width: 160,
-        },
+        // Remove the logo key entirely — logo is now handled in FooterLayout
         links: [
           {
             title: 'Docs',
             items: [
-              {
-                label: 'Getting Started',
-                to: '/docs',
-              },
-              {
-                label: 'Use Cases',
-                to: '/use-cases',
-              },
-              {
-                label: 'Architecture',
-                to: '/docs/architecture/overview',
-              },
-              {
-                label: 'API Reference',
-                to: '/docs/api/rest-api',
-              },
+              { label: 'Getting Started', to: '/docs' },
+              { label: 'Use Cases', to: '/use-cases' },
+              { label: 'Architecture', to: '/docs/architecture/overview' },
+              { label: 'API Reference', to: '/docs/api/rest-api' },
+              { label: 'Terraform Modules', to: '/docs/deployment/terraform' },
             ],
           },
           {
             title: 'Community',
             items: [
-              {
-                label: 'Discord',
-                href: 'https://discord.gg/snrPzb46uu',
-              },
-              {
-                label: 'GitHub',
-                href: 'https://github.com/yaalalabs/agent-kernel',
-              },
-              {
-                label: 'Issues',
-                href: 'https://github.com/yaalalabs/agent-kernel/issues',
-              },
+              { label: 'Discord', href: 'https://discord.gg/snrPzb46uu' },
+              { label: 'GitHub', href: 'https://github.com/yaalalabs/agent-kernel' },
+              { label: 'Issues', href: 'https://github.com/yaalalabs/agent-kernel/issues' },
             ],
           },
           {
-            title: 'More',
+            title: 'Company',
             items: [
-              {
-                label: 'Blog',
-                to: '/blog',
-              },
-              {
-                label: 'PyPI',
-                href: 'https://pypi.org/project/agentkernel/',
-              },
-              {
-                label: 'Terraform',
-                href: 'https://registry.terraform.io/modules/yaalalabs',
-              },
-            ],
-          },
-          {
-            title: 'Legal',
-            items: [
-              {
-                label: 'Privacy Policy',
-                to: '/privacy-policy',
-              },
-              {
-                label: 'Terms of Use',
-                to: '/terms-of-use',
-              },
-              {
-                label: 'Cookie Policy',
-                to: '/cookie-policy',
-              },
+              { label: 'Blog', to: '/blog' },
+              { label: 'PyPI', href: 'https://pypi.org/project/agentkernel/' },
+              { label: 'Yala Labs', href: 'https://www.yaalalabs.com' },
+              { label: 'Careers', href: 'https://www.yaalalabs.com/careers' },
+              { label: 'Contact', href: 'mailto:hello@yaalalabs.com' },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs`,
+        copyright: `© ${new Date().getFullYear()} Yala Labs. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,
