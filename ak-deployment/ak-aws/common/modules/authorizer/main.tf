@@ -107,7 +107,7 @@ module "authorizer_lambda_deployment" {
   create_package         = false
   package_type           = var.authorizer_info.package_type == "Image" ? "Image" : "Zip"
   create_layer = false
-  layers                 = var.layers
+  layers                 = var.authorizer_info.layers
 
   use_existing_cloudwatch_log_group = false
   cloudwatch_logs_retention_in_days = 90
@@ -129,8 +129,8 @@ module "authorizer_lambda_deployment" {
 
   environment_variables = var.authorizer_info.environment_variables
 
-  timeout     = var.timeout
-  memory_size = var.memory_size
+  timeout     = var.authorizer_info.timeout
+  memory_size = var.authorizer_info.memory_size
 
   kms_key_arn                = var.lambda_kms_key_arn
   cloudwatch_logs_kms_key_id = var.cloudwatch_kms_key_arn

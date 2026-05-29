@@ -10,8 +10,8 @@
   justify-content: center;
   gap: 0.75rem;
   padding: 0.65rem 1.5rem;
-  background: linear-gradient(90deg, rgba(79, 125, 247, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.2);
+  background: linear-gradient(90deg, rgba(0, 221, 255, 0.10) 0%, rgba(0, 170, 222, 0.10) 100%);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.2);
   flex-wrap: wrap;
   text-align: center;
 }
@@ -19,7 +19,7 @@
 .whatsNewBadge {
   display: inline-block;
   padding: 0.15rem 0.6rem;
-  background: linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #00DDFF 0%, #00AADE 100%);
   border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 700;
@@ -32,43 +32,43 @@
 
 .whatsNewText {
   font-size: 0.875rem;
-  color: #b0b8d8;
+  color: #C2B6D8;
 }
 
 .whatsNewText strong {
-  color: #dfe1f0;
+  color: #E8E4F0;
 }
 
 .whatsNewLink {
   font-size: 0.875rem;
-  color: #4f7df7;
+  color: #00DDFF;
   font-weight: 600;
   white-space: nowrap;
   text-decoration: none;
 }
 
 .whatsNewLink:hover {
-  color: #8b5cf6;
+  color: #F200FF;
   text-decoration: underline;
 }
 
 [data-theme='light'] .whatsNewBanner {
-  background: linear-gradient(90deg, rgba(79, 125, 247, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.18);
+  background: linear-gradient(90deg, rgba(0, 221, 255, 0.08) 0%, rgba(0, 170, 222, 0.08) 100%);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.18);
 }
 
 [data-theme='light'] .whatsNewText {
-  color: #4a5280;
+  color: #5C4F7A;
 }
 
 [data-theme='light'] .whatsNewText strong {
-  color: #1a1f3a;
+  color: #1F0838;
 }
 
 /* ─── Shared Utilities ────────────────────────────────────────────────────── */
 
 .gradientText {
-  background: linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -88,7 +88,7 @@
 .sectionTitle {
   font-size: 2.4rem;
   font-weight: 800;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.03em;
   line-height: 1.15;
   margin-bottom: 0.25rem;
@@ -96,7 +96,7 @@
 
 .sectionSubtitle {
   font-size: 1.1rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
   margin-top: 1rem;
   margin-bottom: 0;
@@ -108,58 +108,58 @@
 }
 
 .sectionLink {
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.95rem;
   font-weight: 600;
   text-decoration: none;
-  border-bottom: 1px solid rgba(79, 125, 247, 0.3);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.3);
   padding-bottom: 1px;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .sectionLink:hover {
-  color: #6d6af7;
-  border-color: #6d6af7;
+  color: #4DE6FF;
+  border-color: #4DE6FF;
 }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btnPrimary {
-  background: #4f7df7 !important;
-  color: #07080c !important;
+  background: #00DDFF !important;
+  color: #0D001A !important;
   font-weight: 700 !important;
   border: none !important;
 }
 
 .btnPrimary:hover {
-  background: #6d6af7 !important;
-  color: #07080c !important;
+  background: #4DE6FF !important;
+  color: #0D001A !important;
   transform: translateY(-1px);
 }
 
 .btnSecondary {
   background: transparent !important;
-  border: 1px solid rgba(79, 125, 247, 0.35) !important;
-  color: #4f7df7 !important;
+  border: 1px solid rgba(0, 221, 255, 0.35) !important;
+  color: #00DDFF !important;
   font-weight: 600 !important;
 }
 
 .btnSecondary:hover {
-  background: rgba(79, 125, 247, 0.08) !important;
-  border-color: #4f7df7 !important;
-  color: #4f7df7 !important;
+  background: rgba(0, 221, 255, 0.08) !important;
+  border-color: #00DDFF !important;
+  color: #00DDFF !important;
 }
 
 .btnGhost {
   background: transparent !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  color: #94a3b8 !important;
+  color: #9A91B8 !important;
   font-weight: 500 !important;
 }
 
 .btnGhost:hover {
   background: rgba(255, 255, 255, 0.04) !important;
-  color: #dfe1f0 !important;
+  color: #E8E4F0 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
@@ -169,7 +169,7 @@
   position: relative;
   padding: 7rem 0 5rem;
   overflow: hidden;
-  background: #07080c;
+  background: #0D001A;
   text-align: center;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -181,7 +181,7 @@
   transform: translateX(-50%);
   width: 900px;
   height: 700px;
-  background: radial-gradient(ellipse at center, rgba(79,125,247,0.12) 0%, rgba(139,92,246,0.08) 50%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(0, 221, 255,0.14) 0%, rgba(0, 170, 222,0.06) 50%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -211,13 +211,13 @@
   width: 96px;
   height: 96px;
   margin-bottom: 1.5rem;
-  filter: drop-shadow(0 0 24px rgba(79, 125, 247, 0.3));
+  filter: drop-shadow(0 0 24px rgba(0, 221, 255, 0.3));
   animation: heroLogoPulse 4s ease-in-out infinite;
 }
 
 @keyframes heroLogoPulse {
-  0%, 100% { filter: drop-shadow(0 0 20px rgba(79, 125, 247, 0.25)); }
-  50% { filter: drop-shadow(0 0 36px rgba(79, 125, 247, 0.45)); }
+  0%, 100% { filter: drop-shadow(0 0 20px rgba(0, 221, 255, 0.25)); }
+  50% { filter: drop-shadow(0 0 36px rgba(0, 221, 255, 0.45)); }
 }
 
 .heroTitle {
@@ -225,7 +225,7 @@
   font-weight: 900;
   letter-spacing: -0.04em;
   line-height: 1.05;
-  background: linear-gradient(135deg, #4f7df7 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -235,14 +235,14 @@
 .heroTagline {
   font-size: clamp(1.2rem, 2.5vw, 1.6rem);
   font-weight: 600;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.02em;
   margin-bottom: 1rem;
 }
 
 .heroBody {
   font-size: 1.05rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
   max-width: 600px;
   margin: 0 auto 2.25rem;
@@ -260,7 +260,7 @@
 
 .affiliationsStrip {
   padding: 1.5rem 0;
-  background: rgba(14, 16, 23, 0.4);
+  background: rgba(21, 1, 42, 0.4);
 }
 
 .affiliationsLabel {
@@ -269,7 +269,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #5e627d;
+  color: #6B5F85;
   margin-bottom: 1.1rem;
 }
 
@@ -305,7 +305,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   padding: 3.5rem 0;
-  background: rgba(14, 16, 23, 0.85);
+  background: rgba(21, 1, 42, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -322,7 +322,7 @@
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #5e627d;
+  color: #6B5F85;
   margin-bottom: 1.5rem;
 }
 
@@ -365,7 +365,7 @@
 .frameworkName {
   font-size: 0.8rem;
   font-weight: 500;
-  color: #94a3b8;
+  color: #9A91B8;
   white-space: nowrap;
 }
 
@@ -380,7 +380,7 @@
 }
 
 .valuePropCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.75rem;
   padding: 1.25rem 1rem;
@@ -391,12 +391,12 @@
 }
 
 .valuePropCard:hover {
-  border-color: rgba(79, 125, 247, 0.2);
+  border-color: rgba(0, 221, 255, 0.2);
 }
 
 .valueProblem {
   font-size: 0.9rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -404,7 +404,7 @@
 }
 
 .xMark {
-  color: #ef4444;
+  color: #DB4444;
   font-weight: 700;
   flex-shrink: 0;
   font-size: 0.85rem;
@@ -420,7 +420,7 @@
 .valueSolution {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #dfe1f0;
+  color: #E8E4F0;
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -428,7 +428,7 @@
 }
 
 .checkMark {
-  color: #4f7df7;
+  color: #00DDFF;
   font-weight: 700;
   flex-shrink: 0;
   font-size: 0.85rem;
@@ -443,7 +443,7 @@
 }
 
 .segmentCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 1rem;
   padding: 2rem 1.5rem;
@@ -460,37 +460,37 @@
 }
 
 .accent_cyan {
-  border-top: 2px solid #4f7df7;
+  border-top: 2px solid #00DDFF;
 }
 
 .accent_cyan:hover {
-  border-color: #4f7df7;
-  box-shadow: 0 8px 32px rgba(79, 125, 247, 0.12), 0 0 0 1px rgba(79, 125, 247, 0.15);
+  border-color: #00DDFF;
+  box-shadow: 0 8px 32px rgba(0, 221, 255, 0.12), 0 0 0 1px rgba(0, 221, 255, 0.15);
 }
 
 .accent_violet {
-  border-top: 2px solid #8b5cf6;
+  border-top: 2px solid #F200FF;
 }
 
 .accent_violet:hover {
-  border-color: #8b5cf6;
-  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.12), 0 0 0 1px rgba(139, 92, 246, 0.15);
+  border-color: #F200FF;
+  box-shadow: 0 8px 32px rgba(242, 0, 255, 0.12), 0 0 0 1px rgba(242, 0, 255, 0.15);
 }
 
 .segmentIcon {
   font-size: 1.75rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 1rem;
 }
 
 .accent_violet .segmentIcon {
-  color: #8b5cf6;
+  color: #F200FF;
 }
 
 .segmentTitle {
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   line-height: 1.3;
   margin-bottom: 0.75rem;
   white-space: pre-line;
@@ -498,7 +498,7 @@
 
 .segmentTagline {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   flex-grow: 1;
   margin-bottom: 1.25rem;
@@ -507,11 +507,11 @@
 .segmentCta {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #4f7df7;
+  color: #00DDFF;
 }
 
 .accent_violet .segmentCta {
-  color: #8b5cf6;
+  color: #F200FF;
 }
 
 /* ─── Key Features (Bento) ─────────────────────────────────────────────────── */
@@ -523,7 +523,7 @@
 }
 
 .bentoCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1.5rem;
@@ -535,8 +535,8 @@
 
 .bentoCard:hover {
   transform: translateY(-3px);
-  border-color: rgba(79, 125, 247, 0.2);
-  box-shadow: 0 8px 24px rgba(79, 125, 247, 0.08);
+  border-color: rgba(0, 221, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 221, 255, 0.08);
   text-decoration: none;
 }
 
@@ -546,21 +546,21 @@
 
 .bentoIcon {
   font-size: 1.6rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 0.875rem;
 }
 
 .bentoTitle {
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
   margin-bottom: 0.5rem;
 }
 
 .bentoDescription {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin: 0;
 }
@@ -576,7 +576,7 @@
 }
 
 .cloudCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 1rem;
   padding: 2rem 1.75rem;
@@ -584,7 +584,7 @@
 }
 
 .cloudCard:hover {
-  border-color: rgba(79, 125, 247, 0.2);
+  border-color: rgba(0, 221, 255, 0.2);
 }
 
 .cloudCardComingSoon {
@@ -606,7 +606,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #5e627d;
+  color: #6B5F85;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
@@ -622,14 +622,14 @@
 .cloudName {
   font-size: 1.15rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.02em;
   margin-bottom: 0;
 }
 
 .cloudDescription {
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin-bottom: 1rem;
 }
@@ -645,7 +645,7 @@
 
 .cloudModes li {
   font-size: 0.875rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -653,7 +653,7 @@
 
 .cloudModes li::before {
   content: '→';
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.8rem;
 }
 
@@ -669,13 +669,13 @@
   gap: 0.5rem;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #8b5cf6;
+  color: #F200FF;
   text-decoration: none;
   transition: color 0.15s ease;
 }
 
 .terraformLink:hover {
-  color: #a78bfa;
+  color: #FF4DFF;
 }
 
 .terraformIcon {
@@ -686,7 +686,7 @@
 
 .messagingSection {
   padding: 6rem 0;
-  background: rgba(14, 16, 23, 0.35);
+  background: rgba(21, 1, 42, 0.35);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   overflow: hidden;
@@ -719,7 +719,7 @@
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 0.875rem;
   padding: 1.25rem 1.5rem;
@@ -741,7 +741,7 @@
 .messagingName {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #9A91B8;
 }
 
 .comingSoonRow {
@@ -762,7 +762,7 @@
 .comingSoonBadge {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #5e627d;
+  color: #6B5F85;
   background: rgba(255, 255, 255, 0.05);
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
@@ -776,9 +776,9 @@
   padding: 6rem 0;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(79,125,247,0.04) 0%, transparent 100%);
-  border-top: 1px solid rgba(79, 125, 247, 0.1);
-  border-bottom: 1px solid rgba(79, 125, 247, 0.1);
+  background: linear-gradient(180deg, rgba(0, 221, 255,0.04) 0%, transparent 100%);
+  border-top: 1px solid rgba(0, 221, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.1);
 }
 
 .skillsGlow {
@@ -788,7 +788,7 @@
   transform: translateX(-50%);
   width: 800px;
   height: 500px;
-  background: radial-gradient(ellipse at center, rgba(79,125,247,0.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(0, 221, 255,0.06) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -796,13 +796,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  background: rgba(79, 125, 247, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.25);
+  background: rgba(0, 221, 255, 0.1);
+  border: 1px solid rgba(0, 221, 255, 0.25);
   border-radius: 100px;
   padding: 0.35rem 0.9rem;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #4f7df7;
+  color: #00DDFF;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 1rem;
@@ -814,7 +814,7 @@
 }
 
 .skillsTerminal {
-  background: #0c0e14;
+  background: #0d011a;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.75rem;
   overflow: hidden;
@@ -845,7 +845,7 @@
   margin-left: auto;
   margin-right: auto;
   font-size: 0.72rem;
-  color: #5e627d;
+  color: #6B5F85;
   font-weight: 500;
 }
 
@@ -854,7 +854,7 @@
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 0.82rem;
   line-height: 1.7;
-  color: #dfe1f0;
+  color: #E8E4F0;
   white-space: pre;
   overflow-x: auto;
 }
@@ -866,7 +866,7 @@
 }
 
 .terminalComment {
-  color: #5e627d;
+  color: #6B5F85;
   font-style: italic;
 }
 
@@ -882,7 +882,7 @@
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  background: rgba(14, 16, 23, 0.6);
+  background: rgba(21, 1, 42, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.625rem;
   padding: 1rem 1.1rem;
@@ -890,13 +890,13 @@
 }
 
 .skillCard:hover {
-  border-color: rgba(79, 125, 247, 0.2);
+  border-color: rgba(0, 221, 255, 0.2);
   transform: translateY(-1px);
 }
 
 .skillIcon {
   font-size: 1.2rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-top: 0.15rem;
   flex-shrink: 0;
 }
@@ -909,13 +909,13 @@
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.8rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   margin-bottom: 0.2rem;
 }
 
 .skillDesc {
   font-size: 0.78rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.45;
 }
 
@@ -932,20 +932,20 @@
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #4f7df7;
-  background: rgba(79, 125, 247, 0.08);
-  border: 1px solid rgba(79, 125, 247, 0.15);
+  color: #00DDFF;
+  background: rgba(0, 221, 255, 0.08);
+  border: 1px solid rgba(0, 221, 255, 0.15);
   border-radius: 0.375rem;
   padding: 0.3rem 0.6rem;
 }
 
 .flowArrow {
-  color: #5e627d;
+  color: #6B5F85;
   font-size: 0.9rem;
 }
 
 .flowArrowRepeat {
-  color: #8b5cf6;
+  color: #F200FF;
   font-size: 1rem;
   font-weight: 700;
 }
@@ -956,7 +956,7 @@
   padding: 7rem 0;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, rgba(79,125,247,0.07) 0%, rgba(139,92,246,0.07) 100%);
+  background: linear-gradient(135deg, rgba(0, 221, 255,0.08) 0%, rgba(0, 170, 222,0.05) 100%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -967,7 +967,7 @@
   transform: translate(-50%, -50%);
   width: 800px;
   height: 400px;
-  background: radial-gradient(ellipse, rgba(79,125,247,0.08) 0%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(0, 221, 255,0.08) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -980,14 +980,14 @@
 .ctaTitle {
   font-size: clamp(1.8rem, 3.5vw, 2.8rem);
   font-weight: 800;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.03em;
   margin-bottom: 1rem;
 }
 
 .ctaSubtitle {
   font-size: 1.05rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
   max-width: 560px;
   margin: 0 auto 2.5rem;
@@ -1012,7 +1012,7 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  background: rgba(14, 16, 23, 0.6);
+  background: rgba(21, 1, 42, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 0.75rem;
   padding: 0.875rem 1.25rem;
@@ -1022,26 +1022,26 @@
 }
 
 .communityLink:hover {
-  border-color: rgba(79, 125, 247, 0.25);
+  border-color: rgba(0, 221, 255, 0.25);
   transform: translateY(-2px);
   text-decoration: none;
 }
 
 .communityLinkIcon {
   font-size: 1.3rem;
-  color: #94a3b8;
+  color: #9A91B8;
 }
 
 .communityLinkName {
   font-size: 0.9rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   line-height: 1;
 }
 
 .communityLinkDesc {
   font-size: 0.78rem;
-  color: #5e627d;
+  color: #6B5F85;
   margin-top: 0.25rem;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }

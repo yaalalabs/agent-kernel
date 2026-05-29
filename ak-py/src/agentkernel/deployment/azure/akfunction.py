@@ -4,7 +4,8 @@ import traceback
 
 import azure.functions as func
 
-from ..common.chat_service import ChatService
+from ...core.chat_service import ChatService
+from ...core.model import BaseRunRequest
 
 
 class AzureFunctions:
@@ -14,7 +15,6 @@ class AzureFunctions:
     """
 
     _log = logging.getLogger("ak.azure.functions")
-    _log.setLevel(logging.DEBUG)
     _chat_service = None
 
     @classmethod
@@ -40,7 +40,9 @@ class AzureFunctions:
                 raise ValueError("Invalid JSON in request body")
 
             if isinstance(body, dict) and body.get("body") is not None:
-                body = body["body"]
+                body = BaseRunRequest.model_validate(body["body"])
+            else:
+                raise ValueError("Invalid request, request body cannot be empty or null")
 
             # Process chat request using common service
             status_code, res_body = cls._get_chat_service().process_chat_request(body)

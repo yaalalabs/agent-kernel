@@ -1,7 +1,7 @@
 {
   "skill": "ak-init",
   "description": "Evaluations for the ak-init (project scaffolding) skill",
-  "version": "0.2.13",
+  "version": "0.4.0",
   "evals": [
     {
       "id": "init-openai-cli",
@@ -97,6 +97,21 @@
       ]
     },
     {
+      "id": "init-smolagents-cli",
+      "name": "Scaffold Smolagents CLI project",
+      "input": "Create a new Agent Kernel project using Smolagents with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.smolagents import SmolagentsModule",
+        "from agentkernel.smolagents import SmolagentsToolBuilder",
+        "from smolagents import LiteLLMModel, ToolCallingAgent",
+        "SmolagentsModule(["
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "GoogleADKModule"
+      ]
+    },
+    {
       "id": "init-openai-lambda",
       "name": "Scaffold OpenAI AWS Lambda project",
       "input": "Create a new Agent Kernel project using OpenAI with AWS Lambda deployment",
@@ -135,7 +150,7 @@
         "[project]",
         "requires-python",
         "agentkernel[",
-        ">=0.2.13"
+        ">=0.4.0"
       ]
     }
   ]

@@ -94,7 +94,7 @@
   line-height: 1;
 }
 
-.trackTime_traditional { color: #ef4444; }
+.trackTime_traditional { color: #DB4444; }
 .trackTime_with-ak     { color: var(--ak-green); }
 
 /* ─── Track content (chips + bar) ────────────────────────────────────────── */
@@ -132,8 +132,8 @@
 
 .chip_with-ak {
   color: var(--ak-blue);
-  background: rgba(79, 125, 247, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.2);
+  background: rgba(0, 221, 255, 0.1);
+  border: 1px solid rgba(0, 221, 255, 0.2);
 }
 
 @keyframes chipFadeIn {
@@ -200,7 +200,7 @@
 
 .bar_with-ak {
   background: linear-gradient(90deg, var(--ak-blue), var(--ak-purple));
-  box-shadow: 0 0 8px rgba(79, 125, 247, 0.3);
+  box-shadow: 0 0 8px rgba(0, 221, 255, 0.3);
 }
 
 /* ─── Responsive ─────────────────────────────────────────────────────────── */

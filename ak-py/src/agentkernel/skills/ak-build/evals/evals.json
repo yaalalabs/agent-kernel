@@ -1,7 +1,7 @@
 {
   "skill": "ak-build",
   "description": "Evaluations for the ak-build (add tools, agents, handoffs) skill",
-  "version": "0.2.13",
+  "version": "0.4.0",
   "evals": [
     {
       "id": "build-read-project",
@@ -70,6 +70,19 @@
       ]
     },
     {
+      "id": "build-tool-smolagents",
+      "name": "Add tool to Smolagents project",
+      "input": "Add a weather lookup tool to my Smolagents project",
+      "expected_outputs": [
+        "from agentkernel.core import ToolContext",
+        "ToolContext.get()",
+        "SmolagentsToolBuilder.bind(["
+      ],
+      "must_not_contain": [
+        "OpenAIToolBuilder"
+      ]
+    },
+    {
       "id": "build-agent-openai",
       "name": "Add agent to OpenAI project",
       "input": "Add a support agent to my OpenAI project that handles customer inquiries",
@@ -118,6 +131,16 @@
         "GoogleADKModule(["
       ],
       "description": "Must wrap model in LiteLlm()"
+    },
+    {
+      "id": "build-agent-smolagents",
+      "name": "Add agent to Smolagents project",
+      "input": "Add a support agent to my Smolagents project",
+      "expected_outputs": [
+        "from smolagents import LiteLLMModel, ToolCallingAgent",
+        "name=\"support\"",
+        "SmolagentsModule(["
+      ]
     },
     {
       "id": "build-handoff-openai",

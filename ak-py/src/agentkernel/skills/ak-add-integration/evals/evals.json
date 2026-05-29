@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-integration",
   "description": "Evaluations for the ak-add-integration (messaging platform) skill",
-  "version": "0.2.13",
+  "version": "0.4.0",
   "evals": [
     {
       "id": "int-slack",
@@ -74,6 +74,19 @@
         "gmail:",
         "poll_interval",
         "token_file"
+      ]
+    },
+    {
+      "id": "int-teams",
+      "name": "Add Teams integration",
+      "input": "Add Microsoft Teams integration",
+      "expected_outputs": [
+        "agentkernel[", "teams",
+        "AgentTeamsRequestHandler",
+        "AK_TEAMS__APP_ID",
+        "AK_TEAMS__APP_PASSWORD",
+        "teams:",
+        "agent_acknowledgement"
       ]
     },
     {
