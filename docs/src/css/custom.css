@@ -67,6 +67,16 @@
   --ifm-toc-border-color: #250045;
 }
 
+html,
+html[data-theme='dark'] {
+  background-color: #010002 !important;
+}
+
+html[data-theme='dark'] body,
+body {
+  background-color: #010002 !important;
+}
+
 /* Dark mode (same palette — site is dark-first) */
 [data-theme='dark'] {
   --ifm-color-primary:          #00DDFF;
@@ -190,7 +200,7 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: #0D001A;
+  background-color: #010002;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   height: 60px;
@@ -201,7 +211,7 @@ article {
   .navbar {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background-color: #0D001A;
+    background-color: #010002;
   }
 }
 

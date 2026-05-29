@@ -16,7 +16,7 @@ import {
   MdIntegrationInstructions,
   MdCloudUpload,
   MdCheck,
-  MdClose,
+  MdClose, 
 } from "react-icons/md";
 import {
   FaGithub,
@@ -67,118 +67,57 @@ function WhatsNewBanner() {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
+  const leftRef = useRef(null);
   const titleRef = useRef(null);
-  const taglineRef = useRef(null);
-  const bodySentenceRef = useRef(null);
+  const subtitleRef = useRef(null);
   const buttonsRef = useRef(null);
-  const [activeSentenceIndex, setActiveSentenceIndex] = useState(0);
-
-  const bodySentences = [
-    "Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
-    "Agent Kernel reduces months of engineering work to minutes.",
-    "Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.",
-  ];
-
+  const bulletsRef = useRef(null);
+  const videoRef = useRef(null);
+  const scrollLabelRef = useRef(null);
+ 
   useLayoutEffect(() => {
-    const tl = gsap.timeline();
-
-    // Set initial states
+    const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+ 
     gsap.set(
       [
         titleRef.current,
-        taglineRef.current,
-        bodySentenceRef.current,
+        subtitleRef.current,
         buttonsRef.current,
+        bulletsRef.current,
+        videoRef.current,
+        scrollLabelRef.current,
       ],
-      {
-        opacity: 0,
-        y: 30,
-      },
+      { opacity: 0, y: 28 }
     );
-
-    // Animate elements in sequence
-    tl.to(titleRef.current, {
-      opacity: 1,
-      y: 0,
-      duration: 0.8,
-      ease: "power2.out",
-    })
-      .to(
-        taglineRef.current,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.6,
-          ease: "power2.out",
-        },
-        "-=0.4",
-      )
-      .to(
-        bodySentenceRef.current,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.55,
-          ease: "power2.out",
-        },
-        "-=0.15",
-      )
-      .to(
-        buttonsRef.current,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.5,
-          ease: "power2.out",
-        },
-        "-=0.3",
-      );
+ 
+    tl.to(titleRef.current, { opacity: 1, y: 0, duration: 0.85 })
+      .to(subtitleRef.current, { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
+      .to(buttonsRef.current, { opacity: 1, y: 0, duration: 0.55 }, "-=0.35")
+      .to(bulletsRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.3")
+      .to(videoRef.current, { opacity: 1, y: 0, duration: 0.9 }, "-=0.7")
+      .to(scrollLabelRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.4");
   }, []);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setActiveSentenceIndex(
-        (currentIndex) => (currentIndex + 1) % bodySentences.length,
-      );
-    }, 5000);
-
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
-    if (!bodySentenceRef.current) {
-      return;
-    }
-
-    gsap.fromTo(
-      bodySentenceRef.current,
-      { opacity: 0, y: 14 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.55,
-        ease: "power2.out",
-      },
-    );
-  }, [activeSentenceIndex]);
-
+ 
   return (
     <section className={styles.hero}>
-      <div className="container">
-        <div className={styles.heroContent}>
-          <h1 ref={titleRef} className={styles.heroTitle}>
-            Agent Kernel
-          </h1>
-          <p ref={taglineRef} className={styles.heroTagline}>
-            An Open Source Operating System for
+      <div className={styles.inner}>
+        {/* ── LEFT ───────────────────────────────── */}
+        <div ref={leftRef} className={styles.left}>
+          <h1 ref={titleRef} className={styles.title}>
+            The Secure, Compliant
             <br />
-            Scalable & Compliant Enterprise AI Agents.
+            Runtime for
+            <br />
+            Enterprise AI{" "}
+            <span className={styles.gradientWord}>Agents</span>
+          </h1>
+ 
+          <p ref={subtitleRef} className={styles.subtitle}>
+            Orchestrate agent workflows, automate compliance, and
+            <br className={styles.brDesktop} />
+            deploy anywhere with zero vendor lock-in.
           </p>
-          <p className={styles.heroBody}>
-            <span ref={bodySentenceRef} className={styles.heroBodySentence}>
-              {bodySentences[activeSentenceIndex]}
-            </span>
-          </p>
+ 
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link
               className={`button button--primary button--lg ${styles.btnPrimary}`}
@@ -199,25 +138,40 @@ function Hero() {
               <span className={styles.btnIconSecondary}>→</span>
               Agent Skills
             </button>
-            <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
-              to="https://github.com/yaalalabs/agent-kernel"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className={styles.btnIconSecondary}>
-                <FaGithub />
-              </span>
-              View on GitHub
-            </Link>
-            <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
-              to="/features"
-            >
-              <span className={styles.btnIconSecondary}>→</span>
-              Explore Features
-            </Link>
           </div>
+ 
+          <ul ref={bulletsRef} className={styles.bullets}>
+            <li>
+              <MdCheck className={styles.check} />
+              Install in minutes
+            </li>
+            <li>
+              <MdCheck className={styles.check} />
+              Zero vendor lock-in
+            </li>
+            <li>
+              <MdCheck className={styles.check} />
+              Enterprise-grade observability
+            </li>
+          </ul>
+        </div>
+ 
+        {/* ── RIGHT – particle video ───────────── */}
+        <div ref={videoRef} className={styles.right}>
+          <video
+            className={styles.heroVideo}
+            src="/video/hero.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        </div>
+
+        {/* ── Scroll label ────────────────────── */}
+        <div ref={scrollLabelRef} className={styles.scrollLabel} aria-hidden="true">
+          <span className={styles.scrollLine} />
+          <span className={styles.scrollText}>Scroll down to <strong>Begin</strong></span>
         </div>
       </div>
     </section>
@@ -1901,12 +1855,11 @@ export default function Home() {
       title={`${siteConfig.title} — ${siteConfig.tagline}`}
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months."
     >
-      <PlantParticlesBackground ref={backgroundRef} />
-      <WhatsNewBanner />
+      {/* <PlantParticlesBackground ref={backgroundRef} /> */}
+      {/* <WhatsNewBanner /> */}
       <Hero />
       <main>
         <FrameworksStrip />
-        <AffiliationsStrip />
         <div ref={levelsRef}>
           <Levels />
         </div>
