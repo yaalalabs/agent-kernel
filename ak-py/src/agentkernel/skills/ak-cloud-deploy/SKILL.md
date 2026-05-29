@@ -266,6 +266,31 @@ module "serverless_agents" {
 }
 ```
 
+**Queue mode `config.yaml`** (bundled into every Lambda package — `execution.mode`, queue URLs, table names, and `max_receive_count` are all injected automatically by Terraform as environment variables; only set values that are NOT injected):
+
+```yaml
+# For rest_sync or rest_async
+execution:
+  response_store:
+    type: dynamodb  # or redis — not injected, must be set here
+    retry_count: 5
+    delay: 5
+session:
+  type: dynamodb  # or redis — not injected, must be set here
+```
+
+- `rest_sync`: request handler sends to queue, polls the response store until the result is available, then returns it synchronously.
+- `rest_async`: request handler returns `{status: "ACCEPTED", request_id}` immediately; the client polls `GET /api/{version}/{endpoint}` with `{"request_id": "<id>"}` in the JSON body.
+- SQS visibility timeout for each queue **must be >= the corresponding Lambda timeout**.
+
+**Required `pyproject.toml` extras for queue mode**:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,aws]>=0.4.0"  # include 'redis' if using Redis session/response store
+]
+```
+
 ### C) WebSocket Async (`async`)
 
 Use this for realtime bidirectional interactions.
@@ -277,26 +302,30 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.4.0"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
-  function_name        = "request-handler"
-  module_name   = var.module_name
-  handler_path  = "lambda_request_handler.handler"
-  package_path  = "../dist_request_handler.zip"
-  package_type  = "LocalZip"
-  memory_size   = 256
-  timeout       = 45
-  region        = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  region               = var.region
+  product_display_name = "AK WebSocket Serverless Example"
 
   queue_mode     = true
   execution_mode = "async"
 
-  create_redis_cluster            = true
-  create_dynamodb_response_store  = true
+  create_redis_cluster           = true
+  create_dynamodb_response_store = true
 
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
+  request_handler = {
+    module_name          = "request-handler"
+    function_name        = "request-handler"
+    function_description = "Receives WebSocket requests"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_request_handler.zip"
+    timeout              = 45
+    memory_size          = 256
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
   }
 
   agent_runner = {
@@ -306,6 +335,11 @@ module "serverless_agents" {
     handler_path         = "lambda_agent_runner.handler"
     package_type         = "Image"
     package_path         = "../dist_agent_runner"
+    timeout              = 45
+    memory_size          = 512
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
   }
 
   response_handler = {
@@ -315,6 +349,8 @@ module "serverless_agents" {
     handler_path         = "lambda_response_handler.handler"
     package_type         = "LocalZip"
     package_path         = "../dist_response_handler.zip"
+    timeout              = 45
+    memory_size          = 256
   }
 
   ws_connection_handler = {
@@ -322,8 +358,9 @@ module "serverless_agents" {
     function_name        = "ws-connection-handler"
     function_description = "Handles $connect/$disconnect"
     handler_path         = "lambda_ws_connection_handler.handler"
-    package_type         = "LocalZip"
     package_path         = "../dist_ws_connection_handler.zip"
+    timeout              = 45
+    memory_size          = 256
   }
 
   ws_routes = [
@@ -331,6 +368,84 @@ module "serverless_agents" {
     { route = "app_info" }
   ]
 }
+```
+
+**WebSocket `lambda_ws_connection_handler.py`** — implement `AuthValidator` to validate the bearer token on `$connect`:
+
+```python
+import jwt
+import os
+from agentkernel.auth import AuthValidator, ValidationResult
+from agentkernel.aws import WebsocketConnectionHandler
+
+
+class MyAuthValidator(AuthValidator):
+    def validate(self, token: str) -> ValidationResult:
+        try:
+            payload = jwt.decode(
+                token,
+                os.environ["JWT_SECRET"],
+                algorithms=["HS256"],
+                issuer=os.environ["JWT_ISSUER"],
+                audience=os.environ["JWT_AUDIENCE"],
+            )
+            user_id = payload.get("userId", "")
+            if user_id:
+                return ValidationResult(is_valid=True, claims={"userId": user_id})
+            return ValidationResult(is_valid=False, error_msg="userId claim missing")
+        except Exception as e:
+            return ValidationResult(is_valid=False, error_msg=str(e))
+
+
+handler = WebsocketConnectionHandler.set_auth_validator(MyAuthValidator()).handler
+```
+
+**WebSocket `lambda_request_handler.py`** — routes are registered by **route name** (no leading slash, no HTTP method) because the WebSocket API uses `$request.body.route` for dispatch:
+
+```python
+import json
+from agentkernel.aws import Lambda
+
+
+@Lambda.register("app")               # WebSocket route name, no slash/method
+def app_handler(event, context):
+    return {"response": "Hello from app route"}
+
+
+@Lambda.register("app_info")
+def app_info_handler(event, context):
+    payload = json.loads(event.get("body") or "{}")
+    return {"response": "Hello from app_info route"}
+
+
+handler = Lambda.handler
+```
+
+Contrast with REST mode where routes use a leading slash and HTTP method:
+```python
+@Lambda.register("/app", method="GET")    # REST mode: path + method
+```
+
+**WebSocket `config.yaml`** (bundled into every Lambda package — `execution.mode`, `websocket_api.chat_route`, queue URLs, and connection table name are all injected automatically by Terraform; only set values that are NOT injected):
+
+```yaml
+session:
+  type: redis                   # or dynamodb — not injected, must be set here
+  redis:
+    prefix: "ak:myapp:"
+```
+
+- Authentication is **mandatory** for WebSocket mode. `AuthValidator.validate()` must return `claims["userId"]`; connections without a valid token are rejected at `$connect`.
+- The `authorizer` Terraform block is not supported in WebSocket mode — leave it unset.
+- Only `LocalZip` is supported for `ws_connection_handler.package_path`.
+- `ws_routes` custom routes must have a matching `@Lambda.register("route_name")` entry. `ws_chat_route` is the built-in AI chat route — it is handled internally by the framework and does **not** need a `@Lambda.register` entry.
+
+**Required `pyproject.toml` extras for WebSocket mode**:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,aws,redis,auth]>=0.4.0"
+]
 ```
 
 ### D) API Gateway Custom Authorizer (AWS)
@@ -476,15 +591,34 @@ module "containerized_agents" {
 
 ## Config and Packaging Notes
 
-- For AWS async/scalable deployments, split packaging for:
-- request handler
-- agent runner
-- response handler
-- (WebSocket mode) connection handler
-- Azure serverless uses a single zip `package_path` for the Functions deployment.
-- Azure containerized uses `package_path` as the Docker build context for Container Apps.
-- Ensure `config.yaml` session settings align with Terraform-created stores.
-- Keep Lambda timeout lower than SQS visibility timeout.
+### Packaging
+
+For AWS async/scalable deployments, build and package separately:
+- **request handler** — `LocalZip`, `S3Zip`, or `Image`
+- **agent runner** — `LocalZip`, `S3Zip`, or `Image` (typically `Image` for heavier dependencies)
+- **response handler** — `LocalZip`, `S3Zip`, or `Image`
+- **ws-connection-handler** — `LocalZip` only (WebSocket mode; no `package_type` field, only `package_path`)
+
+Azure serverless uses a single zip `package_path` for the Functions deployment.
+Azure containerized uses `package_path` as the Docker build context for Container Apps.
+
+### config.yaml per mode
+
+Each Lambda package must include a `config.yaml`. Most runtime values (`execution.mode`, queue URLs, table names, `max_receive_count`, `websocket_api.chat_route`) are **injected automatically by Terraform as environment variables** and do not need to be set in `config.yaml`. Only the values in the table below must be configured manually:
+
+| Config key | Required in | Notes |
+|------------|------------|-------|
+| `execution.response_store.type` | request-handler, response-handler (queue modes) | `redis` or `dynamodb` — not injected |
+| `execution.response_store.retry_count` | request-handler (`rest_sync`) | how many times to poll for response |
+| `execution.response_store.delay` | request-handler (`rest_sync`) | seconds between polls |
+| `session.type` | agent-runner | `redis` or `dynamodb` — not injected |
+| `session.redis.prefix` | agent-runner (Redis sessions) | key namespace prefix |
+
+### Timeouts and visibility
+
+- SQS `input_queue_visibility_timeout` must be **>= agent runner Lambda timeout**.
+- SQS `output_queue_visibility_timeout` must be **>= response handler Lambda timeout**.
+- FIFO queues are used by default; `message_group_id` maps to session ID.
 
 ## Prerequisites Checklist
 
