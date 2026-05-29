@@ -374,6 +374,7 @@ module "serverless_agents" {
 
 ```python
 import jwt
+import os
 from agentkernel.auth import AuthValidator, ValidationResult
 from agentkernel.aws import WebsocketConnectionHandler
 
@@ -381,7 +382,13 @@ from agentkernel.aws import WebsocketConnectionHandler
 class MyAuthValidator(AuthValidator):
     def validate(self, token: str) -> ValidationResult:
         try:
-            payload = jwt.decode(token, options={"verify_signature": False})
+            payload = jwt.decode(
+                token,
+                os.environ["JWT_SECRET"],
+                algorithms=["HS256"],
+                issuer=os.environ["JWT_ISSUER"],
+                audience=os.environ["JWT_AUDIENCE"],
+            )
             user_id = payload.get("userId", "")
             if user_id:
                 return ValidationResult(is_valid=True, claims={"userId": user_id})
@@ -437,7 +444,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis]>=0.4.0"
+  "agentkernel[openai,api,aws,redis,auth]>=0.4.0"
 ]
 ```
 
