@@ -61,6 +61,62 @@
   border-color: #00DDFF;
 }
 
+/* Top border + gradient glow */
+.topGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(120, 180, 255, 0.25) 20%,
+    rgba(160, 210, 255, 0.7) 50%,
+    rgba(120, 180, 255, 0.25) 80%,
+    transparent 100%
+  );
+}
+
+.topGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 220px;
+  background: radial-gradient(
+    ellipse at top center,
+    rgba(100, 170, 255, 0.1) 0%,
+    rgba(80, 140, 255, 0.05) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Badge */
+.Badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid rgba(99, 179, 237, 0.55);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: rgba(99, 179, 237, 0.06);
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
+}
+
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btnPrimary {
@@ -977,62 +1033,6 @@
   overflow: hidden;
 }
 
-/* Top border + gradient glow */
-.topGlow {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(120, 180, 255, 0.25) 20%,
-    rgba(160, 210, 255, 0.7) 50%,
-    rgba(120, 180, 255, 0.25) 80%,
-    transparent 100%
-  );
-}
-
-.topGlow::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 70%;
-  height: 220px;
-  background: radial-gradient(
-    ellipse at top center,
-    rgba(100, 170, 255, 0.1) 0%,
-    rgba(80, 140, 255, 0.05) 40%,
-    transparent 70%
-  );
-  pointer-events: none;
-}
-
-/* Badge */
-.frameworksBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 1rem;
-  border: 1px solid rgba(99, 179, 237, 0.55);
-  border-radius: 999px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: rgba(147, 210, 255, 0.9);
-  letter-spacing: 0.01em;
-  margin-bottom: 1.5rem;
-  background: rgba(99, 179, 237, 0.06);
-  position: relative;
-}
-
-.badgeStar {
-  font-size: 0.9rem;
-  color: rgba(147, 210, 255, 0.7);
-}
-
 /* Label */
 .frameworksLabel {
   text-align: center;
@@ -1692,62 +1692,191 @@
 .agentSkillsContainer {
   max-width: 980px;
   margin: 0 auto;
+  margin-top: -4rem;
 }
 
-.agentSkillsHero {
+/* Section header — badge + title centred */
+.sectionHeader {
   text-align: center;
-  max-width: 760px;
-  margin: 0 auto;
-}
-
-.agentSkillsBadge {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.4rem 0.85rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+/* Tab row */
+.agentSkillsTopicsRow {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.agentSkillsTopicButton {
+  position: relative;
+  background: rgba(0, 221, 255, 0.07);
+  backdrop-filter: blur(12px);
+  color: #dfe1f0;
+  border: 2px solid rgba(255, 255, 255, 0.06);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(14, 16, 23, 0.8);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.agentSkillsBadgeIcon {
-  font-size: 0.9rem;
-  color: #00ddff;
+.agentSkillsTopicButton:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.2);
 }
 
-.agentSkillsDivider {
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin: 2rem 0;
-}
-
-.agentSkillsSectionLabel {
-  text-align: left;
-  font-size: 1.25rem;
-  font-weight: 500;
+/* Active tab — gradient glow matching the image */
+.agentSkillsTopicActive {
+  border-color: rgba(0, 221, 255, 0.45) !important;
   color: #ffffff;
-  margin-bottom: 1.5rem;
-  letter-spacing: -0.01em;
-  width: 100%;
+  background: transparent;
+}
+
+.agentSkillsTopicActive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 221, 255, 0.18) 0%,
+    rgba(0, 140, 255, 0.12) 50%,
+    rgba(0, 221, 255, 0.06) 100%
+  );
+  z-index: 0;
+}
+
+.agentSkillsTopicActive::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  width: 80%;
+  height: 40%;
+  background: radial-gradient(
+    ellipse at bottom center,
+    rgba(0, 221, 255, 0.25) 0%,
+    transparent 70%
+  );
+  z-index: 0;
+  border-radius: inherit;
+}
+
+/* Keep text above pseudo-elements */
+.agentSkillsTopicButton span,
+.agentSkillsTopicButton {
+  z-index: 1;
+}
+
+/* Split grid */
+.agentSkillsSplitGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  margin-bottom: 2rem;
+}
+
+/* Shared panel shell */
+.agentSkillsPanel {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── IDE chrome ── */
+.agentSkillsIdeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.agentSkillsIdeDots {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.agentSkillsIdeDots span {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.agentSkillsDotRed    { background: #ff5f57; }
+.agentSkillsDotYellow { background: #febc2e; }
+.agentSkillsDotGreen  { background: #28c840; }
+
+.agentSkillsIdeActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.agentSkillsIdeActions svg {
+  display: block;
+  transition: color 0.15s ease;
+  cursor: pointer;
+}
+
+.agentSkillsIdeActions svg:hover {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* IDE body = line numbers + code side by side */
+.agentSkillsIdeBody {
+  display: flex;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.agentSkillsLineNumbers {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 0.75rem 1.25rem 1rem;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.82rem;
+  line-height: 1.9;
+  color: rgba(255, 255, 255, 0.18);
+  user-select: none;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: right;
+  min-width: 2.25rem;
 }
 
 .agentSkillsCodeBlock {
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
+  flex: 1 1 auto;
   padding: 1.25rem 1.5rem;
-  margin-bottom: 1.75rem;
   font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   line-height: 1.9;
   color: #dfe1f0;
-  max-width: 100%;
   overflow-x: hidden;
   overflow-wrap: anywhere;
 }
@@ -1774,116 +1903,19 @@
   word-break: break-word;
 }
 
-@keyframes agentSkillsCommandReveal {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-    filter: blur(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0px);
-  }
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment,
-.agentSkillsCommandsVisible .agentSkillsCodeArg {
-  animation: agentSkillsCommandReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--agent-skills-reveal-delay, 0ms);
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(1) {
-  --agent-skills-reveal-delay: 60ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(2) {
-  --agent-skills-reveal-delay: 240ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(3) {
-  --agent-skills-reveal-delay: 420ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(1) {
-  --agent-skills-reveal-delay: 140ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(2) {
-  --agent-skills-reveal-delay: 320ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(3) {
-  --agent-skills-reveal-delay: 500ms;
-}
-
-.agentSkillsSkillList {
-  display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 2rem;
-  max-width: 64rem;
-  margin: 0 auto 3rem;
-}
-
-.agentSkillsSplitGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.5rem;
-  align-items: stretch;
-  margin-bottom: 3rem;
-}
-
-.agentSkillsPanel {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
+/* Right panel padding (no IDE chrome) */
+.agentSkillsPanel:last-of-type {
   padding: 1.5rem;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  display: flex;
-  flex-direction: column;
 }
 
-.agentSkillsTopicsRow {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: nowrap;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-}
-
-.agentSkillsTopicButton {
-  background: rgba(0, 221, 255, 0.07);
-  backdrop-filter: blur(12px);
-  color: #dfe1f0;
-  border: 2px solid rgba(255, 255, 255, 0.06);
-  padding: 0.65rem 0.9rem;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  white-space: nowrap;
-  border-radius: 999px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.agentSkillsTopicButton:hover {
-  transform: translateY(-2px);
-  border-color: rgba(0, 221, 255, 0.2);
-}
-
-.agentSkillsTopicActive {
-  background: linear-gradient(
-    135deg,
-    rgba(0, 221, 255, 0.092),
-    rgba(0, 221, 255, 0.06)
-  );
-  border-color: rgba(0, 221, 255, 0.35) !important;
+.agentSkillsSectionLabel {
+  text-align: left;
+  font-size: 1.25rem;
+  font-weight: 500;
   color: #ffffff;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.01em;
+  width: 100%;
 }
 
 .agentSkillsDetailWrap {
@@ -1896,7 +1928,7 @@
 .agentSkillsDetailBox {
   width: 100%;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1210);
+  border: 1px solid rgba(255, 255, 255, 0.121);
   border-radius: 0.75rem;
   backdrop-filter: blur(6px);
   padding: 1.25rem;
@@ -1905,25 +1937,6 @@
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-}
-
-.agentSkillsSkillCard {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  background: transparent;
-  transition: all 0.3s ease;
-}
-
-.agentSkillsSkillCard:hover {
-  background: rgba(0, 221, 255, 0.05);
-  border-color: rgba(0, 221, 255, 0.4);
-  transform: scale(1.03);
 }
 
 .agentSkillsSkillHeader {
@@ -1972,9 +1985,21 @@
   will-change: transform, opacity;
 }
 
+/* Footer row — subtitle left, CTA right */
 .agentSkillsFooter {
-  text-align: center;
-  margin-top: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-top: 0.5rem;
+}
+
+.agentSkillsFooterText {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 0;
 }
 
 .agentSkillsCtaLink {
@@ -1983,11 +2008,11 @@
   gap: 0.4rem;
   font-size: 0.92rem;
   font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
   color: #00ddff;
   text-decoration: none;
-  transition:
-    color 0.2s ease,
-    transform 0.2s ease;
+  transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .agentSkillsCtaLink:hover {
@@ -1996,15 +2021,31 @@
   text-decoration: none;
 }
 
-/* Responsive tweaks for Agent Skills (tablet & mobile) */
+/* Scramble animation (unchanged) */
+@keyframes agentSkillsCommandReveal {
+  from { opacity: 0; transform: translateY(12px); filter: blur(3px); }
+  to   { opacity: 1; transform: translateY(0);    filter: blur(0px); }
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment,
+.agentSkillsCommandsVisible .agentSkillsCodeArg {
+  animation: agentSkillsCommandReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--agent-skills-reveal-delay, 0ms);
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(1) { --agent-skills-reveal-delay: 60ms;  }
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(2) { --agent-skills-reveal-delay: 240ms; }
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(3) { --agent-skills-reveal-delay: 420ms; }
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(1)     { --agent-skills-reveal-delay: 140ms; }
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(2)     { --agent-skills-reveal-delay: 320ms; }
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(3)     { --agent-skills-reveal-delay: 500ms; }
+
+/* ─── Responsive ─────────────────────────────────────────────────────────────── */
+
 @media (max-width: 1024px) {
   .agentSkillsSplitGrid {
     grid-template-columns: 1fr;
     gap: 1rem;
-  }
-
-  .agentSkillsPanel {
-    padding: 1rem;
   }
 }
 
@@ -2016,15 +2057,10 @@
     justify-content: flex-start;
     margin-bottom: 0.75rem;
     padding-bottom: 0.25rem;
+    scrollbar-width: none;
   }
 
-  /* hide native scrollbar but keep scroll accessible */
-  .agentSkillsTopicsRow {
-    scrollbar-width: none; /* Firefox */
-  }
-  .agentSkillsTopicsRow::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Edge */
-  }
+  .agentSkillsTopicsRow::-webkit-scrollbar { display: none; }
 
   .agentSkillsTopicButton {
     flex: 0 0 auto;
@@ -2034,15 +2070,19 @@
     min-width: auto;
   }
 
-  .agentSkillsCodeBlock,
+  .agentSkillsCodeBlock {
+    font-size: 0.8rem;
+    line-height: 1.7;
+  }
+
   .agentSkillsDetailBox {
     padding: 0.85rem;
   }
 
-  .agentSkillsCodeBlock {
-    font-size: 0.8rem;
-    line-height: 1.7;
-    max-width: 100%;
+  .agentSkillsFooter {
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
   }
 }
 
@@ -2051,6 +2091,7 @@
     padding: 0.45rem 0.65rem;
     font-size: 0.78rem;
   }
+
   .agentSkillsSkillIcon {
     font-size: 1.4rem;
   }
@@ -2058,6 +2099,10 @@
   .agentSkillsCodeBlock {
     font-size: 0.75rem;
     line-height: 1.65;
+  }
+
+  .agentSkillsLineNumbers {
+    font-size: 0.72rem;
   }
 }
 

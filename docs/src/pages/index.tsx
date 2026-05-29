@@ -249,7 +249,7 @@ function FrameworksStrip() {
       {/* Top border + gradient glow */}
       <div className={styles.topGlow} />
 
-      <div ref={badgeRef} className={styles.frameworksBadge}>
+      <div ref={badgeRef} className={styles.Badge}>
         <span className={styles.badgeStar}>✦</span>
         Integrates Seamlessly
       </div>
@@ -440,9 +440,9 @@ function AgentSkills() {
 
   gsap.registerPlugin(ScrollTrigger, ScrambleTextPlugin);
 
-  const cmd1Ref = useRef<HTMLSpanElement>(null); // pip install agentkernel
-  const cmd2Ref = useRef<HTMLSpanElement>(null); // ak skill install
-  const cmd3Ref = useRef<HTMLSpanElement>(null); // ak skill install --assistant claude
+  const cmd1Ref = useRef<HTMLSpanElement>(null);
+  const cmd2Ref = useRef<HTMLSpanElement>(null);
+  const cmd3Ref = useRef<HTMLSpanElement>(null);
   const commandsPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -462,9 +462,7 @@ function AgentSkills() {
     });
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
-      return;
-    }
+    if (reducedMotion) return;
 
     const playScramble = () => {
       targets.forEach((target, index) => {
@@ -492,34 +490,22 @@ function AgentSkills() {
       (entries) => {
         const entry = entries[0];
         if (!entry) return;
-
-        if (entry.isIntersecting) {
-          playScramble();
-        }
+        if (entry.isIntersecting) playScramble();
       },
-      {
-        threshold: 0.35,
-        rootMargin: "0px 0px -10% 0px",
-      },
+      { threshold: 0.35, rootMargin: "0px 0px -10% 0px" },
     );
 
     observer.observe(panel);
 
     const rect = panel.getBoundingClientRect();
     const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
-    if (isVisible) {
-      playScramble();
-    }
+    if (isVisible) playScramble();
 
-    return () => {
-      observer.disconnect();
-    };
+    return () => { observer.disconnect(); };
   }, []);
 
   useLayoutEffect(() => {
-    if (!detailContentRef.current) {
-      return;
-    }
+    if (!detailContentRef.current) return;
 
     if (!hasAnimatedSkillChangeRef.current) {
       hasAnimatedSkillChangeRef.current = true;
@@ -535,52 +521,33 @@ function AgentSkills() {
 
     gsap.fromTo(
       content,
-      {
-        opacity: 0.55,
-        y: 14,
-        scale: 0.985,
-        filter: "blur(4px)",
-      },
-      {
-        opacity: 1,
-        y: 0,
-        scale: 1,
-        filter: "blur(0px)",
-        duration: 0.42,
-        ease: "power3.out",
-      },
+      { opacity: 0.55, y: 14, scale: 0.985, filter: "blur(4px)" },
+      { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.42, ease: "power3.out" },
     );
 
     gsap.fromTo(
       Array.from(motionTargets),
-      {
-        opacity: 0,
-        y: 10,
-      },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.32,
-        ease: "power2.out",
-        stagger: 0.04,
-        delay: 0.04,
-      },
+      { opacity: 0, y: 10 },
+      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out", stagger: 0.04, delay: 0.04 },
     );
   }, [activeSkillIndex]);
 
   return (
     <section id="agent-skills" className={styles.agentSkillsSection}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
       <div className="container">
         <div className={styles.agentSkillsContainer}>
           <div className={styles.sectionHeader}>
+            <div className={styles.Badge}>
+              <span className={styles.badgeStar}>✦</span>
+              Developer Experience
+            </div>
             <h2 className={styles.sectionTitle}>
               Your coding assistant, supercharged.
             </h2>
-            <p className={styles.sectionSubtitle}>
-              Agent Skills works with the tools you already use, like Copilot,
-              Claude, Cursor, or Windsurf, to help you build and ship AI agents
-              faster. No more guesswork, no more broken code suggestions.
-            </p>          </div>
+          </div>
 
           <div className={styles.agentSkillsTopicsRow} role="tablist">
             {AGENT_SKILLS.map((skill, idx) => (
@@ -589,9 +556,7 @@ function AgentSkills() {
                 role="tab"
                 aria-selected={activeSkillIndex === idx}
                 className={`${styles.agentSkillsTopicButton} ${
-                  activeSkillIndex === idx
-                    ? styles.agentSkillsTopicActive
-                    : ""
+                  activeSkillIndex === idx ? styles.agentSkillsTopicActive : ""
                 }`}
                 onClick={() => setActiveSkillIndex(idx)}
               >
@@ -601,46 +566,66 @@ function AgentSkills() {
           </div>
 
           <div className={styles.agentSkillsSplitGrid}>
+            {/* Left — IDE-style code panel */}
             <div ref={commandsPanelRef} className={styles.agentSkillsPanel}>
-              <div className={styles.agentSkillsSectionLabel}>
-                Get started in two commands
+              <div className={styles.agentSkillsIdeHeader}>
+                <div className={styles.agentSkillsIdeDots}>
+                  <span className={styles.agentSkillsDotRed} />
+                  <span className={styles.agentSkillsDotYellow} />
+                  <span className={styles.agentSkillsDotGreen} />
+                </div>
+                <div className={styles.agentSkillsIdeActions}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </div>
               </div>
-              <div className={styles.agentSkillsCodeBlock}>
-                <div className={styles.agentSkillsCodeComment}>
-                  # 1. Install the CLI
+
+              <div className={styles.agentSkillsIdeBody}>
+                <div className={styles.agentSkillsLineNumbers}>
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <span key={i}>{i + 1}</span>
+                  ))}
                 </div>
-                <div>
-                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                  <span ref={cmd1Ref} className={styles.agentSkillsCodeArg}>
-                    pip install agentkernel
-                  </span>
-                </div>
-                <br />
-                <div className={styles.agentSkillsCodeComment}>
-                  # 2. Install skills for your coding assistant
-                </div>
-                <div>
-                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                  <span ref={cmd2Ref} className={styles.agentSkillsCodeArg}>
-                    ak skill install
-                  </span>
-                </div>
-                <div className={styles.agentSkillsCodeComment}>
-                  &nbsp;&nbsp;or target a specific assistant:
-                </div>
-                <div>
-                  <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                  <span ref={cmd3Ref}className={styles.agentSkillsCodeArg}>
-                    ak skill install --assistant claude
-                  </span>
+                <div className={styles.agentSkillsCodeBlock}>
+                  <div className={styles.agentSkillsCodeComment}>
+                    # 1. Install the CLI
+                  </div>
+                  <div>
+                    <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                    <span ref={cmd1Ref} className={styles.agentSkillsCodeArg}>
+                      pip install agentkernel
+                    </span>
+                  </div>
+                  <br />
+                  <div className={styles.agentSkillsCodeComment}>
+                    # 2. Install skills for your coding assistant
+                  </div>
+                  <div>
+                    <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                    <span ref={cmd2Ref} className={styles.agentSkillsCodeArg}>
+                      ak skill install
+                    </span>
+                  </div>
+                  <div className={styles.agentSkillsCodeComment}>
+                    &nbsp;&nbsp;or target a specific assistant:
+                  </div>
+                  <div>
+                    <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
+                    <span ref={cmd3Ref} className={styles.agentSkillsCodeArg}>
+                      ak skill install --assistant claude
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Right — skill detail panel */}
             <div className={styles.agentSkillsPanel}>
               <div className={styles.agentSkillsSectionLabel}>
                 What each skill does
-              </div>              
+              </div>
               <div className={styles.agentSkillsDetailWrap}>
                 <div
                   ref={detailContentRef}
@@ -670,12 +655,16 @@ function AgentSkills() {
             </div>
           </div>
 
+          {/* Bottom row — subtitle left, CTA right */}
           <div className={styles.agentSkillsFooter}>
+            <p className={styles.agentSkillsFooterText}>
+              Agent Skills works with the tools you already use, like Copilot, Claude, Cursor, or Windsurf, to help you build and ship AI agents faster. No more guesswork, no more broken code suggestions.
+            </p>
             <Link
               className={`button button--primary button--md ${styles.btnLinkPrimary} ${styles.agentSkillsCtaLink}`}
               to="/docs"
             >
-              Learn more about Agent Skills 
+              Learn more about Agent Skills
               <span className={styles.btnLinkIconPrimary}>→</span>
             </Link>
           </div>
