@@ -27,12 +27,11 @@ def get_google_identity_token(audience: str = None):
         return token
 
     # Local path: use gcloud directly
-    cmd = ['gcloud', 'auth', 'print-identity-token']
+    cmd = ["gcloud", "auth", "print-identity-token"]
     if audience:
-        cmd += ['--audiences', audience]
+        cmd += ["--audiences", audience]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return result.stdout.strip()
-
 
 
 class APITestClient:
