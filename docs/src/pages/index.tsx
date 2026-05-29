@@ -183,11 +183,12 @@ function Hero() {
 function FrameworksStrip() {
   const frameworksRef = useRef(null);
   const labelRef = useRef(null);
+  const badgeRef = useRef(null);
   const rowRef = useRef(null);
 
   const frameworks = [
     {
-      name: "ChatGPT OpenAI Agents",
+      name: "Open AI Agents SDK",
       logo: "/img/integrations/chatgpt.png",
       link: "/docs/frameworks/openai",
     },
@@ -221,18 +222,9 @@ function FrameworksStrip() {
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
 
-    // Set initial states
-    gsap.set(labelRef.current, {
-      opacity: 0,
-      y: 20,
-    });
+    gsap.set([badgeRef.current, labelRef.current], { opacity: 0, y: 16 });
+    gsap.set(rowRef.current?.children || [], { opacity: 0, y: 24 });
 
-    gsap.set(rowRef.current?.children || [], {
-      opacity: 0,
-      y: 20,
-    });
-
-    // Create scroll-triggered animation
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: frameworksRef.current,
@@ -241,77 +233,43 @@ function FrameworksStrip() {
       },
     });
 
-    // Animate label first
-    tl.to(labelRef.current, {
-      opacity: 1,
-      y: 0,
-      duration: 0.6,
-      ease: "power2.out",
-    });
+    tl.to(badgeRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" })
+      .to(labelRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
+      .to(
+        rowRef.current?.children || [],
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", stagger: 0.07 },
+        "-=0.2"
+      );
 
-    // Then animate framework items with stagger
-    tl.to(
-      rowRef.current?.children || [],
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.4,
-        ease: "power2.out",
-        stagger: 0.08,
-      },
-      "-=0.3",
-    );
-
-    // Add hover animations to framework items
-    const frameworkItems =
-      rowRef.current?.querySelectorAll(`.${styles.frameworkItem}`) || [];
-    frameworkItems.forEach((item) => {
-      const img = item.querySelector("img");
-      if (img) {
-        item.addEventListener("mouseenter", () => {
-          gsap.to(img, {
-            scale: 1.05,
-            duration: 0.2,
-            ease: "power1.out",
-          });
-        });
-
-        item.addEventListener("mouseleave", () => {
-          gsap.to(img, {
-            scale: 1,
-            duration: 0.2,
-            ease: "power1.out",
-          });
-        });
-      }
-    });
-
-    // Cleanup
     return undefined;
   }, []);
 
   return (
     <section ref={frameworksRef} className={styles.frameworksStrip}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
+      <div ref={badgeRef} className={styles.frameworksBadge}>
+        <span className={styles.badgeStar}>✦</span>
+        Integrates Seamlessly
+      </div>
+
       <p ref={labelRef} className={styles.frameworksLabel}>
-        Works with the frameworks you already use
+        Works with your stack. No migration. One adapter line.
       </p>
+
       <div ref={rowRef} className={styles.frameworksRow}>
-        {frameworks.map((framework, index) => (
+        {frameworks.map((framework) => (
           <Link
             key={framework.name}
             to={framework.link}
             className={styles.frameworkItem}
           >
-            <div className={styles.frameworkLogoContainer}>
-              <img
-                src={framework.logo}
-                alt={framework.name}
-                className={styles.frameworkLogo}
-              />
-            </div>
-            {index < frameworks.length - 1 && (
-              <span className={styles.frameworkSeparator}>●</span>
-            )}
+            <img
+              src={framework.logo}
+              alt={framework.name}
+              className={styles.frameworkLogo}
+            />
           </Link>
         ))}
       </div>

@@ -970,70 +970,182 @@
 /* ─── Frameworks Strip ─────────────────────────────────────────────────────── */
 
 .frameworksStrip {
-  padding: 3rem 1.5rem 5rem;
+  position: relative;
+  padding: 4rem 1.5rem 5rem;
   text-align: center;
+  background: transparent;
+  overflow: hidden;
 }
 
+/* Top border + gradient glow */
+.topGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(120, 180, 255, 0.25) 20%,
+    rgba(160, 210, 255, 0.7) 50%,
+    rgba(120, 180, 255, 0.25) 80%,
+    transparent 100%
+  );
+}
+
+.topGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 220px;
+  background: radial-gradient(
+    ellipse at top center,
+    rgba(100, 170, 255, 0.1) 0%,
+    rgba(80, 140, 255, 0.05) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Badge */
+.frameworksBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid rgba(99, 179, 237, 0.55);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: rgba(99, 179, 237, 0.06);
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
+}
+
+/* Label */
 .frameworksLabel {
   text-align: center;
-  font-size: 1.25rem;
-  font-weight: 500;
-  color: #ffffff;
-  margin-bottom: 2rem;
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 2.5rem;
   letter-spacing: -0.01em;
+  position: relative;
 }
 
+/* Row */
 .frameworksRow {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;
   gap: 0.75rem;
   flex-wrap: nowrap;
   margin: 0 auto;
-  max-width: 80rem;
-  padding: 0 1rem;
+  max-width: 72rem;
+  position: relative;
 }
 
+/* Card — logo only */
 .frameworkItem {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  flex-shrink: 1;
-  min-width: 0;
+  justify-content: center;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
   text-decoration: none;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: unset;
 }
 
 .frameworkItem:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-2px);
   text-decoration: none;
 }
 
-.frameworkLogoContainer {
-  width: 136px;
-  height: 136px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
+/* Logo — fills the card */
 .frameworkLogo {
   width: 100%;
-  height: 100%;
+  max-width: 120px;
+  height: 48px;
   object-fit: contain;
-  transition: transform 0.2s ease;
+  display: block;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0.9;
 }
 
 .frameworkItem:hover .frameworkLogo {
   transform: scale(1.05);
+  opacity: 1;
 }
 
-.frameworkSeparator {
-  color: #ffffff;
-  font-size: 0.875rem;
-  flex-shrink: 0;
-  text-decoration: none;
-  opacity: 0.55;
-  margin-right: 0.75rem;
+/* ─── Tablet (≤ 900px) ─────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .frameworksRow {
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    max-width: 580px;
+  }
+
+  .frameworkItem {
+    flex: 1 1 calc(33.333% - 0.65rem);
+    min-width: 150px;
+    padding: 1.1rem 1.25rem;
+  }
+
+  .frameworkLogo {
+    max-width: 100px;
+    height: 40px;
+  }
+}
+
+/* ─── Mobile (≤ 540px) ─────────────────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .frameworksStrip {
+    padding: 3rem 1rem 3.5rem;
+  }
+
+  .frameworksLabel {
+    font-size: 0.975rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .frameworksRow {
+    max-width: 100%;
+    gap: 0.5rem;
+  }
+
+  .frameworkItem {
+    flex: 1 1 calc(50% - 0.5rem);
+    min-width: 130px;
+    padding: 1rem 1rem;
+  }
+
+  .frameworkLogo {
+    max-width: 90px;
+    height: 36px;
+  }
+
+  .topGlow::after {
+    width: 100%;
+    height: 160px;
+  }
 }
 
 /* ─── Value Proposition ───────────────────────────────────────────────────── */
