@@ -677,7 +677,6 @@ function AgentSkills() {
 /* ─── Deployment ────────────────────────────────────────────────────────── */
 
 function Deployment() {
-
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -705,7 +704,7 @@ function Deployment() {
     );
 
     return () => {
-      triggers.forEach((t) => t.kill()); 
+      triggers.forEach((t) => t.kill());
     };
   }, []);
 
@@ -761,51 +760,60 @@ function Deployment() {
   ];
 
   return (
-    <section className={styles.section}>
-      <div>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Deploy Anywhere</h2>
-          <p className={styles.sectionSubtitle}>
-            Run the same agent code on AWS, Azure, or your own on-prem Docker.{" "}
+    <section className={styles.deploySection}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
+      <div className="container">
+        <div className={styles.deployHeader}>
+          <div className={styles.Badge}>
+            <span className={styles.badgeStar}>✦</span>
+            Developer Experience
+          </div>
+          <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
+          <p className={styles.deploySubtitle}>
+            Run the same agent code on AWS, Azure, or Google Cloud. Zero rewrites.
             <br />
-            Zero rewrites. Includes production-ready Terraform modules with best
-            practices baked in.
+            Production-ready Terraform modules with best practices baked in.
           </p>
         </div>
 
         <div className={styles.cloudGrid} ref={gridRef}>
           {clouds.map((c, i) => (
             <div key={i} className={styles.cloudCard}>
-              {/* Logo */}
-              <div className={styles.cloudIcon}>{c.icon}</div>
 
-              {/* Name + badge */}
-              <div className={styles.cloudNameRow}>
-                <h3 className={styles.cloudName}>{c.name}</h3>
-                {c.comingSoon && (
-                  <span className={styles.cloudComingSoonBadge}>
-                    COMING SOON
-                  </span>
-                )}
+              {/* Icon + name row */}
+              <div className={styles.cloudHeader}>
+                <div className={styles.cloudIconWrap}>
+                  {c.icon}
+                </div>
+                <div className={styles.cloudNameRow}>
+                  <h3 className={styles.cloudName}>{c.name}</h3>
+                  {c.comingSoon && (
+                    <span className={styles.cloudComingSoonBadge}>
+                      COMING SOON
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Description */}
               <p className={styles.cloudDescription}>{c.description}</p>
 
-              {/* Mode bullets */}
+              {/* Mode bullets — checkmark style */}
               <ul className={styles.cloudModes}>
                 {c.modes.map((m, j) => (
                   <li key={j}>
-                    <span className={styles.arrow}>→</span>
+                    <span className={styles.checkmark}>✓</span>
                     {m}
                   </li>
                 ))}
               </ul>
 
-              {/* Terraform links */}
-              {c.modules.length > 0 && (
-                <div className={styles.cloudModules}>
-                  {c.modules.map((m, j) => (
+              {/* Terraform links — styled as "Read More" buttons */}
+              <div className={styles.cloudModules}>
+                {c.modules.length > 0 ? (
+                  c.modules.map((m, j) => (
                     <Link
                       key={j}
                       to={m.url}
@@ -816,9 +824,14 @@ function Deployment() {
                       <SiTerraform className={styles.terraformIcon} />
                       <span>{m.name}</span>
                     </Link>
-                  ))}
-                </div>
-              )}
+                  ))
+                ) : (
+                  <button className={styles.readMoreBtn} disabled>
+                    Coming Soon
+                  </button>
+                )}
+              </div>
+
             </div>
           ))}
         </div>
