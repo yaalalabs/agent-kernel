@@ -2603,10 +2603,9 @@
 /* ─── CTA / Community ─────────────────────────────────────────────────────── */
 
 .ctaSection {
-  padding: 7rem 0;
+  padding: 7rem 0 0;
   position: relative;
   overflow: hidden;
-  /* background: linear-gradient(135deg, rgba(79,125,247,0.07) 0%, rgba(139,92,246,0.07) 100%); */
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -2632,18 +2631,36 @@
 }
 
 .ctaTitle {
-  font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+  font-size: clamp(2.4rem, 6vw, 4rem);
   font-weight: 800;
-  color: #dfe1f0;
+  color: #ffffff;
   letter-spacing: -0.03em;
-  margin-bottom: 1rem;
+  line-height: 1.15;
+  margin-bottom: 1.25rem;
+}
+
+/* Rainbow/multi-colour gradient on "Agent" — matching the screenshot */
+.ctaTitleGradient {
+  background: linear-gradient(
+    90deg,
+    #e53e3e 0%,
+    #ed8936 18%,
+    #ecc94b 36%,
+    #48bb78 54%,
+    #4299e1 72%,
+    #9f7aea 90%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: inline;
 }
 
 .ctaSubtitle {
-  font-size: 1.05rem;
-  color: #dfe1f0;
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.55);
   line-height: 1.7;
-  max-width: 560px;
+  max-width: 550px;
   margin: 0 auto 2.5rem;
 }
 
@@ -2651,9 +2668,52 @@
   display: flex;
   gap: 0.75rem;
   justify-content: center;
-  margin-bottom: 3rem;
+  margin-bottom: 4rem;
   flex-wrap: wrap;
 }
+
+/* ─── Bottom hero image ──────────────────────────────────────────────────── */
+
+.ctaImageWrapper {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  margin-top: -2rem;
+  /* Fade the bottom edge so it blends into the page */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 60%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black 60%,
+    transparent 100%
+  );
+}
+
+.ctaImage {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  /* Subtle floating animation */
+  animation: ctaFloat 4s ease-in-out infinite;
+}
+
+@keyframes ctaFloat {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* ─── Community links (kept for backward-compat) ─────────────────────────── */
 
 .communityLinks {
   display: flex;
@@ -2700,6 +2760,55 @@
   color: #5e627d;
   margin-top: 0.25rem;
   font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+
+/* Tablet */
+@media (max-width: 900px) {
+  .ctaSection {
+    padding: 5rem 0 0;
+  }
+
+  .ctaTitle {
+    font-size: clamp(2rem, 7vw, 3rem);
+  }
+
+  .ctaImageWrapper {
+    max-width: 300px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+  .ctaSection {
+    padding: 4rem 0 0;
+  }
+
+  .ctaTitle {
+    font-size: clamp(1.75rem, 9vw, 2.5rem);
+  }
+
+  .ctaSubtitle {
+    font-size: 0.95rem;
+    padding: 0 0.5rem;
+  }
+
+  .ctaButtons {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 3rem;
+  }
+
+  .ctaButtons .button {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .ctaImageWrapper {
+    max-width: 220px;
+  }
 }
 
 /* ─── Levels ──────────────────────────────────────────────────────────────── */

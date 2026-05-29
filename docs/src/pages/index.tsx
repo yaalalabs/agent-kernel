@@ -841,7 +841,6 @@ function Deployment() {
 }
 
 /* ─── Community / CTA ───────────────────────────────────────────────────── */
-
 interface CommunityProps {
   sectionRef?: React.Ref<HTMLElement>;
 }
@@ -849,10 +848,14 @@ interface CommunityProps {
 function Community({ sectionRef }: CommunityProps) {
   return (
     <section ref={sectionRef} className={styles.ctaSection}>
-      {/* <div className={styles.ctaGlow} /> */}
       <div className="container">
         <div className={styles.ctaContent}>
-          <h2 className={styles.ctaTitle}>Ready to Ship Your First Agent?</h2>
+          <h2 className={styles.ctaTitle}>
+            Ready to Ship Your
+            <br />
+            First{" "}
+            <span className={styles.ctaTitleGradient}>Agent</span>?
+          </h2>
           <p className={styles.ctaSubtitle}>
             Free, open-source, Apache 2.0. No licensing costs, no vendor
             lock-in. Join hundreds of developers building production AI agents
@@ -864,7 +867,7 @@ function Community({ sectionRef }: CommunityProps) {
               to="/docs"
             >
               <span className={styles.btnIcon}>→</span>
-              Get Started
+              Get Started Free
             </Link>
             <Link
               className={`button button--secondary button--lg ${styles.btnSecondary}`}
@@ -875,8 +878,16 @@ function Community({ sectionRef }: CommunityProps) {
               <span className={styles.btnIconSecondary}>
                 <FaGithub />
               </span>
-              View on GitHub
+              View On GitHub
             </Link>
+          </div>
+
+          <div className={styles.ctaImageWrapper}>
+            <img
+              src="/img/cta-bg.png"
+              alt="Agent Kernel"
+              className={styles.ctaImage}
+            />
           </div>
         </div>
       </div>
