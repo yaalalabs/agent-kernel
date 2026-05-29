@@ -128,6 +128,14 @@ module "docker_image" {
   source_path   = var.package_path
 }
 
+resource "time_sleep" "wait_for_network" {
+  count = var.network_id == null ? 1 : 0
+
+  depends_on = [module.vpc]
+
+  create_duration = "60s"
+}
+
 # Redis — optional session cache
 module "redis" {
   source = "yaalalabs/ak-common/google//modules/memorystore"  # uncomment for registry
@@ -139,6 +147,10 @@ module "redis" {
   env_alias     = var.env_alias
   module_name   = var.module_name
   network_id    = local.network_id
+
+  depends_on = [
+    time_sleep.wait_for_network
+  ]
 }
 
 # Firestore — optional session storage
@@ -151,4 +163,8 @@ module "firestore" {
   product_alias = var.product_alias
   env_alias     = var.env_alias
   module_name   = var.module_name
+
+  depends_on = [
+    time_sleep.wait_for_network
+  ]
 }
