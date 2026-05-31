@@ -911,17 +911,6 @@ interface Level {
   bullets: string[];
 }
 
-interface ScrollTriggerInstance {
-  kill: () => void;
-}
-
-type AkCompareCellStatus = "positive" | "negative" | "partial";
-
-interface AkCompareCell {
-  status: AkCompareCellStatus;
-  text?: string;
-}
-
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
@@ -930,7 +919,7 @@ function Levels() {
   const badgeRef = useRef<HTMLDivElement>(null);
   const cardsWrapRef = useRef<HTMLDivElement>(null);
   const history = useHistory();
- 
+
   const levels: Level[] = [
     {
       id: "01",
@@ -969,7 +958,7 @@ function Levels() {
       ],
     },
   ];
- 
+
   const handleLevelSelect = (levelId: string) => {
     const levelPages: { [key: string]: string } = {
       "01": "/business-leader",
@@ -980,79 +969,95 @@ function Levels() {
       history.push(levelPages[levelId]);
     }
   };
- 
+
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
 
     const section = sectionRef.current;
-    const sticky = stickyRef.current;
     const cardEls = cardsWrapRef.current?.querySelectorAll<HTMLElement>(
       `.${styles.levelWindowCard}`
     );
 
     if (!section || !cardEls || cardEls.length === 0) return;
 
-    // Use a simpler, mobile-friendly animation for tablet/mobile (no pin)
-    const isSmall = typeof window !== "undefined" && window.matchMedia
-      ? window.matchMedia("(max-width: 1024px)").matches
-      : window.innerWidth <= 1024;
+    const isSmall = window.matchMedia("(max-width: 1024px)").matches;
+    const cardArray = Array.from(cardEls);
+    const total = cardArray.length;
 
+    // ── Mobile / tablet: simple fade-in per card ─────────────────────────────
     if (isSmall) {
-      // Simple fade-in for mobile/tablet: opacity only (no translate)
-      const cards = Array.from(cardEls);
-      gsap.set(cards, { autoAlpha: 0 });
+      gsap.set(cardArray, { autoAlpha: 0, y: 30 });
 
-      const reveals = cards.map((card) =>
+      const triggers = cardArray.map((card) =>
         gsap.to(card, {
           autoAlpha: 1,
+          y: 0,
           duration: 0.6,
           ease: "power2.out",
           scrollTrigger: {
             trigger: card,
-            start: "top 100%", // ensure card is fully in view for small screens
+            start: "top 90%",
             toggleActions: "play none none none",
-            once: true,
           },
         })
       );
 
-      // Header: simple fade-in as section enters
-      const headerAnim = gsap.to([badgeRef.current, titleRef.current, subtitleRef.current], {
-        autoAlpha: 1,
-        duration: 0.5,
-        stagger: 0.06,
-        ease: "power2.out",
-        scrollTrigger: { trigger: section, start: "top 95%", toggleActions: "play none none none", once: true },
-      });
-
-      // On small screens ScrollTrigger can calculate sizes before layout settles.
-      // Force a refresh after a small delay so triggers start reliably.
-      setTimeout(() => {
-        try {
-          ScrollTrigger.refresh();
-        } catch (e) {
-          /* ignore */
+      gsap.fromTo(
+        [badgeRef.current, titleRef.current, subtitleRef.current],
+        { autoAlpha: 0, y: 20 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.5,
+          stagger: 0.06,
+          ease: "power2.out",
+          scrollTrigger: {
+            trigger: section,
+            start: "top 90%",
+            toggleActions: "play none none none",
+          },
         }
-      }, 120);
+      );
 
       return () => {
-        reveals.forEach((r) => {
-          r.scrollTrigger?.kill();
-          r.kill();
+        triggers.forEach((t) => {
+          t.scrollTrigger?.kill();
+          t.kill();
         });
-        headerAnim.scrollTrigger?.kill();
-        headerAnim.kill();
       };
     }
 
-    // Desktop / large screens: keep original pin + stacked reveal behavior
-    // Set all cards invisible initially except the first
-    const cardArray = Array.from(cardEls);
-    gsap.set(cardArray, { autoAlpha: 0, y: 40 });
-    gsap.set(cardArray[0], { autoAlpha: 1, y: 0 });
+    // ── Desktop: card stack animation ────────────────────────────────────────
 
-    // Header fade in
-    const headerPinAnim = gsap.fromTo(
+    // Apply absolute positioning only on desktop
+    const cardArrayEl = cardsWrapRef.current;
+    if (cardArrayEl) {
+      cardArrayEl.style.position = "relative";
+    }
+    cardArray.forEach((card) => {
+      card.style.position = "absolute";
+      card.style.top = "0";
+      card.style.left = "0";
+      card.style.width = "100%";
+    });
+
+    const STACK_OFFSET_PX = 8;
+    const STACK_SCALE_OFFSET = 0.015;
+    const TRANSITION_SCROLL = window.innerHeight * 1.4;
+    const INITIAL_PAUSE = window.innerHeight * 0.5;
+    const totalScroll = INITIAL_PAUSE + (total - 1) * TRANSITION_SCROLL;
+
+    gsap.set(cardArray[0], { autoAlpha: 1, y: 0, scale: 1, zIndex: total });
+    cardArray.slice(1).forEach((card, i) => {
+      gsap.set(card, {
+        autoAlpha: 0,
+        y: window.innerHeight * 1.1,
+        scale: 1,
+        zIndex: total - (i + 1),
+      });
+    });
+
+    const headerAnim = gsap.fromTo(
       [badgeRef.current, titleRef.current, subtitleRef.current],
       { opacity: 0, y: 20 },
       {
@@ -1069,63 +1074,75 @@ function Levels() {
       }
     );
 
-    // Pin the section; each scroll step reveals the next card
-    const STEP = window.innerHeight * 0.6;
-    const totalScroll = (levels.length - 1) * STEP;
-
     const pin = ScrollTrigger.create({
       trigger: section,
       start: "top top",
       end: `+=${totalScroll}`,
-      pin: sticky,
+      pin: stickyRef.current,
       pinSpacing: true,
       anticipatePin: 1,
       onUpdate: (self) => {
-        const progress = self.progress;
-        const totalCards = cardArray.length;
-        const floatIdx = progress * (totalCards - 1);
+        const pauseFraction = INITIAL_PAUSE / totalScroll;
+        if (self.progress < pauseFraction) return;
 
-        cardArray.forEach((card, i) => {
-          if (i === 0) {
-            const opacity = i < floatIdx ? Math.max(0, 1 - (floatIdx - i)) : 1;
-            gsap.set(card, {
-              autoAlpha: opacity,
-              y: i < floatIdx ? -20 * (floatIdx - i) : 0,
-            });
-          } else {
-            const fadeIn = Math.min(1, Math.max(0, (floatIdx - (i - 1)) / 0.5));
-            const fadeOut =
-              i < totalCards - 1
-                ? Math.max(0, 1 - Math.max(0, (floatIdx - i) / 0.5))
-                : 1;
-            const opacity = fadeIn * fadeOut;
-            const yOffset = 40 * (1 - fadeIn);
-            gsap.set(card, { autoAlpha: opacity, y: yOffset });
-          }
-        });
+        const t = (self.progress - pauseFraction) / (1 - pauseFraction);
+        const floatIdx = t * (total - 1);
+        const activeIdx = Math.min(Math.floor(floatIdx), total - 2);
+        const localT = floatIdx - activeIdx;
+
+        const incomingIdx = activeIdx + 1;
+        if (incomingIdx < total) {
+          gsap.set(cardArray[incomingIdx], {
+            autoAlpha: Math.min(1, localT * 2),
+            y: window.innerHeight * 1.1 * (1 - localT),
+            scale: 1,
+            zIndex: total + 1,
+          });
+        }
+
+        for (let i = 0; i <= activeIdx; i++) {
+          const depthBefore = activeIdx - i;
+          const depthAfter = depthBefore + 1;
+          const depth = depthBefore + localT * (depthAfter - depthBefore);
+
+          gsap.set(cardArray[i], {
+            y: depth * STACK_OFFSET_PX,
+            scale: 1 - depth * STACK_SCALE_OFFSET,
+            autoAlpha: 1,
+            zIndex: total - Math.round(depth),
+          });
+        }
       },
     });
 
     return () => {
       pin.kill();
-      headerPinAnim.scrollTrigger?.kill();
-      headerPinAnim.kill && headerPinAnim.kill();
+      headerAnim.scrollTrigger?.kill();
+      headerAnim.kill();
+      // Clean up inline styles applied for desktop
+      cardArray.forEach((card) => {
+        card.style.position = "";
+        card.style.top = "";
+        card.style.left = "";
+        card.style.width = "";
+      });
+      if (cardArrayEl) {
+        cardArrayEl.style.position = "";
+      }
     };
   }, [levels]);
- 
+
   return (
     <section
       ref={sectionRef}
       className={styles.levelsSection}
       style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}
     >
-      {/* Sticky container — this gets pinned */}
       <div
         ref={stickyRef}
         className={styles.levelsStickyInner}
         style={{ position: "relative", zIndex: 1, overflow: "hidden" }}
       >
-        {/* Background video */}
         <video
           autoPlay
           muted
@@ -1148,8 +1165,7 @@ function Levels() {
         >
           <source src="/video/path-bg.mp4" type="video/mp4" />
         </video>
- 
-        {/* Header */}
+
         <div className={styles.levelsFrameContainer}>
           <div className={styles.levelsHeader}>
             <div ref={badgeRef} className={styles.levelsPathBadge}>
@@ -1162,12 +1178,11 @@ function Levels() {
               Select the role that fits you
             </p>
           </div>
-  
-          {/* Cards stack */}
+
+          {/* No inline position styles here — desktop positioning is applied via JS only */}
           <div ref={cardsWrapRef} className={styles.levelsWindowStack}>
             {levels.map((level) => (
               <div key={level.id} className={styles.levelWindowCard}>
-                {/* macOS window chrome */}
                 <div className={styles.levelWindowChrome}>
                   <div className={styles.levelWindowDots}>
                     <span className={`${styles.levelWindowDot} ${styles.dotRed}`} />
@@ -1191,10 +1206,8 @@ function Levels() {
                     </svg>
                   </div>
                 </div>
-  
-                {/* Card body */}
+
                 <div className={styles.levelWindowBody}>
-                  {/* Left: image area */}
                   <div className={styles.levelWindowImageArea}>
                     <img
                       src={level.image}
@@ -1202,8 +1215,6 @@ function Levels() {
                       className={styles.levelWindowImage}
                     />
                   </div>
-  
-                  {/* Right: content */}
                   <div className={styles.levelWindowContent}>
                     <h3 className={styles.levelWindowTitle}>{level.title}</h3>
                     <p className={styles.levelWindowDescription}>{level.description}</p>
@@ -1231,7 +1242,6 @@ function Levels() {
     </section>
   );
 }
-
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function Home() {
