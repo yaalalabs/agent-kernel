@@ -383,7 +383,6 @@ const config = {
               { label: 'Use Cases', to: '/use-cases' },
               { label: 'Architecture', to: '/docs/architecture/overview' },
               { label: 'API Reference', to: '/docs/api/rest-api' },
-              { label: 'Terraform Modules', to: '/docs/deployment/terraform' },
             ],
           },
           {
@@ -395,13 +394,11 @@ const config = {
             ],
           },
           {
-            title: 'Company',
+            title: 'More',
             items: [
               { label: 'Blog', to: '/blog' },
               { label: 'PyPI', href: 'https://pypi.org/project/agentkernel/' },
-              { label: 'Yala Labs', href: 'https://www.yaalalabs.com' },
-              { label: 'Careers', href: 'https://www.yaalalabs.com/careers' },
-              { label: 'Contact', href: 'mailto:hello@yaalalabs.com' },
+              { label: 'Terraform', href: 'https://registry.terraform.io/modules/yaalalabs' },
             ],
           },
         ],

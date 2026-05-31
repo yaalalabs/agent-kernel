@@ -2814,14 +2814,348 @@
 /* ─── Levels ──────────────────────────────────────────────────────────────── */
 
 .levelsSection {
-  padding: 5rem 2.5rem;
+  padding: 6rem 0;
   position: relative;
-  isolation: auto;
+  overflow: hidden;
+}
+
+.levelsHeader {
+  text-align: center;
+  margin-bottom: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+ 
+/* The sticky inner is what GSAP actually pins */
+.levelsStickyInner {
+  position: relative;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 0;          /* remove padding — frame container handles it */
+  z-index: 1;
+  overflow: hidden;
+}
+ 
+/* ─── Header ── */
+
+.levelsFrameContainer {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 780px;
+  max-height: 150px;
+  margin: 0 auto;
+  margin-top: -30rem;
+}
+ 
+.levelsHeader {
   text-align: center;
+  margin-bottom: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+ 
+/* Also update the badge bottom spacing to match */
+.levelsPathBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.85rem;
+  border: 1px solid rgba(0, 221, 255, 0.35);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(0, 221, 255, 0.9);
+  background: rgba(0, 221, 255, 0.06);
+  letter-spacing: 0.02em;
+  margin-bottom: 0.05rem;  /* small extra nudge below badge, before title */
+}
+ 
+.levelsPathBadgePlus {
+  font-size: 0.9rem;
+  line-height: 1;
+  color: rgba(0, 221, 255, 0.7);
+}
+ 
+.levelsTitle {
+  font-size: clamp(1.5rem, 3.5vw, 2.15rem);
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 0;
+}
+ 
+.levelsSubtitle {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: -4rem;
+}
+ 
+/* ─── Card Stack ── */
+ 
+.levelsWindowStack {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  min-height: 350px;
+  margin-top: -3rem;
+}
+ 
+/* Each card is absolutely positioned so they overlap */
+.levelWindowCard {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(8, 8, 14, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.68),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  flex-direction: column;
+  will-change: opacity, transform;
+}
+ 
+/* ─── macOS Chrome ── */
+ 
+.levelWindowChrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+ 
+.levelWindowDots {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+ 
+.levelWindowDot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+ 
+.dotRed    { background: #ff5f57; }
+.dotYellow { background: #febc2e; }
+.dotGreen  { background: #28c840; }
+ 
+.levelWindowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: rgba(255, 255, 255, 0.25);
+}
+ 
+.levelWindowActions svg {
+  display: block;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+ 
+.levelWindowActions svg:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+ 
+/* ─── Card Body ── */
+ 
+.levelWindowBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  min-height: 0;
+}
+ 
+/* Left: dark starfield / image area */
+.levelWindowImageArea {
+  background: #010002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+ 
+/* Subtle noise/grain overlay to mimic the starfield in the design */
+.levelWindowImageArea::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  pointer-events: none;
+}
+ 
+.levelWindowImage {
+  object-fit: contain;
+  position: relative;
+  z-index: 1;
+}
+ 
+/* Right: text content */
+.levelWindowContent {
+  padding: 2rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  justify-content: center;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+ 
+.levelWindowTitle {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+ 
+.levelWindowDescription {
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.65;
+  margin: 0;
+}
+ 
+.levelWindowBullets {
+  list-style: none;
+  padding: 0;
+  margin: 0.15rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+ 
+.levelWindowBulletItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.4;
+}
+ 
+.levelWindowBulletCheck {
+  color: #28c840;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+ 
+.levelWindowReadMore {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.95rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  letter-spacing: 0.01em;
+}
+ 
+.levelWindowReadMore:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+}
+ 
+/* ─── Responsive ── */
+ 
+@media (max-width: 768px) {
+  .levelsStickyInner {
+    padding: 3rem 1rem 2.5rem;
+  }
+ 
+  .levelsHeader {
+    margin-bottom: 1.25rem;
+  }
+ 
+  .levelsTitle {
+    font-size: clamp(1.3rem, 5.5vw, 1.75rem);
+  }
+
+  .levelsSubtitle {
+    font-size: 0.82rem;
+  }
+ 
+  .levelsWindowStack {
+    min-height: 440px;
+  }
+ 
+  .levelWindowBody {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+ 
+  .levelWindowImageArea {
+    padding: 1.5rem;
+    min-height: 160px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+ 
+  .levelWindowContent {
+    border-left: none;
+    padding: 1.25rem;
+  }
+ 
+  .levelWindowTitle {
+    font-size: 1.15rem;
+  }
+}
+ 
+@media (max-width: 480px) {
+  .levelsStickyInner {
+    padding: 3rem 0.875rem 2.5rem;
+  }
+ 
+  .levelsWindowStack {
+    min-height: 500px;
+  }
+ 
+  .levelWindowImageArea {
+    min-height: 130px;
+    padding: 1.25rem;
+  }
+ 
+  .levelWindowImage {
+    width: 80px;
+    height: 80px;
+  }
+ 
+  .levelWindowContent {
+    padding: 1rem;
+  }
+ 
+  .levelWindowDescription {
+    font-size: 0.8rem;
+  }
+ 
+  .levelWindowBulletItem {
+    font-size: 0.74rem;
+  }
 }
 
 .levelsPinned {
@@ -4841,7 +5175,7 @@
 
   /* Levels section */
   .levelsSection {
-    padding: 3rem 1rem;
+    padding: 2.5rem 1rem;
   }
 
   .levelsPinned {
@@ -4849,12 +5183,12 @@
   }
 
   .levelsTitle {
-    font-size: 1.75rem;
-    margin-bottom: 2rem;
+    font-size: 1.45rem;
+    margin-bottom: 1rem;
   }
 
   .levelsSubtitle {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
   }
 
   .levelsGrid {
@@ -5018,11 +5352,11 @@
 
   /* Levels */
   .levelsTitle {
-    font-size: 1.5rem;
+    font-size: 1.35rem;
   }
 
   .levelsSubtitle {
-    font-size: 1rem;
+    font-size: 0.85rem;
   }
 
   .levelCardTitle {

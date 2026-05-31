@@ -229,7 +229,8 @@ function FrameworksStrip() {
       scrollTrigger: {
         trigger: frameworksRef.current,
         start: "top 85%",
-        toggleActions: "play none none reverse",
+        toggleActions: "play none none none",
+        once: true,
       },
     });
 
@@ -241,7 +242,12 @@ function FrameworksStrip() {
         "-=0.2"
       );
 
-    return undefined;
+    return () => {
+      tl.kill();
+      if (tl.scrollTrigger) {
+        tl.scrollTrigger.kill();
+      }
+    };
   }, []);
 
   return (
@@ -306,7 +312,7 @@ function AffiliationsStrip() {
       scrollTrigger: {
         trigger: section,
         start: "top 80%",
-        toggleActions: "play none none reverse",
+        once: true,
       },
     });
 
@@ -902,6 +908,7 @@ interface Level {
   title: string;
   image: string;
   description: string;
+  bullets: string[];
 }
 
 interface ScrollTriggerInstance {
@@ -936,820 +943,253 @@ function AkCompareCellContent({ cell }: { cell: AkCompareCell }) {
 
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
+  const stickyRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
-  const [isPinned, setIsPinned] = useState(true);
-  const scrollTriggerRef = useRef<ScrollTriggerInstance | null>(null);
+  const badgeRef = useRef<HTMLDivElement>(null);
+  const cardsWrapRef = useRef<HTMLDivElement>(null);
   const history = useHistory();
-
+ 
   const levels: Level[] = [
     {
       id: "01",
       title: "Business Leader",
       image: "/img/business_leader.png",
       description:
-        "You run or work in a business / enterprise and want to incorporate AI agentsassistants that actually work into your business workflows without needing to understand the tech.",
+        "Scaffold production-ready agents in minutes using the frameworks and languages you already know. Ship faster without learning an entirely new development stack.",
+      bullets: [
+        "Zero-config CLI with guided project setup",
+        "Seamless integration with your existing CI pipelines",
+        "Built-in retry and fallback routing logic",
+      ],
     },
     {
       id: "02",
       title: "Developer",
       image: "/img/developer.png",
       description:
-        "You buildwrite software but haven't built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.",
+        "Scaffold production-ready agents in minutes using the frameworks and languages you already know. Ship faster without learning an entirely new development stack.",
+      bullets: [
+        "Zero-config CLI with guided project setup",
+        "Seamless integration with your existing CI pipelines",
+        "Built-in retry and fallback routing logic",
+      ],
     },
     {
       id: "03",
       title: "AI Engineer",
       image: "/img/ai.png",
       description:
-        "You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework runtime that doesn't get in your way.",
+        "Scaffold production-ready agents in minutes using the frameworks and languages you already know. Ship faster without learning an entirely new development stack.",
+      bullets: [
+        "Zero-config CLI with guided project setup",
+        "Seamless integration with your existing CI pipelines",
+        "Built-in retry and fallback routing logic",
+      ],
     },
   ];
-
+ 
   const handleLevelSelect = (levelId: string) => {
-    // Navigate to the appropriate level page
     const levelPages: { [key: string]: string } = {
       "01": "/business-leader",
       "02": "/developer",
       "03": "/ai-engineer",
     };
-
     if (levelPages[levelId]) {
       history.push(levelPages[levelId]);
     }
   };
-
+ 
   useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (!isPinned) return;
-      const rect = sectionRef.current?.getBoundingClientRect();
-      if (rect && rect.top <= 0 && rect.bottom >= window.innerHeight) {
-        if (e.deltaY > 0) {
-          e.preventDefault();
-        }
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!isPinned) return;
-      const rect = sectionRef.current?.getBoundingClientRect();
-      if (rect && rect.top <= 0 && rect.bottom >= window.innerHeight) {
-        e.preventDefault();
-      }
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!isPinned) return;
-      const rect = sectionRef.current?.getBoundingClientRect();
-      if (rect && rect.top <= 0 && rect.bottom >= window.innerHeight) {
-        if (e.key === "ArrowDown" || e.key === " " || e.key === "PageDown") {
-          e.preventDefault();
-        }
-      }
-    };
-
-    const levelCards = Array.from(
-      cardsRef.current?.querySelectorAll(`.${styles.levelCard}`) || [],
-    ) as HTMLElement[];
-
-    if (!selectedLevel) {
-      gsap.registerPlugin(ScrollTrigger);
-
-      const isDesktop = window.innerWidth > 996;
-      const middleCard = levelCards[1];
-
-      gsap.fromTo(
-        [titleRef.current, subtitleRef.current, cardsRef.current],
-        { opacity: 0, y: 30 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: 1,
-          ease: "power2.out",
-          scrollTrigger: {
-            trigger: sectionRef.current,
-            start: "top 60%",
-            toggleActions: "play none none reverse",
-          },
+    gsap.registerPlugin(ScrollTrigger);
+ 
+    const section = sectionRef.current;
+    const sticky = stickyRef.current;
+    const cardEls = cardsWrapRef.current?.querySelectorAll<HTMLElement>(
+      `.${styles.levelWindowCard}`
+    );
+ 
+    if (!section || !sticky || !cardEls || cardEls.length === 0) return;
+ 
+    // Set all cards invisible initially except the first
+    gsap.set(Array.from(cardEls), { autoAlpha: 0, y: 40 });
+    gsap.set(cardEls[0], { autoAlpha: 1, y: 0 });
+ 
+    // Header fade in
+    gsap.fromTo(
+      [badgeRef.current, titleRef.current, subtitleRef.current],
+      { opacity: 0, y: 20 },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.8,
+        stagger: 0.1,
+        ease: "power3.out",
+        scrollTrigger: {
+          trigger: section,
+          start: "top 80%",
+          toggleActions: "play none none none",
         },
-      );
-
-      if (isDesktop) {
-        gsap.set(sectionRef.current, { height: "100vh" });
-        ScrollTrigger.refresh();
-
-        if (levelCards.length === 3) {
-          gsap.set(levelCards, {
-            opacity: 0,
-            y: 28,
-            scale: 0.94,
-            transformOrigin: "center center",
-          });
-
-          gsap.set(middleCard, {
-            opacity: 1,
-            y: 0,
-            scale: 1.08,
-            zIndex: 3,
-          });
-
-          gsap.set(levelCards[0], {
-            x: 110,
-            zIndex: 2,
-          });
-
-          gsap.set(levelCards[2], {
-            x: -110,
-            zIndex: 2,
-          });
-        }
-
-        if (levelCards.length === 3) {
-          const tl = gsap.timeline({ paused: true });
-
-          tl.to(
-            levelCards[0],
-            {
-              x: 0,
-              y: 0,
-              opacity: 1,
-              scale: 1,
-              duration: 0.8,
-              ease: "power2.out",
-            },
-            0,
-          )
-            .to(
-              middleCard,
-              {
-                y: 0,
-                scale: 1,
-                duration: 0.8,
-                ease: "power2.out",
-              },
-              0,
-            )
-            .to(
-              levelCards[2],
-              {
-                x: 0,
-                y: 0,
-                opacity: 1,
-                scale: 1,
-                duration: 0.8,
-                ease: "power2.out",
-              },
-              0,
-            );
-
-          const scrollTrigger = ScrollTrigger.create({
-            trigger: sectionRef.current,
-            start: "top top",
-            end: "+=100%",
-            pin: true,
-            pinSpacing: true,
-            onEnter: () => tl.restart(),
-            onEnterBack: () => tl.restart(),
-          });
-
-          scrollTriggerRef.current = scrollTrigger as ScrollTriggerInstance | null;
-
-          window.addEventListener("wheel", handleWheel, { passive: false });
-          window.addEventListener("touchmove", handleTouchMove, {
-            passive: false,
-          });
-          window.addEventListener("keydown", handleKeyDown);
-        }
       }
-    }
-
-    return () => {
-      window.removeEventListener("wheel", handleWheel);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("keydown", handleKeyDown);
-      if (scrollTriggerRef.current) {
-        scrollTriggerRef.current.kill();
-      }
-    };
-  }, [isPinned, selectedLevel]);
-
-  useEffect(() => {
-    if (selectedLevel) {
-      gsap.registerPlugin(ScrollTrigger);
-      const levelCards = Array.from(
-        cardsRef.current?.querySelectorAll(`.${styles.levelCard}`) || [],
-      ) as HTMLElement[];
-      const selectedCard = cardsRef.current?.querySelector(
-        `[data-level="${selectedLevel}"]`,
-      ) as HTMLElement | null;
-
-      if (levelCards.length) {
-        gsap.set(levelCards, { clearProps: "transform,opacity" });
-      }
-
-      if (selectedCard) {
-        gsap.set(selectedCard, {
-          opacity: 1,
-          scale: 1.05,
-          zIndex: 4,
-        });
-      }
-
-      // Animate contentStep elements - Smooth fade and slide
-      const steps =
-        contentRef.current?.querySelectorAll(`.${styles.contentStep}`) || [];
-      steps.forEach((step) => {
-        gsap.fromTo(
-          step,
-          { opacity: 0, y: 30 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: step,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate contentCard elements - Subtle scale and fade
-      const cards =
-        contentRef.current?.querySelectorAll(`.${styles.contentCard}`) || [];
-      cards.forEach((card, idx) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 25, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.9,
-            ease: "power2.out",
-            delay: idx * 0.08,
-            scrollTrigger: {
-              trigger: card,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate architecture layers - Slide from left
-      const layers =
-        contentRef.current?.querySelectorAll(
-          `.${styles.architectureLayerGroup}`,
-        ) || [];
-      layers.forEach((layer, index) => {
-        gsap.fromTo(
-          layer,
-          { opacity: 0, x: -50 },
-          {
-            opacity: 1,
-            x: 0,
-            duration: 0.9,
-            delay: index * 0.12,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: layer,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate capability/feature cards - Staggered fade and scale
-      const capCards =
-        contentRef.current?.querySelectorAll(
-          `.${styles.capabilityCard}, .${styles.devFeatureCard}, .${styles.blValueCard}`,
-        ) || [];
-      capCards.forEach((card, idx) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 25, scale: 0.96 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            delay: (idx % 3) * 0.1,
-            scrollTrigger: {
-              trigger: card,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate highlight cards - Smooth entrance with subtle scale
-      const highlightCards =
-        contentRef.current?.querySelectorAll(`.${styles.blHighlightCard}`) ||
-        [];
-      highlightCards.forEach((card) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 30, scale: 0.97 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 1.05,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: card,
-              start: "top 82%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate developer analogy section
-      const devAnalogy = contentRef.current?.querySelector(
-        `.${styles.developerAnalogy}`,
-      );
-      if (devAnalogy) {
-        gsap.fromTo(
-          devAnalogy,
-          { opacity: 0, y: 35 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 1.1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: devAnalogy,
-              start: "top 75%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      }
-
-      // Animate Architecture Wrapper
-      const archWrappers =
-        contentRef.current?.querySelectorAll(
-          `.${styles.devArchitectureWrapper}`,
-        ) || [];
-      archWrappers.forEach((wrapper) => {
-        gsap.fromTo(
-          wrapper,
-          { opacity: 0, y: 40, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 1.1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: wrapper,
-              start: "top 80%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate BusinessLeaderScenarios tabs
-      const blTabs =
-        contentRef.current?.querySelectorAll(`.${styles.blTab}`) || [];
-      blTabs.forEach((tab, idx) => {
-        gsap.fromTo(
-          tab,
-          { opacity: 0, y: 15 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.7,
-            ease: "power2.out",
-            delay: idx * 0.06,
-            scrollTrigger: {
-              trigger: tab,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate scenario content
-      const scenarioContent = contentRef.current?.querySelector(
-        `.${styles.blScenarioContent}`,
-      );
-      if (scenarioContent) {
-        gsap.fromTo(
-          scenarioContent,
-          { opacity: 0, y: 30, scale: 0.97 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: scenarioContent,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      }
-
-      // Animate scenario columns
-      const scenarioCols =
-        contentRef.current?.querySelectorAll(`.${styles.blScenarioCol}`) || [];
-      scenarioCols.forEach((col, idx) => {
-        gsap.fromTo(
-          col,
-          { opacity: 0, y: 25, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.85,
-            ease: "power2.out",
-            delay: idx * 0.1,
-            scrollTrigger: {
-              trigger: col,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate AI Engineer comparison section
-      const akStandOutSection = contentRef.current?.querySelector(
-        `.${styles.akStandOutSection}`,
-      );
-      if (akStandOutSection) {
-        const standOutLabel = akStandOutSection.querySelector(
-          `.${styles.devStepLabel}`,
-        );
-        const standOutTitle = akStandOutSection.querySelector(
-          `.${styles.devTitle}`,
-        );
-        const comparePanel = akStandOutSection.querySelector(
-          `.${styles.akComparePanel}`,
-        );
-        const compareFooter = akStandOutSection.querySelector(
-          `.${styles.akCompareFooter}`,
-        );
-        const compareTableHead = akStandOutSection.querySelector(
-          `.${styles.akCompareTable} thead tr`,
-        );
-        const compareRows = akStandOutSection.querySelectorAll(
-          `.${styles.akCompareTable} tbody tr`,
-        );
-        const compareMobileCards = akStandOutSection.querySelectorAll(
-          `.${styles.akCompareMobileCard}`,
-        );
-        const isCompareMobile = window.matchMedia("(max-width: 640px)").matches;
-
-        if (standOutLabel && standOutTitle) {
-          gsap.fromTo(
-            [standOutLabel, standOutTitle],
-            { opacity: 0, y: 30 },
-            {
-              opacity: 1,
-              y: 0,
-              duration: 1,
-              ease: "power2.out",
-              stagger: 0.1,
-              scrollTrigger: {
-                trigger: akStandOutSection,
-                start: "top 82%",
-                toggleActions: "play none none reverse",
-              },
-            },
-          );
-        }
-
-        if (comparePanel) {
-          gsap.fromTo(
-            comparePanel,
-            { opacity: 0, scale: 0.98 },
-            {
-              opacity: 1,
-              scale: 1,
-              duration: 1.1,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: comparePanel,
-                start: "top 85%",
-                toggleActions: "play none none reverse",
-              },
-            },
-          );
-        }
-
-        if (!isCompareMobile && comparePanel && compareRows.length > 0) {
-          const tableRevealTargets = compareTableHead
-            ? [compareTableHead, ...compareRows]
-            : [...compareRows];
-          gsap.set(tableRevealTargets, { opacity: 0 });
-
-          const compareTl = gsap.timeline({
-            scrollTrigger: {
-              trigger: comparePanel,
-              start: "top 80%",
-              toggleActions: "play none none reverse",
-            },
-          });
-
-          if (compareTableHead) {
-            compareTl.to(compareTableHead, {
-              opacity: 1,
-              duration: 0.6,
-              ease: "power2.out",
+    );
+ 
+    // Pin the section; each scroll step reveals the next card
+    const STEP = window.innerHeight * 0.6;
+    const totalScroll = (levels.length - 1) * STEP;
+ 
+    const pin = ScrollTrigger.create({
+      trigger: section,
+      start: "top top",
+      end: `+=${totalScroll}`,
+      pin: sticky,
+      pinSpacing: true,
+      anticipatePin: 1,
+      onUpdate: (self) => {
+        const progress = self.progress;
+        const totalCards = cardEls.length;
+        const floatIdx = progress * (totalCards - 1);
+ 
+        cardEls.forEach((card, i) => {
+          if (i === 0) {
+            const opacity = i < floatIdx ? Math.max(0, 1 - (floatIdx - i)) : 1;
+            gsap.set(card, {
+              autoAlpha: opacity,
+              y: i < floatIdx ? -20 * (floatIdx - i) : 0,
             });
-          }
-
-          compareTl.to(
-            compareRows,
-            {
-              opacity: 1,
-              duration: 0.55,
-              ease: "power2.out",
-              stagger: 0.06,
-            },
-            compareTableHead ? "-=0.2" : 0,
-          );
-        }
-
-        if (isCompareMobile) {
-          compareMobileCards.forEach((card, idx) => {
-            gsap.fromTo(
-              card,
-              { opacity: 0, y: 25, scale: 0.96 },
-              {
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                duration: 0.85,
-                ease: "power2.out",
-                delay: idx * 0.08,
-                scrollTrigger: {
-                  trigger: card,
-                  start: "top 88%",
-                  toggleActions: "play none none reverse",
-                },
-              },
-            );
-          });
-        }
-
-        if (compareFooter) {
-          gsap.fromTo(
-            compareFooter,
-            { opacity: 0, y: 20 },
-            {
-              opacity: 1,
-              y: 0,
-              duration: 0.9,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: compareFooter,
-                start: "top 90%",
-                toggleActions: "play none none reverse",
-              },
-            },
-          );
-        }
-
-      }
-
-      // Animate AI Engineer build flow section
-      const aiBuildSection = contentRef.current?.querySelector(
-        `.${styles.aiEngineerBuildSection}`,
-      );
-      if (aiBuildSection) {
-        const buildLabel = aiBuildSection.querySelector(
-          `.${styles.devStepLabel}`,
-        );
-        const buildTitle = aiBuildSection.querySelector(`.${styles.devTitle}`);
-        if (buildLabel && buildTitle) {
-          gsap.fromTo(
-            [buildLabel, buildTitle],
-            { opacity: 0, y: 30 },
-            {
-              opacity: 1,
-              y: 0,
-              duration: 1,
-              ease: "power2.out",
-              stagger: 0.1,
-              scrollTrigger: {
-                trigger: aiBuildSection,
-                start: "top 82%",
-                toggleActions: "play none none reverse",
-              },
-            },
-          );
-        }
-
-        const buildSubsections = aiBuildSection.querySelectorAll(
-          `.${styles.aiBuildSubsection}`,
-        );
-        buildSubsections.forEach((subsection) => {
-          // Animate title/body only — opacity/transform on the subsection breaks
-          // backdrop-filter on the diagram panel inside it.
-          const buildCopy = subsection.querySelectorAll(
-            `.${styles.aiBuildSubTitle}, .${styles.aiBuildSubBody}`,
-          );
-          if (buildCopy.length > 0) {
-            gsap.fromTo(
-              buildCopy,
-              { opacity: 0, y: 28 },
-              {
-                opacity: 1,
-                y: 0,
-                duration: 0.95,
-                ease: "power2.out",
-                stagger: 0.08,
-                scrollTrigger: {
-                  trigger: subsection,
-                  start: "top 85%",
-                  toggleActions: "play none none reverse",
-                },
-                clearProps: "transform",
-              },
-            );
+          } else {
+            const fadeIn = Math.min(1, Math.max(0, (floatIdx - (i - 1)) / 0.5));
+            const fadeOut =
+              i < totalCards - 1
+                ? Math.max(0, 1 - Math.max(0, (floatIdx - i) / 0.5))
+                : 1;
+            const opacity = fadeIn * fadeOut;
+            const yOffset = 40 * (1 - fadeIn);
+            gsap.set(card, { autoAlpha: opacity, y: yOffset });
           }
         });
-      }
-
-      // Animate developer framework section
-      const devFrameworkSection = contentRef.current?.querySelector(
-        `.${styles.devFrameworkSection}`,
-      );
-      if (devFrameworkSection) {
-        gsap.fromTo(
-          devFrameworkSection,
-          { opacity: 0, y: 40 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 1.1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: devFrameworkSection,
-              start: "top 80%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      }
-
-      // Animate framework buttons
-      const frameworkButtons =
-        contentRef.current?.querySelectorAll(`.${styles.devFrameworkButton}`) ||
-        [];
-      frameworkButtons.forEach((btn, idx) => {
-        gsap.fromTo(
-          btn,
-          { opacity: 0, y: 15, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.7,
-            ease: "power2.out",
-            delay: idx * 0.08,
-            scrollTrigger: {
-              trigger: btn,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Animate code blocks
-      const codeBlocks =
-        contentRef.current?.querySelectorAll(
-          `.${styles.devFrameworkCodeBlock}`,
-        ) || [];
-      codeBlocks.forEach((block, idx) => {
-        gsap.fromTo(
-          block,
-          { opacity: 0, x: 30, scale: 0.98 },
-          {
-            opacity: 1,
-            x: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            delay: idx * 0.12,
-            scrollTrigger: {
-              trigger: block,
-              start: "top 83%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      // Add professional hover animations to cards
-      const allAnimatedCards =
-        contentRef.current?.querySelectorAll(
-          `.${styles.contentCard}, .${styles.capabilityCard}, .${styles.devFeatureCard}, .${styles.blValueCard}`,
-        ) || [];
-      allAnimatedCards.forEach((card: any) => {
-        card.addEventListener("mouseenter", () => {
-          gsap.to(card, {
-            y: -6,
-            scale: 1.02,
-            boxShadow: "0 16px 32px rgba(0,0,0,0.12)",
-            duration: 0.25,
-            ease: "power2.out",
-          });
-        });
-        card.addEventListener("mouseleave", () => {
-          gsap.to(card, {
-            y: 0,
-            scale: 1,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            duration: 0.25,
-            ease: "power2.out",
-          });
-        });
-      });
-
-      // Add hover animations to framework buttons
-      frameworkButtons.forEach((btn: any) => {
-        btn.addEventListener("mouseenter", () => {
-          gsap.to(btn, {
-            scale: 1.05,
-            duration: 0.15,
-            ease: "power2.out",
-          });
-        });
-        btn.addEventListener("mouseleave", () => {
-          gsap.to(btn, {
-            scale: 1,
-            duration: 0.15,
-            ease: "power2.out",
-          });
-        });
-      });
-    }
-
+      },
+    });
+ 
     return () => {
-      if (scrollTriggerRef.current) {
-        scrollTriggerRef.current.kill();
-        scrollTriggerRef.current = null;
-      }
+      pin.kill();
+      ScrollTrigger.getAll().forEach((st) => {
+        if (st.vars.trigger === section) st.kill();
+      });
     };
-  }, [selectedLevel, styles]);
-
+  }, []);
+ 
   return (
     <section
       ref={sectionRef}
-      className={`${styles.levelsSection} ${!selectedLevel ? styles.levelsPinned : ""}`}
+      className={styles.levelsSection}
+      style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}
     >
-      <StepTimeline levelId={selectedLevel} contentRef={contentRef} />
-      <div className="container">
-        <div className={styles.levelsContainer}>
-          <p ref={subtitleRef} className={styles.levelsSubtitle}>
-            Which path describes you the best
-          </p>
-
-          <h2 ref={titleRef} className={styles.levelsTitle}>
-            Agent Kernel is designed to adapt to your level of expertise
-          </h2>
-
-          <div ref={cardsRef} className={styles.levelsGrid}>
+      {/* Sticky container — this gets pinned */}
+      <div
+        ref={stickyRef}
+        className={styles.levelsStickyInner}
+        style={{ position: "relative", zIndex: 1, overflow: "hidden" }}
+      >
+        {/* Background video */}
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="none"
+          className={styles.levelsSectionVideo}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            zIndex: 0,
+            opacity: 0.6,
+            pointerEvents: "none",
+            transform: "scale(1.2)",
+            transformOrigin: "center center",
+          }}
+        >
+          <source src="/video/path-bg.mp4" type="video/mp4" />
+        </video>
+ 
+        {/* Header */}
+        <div className={styles.levelsFrameContainer}>
+          <div className={styles.levelsHeader}>
+            <div ref={badgeRef} className={styles.levelsPathBadge}>
+              <span className={styles.levelsPathBadgePlus}>+</span> Built for Everyone
+            </div>
+            <h2 ref={titleRef} className={styles.levelsTitle}>
+              Choose Your Path to Production
+            </h2>
+            <p ref={subtitleRef} className={styles.levelsSubtitle}>
+              Select the role that fits you
+            </p>
+          </div>
+  
+          {/* Cards stack */}
+          <div ref={cardsWrapRef} className={styles.levelsWindowStack}>
             {levels.map((level) => (
-              <div
-                key={level.id}
-                data-level={level.id}
-                onClick={() => handleLevelSelect(level.id)}
-                className={`${styles.levelCard} ${selectedLevel === level.id ? styles.levelCardSelected : ""}`}
-              >
-                <div className={styles.levelImage}>
-                  <img src={level.image} alt={level.title} />
+              <div key={level.id} className={styles.levelWindowCard}>
+                {/* macOS window chrome */}
+                <div className={styles.levelWindowChrome}>
+                  <div className={styles.levelWindowDots}>
+                    <span className={`${styles.levelWindowDot} ${styles.dotRed}`} />
+                    <span className={`${styles.levelWindowDot} ${styles.dotYellow}`} />
+                    <span className={`${styles.levelWindowDot} ${styles.dotGreen}`} />
+                  </div>
+                  <div className={styles.levelWindowActions}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <path d="M9 3v18" />
+                    </svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="m21 21-4.35-4.35" />
+                    </svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="15 3 21 3 21 9" />
+                      <polyline points="9 21 3 21 3 15" />
+                      <line x1="21" y1="3" x2="14" y2="10" />
+                      <line x1="3" y1="21" x2="10" y2="14" />
+                    </svg>
+                  </div>
                 </div>
-
-                <h3 className={styles.levelCardTitle}>{level.title}</h3>
-                <p className={styles.levelCardDescription}>
-                  {level.description}
-                </p>
+  
+                {/* Card body */}
+                <div className={styles.levelWindowBody}>
+                  {/* Left: image area */}
+                  <div className={styles.levelWindowImageArea}>
+                    <img
+                      src={level.image}
+                      alt={level.title}
+                      className={styles.levelWindowImage}
+                    />
+                  </div>
+  
+                  {/* Right: content */}
+                  <div className={styles.levelWindowContent}>
+                    <h3 className={styles.levelWindowTitle}>{level.title}</h3>
+                    <p className={styles.levelWindowDescription}>{level.description}</p>
+                    <ul className={styles.levelWindowBullets}>
+                      {level.bullets.map((bullet, i) => (
+                        <li key={i} className={styles.levelWindowBulletItem}>
+                          <span className={styles.levelWindowBulletCheck}>✓</span>
+                          {bullet}
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      className={styles.levelWindowReadMore}
+                      onClick={() => handleLevelSelect(level.id)}
+                    >
+                      Read More
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
-          </div>
-
-          <div className={styles.levelsHint}>
-            Select a path that best describes you to continue
           </div>
         </div>
       </div>
