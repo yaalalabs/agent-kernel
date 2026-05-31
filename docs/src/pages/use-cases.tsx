@@ -478,19 +478,19 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
 const ORBIT_CARDS = [
   {
     icon: <MdSwapHoriz />,
-    color: '#40BBDE',
+    color: '#00DDFF',
     title: 'Framework-Neutral',
     desc: 'The only runtime that lets you bring inswap between  agents written from OpenAI Agents,  CrewAI, LangGraph, and Google ADK, Smolagents, LiveKit with near-zero code change — and run all of them simultaneously in a single runtime.',
   },
   {
     icon: <MdCloud />,
-    color: '#8E5DFF',
+    color: '#00DDFF',
     title: 'Multi-Cloud Native',
     desc: 'Same agent code deploys to AWS and Azure out of the box. No other AI agent runtime offers this out of the box.',
   },
   {
     icon: <MdSpeed />,
-    color: '#F7A544',
+    color: '#00DDFF',
     title: 'Full Lifecycle',
     desc: 'Build → Test → Deploy → Monitor. One tool that takes you from a Python script to a multi-AZ production cluster.',
   },
@@ -502,25 +502,25 @@ const ORBIT_CARDS = [
   },
   {
     icon: <MdSecurity />,
-    color: '#DB4444',
+    color: '#00DDFF',
     title: 'Production-Ready',
     desc: 'Fault tolerance, guardrails, observability, and session management built in from day one — not bolted on later.',
   },
   {
     icon: <MdMessage />,
-    color: '#73D0EB',
+    color: '#00DDFF',
     title: 'Built-in Messaging',
     desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail — ship working integrations on day one, not months later.',
   },
   {
     icon: <FaLock />,
-    color: '#B391FF',
+    color: '#00DDFF',
     title: 'Open-Source',
     desc: 'No usage fees, no proprietary lock-in. Community-driven with full codebase access — fork it, extend it, contribute back.',
   },
   {
     icon: <MdNetworkCheck />,
-    color: '#F7BC77',
+    color: '#00DDFF',
     title: 'Protocol Support',
     desc: 'MCP and A2A server modes for future-proof agent architectures and full ecosystem compatibility out of the box.',
   },
@@ -612,11 +612,9 @@ function RealWorldUseCases() {
       tl.kill();
     };
   }, []);
+
   return (
-    <section
-      className={styles.realWorldSection}
-      ref={sectionRef}
-    >
+    <section className={styles.realWorldSection} ref={sectionRef}>
       <div className="container">
         <div className={styles.realWorldSectionHeader}>
           <h2 className={styles.realWorldSectionTitle}>Real world use cases</h2>
@@ -624,18 +622,19 @@ function RealWorldUseCases() {
         <ul className={styles.featuresGrid}>
           {REAL_WORLD_USE_CASES.map((useCase, i) => (
             <li key={useCase.title} className={styles.featureGridCell}>
-              <Link
-                to={useCase.link}
-                className={styles.featureCard}
-              >
+              <Link to={useCase.link} className={styles.featureCard}>
                 <div className={styles.featureCardHeader}>
-                  <span className={styles.featureIndex}>{String(i + 1).padStart(2, '0')}</span>
+                  <span className={styles.featureIndex}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
                 </div>
                 <div className={styles.featureCardBody}>
                   <h3 className={styles.featureTitle}>{useCase.title}</h3>
                   <p className={styles.featureDescription}>{useCase.description}</p>
                 </div>
-                <span className={styles.featureLink}>Read blog →</span>
+                <div className={styles.featureCardFooter}>
+                  <span className={styles.featureLink}>Read More</span>
+                </div>
               </Link>
             </li>
           ))}
@@ -681,8 +680,8 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
     const cards = containerRef.current?.querySelectorAll(`.${styles.orbitCard}`);
     if (!containerRef.current || !hub || !hubImg || !cards?.length) return;
 
-    // set initial state for hub, hub image, and cards
-    gsap.set([hub, hubImg, ...Array.from(cards)], { opacity: 0, scale: 0.88 });
+    // set initial state for cards only (leave hub/video static)
+    gsap.set(Array.from(cards), { opacity: 0, scale: 0.88 });
 
     const tl = gsap.timeline({
       scrollTrigger: {
@@ -693,15 +692,8 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
       },
     });
 
-    // 1) Reveal hub container, 2) pop the logo with a small rotate/overshoot, 3) reveal cards sequentially
-    tl.to(hub, { opacity: 1, scale: 1, duration: 0.45, ease: 'power2.out' })
-      .to(
-        hubImg,
-        { opacity: 1, scale: 1.12, rotation: 8, duration: 0.45, ease: 'back.out(1.6)' },
-        '-=0.05'
-      )
-      .to(hubImg, { scale: 1, rotation: 0, duration: 0.28, ease: 'power2.out' })
-      .to(cards, { opacity: 1, scale: 1, duration: 0.4, stagger: 0.4, ease: 'back.out(1.2)' });
+    // Reveal cards sequentially; keep hub (video) static — no hub animation
+    tl.to(cards, { opacity: 1, scale: 1, duration: 0.4, stagger: 0.20, ease: 'back.out(1.2)' });
   }, []);
 
   return (
@@ -730,13 +722,15 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
 
           {/* Central hub */}
           <div ref={hubRef} className={styles.orbitHub}>
-            <span className={styles.pulseRing} aria-hidden="true" />
-            <span className={styles.pulseRingDelayed} aria-hidden="true" />
-            <div className={styles.orbitHubGlowCore} />
-            <img
-              src="/img/branding/agent-kernel-icon-color.svg"
-              alt="Agent Kernel"
+            <video
+              src="/video/hero.mp4"
+              aria-label="Agent Kernel"
               className={styles.orbitHubIcon}
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="metadata"
             />
           </div>
         </div>
@@ -751,7 +745,6 @@ export default function UseCases() {
   const [activeSegment, setActiveSegment] = useState<typeof segments[0] | null>(null);
   const backgroundRef = useRef<ParticleBackgroundHandle | null>(null);
 
-  // Ensure footer covers hero section
   useEffect(() => {
     const footer = document.querySelector('footer');
     if (footer) {
@@ -764,17 +757,14 @@ export default function UseCases() {
     <Layout
       title="Use Cases"
       description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
-      {/* <PlantParticlesBackground ref={backgroundRef} modelUrl='models/brain.glb' /> */}
-      
-      {/* Fixed hero section */}
+    
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
         <Hero />
       </div>
       
-      {/* Spacer to push content below the fixed hero */}
       <div style={{ height: '100vh' }} />
       
-      {/* Content sections that scroll over the hero */}
+      {/* Content that scroll over the hero section */}
       <main style={{ position: 'relative', zIndex: 10, backgroundColor: '#010002' }}>
         <UseCaseJourneyMap />
         <RealWorldUseCases />
