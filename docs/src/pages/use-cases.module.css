@@ -180,6 +180,27 @@
   z-index: 0;
 }
 
+.gradientBackground {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 150% 80% at 50% 50%,
+    rgba(79, 125, 247, 0.18) 0%,
+    rgba(139, 92, 246, 0.14) 20%,
+    rgba(168, 85, 247, 0.12) 40%,
+    rgba(139, 92, 246, 0.14) 60%,
+    rgba(79, 125, 247, 0.18) 80%,
+    transparent 100%
+  );
+  background-size: 200% 200%;
+  background-position: 0% center;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.65;
+  filter: blur(45px);
+  mix-blend-mode: screen;
+}
+
 .heroContent {
   position: relative;
   z-index: 1;
@@ -197,8 +218,29 @@
   }
 }
 
+.Badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid rgba(99, 179, 237, 0.55);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: rgba(99, 179, 237, 0.06);
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
+}
+
 .heroTitle {
-  font-size: clamp(1.35rem, 5.5vw, 5rem);
+  font-size: clamp(1.0rem, 4.2vw, 3.5rem);
   font-weight: 900;
   letter-spacing: -0.03em;
   line-height: 1.1;
@@ -1005,7 +1047,7 @@
   }
 
   .heroTitle {
-    font-size: clamp(2rem, 6vw, 3.2rem);
+    font-size: clamp(1.8rem, 5vw, 2.6rem);
   }
 
   .heroSubtitle {
@@ -1072,7 +1114,7 @@
   }
 
   .heroTitle {
-    font-size: clamp(1.75rem, 7vw, 2.5rem);
+    font-size: clamp(1.5rem, 6vw, 2rem);
   }
 
   .heroSubtitle {
@@ -1219,7 +1261,7 @@
   }
 
   .heroTitle {
-    font-size: clamp(1.5rem, 8.5vw, 1.875rem);
+    font-size: clamp(1.25rem, 7.5vw, 1.6rem);
     margin-bottom: 0.65rem;
   }
 
