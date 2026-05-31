@@ -123,7 +123,7 @@
   align-items: center;
   justify-content: center;
   transition: background-color 0.2s ease, width 0.2s ease, height 0.2s ease;
-  color: #0d001a;
+  color: #010002;
 }
 
 .pip--upcoming {

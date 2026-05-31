@@ -1,7 +1,7 @@
 /* ── Design tokens ─────────────────────────────────────────────────────────── */
 :local {
-  --ps-bg:          #0D001A;
-  --ps-surface:     #160025;
+  --ps-bg:          #010002;
+  --ps-surface:     #010002;
   --ps-border:      rgba(0, 221, 255, 0.18);
   --ps-border-sub:  rgba(0, 221, 255, 0.09);
   --ps-cyan:        #00DDFF;
@@ -37,7 +37,7 @@
   border-radius: 50%;
   background: transparent;
   border: none;
-  color: #0D001A;
+  color: #010002;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -92,7 +92,7 @@
   bottom: 50%;
   transform: translateY(50%) translateX(4px);
   white-space: nowrap;
-  background: #0D001A;
+  background: #010002;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(0, 221, 255, 0.25);
@@ -369,7 +369,7 @@
   right: 24px;
   width: 400px;
   height: 580px;
-  background: #0D001A;
+  background: #010002;
   border-radius: 14px;
   border: 1px solid rgba(0, 221, 255, 0.2);
   box-shadow:
@@ -436,7 +436,7 @@
 
 .chatHeader {
   padding: 14px 16px;
-  background: #160025;
+  background: #010002;
   border-bottom: 1px solid rgba(0, 221, 255, 0.1);
   display: flex;
   justify-content: space-between;
@@ -739,14 +739,14 @@
 /* User */
 .userMessage .messageBubble {
   background: linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
-  color: #0D001A;
+  color: #0D1F35;
   border-bottom-right-radius: 3px;
   box-shadow: 0 0 16px rgba(0, 221, 255, 0.25);
 }
 
 /* Agent */
 .agentMessage .messageBubble {
-  background: #160025;
+  background: #010002;
   color: rgba(255, 255, 255, 0.88);
   border-bottom-left-radius: 3px;
   border: 1px solid rgba(0, 221, 255, 0.14);
@@ -975,7 +975,7 @@
 
 .chatInputContainer {
   padding: 12px 14px;
-  background: #160025;
+  background: #010002;
   border-top: 1px solid rgba(0, 221, 255, 0.1);
   display: flex;
   gap: 8px;
@@ -1041,7 +1041,7 @@
   border-radius: 9px;
   background: linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
   border: none;
-  color: #0D001A;
+  color: #010002;
   cursor: pointer;
   display: flex;
   align-items: center;
