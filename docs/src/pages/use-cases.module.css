@@ -2,6 +2,17 @@
    Use Cases Page — Dark Technical Premium
    ============================================================================= */
 
+/* Ensure footer and all Docusaurus elements cover the fixed hero */
+:global(footer) {
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+:global(.navbar) {
+  position: relative;
+  z-index: 11;
+}
+
 /* ─── Shared ──────────────────────────────────────────────────────────────── */
 
 .sectionHeader {
@@ -360,6 +371,7 @@
 /* ─── Differentiators Bento ───────────────────────────────────────────────── */
 
 .diffSection {
+  background: #010002;
   padding: clamp(2.5rem, 8vw, 5rem) 0;
   backdrop-filter: blur(4px);
 }
@@ -1333,6 +1345,7 @@
 /* ─── Real world use cases ──────────────────────────────────────────────── */
 
 .realWorldSection {
+  background: #010002;
   padding: 4rem 0;
 }
 

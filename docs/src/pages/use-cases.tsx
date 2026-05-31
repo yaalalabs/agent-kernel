@@ -47,6 +47,7 @@ function Hero() {
   const animFrameRef = useRef<number>(0);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isIdleRef = useRef(false);
+  const isAnimatingRef = useRef(true);
 
   /* ── Aurora canvas animation ── */
   useEffect(() => {
@@ -89,46 +90,49 @@ function Hero() {
     let t = 0;
 
     const draw = () => {
-      t++;
+      // Only animate if the hero section is not covered
+      if (isAnimatingRef.current) {
+        t++;
 
-      // If idle, animate the target position in a circular motion
-      if (isIdleRef.current) {
-        const slowTime = t * 0.005; // Idle animation movement
-        const radius = 0.25;
-        targetMouseRef.current = {
-          x: 0.5 + Math.cos(slowTime) * radius,
-          y: 0.5 + Math.sin(slowTime) * radius,
-        };
+        // If idle, animate the target position in a circular motion
+        if (isIdleRef.current) {
+          const slowTime = t * 0.005; // Idle animation movement
+          const radius = 0.25;
+          targetMouseRef.current = {
+            x: 0.5 + Math.cos(slowTime) * radius,
+            y: 0.5 + Math.sin(slowTime) * radius,
+          };
+        }
+
+        // Smoothly lerp mouse position
+        const m = mouseRef.current;
+        const tm = targetMouseRef.current;
+        m.x += (tm.x - m.x) * 0.04;
+        m.y += (tm.y - m.y) * 0.04;
+
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Clear with deep dark base
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = '#010002';
+        ctx.fillRect(0, 0, W, H);
+
+        // Cursor spotlight — a tight bright glow that follows the mouse
+        const sx = m.x * W;
+        const sy = m.y * H;
+        const spotR = Math.max(W, H) * 0.5;
+        const spot = ctx.createRadialGradient(sx, sy, 0, sx, sy, spotR);
+        spot.addColorStop(0,   'rgba(0,119,255,0.10)');
+        spot.addColorStop(0.5, 'rgba(0,119,255,0.05)');
+        spot.addColorStop(1,   'rgba(0,119,255,0.00)');
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fillStyle = spot;
+        ctx.fillRect(0, 0, W, H);
+
+        // Reset composite
+        ctx.globalCompositeOperation = 'source-over';
       }
-
-      // Smoothly lerp mouse position
-      const m = mouseRef.current;
-      const tm = targetMouseRef.current;
-      m.x += (tm.x - m.x) * 0.04;
-      m.y += (tm.y - m.y) * 0.04;
-
-      const W = canvas.width;
-      const H = canvas.height;
-
-      // Clear with deep dark base
-      ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = '#010002';
-      ctx.fillRect(0, 0, W, H);
-
-      // Cursor spotlight — a tight bright glow that follows the mouse
-      const sx = m.x * W;
-      const sy = m.y * H;
-      const spotR = Math.max(W, H) * 0.5;
-      const spot = ctx.createRadialGradient(sx, sy, 0, sx, sy, spotR);
-      spot.addColorStop(0,   'rgba(0,119,255,0.10)');
-      spot.addColorStop(0.5, 'rgba(0,119,255,0.05)');
-      spot.addColorStop(1,   'rgba(0,119,255,0.00)');
-      ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = spot;
-      ctx.fillRect(0, 0, W, H);
-
-      // Reset composite
-      ctx.globalCompositeOperation = 'source-over';
 
       animFrameRef.current = requestAnimationFrame(draw);
     };
@@ -190,6 +194,21 @@ function Hero() {
         },
         '-=0.25',
       );
+  }, []);
+
+  /* ── Stop animations when hero is covered ── */
+  useEffect(() => {
+    const handleScroll = () => {
+      // Check if hero is covered by scrolling down past 100vh
+      if (window.scrollY > window.innerHeight * 0.8) {
+        isAnimatingRef.current = false;
+      } else {
+        isAnimatingRef.current = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   return (
@@ -732,17 +751,36 @@ export default function UseCases() {
   const [activeSegment, setActiveSegment] = useState<typeof segments[0] | null>(null);
   const backgroundRef = useRef<ParticleBackgroundHandle | null>(null);
 
+  // Ensure footer covers hero section
+  useEffect(() => {
+    const footer = document.querySelector('footer');
+    if (footer) {
+      footer.style.position = 'relative';
+      footer.style.zIndex = '10';
+    }
+  }, []);
+
   return (
     <Layout
       title="Use Cases"
       description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
       {/* <PlantParticlesBackground ref={backgroundRef} modelUrl='models/brain.glb' /> */}
-      <Hero />
-      <main>
+      
+      {/* Fixed hero section */}
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
+        <Hero />
+      </div>
+      
+      {/* Spacer to push content below the fixed hero */}
+      <div style={{ height: '100vh' }} />
+      
+      {/* Content sections that scroll over the hero */}
+      <main style={{ position: 'relative', zIndex: 10, backgroundColor: '#010002' }}>
         <UseCaseJourneyMap />
         <RealWorldUseCases />
         <Differentiators backgroundRef={backgroundRef} />
       </main>
+      
       {activeSegment && (
         <SegmentModal segment={activeSegment} onClose={() => setActiveSegment(null)} />
       )}
