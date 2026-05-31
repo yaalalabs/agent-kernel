@@ -3577,25 +3577,48 @@
   gap: 1rem;
 }
 
-.architectureLayerGroup {
+.developerArchitectureLayerGroup {
   display: flex;
   gap: 1.5rem;
   overflow: hidden;
 }
 
-.architectureLayerGroup:hover .layerNumberCircle {
-  border-color: rgba(0, 221, 255, 0.4);
-  background-color: rgba(0, 221, 255, 0.1);
+.aiEngineeringLayerGroup {
+  display: flex;
+  gap: 1.5rem;
+  overflow: hidden;
 }
 
-.architectureLayerGroup:hover .layerConnector {
-  background-color: rgba(0, 221, 255, 0.4);
+/* Developer Architecture */
+.developerArchitectureLayerGroup:hover .layerNumberCircle {
+  border-color: rgba(204, 125, 33, 0.4);
+  background-color: rgba(204, 125, 33, 0.1);
 }
 
-.architectureLayerGroup:hover .layerContentBox {
-  border-color: rgba(0, 221, 255, 0.4);
-  background-color: rgba(0, 221, 255, 0.1);
+.developerArchitectureLayerGroup:hover .layerConnector {
+  background-color: rgba(204, 125, 33, 0.4);
 }
+
+.developerArchitectureLayerGroup:hover .layerContentBox {
+  border-color: rgba(204, 125, 33, 0.4);
+  background-color: rgba(204, 125, 33, 0.1);
+}
+
+/* AI Engineering Architecture*/
+.aiEngineeringLayerGroup:hover .layerNumberCircle {
+  border-color: rgba(38, 166, 77, 0.4);
+  background-color: rgba(38, 166, 77, 0.1);
+}
+
+.aiEngineeringLayerGroup:hover .layerConnector {
+  background-color: rgba(38, 166, 77, 0.4);
+}
+
+.aiEngineeringLayerGroup:hover .layerContentBox {
+  border-color: rgba(38, 166, 77, 0.4);
+  background-color: rgba(38, 166, 77, 0.1);
+}
+
 
 .layerNumberWrapper {
   display: flex;
@@ -4269,7 +4292,7 @@
   }
 
   /* Center lone card in last row when 3-col group has odd count on 2-col grid */
-  .devFeaturesGrid3 .devFeatureCard:last-child:nth-child(2n + 1) {
+  .devFeaturesGrid3 .devFeatureCard .aiEngineerFeatureCard:last-child:nth-child(2n + 1) {
     grid-column: 1 / -1;
     max-width: calc(50% - 0.5rem);
     justify-self: center;
@@ -4285,7 +4308,7 @@
     grid-template-columns: repeat(4, 1fr);
   }
 
-  .devFeaturesGrid3 .devFeatureCard:last-child:nth-child(2n + 1) {
+  .devFeaturesGrid3 .devFeatureCard .aiEngineerFeatureCard:last-child:nth-child(2n + 1) {
     grid-column: auto;
     max-width: none;
     justify-self: stretch;
@@ -4307,9 +4330,29 @@
     background-color 300ms ease;
 }
 
+.aiEngineerFeatureCard {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  transition:
+    border-color 300ms ease,
+    background-color 300ms ease;
+}
+
 .devFeatureCard:hover {
-  border-color: rgba(0, 221, 255, 0.4);
-  background-color: rgba(0, 221, 255, 0.1);
+  border-color: rgba(204, 125, 33, 0.4);
+  background-color: rgba(204, 125, 33, 0.1);
+}
+
+.aiEngineerFeatureCard:hover {
+  border-color: rgba(38, 166, 77, 0.4);
+  background-color: rgba(38, 166, 77, 0.1);
 }
 
 .devFeatureCardHeader {
@@ -4441,7 +4484,7 @@
   align-items: stretch;
 }
 
-.devHookPipeline .devFeatureCard {
+.devHookPipeline .devFeatureCard .aiEngineerFeatureCard {
   min-height: 100%;
 }
 
@@ -4488,7 +4531,7 @@
     min-width: 100%;
   }
 
-  .devHookPipeline .devFeatureCard {
+  .devHookPipeline .devFeatureCard .aiEngineerFeatureCard {
     min-width: 0;
   }
 
@@ -5391,6 +5434,10 @@
   }
 
   .devFeatureCard {
+    padding: 1rem;
+  }
+
+  .aiEngineerFeatureCard {
     padding: 1rem;
   }
 

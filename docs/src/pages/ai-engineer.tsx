@@ -644,7 +644,7 @@ export default function AIEngineerPage() {
             {AI_ENGINEER_ARCH_LAYERS.map((layer, i, arr) => (
               <div
                 key={layer.label}
-                className={styles.architectureLayerGroup}
+                className={styles.aiEngineeringLayerGroup}
               >
                 <div className={styles.layerNumberWrapper}>
                   <div className={styles.layerNumberCircle}>
@@ -856,7 +856,7 @@ export default function AIEngineerPage() {
                     return (
                       <div
                         key={feature.title}
-                        className={styles.devFeatureCard}
+                        className={styles.aiEngineerFeatureCard}
                       >
                         <div className={styles.devFeatureCardHeader}>
                           <div className={styles.devFeatureIconWrap}>

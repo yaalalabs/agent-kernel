@@ -450,7 +450,7 @@ export default function DeveloperPage() {
                 ].map((layer, i, arr) => (
                   <div
                     key={layer.label}
-                    className={styles.architectureLayerGroup}
+                    className={styles.developerArchitectureLayerGroup}
                   >
                     {/* Step number */}
                     <div className={styles.layerNumberWrapper}>
