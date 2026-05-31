@@ -922,25 +922,6 @@ interface AkCompareCell {
   text?: string;
 }
 
-function AkCompareCellContent({ cell }: { cell: AkCompareCell }) {
-  if (cell.status === "partial") {
-    return <span className={styles.akComparePartial}>{cell.text}</span>;
-  }
-
-  const Icon = cell.status === "positive" ? MdCheck : MdClose;
-  const iconClass =
-    cell.status === "positive"
-      ? styles.akCompareIconPos
-      : styles.akCompareIconNeg;
-
-  return (
-    <span className={styles.akCompareCellValue}>
-      <Icon className={iconClass} aria-hidden />
-      {cell.text ? <span>{cell.text}</span> : null}
-    </span>
-  );
-}
-
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
@@ -1002,21 +983,76 @@ function Levels() {
  
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
- 
+
     const section = sectionRef.current;
     const sticky = stickyRef.current;
     const cardEls = cardsWrapRef.current?.querySelectorAll<HTMLElement>(
       `.${styles.levelWindowCard}`
     );
- 
-    if (!section || !sticky || !cardEls || cardEls.length === 0) return;
- 
+
+    if (!section || !cardEls || cardEls.length === 0) return;
+
+    // Use a simpler, mobile-friendly animation for tablet/mobile (no pin)
+    const isSmall = typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(max-width: 1024px)").matches
+      : window.innerWidth <= 1024;
+
+    if (isSmall) {
+      // Simple fade-in for mobile/tablet: opacity only (no translate)
+      const cards = Array.from(cardEls);
+      gsap.set(cards, { autoAlpha: 0 });
+
+      const reveals = cards.map((card) =>
+        gsap.to(card, {
+          autoAlpha: 1,
+          duration: 0.6,
+          ease: "power2.out",
+          scrollTrigger: {
+            trigger: card,
+            start: "top 100%", // ensure card is fully in view for small screens
+            toggleActions: "play none none none",
+            once: true,
+          },
+        })
+      );
+
+      // Header: simple fade-in as section enters
+      const headerAnim = gsap.to([badgeRef.current, titleRef.current, subtitleRef.current], {
+        autoAlpha: 1,
+        duration: 0.5,
+        stagger: 0.06,
+        ease: "power2.out",
+        scrollTrigger: { trigger: section, start: "top 95%", toggleActions: "play none none none", once: true },
+      });
+
+      // On small screens ScrollTrigger can calculate sizes before layout settles.
+      // Force a refresh after a small delay so triggers start reliably.
+      setTimeout(() => {
+        try {
+          ScrollTrigger.refresh();
+        } catch (e) {
+          /* ignore */
+        }
+      }, 120);
+
+      return () => {
+        reveals.forEach((r) => {
+          r.scrollTrigger?.kill();
+          r.kill();
+        });
+        headerAnim.scrollTrigger?.kill();
+        headerAnim.kill();
+      };
+    }
+
+    // Desktop / large screens: keep original pin + stacked reveal behavior
     // Set all cards invisible initially except the first
-    gsap.set(Array.from(cardEls), { autoAlpha: 0, y: 40 });
-    gsap.set(cardEls[0], { autoAlpha: 1, y: 0 });
- 
+    const cardArray = Array.from(cardEls);
+    gsap.set(cardArray, { autoAlpha: 0, y: 40 });
+    gsap.set(cardArray[0], { autoAlpha: 1, y: 0 });
+
     // Header fade in
-    gsap.fromTo(
+    const headerPinAnim = gsap.fromTo(
       [badgeRef.current, titleRef.current, subtitleRef.current],
       { opacity: 0, y: 20 },
       {
@@ -1032,11 +1068,11 @@ function Levels() {
         },
       }
     );
- 
+
     // Pin the section; each scroll step reveals the next card
     const STEP = window.innerHeight * 0.6;
     const totalScroll = (levels.length - 1) * STEP;
- 
+
     const pin = ScrollTrigger.create({
       trigger: section,
       start: "top top",
@@ -1046,10 +1082,10 @@ function Levels() {
       anticipatePin: 1,
       onUpdate: (self) => {
         const progress = self.progress;
-        const totalCards = cardEls.length;
+        const totalCards = cardArray.length;
         const floatIdx = progress * (totalCards - 1);
- 
-        cardEls.forEach((card, i) => {
+
+        cardArray.forEach((card, i) => {
           if (i === 0) {
             const opacity = i < floatIdx ? Math.max(0, 1 - (floatIdx - i)) : 1;
             gsap.set(card, {
@@ -1069,14 +1105,13 @@ function Levels() {
         });
       },
     });
- 
+
     return () => {
       pin.kill();
-      ScrollTrigger.getAll().forEach((st) => {
-        if (st.vars.trigger === section) st.kill();
-      });
+      headerPinAnim.scrollTrigger?.kill();
+      headerPinAnim.kill && headerPinAnim.kill();
     };
-  }, []);
+  }, [levels]);
  
   return (
     <section

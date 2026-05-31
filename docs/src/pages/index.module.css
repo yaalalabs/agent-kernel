@@ -2404,6 +2404,10 @@
     padding: 5rem 0;
   }
 
+  .deployHeader {
+    margin-top: -2rem;
+  }
+
   .cloudGrid {
     grid-template-columns: 1fr;
     gap: 1rem;
@@ -2447,6 +2451,10 @@
 @media (max-width: 480px) {
   .deploySection {
     padding: 4rem 0;
+  }
+
+  .deployHeader {
+    margin-top: 0.5rem;
   }
 
   .cloudGrid {
@@ -3091,14 +3099,20 @@
  
   .levelsHeader {
     margin-bottom: 1.25rem;
+    gap: 1rem; /* increased gap for tablet */
   }
  
   .levelsTitle {
     font-size: clamp(1.3rem, 5.5vw, 1.75rem);
+    line-height: 1.12;
+    max-width: 14ch;
   }
 
   .levelsSubtitle {
     font-size: 0.82rem;
+    line-height: 1.5;
+    margin-top: 0;
+    max-width: 28ch;
   }
  
   .levelsWindowStack {
@@ -3108,6 +3122,36 @@
   .levelWindowBody {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
+  }
+
+  /* Make cards stack instead of absolute-overlap on smaller screens */
+  .levelsWindowStack {
+    position: static;
+    margin-top: 0;
+    min-height: auto;
+    max-width: 980px;
+  }
+
+  .levelWindowCard {
+    position: relative; /* remove absolute stacking so cards flow */
+    inset: auto;
+    width: 100%;
+    margin: 0 0 1.25rem 0;
+    display: block;
+    transform: none !important;
+    will-change: auto;
+  }
+
+  /* Reduce frame container offset so header sits above stacked cards */
+  .levelsFrameContainer {
+    margin-top: 0;
+    max-height: none;
+    padding: 0 0.5rem;
+  }
+
+  /* Avoid the heavy background video on tablet to improve perf */
+  .levelsSectionVideo {
+    display: none;
   }
  
   .levelWindowImageArea {
@@ -3141,8 +3185,8 @@
   }
  
   .levelWindowImage {
-    width: 80px;
-    height: 80px;
+    width: 150px;
+    height: 150px;
   }
  
   .levelWindowContent {
@@ -3156,6 +3200,42 @@
   .levelWindowBulletItem {
     font-size: 0.74rem;
   }
+
+  .levelsHeader {
+    gap: 1rem; 
+    margin-bottom: 1.25rem;
+  }
+
+  .levelsTitle {
+    font-size: clamp(1.2rem, 7vw, 1.55rem);
+    line-height: 1.15;
+    max-width: 12ch;
+  }
+
+  .levelsSubtitle {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    max-width: 24ch;
+  }
+
+  /* Further tighten card spacing on small phones */
+  .levelsWindowStack {
+    margin-top: 0;
+    min-height: auto;
+  }
+
+  .levelWindowCard {
+    margin-bottom: 0.9rem;
+    border-radius: 10px;
+  }
+
+  .levelsFrameContainer {
+    margin-top: 0;
+    padding: 0 0.5rem;
+    max-width: 100%;
+  }
+
+  .levelsSectionVideo { display: none; }
 }
 
 .levelsPinned {
