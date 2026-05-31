@@ -15,6 +15,7 @@ import {
 import styles from "./index.module.css";
 import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
 import { StepTimeline } from "../components/StepTimeline";
+import HeroAnimation from "../components/HeroAnimation";
 
 const DEV_FEATURE_GROUPS = [
   {
@@ -81,7 +82,11 @@ export default function DeveloperPage() {
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
 
-    if (contentRef.current) {
+    if (!sectionRef.current || !contentRef.current) {
+      return;
+    }
+
+    const context = gsap.context(() => {
       // Animate developer analogy section
       const devAnalogy = contentRef.current?.querySelector(
         `.${styles.developerAnalogy}`,
@@ -289,10 +294,10 @@ export default function DeveloperPage() {
           });
         });
       });
-    }
+    }, sectionRef);
 
     return () => {
-      ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
+      context.revert();
     };
   }, []);
 
@@ -301,6 +306,11 @@ export default function DeveloperPage() {
       title="Agent Kernel for Developers"
       description="Learn how Agent Kernel helps developers build and deploy AI agents quickly without reinventing the wheel."
     >
+      <HeroAnimation
+        badge="Developers"
+        title="Build AI Agents Without Rebuilding Infrastructure"
+        subtitle="Agent Kernel gives developers a production-ready runtime so you can focus on agent logic. Use your preferred framework, expose agents through API or messaging channels, and deploy to cloud environments fast with enterprise-grade building blocks included."
+      />
       <section ref={sectionRef} className={styles.devPageSection}>
         <StepTimeline levelId="02" contentRef={contentRef} />
         <div className="container">

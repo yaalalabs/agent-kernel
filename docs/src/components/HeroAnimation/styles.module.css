@@ -1,0 +1,193 @@
+/* ─── Hero ────────────────────────────────────────────────────────────────── */
+
+.hero {
+  position: relative;
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  overflow: hidden;
+  text-align: center;
+  animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', 'Liberation Sans', sans-serif;
+}
+
+@media (min-width: 640px) {
+  .hero {
+    padding: 3.5rem 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero {
+    padding: 5rem 1.5rem;
+  }
+}
+
+.hero :global(.container) {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.heroContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 48rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+  .heroContent {
+    margin: 0 auto;
+  }
+}
+
+.Badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid rgba(99, 179, 237, 0.55);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: rgba(99, 179, 237, 0.06);
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
+}
+
+.heroTitle {
+  font-size: clamp(1.0rem, 4.2vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: #ffffff;
+  margin-bottom: 0.75rem;
+  text-rendering: optimizeLegibility;
+}
+
+.heroSubtitle {
+  font-size: clamp(0.875rem, 2vw, 1.125rem);
+  color: #ffffff;
+  line-height: 1.75;
+  max-width: 40rem;
+  margin: 0 auto 2.25rem;
+}
+
+.heroButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2.5rem;
+}
+
+@media (min-width: 640px) {
+  .heroButtons {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: clamp(0.5rem, 2vw, 0.75rem);
+  }
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btnPrimary {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.625rem;
+  padding: 0.4rem 1.375rem 0.4rem 0.4rem !important;
+  background: rgba(14, 8, 28, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap;
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease !important;
+}
+
+.btnPrimary:hover {
+  background: rgba(26, 14, 46, 0.88) !important;
+  border-color: rgba(0, 221, 255, 0.35) !important;
+  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 221, 255, 0.12) !important;
+  transform: translateY(-1px) !important;
+  color: #ffffff !important;
+}
+
+.btnIcon {
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4facfe 0%, #2979ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: #ffffff;
+  font-style: normal;
+  line-height: 1;
+}
+
+.btnSecondary {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.625rem;
+  padding: 0.4rem 1.375rem 0.4rem 0.4rem !important;
+  background: rgba(14, 8, 28, 0.5) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap;
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease !important;
+}
+
+.btnSecondary:hover {
+  background: rgba(0, 221, 255, 0.07) !important;
+  border-color: rgba(0, 221, 255, 0.4) !important;
+  transform: translateY(-1px) !important;
+  color: #ffffff !important;
+}
+
+.btnIconSecondary {
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-style: normal;
+  line-height: 1;
+}

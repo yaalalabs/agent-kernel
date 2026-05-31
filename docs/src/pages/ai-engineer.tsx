@@ -31,6 +31,7 @@ import BuildingAgentsFlowDiagram from "../components/BuildingAgentsFlowDiagram";
 import RunningAgentsFlowDiagram from "../components/RunningAgentsFlowDiagram";
 import AgentKernelSitsInFlowDiagram from "../components/AgentKernelSitsInFlowDiagram";
 import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
+import HeroAnimation from "../components/HeroAnimation";
 
 export default function AIEngineerPage() {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -366,12 +367,244 @@ export default function AIEngineerPage() {
     setCopiedCode(id);
     setTimeout(() => setCopiedCode(null), 2000);
   };
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+
+    if (!contentRef.current) {
+      return;
+    }
+
+    const context = gsap.context(() => {
+      const root = contentRef.current;
+      if (!root) {
+        return;
+      }
+
+      const animateSections = [
+        `.${styles.developerAnalogy}`,
+        `.${styles.architectureWrapper}`,
+        `.${styles.akStandOutSection}`,
+        `.${styles.devFeatureSection}`,
+        `.${styles.devFrameworkSection}`,
+        `.${styles.aiEngineerBuildSection}`,
+        `.${styles.devArchitectureSection}`,
+      ];
+
+      animateSections.forEach((selector, index) => {
+        const sections = root.querySelectorAll(selector);
+        sections.forEach((section) => {
+          gsap.fromTo(
+            section,
+            { opacity: 0, y: 36 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 1,
+              ease: "power2.out",
+              delay: index * 0.08,
+              scrollTrigger: {
+                trigger: section,
+                start: "top 84%",
+                toggleActions: "play none none reverse",
+              },
+            },
+          );
+        });
+      });
+
+      const architectureLayers = root.querySelectorAll(
+        `.${styles.architectureLayerGroup}`,
+      );
+      architectureLayers.forEach((layer, index) => {
+        gsap.fromTo(
+          layer,
+          { opacity: 0, x: -50 },
+          {
+            opacity: 1,
+            x: 0,
+            duration: 0.9,
+            delay: index * 0.12,
+            ease: "power2.out",
+            scrollTrigger: {
+              trigger: layer,
+              start: "top 85%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+
+      const comparePanel = root.querySelector(`.${styles.akComparePanel}`);
+      if (comparePanel) {
+        gsap.fromTo(
+          comparePanel,
+          { opacity: 0, y: 30, scale: 0.98 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.95,
+            ease: "power2.out",
+            scrollTrigger: {
+              trigger: comparePanel,
+              start: "top 86%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      }
+
+      const comparisonCards = root.querySelectorAll(
+        `.${styles.akCompareMobileCard}`,
+      );
+      comparisonCards.forEach((card, index) => {
+        gsap.fromTo(
+          card,
+          { opacity: 0, y: 24, scale: 0.97 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.85,
+            ease: "power2.out",
+            delay: index * 0.07,
+            scrollTrigger: {
+              trigger: card,
+              start: "top 88%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+
+      const featureCards = root.querySelectorAll(`.${styles.devFeatureCard}`);
+      featureCards.forEach((card, index) => {
+        gsap.fromTo(
+          card,
+          { opacity: 0, y: 24, scale: 0.96 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.9,
+            ease: "power2.out",
+            delay: (index % 3) * 0.08,
+            scrollTrigger: {
+              trigger: card,
+              start: "top 88%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+
+      const frameworkButtons = root.querySelectorAll(
+        `.${styles.devFrameworkButton}`,
+      );
+      frameworkButtons.forEach((button, index) => {
+        gsap.fromTo(
+          button,
+          { opacity: 0, y: 16, scale: 0.95 },
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.7,
+            ease: "power2.out",
+            delay: index * 0.08,
+            scrollTrigger: {
+              trigger: button,
+              start: "top 90%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+
+      const codeBlocks = root.querySelectorAll(
+        `.${styles.devFrameworkCodeBlock}`,
+      );
+      codeBlocks.forEach((block, index) => {
+        gsap.fromTo(
+          block,
+          { opacity: 0, x: 28, scale: 0.98 },
+          {
+            opacity: 1,
+            x: 0,
+            scale: 1,
+            duration: 0.95,
+            ease: "power2.out",
+            delay: index * 0.1,
+            scrollTrigger: {
+              trigger: block,
+              start: "top 88%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+
+      const buildSubsections = root.querySelectorAll(
+        `.${styles.aiBuildSubsection}`,
+      );
+      buildSubsections.forEach((subsection, index) => {
+        gsap.fromTo(
+          subsection,
+          { opacity: 0, y: 28 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.9,
+            ease: "power2.out",
+            delay: index * 0.1,
+            scrollTrigger: {
+              trigger: subsection,
+              start: "top 86%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+
+      const hookConnectors = root.querySelectorAll(
+        `.${styles.devHookPipelineConnector}`,
+      );
+      hookConnectors.forEach((connector, index) => {
+        gsap.fromTo(
+          connector,
+          { opacity: 0, scale: 0.9 },
+          {
+            opacity: 1,
+            scale: 1,
+            duration: 0.5,
+            ease: "power2.out",
+            delay: index * 0.06,
+            scrollTrigger: {
+              trigger: connector,
+              start: "top 90%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
+      });
+    }, contentRef);
+
+    return () => {
+      context.revert();
+    };
+  }, []);
  
   return (
     <Layout
       title="Agent Kernel for AI Engineers"
       description="Learn how Agent Kernel provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
     >
+      <HeroAnimation
+        badge="AI Engineers"
+        title="Run Advanced Agent Systems on a Unified Runtime"
+        subtitle="Bring your existing agentic code and operate it with production discipline. Agent Kernel unifies execution, memory, hooks, observability, integrations, and multi-cloud deployment so AI engineering teams can ship compliant, scalable systems faster."
+      />
       <section ref={contentRef} className={styles.developerContent}>
         <StepTimeline levelId="03" contentRef={contentRef} />
         {/* Step 01 — AI Engineer Analogy */}
