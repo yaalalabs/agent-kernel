@@ -29,10 +29,42 @@ import { useHistory } from "@docusaurus/router";
 /* ─── What's New Banner ─────────────────────────────────────────────────── */
 
 function WhatsNewBanner() {
+  const bannerRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLSpanElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: bannerRef.current,
+        start: "top 90%",
+        toggleActions: "play none none none",
+      },
+    });
+
+    tl.fromTo(
+      bannerRef.current,
+      { autoAlpha: 0, y: -16 },
+      { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out" }
+    ).fromTo(
+      [iconRef.current, textRef.current, linkRef.current],
+      { autoAlpha: 0, y: 8 },
+      { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.08, ease: "power2.out" },
+      "-=0.25"
+    );
+
+    return () => {
+      tl.kill();
+    };
+  }, []);
+
   return (
-    <div className={styles.whatsNewBanner}>
+    <div ref={bannerRef} className={styles.whatsNewBanner}>
       <div className={styles.whatsNewInner}>
-        <span className={styles.whatsNewIconWrap}>
+        <span ref={iconRef} className={styles.whatsNewIconWrap}>
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="16"
@@ -48,7 +80,7 @@ function WhatsNewBanner() {
             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
           </svg>
         </span>
-        <span className={styles.whatsNewText}>
+        <span ref={textRef} className={styles.whatsNewText}>
           <strong>Knowledge Base Support</strong> — ChromaDB, Neo4j &amp;
           Starburst Galaxy built-in, plus a <strong>custom adapter API</strong>{" "}
           to plug in any backend.
@@ -56,6 +88,7 @@ function WhatsNewBanner() {
         <Link
           to="/docs/next/architecture/memory-management"
           className={styles.whatsNewLink}
+          ref={linkRef}
         >
           Read More →
         </Link>
@@ -96,6 +129,27 @@ function Hero() {
       .to(bulletsRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.3")
       .to(videoRef.current, { opacity: 1, y: 0, duration: 0.9 }, "-=0.7")
       .to(scrollLabelRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.4");
+
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    let pulse: any = null;
+    if (!reducedMotion && scrollLabelRef.current) {
+      pulse = gsap.to(scrollLabelRef.current, {
+        y: 6,
+        repeat: -1,
+        yoyo: true,
+        ease: "power1.inOut",
+        duration: 1.1,
+        delay: 1.2,
+      });
+    }
+
+    return () => {
+      tl.kill();
+      if (pulse) pulse.kill();
+    };
   }, []);
  
   return (
@@ -1312,7 +1366,7 @@ export default function Home() {
       description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months."
     >
       {/* <PlantParticlesBackground ref={backgroundRef} /> */}
-      {/* <WhatsNewBanner /> */}
+      <WhatsNewBanner />
       <Hero />
       <main>
         <FrameworksStrip />

@@ -306,6 +306,8 @@
   align-items: center;
   justify-content: center;
   padding-top: 0.75rem;
+  margin-bottom: 0;
+  z-index: 1;
 }
 
 .whatsNewInner {
@@ -659,6 +661,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  margin-top: -4rem;
 }
 
 .heroButtons {
