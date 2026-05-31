@@ -3092,6 +3092,21 @@
   border-color: rgba(255, 255, 255, 0.35);
   color: #ffffff;
 }
+
+.levelsSectionVideo {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 26%,
+    black 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 26%,
+    black 100%
+  );
+}
  
 /* ─── Responsive ── */
  
