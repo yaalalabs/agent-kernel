@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import styles from './use-cases.module.css';
+import indexStyles from './index.module.css';
 import UseCaseJourneyMap from '../components/UseCaseJourneyMap';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -739,6 +740,55 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
   );
 }
 
+interface CommunityProps {
+  sectionRef?: React.Ref<HTMLElement>;
+}
+
+function Community({ sectionRef }: CommunityProps) {
+  return (
+    <section ref={sectionRef} className={indexStyles.ctaSection}>
+      <div className="container">
+        <div className={indexStyles.ctaContent}>
+          <h2 className={indexStyles.ctaTitle}>
+            Ready to Ship Your
+            <br />
+            First <span className={indexStyles.ctaTitleGradient}>Agent</span>?
+          </h2>
+          <p className={indexStyles.ctaSubtitle}>
+            Free, open-source, Apache 2.0. No licensing costs, no vendor
+            lock-in. Join hundreds of developers building production AI agents
+            with Agent Kernel.
+          </p>
+          <div className={indexStyles.ctaButtons}>
+            <Link
+              className={`button button--primary button--lg ${indexStyles.btnPrimary}`}
+              to="/docs"
+            >
+              <span className={indexStyles.btnIcon}>→</span>
+              Get Started Free
+            </Link>
+            <Link
+              className={`button button--secondary button--lg ${indexStyles.btnSecondary}`}
+              to="https://github.com/yaalalabs/agent-kernel"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className={indexStyles.btnIconSecondary}>
+                <FaGithub />
+              </span>
+              View On GitHub
+            </Link>
+          </div>
+
+          <div className={indexStyles.ctaImageWrapper}>
+            <img src="/img/cta-bg.png" alt="Agent Kernel" className={indexStyles.ctaImage} />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function UseCases() {
@@ -769,6 +819,7 @@ export default function UseCases() {
         <UseCaseJourneyMap />
         <RealWorldUseCases />
         <Differentiators backgroundRef={backgroundRef} />
+        <Community />
       </main>
       
       {activeSegment && (
