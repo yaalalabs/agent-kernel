@@ -618,6 +618,10 @@ function RealWorldUseCases() {
     <section className={styles.realWorldSection} ref={sectionRef}>
       <div className="container">
         <div className={styles.realWorldSectionHeader}>
+          <div className={styles.Badge}>
+            <span className={styles.badgeStar}>✦</span>
+            Use Cases
+          </div>
           <h2 className={styles.realWorldSectionTitle}>Real world use cases</h2>
         </div>
         <ul className={styles.featuresGrid}>
@@ -701,6 +705,10 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
     <section className={styles.diffSection}>
       <div className="container">
         <div className={styles.sectionHeader}>
+          <div className={styles.Badge}>
+            <span className={styles.badgeStar}>✦</span>
+            Trust
+          </div>
           <h2 className={styles.sectionTitle}>Why Teams Choose Agent Kernel</h2>
           <p className={styles.sectionSubtitle}>
             What makes Agent Kernel different from rolling your own or using other platforms.

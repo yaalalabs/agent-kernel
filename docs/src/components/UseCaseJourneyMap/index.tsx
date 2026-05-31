@@ -92,7 +92,10 @@ export default function UseCaseJourneyMap() {
 
         {/* Header */}
         <div className={styles.header}>
-          <p className={styles.eyebrow}>Time to production</p>
+          <div className={styles.Badge}>
+            <span className={styles.badgeStar}>✦</span>
+            Time to production
+          </div>
           <h2 className={styles.title}>
             Traditional vs.{' '}
             <span className={styles.gradientText}>Agent Kernel</span>

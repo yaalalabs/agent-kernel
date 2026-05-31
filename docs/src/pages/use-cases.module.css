@@ -1558,3 +1558,25 @@
     padding: 1.75rem 1.75rem 1.5rem;
   }
 }
+
+/* Badge */
+.Badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid rgba(99, 179, 237, 0.55);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: rgba(99, 179, 237, 0.06);
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
+}

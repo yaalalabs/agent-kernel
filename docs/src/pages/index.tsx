@@ -548,7 +548,7 @@ function AgentSkills() {
           <div className={styles.sectionHeader}>
             <div className={styles.Badge}>
               <span className={styles.badgeStar}>✦</span>
-              Developer Experience
+              Agent Skills
             </div>
             <h2 className={styles.sectionTitle}>
               Your coding assistant, supercharged.
@@ -774,7 +774,7 @@ function Deployment() {
         <div className={styles.deployHeader}>
           <div className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Developer Experience
+            Deployment
           </div>
           <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
           <p className={styles.deploySubtitle}>
