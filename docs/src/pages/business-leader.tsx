@@ -434,13 +434,6 @@ export default function BusinessLeaderPage() {
                 <AgentKernelArchDiagram />
               </div>
             </div>
-
-            {/* Back to home link */}
-            <div style={{ marginTop: "4rem", textAlign: "center" }}>
-              <Link to="/" className={styles.btnPrimary}>
-                ← Back to Home
-              </Link>
-            </div>
           </div>
         </div>
       </section>

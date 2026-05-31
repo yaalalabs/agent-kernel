@@ -3851,6 +3851,13 @@
 
 /* ─── AI Engineer — Stand Out comparison table ─────────────────────────────── */
 
+.aiEngineerBlock{
+  margin-top: 5rem;
+  max-width: 72rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .akStandOutSection {
   margin-top: 0;
   margin-bottom: 5rem;
@@ -4876,6 +4883,9 @@
 
 .devArchitectureSection {
   margin-top: 4rem;
+  max-width: 72rem;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .devArchitectureWrapper {
@@ -5495,4 +5505,49 @@
   .layerContentBox {
     padding: 1rem;
   }
+}
+
+/* ─── Business Leader Gradient Animation ──────────────────────────────────────────────── */
+@keyframes gradientShift {
+  0%   { background-position: 100% 20%; }
+  25%  { background-position: 0%   60%; }
+  50%  { background-position: 100% 80%; }
+  75%  { background-position: 0%   30%; }
+  100% { background-position: 100% 20%; }
+}
+
+.blPageSection {
+  background: radial-gradient(ellipse 55% 50% at 50% 50%, #1a0020 0%, #010002 65%);
+  background-size: 250% 250%;
+  animation: gradientShift 16s ease-in-out infinite;
+}
+
+/* ─── Developer Gradient Animation ──────────────────────────────────────────────── */
+@keyframes gradientShiftDev {
+  0%   { background-position: 100% 20%; }
+  25%  { background-position: 0%   60%; }
+  50%  { background-position: 100% 80%; }
+  75%  { background-position: 0%   30%; }
+  100% { background-position: 100% 20%; }
+}
+
+.devPageSection {
+  background: radial-gradient(ellipse 55% 50% at 50% 50%, #1a0f02 0%, #010002 65%);
+  background-size: 250% 250%;
+  animation: gradientShiftDev 16s ease-in-out infinite;
+}
+
+/* ─── AI Engineer Gradient Animation ──────────────────────────────────────────────── */
+@keyframes gradientShiftAI {
+  0%   { background-position: 100% 20%; }
+  25%  { background-position: 0%   60%; }
+  50%  { background-position: 100% 80%; }
+  75%  { background-position: 0%   30%; }
+  100% { background-position: 100% 20%; }
+}
+
+.aiEngineerSection {
+  background: radial-gradient(ellipse 55% 50% at 50% 50%, #0d2018 0%, #010002 65%);
+  background-size: 250% 250%;
+  animation: gradientShiftAI 16s ease-in-out infinite;
 }

@@ -6,8 +6,8 @@
 /* ── Bar ─────────────────────────────────────────────────────────────── */
 
 .bar {
-  position: fixed;
-  top: 60px; /* sits flush below your main nav */
+  position: sticky;
+  top: 0;
   left: 0;
   right: 0;
   z-index: 200;
@@ -17,7 +17,7 @@
   padding: 0 28px;
 
   /* Surface */
-  background-color: rgba(13, 0, 26, 0.94);
+  background-color: #010002;
   border-bottom: 1px solid rgba(0, 221, 255, 0.22);
 
   /* Frosted glass — supported everywhere modern */
