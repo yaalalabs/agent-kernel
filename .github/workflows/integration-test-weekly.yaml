@@ -184,21 +184,21 @@ jobs:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
           if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
-            # # Deploy
-            # python .github/scripts/run_single_test.py \
-            #   --type ${{ matrix.type }} \
-            #   --path ${{ matrix.path }} \
-            #   --deploy-dir ${{ matrix.deploy_dir }} \
-            #   --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
-            #   --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
-            #   --action deploy
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
+              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
+              --action deploy
             
-            # # Test
-            # python .github/scripts/run_single_test.py \
-            #   --type ${{ matrix.type }} \
-            #   --path ${{ matrix.path }} \
-            #   --deploy-dir ${{ matrix.deploy_dir }} \
-            #   --action test
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
             
             # Destroy
             python .github/scripts/run_single_test.py \
@@ -210,19 +210,19 @@ jobs:
               --action destroy
 
           elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
-            # # Deploy
-            # python .github/scripts/run_single_test.py \
-            #   --type ${{ matrix.type }} \
-            #   --path ${{ matrix.path }} \
-            #   --deploy-dir ${{ matrix.deploy_dir }} \
-            #   --action deploy
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
             
-            # # Test
-            # python .github/scripts/run_single_test.py \
-            #   --type ${{ matrix.type }} \
-            #   --path ${{ matrix.path }} \
-            #   --deploy-dir ${{ matrix.deploy_dir }} \
-            #   --action test
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
             
             # Destroy
             python .github/scripts/run_single_test.py \
@@ -232,19 +232,19 @@ jobs:
               --action destroy
 
           elif [[ "${{ matrix.type }}" == "gcp-serverless" || "${{ matrix.type }}" == "gcp-containerized" ]]; then
-            # # Deploy
-            # python .github/scripts/run_single_test.py \
-            #   --type ${{ matrix.type }} \
-            #   --path ${{ matrix.path }} \
-            #   --deploy-dir ${{ matrix.deploy_dir }} \
-            #   --action deploy
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
             
-            # # Test
-            # python .github/scripts/run_single_test.py \
-            #   --type ${{ matrix.type }} \
-            #   --path ${{ matrix.path }} \
-            #   --deploy-dir ${{ matrix.deploy_dir }} \
-            #   --action test
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
             
             # Destroy
             python .github/scripts/run_single_test.py \
