@@ -22,7 +22,7 @@ Usage:
   $(basename "$0") <cloud> [options]
 
 Clouds:
-  aws       Setup S3 + DynamoDB backend
+  aws       Setup S3 backend
   azure     Setup Azure Storage backend
   gcp       Setup GCS backend
 
@@ -30,7 +30,6 @@ Options:
 
   AWS options:
     --bucket <name>           S3 bucket name
-    --dynamodb <name>         DynamoDB table name
     --region <region>         AWS region
 
   Azure options:
@@ -56,7 +55,6 @@ Examples:
   # Override AWS values
   $(basename "$0") aws \
     --bucket my-tf-state \
-    --dynamodb my-lock-table \
     --region us-east-1
 
   # Azure with overrides
@@ -229,7 +227,6 @@ setup_gcp() {
 ########################################
 # Default override variables (empty)
 BUCKET_NAME=""
-DYNAMODB_TABLE=""
 REGION=""
 
 STORAGE_ACCOUNT=""
