@@ -1,6 +1,6 @@
 /* ─────────────────────────────────────────────────────────────────────────
    StepTimeline — styles.module.css
-   Clean, professional fixed top bar.
+   Clean, premium glowing progress bar matching the mockups.
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ── Bar ─────────────────────────────────────────────────────────────── */
@@ -11,29 +11,58 @@
   left: 0;
   right: 0;
   z-index: 200;
-  height: 56px;
+  height: 0;
+  margin-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  padding: 0 28px;
+  padding: 0 48px;
 
-  /* Surface */
-  background-color: #010002;
-  border-bottom: 1px solid rgba(0, 221, 255, 0.22);
+  /* Premium Dark Surface */
+  background-color: rgba(6, 6, 9, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0);
 
-  /* Frosted glass — supported everywhere modern */
+  /* Frosted glass */
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
+
+  /* Transition for smooth slide and fade */
+  transition: 
+    height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    margin-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.35s ease,
+    border-bottom-color 0.35s ease,
+    visibility 0.35s;
+}
+
+.bar--visible {
+  height: 90px;
+  margin-bottom: 1rem;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
 /* ── Inner layout ────────────────────────────────────────────────────── */
 
 .inner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  padding-top: 21px;
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
-  overflow: hidden;
+  height: 100%;
+  transform: translateY(-8px);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bar--visible .inner {
+  transform: translateY(0);
 }
 
 /* ── Connector line ──────────────────────────────────────────────────── */
@@ -41,9 +70,13 @@
 .connector {
   flex: 1;
   min-width: 12px;
-  height: 1px;
-  background-color: rgba(0, 221, 255, 0.2);
+  height: 2px;
+  margin-top: 11px;
+  background-color: #20232c;
   position: relative;
+  margin-left: -4px;
+  margin-right: -4px;
+  z-index: 1;
 }
 
 .connectorFill {
@@ -51,34 +84,40 @@
   left: 0;
   top: 0;
   bottom: 0;
-  height: 1px;
-  width: var(--fill, 0%);
-  background: linear-gradient(90deg, #00aade 0%, #00ddff 100%);
-  transition: width 120ms linear;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left;
+  background: linear-gradient(90deg, #00bfff 0%, #00ddff 100%);
+  box-shadow: 0 0 8px 1px rgba(0, 221, 255, 0.5);
+  transition: transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 /* ── Step button ─────────────────────────────────────────────────────── */
 
 .step {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   background: none;
   border: none;
-  padding: 7px 10px;
   cursor: pointer;
   flex-shrink: 0;
-  border-radius: 8px;
   outline: none;
-  transition: background-color 0.15s ease, opacity 0.2s ease;
+  padding: 0;
+  z-index: 2;
+  transition: transform 0.2s ease;
 }
 
 .step:focus-visible {
-  box-shadow: 0 0 0 2px rgba(242, 0, 255, 0.5);
+  outline: none;
 }
 
 .step--upcoming {
-  opacity: 0.62;
+  opacity: 0.7;
 }
 
 .step--done,
@@ -86,83 +125,82 @@
   opacity: 1;
 }
 
-/* ── Step number ─────────────────────────────────────────────────────── */
+/* ── Step number (Hidden in this visual style) ───────────────────────── */
 
 .num {
-  font-size: 11px;
-  font-weight: 600;
-  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
-  letter-spacing: 0.03em;
-  min-width: 16px;
-  text-align: right;
-  line-height: 1;
-  flex-shrink: 0;
-  transition: color 0.2s ease;
+  display: none;
 }
 
-.num--upcoming {
-  color: rgba(0, 170, 222, 0.6);
-}
-
-.num--done {
-  color: #00aade;
-}
-
-.num--active {
-  color: #00ddff;
-}
-
-/* ── Pip (state indicator dot / checkmark) ───────────────────────────── */
+/* ── Pip (state indicator dot) ───────────────────────────────────────── */
 
 .pip {
-  width: 8px;
-  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s ease, width 0.2s ease, height 0.2s ease;
-  color: #010002;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .pip--upcoming {
-  background-color: rgba(0, 170, 222, 0.35);
+  width: 8px;
+  height: 8px;
+  background-color: #2c2f36;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .pip--active {
-  width: 10px;
-  height: 10px;
-  background-color: #00ddff;
-  box-shadow: 0 0 0 2px rgba(242, 0, 255, 0.22);
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #00d5ff 30%, #0088cc 70%, #004466 100%);
+  box-shadow: 0 0 14px 4px rgba(0, 221, 255, 0.8), inset 0 -1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .pip--done {
-  background-color: #00aade;
+  width: 8px;
+  height: 8px;
+  background-color: #3f4450;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ── Interactive Hovers ──────────────────────────────────────────────── */
+
+.step:hover .pip--upcoming,
+.step:hover .pip--done {
+  background-color: #5a6172;
+  transform: scale(1.2);
+}
+
+.step:hover .label--upcoming,
+.step:hover .label--done {
+  color: #a0a8ba;
 }
 
 /* ── Label ───────────────────────────────────────────────────────────── */
 
 .label {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
-  white-space: nowrap;
   letter-spacing: 0.01em;
   line-height: 1;
-  transition: color 0.2s ease, font-weight 0.2s ease;
+  text-align: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .label--upcoming {
-  color: rgba(0, 170, 222, 0.72);
+  color: #4a4e5a;
 }
 
 .label--done {
-  color: #00aade;
+  color: #6a7182;
 }
 
 .label--active {
   font-weight: 600;
   color: #00ddff;
+  text-shadow: 0 0 8px rgba(0, 221, 255, 0.3);
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────── */

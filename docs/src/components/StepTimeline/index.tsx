@@ -45,6 +45,7 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
   const [connectorProgress, setConnectorProgress] = useState<number[]>([]);
   const rafRef = useRef<number | null>(null);
   const obsRef = useRef<IntersectionObserver | null>(null);
+  const stepLayoutsRef = useRef<{ top: number; height: number }[]>([]);
 
   const steps = levelId ? (LEVEL_STEPS[levelId] ?? []) : [];
 
@@ -88,6 +89,7 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
     if (!visible || !contentRef.current || steps.length === 0) {
       setActiveStep(0);
       setConnectorProgress([]);
+      stepLayoutsRef.current = [];
       return;
     }
 
@@ -95,15 +97,29 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
       (s) => contentRef.current!.querySelector(s.selector) as HTMLElement | null
     );
 
+    const measureLayouts = () => {
+      stepLayoutsRef.current = els.map((el) => {
+        if (!el) return { top: 0, height: 0 };
+        return {
+          top: getDocumentTop(el),
+          height: el.offsetHeight,
+        };
+      });
+    };
+
     const update = () => {
       const marker = window.innerHeight * 0.35;
       const scrollPos = window.scrollY + marker;
       let nextActive = 0;
 
-      const next = els.map((el, i) => {
-        if (!el) return 0;
-        const top = getDocumentTop(el);
-        const bottom = top + el.offsetHeight;
+      if (stepLayoutsRef.current.length === 0) {
+        measureLayouts();
+      }
+
+      const next = stepLayoutsRef.current.map((layout, i) => {
+        if (layout.height === 0) return 0;
+        const top = layout.top;
+        const bottom = top + layout.height;
         if (scrollPos >= top) nextActive = i;
         const start = top - marker;
         const end = bottom - marker;
@@ -121,14 +137,23 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
       rafRef.current = window.requestAnimationFrame(update);
     };
 
+    const onResize = () => {
+      stepLayoutsRef.current = [];
+      if (rafRef.current != null) return;
+      rafRef.current = window.requestAnimationFrame(update);
+    };
+
+    // Initial measurement and render tick
+    measureLayouts();
     update();
+
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
+    window.addEventListener('resize', onResize);
 
     return () => {
       if (rafRef.current) { window.cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('resize', onResize);
     };
   }, [visible, contentRef, steps]);
 
@@ -140,10 +165,10 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
     }
   };
 
-  if (!visible || steps.length === 0) return null;
+  if (steps.length === 0) return null;
 
   return (
-    <nav className={styles.bar} aria-label="Section progress">
+    <nav className={`${styles.bar} ${visible ? styles['bar--visible'] : ''}`} aria-label="Section progress">
       <div className={styles.inner}>
         {steps.map((step, index) => {
           const state: 'done' | 'active' | 'upcoming' =
@@ -163,7 +188,7 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
                 <div className={styles.connector} aria-hidden="true">
                   <div
                     className={styles.connectorFill}
-                    style={{ '--fill': `${Math.max(0, Math.min(1, connFill)) * 100}%` } as React.CSSProperties}
+                    style={{ '--fill': Math.max(0, Math.min(1, connFill)) } as React.CSSProperties}
                   />
                 </div>
               )}
