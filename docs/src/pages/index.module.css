@@ -651,6 +651,124 @@
   color: #000000;
 }
 
+/* ─── Explore Other Paths Section ───────────────────────────────────────── */
+.exploreSection {
+  padding: 3.5rem 0;
+  text-align: center;
+}
+
+.exploreInner {
+  max-width: 980px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.exploreGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: 2rem;
+  text-align: left;
+}
+
+/* Each card has an accent glow driven by --card-accent */
+.exploreCard {
+  --card-accent: #00c896; /* default accent — override per page */
+
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2rem;
+  border-radius: 1rem;
+  background:
+    radial-gradient(ellipse 60% 50% at 0% 100%, color-mix(in srgb, var(--card-accent) 18%, transparent), transparent),
+    #0100027e;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  backdrop-filter: blur(6px);
+}
+
+.exploreCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  border-color: color-mix(in srgb, var(--card-accent) 30%, transparent);
+  text-decoration: none;
+}
+
+.exploreCardTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.exploreCardSubtitle {
+  margin: 0 0 1.75rem;
+  color: #94a3b8;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.exploreCardFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.exploreCardFeatures li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+
+.exploreCardFeatures li::before {
+  content: '';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300c896' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.exploreCardCta {
+  display: inline-block;
+  margin-top: auto;
+  padding: 0.55rem 1.35rem;
+  border-radius: 2rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #fff;
+  text-decoration: none;
+  width: fit-content;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.exploreCard:hover .exploreCardCta {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: color-mix(in srgb, var(--card-accent) 50%, transparent);
+}
+
+@media (max-width: 768px) {
+  .exploreGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .exploreInner {
+    padding: 0 1rem;
+  }
+}
+
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
 
 .hero {
@@ -4641,6 +4759,7 @@
 
 .devArchitectureWrapper {
   margin-top: 2rem;
+  margin-bottom: 2rem;
   max-width: 100%;
 }
 

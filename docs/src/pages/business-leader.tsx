@@ -14,6 +14,7 @@ import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
 import BusinessLeaderScenarios from "../components/BusinessLeaderScenarios";
 import { StepTimeline } from "../components/StepTimeline";
 import HeroAnimation from "../components/HeroAnimation";
+import heroStyles from "../components/HeroAnimation/styles.module.css";
 
 export default function BusinessLeaderPage() {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -434,6 +435,62 @@ export default function BusinessLeaderPage() {
                 <AgentKernelArchDiagram accentColor="#6F45CC" />
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.exploreSection} aria-labelledby="explore-paths-bl">
+        {/* Top border + gradient glow */}
+        <div className={styles.topGlow} />
+
+        <div className="container exploreInner">
+          <div className={heroStyles.Badge}>
+            <span className={heroStyles.badgeStar}>✦</span>
+            Explore Other Paths
+          </div>
+          <h3 id="explore-paths-bl" className={heroStyles.heroTitle}>
+            Agent Kernel adapts to every role
+          </h3>
+          <p className={heroStyles.heroSubtitle}>
+            See how different teams build with Kernel
+          </p>
+
+          <div className={styles.exploreGrid}>
+            <Link
+              className={styles.exploreCard}
+              to="/developer"
+              style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
+            >
+              <h4 className={styles.exploreCardTitle}>Developer</h4>
+              <p className={styles.exploreCardSubtitle}>
+                Scaffold production-ready agents in minutes using the frameworks and languages you already know.
+                Ship faster without learning an entirely new development stack.
+              </p>
+              <ul className={styles.exploreCardFeatures}>
+                <li>Zero-config CLI with guided project setup</li>
+                <li>Seamless integration with your existing CI pipelines</li>
+                <li>Built-in retry and fallback routing logic</li>
+              </ul>
+              <span className={styles.exploreCardCta}>Read More</span>
+            </Link>
+
+            <Link
+              className={styles.exploreCard}
+              to="/ai-engineer"
+              style={{ '--card-accent': '#26A64D' } as React.CSSProperties}
+            >
+              <h4 className={styles.exploreCardTitle}>AI Engineer</h4>
+              <p className={styles.exploreCardSubtitle}>
+                Advanced agent systems built for scale. Design, fine-tune, and orchestrate multi-model
+                pipelines with full observability baked in.
+              </p>
+              <ul className={styles.exploreCardFeatures}>
+                <li>Zero-config CLI with guided project setup</li>
+                <li>Seamless integration with your existing CI pipelines</li>
+                <li>Built-in retry and fallback routing logic</li>
+              </ul>
+              <span className={styles.exploreCardCta}>Read More</span>
+            </Link>
           </div>
         </div>
       </section>
