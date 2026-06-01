@@ -861,7 +861,7 @@ export default function AIEngineerPage() {
               Use The Framework You Prefer
             </h2>
 
-            <FrameworkSelector showTitle={false} showDescription={true} />
+            <FrameworkSelector showTitle={false} showDescription={true} accentColor="#26A64D" />
           </div>
 
           {/* Step 06 — Production-ready compliant agents */}
@@ -924,7 +924,7 @@ export default function AIEngineerPage() {
             </p>
 
             <div className={styles.devArchitectureWrapper}>
-              <AgentKernelArchDiagram />
+              <AgentKernelArchDiagram accentColor="#26A64D" />
             </div>
           </div>
 
