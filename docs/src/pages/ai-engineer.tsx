@@ -145,7 +145,7 @@ export default function AIEngineerPage() {
       ],
     },
   ] as const;
-  
+
   const AI_ENGINEER_HOOK_PIPELINE = [
     {
       title: "Pre-Execution Hooks",
@@ -277,7 +277,7 @@ export default function AIEngineerPage() {
         {
           icon: MdTerminal,
           title: "CLI for Prototyping",
-          body: "Easy interfacing your agents on your laptop via Agent Kernel’s command line interface.",
+          body: "Easy interfacing your agents on your laptop via Agent Kernel's command line interface.",
         },
         {
           icon: MdBolt,
@@ -363,231 +363,220 @@ export default function AIEngineerPage() {
 
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
-
-    if (!contentRef.current) {
-      return;
-    }
+    if (!contentRef.current) return;
 
     const context = gsap.context(() => {
-      const root = contentRef.current;
-      if (!root) {
-        return;
+      const root = contentRef.current!;
+
+      // ─── Utility: fade-up a single element ───────────────────────────────
+      function fadeUp(
+        el: Element,
+        opts: { delay?: number; duration?: number; y?: number; start?: string } = {}
+      ) {
+        const { delay = 0, duration = 0.85, y = 28, start = "top 88%" } = opts;
+        gsap.fromTo(
+          el,
+          { opacity: 0, y },
+          {
+            opacity: 1,
+            y: 0,
+            duration,
+            delay,
+            ease: "power2.out",
+            scrollTrigger: {
+              trigger: el,
+              start,
+              toggleActions: "play none none reverse",
+            },
+          }
+        );
       }
 
-      const animateSections = [
-        `.${styles.developerAnalogy}`,
-        `.${styles.architectureWrapper}`,
-        `.${styles.akStandOutSection}`,
-        `.${styles.devFeatureSection}`,
-        `.${styles.devFrameworkSection}`,
-        `.${styles.aiEngineerBuildSection}`,
-        `.${styles.devArchitectureSection}`,
-      ];
+      // ─── Step 01: Analogy ─────────────────────────────────────────────────
+      const step01 = root.querySelector('[data-step="ai-01"]');
+      if (step01) fadeUp(step01, { y: 36, duration: 1 });
 
-      animateSections.forEach((selector, index) => {
-        const sections = root.querySelectorAll(selector);
-        sections.forEach((section) => {
+      // ─── Step 02: Architecture layers (slide from left, one by one) ───────
+      // These are short elements that individually enter the viewport, so
+      // per-element triggers are correct here — they're meant to stagger.
+      root
+        .querySelectorAll(`[data-step="ai-02"] .${styles.aiEngineeringLayerGroup}`)
+        .forEach((layer, i) => {
           gsap.fromTo(
-            section,
-            { opacity: 0, y: 36 },
+            layer,
+            { opacity: 0, x: -50 },
+            {
+              opacity: 1,
+              x: 0,
+              duration: 0.9,
+              delay: i * 0.1,
+              ease: "power2.out",
+              scrollTrigger: {
+                trigger: layer,
+                start: "top 88%",
+                toggleActions: "play none none reverse",
+              },
+            }
+          );
+        });
+
+      // ─── Step 03: Compare section ─────────────────────────────────────────
+      // CRITICAL: The entire step (heading + panel) must be opacity:1 BEFORE
+      // any part of it scrolls into view. We trigger on "top bottom" which
+      // fires the moment the very top pixel of the element enters the screen
+      // from below — so the animation always completes before rows are visible.
+      const step03 = root.querySelector('[data-step="ai-03"]');
+      if (step03) {
+        gsap.fromTo(
+          step03,
+          { opacity: 0, y: 24 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.6,
+            ease: "power2.out",
+            scrollTrigger: {
+              trigger: step03,
+              // "top bottom" = fires when top of element hits bottom of viewport
+              // The section is fully invisible at this point, so the short
+              // animation completes before anything is actually visible.
+              start: "top bottom",
+              toggleActions: "play none none reverse",
+            },
+          }
+        );
+      }
+
+      // ─── Step 04: Feature cards (scoped strictly to ai-04) ───────────────
+      root
+        .querySelectorAll(`[data-step="ai-04"] .${styles.aiEngineerFeatureCard}`)
+        .forEach((card, i) => {
+          gsap.fromTo(
+            card,
+            { opacity: 0, y: 20, scale: 0.97 },
             {
               opacity: 1,
               y: 0,
-              duration: 1,
+              scale: 1,
+              duration: 0.75,
+              delay: (i % 4) * 0.07,
               ease: "power2.out",
-              delay: index * 0.08,
               scrollTrigger: {
-                trigger: section,
-                start: "top 84%",
+                trigger: card,
+                start: "top 90%",
                 toggleActions: "play none none reverse",
               },
-            },
+            }
           );
         });
-      });
 
-      const architectureLayers = root.querySelectorAll(
-        `.${styles.architectureLayerGroup}`,
-      );
-      architectureLayers.forEach((layer, index) => {
-        gsap.fromTo(
-          layer,
-          { opacity: 0, x: -50 },
-          {
-            opacity: 1,
-            x: 0,
-            duration: 0.9,
-            delay: index * 0.12,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: layer,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+      // ─── Step 05: Framework section ──────────────────────────────────────
+      const step05 = root.querySelector('[data-step="ai-05"]');
+      if (step05) fadeUp(step05, { y: 36, duration: 1 });
 
-      const comparePanel = root.querySelector(`.${styles.akComparePanel}`);
-      if (comparePanel) {
-        gsap.fromTo(
-          comparePanel,
-          { opacity: 0, y: 30, scale: 0.98 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: comparePanel,
-              start: "top 86%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      }
+      root
+        .querySelectorAll(`[data-step="ai-05"] .${styles.devFrameworkButton}`)
+        .forEach((btn, i) => {
+          gsap.fromTo(
+            btn,
+            { opacity: 0, y: 16, scale: 0.95 },
+            {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              duration: 0.65,
+              delay: i * 0.07,
+              ease: "power2.out",
+              scrollTrigger: {
+                trigger: btn,
+                start: "top 92%",
+                toggleActions: "play none none reverse",
+              },
+            }
+          );
+        });
 
-      const comparisonCards = root.querySelectorAll(
-        `.${styles.akCompareMobileCard}`,
-      );
-      comparisonCards.forEach((card, index) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 24, scale: 0.97 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.85,
-            ease: "power2.out",
-            delay: index * 0.07,
-            scrollTrigger: {
-              trigger: card,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+      root
+        .querySelectorAll(`[data-step="ai-05"] .${styles.devFrameworkCodeBlock}`)
+        .forEach((block, i) => {
+          gsap.fromTo(
+            block,
+            { opacity: 0, x: 28, scale: 0.98 },
+            {
+              opacity: 1,
+              x: 0,
+              scale: 1,
+              duration: 0.9,
+              delay: i * 0.1,
+              ease: "power2.out",
+              scrollTrigger: {
+                trigger: block,
+                start: "top 90%",
+                toggleActions: "play none none reverse",
+              },
+            }
+          );
+        });
 
-      const featureCards = root.querySelectorAll(`.${styles.devFeatureCard}`);
-      featureCards.forEach((card, index) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 24, scale: 0.96 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.9,
-            ease: "power2.out",
-            delay: (index % 3) * 0.08,
-            scrollTrigger: {
-              trigger: card,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+      // ─── Step 06: Build subsections ───────────────────────────────────────
+      root
+        .querySelectorAll(`[data-step="ai-06"] .${styles.aiBuildSubsection}`)
+        .forEach((subsection, i) => {
+          fadeUp(subsection, { y: 28, duration: 0.9, delay: i * 0.1, start: "top 88%" });
+        });
 
-      const frameworkButtons = root.querySelectorAll(
-        `.${styles.devFrameworkButton}`,
-      );
-      frameworkButtons.forEach((button, index) => {
-        gsap.fromTo(
-          button,
-          { opacity: 0, y: 16, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.7,
-            ease: "power2.out",
-            delay: index * 0.08,
-            scrollTrigger: {
-              trigger: button,
-              start: "top 90%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+      // ─── Step 07: Architecture section ────────────────────────────────────
+      const step07 = root.querySelector('[data-step="ai-07"]');
+      if (step07) fadeUp(step07, { y: 36, duration: 1 });
 
-      const codeBlocks = root.querySelectorAll(
-        `.${styles.devFrameworkCodeBlock}`,
-      );
-      codeBlocks.forEach((block, index) => {
-        gsap.fromTo(
-          block,
-          { opacity: 0, x: 28, scale: 0.98 },
-          {
-            opacity: 1,
-            x: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            delay: index * 0.1,
-            scrollTrigger: {
-              trigger: block,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+      // ─── Step 08: Memory + hook cards (scoped strictly to ai-08) ─────────
+      root
+        .querySelectorAll(`[data-step="ai-08"] .${styles.aiEngineerFeatureCard}`)
+        .forEach((card, i) => {
+          gsap.fromTo(
+            card,
+            { opacity: 0, y: 20, scale: 0.97 },
+            {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              duration: 0.75,
+              delay: (i % 3) * 0.08,
+              ease: "power2.out",
+              scrollTrigger: {
+                trigger: card,
+                start: "top 90%",
+                toggleActions: "play none none reverse",
+              },
+            }
+          );
+        });
 
-      const buildSubsections = root.querySelectorAll(
-        `.${styles.aiBuildSubsection}`,
-      );
-      buildSubsections.forEach((subsection, index) => {
-        gsap.fromTo(
-          subsection,
-          { opacity: 0, y: 28 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.9,
-            ease: "power2.out",
-            delay: index * 0.1,
-            scrollTrigger: {
-              trigger: subsection,
-              start: "top 86%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
-
-      const hookConnectors = root.querySelectorAll(
-        `.${styles.devHookPipelineConnector}`,
-      );
-      hookConnectors.forEach((connector, index) => {
-        gsap.fromTo(
-          connector,
-          { opacity: 0, scale: 0.9 },
-          {
-            opacity: 1,
-            scale: 1,
-            duration: 0.5,
-            ease: "power2.out",
-            delay: index * 0.06,
-            scrollTrigger: {
-              trigger: connector,
-              start: "top 90%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+      root
+        .querySelectorAll(`[data-step="ai-08"] .${styles.devHookPipelineConnector}`)
+        .forEach((connector, i) => {
+          gsap.fromTo(
+            connector,
+            { opacity: 0, scale: 0.9 },
+            {
+              opacity: 1,
+              scale: 1,
+              duration: 0.5,
+              delay: i * 0.06,
+              ease: "power2.out",
+              scrollTrigger: {
+                trigger: connector,
+                start: "top 92%",
+                toggleActions: "play none none reverse",
+              },
+            }
+          );
+        });
     }, contentRef);
 
-    return () => {
-      context.revert();
-    };
+    return () => context.revert();
   }, []);
- 
+
   return (
     <Layout
       title="Agent Kernel for AI Engineers"
@@ -673,7 +662,7 @@ export default function AIEngineerPage() {
             </div>
           </div>
 
-          {/* Step 02 — What Makes Agent Kernel Stand Out */}
+          {/* Step 03 — What Makes Agent Kernel Stand Out */}
           <div
             className={`${styles.akStandOutSection} ${styles.developerBlock}`}
             data-step="ai-03"
@@ -698,10 +687,7 @@ export default function AIEngineerPage() {
                   </colgroup>
                   <thead>
                     <tr>
-                      <th
-                        scope="col"
-                        className={styles.akCompareFeatureCol}
-                      />
+                      <th scope="col" className={styles.akCompareFeatureCol} />
                       <th
                         scope="col"
                         className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
@@ -740,10 +726,7 @@ export default function AIEngineerPage() {
                           i % 2 === 1 ? styles.akCompareRowAlt : undefined
                         }
                       >
-                        <th
-                          scope="row"
-                          className={styles.akCompareFeatureCell}
-                        >
+                        <th scope="row" className={styles.akCompareFeatureCell}>
                           <span className={styles.akCompareFeatureText}>
                             {row.feature}
                           </span>
@@ -823,7 +806,7 @@ export default function AIEngineerPage() {
             </div>
           </div>
 
-          {/* Step 03 — Available Features */}
+          {/* Step 04 — Available Features */}
           <div className={styles.devFeatureSection} data-step="ai-04">
             <p className={styles.devFeatureLabel}>
               All Enterprise Features Available Free And Open-Source
@@ -875,7 +858,7 @@ export default function AIEngineerPage() {
             </div>
           </div>
 
-          {/* Step 04 — Framework Selection */}
+          {/* Step 05 — Framework Selection */}
           <div
             className={`${styles.devFrameworkSection} ${styles.developerBlock}`}
             data-step="ai-05"
@@ -890,7 +873,7 @@ export default function AIEngineerPage() {
             <FrameworkSelector showTitle={false} showDescription={true} />
           </div>
 
-          {/* Step 05 — Production-ready compliant agents */}
+          {/* Step 06 — Production-ready compliant agents */}
           <div
             className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}
             data-step="ai-06"
@@ -933,7 +916,7 @@ export default function AIEngineerPage() {
             </article>
           </div>
 
-          {/* Step 06 — How Agent Kernel Fits In */}
+          {/* Step 07 — How Agent Kernel Fits In */}
           <div
             className={`${styles.devArchitectureSection} ${styles.developerBlock}`}
             data-step="ai-07"
@@ -942,7 +925,7 @@ export default function AIEngineerPage() {
             <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
 
             <p className={styles.devFrameworkBody}>
-              You write your AI agent’s logic. Agent Kernel handles
+              You write your AI agent's logic. Agent Kernel handles
               everything else: the infrastructure, the cloud deployment,
               memory, knowledge bases, hooks, observability & traceability,
               LLM cost tracking, the integrations so your agent is live and
@@ -954,7 +937,7 @@ export default function AIEngineerPage() {
             </div>
           </div>
 
-          {/* Step 07 - Why Agent Kernel is a Powerful Operating System */}
+          {/* Step 08 — Why Agent Kernel is a Powerful Operating System */}
           <div
             className={`${styles.devFeatureSection} ${styles.developerBlock}`}
             data-step="ai-08"
@@ -1045,9 +1028,7 @@ export default function AIEngineerPage() {
                             <div className={styles.devFeatureCardBadgeSlot}>
                               {"badge" in step && step.badge ? (
                                 <span
-                                  className={
-                                    styles.devFeatureHighlightBadge
-                                  }
+                                  className={styles.devFeatureHighlightBadge}
                                 >
                                   {step.badge}
                                 </span>
@@ -1075,14 +1056,10 @@ export default function AIEngineerPage() {
                               className={styles.devHookPipelineConnector}
                               aria-hidden="true"
                             >
-                              <span
-                                className={styles.devHookPipelineArrowH}
-                              >
+                              <span className={styles.devHookPipelineArrowH}>
                                 →
                               </span>
-                              <span
-                                className={styles.devHookPipelineArrowV}
-                              >
+                              <span className={styles.devHookPipelineArrowV}>
                                 ↓
                               </span>
                             </div>
