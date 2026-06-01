@@ -1,4 +1,5 @@
 import logging
+import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
@@ -42,6 +43,7 @@ class LambdaSQSConsumer(ABC):
 
             except Exception as exc:
                 cls._log.info(f"Sending message as batchItemFailure '{message_id}': '{exc}'")
+                cls._log.debug(traceback.format_exc())
                 # On failure, tell Lambda to return this message to the queue
                 failures.append({"itemIdentifier": message_id})
 

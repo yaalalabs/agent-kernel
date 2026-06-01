@@ -1,0 +1,250 @@
+name: Auto Sync Skills and Docs
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  detect-eligible-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.detect.outputs.should_run }}
+      reason: ${{ steps.detect.outputs.reason }}
+      pr_number: ${{ steps.detect.outputs.pr_number }}
+      commit_sha: ${{ steps.detect.outputs.commit_sha }}
+      assignee: ${{ steps.detect.outputs.assignee }}
+      auto_pr_title: ${{ steps.detect.outputs.auto_pr_title }}
+    steps:
+      - name: Determine whether commit should be processed
+        id: detect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.sha;
+            const actor = context.actor || '';
+            const headMessage = context.payload?.head_commit?.message || '';
+
+            const skip = (reason) => {
+              core.setOutput('should_run', 'false');
+              core.setOutput('reason', reason);
+              core.setOutput('pr_number', '');
+              core.setOutput('commit_sha', sha);
+              core.setOutput('assignee', '');
+              core.setOutput('auto_pr_title', '');
+            };
+
+            // Ignore bot/app actors
+            if (actor.endsWith('[bot]') || actor.toLowerCase().includes('github-app')) {
+              skip(`Skipped bot/app actor: ${actor}`);
+              return;
+            }
+
+            // Ignore explicit skip marker commits
+            if (headMessage.includes('[skip skill-doc-sync]')) {
+              skip('Skipped due to commit marker [skip skill-doc-sync]');
+              return;
+            }
+
+            // Fetch PRs associated with this commit
+            const pulls = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: sha,
+            });
+
+            const mergedToDevelop = (pulls.data || []).find(pr =>
+              pr.merged_at && pr.base?.ref === 'develop'
+            );
+
+            // Ignore direct commits (no merged PR associated)
+            if (!mergedToDevelop) {
+              skip('Skipped direct commit or non-PR merge commit');
+              return;
+            }
+
+            // Ignore PRs raised by automation to avoid circular updates
+            const automationPR =
+              (mergedToDevelop.labels || []).some(l => l.name === 'auto-skill-doc-sync') ||
+              (mergedToDevelop.title || '').startsWith('chore(auto): sync skills/docs') ||
+              (mergedToDevelop.head?.ref || '').startsWith('auto/skill-doc-sync/');
+
+            if (automationPR) {
+              skip('Skipped automation sync PR merge to avoid circular updates');
+              return;
+            }
+
+            // Ignore merged PRs authored by bot accounts
+            const prUser = mergedToDevelop.user?.login || '';
+            if (prUser.endsWith('[bot]')) {
+              skip(`Skipped bot-authored merged PR: #${mergedToDevelop.number}`);
+              return;
+            }
+
+            // Resolve original commit author login when available.
+            const commitResp = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+            });
+            const commitAuthorLogin = commitResp.data?.author?.login || '';
+            const commitCommitterLogin = commitResp.data?.committer?.login || '';
+
+            let assignee = commitAuthorLogin || commitCommitterLogin || prUser;
+            if (assignee.endsWith('[bot]')) {
+              assignee = prUser;
+            }
+
+            // Build a meaningful docs PR title from the source PR title.
+            const sourceTitleRaw = (mergedToDevelop.title || '').trim();
+            const sourceTitle = sourceTitleRaw
+              .replace(/^(feat|fix|docs|chore|refactor|test|build|ci|perf|style)(\(.+?\))?:\s*/i, '')
+              .replace(/^\[[^\]]+\]\s*/, '')
+              .trim();
+            const meaningful = (sourceTitle || `sync updates from commit ${sha.substring(0, 12)}`).substring(0, 120);
+            const autoPrTitle = `docs: ${meaningful}`;
+
+            core.setOutput('should_run', 'true');
+            core.setOutput('reason', `Eligible merged PR #${mergedToDevelop.number}`);
+            core.setOutput('pr_number', String(mergedToDevelop.number));
+            core.setOutput('commit_sha', sha);
+            core.setOutput('assignee', assignee);
+            core.setOutput('auto_pr_title', autoPrTitle);
+
+      - name: Eligibility summary
+        run: |
+          echo "should_run=${{ steps.detect.outputs.should_run }}"
+          echo "reason=${{ steps.detect.outputs.reason }}"
+          echo "pr_number=${{ steps.detect.outputs.pr_number }}"
+          echo "commit_sha=${{ steps.detect.outputs.commit_sha }}"
+          echo "assignee=${{ steps.detect.outputs.assignee }}"
+          echo "auto_pr_title=${{ steps.detect.outputs.auto_pr_title }}"
+
+  sync-and-open-pr:
+    needs: detect-eligible-commit
+    if: needs.detect-eligible-commit.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "agent-kernel-ci[bot]"
+          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+
+      - name: Create working branch
+        id: branch
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          BRANCH="auto/skill-doc-sync/${SHORT_SHA}"
+          git checkout -b "$BRANCH"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare sync context
+        run: |
+          cat <<EOF > .github/auto-sync-context.md
+          Commit SHA: ${{ needs.detect-eligible-commit.outputs.commit_sha }}
+          Source PR: #${{ needs.detect-eligible-commit.outputs.pr_number }}
+          Base Branch: develop
+          Skill to invoke: .agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md
+
+          Automation intent:
+          - Analyze the above commit hash
+          - Update dev skills and published user skills if needed
+          - Update docs surfaces if needed
+          - Keep catalogs/inventories consistent
+          EOF
+
+      - name: Set up Node.js environment
+        uses: actions/setup-node@v4
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Run skill sync with Copilot CLI
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
+          COMMIT_SHA: ${{ needs.detect-eligible-commit.outputs.commit_sha }}
+          SOURCE_PR_NUMBER: ${{ needs.detect-eligible-commit.outputs.pr_number }}
+        run: |
+          if [ -z "$COPILOT_GITHUB_TOKEN" ]; then
+            echo "COPILOT_REQUEST_TOKEN secret is not configured."
+            echo "Create a fine-grained PAT with Copilot Requests permission and store it as COPILOT_REQUEST_TOKEN."
+            exit 1
+          fi
+
+          PROMPT=$(cat <<EOF
+          You are updating this repository using the workflow skill instructions.
+
+          Primary instructions file:
+          - .agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md
+
+          Context file:
+          - .github/auto-sync-context.md
+
+          Source inputs:
+          - Commit hash: ${COMMIT_SHA}
+          - Source PR number: #${SOURCE_PR_NUMBER}
+          - Base branch: develop
+
+          Task requirements:
+          - Follow the skill instructions exactly.
+          - Sync only what is required from the given commit into skills and docs.
+          - Keep docs/specs skill inventories and counts consistent.
+          - Do not modify unrelated files.
+          - Leave changes staged in the working tree for pull request creation.
+          EOF
+          )
+
+          copilot -p "$PROMPT" \
+            --allow-tool='shell(git:*)' \
+            --allow-tool=read \
+            --allow-tool=write \
+            --no-ask-user
+
+      - name: Push working branch
+        run: git push origin ${{ steps.branch.outputs.name }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: ${{ steps.branch.outputs.name }}
+          base: develop
+          title: ${{ needs.detect-eligible-commit.outputs.auto_pr_title }}
+          commit-message: "chore(auto): sync skills/docs for ${{ needs.detect-eligible-commit.outputs.commit_sha }} [skip skill-doc-sync]"
+          body: |
+            Automated sync for commit `${{ needs.detect-eligible-commit.outputs.commit_sha }}` from merged PR #${{ needs.detect-eligible-commit.outputs.pr_number }}.
+
+            This PR updates skills and documentation based on:
+            - `.agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md`
+
+            Loop-prevention markers are included so this merge is ignored by the automation workflow.
+          labels: |
+            documentation
+            skill-sync
+            auto-skill-doc-sync
+          assignees: |
+            ${{ needs.detect-eligible-commit.outputs.assignee }}
+          draft: false

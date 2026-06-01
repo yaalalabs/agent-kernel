@@ -6,20 +6,23 @@ module "serverless_agents" {
   # Basic lambda configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "Agent Kernel LangGraph Sample Lambda"
-  function_name        = "langgraph-agents"
-  handler_path         = "lambda.handler"
   module_name          = var.module_name
-  package_path         = "../dist"
-  package_type         = "Image"
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
-  memory_size          = 1024
   product_display_name = "AK Langraph Serverless Example"
 
-  # Environment variables passed to lambda
-  environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+  # Request handler configuration
+  request_handler = {
+    function_name         = "langgraph-agents"
+    function_description   = "Agent Kernel LangGraph Sample Lambda"
+    handler_path          = "lambda.handler"
+    module_name           = var.module_name
+    package_path          = "../dist"
+    package_type          = "Image"
+    memory_size           = 1024
+    environment_variables = {
+      "OPENAI_API_KEY" = var.openai_api_key
+    }
   }
 }

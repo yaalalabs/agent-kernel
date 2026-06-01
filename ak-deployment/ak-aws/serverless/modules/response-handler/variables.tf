@@ -1,9 +1,3 @@
-variable "cloudwatch_logs_retention_in_days" {
-  type        = number
-  description = "CloudWatch log retention period in days"
-  default     = 90
-}
-
 variable "module_type" {
   type        = string
   description = "Module type"
@@ -58,16 +52,17 @@ variable "lambda_signing_config_arn" {
 variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
-    function_name         = optional(string, "response-handler")
-    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
-    timeout               = optional(number, 30)
-    memory_size           = optional(number, 256)
-    handler_path          = optional(string, "response_handler.handler")
-    module_name           = optional(string, "response-handler")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
-    environment_variables = optional(map(string), {})
+    function_name                  = optional(string, "response-handler")
+    function_description           = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
+    timeout                        = optional(number, 30)
+    memory_size                    = optional(number, 256)
+    handler_path                   = optional(string, "response_handler.handler")
+    module_name                    = optional(string, "response-handler")
+    package_path                   = optional(string, null)
+    package_type                   = string
+    layers                         = optional(list(string), [])
+    environment_variables          = optional(map(string), {})
+    cloudwatch_logs_retention_in_days = optional(number, 90)
   })
 }
 
@@ -122,3 +117,25 @@ variable "cloudwatch_kms_key_arn" {
   description = "KMS key ARN for CloudWatch logs encryption"
   default     = null
 }
+
+variable "websocket_connections_dynamodb" {
+  description = "DynamoDB configuration for websocket connections table"
+  type = object({
+    table_name = string
+    table_arn  = string
+  })
+  default = null
+}
+
+variable "websocket_api_execution_arn" {
+  description = "Execution ARN of the WebSocket API Gateway (for PostToConnection permission)"
+  type        = string
+  default     = null
+}
+
+variable "websocket_mode" {
+  description = "Whether WebSocket API is enabled (known at plan time)"
+  type        = bool
+  default     = false
+}
+

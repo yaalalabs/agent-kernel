@@ -77,19 +77,20 @@ In addition to Terraform, MCP must be enabled at the application level using `co
 ```yaml
 mcp:
   enabled: true
-  port: 8000
   expose_agents: true
   agents: ['*']
 ```
 
+> **Endpoint**: The MCP server is always mounted internally at `/mcp` on the main API server. If you are connecting directly to the app, the internal URL is `http://{api.host}:{api.port}/mcp` (and `api.port` controls that port). In this AWS deployment, the external/public endpoint may include additional gateway or base-path prefixes, for example `/<api_base_path>/<api_version>/mcp`.
+
 ### Configuration Explanation
 
-| Field           | Description                                        |
-| --------------- | -------------------------------------------------- |
-| `enabled`       | Enables the MCP server                             |
-| `port`          | Port MCP listens on (must match container port)    |
-| `expose_agents` | Automatically exposes agents as MCP tools          |
-| `agents`        | List of agent names to expose (`'*'` = all agents) |
+| Field              | Description                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `enabled`          | Enables the MCP server                                                                           |
+| `expose_agents`    | Automatically exposes agents as MCP tools                                                        |
+| `agents`           | List of agent names to expose (`'*'` = all agents)                                               |
+| `stateless_http`   | Stateless HTTP mode — each request is independent, no `Mcp-Session-Id` (default: `false`)        |
 
 
 > **Both Terraform (`enable_mcp_server = true`) and `config.yaml` MCP settings are required** for MCP to work correctly.

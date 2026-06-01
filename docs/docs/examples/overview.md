@@ -55,9 +55,10 @@ AWS ECS/Fargate deployment examples:
 AWS Lambda serverless deployment examples:
 
 - **`adk/`** - Google ADK agents running on AWS Lambda
-- **`crewai/`** - CrewAI agents running on AWS Lambda  
+- **`crewai/`** - CrewAI agents running on AWS Lambda
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda
+- **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 
