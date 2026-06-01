@@ -22,7 +22,7 @@
   padding: 0 48px;
 
   /* Premium Dark Surface */
-  background-color: rgba(6, 6, 9, 0.85);
+  background-color: rgba(6, 6, 9, 0.65);
   border-bottom: 1px solid rgba(255, 255, 255, 0);
 
   /* Frosted glass */
@@ -30,7 +30,7 @@
   -webkit-backdrop-filter: saturate(180%) blur(16px);
 
   /* Transition for smooth slide and fade */
-  transition: 
+  transition:
     height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     margin-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     opacity 0.35s ease,
