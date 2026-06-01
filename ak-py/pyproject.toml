@@ -46,7 +46,7 @@ smolagents = [
     "smolagents>=1.0.0",
 ]
 cli = [
-
+    
 ]
 aws = [
     "boto3>=1.41.4",
