@@ -504,6 +504,7 @@ function AgentSkills() {
   const cmd2Ref = useRef<HTMLSpanElement>(null);
   const cmd3Ref = useRef<HTMLSpanElement>(null);
   const commandsPanelRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const panel = commandsPanelRef.current;
@@ -564,6 +565,44 @@ function AgentSkills() {
     return () => { observer.disconnect(); };
   }, []);
 
+  // Scroll animation for the whole AgentSkills section
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) return;
+
+    const container = el.querySelector(`.${styles.agentSkillsContainer}`);
+    const splitGrid = el.querySelector(`.${styles.agentSkillsSplitGrid}`);
+    const panels = splitGrid ? Array.from(splitGrid.querySelectorAll(`.${styles.agentSkillsPanel}`)) : [];
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: el,
+        start: "top 82%",
+        toggleActions: "play none none reverse",
+      },
+    });
+
+    if (container) {
+      tl.fromTo(container, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" });
+    }
+
+    if (panels.length) {
+      tl.fromTo(panels, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out", stagger: 0.06 }, "-=0.36");
+    }
+
+    return () => {
+      try {
+        if (tl.scrollTrigger) tl.scrollTrigger.kill();
+        tl.kill();
+      } catch (e) {
+        // ignore
+      }
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!detailContentRef.current) return;
 
@@ -593,7 +632,7 @@ function AgentSkills() {
   }, [activeSkillIndex]);
 
   return (
-    <section id="agent-skills" className={styles.agentSkillsSection}>
+    <section ref={sectionRef} id="agent-skills" className={styles.agentSkillsSection}>
       {/* Top border + gradient glow */}
       <div className={styles.topGlow} />
 

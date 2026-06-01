@@ -129,7 +129,7 @@ export default function DeveloperPage() {
       // Animate architecture layers - Slide from left
       const layers =
         contentRef.current?.querySelectorAll(
-          `.${styles.architectureLayerGroup}`,
+          `.${styles.developerArchitectureLayerGroup}`,
         ) || [];
       layers.forEach((layer, index) => {
         gsap.fromTo(

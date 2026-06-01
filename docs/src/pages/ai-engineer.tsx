@@ -397,8 +397,6 @@ export default function AIEngineerPage() {
       if (step01) fadeUp(step01, { y: 36, duration: 1 });
 
       // ─── Step 02: Architecture layers (slide from left, one by one) ───────
-      // These are short elements that individually enter the viewport, so
-      // per-element triggers are correct here — they're meant to stagger.
       root
         .querySelectorAll(`[data-step="ai-02"] .${styles.aiEngineeringLayerGroup}`)
         .forEach((layer, i) => {
@@ -421,10 +419,6 @@ export default function AIEngineerPage() {
         });
 
       // ─── Step 03: Compare section ─────────────────────────────────────────
-      // CRITICAL: The entire step (heading + panel) must be opacity:1 BEFORE
-      // any part of it scrolls into view. We trigger on "top bottom" which
-      // fires the moment the very top pixel of the element enters the screen
-      // from below — so the animation always completes before rows are visible.
       const step03 = root.querySelector('[data-step="ai-03"]');
       if (step03) {
         gsap.fromTo(
@@ -437,9 +431,6 @@ export default function AIEngineerPage() {
             ease: "power2.out",
             scrollTrigger: {
               trigger: step03,
-              // "top bottom" = fires when top of element hits bottom of viewport
-              // The section is fully invisible at this point, so the short
-              // animation completes before anything is actually visible.
               start: "top bottom",
               toggleActions: "play none none reverse",
             },
