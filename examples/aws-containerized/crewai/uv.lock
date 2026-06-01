@@ -230,7 +230,6 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["api", "crewai", "redis"] },
-    { name = "crewai" },
 ]
 
 [package.dev-dependencies]
@@ -242,10 +241,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "agentkernel", extras = ["crewai", "api", "redis"], specifier = ">=0.4.0" },
-    { name = "crewai", specifier = "==0.165.1" },
-]
+requires-dist = [{ name = "agentkernel", extras = ["crewai", "api", "redis"], specifier = ">=0.4.0" }]
 
 [package.metadata.requires-dev]
 dev = [
