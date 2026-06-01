@@ -68,14 +68,12 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(120, 180, 255, 0.25) 20%,
-    rgba(160, 210, 255, 0.7) 50%,
-    rgba(120, 180, 255, 0.25) 80%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(120, 180, 255, 0.25) 20%,
+      rgba(160, 210, 255, 0.7) 50%,
+      rgba(120, 180, 255, 0.25) 80%,
+      transparent 100%);
 }
 
 .topGlow::after {
@@ -86,12 +84,10 @@
   transform: translateX(-50%);
   width: 70%;
   height: 220px;
-  background: radial-gradient(
-    ellipse at top center,
-    rgba(100, 170, 255, 0.1) 0%,
-    rgba(80, 140, 255, 0.05) 40%,
-    transparent 70%
-  );
+  background: radial-gradient(ellipse at top center,
+      rgba(100, 170, 255, 0.1) 0%,
+      rgba(80, 140, 255, 0.05) 40%,
+      transparent 70%);
   pointer-events: none;
 }
 
@@ -184,10 +180,10 @@
   text-transform: none;
   letter-spacing: 0.01em;
   white-space: nowrap;
-  transition: background 0.25s ease, 
-              border-color 0.25s ease, 
-              transform 0.2s ease, 
-              box-shadow 0.25s ease;
+  transition: background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.2s ease,
+    box-shadow 0.25s ease;
 }
 
 .btnLinkPrimary:hover {
@@ -198,7 +194,7 @@
   color: #ffffff;
 }
 
-.btnLinkIconPrimary{
+.btnLinkIconPrimary {
   width: 1.875rem;
   height: 1.875rem;
   border-radius: 50%;
@@ -223,6 +219,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .btnLinkPrimary,
   .btnLinkPrimary .btnLinkIconPrimary {
     transition: none !important;
@@ -350,21 +347,27 @@
   0% {
     transform: rotate(0deg);
   }
+
   10% {
     transform: rotate(-18deg);
   }
+
   30% {
     transform: rotate(12deg);
   }
+
   50% {
     transform: rotate(-10deg);
   }
+
   70% {
     transform: rotate(6deg);
   }
+
   90% {
     transform: rotate(-3deg);
   }
+
   100% {
     transform: rotate(0deg);
   }
@@ -374,21 +377,26 @@
   0% {
     transform: translateY(0);
   }
+
   25% {
     transform: translateY(2px);
   }
+
   50% {
     transform: translateY(0);
   }
+
   75% {
     transform: translateY(1px);
   }
+
   100% {
     transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .whatsNewIconWrap svg,
   .whatsNewIconWrap svg path:nth-of-type(2) {
     animation: none !important;
@@ -673,7 +681,8 @@
 
 /* Each card has an accent glow driven by --card-accent */
 .exploreCard {
-  --card-accent: #00c896; /* default accent — override per page */
+  --card-accent: #00c896;
+  /* default accent — override per page */
 
   display: flex;
   flex-direction: column;
@@ -815,7 +824,8 @@
   align-items: flex-start;
   gap: 1.5rem;
   position: relative;
-  z-index: 2; /* always above the video layer */
+  z-index: 2;
+  /* always above the video layer */
 }
 
 .title {
@@ -829,12 +839,10 @@
 
 /* "Agents" colorful gradient word */
 .gradientWord {
-  background: linear-gradient(
-    90deg,
-    #a855f7 0%,
-    #3b82f6 40%,
-    #f59e0b 100%
-  );
+  background: linear-gradient(90deg,
+      #a855f7 0%,
+      #3b82f6 40%,
+      #f59e0b 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -989,12 +997,10 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      to bottom,
-      rgba(1, 0, 2, 0.72) 0%,
-      rgba(1, 0, 2, 0.55) 50%,
-      rgba(1, 0, 2, 0.72) 100%
-    );
+    background: linear-gradient(to bottom,
+        rgba(1, 0, 2, 0.72) 0%,
+        rgba(1, 0, 2, 0.55) 50%,
+        rgba(1, 0, 2, 0.72) 100%);
     z-index: 1;
   }
 
@@ -1055,7 +1061,8 @@
     z-index: 0;
     pointer-events: none;
     overflow: hidden;
-    order: unset; /* remove the order: -1 that previously pushed it above text */
+    order: unset;
+    /* remove the order: -1 that previously pushed it above text */
   }
 
   /* Stronger dark overlay on mobile for legibility */
@@ -1063,12 +1070,10 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      to bottom,
-      rgba(1, 0, 2, 0.78) 0%,
-      rgba(1, 0, 2, 0.60) 50%,
-      rgba(1, 0, 2, 0.78) 100%
-    );
+    background: linear-gradient(to bottom,
+        rgba(1, 0, 2, 0.78) 0%,
+        rgba(1, 0, 2, 0.60) 50%,
+        rgba(1, 0, 2, 0.78) 100%);
     z-index: 1;
   }
 
@@ -1080,7 +1085,8 @@
   }
 
   .scrollLabel {
-    display: none; /* hide scroll hint on mobile — too cluttered */
+    display: none;
+    /* hide scroll hint on mobile — too cluttered */
   }
 }
 
@@ -1627,21 +1633,27 @@
 /* ─── Responsive ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
+
   /* Scrollable single-row pill strip — no wrapping */
   .blTabBar {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; /* Firefox */
+    scrollbar-width: none;
+    /* Firefox */
     gap: 0.5rem;
-    padding-bottom: 2px; /* keep bottom border of focused tab visible */
+    padding-bottom: 2px;
+    /* keep bottom border of focused tab visible */
   }
+
   .blTabBar::-webkit-scrollbar {
-    display: none; /* Chrome / Safari */
+    display: none;
+    /* Chrome / Safari */
   }
 
   .blTab {
-    flex-shrink: 0; /* prevent tabs from squishing */
+    flex-shrink: 0;
+    /* prevent tabs from squishing */
     padding: 0.55rem 1rem;
     font-size: 0.8rem;
   }
@@ -1873,12 +1885,10 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(
-    135deg,
-    rgba(0, 221, 255, 0.18) 0%,
-    rgba(0, 140, 255, 0.12) 50%,
-    rgba(0, 221, 255, 0.06) 100%
-  );
+  background: linear-gradient(135deg,
+      rgba(0, 221, 255, 0.18) 0%,
+      rgba(0, 140, 255, 0.12) 50%,
+      rgba(0, 221, 255, 0.06) 100%);
   z-index: 0;
 }
 
@@ -1889,11 +1899,9 @@
   left: 10%;
   width: 80%;
   height: 40%;
-  background: radial-gradient(
-    ellipse at bottom center,
-    rgba(0, 221, 255, 0.25) 0%,
-    transparent 70%
-  );
+  background: radial-gradient(ellipse at bottom center,
+      rgba(0, 221, 255, 0.25) 0%,
+      transparent 70%);
   z-index: 0;
   border-radius: inherit;
 }
@@ -1948,9 +1956,17 @@
   border-radius: 50%;
 }
 
-.agentSkillsDotRed    { background: #ff5f57; }
-.agentSkillsDotYellow { background: #febc2e; }
-.agentSkillsDotGreen  { background: #28c840; }
+.agentSkillsDotRed {
+  background: #ff5f57;
+}
+
+.agentSkillsDotYellow {
+  background: #febc2e;
+}
+
+.agentSkillsDotGreen {
+  background: #28c840;
+}
 
 .agentSkillsIdeActions {
   display: flex;
@@ -2002,7 +2018,7 @@
   overflow-wrap: anywhere;
 }
 
-.agentSkillsCodeBlock > div {
+.agentSkillsCodeBlock>div {
   min-width: 0;
 }
 
@@ -2144,8 +2160,17 @@
 
 /* Scramble animation (unchanged) */
 @keyframes agentSkillsCommandReveal {
-  from { opacity: 0; transform: translateY(12px); filter: blur(3px); }
-  to   { opacity: 1; transform: translateY(0);    filter: blur(0px); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0px);
+  }
 }
 
 .agentSkillsCommandsVisible .agentSkillsCodeComment,
@@ -2154,12 +2179,29 @@
   animation-delay: var(--agent-skills-reveal-delay, 0ms);
 }
 
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(1) { --agent-skills-reveal-delay: 60ms;  }
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(2) { --agent-skills-reveal-delay: 240ms; }
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(3) { --agent-skills-reveal-delay: 420ms; }
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(1)     { --agent-skills-reveal-delay: 140ms; }
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(2)     { --agent-skills-reveal-delay: 320ms; }
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(3)     { --agent-skills-reveal-delay: 500ms; }
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(1) {
+  --agent-skills-reveal-delay: 60ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(2) {
+  --agent-skills-reveal-delay: 240ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(3) {
+  --agent-skills-reveal-delay: 420ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(1) {
+  --agent-skills-reveal-delay: 140ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(2) {
+  --agent-skills-reveal-delay: 320ms;
+}
+
+.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(3) {
+  --agent-skills-reveal-delay: 500ms;
+}
 
 /* ─── Responsive ─────────────────────────────────────────────────────────────── */
 
@@ -2181,7 +2223,9 @@
     scrollbar-width: none;
   }
 
-  .agentSkillsTopicsRow::-webkit-scrollbar { display: none; }
+  .agentSkillsTopicsRow::-webkit-scrollbar {
+    display: none;
+  }
 
   .agentSkillsTopicButton {
     flex: 0 0 auto;
@@ -2282,12 +2326,10 @@
   z-index: 0;
   background: #010002;
   /* background-image is the hover glow — starts transparent */
-  background-image: radial-gradient(
-    ellipse 80% 60% at 20% 100%,
-    rgba(0, 149, 180, 0) 0%,
-    rgba(0, 149, 160, 0) 40%,
-    transparent 70%
-  );
+  background-image: radial-gradient(ellipse 80% 60% at 20% 100%,
+      rgba(0, 149, 180, 0) 0%,
+      rgba(0, 149, 160, 0) 40%,
+      transparent 70%);
   transition:
     transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
     background-image 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -2300,13 +2342,11 @@
   inset: 0;
   border-radius: 1rem;
   padding: 1px;
-  background: linear-gradient(
-    160deg,
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0.30) 25%,
-    rgba(255, 255, 255, 0.12) 55%,
-    rgba(255, 255, 255, 0.06) 100%
-  );
+  background: linear-gradient(160deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.30) 25%,
+      rgba(255, 255, 255, 0.12) 55%,
+      rgba(255, 255, 255, 0.06) 100%);
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
@@ -2326,13 +2366,11 @@
   position: absolute;
   inset: 0;
   border-radius: 1rem;
-  background: radial-gradient(
-    ellipse 150% 100% at 50% 120%,
-    rgba(30, 100, 255, 0.28) 0%,
-    rgba(0, 140, 255, 0.18) 30%,
-    rgba(0, 100, 220, 0.10) 55%,
-    transparent 75%
-  );
+  background: radial-gradient(ellipse 150% 100% at 50% 120%,
+      rgba(30, 100, 255, 0.28) 0%,
+      rgba(0, 140, 255, 0.18) 30%,
+      rgba(0, 100, 220, 0.10) 55%,
+      transparent 75%);
   opacity: 0;
   pointer-events: none;
   z-index: 0;
@@ -2348,13 +2386,11 @@
 }
 
 .cloudCard:hover::before {
-  background: linear-gradient(
-    160deg,
-    rgba(160, 220, 255, 0.75) 0%,
-    rgba(100, 180, 255, 0.45) 25%,
-    rgba(255, 255, 255, 0.18) 55%,
-    rgba(255, 255, 255, 0.08) 100%
-  );
+  background: linear-gradient(160deg,
+      rgba(160, 220, 255, 0.75) 0%,
+      rgba(100, 180, 255, 0.45) 25%,
+      rgba(255, 255, 255, 0.18) 55%,
+      rgba(255, 255, 255, 0.08) 100%);
 }
 
 /* Make sure card content sits above the glow ::after */
@@ -2635,20 +2671,16 @@
 
 .messagingTrackWrapper {
   overflow: hidden;
-  mask-image: linear-gradient(
-    to right,
-    transparent,
-    black 10%,
-    black 90%,
-    transparent
-  );
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent,
-    black 10%,
-    black 90%,
-    transparent
-  );
+  mask-image: linear-gradient(to right,
+      transparent,
+      black 10%,
+      black 90%,
+      transparent);
+  -webkit-mask-image: linear-gradient(to right,
+      transparent,
+      black 10%,
+      black 90%,
+      transparent);
 }
 
 .messagingTrack {
@@ -2666,6 +2698,7 @@
   from {
     transform: translateX(0);
   }
+
   to {
     transform: translateX(-50%);
   }
@@ -2745,11 +2778,9 @@
   transform: translate(-50%, -50%);
   width: 800px;
   height: 400px;
-  background: radial-gradient(
-    ellipse,
-    rgba(79, 125, 247, 0.08) 0%,
-    transparent 70%
-  );
+  background: radial-gradient(ellipse,
+      rgba(79, 125, 247, 0.08) 0%,
+      transparent 70%);
   pointer-events: none;
 }
 
@@ -2770,15 +2801,13 @@
 
 /* Rainbow/multi-colour gradient on "Agent" — matching the screenshot */
 .ctaTitleGradient {
-  background: linear-gradient(
-    90deg,
-    #e53e3e 0%,
-    #ed8936 18%,
-    #ecc94b 36%,
-    #48bb78 54%,
-    #4299e1 72%,
-    #9f7aea 90%
-  );
+  background: linear-gradient(90deg,
+      #e53e3e 0%,
+      #ed8936 18%,
+      #ecc94b 36%,
+      #48bb78 54%,
+      #4299e1 72%,
+      #9f7aea 90%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -2809,18 +2838,14 @@
   margin: 0 auto;
   margin-top: -2rem;
   /* Fade the bottom edge so it blends into the page */
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 60%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black 60%,
-    transparent 100%
-  );
+  -webkit-mask-image: linear-gradient(to bottom,
+      black 0%,
+      black 60%,
+      transparent 100%);
+  mask-image: linear-gradient(to bottom,
+      black 0%,
+      black 60%,
+      transparent 100%);
 }
 
 .ctaImage {
@@ -2833,10 +2858,12 @@
 }
 
 @keyframes ctaFloat {
+
   0%,
   100% {
     transform: translateY(0px);
   }
+
   50% {
     transform: translateY(-10px);
   }
@@ -2956,7 +2983,7 @@
   align-items: center;
   gap: 0.15rem;
 }
- 
+
 /* The sticky inner is what GSAP actually pins */
 .levelsStickyInner {
   position: relative;
@@ -2965,11 +2992,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0;          /* remove padding — frame container handles it */
+  padding: 0;
+  /* remove padding — frame container handles it */
   z-index: 1;
   overflow: hidden;
 }
- 
+
 /* ─── Header ── */
 
 .levelsFrameContainer {
@@ -2981,7 +3009,7 @@
   margin: 0 auto;
   margin-top: -30rem;
 }
- 
+
 .levelsHeader {
   text-align: center;
   margin-bottom: 3.5rem;
@@ -2990,7 +3018,7 @@
   align-items: center;
   gap: 0.75rem;
 }
- 
+
 /* Also update the badge bottom spacing to match */
 .levelsPathBadge {
   display: inline-flex;
@@ -3004,15 +3032,16 @@
   color: rgba(0, 221, 255, 0.9);
   background: rgba(0, 221, 255, 0.06);
   letter-spacing: 0.02em;
-  margin-bottom: 0.05rem;  /* small extra nudge below badge, before title */
+  margin-bottom: 0.05rem;
+  /* small extra nudge below badge, before title */
 }
- 
+
 .levelsPathBadgePlus {
   font-size: 0.9rem;
   line-height: 1;
   color: rgba(0, 221, 255, 0.7);
 }
- 
+
 .levelsTitle {
   font-size: clamp(1.5rem, 3.5vw, 2.15rem);
   font-weight: 800;
@@ -3021,16 +3050,16 @@
   line-height: 1.05;
   margin: 0;
 }
- 
+
 .levelsSubtitle {
   font-size: 0.9rem;
   font-weight: 400;
   color: rgba(255, 255, 255, 0.55);
   margin-top: -4rem;
 }
- 
+
 /* ─── Card Stack ── */
- 
+
 .levelsWindowStack {
   position: relative;
   width: 100%;
@@ -3038,7 +3067,7 @@
   min-height: 350px;
   margin-top: -3rem;
 }
- 
+
 /* Each card is absolutely positioned so they overlap */
 .levelWindowCard {
   position: absolute;
@@ -3056,9 +3085,9 @@
   flex-direction: column;
   will-change: opacity, transform;
 }
- 
+
 /* ─── macOS Chrome ── */
- 
+
 .levelWindowChrome {
   display: flex;
   align-items: center;
@@ -3068,50 +3097,58 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   flex-shrink: 0;
 }
- 
+
 .levelWindowDots {
   display: flex;
   align-items: center;
   gap: 0.4rem;
 }
- 
+
 .levelWindowDot {
   display: block;
   width: 10px;
   height: 10px;
   border-radius: 50%;
 }
- 
-.dotRed    { background: #ff5f57; }
-.dotYellow { background: #febc2e; }
-.dotGreen  { background: #28c840; }
- 
+
+.dotRed {
+  background: #ff5f57;
+}
+
+.dotYellow {
+  background: #febc2e;
+}
+
+.dotGreen {
+  background: #28c840;
+}
+
 .levelWindowActions {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   color: rgba(255, 255, 255, 0.25);
 }
- 
+
 .levelWindowActions svg {
   display: block;
   cursor: pointer;
   transition: color 0.15s ease;
 }
- 
+
 .levelWindowActions svg:hover {
   color: rgba(255, 255, 255, 0.6);
 }
- 
+
 /* ─── Card Body ── */
- 
+
 .levelWindowBody {
   display: grid;
   grid-template-columns: 1fr 1fr;
   flex: 1;
   min-height: 0;
 }
- 
+
 /* Left: dark starfield / image area */
 .levelWindowImageArea {
   background: #010002;
@@ -3122,7 +3159,7 @@
   position: relative;
   overflow: hidden;
 }
- 
+
 /* Subtle noise/grain overlay to mimic the starfield in the design */
 .levelWindowImageArea::before {
   content: "";
@@ -3131,13 +3168,13 @@
   opacity: 0.4;
   pointer-events: none;
 }
- 
+
 .levelWindowImage {
   object-fit: contain;
   position: relative;
   z-index: 1;
 }
- 
+
 /* Right: text content */
 .levelWindowContent {
   padding: 2rem 1.75rem;
@@ -3147,7 +3184,7 @@
   justify-content: center;
   border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
- 
+
 .levelWindowTitle {
   font-size: 1.3rem;
   font-weight: 700;
@@ -3156,14 +3193,14 @@
   letter-spacing: -0.02em;
   line-height: 1.2;
 }
- 
+
 .levelWindowDescription {
   font-size: 0.84rem;
   color: rgba(255, 255, 255, 0.6);
   line-height: 1.65;
   margin: 0;
 }
- 
+
 .levelWindowBullets {
   list-style: none;
   padding: 0;
@@ -3172,7 +3209,7 @@
   flex-direction: column;
   gap: 0.35rem;
 }
- 
+
 .levelWindowBulletItem {
   display: flex;
   align-items: flex-start;
@@ -3181,7 +3218,7 @@
   color: rgba(255, 255, 255, 0.75);
   line-height: 1.4;
 }
- 
+
 .levelWindowBulletCheck {
   color: #28c840;
   font-size: 0.8rem;
@@ -3189,7 +3226,7 @@
   flex-shrink: 0;
   margin-top: 0.1rem;
 }
- 
+
 .levelWindowReadMore {
   align-self: flex-start;
   margin-top: 0.35rem;
@@ -3204,7 +3241,7 @@
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   letter-spacing: 0.01em;
 }
- 
+
 .levelWindowReadMore:hover {
   background: rgba(255, 255, 255, 0.14);
   border-color: rgba(255, 255, 255, 0.35);
@@ -3212,32 +3249,29 @@
 }
 
 .levelsSectionVideo {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 26%,
-    black 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    black 26%,
-    black 100%
-  );
+  -webkit-mask-image: linear-gradient(to bottom,
+      transparent 0%,
+      black 26%,
+      black 100%);
+  mask-image: linear-gradient(to bottom,
+      transparent 0%,
+      black 26%,
+      black 100%);
 }
- 
+
 /* ─── Responsive ── */
- 
+
 @media (max-width: 768px) {
   .levelsStickyInner {
     padding: 3rem 1rem 2.5rem;
   }
- 
+
   .levelsHeader {
     margin-bottom: 1.25rem;
-    gap: 1rem; /* increased gap for tablet */
+    gap: 1rem;
+    /* increased gap for tablet */
   }
- 
+
   .levelsTitle {
     font-size: clamp(1.3rem, 5.5vw, 1.75rem);
     line-height: 1.12;
@@ -3250,11 +3284,11 @@
     margin-top: 0;
     max-width: 28ch;
   }
- 
+
   .levelsWindowStack {
     min-height: 440px;
   }
- 
+
   .levelWindowBody {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
@@ -3269,7 +3303,8 @@
   }
 
   .levelWindowCard {
-    position: relative; /* remove absolute stacking so cards flow */
+    position: relative;
+    /* remove absolute stacking so cards flow */
     inset: auto;
     width: 100%;
     margin: 0 0 1.25rem 0;
@@ -3289,56 +3324,56 @@
   .levelsSectionVideo {
     display: none;
   }
- 
+
   .levelWindowImageArea {
     padding: 1.5rem;
     min-height: 160px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
- 
+
   .levelWindowContent {
     border-left: none;
     padding: 1.25rem;
   }
- 
+
   .levelWindowTitle {
     font-size: 1.15rem;
   }
 }
- 
+
 @media (max-width: 480px) {
   .levelsStickyInner {
     padding: 3rem 0.875rem 2.5rem;
   }
- 
+
   .levelsWindowStack {
     min-height: 500px;
   }
- 
+
   .levelWindowImageArea {
     min-height: 130px;
     padding: 1.25rem;
   }
- 
+
   .levelWindowImage {
     width: 150px;
     height: 150px;
   }
- 
+
   .levelWindowContent {
     padding: 1rem;
   }
- 
+
   .levelWindowDescription {
     font-size: 0.8rem;
   }
- 
+
   .levelWindowBulletItem {
     font-size: 0.74rem;
   }
 
   .levelsHeader {
-    gap: 1rem; 
+    gap: 1rem;
     margin-bottom: 1.25rem;
   }
 
@@ -3371,7 +3406,9 @@
     max-width: 100%;
   }
 
-  .levelsSectionVideo { display: none; }
+  .levelsSectionVideo {
+    display: none;
+  }
 }
 
 .levelsPinned {
@@ -3624,7 +3661,8 @@
 }
 
 /* ensure contained elements inherit centered alignment */
-.developerBlock, .developerBlock * {
+.developerBlock,
+.developerBlock * {
   text-align: inherit;
 }
 
@@ -4047,7 +4085,69 @@
 
 /* ─── AI Engineer — Stand Out comparison table ─────────────────────────────── */
 
-.aiEngineerBlock{
+.aiStepLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #26A64D;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  margin-bottom: 1.25rem;
+  margin-top: 0;
+}
+
+/* center the step label contents when parent is centered */
+.aiStepLabel {
+  justify-content: center;
+}
+
+.aiStepLabel::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: #26A64D;
+  flex-shrink: 0;
+}
+
+.aiTitle {
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.75rem;
+  margin-top: 0;
+  text-transform: none;
+  text-align: center;
+}
+
+.aiTitleWhite {
+  color: #ffffff;
+}
+
+.aiTitleGray {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.aiDescription {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: center;
+  max-width: 780px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* centre column children (intro, bullets) */
+.aiDescription {
+  align-items: center;
+}
+
+
+.aiEngineerBlock {
   margin-top: 5rem;
   max-width: 72rem;
   margin-left: auto;
@@ -4064,9 +4164,9 @@
 }
 
 .akComparePanel {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(38, 166, 77, 0.25);
   border-radius: 0.5rem;
-  background: rgba(10, 12, 22, 0.52);
+  background: #010002;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   overflow: hidden;
@@ -4074,7 +4174,7 @@
 }
 
 .akComparePanel:hover {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(38, 166, 77, 0.4);
 }
 
 .akCompareScrollHint {
@@ -4086,14 +4186,14 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.45);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(38, 166, 77, 0.15);
 }
 
 .akCompareTableWrap {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-color: rgba(38, 166, 77, 0.3) transparent;
 }
 
 .akCompareTable {
@@ -4114,17 +4214,21 @@
   width: 22.6667%;
 }
 
+.akCompareTable thead tr {
+  background: linear-gradient(90deg, rgba(38, 166, 77, 0.05) 0%, rgba(38, 166, 77, 0.25) 50%, rgba(38, 166, 77, 0.05) 100%);
+}
+
 .akCompareTable th,
 .akCompareTable td {
   padding: 0.875rem 1rem;
   vertical-align: middle;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(38, 166, 77, 0.15);
   text-align: center;
 }
 
 .akCompareHeadCell {
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.7);
   background: transparent;
   font-size: 0.75rem;
   line-height: 1.35;
@@ -4142,10 +4246,10 @@
 }
 
 .akCompareHeadCellHighlight {
-  color: #ffffff;
-  background: rgba(0, 221, 255, 0.08);
-  border-color: rgba(0, 221, 255, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(0, 221, 255, 0.1);
+  color: #26A64D;
+  background: rgba(38, 166, 77, 0.1);
+  border-color: rgba(38, 166, 77, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(38, 166, 77, 0.12);
 }
 
 .akCompareFeatureCell {
@@ -4178,12 +4282,12 @@
 }
 
 .akCompareDataCellHighlight {
-  background: rgba(0, 221, 255, 0.06);
-  border-color: rgba(0, 221, 255, 0.18);
+  background: rgba(38, 166, 77, 0.06);
+  border-color: rgba(38, 166, 77, 0.2);
 }
 
 .akCompareRowAlt .akCompareDataCellHighlight {
-  background: rgba(0, 221, 255, 0.08);
+  background: rgba(38, 166, 77, 0.1);
 }
 
 .akCompareCellValue {
@@ -4198,7 +4302,7 @@
   flex-shrink: 0;
   width: 1.125rem;
   height: 1.125rem;
-  color: #00ddff;
+  color: #26A64D;
 }
 
 .akCompareIconNeg {
@@ -4206,6 +4310,16 @@
   width: 1.125rem;
   height: 1.125rem;
   color: #ef4444;
+}
+
+.akCompareTextPos {
+  color: #26A64D;
+  font-weight: 500;
+}
+
+.akCompareTextNeg {
+  color: #ef4444;
+  font-weight: 500;
 }
 
 .akComparePartial {
@@ -4216,8 +4330,8 @@
 .akCompareFooter {
   margin: 0;
   padding: 1rem 1.25rem;
-  background: rgba(8, 10, 20, 0.35);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(90deg, rgba(38, 166, 77, 0.05) 0%, rgba(38, 166, 77, 0.25) 50%, rgba(38, 166, 77, 0.05) 100%);
+  border-top: 1px solid rgba(38, 166, 77, 0.3);
   color: rgba(255, 255, 255, 0.8);
   font-size: 0.9375rem;
   line-height: 1.5;
@@ -4272,8 +4386,8 @@
 }
 
 .akCompareMobileRowHighlight {
-  background: rgba(0, 221, 255, 0.07);
-  border-color: rgba(0, 221, 255, 0.28);
+  background: rgba(38, 166, 77, 0.07);
+  border-color: rgba(38, 166, 77, 0.28);
 }
 
 .akCompareMobileLabel {
@@ -4350,7 +4464,7 @@
   margin-top: 2.5rem;
 }
 
-.aiBuildSubsection + .aiBuildSubsection {
+.aiBuildSubsection+.aiBuildSubsection {
   margin-top: 3.5rem;
   padding-top: 3rem;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
@@ -4362,11 +4476,13 @@
   font-weight: 700;
   color: #ffffff;
   letter-spacing: -0.01em;
+  text-align: center;
 }
 
 .aiBuildSubBody {
-  margin: 0 0 1.5rem;
-  max-width: 42rem;
+  margin: 0 auto 1.5rem;
+  max-width: 52rem;
+  text-align: center;
   font-size: 1.0625rem;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.8);
@@ -4386,7 +4502,7 @@
   }
 }
 
-.devArchitectureSection + .devFeatureSection {
+.devArchitectureSection+.devFeatureSection {
   margin-top: 5rem;
 }
 
@@ -4696,8 +4812,7 @@
   .devHookPipeline {
     display: grid;
     grid-template-columns:
-      minmax(12rem, 1fr) auto minmax(12rem, 1fr)
-      auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
+      minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr) auto minmax(12rem, 1fr);
     align-items: stretch;
     gap: 0 0.5rem;
     width: max-content;
@@ -4734,8 +4849,7 @@
 
   .devHookPipeline {
     grid-template-columns:
-      minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr)
-      1.75rem minmax(0, 1fr);
+      minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr) 1.75rem minmax(0, 1fr);
     gap: 0 0.65rem;
     width: 100%;
     min-width: 0;
@@ -4744,7 +4858,7 @@
 
 /* ─── Developer Framework Section ──────────────────────────────────────────── */
 
-.devFrameworkSection + .aiEngineerBuildSection {
+.devFrameworkSection+.aiEngineerBuildSection {
   margin-top: 6.5rem;
 }
 
@@ -5026,6 +5140,7 @@
    ============================================================================= */
 
 @media (max-width: 996px) {
+
   /* FrameworksStrip — allow wrapping, shrink logos */
   .frameworksRow {
     flex-wrap: wrap;
@@ -5308,6 +5423,7 @@
    ============================================================================= */
 
 @media (max-width: 480px) {
+
   /* Hero */
   .heroBody {
     min-height: 4.5rem;
@@ -5412,11 +5528,25 @@
 
 /* ─── Business Leader Gradient Animation ──────────────────────────────────────────────── */
 @keyframes gradientShift {
-  0%   { background-position: 100% 20%; }
-  25%  { background-position: 0%   60%; }
-  50%  { background-position: 100% 80%; }
-  75%  { background-position: 0%   30%; }
-  100% { background-position: 100% 20%; }
+  0% {
+    background-position: 100% 20%;
+  }
+
+  25% {
+    background-position: 0% 60%;
+  }
+
+  50% {
+    background-position: 100% 80%;
+  }
+
+  75% {
+    background-position: 0% 30%;
+  }
+
+  100% {
+    background-position: 100% 20%;
+  }
 }
 
 .blPageSection {
@@ -5427,11 +5557,25 @@
 
 /* ─── Developer Gradient Animation ──────────────────────────────────────────────── */
 @keyframes gradientShiftDev {
-  0%   { background-position: 100% 20%; }
-  25%  { background-position: 0%   60%; }
-  50%  { background-position: 100% 80%; }
-  75%  { background-position: 0%   30%; }
-  100% { background-position: 100% 20%; }
+  0% {
+    background-position: 100% 20%;
+  }
+
+  25% {
+    background-position: 0% 60%;
+  }
+
+  50% {
+    background-position: 100% 80%;
+  }
+
+  75% {
+    background-position: 0% 30%;
+  }
+
+  100% {
+    background-position: 100% 20%;
+  }
 }
 
 .devPageSection {
@@ -5442,11 +5586,25 @@
 
 /* ─── AI Engineer Gradient Animation ──────────────────────────────────────────────── */
 @keyframes gradientShiftAI {
-  0%   { background-position: 100% 20%; }
-  25%  { background-position: 0%   60%; }
-  50%  { background-position: 100% 80%; }
-  75%  { background-position: 0%   30%; }
-  100% { background-position: 100% 20%; }
+  0% {
+    background-position: 100% 20%;
+  }
+
+  25% {
+    background-position: 0% 60%;
+  }
+
+  50% {
+    background-position: 100% 80%;
+  }
+
+  75% {
+    background-position: 0% 30%;
+  }
+
+  100% {
+    background-position: 100% 20%;
+  }
 }
 
 .aiEngineerSection {

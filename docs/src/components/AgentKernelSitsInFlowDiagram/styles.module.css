@@ -101,7 +101,7 @@
 .deploymentLabel {
   position: absolute;
   left: 50%;
-  bottom: 0.6rem;
+  bottom: 0.1rem;
   transform: translateX(-50%);
   margin: 0;
   font-size: 0.8125rem;

@@ -263,10 +263,15 @@ export default function AIEngineerPage() {
         ? styles.akCompareIconPos
         : styles.akCompareIconNeg;
 
+    const textClass =
+      cell.status === "positive"
+        ? styles.akCompareTextPos
+        : styles.akCompareTextNeg;
+
     return (
       <span className={styles.akCompareCellValue}>
         <Icon className={iconClass} aria-hidden />
-        {cell.text ? <span>{cell.text}</span> : null}
+        {cell.text ? <span className={textClass}>{cell.text}</span> : null}
       </span>
     );
   }
@@ -422,23 +427,7 @@ export default function AIEngineerPage() {
 
       // ─── Step 03: Compare section ─────────────────────────────────────────
       const step03 = root.querySelector('[data-step="ai-03"]');
-      if (step03) {
-        gsap.fromTo(
-          step03,
-          { opacity: 0, y: 24 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.6,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: step03,
-              start: "top bottom",
-              toggleActions: "play none none reverse",
-            },
-          }
-        );
-      }
+      if (step03) fadeUp(step03, { y: 36, duration: 1 });
 
       // ─── Step 04: Feature cards (scoped strictly to ai-04) ───────────────
       root
@@ -588,13 +577,13 @@ export default function AIEngineerPage() {
             className={`${styles.developerAnalogy} ${styles.aiEngineerBlock}`}
             data-step="ai-01"
           >
-            <p className={styles.devStepLabel}>Step 01 | Analogy</p>
-            <h2 className={styles.devTitle}>
-              Bring your already existing agentic AI code onto a unified
-              Operating System and Deployment Infrastructure for your AI
-              Agents while making it enterprise ready and compliant.
+            <p className={styles.aiStepLabel}>Step 01 | Analogy</p>
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>Unify Your Existing Agents On A Compliant</span>
+                {' '}
+                <span className={styles.aiTitleGray}>Enterprise Runtime</span>
             </h2>
-            <div className={styles.devDescription}>
+            <div className={styles.aiDescription}>
               <p className={styles.devIntro}>
                 Agent Kernel is a unified, capable runtime for AI agents.
                 Its pluggable architecture lets you attach capabilities to
@@ -660,9 +649,11 @@ export default function AIEngineerPage() {
             className={`${styles.akStandOutSection} ${styles.developerBlock}`}
             data-step="ai-03"
           >
-            <p className={styles.devStepLabel}>Compare alternatives</p>
-            <h2 className={styles.devTitle}>
-              What Makes Agent Kernel Stand Out
+            <p className={styles.aiStepLabel}>Step 02 | Stand Out</p>
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>What Makes Agent Kernel</span>
+                {' '}
+                <span className={styles.aiTitleGray}>Stand Out</span>
             </h2>
 
             <div className={styles.akComparePanel}>
@@ -801,11 +792,13 @@ export default function AIEngineerPage() {
 
           {/* Step 04 — Available Features */}
           <div className={styles.devFeatureSection} data-step="ai-04">
-            <p className={styles.devFeatureLabel}>
-              All Enterprise Features Available Free And Open-Source
+            <p className={styles.aiStepLabel}>
+              Step 03 | Features
             </p>
-            <h2 className={styles.devFeatureTitle}>
-              Focus on Agent Logic. We Handle the Rest.
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>Focus on Agent Logic</span>
+                {' '}<br/>
+              <span className={styles.aiTitleGray}>We Handle the Rest</span>
             </h2>
 
             <div className={styles.devFeatureGroups}>
@@ -856,11 +849,13 @@ export default function AIEngineerPage() {
             className={`${styles.devFrameworkSection} ${styles.developerBlock}`}
             data-step="ai-05"
           >
-            <p className={styles.devFrameworkLabel}>
-              No lock-in. Your choice
+            <p className={styles.aiStepLabel}>
+              Step 04 | Frameworks
             </p>
-            <h2 className={styles.devFrameworkTitle}>
-              Use The Framework You Prefer
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>Use The Framework</span>
+                {' '}
+              <span className={styles.aiTitleGray}> You Prefer</span>
             </h2>
 
             <FrameworkSelector showTitle={false} showDescription={true} accentColor="#26A64D" />
@@ -871,10 +866,11 @@ export default function AIEngineerPage() {
             className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}
             data-step="ai-06"
           >
-            <p className={styles.devStepLabel}>Build with confidence</p>
-            <h2 className={styles.devTitle}>
-              How Agent Kernel Helps You Build Production-Ready Compliant AI
-              Agents
+            <p className={styles.aiStepLabel}>Step 05 | Build Agents</p>
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>How Agent Kernel Helps You Build</span>
+                {' '}
+              <span className={styles.aiTitleGray}>Production-Ready Compliant AI Agents</span>
             </h2>
 
             <article className={styles.aiBuildSubsection}>
@@ -914,10 +910,14 @@ export default function AIEngineerPage() {
             className={`${styles.devArchitectureSection} ${styles.developerBlock}`}
             data-step="ai-07"
           >
-            <p className={styles.devStepLabel}>The complete picture</p>
-            <h2 className={styles.devTitle}>How Agent Kernel Fits In</h2>
+            <p className={styles.aiStepLabel}>Step 06 | Complete Picture</p>
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>How Agent Kernel</span>
+                {' '}
+              <span className={styles.aiTitleGray}>Fits In</span>
+            </h2>
 
-            <p className={styles.devFrameworkBody}>
+            <p className={styles.aiDescription}>
               You write your AI agent's logic. Agent Kernel handles
               everything else: the infrastructure, the cloud deployment,
               memory, knowledge bases, hooks, observability & traceability,
@@ -935,9 +935,11 @@ export default function AIEngineerPage() {
             className={`${styles.devFeatureSection} ${styles.developerBlock}`}
             data-step="ai-08"
           >
-            <p className={styles.devStepLabel}>Operating system depth</p>
-            <h2 className={styles.devTitle}>
-              Why Agent Kernel is a Powerful Operating System
+            <p className={styles.aiStepLabel}>Step 07 | Operating system depth</p>
+            <h2 className={styles.aiTitle}>
+              <span className={styles.aiTitleWhite}>Why Agent Kernel is a Powerful</span>
+                {' '}<br/>
+              <span className={styles.aiTitleGray}>Operating System</span>
             </h2>
 
             <div className={styles.devFeatureGroups}>
