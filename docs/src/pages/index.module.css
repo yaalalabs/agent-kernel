@@ -1438,6 +1438,7 @@
   margin-bottom: 2rem;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  text-align: center;
 }
 
 .blHighlightEyebrow {
@@ -1446,14 +1447,14 @@
   color: rgba(255, 255, 255, 0.45);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin: 0 0 0.75rem 0;
+  margin: 0 auto 0.75rem auto;
 }
 
 .blHighlightTitle {
   font-size: 1.75rem;
   font-weight: 700;
   color: #ffffff;
-  margin: 0 0 1rem 0;
+  margin: 0 auto 1rem auto;
   line-height: 1.3;
 }
 
@@ -1461,7 +1462,7 @@
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.65;
-  margin: 0 0 0.75rem 0;
+  margin: 0 auto 0.75rem auto;
   max-width: 680px;
 }
 
@@ -1498,7 +1499,7 @@
 
 .blValueIcon {
   font-size: 3rem;
-  color: #ffffff;
+  color: #8E5DFF;
   opacity: 0.8;
 }
 
@@ -1522,7 +1523,7 @@
 .blScenarios {
   display: flex;
   flex-direction: column;
-  gap: 2.5rem;
+  gap: 2rem;
   margin-top: 1.5rem;
 }
 
@@ -1532,37 +1533,38 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 0.5rem;
 }
 
 .blTab {
-  background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
-  border-radius: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.6rem 1.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
-  transition:
-    color 0.15s ease,
-    border-color 0.15s ease,
-    background 0.15s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
   letter-spacing: 0.01em;
   line-height: 1;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
 }
 
 .blTab:hover {
-  color: rgba(255, 255, 255, 0.85);
-  border-color: rgba(255, 255, 255, 0.55);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
 }
 
-/* Active tab: white border + white text, matches the image */
+/* Active tab: premium purple-to-pink gradient, rounded pill with glow, no border */
 .blTabActive {
   color: #ffffff !important;
-  border-color: #ffffff !important;
-  background: transparent;
+  border-color: transparent !important;
+  background: linear-gradient(90deg, #7c3aed 0%, #db2777 100%) !important;
+  box-shadow: 0 0 16px rgba(124, 58, 237, 0.45), 0 0 8px rgba(219, 39, 119, 0.25);
 }
 
 /* ─── Scenario content area ──────────────────────────────────────────────────── */
@@ -1571,10 +1573,17 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1.5rem;
+  padding: 3rem 2.5rem;
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 40px rgba(0, 0, 0, 0.35);
+  text-align: center;
 }
 
 .blScenarioTitle {
-  font-size: 1.75rem;
+  font-size: 2rem;
   font-weight: 700;
   color: #ffffff;
   margin: 0;
@@ -1582,10 +1591,10 @@
 }
 
 .blScenarioChannels {
-  font-size: 1.125rem;
-  color: rgba(255, 255, 255, 0.45);
-  margin: 0 0 1.5rem 0;
-  font-weight: 400;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0.25rem 0 2.5rem 0;
+  font-weight: 500;
 }
 
 /* ─── Three columns ──────────────────────────────────────────────────────────── */
@@ -1593,23 +1602,30 @@
 .blScenarioCols {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .blScenarioCol {
   background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
-  border-radius: 0.75rem;
-  padding: 2rem 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1.25rem;
+  padding: 2.5rem 2rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   text-align: center;
-  backdrop-filter: blur(4px);
+  transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+  backdrop-filter: blur(8px);
+}
+
+.blScenarioCol:hover {
+  border-color: rgba(139, 92, 246, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
 .blScenarioColHeading {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: #ffffff;
   margin: 0 0 0.25rem 0;
@@ -1617,16 +1633,17 @@
 }
 
 .blScenarioColSub {
-  font-size: 1.125rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
   margin: 0 0 1rem 0;
-  font-weight: 400;
+  font-weight: 500;
+  text-transform: capitalize;
 }
 
 .blScenarioColBody {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.7);
-  line-height: 1.7;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.65;
   margin: 0;
 }
 
@@ -1642,8 +1659,8 @@
     scrollbar-width: none;
     /* Firefox */
     gap: 0.5rem;
-    padding-bottom: 2px;
-    /* keep bottom border of focused tab visible */
+    padding-bottom: 4px;
+    justify-content: flex-start;
   }
 
   .blTabBar::-webkit-scrollbar {
@@ -1654,39 +1671,32 @@
   .blTab {
     flex-shrink: 0;
     /* prevent tabs from squishing */
-    padding: 0.55rem 1rem;
+    padding: 0.55rem 1.1rem;
     font-size: 0.8rem;
+  }
+
+  .blScenarioContent {
+    padding: 2.25rem 1.5rem;
+    border-radius: 1.25rem;
+  }
+
+  .blScenarioTitle {
+    font-size: 1.6rem;
+  }
+
+  .blScenarioChannels {
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
   }
 
   .blScenarioCols {
     grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
-  /* Left-align in single-column layout — easier to read */
+  /* Center-align or keep left-align in single-column layout */
   .blScenarioCol {
-    text-align: left;
-    padding: 1.5rem 1.25rem;
-  }
-
-  .blScenarioTitle {
-    font-size: 1.35rem;
-  }
-
-  .blScenarioChannels {
-    font-size: 1rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .blScenarioColHeading {
-    font-size: 1.1rem;
-  }
-
-  .blScenarioColSub {
-    font-size: 1rem;
-  }
-
-  .blScenarioColBody {
-    font-size: 0.9rem;
+    padding: 2rem 1.5rem;
   }
 }
 
@@ -1696,36 +1706,21 @@
   }
 
   .blTab {
-    padding: 0.5rem 0.85rem;
+    padding: 0.5rem 0.9rem;
     font-size: 0.75rem;
   }
 
-  .blScenarioTitle {
-    font-size: 1.15rem;
-    line-height: 1.3;
+  .blScenarioContent {
+    padding: 1.75rem 1rem;
+    border-radius: 1rem;
   }
 
-  .blScenarioChannels {
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
+  .blScenarioTitle {
+    font-size: 1.35rem;
   }
 
   .blScenarioCol {
-    padding: 1.25rem 1rem;
-  }
-
-  .blScenarioColHeading {
-    font-size: 1rem;
-  }
-
-  .blScenarioColSub {
-    font-size: 0.875rem;
-    margin-bottom: 0.625rem;
-  }
-
-  .blScenarioColBody {
-    font-size: 0.85rem;
-    line-height: 1.65;
+    padding: 1.75rem 1.25rem;
   }
 }
 
@@ -3609,30 +3604,64 @@
 }
 
 .contentCard {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
   padding: 2rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+  transition: border-color 1s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+}
+
+.contentCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 60% 80%,
+      rgba(120, 40, 160, 0.45) 0%,
+      rgba(180, 40, 100, 0.2) 40%,
+      #010002 70%);
+  opacity: 0;
+  z-index: 0;
+  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.contentCard:hover::before {
+  opacity: 1;
+}
+
+.contentCard:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.contentCardLabel,
+.contentCardTitle,
+.bulletList {
+  position: relative;
+  z-index: 1;
 }
 
 .contentCardLabel {
-  font-size: 0.875rem;
-  font-weight: 200;
+  font-size: 0.7rem;
+  font-weight: 700;
   color: #ffffff;
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.5rem 0;
   text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .contentCardTitle {
-  font-size: 1.25rem;
+  font-size: 1.75rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.8);
-  margin: 0 0 1rem 0;
+  color: #ffffff;
+  margin: 0 0 1.5rem 0;
+  line-height: 1.25;
 }
 
 .bulletList {
@@ -3641,11 +3670,11 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.875rem;
 }
 
 .bulletList li {
-  font-size: 1rem;
+  font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
   display: flex;
@@ -3653,37 +3682,13 @@
   gap: 0.75rem;
 }
 
-.bulletList li:before {
-  content: "•";
-  color: rgba(255, 255, 255, 0.6);
+.bulletList li::before {
+  content: "✓";
+  color: #e879a0;
   flex-shrink: 0;
-  margin-top: 0.125rem;
-}
-
-.bulletListLarge {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: 600px;
-}
-
-.bulletListLarge li {
-  font-size: 0.95rem;
-  color: #94a3b8;
-  line-height: 1.7;
-  padding-left: 1.5rem;
-  position: relative;
-}
-
-.bulletListLarge li::before {
-  content: "→";
-  position: absolute;
-  left: 0;
-  color: #4f7df7;
+  margin-top: 0.1rem;
   font-weight: 700;
+  font-size: 0.85rem;
 }
 
 /* ─── Developer Analogy Styles ────────────────────────────────────────────── */

@@ -442,7 +442,7 @@ export default function BusinessLeaderPage() {
               </p>
 
               <div className={styles.devArchitectureWrapper}>
-                <AgentKernelArchDiagram accentColor="#6F45CC" />
+                <AgentKernelArchDiagram accentColor="#8E5DFF" />
               </div>
             </div>
           </div>
