@@ -429,6 +429,65 @@
   .deployLabel { font-size: 0.72rem; }
 }
 
+@media (max-width: 768px) {
+  .archSection {
+    padding: 1.5rem 0;
+  }
+
+  .diagram {
+    gap: 1.25rem;
+  }
+
+  .topBox {
+    padding: 0.9rem 1.75rem;
+  }
+
+  .topBoxLabel {
+    font-size: 1rem;
+  }
+
+  .topBoxSub {
+    font-size: 0.83rem;
+  }
+
+  .hubCard {
+    padding: 1.05rem 1.35rem;
+  }
+
+  .hubLabel {
+    font-size: 0.96rem;
+  }
+
+  .modulesGrid {
+    gap: 0.5rem;
+  }
+
+  .modulesRow {
+    gap: 0.5rem;
+  }
+
+  .moduleChip {
+    padding: 0.5rem 0.7rem;
+  }
+
+  .moduleLabel {
+    font-size: 0.78rem;
+  }
+
+  .deployRow {
+    gap: 0.55rem;
+  }
+
+  .deployBox {
+    min-width: 96px;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .deployLabel {
+    font-size: 0.74rem;
+  }
+}
+
 @media (max-width: 400px) {
   .diagram {
     gap: 2rem;

@@ -1,0 +1,260 @@
+.frameworkContainer {
+  margin-top: 2rem;
+}
+
+.frameworkTitle {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+  margin-top: 0;
+  letter-spacing: -0.01em;
+  overflow-wrap: break-word;
+}
+
+.frameworkBody {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  margin-top: 0;
+  overflow-wrap: break-word;
+}
+
+.frameworkContent {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .frameworkContent {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+}
+
+.frameworkButtonsCol {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.frameworkButtonsGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0;
+}
+
+.frameworkButton {
+  padding: 0.875rem 1.25rem;
+  background-color: rgba(0, 221, 255, 0.05);
+  border: 1px solid rgba(0, 221, 255, 0.15);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 300ms ease;
+  backdrop-filter: blur(4px);
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.frameworkButton:hover {
+  background-color: rgba(0, 221, 255, 0.1);
+  border-color: rgba(0, 221, 255, 0.4);
+  color: rgba(255, 255, 255, 0.9);
+  transform: none !important;
+}
+
+.frameworkButtonActive {
+  background-color: rgba(0, 221, 255, 0.15);
+  border-color: rgba(0, 221, 255, 0.6);
+  color: #ffffff;
+}
+
+.frameworkCodeCol {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.frameworkCodeBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.frameworkCodeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.frameworkCodeLabel {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.frameworkCopyBtn {
+  padding: 0.5rem 1rem;
+  background-color: rgba(0, 221, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.375rem;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 200ms ease;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.frameworkCopyBtn:hover {
+  border-color: rgba(0, 221, 255, 0.4);
+  background-color: rgba(0, 221, 255, 0.1);
+  color: #ffffff;
+}
+
+.frameworkDocLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 2rem;
+  padding: 0.875rem 1.25rem;
+  background-color: #0e1017;
+  border: 1px solid rgba(0, 221, 255, 0.06);
+  border-radius: 0.5rem;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 200ms ease;
+  backdrop-filter: blur(4px);
+}
+
+.frameworkDocLink:hover {
+  background-color: #0e1017;
+  border-color: rgba(79, 125, 247, 0.2);
+  box-shadow: 0 8px 24px rgba(79, 125, 247, 0.08);
+  transform: translateY(-3px);
+}
+
+.frameworkCodePre {
+  background-color: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 0;
+  font-family: "Courier New", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  backdrop-filter: blur(4px);
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.frameworkCodePre code {
+  color: rgba(255, 255, 255, 0.85);
+  display: block;
+  white-space: pre;
+}
+
+/* ─── Responsive Styles ───────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .frameworkTitle {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .frameworkBody {
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .frameworkContent {
+    gap: 1rem;
+  }
+
+  .frameworkButton {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .frameworkCodePre {
+    font-size: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .frameworkCodeLabel {
+    font-size: 0.8rem;
+  }
+
+  .frameworkCopyBtn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.65rem;
+  }
+
+  .frameworkDocLink {
+    margin-top: 1.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .frameworkTitle {
+    font-size: 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .frameworkBody {
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+
+  .frameworkButton {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.85rem;
+  }
+
+  .frameworkCodeHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .frameworkCopyBtn {
+    align-self: flex-end;
+  }
+
+  .frameworkCodePre {
+    font-size: 0.7rem;
+    padding: 0.5rem;
+  }
+
+  .frameworkDocLink {
+    font-size: 0.75rem;
+    padding: 0.625rem 0.875rem;
+  }
+}
