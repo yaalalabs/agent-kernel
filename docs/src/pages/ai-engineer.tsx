@@ -34,6 +34,7 @@ import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
 import HeroAnimation from "../components/HeroAnimation";
 import FrameworkSelector from "../components/FrameworkSelector";
 import heroStyles from "../components/HeroAnimation/styles.module.css";
+import { FaGithub } from "react-icons/fa";
 
 export default function AIEngineerPage() {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1119,6 +1120,52 @@ export default function AIEngineerPage() {
               </ul>
               <span className={styles.exploreCardCta}>Read More</span>
             </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.ctaSection}>
+        <div className="container">
+          <div className={styles.ctaContent}>
+            <h2 className={styles.ctaTitle}>
+              Ready to Ship Your
+              <br />
+              First{" "}
+              <span className={styles.ctaTitleGradient}>Agent</span>?
+            </h2>
+            <p className={styles.ctaSubtitle}>
+              Free, open-source, Apache 2.0. No licensing costs, no vendor
+              lock-in. Join hundreds of developers building production AI agents
+              with Agent Kernel.
+            </p>
+            <div className={styles.ctaButtons}>
+              <Link
+                className={`button button--primary button--lg ${styles.btnPrimary}`}
+                to="/docs"
+              >
+                <span className={styles.btnIcon}>→</span>
+                Get Started Free
+              </Link>
+              <Link
+                className={`button button--secondary button--lg ${styles.btnSecondary}`}
+                to="https://github.com/yaalalabs/agent-kernel"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className={styles.btnIconSecondary}>
+                  <FaGithub />
+                </span>
+                View On GitHub
+              </Link>
+            </div>
+
+            <div className={styles.ctaImageWrapper}>
+              <img
+                src="/img/cta-bg.png"
+                alt="Agent Kernel"
+                className={styles.ctaImage}
+              />
+            </div>
           </div>
         </div>
       </section>
