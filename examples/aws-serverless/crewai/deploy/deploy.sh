@@ -11,7 +11,6 @@ create_deployment_package() {
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[redis,crewai,test] || true
-      uv pip install --group crewai --target=dist/data
     fi
     cp -r lambda.py config.yaml dist/data
     popd || exit 1

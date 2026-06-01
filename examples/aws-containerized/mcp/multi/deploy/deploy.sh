@@ -10,8 +10,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../../ak-py/dist
-      uv pip install --force-reinstall  --target=dist/data --find-links ../../../../ak-py/dist agentkernel[api,crewai,openai,mcp,test] || true
-      uv pip install --group mcp --target=dist/data
+      uv pip install --force-reinstall --target=dist/data --find-links ../../../../ak-py/dist agentkernel[api,crewai,openai,mcp,test] || true
     fi
     cp -r server.py config.yaml dist/data
     popd || exit 1
