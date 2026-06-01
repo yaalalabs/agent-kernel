@@ -137,7 +137,6 @@ mcp = [
 ]
 multimodal = [
     "litellm>=1.74.9",
-    "python-multipart>=0.0.12",
 ]
 
 [project.scripts]

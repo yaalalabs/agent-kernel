@@ -16,9 +16,7 @@ dev = [
     "isort>=5.0.0",
     "mypy>=1.0.0",
 ]
-crewai = [
-    "crewai==0.165.1",
-]
+
 [tool.uv]
 package = false
 
