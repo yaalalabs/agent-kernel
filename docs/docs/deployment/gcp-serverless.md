@@ -179,7 +179,7 @@ Enable a Firestore TTL policy on the collection pointing to the `expiry_time` fi
 ## Deployment
 
 ```bash
-# 1. Build and push container image
+# 1. Build example package
 ./build.sh
 
 # 2. Deploy infrastructure

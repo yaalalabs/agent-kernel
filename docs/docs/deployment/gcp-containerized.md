@@ -142,7 +142,7 @@ session:
 ## Deployment
 
 ```bash
-# 1. Build and push container image
+# 1. Build example package
 ./build.sh
 
 # 2. Deploy infrastructure
