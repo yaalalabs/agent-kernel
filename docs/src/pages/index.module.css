@@ -3025,44 +3025,36 @@
 /* ─── Levels ──────────────────────────────────────────────────────────────── */
 
 .levelsSection {
-  padding: 6rem 0;
-  position: relative;
-  overflow: hidden;
-}
-
-.levelsHeader {
-  text-align: center;
-  margin-bottom: 1.75rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-/* The sticky inner is what GSAP actually pins */
-.levelsStickyInner {
-  position: relative;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   padding: 0;
-  /* remove padding — frame container handles it */
-  z-index: 1;
+  position: relative;
   overflow: hidden;
+  min-height: 700px;
 }
 
-/* ─── Header ── */
+.levelsSectionVideo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  -webkit-mask-image: linear-gradient(to bottom,
+      transparent 0%,
+      black 26%,
+      black 100%);
+  mask-image: linear-gradient(to bottom,
+      transparent 0%,
+      black 26%,
+      black 100%);
+}
 
 .levelsFrameContainer {
   position: relative;
   z-index: 2;
   width: 100%;
-  max-width: 780px;
-  max-height: 150px;
+  max-width: 1300px;
   margin: 0 auto;
-  margin-top: -30rem;
+  padding: 8rem 2rem 5rem;
 }
 
 .levelsHeader {
@@ -3074,409 +3066,6 @@
   gap: 0.75rem;
 }
 
-/* Also update the badge bottom spacing to match */
-.levelsPathBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.85rem;
-  border: 1px solid rgba(0, 221, 255, 0.35);
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: rgba(0, 221, 255, 0.9);
-  background: rgba(0, 221, 255, 0.06);
-  letter-spacing: 0.02em;
-  margin-bottom: 0.05rem;
-  /* small extra nudge below badge, before title */
-}
-
-.levelsPathBadgePlus {
-  font-size: 0.9rem;
-  line-height: 1;
-  color: rgba(0, 221, 255, 0.7);
-}
-
-
-.levelsSubtitle {
-  font-size: 0.9rem;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.55);
-  margin-top: -4rem;
-}
-
-/* ─── Card Stack ── */
-
-.levelsWindowStack {
-  position: relative;
-  width: 100%;
-  max-width: 760px;
-  min-height: 350px;
-  margin-top: -3rem;
-}
-
-/* Each card is absolutely positioned so they overlap */
-.levelWindowCard {
-  position: absolute;
-  inset: 0;
-  border-radius: 12px;
-  overflow: hidden;
-  background: rgba(8, 8, 14, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.68),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  display: flex;
-  flex-direction: column;
-  will-change: opacity, transform;
-}
-
-/* ─── macOS Chrome ── */
-
-.levelWindowChrome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.55rem 0.85rem;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  flex-shrink: 0;
-}
-
-.levelWindowDots {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.levelWindowDot {
-  display: block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.dotRed {
-  background: #ff5f57;
-}
-
-.dotYellow {
-  background: #febc2e;
-}
-
-.dotGreen {
-  background: #28c840;
-}
-
-.levelWindowActions {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  color: rgba(255, 255, 255, 0.25);
-}
-
-.levelWindowActions svg {
-  display: block;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.levelWindowActions svg:hover {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-/* ─── Card Body ── */
-
-.levelWindowBody {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  flex: 1;
-  min-height: 0;
-}
-
-/* Left: dark starfield / image area */
-.levelWindowImageArea {
-  background: #010002;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  position: relative;
-  overflow: hidden;
-}
-
-/* Subtle noise/grain overlay to mimic the starfield in the design */
-.levelWindowImageArea::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.levelWindowImage {
-  object-fit: contain;
-  position: relative;
-  z-index: 1;
-}
-
-/* Right: text content */
-.levelWindowContent {
-  padding: 2rem 1.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  justify-content: center;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.levelWindowTitle {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.levelWindowDescription {
-  font-size: 0.84rem;
-  color: rgba(255, 255, 255, 0.6);
-  line-height: 1.65;
-  margin: 0;
-}
-
-.levelWindowBullets {
-  list-style: none;
-  padding: 0;
-  margin: 0.15rem 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.levelWindowBulletItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.75);
-  line-height: 1.4;
-}
-
-.levelWindowBulletCheck {
-  color: #28c840;
-  font-size: 0.8rem;
-  font-weight: 700;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-.levelWindowReadMore {
-  align-self: flex-start;
-  margin-top: 0.35rem;
-  padding: 0.4rem 0.95rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  letter-spacing: 0.01em;
-}
-
-.levelWindowReadMore:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #ffffff;
-}
-
-.levelsSectionVideo {
-  -webkit-mask-image: linear-gradient(to bottom,
-      transparent 0%,
-      black 26%,
-      black 100%);
-  mask-image: linear-gradient(to bottom,
-      transparent 0%,
-      black 26%,
-      black 100%);
-}
-
-/* ─── Responsive ── */
-
-@media (max-width: 768px) {
-  .levelsStickyInner {
-    padding: 3rem 1rem 2.5rem;
-  }
-
-  .levelsHeader {
-    margin-bottom: 1.25rem;
-    gap: 1rem;
-    /* increased gap for tablet */
-  }
-
-  .levelsTitle {
-    font-size: clamp(1.3rem, 5.5vw, 1.75rem);
-    line-height: 1.12;
-    max-width: 14ch;
-  }
-
-  .levelsSubtitle {
-    font-size: 0.82rem;
-    line-height: 1.5;
-    margin-top: 0;
-    max-width: 28ch;
-  }
-
-  .levelsWindowStack {
-    min-height: 440px;
-  }
-
-  .levelWindowBody {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-
-  /* Make cards stack instead of absolute-overlap on smaller screens */
-  .levelsWindowStack {
-    position: static;
-    margin-top: 0;
-    min-height: auto;
-    max-width: 980px;
-  }
-
-  .levelWindowCard {
-    position: relative;
-    /* remove absolute stacking so cards flow */
-    inset: auto;
-    width: 100%;
-    margin: 0 0 1.25rem 0;
-    display: block;
-    transform: none !important;
-    will-change: auto;
-  }
-
-  /* Reduce frame container offset so header sits above stacked cards */
-  .levelsFrameContainer {
-    margin-top: 0;
-    max-height: none;
-    padding: 0 0.5rem;
-  }
-
-  /* Avoid the heavy background video on tablet to improve perf */
-  .levelsSectionVideo {
-    display: none;
-  }
-
-  .levelWindowImageArea {
-    padding: 1.5rem;
-    min-height: 160px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .levelWindowContent {
-    border-left: none;
-    padding: 1.25rem;
-  }
-
-  .levelWindowTitle {
-    font-size: 1.15rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .levelsStickyInner {
-    padding: 3rem 0.875rem 2.5rem;
-  }
-
-  .levelsWindowStack {
-    min-height: 500px;
-  }
-
-  .levelWindowImageArea {
-    min-height: 130px;
-    padding: 1.25rem;
-  }
-
-  .levelWindowImage {
-    width: 150px;
-    height: 150px;
-  }
-
-  .levelWindowContent {
-    padding: 1rem;
-  }
-
-  .levelWindowDescription {
-    font-size: 0.8rem;
-  }
-
-  .levelWindowBulletItem {
-    font-size: 0.74rem;
-  }
-
-  .levelsHeader {
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .levelsTitle {
-    font-size: clamp(1.2rem, 7vw, 1.55rem);
-    line-height: 1.15;
-    max-width: 12ch;
-  }
-
-  .levelsSubtitle {
-    font-size: 0.78rem;
-    line-height: 1.45;
-    max-width: 24ch;
-  }
-
-  /* Further tighten card spacing on small phones */
-  .levelsWindowStack {
-    margin-top: 0;
-    min-height: auto;
-  }
-
-  .levelWindowCard {
-    margin-bottom: 0.9rem;
-    border-radius: 10px;
-  }
-
-  .levelsFrameContainer {
-    margin-top: 0;
-    padding: 0 0.5rem;
-    max-width: 100%;
-  }
-
-  .levelsSectionVideo {
-    display: none;
-  }
-}
-
-.levelsPinned {
-  min-height: 100vh;
-  overflow: hidden;
-}
-
-.levelsContainer {
-  max-width: 72rem;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.levelsSubtitle {
-  font-size: 1.5rem;
-  font-weight: 200;
-  color: #ffffff;
-  margin-bottom: 1rem;
-  letter-spacing: -0.01em;
-}
-
 .levelsTitle {
   font-size: 2.25rem;
   font-weight: 700;
@@ -3486,81 +3075,279 @@
   background-clip: text;
   letter-spacing: -0.01em;
   line-height: 1.15;
-  margin-bottom: 4rem;
+  margin: 0;
+}
+
+.levelsSubtitle {
+  font-size: 1rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+  margin-top: 0.6rem;
 }
 
 .levelsGrid {
   display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 2rem;
-  max-width: 64rem;
-  margin: 0 auto 3rem;
-}
-
-.levelCard {
-  background-color: rgba(0, 221, 255, 0.053);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.5rem;
-  padding: 2rem 2rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-.levelCard:hover {
-  background: rgba(0, 221, 255, 0.1);
-  border-color: rgba(0, 221, 255, 0.4);
-  transform: scale(1.05);
-}
-
-.levelCardSelected {
-  background: rgba(0, 221, 255, 0.15);
-  border-color: rgba(0, 221, 255, 0.6);
-  transform: scale(1.05);
-}
-
-.levelNumber {
-  font-size: 1.125rem;
-  font-weight: 300;
-  color: #ffffff;
-}
-
-.levelImage {
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-
-.levelImage img {
-  width: 4rem;
-  height: 4rem;
-  display: block;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  max-width: 950px;
   margin: 0 auto;
 }
 
+.levelCard {
+  background: rgba(14, 16, 23, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  cursor: pointer;
+  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+  text-decoration: none !important;
+  color: inherit !important;
+}
+
+.levelCard:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 221, 255, 0.35);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 221, 255, 0.08);
+}
+
+.levelCardImageArea {
+  width: 100%;
+  height: 160px;
+  background: #000000;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  transition: border-color 0.3s ease;
+}
+
+.levelCard:hover .levelCardImageArea {
+  border-color: rgba(0, 221, 255, 0.2);
+}
+
+.levelCardImage {
+  width: 150px;
+  height: auto;
+  object-fit: contain;
+  transition: transform 0.4s ease;
+}
+
+.levelCard:hover .levelCardImage {
+  transform: scale(1.05);
+}
+
+.levelCardContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: center;
+  text-align: center;
+}
+
 .levelCardTitle {
-  font-size: 1.5rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: #ffffff;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .levelCardDescription {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.625;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.55;
   margin: 0;
 }
 
-.levelsHint {
-  text-align: center;
-  font-size: 1.2rem;
-  color: rgba(255, 255, 255, 0.6);
-  margin-top: 3rem;
+/* ─── Tablet ── */
+
+@media (min-width: 601px) and (max-width: 991px) {
+  .levelsSection {
+    min-height: unset;
+    background: transparent;
+  }
+
+  .levelsSectionVideo {
+    display: none;
+  }
+
+  .levelsFrameContainer {
+    max-width: 600px;
+    padding: 4rem 2rem 3rem;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .levelsHeader {
+    margin-bottom: 2.5rem;
+    gap: 0.65rem;
+    text-align: center;
+    align-items: center;
+  }
+
+  .levelsTitle {
+    font-size: clamp(1.6rem, 4vw, 2rem);
+    text-align: center;
+  }
+
+  .levelsSubtitle {
+    text-align: center;
+  }
+
+  .levelsGrid {
+    grid-template-columns: 1fr !important;
+    max-width: 100%;
+    margin: 0 auto;
+    gap: 1.25rem;
+  }
+
+  .levelsGrid > *:last-child:nth-child(odd) {
+    grid-column: auto;
+    max-width: 100%;
+    margin: 0;
+    width: 100%;
+  }
+
+  .levelCard {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 1rem;
+    padding: 1.25rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .levelCardImageArea {
+    width: 100% !important;
+    height: 180px;
+  }
+
+  .levelCardImage {
+    width: 130px;
+  }
+
+  .levelCardContent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center !important;
+    gap: 0.6rem;
+    width: 100%;
+  }
+
+  .levelCardTitle {
+    font-size: 1.15rem;
+    text-align: center !important;
+    width: 100%;
+  }
+
+  .levelCardDescription {
+    font-size: 0.88rem;
+    line-height: 1.55;
+    text-align: center !important;
+    width: 100%;
+  }
 }
+
+/* ─── Mobile ── */
+
+@media (max-width: 600px) {
+  .levelsSection {
+    min-height: unset;
+    background: transparent;
+  }
+
+  .levelsSectionVideo {
+    display: none;
+  }
+
+  .levelsFrameContainer {
+    padding: 3rem 1.25rem 2.5rem;
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .levelsHeader {
+    margin-bottom: 2rem;
+    gap: 0.5rem;
+  }
+
+  .levelsTitle {
+    font-size: clamp(1.35rem, 6vw, 1.75rem);
+  }
+
+  .levelsSubtitle {
+    font-size: 0.9rem;
+  }
+
+  .levelsGrid {
+    grid-template-columns: 1fr; /* single column, cards stacked */
+    gap: 1rem;
+    max-width: 100%;
+  }
+
+  /* reset tablet centering rule */
+  .levelsGrid > *:last-child:nth-child(odd) {
+    grid-column: auto;
+    max-width: 100%;
+    margin: 0;
+    width: 100%;
+  }
+
+  .levelCard {
+    display: flex !important;
+    flex-direction: column !important; /* image on top, text below */
+    align-items: stretch !important;
+    gap: 0.875rem;
+    padding: 1rem;
+    border-radius: 12px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .levelCardImageArea {
+    width: 100% !important;
+    height: 140px;
+    border-radius: 10px;
+  }
+
+  .levelCardImage {
+    width: 90px;
+  }
+
+  .levelCardContent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .levelCardTitle {
+    font-size: 1rem;
+    text-align: center !important;
+    width: 100%;
+    margin-top: 1.5rem;
+  }
+
+  .levelCardDescription {
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+}
+
+/* ─── Other styles ── */
 
 .levelContent {
   margin-top: 5rem;
@@ -3594,9 +3381,6 @@
   letter-spacing: 0.18em;
   margin-bottom: 1.25rem;
   margin-top: 0;
-}
-
-.stepLabel {
   justify-content: center;
 }
 
@@ -3632,10 +3416,6 @@
   max-width: 780px;
   margin-left: auto;
   margin-right: auto;
-}
-
-/* centre column children (intro, bullets) */
-.contentDescription {
   align-items: center;
 }
 

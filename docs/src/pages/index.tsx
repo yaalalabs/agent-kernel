@@ -16,7 +16,7 @@ import {
   MdIntegrationInstructions,
   MdCloudUpload,
   MdCheck,
-  MdClose, 
+  MdClose,
 } from "react-icons/md";
 import {
   FaGithub,
@@ -107,10 +107,10 @@ function Hero() {
   const bulletsRef = useRef(null);
   const videoRef = useRef(null);
   const scrollLabelRef = useRef(null);
- 
+
   useLayoutEffect(() => {
     const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
- 
+
     gsap.set(
       [
         titleRef.current,
@@ -122,7 +122,7 @@ function Hero() {
       ],
       { opacity: 0, y: 28 }
     );
- 
+
     tl.to(titleRef.current, { opacity: 1, y: 0, duration: 0.85 })
       .to(subtitleRef.current, { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
       .to(buttonsRef.current, { opacity: 1, y: 0, duration: 0.55 }, "-=0.35")
@@ -151,7 +151,7 @@ function Hero() {
       if (pulse) pulse.kill();
     };
   }, []);
- 
+
   return (
     <section className={styles.hero}>
       <div className={styles.inner}>
@@ -165,13 +165,13 @@ function Hero() {
             Enterprise AI{" "}
             <span className={styles.gradientWord}>Agents</span>
           </h1>
- 
+
           <p ref={subtitleRef} className={styles.subtitle}>
             Orchestrate agent workflows, automate compliance, and
             <br className={styles.brDesktop} />
             deploy anywhere with zero vendor lock-in.
           </p>
- 
+
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link
               className={`button button--primary button--lg ${styles.btnPrimary}`}
@@ -193,7 +193,7 @@ function Hero() {
               Agent Skills
             </button>
           </div>
- 
+
           <ul ref={bulletsRef} className={styles.bullets}>
             <li>
               <MdCheck className={styles.check} />
@@ -209,7 +209,7 @@ function Hero() {
             </li>
           </ul>
         </div>
- 
+
         {/* ── RIGHT – particle video ───────────── */}
         <div ref={videoRef} className={styles.right}>
           <video
@@ -654,9 +654,8 @@ function AgentSkills() {
                 key={skill.name}
                 role="tab"
                 aria-selected={activeSkillIndex === idx}
-                className={`${styles.agentSkillsTopicButton} ${
-                  activeSkillIndex === idx ? styles.agentSkillsTopicActive : ""
-                }`}
+                className={`${styles.agentSkillsTopicButton} ${activeSkillIndex === idx ? styles.agentSkillsTopicActive : ""
+                  }`}
                 onClick={() => setActiveSkillIndex(idx)}
               >
                 {skill.name}
@@ -674,10 +673,10 @@ function AgentSkills() {
                   <span className={styles.agentSkillsDotGreen} />
                 </div>
                 <div className={styles.agentSkillsIdeActions}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
                 </div>
               </div>
 
@@ -1001,17 +1000,15 @@ interface Level {
   title: string;
   image: string;
   description: string;
-  bullets: string[];
 }
 
 function Levels() {
   const sectionRef = useRef<HTMLElement>(null);
-  const stickyRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const cardsWrapRef = useRef<HTMLDivElement>(null);
-  const history = useHistory();
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const levels: Level[] = [
     {
@@ -1019,208 +1016,84 @@ function Levels() {
       title: "Business Leader",
       image: "/img/business_leader.png",
       description:
-        "Scaffold production-ready agents in minutes using the frameworks and languages you already know. Ship faster without learning an entirely new development stack.",
-      bullets: [
-        "Zero-config CLI with guided project setup",
-        "Seamless integration with your existing CI pipelines",
-        "Built-in retry and fallback routing logic",
-      ],
+        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand the tech.",
     },
     {
       id: "02",
       title: "Developer",
       image: "/img/developer.png",
       description:
-        "Scaffold production-ready agents in minutes using the frameworks and languages you already know. Ship faster without learning an entirely new development stack.",
-      bullets: [
-        "Zero-config CLI with guided project setup",
-        "Seamless integration with your existing CI pipelines",
-        "Built-in retry and fallback routing logic",
-      ],
+        "You build software but haven't built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.",
     },
     {
       id: "03",
       title: "AI Engineer",
       image: "/img/ai.png",
       description:
-        "Scaffold production-ready agents in minutes using the frameworks and languages you already know. Ship faster without learning an entirely new development stack.",
-      bullets: [
-        "Zero-config CLI with guided project setup",
-        "Seamless integration with your existing CI pipelines",
-        "Built-in retry and fallback routing logic",
-      ],
+        "You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework that doesn't get in your way.",
     },
   ];
 
-  const handleLevelSelect = (levelId: string) => {
-    const levelPages: { [key: string]: string } = {
-      "01": "/business-leader",
-      "02": "/developer",
-      "03": "/ai-engineer",
-    };
-    if (levelPages[levelId]) {
-      history.push(levelPages[levelId]);
-    }
+  const levelPages: { [key: string]: string } = {
+    "01": "/business-leader",
+    "02": "/developer",
+    "03": "/ai-engineer",
   };
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 992px)");
+    setIsDesktop(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
 
     const section = sectionRef.current;
-    const cardEls = cardsWrapRef.current?.querySelectorAll<HTMLElement>(
-      `.${styles.levelWindowCard}`
-    );
+    const cards = cardsWrapRef.current?.children;
 
-    if (!section || !cardEls || cardEls.length === 0) return;
+    if (!section || !cards || cards.length === 0) return;
 
-    const isSmall = window.matchMedia("(max-width: 1024px)").matches;
-    const cardArray = Array.from(cardEls);
-    const total = cardArray.length;
-
-    // ── Mobile / tablet: simple fade-in per card ─────────────────────────────
-    if (isSmall) {
-      gsap.set(cardArray, { autoAlpha: 0, y: 30 });
-
-      const triggers = cardArray.map((card) =>
-        gsap.to(card, {
-          autoAlpha: 1,
-          y: 0,
-          duration: 0.6,
-          ease: "power2.out",
-          scrollTrigger: {
-            trigger: card,
-            start: "top 90%",
-            toggleActions: "play none none none",
-          },
-        })
-      );
-
-      gsap.fromTo(
-        [badgeRef.current, titleRef.current, subtitleRef.current],
-        { autoAlpha: 0, y: 20 },
-        {
-          autoAlpha: 1,
-          y: 0,
-          duration: 0.5,
-          stagger: 0.06,
-          ease: "power2.out",
-          scrollTrigger: {
-            trigger: section,
-            start: "top 90%",
-            toggleActions: "play none none none",
-          },
-        }
-      );
-
-      return () => {
-        triggers.forEach((t) => {
-          t.scrollTrigger?.kill();
-          t.kill();
-        });
-      };
-    }
-
-    // ── Desktop: card stack animation ────────────────────────────────────────
-
-    // Apply absolute positioning only on desktop
-    const cardArrayEl = cardsWrapRef.current;
-    if (cardArrayEl) {
-      cardArrayEl.style.position = "relative";
-    }
-    cardArray.forEach((card) => {
-      card.style.position = "absolute";
-      card.style.top = "0";
-      card.style.left = "0";
-      card.style.width = "100%";
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: section,
+        start: "top 80%",
+        toggleActions: "play none none none",
+        once: true,
+      },
     });
 
-    const STACK_OFFSET_PX = 8;
-    const STACK_SCALE_OFFSET = 0.015;
-    const TRANSITION_SCROLL = window.innerHeight * 1.4;
-    const INITIAL_PAUSE = window.innerHeight * 0.5;
-    const totalScroll = INITIAL_PAUSE + (total - 1) * TRANSITION_SCROLL;
-
-    gsap.set(cardArray[0], { autoAlpha: 1, y: 0, scale: 1, zIndex: total });
-    cardArray.slice(1).forEach((card, i) => {
-      gsap.set(card, {
-        autoAlpha: 0,
-        y: window.innerHeight * 1.1,
-        scale: 1,
-        zIndex: total - (i + 1),
-      });
-    });
-
-    const headerAnim = gsap.fromTo(
+    tl.fromTo(
       [badgeRef.current, titleRef.current, subtitleRef.current],
       { opacity: 0, y: 20 },
       {
         opacity: 1,
         y: 0,
-        duration: 0.8,
+        duration: 0.6,
         stagger: 0.1,
         ease: "power3.out",
-        scrollTrigger: {
-          trigger: section,
-          start: "top 80%",
-          toggleActions: "play none none none",
-        },
       }
     );
 
-    const pin = ScrollTrigger.create({
-      trigger: section,
-      start: "top top",
-      end: `+=${totalScroll}`,
-      pin: stickyRef.current,
-      pinSpacing: true,
-      anticipatePin: 1,
-      onUpdate: (self) => {
-        const pauseFraction = INITIAL_PAUSE / totalScroll;
-        if (self.progress < pauseFraction) return;
-
-        const t = (self.progress - pauseFraction) / (1 - pauseFraction);
-        const floatIdx = t * (total - 1);
-        const activeIdx = Math.min(Math.floor(floatIdx), total - 2);
-        const localT = floatIdx - activeIdx;
-
-        const incomingIdx = activeIdx + 1;
-        if (incomingIdx < total) {
-          gsap.set(cardArray[incomingIdx], {
-            autoAlpha: Math.min(1, localT * 2),
-            y: window.innerHeight * 1.1 * (1 - localT),
-            scale: 1,
-            zIndex: total + 1,
-          });
-        }
-
-        for (let i = 0; i <= activeIdx; i++) {
-          const depthBefore = activeIdx - i;
-          const depthAfter = depthBefore + 1;
-          const depth = depthBefore + localT * (depthAfter - depthBefore);
-
-          gsap.set(cardArray[i], {
-            y: depth * STACK_OFFSET_PX,
-            scale: 1 - depth * STACK_SCALE_OFFSET,
-            autoAlpha: 1,
-            zIndex: total - Math.round(depth),
-          });
-        }
+    tl.fromTo(
+      Array.from(cards),
+      { opacity: 0, y: 30 },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.6,
+        stagger: 0.12,
+        ease: "power3.out",
       },
-    });
+      "-=0.4"
+    );
 
     return () => {
-      pin.kill();
-      headerAnim.scrollTrigger?.kill();
-      headerAnim.kill();
-      // Clean up inline styles applied for desktop
-      cardArray.forEach((card) => {
-        card.style.position = "";
-        card.style.top = "";
-        card.style.left = "";
-        card.style.width = "";
-      });
-      if (cardArrayEl) {
-        cardArrayEl.style.position = "";
+      tl.kill();
+      if (tl.scrollTrigger) {
+        tl.scrollTrigger.kill();
       }
     };
   }, [levels]);
@@ -1231,11 +1104,7 @@ function Levels() {
       className={styles.levelsSection}
       style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}
     >
-      <div
-        ref={stickyRef}
-        className={styles.levelsStickyInner}
-        style={{ position: "relative", zIndex: 1, overflow: "hidden" }}
-      >
+      {isDesktop && (
         <video
           autoPlay
           muted
@@ -1252,90 +1121,55 @@ function Levels() {
             zIndex: 0,
             opacity: 0.6,
             pointerEvents: "none",
-            transform: "scale(1.2)",
             transformOrigin: "center center",
           }}
         >
           <source src="/video/path-bg.mp4" type="video/mp4" />
         </video>
+      )}
 
-        <div className={styles.levelsFrameContainer}>
-          <div className={styles.levelsHeader}>
-            <div ref={badgeRef} className={styles.Badge}>
-              <span className={styles.badgeStar}>✦</span>
-               Built for Everyone
-            </div>
-            <h2 ref={titleRef} className={styles.levelsTitle}>
-              Choose Your Path to Production
-            </h2>
-            <p ref={subtitleRef} className={styles.levelsSubtitle}>
-              Select the role that fits you
-            </p>
+      <div className={styles.levelsFrameContainer}>
+        <div className={styles.levelsHeader}>
+          <div ref={badgeRef} className={styles.Badge}>
+            <span className={styles.badgeStar}>✦</span>
+            Just like any other operating system
           </div>
+          <h2 ref={titleRef} className={styles.levelsTitle}>
+            <span>Agent Kernel is designed</span>
+            {""}<br />
+            <span>to adapt to your level of expertise</span>
+          </h2>
+          <p ref={subtitleRef} className={styles.levelsSubtitle}>
+            Which path describes you the best
+          </p>
+        </div>
 
-          {/* No inline position styles here — desktop positioning is applied via JS only */}
-          <div ref={cardsWrapRef} className={styles.levelsWindowStack}>
-            {levels.map((level) => (
-              <div key={level.id} className={styles.levelWindowCard}>
-                <div className={styles.levelWindowChrome}>
-                  <div className={styles.levelWindowDots}>
-                    <span className={`${styles.levelWindowDot} ${styles.dotRed}`} />
-                    <span className={`${styles.levelWindowDot} ${styles.dotYellow}`} />
-                    <span className={`${styles.levelWindowDot} ${styles.dotGreen}`} />
-                  </div>
-                  <div className={styles.levelWindowActions}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <path d="M9 3v18" />
-                    </svg>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="11" cy="11" r="8" />
-                      <path d="m21 21-4.35-4.35" />
-                    </svg>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="15 3 21 3 21 9" />
-                      <polyline points="9 21 3 21 3 15" />
-                      <line x1="21" y1="3" x2="14" y2="10" />
-                      <line x1="3" y1="21" x2="10" y2="14" />
-                    </svg>
-                  </div>
-                </div>
-
-                <div className={styles.levelWindowBody}>
-                  <div className={styles.levelWindowImageArea}>
-                    <img
-                      src={level.image}
-                      alt={level.title}
-                      className={styles.levelWindowImage}
-                    />
-                  </div>
-                  <div className={styles.levelWindowContent}>
-                    <h3 className={styles.levelWindowTitle}>{level.title}</h3>
-                    <p className={styles.levelWindowDescription}>{level.description}</p>
-                    <ul className={styles.levelWindowBullets}>
-                      {level.bullets.map((bullet, i) => (
-                        <li key={i} className={styles.levelWindowBulletItem}>
-                          <span className={styles.levelWindowBulletCheck}>✓</span>
-                          {bullet}
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      className={styles.levelWindowReadMore}
-                      onClick={() => handleLevelSelect(level.id)}
-                    >
-                      Read More
-                    </button>
-                  </div>
-                </div>
+        <div ref={cardsWrapRef} className={styles.levelsGrid}>
+          {levels.map((level) => (
+            <Link
+              key={level.id}
+              to={levelPages[level.id]}
+              className={styles.levelCard}
+            >
+              <div className={styles.levelCardImageArea}>
+                <img
+                  src={level.image}
+                  alt={level.title}
+                  className={styles.levelCardImage}
+                />
               </div>
-            ))}
-          </div>
+              <div className={styles.levelCardContent}>
+                <h3 className={styles.levelCardTitle}>{level.title}</h3>
+                <p className={styles.levelCardDescription}>{level.description}</p>
+              </div>
+            </Link>
+          ))}
         </div>
       </div>
     </section>
   );
 }
+
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
 export default function Home() {
