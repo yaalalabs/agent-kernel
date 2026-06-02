@@ -499,12 +499,12 @@ class TestFirestorePreservation(unittest.TestCase):
     @patch("google.cloud.firestore.Client")
     def test_no_database_id_in_unfixed_config(self, mock_client_class):
         """
-        Test that the current _FirestoreConfig does NOT have a database_id field.
+        Test that _FirestoreConfig has a database_id field defaulting to None.
 
-        This documents the current state before the fix. After the fix, this test
-        will need to be updated or removed.
+        Updated after the fix: database_id now exists and defaults to None for
+        backward compatibility.
 
-        EXPECTED OUTCOME: Test PASSES on unfixed code (confirms current state)
+        EXPECTED OUTCOME: Test PASSES on fixed code (confirms database_id field exists with None default)
         """
         # Configure Firestore
         os.environ["AK_SESSION__TYPE"] = "firestore"
@@ -516,11 +516,11 @@ class TestFirestorePreservation(unittest.TestCase):
 
         cfg = AKConfig.get().session.firestore
 
-        # CURRENT STATE: database_id field does not exist on unfixed code
-        # This test documents the baseline - after fix, this will change
-        self.assertFalse(
-            hasattr(cfg, "database_id"), "Current state: _FirestoreConfig does not have database_id field. " "This is expected on unfixed code."
+        # FIXED STATE: database_id field exists and defaults to None for backward compatibility
+        self.assertTrue(
+            hasattr(cfg, "database_id"), "Fixed state: _FirestoreConfig now has database_id field."
         )
+        self.assertIsNone(cfg.database_id, "database_id should default to None for backward compatibility.")
 
     @patch("google.cloud.firestore.Client")
     def test_reserved_fields_excluded_from_keys(self, mock_client_class):
