@@ -823,6 +823,24 @@
   max-width: 42rem;
 }
 
+.problemComparePanelOuter {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(1, 0, 2, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 2.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.problemComparePanelOuter:hover {
+  border-color: rgba(0, 229, 255, 0.3);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 229, 255, 0.04);
+}
+
 .problemTopicGrid {
   list-style: none;
   margin: 0;
@@ -833,9 +851,133 @@
   align-items: stretch;
 }
 
-@media (min-width: 640px) {
+@media (max-width: 639px) {
+  .problemComparePanelOuter {
+    padding: 1.25rem 1rem;
+    border-radius: 1rem;
+  }
+
+  .problemComparePanel {
+    padding: 1.25rem 1rem;
+    border-radius: 0.875rem;
+  }
+
+  .problemCompareGrid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .problemImpactGrid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .problemCompareBody {
+    padding: 1rem 1.25rem;
+    gap: 1rem;
+    min-height: unset;
+    align-items: flex-start;
+  }
+
+  .problemCompareBodyIcon {
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+
+  .problemCompareBodyIcon svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+
+  .problemCompareBodyText {
+    font-size: 0.825rem;
+  }
+
+  .problemComparePanelHeader {
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .problemComparePanelIconWrap {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .problemComparePanelIcon {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  .problemComparePanelTitle {
+    font-size: 1rem;
+  }
+
+  .problemCompareSideLabel {
+    font-size: 0.9rem;
+  }
+
+  .problemCompareSideSub {
+    margin-bottom: 0.75rem;
+  }
+
+  .problemImpactPanel {
+    padding: 1.25rem 1rem;
+    border-radius: 1rem;
+  }
+
+  .problemImpactHeader {
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .problemImpactStat {
+    padding: 1.25rem 1rem;
+    min-height: unset;
+  }
+
+  .problemImpactStatValue {
+    font-size: 1.2rem;
+  }
+
+  .problemImpactIconWrap {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .problemImpactTitle {
+    font-size: 1rem;
+  }
+
+  .problemImpactSub {
+    font-size: 0.8rem;
+  }
+
   .problemTopicGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .problemTopicBtn {
+    min-height: 4rem;
+    padding: 0.6rem 0.5rem;
+  }
+
+  .problemTopicLabel {
+    font-size: 0.7rem;
+  }
+
+  .problemTopicIconWrap {
+    width: 1.875rem;
+    height: 1.875rem;
+  }
+
+  .problemTopicIcon {
+    width: 1rem;
+    height: 1rem;
   }
 }
 
@@ -928,9 +1070,9 @@
 }
 
 .problemComparePanel {
-  border-radius: 1.5rem;
+  border-radius: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(1, 0, 2, 0.6);
+  background: transparent;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 2.25rem 2rem 2.25rem;
@@ -1256,7 +1398,16 @@
   color: #0f172a;
 }
 
-[data-theme='light'] .problemComparePanel,
+[data-theme='light'] .problemComparePanelOuter {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+[data-theme='light'] .problemComparePanel {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
 [data-theme='light'] .problemImpactPanel {
   background: rgba(255, 255, 255, 0.72);
   border-color: rgba(15, 23, 42, 0.12);
