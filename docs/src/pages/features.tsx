@@ -259,7 +259,6 @@ function FeaturesPageMap({
         triggerScatterOut();
       },
       onLeave: () => {
-        setVisible(false);
         triggerScatterIn();
       },
       onLeaveBack: () => {
@@ -294,23 +293,7 @@ function FeaturesPageMap({
     delay: 0.41 + i * 0.07,
   }));
 
-  const topGlowId = `${gradId}TGlow`;
-  const botGlowId = `${gradId}BGlow`;
-
   const TEAL = "rgba(0,221,255,1)";
-  const TEAL_LINE = "rgba(0,221,255,0.28)";
-  const TEAL_HALO = "rgba(0,221,255,0.1)";
-
-  const topParticles = [
-    { pathId: `${gradId}T0`, delay: "0.9s", dur: "1.8s", color: TEAL },
-    { pathId: `${gradId}T1`, delay: "1.5s", dur: "1.4s", color: TEAL },
-    { pathId: `${gradId}T2`, delay: "1.2s", dur: "1.8s", color: TEAL },
-  ];
-  const botParticles = [
-    { pathId: `${gradId}B0`, delay: "2.0s", dur: "1.8s", color: TEAL },
-    { pathId: `${gradId}B1`, delay: "2.35s", dur: "1.4s", color: TEAL },
-    { pathId: `${gradId}B2`, delay: "2.1s", dur: "1.8s", color: TEAL },
-  ];
 
   return (
     <div
