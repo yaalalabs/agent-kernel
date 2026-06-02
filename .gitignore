@@ -9,3 +9,4 @@ __pycache__
 pytest-report.xml
 *.DS_Store
 *.pip-cache
+.kiro
