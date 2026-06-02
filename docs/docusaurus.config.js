@@ -64,7 +64,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:url',
-        content: 'https://kernel.yaala.ai',
+        content: 'https://agentkerneldemo.duckdns.org',
       },
     },
     {
@@ -141,7 +141,7 @@ const config = {
       tagName: 'link',
       attributes: {
         rel: 'canonical',
-        href: 'https://kernel.yaala.ai',
+        href: 'https://agentkerneldemo.duckdns.org',
       },
     },
     // Structured Data (JSON-LD) for better SEO
@@ -167,7 +167,7 @@ const config = {
           name: 'Yaala Labs',
           url: 'https://www.yaalalabs.com',
         },
-        url: 'https://kernel.yaala.ai',
+        url: 'https://agentkerneldemo.duckdns.org',
         keywords: 'Agent Kernel, agentkernel, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK',
         featureList: [
           'Framework-agnostic runtime — OpenAI Agents, LangGraph, CrewAI, Google ADK',
@@ -195,7 +195,7 @@ const config = {
         '@type': 'Organization',
         name: 'Yaala Labs',
         url: 'https://www.yaalalabs.com',
-        logo: 'https://kernel.yaala.ai/img/logo.svg',
+        logo: 'https://agentkerneldemo.duckdns.org/img/logo.svg',
         sameAs: [
           'https://github.com/yaalalabs/agent-kernel',
         ],
@@ -273,13 +273,13 @@ const config = {
             const items = await defaultCreateSitemapItems(rest);
             return items.map((item) => {
               // Set highest priority for key landing pages
-              if (item.url === 'https://kernel.yaala.ai/' ||
-                  item.url === 'https://kernel.yaala.ai/docs' ||
-                  item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
-                  item.url === 'https://kernel.yaala.ai/docs/installation' ||
-                  item.url === 'https://kernel.yaala.ai/features' ||
-                  item.url === 'https://kernel.yaala.ai/use-cases' ||
-                  item.url === 'https://kernel.yaala.ai/blog') {
+              if (item.url === 'https://agentkerneldemo.duckdns.org/' ||
+                  item.url === 'https://agentkerneldemo.duckdns.org/docs' ||
+                  item.url === 'https://agentkerneldemo.duckdns.org/docs/quick-start' ||
+                  item.url === 'https://agentkerneldemo.duckdns.org/docs/installation' ||
+                  item.url === 'https://agentkerneldemo.duckdns.org/features' ||
+                  item.url === 'https://agentkerneldemo.duckdns.org/use-cases' ||
+                  item.url === 'https://agentkerneldemo.duckdns.org/blog') {
                 return {...item, priority: 1.0, changefreq: 'daily'};
               }
               // High priority for blog posts
