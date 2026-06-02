@@ -1,7 +1,6 @@
 aws:
   state:
-    bucket_name: agent-kernel-terraform-state-bucket
-    dynamodb_table: ak-terraform-state-lock
+    bucket_name: agent-kernel-terraform-state-bucket-dev
     region: ap-southeast-2
 
 azure:
@@ -9,3 +8,9 @@ azure:
     storage_account: akterraformstate
     container_name: tfstate
     resource_group: ak-tfstate-rg
+
+gcp:
+  state:
+    bucket_name: agent-kernel-terraform-state-bucket
+    project_id: agent-kernel-test
+    region: us-east1

@@ -25,12 +25,6 @@ variable "source_bucket" {
   default     = null
 }
 
-variable "cloudwatch_logs_retention_in_days" {
-  type        = number
-  description = "CloudWatch log retention period in days"
-  default     = 90
-}
-
 variable "docker_image_uri" {
   type        = string
   description = "Docker image URI for Image package type"
@@ -100,16 +94,17 @@ variable "lambda_signing_config_arn" {
 variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
-    function_name         = optional(string, "agent-runner")
-    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
-    timeout               = optional(number, 30)
-    memory_size           = optional(number, 512)
-    package_path          = string
-    package_type          = optional(string, "LocalZip")
-    handler_path          = optional(string, "agent_runner.handler")
-    module_name           = optional(string, "agent-runner")
-    layers                = optional(list(string), [])
-    environment_variables = optional(map(string), {})
+    function_name                  = optional(string, "agent-runner")
+    function_description           = optional(string, "Agent runner Lambda for processing input queue messages")
+    timeout                        = optional(number, 30)
+    memory_size                    = optional(number, 512)
+    package_path                   = optional(string, null)
+    package_type                   = string
+    handler_path                   = optional(string, "agent_runner.handler")
+    module_name                    = optional(string, "agent-runner")
+    layers                         = optional(list(string), [])
+    environment_variables          = optional(map(string), {})
+    cloudwatch_logs_retention_in_days = optional(number, 90)
   })
 }
 

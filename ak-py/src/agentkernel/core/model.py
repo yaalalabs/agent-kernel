@@ -1,6 +1,6 @@
 import uuid
 from enum import Enum
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -125,16 +125,41 @@ class SystemTool(BaseModel):
     func: Callable
 
 
-class BaseRunRequest(BaseModel):
+class FileData(BaseModel):
+    """Represents a file attachment"""
+
+    file_data: str  # base64 encoded string or URL
+    name: str
+    mime_type: Optional[str] = None
+
+
+class ImageData(BaseModel):
+    """Represents an image attachment"""
+
+    image_data: str  # base64 encoded string
+    name: str
+    mime_type: Optional[str] = None
+
+
+class BaseChatRequest(BaseModel):
+    """Base model for chat requests with common fields."""
+
     prompt: str
     agent: Optional[str] = None
     session_id: Optional[str] = None
+
+
+class BaseRunRequest(BaseChatRequest):
+    """Chat request with file and image attachments (base64/URL format)."""
+
+    files: Optional[List[FileData]] = None
+    images: Optional[List[ImageData]] = None
     model_config = ConfigDict(extra="allow")
 
 
 class BaseRequest(BaseModel):
     request_id: Optional[str] = None
-    user_id: Optional[str] = None  # TODO:: will be needed for websockets implementation
+    route: Optional[str] = None  # RouteKey of the Websocket, needed for WS implementation
     body: Optional[BaseRunRequest] = None
     model_config = ConfigDict(extra="allow")
 
@@ -149,20 +174,21 @@ class BaseRequest(BaseModel):
         if isinstance(payload, dict):
             request_id = payload.get("request_id") or str(uuid.uuid4())
             user_id = payload.get("user_id")
+            route = payload.get("route")
 
             if "body" in payload and payload["body"] is not None:
                 body = payload["body"]
                 if isinstance(body, dict):
-                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id"}}
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id", "route"}}
             else:
-                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "body"}}
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "route", "body"}}
 
             if not body:
-                return cls(request_id=request_id, user_id=user_id)
+                return cls(request_id=request_id, user_id=user_id, route=route)
 
             if not isinstance(body, BaseRunRequest):
                 body = BaseRunRequest.model_validate(body)
 
-            return cls(request_id=request_id, user_id=user_id, body=body)
+            return cls(request_id=request_id, user_id=user_id, route=route, body=body)
 
-        raise TypeError(f"Unsupported payload type for BaseRequest: {type(payload)!r}")
+        raise TypeError(f"Unsupported payload type for BaseRequest: {repr(type(payload))}")

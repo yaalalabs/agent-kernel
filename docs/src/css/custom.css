@@ -4,7 +4,7 @@
    Fonts: Instrument Sans (body) + JetBrains Mono (code)
    ============================================================================= */
 
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   /* Brand Palette */
@@ -27,14 +27,16 @@
   --ak-gradient-subtle: linear-gradient(135deg, rgba(0,221,255,0.12) 0%, rgba(242,0,255,0.12) 100%);
 
   /* Text */
-  --ak-text:           #dfe1f0;
-  --ak-text-secondary: #94a3b8;
-  --ak-text-muted:     #5e627d;
+  --ak-text:           #E8E4F0;
+  --ak-text-secondary: #9A91B8;
+  --ak-text-muted:     #6B5F85;
 
-  /* Semantic */
-  --ak-green:  #10b981;
-  --ak-aws:    #FF9900;
-  --ak-azure:  #0078D4;
+  /* Semantic (aligned with secondary palette) */
+  --ak-green:    #26A64D;
+  --ak-red:      #DB4444;
+  --ak-warning:  #F7A544;
+  --ak-aws:      #FF9900;
+  --ak-azure:    #0078D4;
 
   /* Docusaurus primary (brand cyan) */
   --ifm-color-primary:          #00DDFF;
@@ -55,11 +57,11 @@
   --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
 
   /* Typography */
-  --ifm-font-family-base: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --ifm-font-family-base: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --ifm-heading-font-weight: 700;
-  --ifm-font-color-base: #dfe1f0;
-  --ifm-font-color-secondary: #94a3b8;
+  --ifm-font-color-base: #E8E4F0;
+  --ifm-font-color-secondary: #9A91B8;
 
   /* Layout */
   --ifm-global-radius: 0.5rem;
@@ -638,6 +640,7 @@ article {
   color: #05060b;
   transform: translateY(-1px);
   box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
+  box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
 }
 
 .button--secondary {
@@ -826,6 +829,39 @@ article {
 
 .markdown a:hover {
   border-bottom-color: var(--ak-blue);
+}
+
+/* =============================================================================
+   Blog — framed posts with uniform surface
+   ============================================================================= */
+
+.blog-list-page article,
+.blog-post-page article {
+  background: var(--ak-surface);
+  border: 1px solid var(--ak-border);
+  border-radius: 0.875rem;
+  padding: 2rem 2.25rem;
+  margin-bottom: 1.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.blog-list-page article:hover {
+  border-color: var(--ak-border-accent);
+}
+
+/* Remove the heading border-bottom inside the framed blog article — looks heavy with the frame */
+.blog-list-page article .markdown h2,
+.blog-post-page article .markdown h2 {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+@media (max-width: 768px) {
+  .blog-list-page article,
+  .blog-post-page article {
+    padding: 1.5rem 1.25rem;
+    border-radius: 0.75rem;
+  }
 }
 
 /* Admonitions */

@@ -28,6 +28,7 @@ Ask the user the following questions (adapt based on context):
    - **CrewAI** (multi-agent collaboration with roles and tasks)
    - **LangGraph** (complex workflow graphs with state management)
    - **Google ADK** (Google's Agent Development Kit)
+   - **Smolagents** (lightweight agent framework with managed-agent routing)
 
 2. **Agent purpose**: What should your agent(s) do? (e.g., "customer support bot", "code review assistant", "data analysis agent")
 
@@ -85,12 +86,12 @@ description = "<description>"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[<extras>]>=0.2.13",
+    "agentkernel[<extras>]>=0.4.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.13",
+    "agentkernel[test]>=0.4.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -111,6 +112,7 @@ target-version = ["py312"]
 **Extras selection**:
 - CLI mode: `agentkernel[cli,<framework>]`
 - API mode: `agentkernel[<framework>,api]`
+- Smolagents framework extra: `smolagents`
 - With messaging: add `slack`, `whatsapp`, etc.
 - With session store: add `redis`, `aws` (for DynamoDB), `azure` (for Cosmos DB)
 - With tracing: add `langfuse` or `openllmetry`
@@ -245,6 +247,28 @@ from google.adk.agents import Agent
 )
 
 GoogleADKModule([<agent_name>])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+**For Smolagents framework**:
+
+```python
+from agentkernel.cli import CLI  # or RESTAPI, Lambda
+from agentkernel.smolagents import SmolagentsModule, SmolagentsToolBuilder
+from smolagents import LiteLLMModel, ToolCallingAgent
+
+model = LiteLLMModel(model_id="openai/gpt-4o")
+
+<agent_name> = ToolCallingAgent(
+    tools=SmolagentsToolBuilder.bind([]),
+    model=model,
+    name="<name>",
+    description="<instructions>",
+)
+
+SmolagentsModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()

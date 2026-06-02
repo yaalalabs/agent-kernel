@@ -2,6 +2,69 @@
    Homepage — Dark Technical Premium
    ============================================================================= */
 
+/* ─── What's New Banner ──────────────────────────────────────────────────── */
+
+.whatsNewBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.5rem;
+  background: linear-gradient(90deg, rgba(0, 221, 255, 0.10) 0%, rgba(0, 170, 222, 0.10) 100%);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.2);
+  flex-wrap: wrap;
+  text-align: center;
+}
+
+.whatsNewBadge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  background: linear-gradient(135deg, #00DDFF 0%, #00AADE 100%);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.whatsNewText {
+  font-size: 0.875rem;
+  color: #C2B6D8;
+}
+
+.whatsNewText strong {
+  color: #E8E4F0;
+}
+
+.whatsNewLink {
+  font-size: 0.875rem;
+  color: #00DDFF;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.whatsNewLink:hover {
+  color: #F200FF;
+  text-decoration: underline;
+}
+
+[data-theme='light'] .whatsNewBanner {
+  background: linear-gradient(90deg, rgba(0, 221, 255, 0.08) 0%, rgba(0, 170, 222, 0.08) 100%);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.18);
+}
+
+[data-theme='light'] .whatsNewText {
+  color: #5C4F7A;
+}
+
+[data-theme='light'] .whatsNewText strong {
+  color: #1F0838;
+}
+
 /* ─── Shared Utilities ────────────────────────────────────────────────────── */
 
 .gradientText {
@@ -25,7 +88,7 @@
 .sectionTitle {
   font-size: 2.4rem;
   font-weight: 800;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.03em;
   line-height: 1.15;
   margin-bottom: 0.25rem;
@@ -33,7 +96,7 @@
 
 .sectionSubtitle {
   font-size: 1.1rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
   margin-top: 1rem;
   margin-bottom: 0;
@@ -45,11 +108,11 @@
 }
 
 .sectionLink {
-  color: #4f7df7;
+  color: #00DDFF;
   font-size: 0.95rem;
   font-weight: 600;
   text-decoration: none;
-  border-bottom: 1px solid rgba(79, 125, 247, 0.3);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.3);
   padding-bottom: 1px;
   transition:
     border-color 0.15s ease,
@@ -1286,7 +1349,7 @@
 }
 
 .valuePropCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.75rem;
   padding: 1.25rem 1rem;
@@ -1297,12 +1360,12 @@
 }
 
 .valuePropCard:hover {
-  border-color: rgba(79, 125, 247, 0.2);
+  border-color: rgba(0, 221, 255, 0.2);
 }
 
 .valueProblem {
   font-size: 0.9rem;
-  color: #5e627d;
+  color: #6B5F85;
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -1310,7 +1373,7 @@
 }
 
 .xMark {
-  color: #ef4444;
+  color: #DB4444;
   font-weight: 700;
   flex-shrink: 0;
   font-size: 0.85rem;
@@ -1326,7 +1389,7 @@
 .valueSolution {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #dfe1f0;
+  color: #E8E4F0;
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -1334,7 +1397,7 @@
 }
 
 .checkMark {
-  color: #4f7df7;
+  color: #00DDFF;
   font-weight: 700;
   flex-shrink: 0;
   font-size: 0.85rem;
@@ -1349,7 +1412,7 @@
 }
 
 .segmentCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 1rem;
   padding: 2rem 1.5rem;
@@ -1369,7 +1432,7 @@
 }
 
 .accent_cyan {
-  border-top: 2px solid #4f7df7;
+  border-top: 2px solid #00DDFF;
 }
 
 .accent_cyan:hover {
@@ -1388,7 +1451,7 @@
 
 .segmentIcon {
   font-size: 1.75rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 1rem;
 }
 
@@ -1403,7 +1466,7 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   line-height: 1.3;
   margin-bottom: 0.75rem;
   white-space: pre-line;
@@ -1413,7 +1476,7 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   flex-grow: 1;
   margin-bottom: 1.25rem;
@@ -1422,7 +1485,7 @@
 .segmentCta {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #4f7df7;
+  color: #00DDFF;
 }
 
 .accent_violet .segmentCta {
@@ -1733,7 +1796,7 @@
 }
 
 .bentoCard {
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.875rem;
   padding: 1.75rem 1.5rem;
@@ -1748,8 +1811,8 @@
 
 .bentoCard:hover {
   transform: translateY(-3px);
-  border-color: rgba(79, 125, 247, 0.2);
-  box-shadow: 0 8px 24px rgba(79, 125, 247, 0.08);
+  border-color: rgba(0, 221, 255, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 221, 255, 0.08);
   text-decoration: none;
 }
 
@@ -1759,21 +1822,21 @@
 
 .bentoIcon {
   font-size: 1.6rem;
-  color: #4f7df7;
+  color: #00DDFF;
   margin-bottom: 0.875rem;
 }
 
 .bentoTitle {
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
   margin-bottom: 0.5rem;
 }
 
 .bentoDescription {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.6;
   margin: 0;
 }
@@ -2658,7 +2721,7 @@
 
 .messagingSection {
   padding: 6rem 0;
-  background: rgba(14, 16, 23, 0.35);
+  background: rgba(21, 1, 42, 0.35);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   overflow: hidden;
@@ -2704,7 +2767,7 @@
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  background: #0e1017;
+  background: #15012a;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 0.875rem;
   padding: 1.25rem 1.5rem;
@@ -2728,7 +2791,7 @@
 .messagingName {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: #9A91B8;
 }
 
 .comingSoonRow {
@@ -2749,7 +2812,7 @@
 .comingSoonBadge {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #5e627d;
+  color: #6B5F85;
   background: rgba(255, 255, 255, 0.05);
   padding: 0.2rem 0.5rem;
   border-radius: 999px;

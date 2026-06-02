@@ -78,7 +78,7 @@
 
 .sectionSubtitle {
   font-size: 1.05rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.7;
   text-align: center;
 }
@@ -434,9 +434,9 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #4f7df7;
-  background: rgba(79, 125, 247, 0.1);
-  border: 1px solid rgba(79, 125, 247, 0.2);
+  color: #00DDFF;
+  background: rgba(0, 221, 255, 0.1);
+  border: 1px solid rgba(0, 221, 255, 0.2);
   border-radius: 999px;
   padding: 0.3rem 0.9rem;
   margin-bottom: 1.25rem;
@@ -445,7 +445,7 @@
 .heroTitle {
   font-size: clamp(2.4rem, 5.5vw, 4rem);
   font-weight: 900;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.04em;
   line-height: 1.1;
   margin-bottom: 1.25rem;
@@ -453,7 +453,7 @@
 
 .heroSubtitle {
   font-size: 1.1rem;
-  color: #94a3b8;
+  color: #9A91B8;
   line-height: 1.75;
   max-width: 680px;
   margin: 0 auto 2.25rem;
@@ -1593,7 +1593,7 @@
   margin: 0 0 0.4rem;
   font-size: 1rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.01em;
 }
 
@@ -2382,7 +2382,7 @@
 .ctaTitle {
   font-size: clamp(1.8rem, 3.5vw, 2.8rem);
   font-weight: 800;
-  color: #dfe1f0;
+  color: #E8E4F0;
   letter-spacing: -0.03em;
   margin-bottom: 1rem;
 }

@@ -14,18 +14,20 @@ graph TD
     B -->|CLI| C[CLI Handler]
     B -->|API| D[REST API Handler]
     B -->|Lambda| E[Lambda Handler]
+    B -->|WebSocket| F[WebSocket Handler]
     
-    C --> F[Runtime.get_agent]
-    D --> F
-    E --> F
+    C --> G[Runtime.get_agent]
+    D --> G
+    E --> G
+    F --> G
     
-    F --> G[Runtime.get_session]
-    G --> H[Runner.run]
-    H --> I[Framework Execution]
-    I --> J[Update Session]
-    J --> K[Return Response]
+    G --> H[Runtime.get_session]
+    H --> I[Runner.run]
+    I --> J[Framework Execution]
+    J --> K[Update Session]
+    K --> L[Return Response]
     
-    style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Detailed Flow
@@ -37,6 +39,7 @@ The request enters through one of the execution modes:
 - **CLI**: Interactive terminal input
 - **REST API**: HTTP POST to `/api/v1/chat` endpoint
 - **AWS Lambda**: Lambda event
+- **WebSocket**: WebSocket message via WebSocket API Gateway
 - **MCP/A2A**: Protocol-specific request
 
 ### 2. Agent Resolution

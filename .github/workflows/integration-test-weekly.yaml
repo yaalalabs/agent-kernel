@@ -85,13 +85,13 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.14.3
 
       - name: Inject dependencies and retrieve base outputs
         id: base-outputs
@@ -133,7 +133,7 @@ jobs:
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Azure login
@@ -143,15 +143,33 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      
+      - name: GCP login
+        id: auth          # <-- add this
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: "id_token"
+          id_token_audience: "32555940559.apps.googleusercontent.com"
+          id_token_include_email: true
 
+      - name: Export identity token  
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        run: echo "IDENTITY_TOKEN=${{ steps.auth.outputs.id_token }}" >> $GITHUB_ENV
+      
+      - name: Setup gcloud
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        uses: google-github-actions/setup-gcloud@v2
+     
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
-
+          terraform_version: 1.14.3
       - name: Inject dependencies
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Deploy, Test, and Destroy - ${{ matrix.path }}
@@ -212,8 +230,29 @@ jobs:
               --path ${{ matrix.path }} \
               --deploy-dir ${{ matrix.deploy_dir }} \
               --action destroy
-          fi
 
+          elif [[ "${{ matrix.type }}" == "gcp-serverless" || "${{ matrix.type }}" == "gcp-containerized" ]]; then
+            # Deploy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action deploy
+            
+            # Test
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action test
+            
+            # Destroy
+            python .github/scripts/run_single_test.py \
+              --type ${{ matrix.type }} \
+              --path ${{ matrix.path }} \
+              --deploy-dir ${{ matrix.deploy_dir }} \
+              --action destroy         
+          fi
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -252,7 +291,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ vars.AWS_ROLE_NAME }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
       # - name: Azure login
@@ -264,7 +303,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.14.3
 
       - name: Inject dependencies
         run: python3 scripts/deploy/inject_dependencies.py

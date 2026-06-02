@@ -30,6 +30,8 @@ jobs:
       checkout_ref: ${{ github.event.pull_request.head.sha }}
       # Run all tests including e2e (this workflow has access to secrets)
       run_e2e_tests: true
+      # Disable cache writes/restores when executing untrusted fork code in pull_request_target context
+      enable_cache: false
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

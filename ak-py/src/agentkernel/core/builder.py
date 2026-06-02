@@ -90,6 +90,7 @@ class SessionStoreBuilder(Builder):
         REDIS = "REDIS"
         DYNAMODB = "DYNAMODB"
         COSMOSDB = "COSMOSDB"
+        FIRESTORE = "FIRESTORE"
 
         @classmethod
         def from_str(cls, type_str: str) -> Self:
@@ -141,6 +142,10 @@ class SessionStoreBuilder(Builder):
             from .session.cosmosdb import CosmosDBSessionStore
 
             return CosmosDBSessionStore(cache=SessionCacheBuilder.build())
+        elif session_store_type == SessionStoreBuilder.Types.FIRESTORE:
+            from .session.firestore import FirestoreSessionStore
+
+            return FirestoreSessionStore(cache=SessionCacheBuilder.build())
         else:
             from .session.in_memory import InMemorySessionStore
 

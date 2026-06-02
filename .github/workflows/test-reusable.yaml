@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: true
+      enable_cache:
+        description: 'Whether to enable build cache save/restore steps'
+        required: false
+        type: boolean
+        default: true
     secrets:
       APP_ID:
         required: false
@@ -78,10 +83,11 @@ jobs:
         run: ./build.sh
 
       - name: Cache ak-py build
+        if: ${{ inputs.enable_cache }}
         uses: actions/cache/save@v4
         with:
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          key: ak-py-${{ inputs.checkout_ref }}
 
   script-tests:
     runs-on: ubuntu-latest
@@ -107,6 +113,10 @@ jobs:
         working-directory: scripts
         run: python test_update_terraform_versions.py
 
+      - name: Test update_skills_version script
+        working-directory: scripts
+        run: python test_update_skills_version.py
+
   unit-tests:
     needs: [build-ak-py]
     runs-on: ubuntu-latest
@@ -128,10 +138,11 @@ jobs:
         run: pip install uv
 
       - name: Restore ak-py build
+        if: ${{ inputs.enable_cache }}
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          key: ak-py-${{ inputs.checkout_ref }}
 
       - name: Test ak-py
         working-directory: ak-py
@@ -164,10 +175,11 @@ jobs:
         run: pip install uv
 
       - name: Restore ak-py build
+        if: ${{ inputs.enable_cache }}
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          key: ak-py-${{ inputs.checkout_ref }}
 
       - name: Run test - ${{ matrix.path }}
         env:

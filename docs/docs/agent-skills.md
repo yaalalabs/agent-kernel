@@ -62,7 +62,7 @@ These skills are bundled with the `agentkernel` PyPI package and help you build 
 
 ### ak-init
 
-Interactively scaffold a new Agent Kernel project. Covers all four supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
+Interactively scaffold a new Agent Kernel project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
 
 **Example prompts:**
 - *"Create a new agent project using CrewAI for AWS Lambda"*
@@ -79,7 +79,7 @@ Add tools, agents, and handoffs to an existing project. The workhorse skill for 
 
 ### ak-add-integration
 
-Add messaging platform integrations to an existing project. Covers Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail with complete configuration and setup instructions.
+Add messaging platform integrations to an existing project. Covers Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, and Gmail with complete configuration and setup instructions.
 
 **Example prompts:**
 - *"Add Slack integration to my agent"*
@@ -87,7 +87,7 @@ Add messaging platform integrations to an existing project. Covers Slack, WhatsA
 
 ### ak-cloud-deploy
 
-Deploy your agent to AWS or Azure. Generates complete Terraform configurations for four deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), and Azure Containerized (Container Apps).
+Deploy your agent to AWS or Azure. Generates complete Terraform configurations for four deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), and Azure Containerized (Container Apps). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, and custom API Gateway authorizers.
 
 **Example prompts:**
 - *"Deploy my agent to AWS Lambda"*
@@ -95,7 +95,7 @@ Deploy your agent to AWS or Azure. Generates complete Terraform configurations f
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry), session persistence (Redis, DynamoDB, Cosmos DB), MCP server, A2A server, custom hooks, and multimodal support.
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry), session persistence (Redis, DynamoDB, Cosmos DB), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, and multimodal support.
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*
@@ -112,17 +112,22 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 
 ## Developer Skills — Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains seven developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains twelve developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards — eliminating the onboarding curve for new contributors.
 
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
 | `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow — everything needed to understand the codebase |
-| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK) — subclass creation, dependency wiring, exports, tests |
-| `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail) — handler class, webhook routes, message parsing, config |
+| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents) — subclass creation, dependency wiring, exports, tests |
+| `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail) — handler class, webhook routes, message parsing, config |
+| `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst) — implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI) — input/output guardrails, factory registration, configuration |
 | `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry) — `BaseTrace` interface, traced runners, factory wiring |
+| `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB) — storage interface, config wiring, tests, and docs |
+| `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
+| `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
+| `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
 | `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
 
