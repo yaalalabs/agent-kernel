@@ -1293,7 +1293,7 @@ export default function Home() {
       <Hero />
       <main>
         <FrameworksStrip />
-        <div ref={levelsRef}>
+        <div ref={levelsRef} id="levels">
           <Levels />
         </div>
         <AgentSkills />

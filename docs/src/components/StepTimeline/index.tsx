@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styles from './styles.module.css';
+import { useHistory } from '@docusaurus/router';
 
 interface StepDef {
   num: string;
@@ -40,6 +41,7 @@ interface StepTimelineProps {
 }
 
 export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
+  const history = useHistory();
   const [activeStep, setActiveStep] = useState(0);
   const [visible, setVisible] = useState(false);
   const [connectorProgress, setConnectorProgress] = useState<number[]>([]);
@@ -169,6 +171,33 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
 
   return (
     <nav className={`${styles.bar} ${visible ? styles['bar--visible'] : ''}`} aria-label="Section progress">
+      <button
+        className={styles.backBtn}
+        onClick={() => {
+          history.push('/');
+          setTimeout(() => {
+            document.getElementById('levels')?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }}
+        aria-label="Back to path selection"
+        title="Back to path selection"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="25"
+          height="25"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      </button>
+
       <div className={styles.inner}>
         {steps.map((step, index) => {
           const state: 'done' | 'active' | 'upcoming' =
