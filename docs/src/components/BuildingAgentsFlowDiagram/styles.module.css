@@ -10,12 +10,10 @@
 .flowScene {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(7.5rem, auto) minmax(7.5rem, auto) minmax(32rem, 1fr) minmax(7.5rem, auto);
+  grid-template-columns: minmax(7.5rem, auto) minmax(7.5rem, auto) 1fr minmax(7.5rem, auto);
   grid-template-areas:
-    'input guardIn core outputStack'
     'input guardIn core outputStack';
   column-gap: 2.5rem;
-  row-gap: 1.5rem;
   align-items: center;
   min-height: 32rem;
   padding: 2rem 1.75rem;
@@ -55,7 +53,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  min-width: 32rem;
+  width: 100%;
   padding: 1.5rem 1.75rem;
   border: 1.5px dashed rgba(255, 255, 255, 0.28);
   border-radius: 0.625rem;
@@ -77,10 +75,11 @@
 
 .coreRow {
   display: grid;
-  grid-template-columns: auto auto minmax(13rem, 1fr);
+  grid-template-columns: auto auto 1fr;
   align-items: center;
   column-gap: 2.75rem;
   row-gap: 1.25rem;
+  width: 100%;
 }
 
 .slotSupervisor {
@@ -99,6 +98,7 @@
   flex-direction: column;
   gap: 0.875rem;
   min-width: 13rem;
+  width: 100%;
 }
 
 .outputStack {

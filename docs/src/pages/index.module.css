@@ -4192,32 +4192,137 @@
   margin: 0 auto 5rem;
 }
 
-.aiBuildSubsection {
+/* ── Tab row ── */
+.aiBuildTabsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
   margin-top: 2.5rem;
 }
 
-.aiBuildSubsection+.aiBuildSubsection {
-  margin-top: 3.5rem;
-  padding-top: 3rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+.aiBuildTabCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 1.25rem 1.25rem 1.5rem;
+  background: rgba(10, 20, 12, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  /* Reset button styles */
+  font-family: inherit;
+  color: inherit;
+  outline: none;
 }
 
-.aiBuildSubTitle {
-  margin: 0 0 0.75rem;
-  font-size: 1.25rem;
+.aiBuildTabCard:hover {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.aiBuildTabCardActive {
+  border-color: rgba(34, 197, 94, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(34, 197, 94, 0.25),
+    0 0 24px rgba(34, 197, 94, 0.12),
+    inset 0 0 20px rgba(34, 197, 94, 0.04);
+}
+
+/* small green icon badge */
+.aiBuildTabIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  flex-shrink: 0;
+  margin-bottom: 0.15rem;
+}
+
+.aiBuildTabTitle {
+  margin: 0;
+  font-size: 1.0625rem;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: -0.01em;
-  text-align: center;
 }
 
-.aiBuildSubBody {
-  margin: 0 auto 1.5rem;
-  max-width: 52rem;
-  text-align: center;
-  font-size: 1.0625rem;
+.aiBuildTabBody {
+  margin: 0;
+  font-size: 0.875rem;
   line-height: 1.55;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ── Arrow indicator track ── */
+.aiBuildArrowTrack {
+  position: relative;
+  width: 100%;
+  height: 1rem;
+  margin-top: 0.5rem;
+  /* Arrow is absolutely positioned within the track via GSAP transform */
+}
+
+.aiBuildArrow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* GSAP sets translateX to center it under the active tab */
+  line-height: 0;
+  filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.7));
+  will-change: transform;
+}
+
+/* ── Expanded panel ── */
+.aiBuildPanel {
+  margin-top: 0;
+  background: rgba(8, 18, 10, 0.85);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 1rem;
+  padding: 1.75rem 2rem 2rem;
+  will-change: transform, opacity;
+}
+
+.aiBuildPanelHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.aiBuildPanelTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.aiBuildPanelDiagramWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .aiBuildTabsRow {
+    grid-template-columns: 1fr;
+  }
+
+  .aiBuildPanel {
+    margin-top: 1rem;
+    padding: 1.25rem 1rem 1.5rem;
+  }
+
+  .aiBuildArrowTrack {
+    display: none; /* Arrow only makes sense in 3-column layout */
+  }
 }
 
 @media (max-width: 640px) {
@@ -4225,16 +4330,21 @@
     font-size: 1.25rem;
   }
 
-  .aiBuildSubTitle {
-    font-size: 1.125rem;
+  .aiBuildTabTitle {
+    font-size: 1rem;
   }
 
-  .aiBuildSubBody {
-    font-size: 1rem;
+  .aiBuildPanel {
+    margin-top: 1rem;
+    padding: 1.25rem 1rem 1.5rem;
+  }
+
+  .aiBuildPanelDiagramWrap {
+    padding: 1rem 0.75rem;
   }
 }
 
-.devArchitectureSection+.devFeatureSection {
+.devArchitectureSection + .devFeatureSection {
   margin-top: 5rem;
 }
 

@@ -212,6 +212,31 @@
   line-height: 1.35;
 }
 
+/* ── Agent Kernel icon inside nodes ─────────────────────────────────────────── */
+
+.flowNodeWithIcon {
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.akNodeIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding-left: 0.25rem;
+}
+
+.akNodeIcon {
+  width: 1.8rem;
+  height: 1.8rem;
+  object-fit: contain;
+  display: block;
+}
+
 /* ── Animation Classes for SVG Connections ───────────────────────────────────── */
 
 .pulseFlow {

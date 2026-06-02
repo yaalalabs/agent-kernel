@@ -12,24 +12,24 @@ type FlowNode = {
   label: string;
   kind: NodeKind;
   color?: string;
+  showIcon?: boolean;
 };
 
+const AK_ICON = (
+  <img
+    src="/img/branding/agent-kernel-icon-color.svg"
+    alt=""
+    aria-hidden="true"
+    className={styles.akNodeIcon}
+  />
+);
+
 const FLOW_NODES: FlowNode[] = [
-  { id: 'logic', label: 'Actual Agent Logic', kind: 'logic', color: '#94a3b8' },
-  { id: 'api', label: 'REST API', kind: 'kernel', color: '#60a5fa' },
-  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: '#f472b6' },
-  {
-    id: 'framework',
-    label: 'Agentic Framework Implementation',
-    kind: 'framework',
-    color: '#facc15',
-  },
-  {
-    id: 'testAuto',
-    label: 'Agent Test Automation',
-    kind: 'test',
-    color: '#4ade80',
-  },
+  { id: 'logic',     label: 'Actual Agent Logic',                kind: 'logic',     color: '#94a3b8' },
+  { id: 'api',       label: 'REST API',                          kind: 'kernel',    color: '#60a5fa',  showIcon: true },
+  { id: 'memory',    label: 'Agent Memory',                      kind: 'memory',    color: '#f472b6',  showIcon: true },
+  { id: 'framework', label: 'Agentic Framework Implementation',  kind: 'framework', color: '#facc15',  showIcon: true },
+  { id: 'testAuto',  label: 'Agent Test Automation',             kind: 'test',      color: '#4ade80',  showIcon: true },
 ];
 
 type Point = { x: number; y: number };
@@ -70,9 +70,14 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
     <div
       data-flow-node={node.id}
       data-kind={node.kind}
-      className={`${styles.flowNode} ${kindClass}`}
+      className={`${styles.flowNode} ${kindClass} ${node.showIcon ? styles.flowNodeWithIcon : ''}`}
       style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
     >
+      {node.showIcon && (
+        <span className={styles.akNodeIconWrap} aria-hidden="true">
+          {AK_ICON}
+        </span>
+      )}
       <span className={styles.flowNodeLabel}>{node.label}</span>
     </div>
   );
@@ -164,19 +169,19 @@ export default function AgentKernelSitsInFlowDiagram() {
       }
     };
 
-    const logic = boundsOf('logic');
-    const api = boundsOf('api');
-    const memory = boundsOf('memory');
+    const logic     = boundsOf('logic');
+    const api       = boundsOf('api');
+    const memory    = boundsOf('memory');
     const framework = boundsOf('framework');
-    const testAuto = boundsOf('testAuto');
+    const testAuto  = boundsOf('testAuto');
 
-    if (logic && api) connectNodes(api, logic);
-    if (logic && memory) connectNodes(memory, logic);
+    if (logic && api)       connectNodes(api, logic);
+    if (logic && memory)    connectNodes(memory, logic);
     if (logic && framework) connectNodes(framework, logic);
 
     if (logic && testAuto) {
       const start = edgePoint(testAuto, { x: logic.cx, y: logic.cy });
-      const end = edgePoint(logic, { x: testAuto.cx, y: testAuto.cy });
+      const end   = edgePoint(logic,    { x: testAuto.cx, y: testAuto.cy });
       appendBidirectional([start, end]);
     }
   }, []);

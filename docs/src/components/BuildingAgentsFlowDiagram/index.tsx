@@ -191,46 +191,153 @@ export default function BuildingAgentsFlowDiagram() {
       };
     };
 
-    CONNECTIONS.forEach((conn) => {
-      const fromBounds = boundsOf(conn.from);
-      const toBounds = boundsOf(conn.to);
-      if (!fromBounds || !toBounds) return;
+    // ── Helper: draw a solid pulse line (used for main flow) ──────────────
+    const drawSolidLine = (
+      x1: number, y1: number,
+      x2: number, y2: number,
+      withArrow = true
+    ) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const trimEnd = withArrow ? 9 : 0;
+      const ex = x2 - (dx / len) * trimEnd;
+      const ey = y2 - (dy / len) * trimEnd;
 
-      const targetCenter = { x: toBounds.cx, y: toBounds.cy };
-      const sourceCenter = { x: fromBounds.cx, y: fromBounds.cy };
+      const base = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      base.setAttribute('x1', String(x1));
+      base.setAttribute('y1', String(y1));
+      base.setAttribute('x2', String(ex));
+      base.setAttribute('y2', String(ey));
+      base.setAttribute('stroke', 'rgba(255,255,255,0.2)');
+      base.setAttribute('stroke-width', '2');
+      base.setAttribute('fill', 'none');
+      svg.appendChild(base);
 
-      const start = edgePoint(fromBounds, targetCenter);
-      const end = edgePoint(toBounds, sourceCenter);
+      const pulse = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      pulse.setAttribute('x1', String(x1));
+      pulse.setAttribute('y1', String(y1));
+      pulse.setAttribute('x2', String(ex));
+      pulse.setAttribute('y2', String(ey));
+      pulse.setAttribute('stroke', 'rgba(255,255,255,0.7)');
+      pulse.setAttribute('stroke-width', '2');
+      pulse.setAttribute('fill', 'none');
+      pulse.setAttribute('class', styles.pulseFlow);
+      if (withArrow) pulse.setAttribute('marker-end', 'url(#baArrow)');
+      svg.appendChild(pulse);
+    };
 
-      const trimEnd = conn.dashed ? 0 : 9;
-      const segment = shortenSegment(start, end, trimEnd);
+    // ── Helper: draw orthogonal comb from one agent to multiple tools ─────
+    // Pattern: horizontal from agent right edge → vertical trunk → horizontal branches to each tool
+    const drawCombLines = (agentId: string, toolIds: string[]) => {
+      const agent = boundsOf(agentId);
+      if (!agent) return;
 
-      const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      basePath.setAttribute('d', `M ${segment.x1} ${segment.y1} L ${segment.x2} ${segment.y2}`);
-      basePath.setAttribute('fill', 'none');
+      const toolBounds = toolIds
+        .map((id) => ({ id, b: boundsOf(id) }))
+        .filter((t): t is { id: string; b: NodeBounds } => t.b !== null);
+      if (toolBounds.length === 0) return;
 
-      if (conn.dashed) {
-        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.15)');
-        basePath.setAttribute('stroke-width', '1.5');
-        basePath.setAttribute('stroke-dasharray', '5 5');
-        basePath.setAttribute('class', styles.dashedFlow);
-      } else {
-        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
-        basePath.setAttribute('stroke-width', '2');
-      }
-      svg.appendChild(basePath);
+      // Start: right edge of agent circle
+      const startX = agent.right;
+      const startY = agent.cy;
 
-      if (!conn.dashed) {
-        const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        pulsePath.setAttribute('d', `M ${segment.x1} ${segment.y1} L ${segment.x2} ${segment.y2}`);
-        pulsePath.setAttribute('fill', 'none');
-        pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
-        pulsePath.setAttribute('stroke-width', '2');
-        pulsePath.setAttribute('class', styles.pulseFlow);
-        pulsePath.setAttribute('marker-end', 'url(#baArrow)');
-        svg.appendChild(pulsePath);
-      }
+      // Trunk X: halfway between agent right and tool left edge
+      const firstTool = toolBounds[0].b;
+      const trunkX = firstTool.left - 18;
+
+      // Vertical extent of trunk: from first tool cy to last tool cy
+      const topY = toolBounds[0].b.cy;
+      const botY = toolBounds[toolBounds.length - 1].b.cy;
+
+      const STROKE = 'rgba(255,255,255,0.22)';
+      const DASH = '5 5';
+      const W = '1.5';
+
+      const mkPath = (d: string) => {
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('fill', 'none');
+        p.setAttribute('stroke', STROKE);
+        p.setAttribute('stroke-width', W);
+        p.setAttribute('stroke-dasharray', DASH);
+        p.setAttribute('class', styles.dashedFlow);
+        svg.appendChild(p);
+      };
+
+      // Horizontal stem: agent right → trunk
+      mkPath(`M ${startX} ${startY} H ${trunkX}`);
+
+      // Vertical trunk
+      mkPath(`M ${trunkX} ${topY} V ${botY}`);
+
+      // Horizontal branches: trunk → each tool left edge
+      toolBounds.forEach(({ b }) => {
+        mkPath(`M ${trunkX} ${b.cy} H ${b.left}`);
+      });
+    };
+
+    // 1. Input Message → Guardrails (forced horizontal, right→left)
+    const inputB   = boundsOf('input');
+    const guardInB = boundsOf('guardIn');
+    if (inputB && guardInB) {
+      drawSolidLine(inputB.right, inputB.cy, guardInB.left, guardInB.cy, true);
+    }
+
+    // 2. Guardrails → Supervisor Agent (right edge of guardIn → circle edge)
+    const supervisorB = boundsOf('supervisor');
+    if (guardInB && supervisorB) {
+      const start = edgePoint(guardInB,    { x: supervisorB.cx, y: supervisorB.cy });
+      const end   = edgePoint(supervisorB, { x: guardInB.cx,    y: guardInB.cy });
+      drawSolidLine(start.x, start.y, end.x, end.y, true);
+    }
+
+    // 3. coreZone right edge → output Guardrails left edge (forced horizontal)
+    const coreB     = boundsOf('coreZone');
+    const guardOutB = boundsOf('guardOut');
+    if (coreB && guardOutB) {
+      drawSolidLine(coreB.right, coreB.cy, guardOutB.left, guardOutB.cy, true);
+    }
+
+    // 4. output Guardrails → Output Message (forced vertical, bottom→top)
+    const outputB = boundsOf('output');
+    if (guardOutB && outputB) {
+      drawSolidLine(guardOutB.cx, guardOutB.bottom, outputB.cx, outputB.top, true);
+    }
+
+    // ── Supervisor → agents (straight dashed, short) ──────────────────────
+    const supervisorAgentConns: Array<[string, string]> = [
+      ['supervisor', 'general'],
+      ['supervisor', 'travel'],
+      ['supervisor', 'booking'],
+    ];
+
+    supervisorAgentConns.forEach(([fromId, toId]) => {
+      const from = boundsOf(fromId);
+      const to   = boundsOf(toId);
+      if (!from || !to) return;
+
+      const start = edgePoint(from, { x: to.cx, y: to.cy });
+      const end   = edgePoint(to,   { x: from.cx, y: from.cy });
+
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', 'rgba(255,255,255,0.22)');
+      p.setAttribute('stroke-width', '1.5');
+      p.setAttribute('stroke-dasharray', '5 5');
+      p.setAttribute('class', styles.dashedFlow);
+      svg.appendChild(p);
     });
+
+    // ── Agent → tools: orthogonal comb ───────────────────────────────────
+
+    // Travel expert → all 5 tools
+    drawCombLines('travel', ['toolDest', 'toolKnowledge', 'toolFlight', 'toolHotel', 'toolLang']);
+
+    // Booking agent → its tools
+    drawCombLines('booking', ['toolKnowledge', 'toolDest', 'toolLang', 'toolFlight', 'toolHotel']);
+
   }, []);
 
   useEffect(() => {
