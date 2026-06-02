@@ -186,15 +186,18 @@ function WhyAgentKernel() {
 
   return (
     <section className={styles.whyHero}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+      
       <div className="container">
         <div className={styles.whyHeroBlock}>
-          <p ref={labelRef} className={styles.whyHeroLabel}>
+          <p ref={labelRef} className={styles.sectionLabel}>
             Why Agent Kernel
           </p>
-          <h2 ref={titleRef} className={styles.whyHeroTitle}>
-            Everything You Need to Build, Run, and Scale AI Agents
+          <h2 ref={titleRef} className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>
+            Everything You Need to Build, Run and Scale AI Agents
           </h2>
-          <p ref={subtitleRef} className={styles.whyHeroSubtitle}>
+          <p ref={subtitleRef} className={styles.sectionSubtitle}>
             From runtime and memory to guardrails, observability, testing, and
             multi-cloud deployment.
           </p>
@@ -316,9 +319,15 @@ function FeaturesPageMap({
       role="region"
       aria-labelledby="features-page-map-heading"
     >
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>Feature Map</span>
+          <div className={styles.Badge}>
+            <span className={styles.badgeStar}>✦</span>
+            Feature Map
+          </div>
           <h2 id="features-page-map-heading" className={styles.sectionTitle}>
             Everything Agent Kernel Does
           </h2>
@@ -651,10 +660,8 @@ function ProblemTable() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>01</span>
-          <h2 className={styles.sectionTitle}>
-            The Problem Agent Kernel Solves
-          </h2>
+          <p className={styles.sectionLabel}>01 | The Problem</p>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>The Problem Agent Kernel Solves</h2>
           <p className={styles.sectionSubtitle}>
             Building production AI agents today involves solving many hard
             problems that have nothing to do with the actual agent intelligence.
@@ -1055,8 +1062,8 @@ function CoreFeatures() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>02</span>
-          <h2 className={styles.sectionTitle}>Core Capabilities</h2>
+          <p className={styles.sectionLabel}>02 | Core Capabilities</p>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>Core Capabilities</h2>
           <p className={styles.sectionSubtitle}>
             Everything you need to build, run, and scale production AI agents
             without building platform code.
@@ -1355,8 +1362,8 @@ function FrameworkSupport() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>03</span>
-          <h2 className={styles.sectionTitle}>One Runtime. Any Framework.</h2>
+          <p className={styles.sectionLabel}>03 | Framework Support</p>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>One Runtime, Any Framework</h2>
           <p className={styles.sectionSubtitle}>
             Use the best framework for each job, and run them all together in a
             single deployment.
@@ -1572,8 +1579,8 @@ function TestingSection() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>04</span>
-          <h2 className={styles.sectionTitle}>Testing Framework</h2>
+          <p className={styles.sectionLabel}>04 | Testing</p>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>Testing Framework</h2>
           <p className={styles.sectionSubtitle}>
             Test your agents like any other code. CLI testing for development,
             automated suites for CI/CD, and three comparison modes for every use
@@ -1736,8 +1743,8 @@ function MessagingSection() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>05</span>
-          <h2 className={styles.sectionTitle}>Messaging integrations</h2>
+          <p className={styles.sectionLabel}>05 | Messaging</p>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>Messaging Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Your agents meet users on the channels they already use. Every
             integration routes through the same Agent Kernel runtime. Pick a
@@ -1888,8 +1895,8 @@ function ProtocolSupport() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <span className={styles.sectionNumber}>06</span>
-          <h2 className={styles.sectionTitle}>Protocol Support</h2>
+          <p className={styles.sectionLabel}>06 | Protocol</p>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleWhite}`}>Protocol Support</h2>
           <p className={styles.sectionSubtitle}>
             Standard protocols for tool connectivity and multi-agent
             coordination. Wired into the runtime.

@@ -30,19 +30,57 @@
   backdrop-filter: blur(4px);
 }
 
-.sectionTitle {
-  font-size: 3rem;
-  font-weight: 800;
-  color: #dfe1f0;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  margin-bottom: 0.75rem;
+.sectionLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #00D4FF;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  margin-bottom: 1.25rem;
+  margin-top: 0;
 }
+
+.sectionLabel {
+  justify-content: center;
+}
+
+.sectionLabel::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: #00D4FF;
+  flex-shrink: 0;
+}
+
+.sectionTitle {
+  font-size: clamp(1.875rem, 4vw, 2.5rem);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.75rem;
+  margin-top: 0;
+  text-transform: none;
+  text-align: center;
+}
+
+.sectionTitleWhite {
+  color: #ffffff;
+}
+
+.sectionTitleGray {
+  color: rgba(255, 255, 255, 0.45);
+}
+
 
 .sectionSubtitle {
   font-size: 1.05rem;
   color: #94a3b8;
   line-height: 1.7;
+  text-align: center;
 }
 
 .sectionFooter {
@@ -78,6 +116,57 @@
 
 .featureLink:hover {
   color: #00ECFF;
+}
+
+/* Top border + gradient glow */
+.topGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(120, 180, 255, 0.25) 20%,
+      rgba(160, 210, 255, 0.7) 50%,
+      rgba(120, 180, 255, 0.25) 80%,
+      transparent 100%);
+}
+
+.topGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 220px;
+  background: radial-gradient(ellipse at top center,
+      rgba(100, 170, 255, 0.1) 0%,
+      rgba(80, 140, 255, 0.05) 40%,
+      transparent 70%);
+  pointer-events: none;
+}
+
+.Badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid rgba(99, 179, 237, 0.55);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: rgba(99, 179, 237, 0.06);
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
 }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
@@ -390,8 +479,6 @@
   padding: 5rem 0 4.5rem;
   backdrop-filter: blur(4px);
   background-color: #010002;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Show on desktop only */
@@ -1859,7 +1946,7 @@
 .testingModesPanel {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.5rem;
-  background: rgba(10, 12, 22, 0.36);
+  background: #010002;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   padding: 1.35rem 1.25rem 1.25rem;
