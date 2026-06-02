@@ -517,9 +517,7 @@ class TestFirestorePreservation(unittest.TestCase):
         cfg = AKConfig.get().session.firestore
 
         # FIXED STATE: database_id field exists and defaults to None for backward compatibility
-        self.assertTrue(
-            hasattr(cfg, "database_id"), "Fixed state: _FirestoreConfig now has database_id field."
-        )
+        self.assertTrue(hasattr(cfg, "database_id"), "Fixed state: _FirestoreConfig now has database_id field.")
         self.assertIsNone(cfg.database_id, "database_id should default to None for backward compatibility.")
 
     @patch("google.cloud.firestore.Client")
