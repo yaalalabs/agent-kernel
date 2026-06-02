@@ -37,7 +37,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 |  | Agent Kernel |
 |---|---|
 | 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
-| ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP (soon), or on-prem. |
+| ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
@@ -116,7 +116,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 | Layer | Backends |
 |---|---|
-| **Session / Memory** | In-memory, Redis, DynamoDB (AWS), Cosmos DB (Azure) |
+| **Session / Memory** | In-memory, Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |
@@ -149,7 +149,7 @@ Same agent code. Pick your runtime. Full Terraform modules included.
 |---|---|---|
 | **AWS** | [Lambda](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) | [ECS / Fargate](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) |
 | **Azure** | [Functions](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) | [Container Apps](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) |
-| **GCP** | _Coming soon_ | _Coming soon_ |
+| **GCP** | [Cloud Run Serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/serverless) | [Cloud Run Containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized) |
 | **On-Prem** | ✅ Docker image | ✅ REST API bundle |
 
 ---
@@ -168,7 +168,7 @@ ak skill install
 | `ak-build` | Add tools, agents, handoffs — context-aware and framework-specific |
 | `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, hooks, multimodal |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
-| `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps with full Terraform |
+| `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
 | `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |
 
 ---

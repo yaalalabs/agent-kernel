@@ -1,10 +1,11 @@
 ---
 name: ak-cloud-deploy
 description: >
-  Deploy an Agent Kernel project to AWS or Azure using Terraform modules.
-  Supports serverless and containerized modes, plus AWS execution modes
-  (rest_sync, rest_async, async), queue-based scalable processing, custom
-  API Gateway authorizers, and multi-lambda serverless patterns.
+  Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules.
+  Supports serverless and containerized modes for all three clouds. AWS supports
+  execution modes (rest_sync, rest_async, async), queue-based scalable processing,
+  and custom API Gateway authorizers. GCP supports Cloud Run serverless (scale-to-zero)
+  and containerized (always-on) with Redis or Firestore session backends.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -14,7 +15,7 @@ metadata:
 
 # Deploy to Cloud
 
-Use this skill to deploy your Agent Kernel project to AWS or Azure.
+Use this skill to deploy your Agent Kernel project to AWS, Azure, or GCP.
 
 ## Instructions for the Agent
 
@@ -31,7 +32,7 @@ If missing, suggest `ak-init` first.
 
 ### Step 2: Ask Deployment Questions
 
-1. Cloud provider: AWS or Azure?
+1. Cloud provider: AWS, Azure, or GCP?
 2. Runtime mode:
 - Serverless
 - Containerized
@@ -40,7 +41,7 @@ If missing, suggest `ak-init` first.
 - Asynchronous REST (`rest_async`, queue/scalable mode)
 - WebSocket async (`async`, queue/scalable mode)
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
-5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure)?
+5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
 7. Environment aliases: `product_alias`, `env_alias`, `module_name`.
 
@@ -51,6 +52,8 @@ Use official modules:
 - AWS containerized: `yaalalabs/ak-containerized/aws`
 - Azure serverless: `yaalalabs/ak-serverless/azurerm`
 - Azure containerized: `yaalalabs/ak-containerized/azurerm`
+- GCP serverless: local module at `ak-deployment/ak-gcp/serverless`
+- GCP containerized: local module at `ak-deployment/ak-gcp/containerized`
 
 Use current module version (`0.4.0`) unless user requests another.
 
@@ -60,6 +63,8 @@ AWS-only features in this skill:
 - `authorizer`
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
+
+GCP modules use Cloud Run for both serverless (scale-to-zero, `min_instance_count=0`) and containerized (always-on, `min_instance_count≥1`) modes. Both use `agentkernel.gcp.CloudRun` as the entry point.
 
 ### Step 4: Align App Dependencies and Session Config
 
@@ -130,6 +135,31 @@ session:
     database_name: ${AZURE_COSMOS_DATABASE}
     container_name: ${AZURE_COSMOS_CONTAINER}
 ```
+
+#### Firestore sessions (GCP)
+
+- Dependency extras: include `gcp`
+- Typical dependency example:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,gcp]>=0.4.0"
+]
+```
+
+- `config.yaml` session block:
+
+```yaml
+session:
+  type: firestore
+  firestore:
+    collection_name: ${AK_SESSION__FIRESTORE__COLLECTION_NAME}
+    project_id: ${PROJECT_ID}
+    ttl: 604800
+```
+
+- The Terraform module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLLECTION_NAME` automatically when Firestore is enabled.
+- A TTL policy must be set on the Firestore collection pointing to the `expiry_time` field for automatic document expiry.
 
 If the Terraform module creates the backing store (for example `create_redis_cluster = true` or `create_dynamodb_memory_table = true`), make sure output values are wired to the app environment variables used by `config.yaml`.
 
@@ -589,6 +619,129 @@ module "containerized_agents" {
 }
 ```
 
+## GCP Serverless (Cloud Run — scale-to-zero)
+
+### Agent Code Pattern
+
+```python
+from agentkernel.gcp import CloudRun
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+@CloudRun.register("/app", method="GET")
+def app_handler() -> dict:
+    return {"status": "ok"}
+
+def main() -> None:
+    CloudRun.run()
+```
+
+### Terraform Example (with Redis sessions)
+
+```hcl
+module "serverless_agent" {
+  source = "../../ak-deployment/ak-gcp/serverless"
+
+  project_id           = var.project_id
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  product_display_name = "AK GCP Serverless"
+
+  package_path = "${path.module}/../dist"
+
+  create_redis_cluster = true
+
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+
+  gateway_endpoints = [
+    { path = "app", method = "GET", overwrite_path = "/app" },
+    { path = "app_info", method = "POST", overwrite_path = "/app_info" }
+  ]
+}
+```
+
+### Terraform Example (with Firestore sessions)
+
+```hcl
+module "serverless_agent" {
+  source = "../../ak-deployment/ak-gcp/serverless"
+
+  project_id           = var.project_id
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  product_display_name = "AK GCP Serverless Firestore"
+
+  package_path = "${path.module}/../dist"
+
+  create_firestore_db = true
+
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+```
+
+The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLLECTION_NAME` automatically when `create_firestore_db = true`.
+
+**Required `pyproject.toml` extras:**
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,gcp]>=0.4.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.4.0"  # for Redis sessions
+]
+```
+
+## GCP Containerized (Cloud Run — always-on)
+
+### Agent Code Pattern
+
+Same as GCP Serverless — use `agentkernel.gcp.CloudRun`:
+
+```python
+from agentkernel.gcp import CloudRun
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+def main() -> None:
+    CloudRun.run()
+```
+
+### Terraform Example
+
+```hcl
+module "containerized_agent" {
+  source = "../../ak-deployment/ak-gcp/containerized"
+
+  project_id           = var.project_id
+  region               = var.region
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  product_display_name = "AK GCP Containerized"
+
+  package_path       = "${path.module}/../dist"
+  min_instance_count = 1   # always-on — no cold starts
+  container_port     = 8000
+
+  create_redis_cluster = true
+
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+```
+
+**Key difference from GCP Serverless:** `min_instance_count = 1` keeps at least one instance running at all times, eliminating cold starts.
+
 ## Config and Packaging Notes
 
 ### Packaging
@@ -636,6 +789,14 @@ Each Lambda package must include a `config.yaml`. Most runtime values (`executio
 - Terraform >= 1.9.5
 - Resource group and subscription permissions
 - Storage for remote Terraform state (optional but recommended)
+
+### GCP
+
+- GCP CLI configured (`gcloud auth application-default login`)
+- Terraform >= 1.9.5
+- Docker installed (for local image building and push to Artifact Registry)
+- An existing GCP project with appropriate permissions
+- Required APIs enabled: Cloud Run, API Gateway, Artifact Registry, VPC Access
 
 ## Deploy
 

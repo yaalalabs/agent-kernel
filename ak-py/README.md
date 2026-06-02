@@ -3,18 +3,18 @@
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks and cloud providers. Deploy the same agent code to **AWS or Azure** without modification. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
+Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks and cloud providers. Deploy the same agent code to **AWS, Azure, or GCP** without modification. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
 
-**Supported Cloud Platforms:** AWS, Azure
+**Supported Cloud Platforms:** AWS, Azure, GCP
 
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents
-- **Multi-Cloud Deployment**: Deploy to AWS (Lambda, ECS/Fargate) or Azure (Functions, Container Apps) with the same code
-- **Session Management**: Built-in session abstraction with multi-cloud storage (Redis, DynamoDB, Cosmos DB)
+- **Multi-Cloud Deployment**: Deploy to AWS (Lambda, ECS/Fargate), Azure (Functions, Container Apps), or GCP (Cloud Run serverless/containerized) with the same code
+- **Session Management**: Built-in session abstraction with multi-cloud storage (Redis, DynamoDB, Cosmos DB, Firestore)
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
-- **Flexible Deployment**: Interactive CLI, REST API, serverless (AWS Lambda, Azure Functions), containerized (AWS ECS, Azure Container Apps)
+- **Flexible Deployment**: Interactive CLI, REST API, serverless (AWS Lambda, Azure Functions, GCP Cloud Run), containerized (AWS ECS, Azure Container Apps, GCP Cloud Run)
 - **Pluggable Architecture**: Easy to extend with custom framework adapters and cloud providers
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
@@ -259,6 +259,31 @@ Azure Functions also accepts the normalized envelope, and flat run payloads are 
 - `400` — No agent available
 - `500` — Unexpected error
 
+### GCP Cloud Run Deployment
+
+Deploy your agents to GCP Cloud Run using the built-in `CloudRun` handler.
+
+```python
+from agentkernel.gcp import CloudRun
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+@CloudRun.register("/app", method="GET")
+def app_handler() -> dict:
+    return {"status": "ok"}
+
+def main() -> None:
+    CloudRun.run()
+
+if __name__ == "__main__":
+    main()
+```
+
+`CloudRun` is the GCP equivalent of `Lambda` (AWS) and `AzureFunctions` (Azure). It wraps `RESTAPI` and starts a FastAPI/uvicorn server. Custom routes are registered with `@CloudRun.register(path, method)`. Use `CloudRun.run()` instead of `RESTAPI.run()` when deploying to GCP.
+
+For full Terraform deployment configuration, see [`ak-deployment/ak-gcp/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp) or the [GCP deployment docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/gcp-serverless.md).
+
 ## Configuration
 
 Agent Kernel can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
@@ -306,7 +331,7 @@ Configure where agent sessions are stored (supports multi-cloud storage backends
 
 - **Field**: `session.type`
 - **Type**: string
-- **Options**: `in_memory`, `redis`, `dynamodb` (AWS), `cosmosdb` (Azure)
+- **Options**: `in_memory`, `redis`, `dynamodb` (AWS), `cosmosdb` (Azure), `firestore` (GCP)
 - **Default**: `in_memory`
 - **Environment Variable**: `AK_SESSION__TYPE`
 
