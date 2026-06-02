@@ -8,6 +8,7 @@ import React, {
 import Link from "@docusaurus/Link";
 import Layout from "@theme/Layout";
 import styles from "./features.module.css";
+import indexStyles from "./index.module.css";
 import {
   MdMemory,
   MdSwapHoriz,
@@ -47,6 +48,7 @@ import { FaFacebookMessenger } from "react-icons/fa6";
 import { TbBrandTeams } from "react-icons/tb";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
 import AgentKernelRuntimeFlowDiagram from "../components/AgentKernelRuntimeFlowDiagram";
+import HeroAnimation from "../components/HeroAnimation";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 
@@ -71,43 +73,43 @@ const FEATURE_PAGE_MAP: {
   title: string;
   hint: string;
 }[] = [
-  {
-    anchor: "problem",
-    number: "01",
-    title: "The Problem",
-    hint: "What Agent Kernel solves",
-  },
-  {
-    anchor: "core",
-    number: "02",
-    title: "Core Capabilities",
-    hint: "Runtime, memory, hooks, and more",
-  },
-  {
-    anchor: "frameworks",
-    number: "03",
-    title: "Framework Support",
-    hint: "One runtime, any framework",
-  },
-  {
-    anchor: "testing",
-    number: "04",
-    title: "Testing",
-    hint: "CLI, pytest, comparison modes",
-  },
-  {
-    anchor: "messaging",
-    number: "05",
-    title: "Messaging",
-    hint: "Slack, WhatsApp, and more",
-  },
-  {
-    anchor: "protocols",
-    number: "06",
-    title: "Protocol Support",
-    hint: "MCP and A2A out of the box",
-  },
-];
+    {
+      anchor: "problem",
+      number: "01",
+      title: "The Problem",
+      hint: "What Agent Kernel solves",
+    },
+    {
+      anchor: "core",
+      number: "02",
+      title: "Core Capabilities",
+      hint: "Runtime, memory, hooks, and more",
+    },
+    {
+      anchor: "frameworks",
+      number: "03",
+      title: "Framework Support",
+      hint: "One runtime, any framework",
+    },
+    {
+      anchor: "testing",
+      number: "04",
+      title: "Testing",
+      hint: "CLI, pytest, comparison modes",
+    },
+    {
+      anchor: "messaging",
+      number: "05",
+      title: "Messaging",
+      hint: "Slack, WhatsApp, and more",
+    },
+    {
+      anchor: "protocols",
+      number: "06",
+      title: "Protocol Support",
+      hint: "MCP and A2A out of the box",
+    },
+  ];
 
 function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
   const id = FEATURE_ANCHORS[anchor];
@@ -122,7 +124,7 @@ type PlantParticlesBackgroundHandle = React.ElementRef<
 
 /* ─── Why Agent Kernel (hero) ───────────────────────────────────────────── */
 
-function Hero() {
+function WhyAgentKernel() {
   const labelRef = useRef<HTMLParagraphElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const subtitleRef = useRef<HTMLParagraphElement>(null);
@@ -189,9 +191,9 @@ function Hero() {
           <p ref={labelRef} className={styles.whyHeroLabel}>
             Why Agent Kernel
           </p>
-          <h1 ref={titleRef} className={styles.whyHeroTitle}>
+          <h2 ref={titleRef} className={styles.whyHeroTitle}>
             Everything You Need to Build, Run, and Scale AI Agents
-          </h1>
+          </h2>
           <p ref={subtitleRef} className={styles.whyHeroSubtitle}>
             From runtime and memory to guardrails, observability, testing, and
             multi-cloud deployment.
@@ -336,8 +338,10 @@ function FeaturesPageMap({
                 style={{ "--node-delay": `${i * 80}ms` } as React.CSSProperties}
                 onClick={() => scrollToFeaturesSection(item.anchor)}
               >
-                <span className={styles.pageMapNodeNumber}>{item.number}</span>
-                <span className={styles.pageMapNodeTitle}>{item.title}</span>
+                <div className={styles.pageMapNodeHeader}>
+                  <span className={styles.pageMapNodeNumber}>{item.number}</span>
+                  <span className={styles.pageMapNodeTitle}>{item.title}</span>
+                </div>
                 <span className={styles.pageMapNodeHint}>{item.hint}</span>
               </button>
             ))}
@@ -361,8 +365,8 @@ function FeaturesPageMap({
                   x2="450"
                   y2="60"
                 >
-                  <stop offset="0%"   stopColor={TEAL} stopOpacity="0" />
-                  <stop offset="50%"  stopColor={TEAL} stopOpacity="1" />
+                  <stop offset="0%" stopColor={TEAL} stopOpacity="0" />
+                  <stop offset="50%" stopColor={TEAL} stopOpacity="1" />
                   <stop offset="100%" stopColor={TEAL} stopOpacity="0.3" />
                 </linearGradient>
               ))}
@@ -417,8 +421,8 @@ function FeaturesPageMap({
                   x2={COL_X_BOT[i]}
                   y2="60"
                 >
-                  <stop offset="0%"   stopColor={TEAL} stopOpacity="0.3" />
-                  <stop offset="50%"  stopColor={TEAL} stopOpacity="1" />
+                  <stop offset="0%" stopColor={TEAL} stopOpacity="0.3" />
+                  <stop offset="50%" stopColor={TEAL} stopOpacity="1" />
                   <stop offset="100%" stopColor={TEAL} stopOpacity="0" />
                 </linearGradient>
               ))}
@@ -456,8 +460,10 @@ function FeaturesPageMap({
                 }
                 onClick={() => scrollToFeaturesSection(item.anchor)}
               >
-                <span className={styles.pageMapNodeNumber}>{item.number}</span>
-                <span className={styles.pageMapNodeTitle}>{item.title}</span>
+                <div className={styles.pageMapNodeHeader}>
+                  <span className={styles.pageMapNodeNumber}>{item.number}</span>
+                  <span className={styles.pageMapNodeTitle}>{item.title}</span>
+                </div>
                 <span className={styles.pageMapNodeHint}>{item.hint}</span>
               </button>
             ))}
@@ -727,7 +733,7 @@ function ProblemTable() {
                       className={styles.problemCompareBodyIcon}
                       aria-hidden="true"
                     >
-                      <MdClose />
+                      <ActiveIcon />
                     </span>
                     <p className={styles.problemCompareBodyText}>
                       {activeRow.without}
@@ -750,7 +756,7 @@ function ProblemTable() {
                       className={styles.problemCompareBodyIcon}
                       aria-hidden="true"
                     >
-                      <MdCheck />
+                      <ActiveIcon />
                     </span>
                     <p className={styles.problemCompareBodyText}>
                       {activeRow.with}
@@ -780,26 +786,46 @@ function ProblemTable() {
               </div>
             </div>
             <div className={styles.problemImpactGrid}>
-              <div
-                className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}
+              <article
+                className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}
               >
-                <span className={styles.problemImpactStatLabel}>
+                <p className={styles.problemCompareSideLabel}>
                   Without Agent Kernel
-                </span>
-                <p className={styles.problemImpactStatValue}>
-                  {impactRow.without}
                 </p>
-              </div>
-              <div
-                className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}
+                <p className={styles.problemCompareSideSub}>
+                  What you take on today
+                </p>
+                <div
+                  className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}
+                >
+                  <span className={styles.problemImpactStatLabel}>
+                    Without Agent Kernel
+                  </span>
+                  <p className={styles.problemImpactStatValue}>
+                    {impactRow.without}
+                  </p>
+                </div>
+              </article>
+              <article
+                className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}
               >
-                <span className={styles.problemImpactStatLabel}>
+                <p className={styles.problemCompareSideLabel}>
                   With Agent Kernel
-                </span>
-                <p className={styles.problemImpactStatValue}>
-                  {impactRow.with}
                 </p>
-              </div>
+                <p className={styles.problemCompareSideSub}>
+                  What the platform covers
+                </p>
+                <div
+                  className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}
+                >
+                  <span className={styles.problemImpactStatLabel}>
+                    With Agent Kernel
+                  </span>
+                  <p className={styles.problemImpactStatValue}>
+                    {impactRow.with}
+                  </p>
+                </div>
+              </article>
             </div>
           </aside>
         </div>
@@ -971,7 +997,7 @@ function CoreFeatures() {
       scrollTrigger: {
         trigger: header,
         start: "top 82%",
-          toggleActions: "play none none reverse",
+        toggleActions: "play none none reverse",
       },
     });
 
@@ -1041,15 +1067,12 @@ function CoreFeatures() {
             <li key={f.title} className={styles.featureGridCell}>
               <article className={styles.featureCard}>
                 <div className={styles.featureCardHeader}>
-                  <span className={styles.featureIndex}>
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
                   <div className={styles.featureIconWrap} aria-hidden="true">
                     {f.icon}
                   </div>
+                  <h3 className={styles.featureTitle}>{f.title}</h3>
                 </div>
                 <div className={styles.featureCardBody}>
-                  <h3 className={styles.featureTitle}>{f.title}</h3>
                   <p className={styles.featureDescription}>{f.description}</p>
                   <ul className={styles.featureHighlights}>
                     {f.highlights.map((h) => (
@@ -1059,7 +1082,7 @@ function CoreFeatures() {
                 </div>
                 {f.link ? (
                   <Link to={f.link} className={styles.featureLink}>
-                    Learn more →
+                    Learn More
                   </Link>
                 ) : null}
               </article>
@@ -1202,7 +1225,7 @@ function FrameworkSupport() {
       </div>
       <p className={styles.frameworkDescription}>{f.description}</p>
       <span className={`${styles.frameworkLink} ${styles.frameworkLinkInline}`}>
-        Learn more →
+        Learn More
       </span>
     </>
   );
@@ -1229,7 +1252,7 @@ function FrameworkSupport() {
         <span
           className={`${styles.frameworkLink} ${styles.frameworkFeaturedCta}`}
         >
-          Learn more →
+          Learn More
         </span>
       </div>
     </>
@@ -1561,7 +1584,7 @@ function TestingSection() {
           <ul className={styles.testingApproachesGrid}>
             {approaches.map((a) => (
               <li key={a.key} className={styles.testingApproachCell}>
-                <Link to={a.link} className={styles.testingApproachCard}>
+                <article className={styles.testingApproachCard}>
                   <div className={styles.testingApproachHeader}>
                     <div className={styles.testingIconWrap} aria-hidden="true">
                       {a.icon}
@@ -1576,8 +1599,10 @@ function TestingSection() {
                       <li key={h}>{h}</li>
                     ))}
                   </ul>
-                  <span className={styles.testingLink}>Learn more →</span>
-                </Link>
+                  <Link to={a.link} className={styles.testingLink}>
+                    Learn More
+                  </Link>
+                </article>
               </li>
             ))}
           </ul>
@@ -1619,7 +1644,7 @@ const MESSAGING_PLATFORMS = [
     link: "/docs/integrations/slack",
   },
   {
-    name: "Teams",
+    name: "Microsoft Teams",
     icon: <TbBrandTeams />,
     color: "#A8B2FF",
     link: "/docs/next/integrations/teams",
@@ -1722,7 +1747,7 @@ function MessagingSection() {
 
         <div ref={sceneRef} className={styles.msgChannelScene}>
           <ul className={styles.msgChannelGrid}>
-            {MESSAGING_PLATFORMS.map((p) => (
+            {MESSAGING_PLATFORMS.slice(0, 4).map((p) => (
               <li key={p.name} className={styles.msgChannelCell}>
                 <Link
                   to={p.link}
@@ -1732,13 +1757,36 @@ function MessagingSection() {
                   {(p as { featured?: boolean }).featured && (
                     <span className={styles.msgFeaturedBadge}>Popular</span>
                   )}
-                  <span className={styles.msgChannelIcon} aria-hidden>
-                    {p.icon}
-                  </span>
-                  <span className={styles.msgChannelMeta}>
+                  <div className={styles.msgChannelTop}>
+                    <span className={styles.msgChannelIcon} aria-hidden>
+                      {p.icon}
+                    </span>
                     <span className={styles.msgChannelName}>{p.name}</span>
-                    <span className={styles.msgChannelCta}>Setup guide →</span>
-                  </span>
+                  </div>
+                  <span className={styles.msgChannelCta}>Step Guide</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <ul className={styles.msgChannelGrid}>
+            {MESSAGING_PLATFORMS.slice(4).map((p) => (
+              <li key={p.name} className={styles.msgChannelCell}>
+                <Link
+                  to={p.link}
+                  className={`${styles.msgChannelCard}${(p as { featured?: boolean }).featured ? ` ${styles.msgChannelCardFeatured}` : ""}`}
+                  style={{ "--msg-brand": p.color } as React.CSSProperties}
+                >
+                  {(p as { featured?: boolean }).featured && (
+                    <span className={styles.msgFeaturedBadge}>Popular</span>
+                  )}
+                  <div className={styles.msgChannelTop}>
+                    <span className={styles.msgChannelIcon} aria-hidden>
+                      {p.icon}
+                    </span>
+                    <span className={styles.msgChannelName}>{p.name}</span>
+                  </div>
+                  <span className={styles.msgChannelCta}>Step Guide</span>
                 </Link>
               </li>
             ))}
@@ -1771,7 +1819,7 @@ function ProtocolSupport() {
       description:
         "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
       link: "/docs/api/mcp-server",
-      linkLabel: "MCP server docs →",
+      linkLabel: "MCP Server Docs",
     },
     {
       key: "a2a",
@@ -1780,7 +1828,7 @@ function ProtocolSupport() {
       description:
         "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
       link: "/docs/api/a2a-server",
-      linkLabel: "A2A server docs →",
+      linkLabel: "A2A Server Docs",
     },
   ];
   useLayoutEffect(() => {
@@ -1850,7 +1898,7 @@ function ProtocolSupport() {
         <ul className={styles.protocolGrid}>
           {protocols.map((p) => (
             <li key={p.key} className={styles.protocolCell}>
-              <Link to={p.link} className={styles.protocolCard}>
+              <article className={styles.protocolCard}>
                 <div className={styles.protocolCardHeader}>
                   <div className={styles.protocolIconWrap} aria-hidden="true">
                     {p.icon}
@@ -1858,8 +1906,10 @@ function ProtocolSupport() {
                   <h3 className={styles.protocolTitle}>{p.title}</h3>
                 </div>
                 <p className={styles.protocolDescription}>{p.description}</p>
-                <span className={styles.protocolLink}>{p.linkLabel}</span>
-              </Link>
+                <Link to={p.link} className={styles.protocolLink}>
+                  {p.linkLabel}
+                </Link>
+              </article>
             </li>
           ))}
         </ul>
@@ -1879,42 +1929,43 @@ function CTASection({
     <section
       ref={sectionRef}
       id={FEATURE_ANCHORS.cta}
-      className={`${styles.ctaSection} ${styles.pageAnchor}`}
+      className={`${indexStyles.ctaSection} ${styles.pageAnchor}`}
     >
       <div className="container">
-        <div className={styles.ctaContent}>
-          <h2 className={styles.ctaTitle}>Ready to Build Your AI Agents?</h2>
-          <p className={styles.ctaSubtitle}>
-            Free, open-source, Apache 2.0. Whether you're an AI startup, an
-            established software company, or a domain expert, Agent Kernel has a
-            path for you.
+        <div className={indexStyles.ctaContent}>
+          <h2 className={indexStyles.ctaTitle}>
+            Ready to Ship Your
+            <br />
+            First <span className={indexStyles.ctaTitleGradient}>Agent</span>?
+          </h2>
+          <p className={indexStyles.ctaSubtitle}>
+            Free, open-source, Apache 2.0. No licensing costs, no vendor
+            lock-in. Join hundreds of developers building production AI agents
+            with Agent Kernel.
           </p>
-          <div className={styles.ctaButtons}>
+          <div className={indexStyles.ctaButtons}>
             <Link
-              className={`button button--primary button--lg ${styles.btnPrimary}`}
+              className={`button button--primary button--lg ${indexStyles.btnPrimary}`}
               to="/docs"
             >
-              <span className={styles.btnIcon}>→</span>
-              Get Started
+              <span className={indexStyles.btnIcon}>→</span>
+              Get Started Free
             </Link>
             <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
-              to="/use-cases"
-            >
-              <span className={styles.btnIconSecondary}>→</span>
-              Find Your Use Case
-            </Link>
-            <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              className={`button button--secondary button--lg ${indexStyles.btnSecondary}`}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <span className={styles.btnIconSecondary}>
+              <span className={indexStyles.btnIconSecondary}>
                 <FaGithub />
               </span>
-              View on GitHub
+              View On GitHub
             </Link>
+          </div>
+
+          <div className={indexStyles.ctaImageWrapper}>
+            <img src="/img/cta-bg.png" alt="Agent Kernel" className={indexStyles.ctaImage} />
           </div>
         </div>
       </div>
@@ -1959,12 +2010,22 @@ export default function Features() {
       title="Features"
       description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations."
     >
-      <PlantParticlesBackground
-        ref={plantParticlesBackgroundRef}
-        modelUrl="/models/leaf.glb"
-      />
-      <Hero />
-      <main>
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
+        <HeroAnimation
+          badge="Features"
+          title="Everything to Build AI Agents"
+          subtitle="From framework-neutral runtime and smart memory to guardrails, observability, testing and multi-cloud deployment. Everything needed to build and ship production agents without platform engineering overhead."
+          primaryCtaLabel="Get Started"
+          primaryCtaTo="/docs"
+          secondaryCtaLabel="Explore Use Cases"
+          secondaryCtaTo="/use-cases"
+        />
+      </div>
+
+      <div style={{ height: '100vh' }} />
+
+      <main style={{ position: 'relative', zIndex: 10, backgroundColor: '#010002' }}>
+        <WhyAgentKernel />
         <FeaturesPageMap
           plantParticlesBackgroundRef={plantParticlesBackgroundRef}
         />

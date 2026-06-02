@@ -2,11 +2,11 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import styles from './styles.module.css';
 
 const FRAMEWORKS = [
+  'OpenAI',
   'LangGraph',
-  'OpenAI Agents',
   'CrewAI',
   'Google ADK',
-  'Smol Agents',
+  'Smolagents',
   'LiveKit',
 ];
 
@@ -64,8 +64,8 @@ function FlowArrow({
   const uid = useId().replace(/:/g, '');
   const pathId = `${uid}-${variant}`;
   const isCyan = variant === 'cyan';
-  const stroke = isCyan ? TEAL_LINE : PURPLE_LINE;
-  const dot = isCyan ? TEAL : PURPLE;
+  const stroke = TEAL_LINE;
+  const dot = TEAL;
 
   return (
     <div
@@ -146,6 +146,16 @@ function FlowColumn({
   );
 }
 
+const FlowHubIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 581.263 600" {...props}>
+    <g>
+      <path d="M238.569,294.85v34.937l1.906,0.938c21.313,10.656,34.532,32.093,34.532,55.905v13.375 l-73.186-36.593c-31.75-15.875-51.812-48.343-51.812-83.843v-129.56l73.186,36.593c31.75,15.875,51.812,48.343,51.812,83.843 v46.312c-6.125-5.469-13-10.187-20.562-13.968L238.569,294.85z" />
+      <path d="M431.254,150.008v129.56c0,35.5-20.062,67.968-51.812,83.843l-73.186,36.593v-50.749 c0-23.812,13.218-45.249,34.53-55.905l1.907-0.937v-34.937l-15.875,7.937c-7.562,3.781-14.438,8.5-20.562,13.969v-8.937 c0-35.5,20.062-67.968,51.812-83.843L431.254,150.008z" />
+      <path d="M306.26,400.027v44.421l-7.028,3.514c-5.422,2.711-11.805,2.707-17.223-0.011l-6.982-3.503v-44.421 l6.969,3.496c5.426,2.722,11.818,2.722,17.244,0.001l6.971-3.496H306.26z" />
+    </g>
+  </svg>
+);
+
 export default function AgentKernelRuntimeFlowDiagram() {
   const panelRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -201,7 +211,7 @@ export default function AgentKernelRuntimeFlowDiagram() {
 
       <div className={styles.flowDiagramWrap}>
         <div className={styles.flowDiagram}>
-          <FlowColumn label="Bring your framework" items={FRAMEWORKS} visible={visible} baseDelay={80} />
+          <FlowColumn label="BRING YOUR FRAMEWORK" items={FRAMEWORKS} visible={visible} baseDelay={80} />
 
           <FlowArrow variant="cyan" visible={visible} animate={animate} />
 
@@ -209,22 +219,17 @@ export default function AgentKernelRuntimeFlowDiagram() {
             className={`${styles.flowHub} ${visible ? styles.flowHubVisible : ''}`}
             style={{ '--col-delay': '420ms' } as React.CSSProperties}
           >
-            <img
-                src="/img/branding/agent-kernel-icon-color.svg"
-                alt=""
-                className={styles.flowHubLogo}
-                aria-hidden="true"
-              />
+            <FlowHubIcon className={styles.flowHubLogo} />
             <p className={styles.flowHubTitle}>Agent Kernel</p>
             <p className={styles.flowHubSubtitle}>AK Runtime</p>
-            <p className={styles.flowHubMeta}>Sessions ● Hooks ● Observability</p>
+            <p className={styles.flowHubMeta}>Sessions | Hooks | Observability</p>
           </div>
 
           <FlowArrow variant="purple" visible={visible} animate={animate} />
 
-          <FlowColumn label="Deploy anywhere" items={DEPLOY_TARGETS} visible={visible} baseDelay={520} />
+          <FlowColumn label="DEPLOY ANYWHERE" items={DEPLOY_TARGETS} visible={visible} baseDelay={520} />
 
-          <FlowColumn label="Reach users on" items={USER_CHANNELS} visible={visible} baseDelay={680} />
+          <FlowColumn label="REACH USERS ON" items={USER_CHANNELS} visible={visible} baseDelay={680} />
         </div>
       </div>
 
@@ -232,9 +237,8 @@ export default function AgentKernelRuntimeFlowDiagram() {
         {FOOTER_ITEMS.map((item, i) => (
           <article
             key={item.title}
-            className={`${styles.flowFooterCard} ${styles[`flowFooterAccent_${item.accent}`]} ${
-              visible ? styles.flowFooterCardVisible : ''
-            }`}
+            className={`${styles.flowFooterCard} ${styles[`flowFooterAccent_${item.accent}`]} ${visible ? styles.flowFooterCardVisible : ''
+              }`}
             style={{ '--footer-delay': `${760 + i * 70}ms` } as React.CSSProperties}
           >
             <h3 className={styles.flowFooterTitle}>{item.title}</h3>

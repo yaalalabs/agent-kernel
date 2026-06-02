@@ -14,16 +14,16 @@
 @keyframes flowHubBorderGlow {
   0%,
   100% {
-    border-color: rgba(79, 125, 247, 0.4);
+    border-color: rgba(0, 221, 255, 0.4);
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-      0 8px 28px rgba(79, 125, 247, 0.12);
+      0 8px 28px rgba(0, 221, 255, 0.12);
   }
   50% {
-    border-color: rgba(0, 221, 255, 0.5);
+    border-color: rgba(0, 221, 255, 0.6);
     box-shadow:
-      inset 0 0 0 1px rgba(0, 221, 255, 0.12),
-      0 10px 36px rgba(79, 125, 247, 0.28);
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 10px 36px rgba(0, 221, 255, 0.28);
   }
 }
 
@@ -103,7 +103,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: #00ddff;
   text-align: center;
 }
 
@@ -118,10 +118,10 @@
 
 .flowItem {
   padding: 0.625rem 0.75rem;
-  border: 1px solid rgba(0, 221, 255, 0.18);
+  border: 1px solid rgba(0, 221, 255, 0.22);
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.88);
+  color: #00ddff;
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.35;
@@ -142,13 +142,13 @@
 
 .flowItem:hover {
   transform: translateY(-2px);
-  border-color: rgba(0, 221, 255, 0.35);
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 16px rgba(0, 221, 255, 0.08);
+  border-color: rgba(0, 221, 255, 0.6);
+  background: rgba(0, 221, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 221, 255, 0.2);
 }
 
 .flowColumn:hover .flowItem {
-  border-color: rgba(0, 221, 255, 0.28);
+  border-color: rgba(0, 221, 255, 0.4);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -190,15 +190,15 @@
   padding: 1.25rem 1rem;
   min-height: 14.5rem;
   border-radius: 0.75rem;
-  border: 1px solid rgba(79, 125, 247, 0.45);
+  border: 1px solid rgba(0, 221, 255, 0.45);
   background: linear-gradient(
     180deg,
-    rgba(79, 125, 247, 0.42) 0%,
-    rgba(59, 130, 246, 0.22) 100%
+    rgba(0, 221, 255, 0.15) 0%,
+    rgba(0, 221, 255, 0.05) 100%
   );
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 8px 32px rgba(79, 125, 247, 0.15);
+    0 8px 32px rgba(0, 221, 255, 0.15);
   text-align: center;
   opacity: 0;
 }
@@ -214,13 +214,15 @@
   width: 3.25rem;
   height: 3.25rem;
   margin-bottom: 0.5rem;
+  fill: #00ddff;
+  filter: drop-shadow(0 0 12px rgba(0, 221, 255, 0.65));
 }
 
 .flowHubTitle {
   margin: 0;
   font-size: 0.9375rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #00ddff;
   line-height: 1.2;
 }
 
@@ -228,14 +230,16 @@
   margin: 0;
   font-size: 0.8125rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: #00ddff;
+  opacity: 0.8;
 }
 
 .flowHubMeta {
   margin: 0.35rem 0 0;
   font-size: 0.6875rem;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.55);
+  color: #00ddff;
+  opacity: 0.7;
 }
 
 .flowFooter {
@@ -247,7 +251,6 @@
 .flowFooterCard {
   padding: 1rem 1.125rem 1.125rem;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-top: 3px solid transparent;
   opacity: 0;
   transform: translateY(6px);
   transition: background-color 250ms ease;
@@ -267,19 +270,19 @@
 }
 
 .flowFooterAccent_framework {
-  border-top-color: #40bbde;
+  border-top: none;
 }
 
 .flowFooterAccent_cloud {
-  border-top-color: #8e5dff;
+  border-top: none;
 }
 
 .flowFooterAccent_production {
-  border-top-color: #c45bff;
+  border-top: none;
 }
 
 .flowFooterAccent_lightweight {
-  border-top-color: #4adb76;
+  border-top: none;
 }
 
 .flowFooterTitle {
