@@ -55,6 +55,7 @@ const CONNECTIONS: Array<{
   { from: 'booking', to: 'toolHotel', dashed: true },
   { from: 'booking', to: 'toolLang', dashed: true },
   { from: 'coreZone', to: 'guardOut' },
+  { from: 'guardOut', to: 'output' },
 ];
 
 type Point = { x: number; y: number };
@@ -204,24 +205,31 @@ export default function BuildingAgentsFlowDiagram() {
       const trimEnd = conn.dashed ? 0 : 9;
       const segment = shortenSegment(start, end, trimEnd);
 
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', String(segment.x1));
-      line.setAttribute('y1', String(segment.y1));
-      line.setAttribute('x2', String(segment.x2));
-      line.setAttribute('y2', String(segment.y2));
-      line.setAttribute('fill', 'none');
+      const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      basePath.setAttribute('d', `M ${segment.x1} ${segment.y1} L ${segment.x2} ${segment.y2}`);
+      basePath.setAttribute('fill', 'none');
 
       if (conn.dashed) {
-        line.setAttribute('stroke', 'rgba(255, 255, 255, 0.4)');
-        line.setAttribute('stroke-width', '1.5');
-        line.setAttribute('stroke-dasharray', '5 5');
+        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.15)');
+        basePath.setAttribute('stroke-width', '1.5');
+        basePath.setAttribute('stroke-dasharray', '5 5');
+        basePath.setAttribute('class', styles.dashedFlow);
       } else {
-        line.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('marker-end', 'url(#baArrow)');
+        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+        basePath.setAttribute('stroke-width', '2');
       }
+      svg.appendChild(basePath);
 
-      svg.appendChild(line);
+      if (!conn.dashed) {
+        const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pulsePath.setAttribute('d', `M ${segment.x1} ${segment.y1} L ${segment.x2} ${segment.y2}`);
+        pulsePath.setAttribute('fill', 'none');
+        pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+        pulsePath.setAttribute('stroke-width', '2');
+        pulsePath.setAttribute('class', styles.pulseFlow);
+        pulsePath.setAttribute('marker-end', 'url(#baArrow)');
+        svg.appendChild(pulsePath);
+      }
     });
   }, []);
 

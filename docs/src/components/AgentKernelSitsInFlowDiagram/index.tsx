@@ -124,14 +124,22 @@ export default function AgentKernelSitsInFlowDiagram() {
     };
 
     const appendBidirectional = (points: Point[]) => {
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', pointsToPath(points));
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
-      path.setAttribute('stroke-width', '2');
-      path.setAttribute('marker-start', 'url(#akSitArrowStart)');
-      path.setAttribute('marker-end', 'url(#akSitArrowEnd)');
-      svg.appendChild(path);
+      const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      basePath.setAttribute('d', pointsToPath(points));
+      basePath.setAttribute('fill', 'none');
+      basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+      basePath.setAttribute('stroke-width', '2');
+      basePath.setAttribute('marker-start', 'url(#akSitArrowStart)');
+      basePath.setAttribute('marker-end', 'url(#akSitArrowEnd)');
+      svg.appendChild(basePath);
+
+      const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pulsePath.setAttribute('d', pointsToPath(points));
+      pulsePath.setAttribute('fill', 'none');
+      pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+      pulsePath.setAttribute('stroke-width', '2');
+      pulsePath.setAttribute('class', styles.pulseFlow);
+      svg.appendChild(pulsePath);
     };
 
     const connectNodes = (from: NodeBounds, to: NodeBounds) => {
@@ -163,12 +171,12 @@ export default function AgentKernelSitsInFlowDiagram() {
     const testAuto = boundsOf('testAuto');
 
     if (logic && api) connectNodes(api, logic);
-    if (logic && memory) connectNodes(logic, memory);
-    if (logic && framework) connectNodes(logic, framework);
+    if (logic && memory) connectNodes(memory, logic);
+    if (logic && framework) connectNodes(framework, logic);
 
     if (logic && testAuto) {
-      const start = edgePoint(logic, { x: testAuto.cx, y: testAuto.cy });
-      const end = edgePoint(testAuto, { x: logic.cx, y: logic.cy });
+      const start = edgePoint(testAuto, { x: logic.cx, y: logic.cy });
+      const end = edgePoint(logic, { x: testAuto.cx, y: testAuto.cy });
       appendBidirectional([start, end]);
     }
   }, []);

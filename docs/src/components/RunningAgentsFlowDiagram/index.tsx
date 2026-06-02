@@ -155,19 +155,31 @@ export default function RunningAgentsFlowDiagram() {
       // Only trim simple two-point segments; ortho paths already end on node edges
       const trimEnd = !dashed && points.length === 2 ? 9 : 0;
       const trimmed = dashed ? points : shortenPolyline(points, trimEnd);
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', pointsToPath(trimmed));
-      path.setAttribute('fill', 'none');
+
+      const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      basePath.setAttribute('d', pointsToPath(trimmed));
+      basePath.setAttribute('fill', 'none');
       if (dashed) {
-        path.setAttribute('stroke', 'rgba(255, 255, 255, 0.4)');
-        path.setAttribute('stroke-width', '1.5');
-        path.setAttribute('stroke-dasharray', '5 5');
+        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.15)');
+        basePath.setAttribute('stroke-width', '1.5');
+        basePath.setAttribute('stroke-dasharray', '5 5');
+        basePath.setAttribute('class', styles.dashedFlow);
       } else {
-        path.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('marker-end', 'url(#raArrow)');
+        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+        basePath.setAttribute('stroke-width', '2');
       }
-      svg.appendChild(path);
+      svg.appendChild(basePath);
+
+      if (!dashed) {
+        const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pulsePath.setAttribute('d', pointsToPath(trimmed));
+        pulsePath.setAttribute('fill', 'none');
+        pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+        pulsePath.setAttribute('stroke-width', '2');
+        pulsePath.setAttribute('class', styles.pulseFlow);
+        pulsePath.setAttribute('marker-end', 'url(#raArrow)');
+        svg.appendChild(pulsePath);
+      }
     };
 
     const appendLine = (from: string, to: string, dashed = false) => {
