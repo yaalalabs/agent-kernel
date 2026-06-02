@@ -766,8 +766,6 @@ code {
 
 .docItemContainer_Djhp {
   background-color: var(--ak-surface);
-  border-radius: 0.5rem;
-  border: 1px solid var(--ak-border);
   padding: 1rem;
 }
 
