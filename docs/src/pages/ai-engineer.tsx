@@ -564,11 +564,11 @@ export default function AIEngineerPage() {
       title="Agent Kernel for AI Engineers"
       description="Learn how Agent Kernel provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
     >
-      <HeroAnimation
+      {/* <HeroAnimation
         badge="AI Engineers"
         title="Run Advanced Agent Systems on a Unified Runtime"
         subtitle="Bring your existing agentic code and operate it with production discipline. Agent Kernel unifies execution, memory, hooks, observability, integrations, and multi-cloud deployment so AI engineering teams can ship compliant, scalable systems faster."
-      />
+      /> */}
       <section ref={contentRef} className={styles.aiEngineerSection}>
         <StepTimeline levelId="03" contentRef={contentRef} />
         <div className="container">

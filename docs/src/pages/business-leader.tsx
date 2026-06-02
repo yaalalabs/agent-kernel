@@ -248,11 +248,11 @@ export default function BusinessLeaderPage() {
       title="Agent Kernel for Business Leaders"
       description="Learn how Agent Kernel helps business leaders implement AI agents that scale across their organization."
     >
-      <HeroAnimation
+      {/* <HeroAnimation
         badge="Business Leaders"
         title="Scale AI Agents Across Your Organization"
         subtitle="Agent Kernel helps business teams move from AI experimentation to production outcomes. Launch compliant AI agents quickly, connect to real channels, and deploy across AWS, Azure, GCP, or your own infrastructure without rebuilding your platform each time."
-      />
+      /> */}
       <section ref={sectionRef} className={styles.blPageSection}>
         <StepTimeline levelId="01" contentRef={contentRef} />
         <div className="container">

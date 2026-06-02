@@ -301,11 +301,11 @@ export default function DeveloperPage() {
       title="Agent Kernel for Developers"
       description="Learn how Agent Kernel helps developers build and deploy AI agents quickly without reinventing the wheel."
     >
-      <HeroAnimation
+      {/* <HeroAnimation
         badge="Developers"
         title="Build AI Agents Without Rebuilding Infrastructure"
         subtitle="Agent Kernel gives developers a production-ready runtime so you can focus on agent logic. Use your preferred framework, expose agents through API or messaging channels, and deploy to cloud environments fast with enterprise-grade building blocks included."
-      />
+      /> */}
       <section ref={sectionRef} className={styles.devPageSection}>
         <StepTimeline levelId="02" contentRef={contentRef} />
         <div className="container">

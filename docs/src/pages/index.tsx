@@ -82,7 +82,7 @@ function WhatsNewBanner() {
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
           <strong>Knowledge Base Support</strong> — ChromaDB, Neo4j &amp;
-          Starburst Galaxy built-in, plus a <strong>custom adapter API</strong>{" "}
+          Starburst Galaxy built-in, plus a custom adapter API{" "}
           to plug in any backend.
         </span>
         <Link
