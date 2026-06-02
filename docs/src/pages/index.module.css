@@ -10,8 +10,6 @@
   justify-content: center;
   gap: 0.75rem;
   padding: 0.65rem 1.5rem;
-  background: linear-gradient(90deg, rgba(0, 221, 255, 0.10) 0%, rgba(0, 170, 222, 0.10) 100%);
-  border-bottom: 1px solid rgba(0, 221, 255, 0.2);
   flex-wrap: wrap;
   text-align: center;
 }
