@@ -1,6 +1,6 @@
 # Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
-  source = "yaalalabs/ak-serverless/aws"
+  source  = "yaalalabs/ak-serverless/aws"
   version = "0.4.0"
 
   # Basic configuration
@@ -14,7 +14,7 @@ module "serverless_agents" {
   private_subnet_ids   = var.private_subnet_ids
 
   # Execution mode - using for scalable processing
-  queue_mode = true # recommended for production
+  queue_mode     = true        # recommended for production
   execution_mode = "rest_sync" # rest_sync or rest_async
 
   # Memory DB Config
@@ -44,14 +44,14 @@ module "serverless_agents" {
 
   # Request handler configuration
   request_handler = {
-    module_name           = "rqst-hdlr"
-    function_name         = "rqh-func"
-    function_description  = "Agent Kernel OpenAI Scalable Sample Lambda"
-    handler_path          = "lambda_request_handler.handler"
-    package_type          = "LocalZip"
-    package_path          = "../dist_request_handler.zip"
-    memory_size           = 256
-    timeout               = 45
+    module_name          = "rqst-hdlr"
+    function_name        = "rqh-func"
+    function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "S3Zip"
+    lambda_package_s3    = var.request_handler_lambda_package_s3
+    memory_size          = 256
+    timeout              = 45
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -59,14 +59,14 @@ module "serverless_agents" {
 
   # Agent runner configuration
   agent_runner = {
-    module_name           = "agent-runner"
-    function_name         = "ar-func"
-    function_description  = "Agent runner for processing OpenAI requests"
-    timeout               = 45
-    memory_size           = 512
-    handler_path          = "lambda_agent_runner.handler"
-    package_path          = "../dist_agent_runner"
-    package_type          = "Image"
+    module_name          = "agent-runner"
+    function_name        = "ar-func"
+    function_description = "Agent runner for processing OpenAI requests"
+    timeout              = 45
+    memory_size          = 512
+    handler_path         = "lambda_agent_runner.handler"
+    package_type         = "Image"
+    ecr_image_uri        = var.agent_runner_ecr_image_uri
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -74,32 +74,32 @@ module "serverless_agents" {
 
   # Response handler configuration
   response_handler = {
-    function_name         = "rsh-func"
-    module_name           = "rspns-hdlr"
-    function_description  = "Response handler for processing completed requests"
-    timeout               = 45
-    memory_size           = 256
-    handler_path          = "lambda_response_handler.handler"
-    package_type          = "LocalZip"
-    package_path          = "../dist_response_handler.zip"
+    function_name        = "rsh-func"
+    module_name          = "rspns-hdlr"
+    function_description = "Response handler for processing completed requests"
+    timeout              = 45
+    memory_size          = 256
+    handler_path         = "lambda_response_handler.handler"
+    lambda_package_s3    = var.response_handler_lambda_package_s3
+    package_type         = "S3Zip"
   }
 
   # Queue configuration for scalable processing
   queue_config = {
     # Input queue settings
-    input_queue_visibility_timeout = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
-    input_queue_max_receive_count   = 3 
-    input_queue_create_dlq          = false
+    input_queue_visibility_timeout        = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
+    input_queue_max_receive_count         = 3
+    input_queue_create_dlq                = false
     input_queue_message_retention_seconds = 300
-    
+
     # Output queue settings  
-    output_queue_visibility_timeout = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
-    output_queue_max_receive_count   = 3
-    output_queue_create_dlq          = false 
+    output_queue_visibility_timeout        = 60 # make sure to set it higher than the lambda timeout to avoid multiple processing of the same message
+    output_queue_max_receive_count         = 3
+    output_queue_create_dlq                = false
     output_queue_message_retention_seconds = 300
-    
+
     # Processing settings
     batch_size                         = 10
     maximum_batching_window_in_seconds = 0
   }
-} 
+}
