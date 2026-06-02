@@ -23,12 +23,15 @@
 }
 
 .sectionTitle {
-  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  font-size: 2.4rem;
   font-weight: 800;
-  color: #E8E4F0;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   letter-spacing: -0.03em;
-  line-height: 1.2;
-  margin-bottom: 0.75rem;
+  line-height: 1.15;
+  margin-bottom: 0.25rem;
 }
 
 .sectionSubtitle {
@@ -36,6 +39,37 @@
   color: #94a3b8;
   line-height: 1.7;
 }
+
+/* Top border + gradient glow */
+.topGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(120, 180, 255, 0.25) 20%,
+      rgba(160, 210, 255, 0.7) 50%,
+      rgba(120, 180, 255, 0.25) 80%,
+      transparent 100%);
+}
+
+.topGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 220px;
+  background: radial-gradient(ellipse at top center,
+      rgba(100, 170, 255, 0.1) 0%,
+      rgba(80, 140, 255, 0.05) 40%,
+      transparent 70%);
+  pointer-events: none;
+}
+
 
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
 
@@ -979,12 +1013,15 @@
 }
 
 .realWorldSectionTitle {
-  font-size: 2.75rem;
-  font-weight: 600;
-  color: #e8eaf0;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-  margin: 0;
+  font-size: 2.8rem;
+  font-weight: 800;
+  background: linear-gradient(to bottom, #ffffff 0%, #a0a0a0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 0.25rem;
 }
 
 .featuresGrid {

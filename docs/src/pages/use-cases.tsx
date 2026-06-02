@@ -404,6 +404,9 @@ function RealWorldUseCases() {
 
   return (
     <section className={styles.realWorldSection} ref={sectionRef}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
       <div className="container">
         <div className={styles.realWorldSectionHeader}>
           <div className={styles.Badge}>
@@ -491,6 +494,9 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
 
   return (
     <section className={styles.diffSection}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
       <div className="container">
         <div className={styles.sectionHeader}>
           <div className={styles.Badge}>

@@ -86,9 +86,12 @@
 }
 
 .sectionTitle {
-  font-size: 2.4rem;
+  font-size: 2.8rem;
   font-weight: 800;
-  color: #E8E4F0;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   letter-spacing: -0.03em;
   line-height: 1.15;
   margin-bottom: 0.25rem;
@@ -1855,15 +1858,6 @@
   margin-bottom: 3.5rem;
 }
 
-.sectionTitle {
-  font-size: 2.25rem;
-  font-weight: 800;
-  color: #ffffff;
-  margin-bottom: 1rem;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
-}
-
 .sectionSubtitle {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.65);
@@ -2347,7 +2341,10 @@
 .deployTitle {
   font-size: 2.4rem;
   font-weight: 800;
-  color: #dfe1f0;
+  background: linear-gradient(to bottom, #ffffff 0%, #a0a0a0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   letter-spacing: -0.03em;
   line-height: 1.15;
   margin-bottom: 0.25rem;
@@ -3100,14 +3097,6 @@
   color: rgba(0, 221, 255, 0.7);
 }
 
-.levelsTitle {
-  font-size: clamp(1.5rem, 3.5vw, 2.15rem);
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-  margin: 0;
-}
 
 .levelsSubtitle {
   font-size: 0.9rem;
@@ -3491,7 +3480,10 @@
 .levelsTitle {
   font-size: 2.25rem;
   font-weight: 700;
-  color: #ffffff;
+  background: linear-gradient(to bottom, #ffffff 0%, #a0a0a0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   letter-spacing: -0.01em;
   line-height: 1.15;
   margin-bottom: 4rem;
@@ -3620,20 +3612,16 @@
 .contentTitle {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
   font-weight: 900;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin-bottom: 1.75rem;
   margin-top: 0;
   text-transform: none;
   text-align: center;
-}
-
-.contentTitleWhite {
-  color: #ffffff;
-}
-
-.contentTitleGray {
-  color: rgba(255, 255, 255, 0.45);
 }
 
 .contentDescription {
@@ -3808,20 +3796,16 @@
 
 .devTitle {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin-bottom: 1.75rem;
   margin-top: 0;
   text-transform: none;
-}
-
-.devTitleWhite {
-  color: #ffffff;
-}
-
-.devTitleGray {
-  color: rgba(255, 255, 255, 0.45);
 }
 
 .devDescription {
@@ -4223,6 +4207,10 @@
 
 .aiTitle {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -4230,14 +4218,6 @@
   margin-top: 0;
   text-transform: none;
   text-align: center;
-}
-
-.aiTitleWhite {
-  color: #ffffff;
-}
-
-.aiTitleGray {
-  color: rgba(255, 255, 255, 0.45);
 }
 
 .aiDescription {

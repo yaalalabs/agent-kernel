@@ -644,7 +644,7 @@ function AgentSkills() {
               Agent Skills
             </div>
             <h2 className={styles.sectionTitle}>
-              Your coding assistant, supercharged.
+              Your Coding Assistant, Supercharged.
             </h2>
           </div>
 
@@ -1261,8 +1261,9 @@ function Levels() {
 
         <div className={styles.levelsFrameContainer}>
           <div className={styles.levelsHeader}>
-            <div ref={badgeRef} className={styles.levelsPathBadge}>
-              <span className={styles.levelsPathBadgePlus}>+</span> Built for Everyone
+            <div ref={badgeRef} className={styles.Badge}>
+              <span className={styles.badgeStar}>✦</span>
+               Built for Everyone
             </div>
             <h2 ref={titleRef} className={styles.levelsTitle}>
               Choose Your Path to Production

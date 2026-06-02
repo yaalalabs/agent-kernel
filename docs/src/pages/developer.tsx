@@ -317,9 +317,9 @@ export default function DeveloperPage() {
             >
               <p className={styles.devStepLabel}>Step 01 | Analogy</p>
               <h1 className={styles.devTitle}>
-                <span className={styles.devTitleWhite}>Building blocks and deployment infrastructure</span>
+                <span>Building blocks and deployment infrastructure</span>
                 {' '}
-                <span className={styles.devTitleGray}>for your AI Agent.</span>
+                <span>for your AI Agent.</span>
               </h1>
               <div className={styles.devDescription}>
                 <p className={styles.devIntro}>
@@ -489,10 +489,10 @@ export default function DeveloperPage() {
                 Step 02 | Features
               </p>
               <h2 className={styles.devTitle}>
-                <span className={styles.devTitleWhite}>
+                <span>
                   All Enterprise Features Available
                 </span><br/>
-                <span className={styles.devTitleGray}>
+                <span>
                   Free And Open-Source
                 </span>
               </h2>
@@ -547,11 +547,8 @@ export default function DeveloperPage() {
             >
               <p className={styles.devStepLabel}>Step 03 | Framework</p>
               <h2 className={styles.devTitle}>
-                <span className={styles.devTitleWhite}>
-                  Use The Framework
-                </span> {' '}
-                <span className={styles.devTitleGray}>
-                  You Prefer
+                <span>
+                  Use The Framework You Prefer
                 </span>
               </h2>
 
@@ -562,9 +559,7 @@ export default function DeveloperPage() {
             <div className={styles.devArchitectureSection} data-step="dev-05">
               <p className={styles.devStepLabel}>Step 05 | How it works</p>
               <h2 className={styles.devTitle}>
-                <span className={styles.devTitleWhite}>How Agent Kernel</span>
-                {' '}
-                <span className={styles.devTitleGray}>Fits In</span>
+                <span>How Agent Kernel Fits In</span>
               </h2>
 
               <p className={styles.devFrameworkBody}>

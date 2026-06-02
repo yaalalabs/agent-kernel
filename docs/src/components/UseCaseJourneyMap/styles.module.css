@@ -11,7 +11,6 @@
   padding: 5rem 0 4rem;
   backdrop-filter: blur(4px);
   border-top: 1px solid var(--ifm-color-emphasis-200);
-  border-bottom: 1px solid var(--ifm-color-emphasis-200);
 }
 
 /* ─── Header ─────────────────────────────────────────────────────────────── */

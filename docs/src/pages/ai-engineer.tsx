@@ -579,9 +579,10 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 01 | Analogy</p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>Unify Your Existing Agents On A Compliant</span>
+              {/* <span>Unify Your Existing Agents On A Compliant</span>
                 {' '}
-                <span className={styles.aiTitleGray}>Enterprise Runtime</span>
+                <span>Enterprise Runtime</span> */}
+              Bring your already existing agentic AI code onto a unified Operating System and Deployment Infrastructure for your AI Agents while making it enterprise ready and compliant.
             </h2>
             <div className={styles.aiDescription}>
               <p className={styles.devIntro}>
@@ -651,9 +652,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 02 | Stand Out</p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>What Makes Agent Kernel</span>
-                {' '}
-                <span className={styles.aiTitleGray}>Stand Out</span>
+              <span>What Makes Agent Kernel Stand Out</span>
             </h2>
 
             <div className={styles.akComparePanel}>
@@ -796,10 +795,14 @@ export default function AIEngineerPage() {
               Step 03 | Features
             </p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>Focus on Agent Logic</span>
+              <span>All Enterprise Features Available</span>
                 {' '}<br/>
-              <span className={styles.aiTitleGray}>We Handle the Rest</span>
+              <span>Free And Open-Source</span>
             </h2>
+
+            <p className={styles.aiDescription}>
+              Focus on Agent Logic. We Handle the Rest.
+            </p>    
 
             <div className={styles.devFeatureGroups}>
               {DEV_FEATURE_GROUPS.map((group) => (
@@ -853,9 +856,7 @@ export default function AIEngineerPage() {
               Step 04 | Frameworks
             </p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>Use The Framework</span>
-                {' '}
-              <span className={styles.aiTitleGray}> You Prefer</span>
+              <span>Use The Framework You Prefer</span>
             </h2>
 
             <FrameworkSelector showTitle={false} showDescription={true} accentColor="#26A64D" />
@@ -868,9 +869,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 05 | Build Agents</p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>How Agent Kernel Helps You Build</span>
-                {' '}
-              <span className={styles.aiTitleGray}>Production-Ready Compliant AI Agents</span>
+              <span>How Agent Kernel Helps You Build Production-Ready Compliant AI Agents</span>
             </h2>
 
             <article className={styles.aiBuildSubsection}>
@@ -912,9 +911,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 06 | Complete Picture</p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>How Agent Kernel</span>
-                {' '}
-              <span className={styles.aiTitleGray}>Fits In</span>
+              <span>How Agent Kernel Fits In</span>
             </h2>
 
             <p className={styles.aiDescription}>
@@ -937,9 +934,9 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 07 | Operating system depth</p>
             <h2 className={styles.aiTitle}>
-              <span className={styles.aiTitleWhite}>Why Agent Kernel is a Powerful</span>
+              <span>Why Agent Kernel is a Powerful</span>
                 {' '}<br/>
-              <span className={styles.aiTitleGray}>Operating System</span>
+              <span>Operating System</span>
             </h2>
 
             <div className={styles.devFeatureGroups}>

@@ -59,6 +59,10 @@
 .sectionTitle {
   font-size: clamp(1.875rem, 4vw, 2.5rem);
   font-weight: 900;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin-bottom: 1.75rem;
@@ -67,18 +71,9 @@
   text-align: center;
 }
 
-.sectionTitleWhite {
-  color: #ffffff;
-}
-
-.sectionTitleGray {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-
 .sectionSubtitle {
-  font-size: 1.05rem;
-  color: #9A91B8;
+  font-size: 1.02rem;
+  color: #94a3b8;
   line-height: 1.7;
   text-align: center;
 }
