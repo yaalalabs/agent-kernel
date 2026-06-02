@@ -3,7 +3,8 @@ name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
-  A2A server, pre/post hooks, and multimodal support. Generates configuration and code
+  A2A server, pre/post hooks, and multimodal support. Session persistence supports Redis,
+  DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP). Generates configuration and code
   changes needed.
 license: Apache-2.0
 metadata:
@@ -30,7 +31,7 @@ Which capability would you like to add?
 
 1. **Guardrails** — Content safety filters for input and/or output
 2. **Tracing** — Observability and monitoring (Langfuse or OpenLLMetry)
-3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB)
+3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB, Firestore)
 4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, or custom backend)
 5. **MCP Server** — Expose agents as Model Context Protocol tools
 6. **A2A Server** — Agent-to-Agent communication protocol
@@ -209,7 +210,7 @@ trace:
 
 #### Session Persistence
 
-**Ask:** Which backend — Redis, DynamoDB (AWS), or Cosmos DB (Azure)?
+**Ask:** Which backend — Redis, DynamoDB (AWS), Cosmos DB (Azure), or Firestore (GCP)?
 
 **For Redis:**
 
@@ -274,6 +275,28 @@ session:
 ```
 
 3. Set `AZURE_COSMOS_KEY` environment variable.
+
+**For Firestore (GCP):**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,gcp]>=0.4.0",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+session:
+  type: firestore
+  cache: 256
+  firestore:
+    collection_name: "ak_sessions"
+    project_id: "<your-gcp-project-id>"   # optional, inferred from ADC if omitted
+    ttl: 604800
+```
+
+3. Enable a TTL policy on the Firestore collection pointing to the `expiry_time` field for automatic document expiry.
 
 ---
 
