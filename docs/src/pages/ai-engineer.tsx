@@ -1153,8 +1153,7 @@ export default function AIEngineerPage() {
         </div>
       </section>
 
-      <section className={styles.exploreSection} aria-labelledby="explore-paths">
-        {/* Top border + gradient glow */}
+      {/* <section className={styles.exploreSection} aria-labelledby="explore-paths">
         <div className={styles.topGlow} />
 
         <div className="container exploreInner">
@@ -1207,9 +1206,10 @@ export default function AIEngineerPage() {
             </Link>
           </div>
         </div>
-      </section>
+      </section> */}
 
       <section className={styles.ctaSection}>
+        <div className={styles.topGlow} />
         <div className="container">
           <div className={styles.ctaContent}>
             <h2 className={styles.ctaTitle}>

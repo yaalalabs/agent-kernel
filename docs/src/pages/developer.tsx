@@ -578,8 +578,7 @@ export default function DeveloperPage() {
         </div>
       </section>
 
-      <section className={styles.exploreSection} aria-labelledby="explore-paths-dev">
-        {/* Top border + gradient glow */}
+      {/* <section className={styles.exploreSection} aria-labelledby="explore-paths-dev">
         <div className={styles.topGlow} />
 
         <div className="container exploreInner">
@@ -632,9 +631,10 @@ export default function DeveloperPage() {
             </Link>
           </div>
         </div>
-      </section>
+      </section> */}
 
       <section className={styles.ctaSection}>
+        <div className={styles.topGlow} />
         <div className="container">
           <div className={styles.ctaContent}>
             <h2 className={styles.ctaTitle}>

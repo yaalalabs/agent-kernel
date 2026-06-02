@@ -443,8 +443,7 @@ export default function BusinessLeaderPage() {
         </div>
       </section>
 
-      <section className={styles.exploreSection} aria-labelledby="explore-paths-bl">
-        {/* Top border + gradient glow */}
+      {/* <section className={styles.exploreSection} aria-labelledby="explore-paths-bl">
         <div className={styles.topGlow} />
 
         <div className="container exploreInner">
@@ -497,9 +496,10 @@ export default function BusinessLeaderPage() {
             </Link>
           </div>
         </div>
-      </section>
+      </section> */}
 
       <section className={styles.ctaSection}>
+        <div className={styles.topGlow} />
         <div className="container">
           <div className={styles.ctaContent}>
             <h2 className={styles.ctaTitle}>
