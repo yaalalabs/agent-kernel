@@ -906,12 +906,17 @@
 /* "Agents" colorful gradient word */
 .gradientWord {
   background: linear-gradient(90deg,
-      #a855f7 0%,
-      #3b82f6 40%,
-      #f59e0b 100%);
+      #38bdf8 0%,
+      #818cf8 28%,
+      #c026d3 50%,
+      #ef4444 68%,
+      #f97316 82%,
+      #fbbf24 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  display: inline-block;
+  padding-right: 0.08em;
 }
 
 .subtitle {
@@ -920,6 +925,7 @@
   line-height: 1.7;
   margin: 0;
   max-width: 34rem;
+  min-height: 5em;
 }
 
 .brDesktop {
@@ -1036,6 +1042,7 @@
 
   .subtitle {
     text-align: center;
+    min-height: 5em;
   }
 
   .brDesktop {
@@ -1102,6 +1109,7 @@
 
   .subtitle {
     text-align: center;
+    min-height: 8em;
   }
 
   .brDesktop {

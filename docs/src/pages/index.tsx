@@ -108,6 +108,16 @@ function Hero() {
   const videoRef = useRef(null);
   const scrollLabelRef = useRef(null);
 
+  const subtitleLines = [
+    "Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
+    "Agent Kernel reduces months of engineering work to minutes.",
+    "Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.",
+  ];
+
+  // Reading speed: ~200 words/minute → ~3ms per char is a safe hold duration floor
+  // Line 1: ~16 words → ~4.8s hold | Line 2: ~9 words → ~3s hold | Line 3: ~29 words → ~8.5s hold
+  const holdDurations = [4.8, 3.0, 8.5];
+
   useLayoutEffect(() => {
     const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
 
@@ -146,9 +156,64 @@ function Hero() {
       });
     }
 
+    // ── Cycling subtitle animation ───────────────────────────────
+    const subtitleEl = subtitleRef.current as HTMLElement | null;
+    let cycleTimeout: ReturnType<typeof setTimeout>;
+    let currentIndex = 0;
+    let cycleKilled = false;
+
+    const fadeDuration = 0.45; // seconds for fade in / fade out
+
+    const showLine = (index: number) => {
+      if (cycleKilled || !subtitleEl) return;
+
+      const text = subtitleLines[index];
+      const hold = holdDurations[index];
+
+      // Set new text while invisible
+      gsap.set(subtitleEl, { opacity: 0, y: 10 });
+      subtitleEl.textContent = text;
+
+      // Fade in + slide up
+      gsap.to(subtitleEl, {
+        opacity: 1,
+        y: 0,
+        duration: fadeDuration,
+        ease: "power2.out",
+        onComplete: () => {
+          if (cycleKilled) return;
+          // Hold for reading, then fade out and advance
+          cycleTimeout = setTimeout(() => {
+            if (cycleKilled) return;
+            gsap.to(subtitleEl, {
+              opacity: 0,
+              y: -8,
+              duration: fadeDuration,
+              ease: "power2.in",
+              onComplete: () => {
+                if (cycleKilled) return;
+                currentIndex = (index + 1) % subtitleLines.length;
+                showLine(currentIndex);
+              },
+            });
+          }, hold * 1000);
+        },
+      });
+    };
+
+    // Kick off the cycle once the entry animation has brought the subtitle into view.
+    // The entry tl finishes roughly 2.2s in; we wait a touch longer for comfort.
+    const startDelay = setTimeout(() => {
+      if (!cycleKilled) showLine(0);
+    }, 2400);
+
     return () => {
       tl.kill();
       if (pulse) pulse.kill();
+      cycleKilled = true;
+      clearTimeout(cycleTimeout);
+      clearTimeout(startDelay);
+      gsap.killTweensOf(subtitleEl);
     };
   }, []);
 
@@ -158,18 +223,17 @@ function Hero() {
         {/* ── LEFT ───────────────────────────────── */}
         <div ref={leftRef} className={styles.left}>
           <h1 ref={titleRef} className={styles.title}>
-            The Secure, Compliant
+            The Operating System
             <br />
-            Runtime for
+            for Scalable & Compliant
             <br />
             Enterprise AI{" "}
             <span className={styles.gradientWord}>Agents</span>
           </h1>
 
           <p ref={subtitleRef} className={styles.subtitle}>
-            Orchestrate agent workflows, automate compliance, and
-            <br className={styles.brDesktop} />
-            deploy anywhere with zero vendor lock-in.
+            Agent Kernel is the open source platform for building and deploying
+            enterprise AI agents seamlessly at scale.
           </p>
 
           <div ref={buttonsRef} className={styles.heroButtons}>
@@ -193,21 +257,6 @@ function Hero() {
               Agent Skills
             </button>
           </div>
-
-          <ul ref={bulletsRef} className={styles.bullets}>
-            <li>
-              <MdCheck className={styles.check} />
-              Install in minutes
-            </li>
-            <li>
-              <MdCheck className={styles.check} />
-              Zero vendor lock-in
-            </li>
-            <li>
-              <MdCheck className={styles.check} />
-              Enterprise-grade observability
-            </li>
-          </ul>
         </div>
 
         {/* ── RIGHT – particle video ───────────── */}
