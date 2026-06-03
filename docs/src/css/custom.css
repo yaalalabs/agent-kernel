@@ -808,6 +808,26 @@ code {
 }
 
 /* Blog page styling */
+@media (min-width: 997px) {
+  .blog-wrapper .main-wrapper > .container > .row {
+    flex-direction: row-reverse;
+    justify-content: space-between;
+  }
+  .blog-wrapper .main-wrapper > .container > .row > main:last-child {
+    flex: 0 0 calc(75% - 4rem);
+    max-width: calc(75% - 4rem);
+    margin-left: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .blog-wrapper .main-wrapper > .container > .row > main:last-child {
+    flex: 0 0 calc(75% - 6rem);
+    max-width: calc(75% - 6rem);
+    margin-left: 2rem;
+  }
+}
+
 .blog-wrapper .main-wrapper {
   background-color: var(--ak-bg);
 }
@@ -815,6 +835,27 @@ code {
 .blog-wrapper aside {
   border-radius: 0.5rem;
   padding: 1rem;
+}
+
+.blog-wrapper aside a {
+  color: #A1A4A5 !important;
+  transition: color 0.15s ease;
+}
+
+.blog-wrapper aside a:hover,
+.blog-wrapper aside a[aria-current="page"] {
+  color: var(--ak-blue-light) !important;
+  text-decoration: none;
+}
+
+.blog-wrapper aside [class*="sidebarItemTitle"] {
+  color: var(--ak-blue) !important;
+  font-weight: 700 !important;
+}
+
+.blog-wrapper aside h3,
+.blog-wrapper aside [class*="yearGroupHeading"] {
+  color: #A1A4A5 !important;
 }
 
 .blog-wrapper main {
@@ -847,10 +888,12 @@ article {
 
 .markdown h1 {
   font-size: 2.2rem;
+  line-height: 1.2 !important;
 }
 
 .markdown h2 {
   font-size: 1.6rem;
+  line-height: 1.25 !important;
   border-bottom: 1px solid var(--ak-border);
   padding-bottom: 0.5rem;
 }
@@ -872,23 +915,30 @@ article {
 
 .blog-list-page article,
 .blog-post-page article {
-  background: var(--ak-surface);
-  border: 1px solid var(--ak-border);
-  border-radius: 0.875rem;
-  padding: 2rem 2.25rem;
-  margin-bottom: 1.75rem;
-  transition: border-color 0.2s ease;
+  background: #020203;
+  border: 1.5px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 1rem;
+  padding: 2.25rem;
+  margin-bottom: 2rem;
+  transition: all 0.25s ease;
 }
 
 .blog-list-page article:hover {
-  border-color: var(--ak-border-accent);
+  border-color: rgba(0, 221, 255, 0.55) !important;
+  box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
 }
 
-/* Remove the heading border-bottom inside the framed blog article — looks heavy with the frame */
+/* Remove the heading border-bottom inside the framed blog article — looks heavy with the frame, and reduce sub-heading font sizes */
 .blog-list-page article .markdown h2,
 .blog-post-page article .markdown h2 {
   border-bottom: none;
   padding-bottom: 0;
+  font-size: 1.35rem !important;
+}
+
+.blog-list-page article .markdown h3,
+.blog-post-page article .markdown h3 {
+  font-size: 1.15rem !important;
 }
 
 @media (max-width: 768px) {
@@ -897,6 +947,362 @@ article {
     padding: 1.5rem 1.25rem;
     border-radius: 0.75rem;
   }
+}
+
+/* Tighten title line-height and font size on detail page to prevent large gaps when wrapped */
+.blog-post-page article header h1,
+.blog-post-page article .markdown h1 {
+  font-size: 28px !important;
+  line-height: 1.2 !important;
+}
+
+/* Title link color */
+.blog-list-page article h2 a {
+  color: var(--ak-blue) !important;
+  font-size: 28px !important;
+  font-weight: 700;
+  line-height: 1.15 !important;
+  transition: color 0.15s ease;
+  text-decoration: none;
+}
+
+.blog-list-page article h2 a:hover {
+  color: var(--ak-blue-light) !important;
+  text-decoration: none;
+}
+
+/* Post info/meta styling - Scoped to blog list cards only */
+.blog-list-page article header {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0 !important;
+  width: 100% !important;
+}
+
+/* Ensure title occupies 100% width on the first row and minimize bottom margin */
+.blog-list-page article header h2 {
+  width: 100% !important;
+  flex: 0 0 100% !important;
+  margin-top: 0 !important;
+  margin-bottom: 0.25rem !important;
+  line-height: 1.15 !important;
+  font-size: 28px !important;
+}
+
+/* Hide author avatar image, subtitle/role, and small subtitle wrapper */
+.blog-list-page article header img,
+.blog-list-page article header .avatar__photo,
+.blog-list-page article header .avatar__subtitle,
+.blog-list-page article header small,
+.blog-list-page article header > div:has(.avatar) img,
+.blog-list-page article header > div:has(.avatar) small {
+  display: none !important;
+}
+
+/* Re-order authors first (order 1) directly under header, reset all margins/paddings */
+.blog-list-page article header > div:has(.avatar) {
+  order: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 0 0.5rem 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+.blog-list-page article header > div:has(.avatar) > div {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Override Infima grid columns within the authors row */
+.blog-list-page article header > div:has(.avatar) .col {
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Date/time container is sibling to authors, set to order: 2, reset all margins/paddings */
+.blog-list-page article header > div:has(time) {
+  order: 2 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 0 0.5rem 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Force avatar components and all descendants to render as plain inline elements for baseline alignment */
+.blog-list-page article header .avatar,
+.blog-list-page article header .avatar__intro,
+.blog-list-page article header .avatar__name,
+.blog-list-page article header .avatar__name a,
+.blog-list-page article header .avatar__name span {
+  display: inline !important;
+  vertical-align: baseline !important;
+  line-height: inherit !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Separator dot and category between Authors and Info */
+.blog-list-page article header > div:has(.avatar)::after {
+  content: " · Features · " !important;
+  margin: 0 !important;
+  font-weight: 500 !important;
+  color: var(--ak-text-secondary) !important;
+  display: inline !important;
+  vertical-align: baseline !important;
+  white-space: pre !important;
+}
+
+.blog-list-page article header > div:has(.avatar),
+.blog-list-page article header > div:has(.avatar) *,
+.blog-list-page article header > div:has(time),
+.blog-list-page article header > div:has(time) * {
+  color: var(--ak-text-secondary) !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  display: inline !important;
+  vertical-align: baseline !important;
+  line-height: inherit !important;
+  word-spacing: 0.18rem !important;
+}
+
+/* Post info/meta styling - Scoped to blog inner/detail pages */
+.blog-post-page article header {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0 !important;
+  width: 100% !important;
+  margin-bottom: 1.5rem !important;
+}
+
+.blog-post-page article header h1 {
+  width: 100% !important;
+  flex: 0 0 100% !important;
+  margin-top: 0 !important;
+  margin-bottom: 0.25rem !important;
+  line-height: 1.2 !important;
+  font-size: 28px !important;
+  color: var(--ak-blue) !important;
+}
+
+/* Hide author avatar image, subtitle/role, and small subtitle wrapper */
+.blog-post-page article header img,
+.blog-post-page article header .avatar__photo,
+.blog-post-page article header .avatar__subtitle,
+.blog-post-page article header small,
+.blog-post-page article header > div:has(.avatar) img,
+.blog-post-page article header > div:has(.avatar) small {
+  display: none !important;
+}
+
+/* Reset row margins/paddings on authors div, and set order */
+.blog-post-page article header > div:has(.avatar) {
+  order: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 0 0.5rem 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+.blog-post-page article header > div:has(.avatar) > div {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Override Infima grid columns within the authors row */
+.blog-post-page article header > div:has(.avatar) .col {
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Date/time container is sibling to authors, set to order: 2, reset all margins/paddings */
+.blog-post-page article header > div:has(time) {
+  order: 2 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  margin: 0 0 0.5rem 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Force avatar components and all descendants to render as plain inline elements for baseline alignment */
+.blog-post-page article header .avatar,
+.blog-post-page article header .avatar__intro,
+.blog-post-page article header .avatar__name,
+.blog-post-page article header .avatar__name a,
+.blog-post-page article header .avatar__name span {
+  display: inline !important;
+  vertical-align: baseline !important;
+  line-height: inherit !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: unset !important;
+  max-width: unset !important;
+  width: auto !important;
+}
+
+/* Separator dot and category between Authors and Info */
+.blog-post-page article header > div:has(.avatar)::after {
+  content: " · Features · " !important;
+  margin: 0 !important;
+  font-weight: 500 !important;
+  color: var(--ak-text-secondary) !important;
+  display: inline !important;
+  vertical-align: baseline !important;
+  white-space: pre !important;
+}
+
+.blog-post-page article header > div:has(.avatar),
+.blog-post-page article header > div:has(.avatar) *,
+.blog-post-page article header > div:has(time),
+.blog-post-page article header > div:has(time) * {
+  color: var(--ak-text-secondary) !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+  display: inline !important;
+  vertical-align: baseline !important;
+  line-height: inherit !important;
+  word-spacing: 0.18rem !important;
+}
+
+/* Tag pills styling */
+.theme-blog-post-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  list-style: none;
+  padding: 0 !important;
+  margin: 1.5rem 0 !important;
+}
+
+.theme-blog-post-tags::before {
+  content: "Tags :";
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #ffffff;
+  margin-right: 0.75rem;
+}
+
+.theme-blog-post-tags li {
+  margin: 0.25rem 0.35rem 0.25rem 0;
+  list-style: none;
+}
+
+.theme-blog-post-tags a {
+  display: inline-block;
+  background: rgba(0, 221, 255, 0.03);
+  border: 1px solid rgba(0, 221, 255, 0.2);
+  color: var(--ak-blue-light) !important;
+  border-radius: 8px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.theme-blog-post-tags a:hover {
+  background: rgba(0, 221, 255, 0.1);
+  border-color: var(--ak-blue);
+  color: #ffffff !important;
+  text-decoration: none;
+}
+
+/* Read More button styling - Premium Glassmorphism & hover styles */
+.blog-list-page article footer a[aria-label*="Read more"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em !important;
+  padding: 0.6rem 1.6rem !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-decoration: none !important;
+  margin-top: 0.75rem !important;
+  margin-left: 0 !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.blog-list-page article footer a[aria-label*="Read more"] b {
+  font-weight: inherit !important;
+}
+
+.blog-list-page article footer a[aria-label*="Read more"]:hover {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4) !important;
+  text-decoration: none !important;
+}
+
+/* Stack tags and Read More button vertically on blog list cards */
+.blog-list-page article footer {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 0 !important;
+  margin-top: 1.5rem !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+
+.blog-list-page article footer > div {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: unset !important;
+  text-align: left !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Align tag container exactly with content left margin */
+.blog-list-page article .theme-blog-post-tags {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
 }
 
 /* Admonitions */
@@ -933,17 +1339,84 @@ article {
   color: var(--ak-blue);
 }
 
-/* Pagination */
+/* Pagination - styled like Read More glass pill buttons */
+.pagination-nav {
+  margin-top: 0.5rem !important;
+}
+
 .pagination-nav__link {
-  border: 1px solid var(--ak-border);
-  border-radius: 0.5rem;
-  background: var(--ak-surface-raised);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  position: relative !important;
+  display: inline-flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-decoration: none !important;
+  backdrop-filter: blur(12px) !important;
+  padding: 0.6rem 1.6rem !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.pagination-nav__link--prev {
+  align-items: flex-start !important;
+  justify-self: flex-start !important;
+}
+
+.pagination-nav__link--next {
+  align-items: flex-end !important;
+  text-align: right !important;
+  grid-column: 2 !important;
+  justify-self: flex-end !important;
 }
 
 .pagination-nav__link:hover {
-  border-color: var(--ak-border-accent);
-  background: var(--ak-surface-overlay);
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4) !important;
+  text-decoration: none !important;
+}
+
+.pagination-nav__sublabel {
+  color: var(--ak-text-secondary) !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  margin-bottom: 0.15rem !important;
+  transition: color 0.3s ease !important;
+}
+
+.pagination-nav__label {
+  color: #ffffff !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  transition: color 0.3s ease !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  width: 100% !important;
+}
+
+.pagination-nav__link:hover .pagination-nav__sublabel {
+  color: rgba(0, 0, 0, 0.5) !important;
+}
+
+.pagination-nav__link:hover .pagination-nav__label {
+  color: #000000 !important;
+}
+
+/* Scoped Blog-only Pagination Layout - Hide Sublabels */
+.blog-wrapper .pagination-nav__sublabel {
+  display: none !important;
+}
+
+.blog-wrapper .pagination-nav__label {
+  min-width: 0 !important;
 }
 
 /* =============================================================================
@@ -1005,3 +1478,78 @@ article {
   background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%235865F2' d='M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419-.0003 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9554 2.4189-2.1568 2.4189Z'/%3E%3C/svg%3E")
     no-repeat;
 }
+
+/* Blog Inner Page (Post Detail) Overrides
+   Hides the "Recent posts" sidebar and positions the TOC (sub-navigation) on the right. */
+@media (min-width: 997px) {
+  .blog-post-page .main-wrapper > .container > .row {
+    flex-direction: row !important;
+  }
+
+  .blog-post-page aside {
+    display: none !important;
+  }
+
+  .blog-post-page .main-wrapper > .container > .row > main {
+    flex: 0 0 calc(80% - 2rem) !important;
+    max-width: calc(80% - 2rem) !important;
+    margin-left: 0 !important;
+    margin-right: 2rem !important;
+  }
+
+  .blog-post-page .main-wrapper > .container > .row > div:last-child {
+    flex: 0 0 20% !important;
+    max-width: 20% !important;
+    background: #020203;
+    border: 1.5px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    height: fit-content;
+    transition: all 0.25s ease;
+  }
+
+  .blog-post-page .main-wrapper > .container > .row > div:last-child:hover {
+    border-color: rgba(0, 221, 255, 0.55) !important;
+    box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .blog-post-page .main-wrapper > .container > .row > main {
+    flex: 0 0 calc(80% - 3rem) !important;
+    max-width: calc(80% - 3rem) !important;
+    margin-right: 3rem !important;
+  }
+}
+
+/* "Edit this page" premium button styling */
+.theme-edit-this-page {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em !important;
+  padding: 0.6rem 1.6rem !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-decoration: none !important;
+  backdrop-filter: blur(12px) !important;
+  width: fit-content !important;
+  gap: 0.5rem !important;
+  margin-top: 1.5rem !important;
+}
+
+.theme-edit-this-page:hover {
+  background: #ffffff !important;
+  border-color: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4) !important;
+  text-decoration: none !important;
+}
+
+
