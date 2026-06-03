@@ -40,9 +40,9 @@ weekly:
     # - type: aws-containerized
     #   path: examples/aws-containerized/adk
     #   deploy_dir: deploy
-    # - type: aws-containerized
-    #   path: examples/aws-containerized/openai-dynamodb
-    #   deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-dynamodb
+      deploy_dir: deploy
     # - type: aws-containerized
     #   path: examples/aws-containerized/crewai
     #   deploy_dir: deploy
@@ -63,9 +63,9 @@ weekly:
     # - type: aws-serverless
     #   path: examples/aws-serverless/openai-auth
     #   deploy_dir: deploy
-    - type: aws-serverless
-      path: examples/aws-serverless/scalable-openai
-      deploy_dir: deploy
+    # - type: aws-serverless
+    #   path: examples/aws-serverless/scalable-openai
+    #   deploy_dir: deploy
 
     # Memory options 
     # - type: aws-serverless
