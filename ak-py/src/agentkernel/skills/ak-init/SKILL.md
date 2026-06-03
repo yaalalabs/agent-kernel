@@ -43,6 +43,8 @@ Ask the user the following questions (adapt based on context):
    - **AWS ECS/Fargate** (containerized on AWS)
    - **Azure Functions** (serverless on Azure)
    - **Azure Container Apps** (containerized on Azure)
+   - **GCP Cloud Run Serverless** (scale-to-zero on GCP)
+   - **GCP Cloud Run Containerized** (always-on on GCP)
    - **Docker** (generic container, runs anywhere)
 
 6. **Session persistence**: How should conversation state be stored?
@@ -50,6 +52,7 @@ Ask the user the following questions (adapt based on context):
    - **Redis** (recommended for production — works with all deployment targets)
    - **DynamoDB** (AWS-native, recommended for AWS serverless)
    - **Cosmos DB** (Azure-native, recommended for Azure serverless)
+   - **Firestore** (GCP-native, recommended for GCP Cloud Run)
 
 ### Step 2: Generate the Project
 
