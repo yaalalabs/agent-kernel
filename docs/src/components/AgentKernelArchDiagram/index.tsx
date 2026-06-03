@@ -169,13 +169,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
                 aria-hidden="true"
               >
                 <g>
-                  <defs>
-                    <rect id="akSVGRect" width="581.263" height="600" />
-                  </defs>
-                  <clipPath id="akClip">
-                    <use xlinkHref="#akSVGRect" style={{ overflow: 'visible' }} />
-                  </clipPath>
-                  <g style={{ clipPath: 'url(#akClip)' }}>
+                  <g>
                     <path fill="var(--ak-accent)" d="M238.569,294.85v34.937l1.906,0.938c21.313,10.656,34.532,32.093,34.532,55.905v13.375
                         l-73.186-36.593c-31.75-15.875-51.812-48.343-51.812-83.843v-129.56l73.186,36.593c31.75,15.875,51.812,48.343,51.812,83.843
                         v46.312c-6.125-5.469-13-10.187-20.562-13.968L238.569,294.85z" />

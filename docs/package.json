@@ -19,7 +19,6 @@
     "@docusaurus/theme-mermaid": "^3.9.2",
     "@easyops-cn/docusaurus-search-local": "^0.52.1",
     "@mdx-js/react": "^3.0.0",
-    "@types/three": "^0.184.0",
     "clsx": "^2.0.0",
     "gsap": "^3.12.2",
     "prism-react-renderer": "^2.3.0",
@@ -33,6 +32,7 @@
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.6.0",
     "@docusaurus/types": "^3.6.0",
+    "@types/three": "^0.184.0",
     "baseline-browser-mapping": "^2.9.9"
   },
   "browserslist": {

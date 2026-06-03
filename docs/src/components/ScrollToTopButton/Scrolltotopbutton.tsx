@@ -53,6 +53,13 @@ const ScrollToTopButton: React.FC = () => {
     }
   }, [visible]);
 
+  useEffect(() => {
+    if (visible) return;
+    if (buttonRef.current && document.activeElement === buttonRef.current) {
+      buttonRef.current.blur();
+    }
+  }, [visible]);
+
   /* ── Hover ── */
   const handleMouseEnter = () => {
     if (!buttonRef.current || !svgRef.current) return;
@@ -98,13 +105,21 @@ const ScrollToTopButton: React.FC = () => {
   if (!visible && containerRef.current === null) return null;
 
   return (
-    <div ref={containerRef} className={styles.container} style={{ opacity: 0 }}>
+    <div
+      ref={containerRef}
+      className={`${styles.container} ${!visible ? styles.containerHidden : ''}`}
+      style={{ opacity: 0 }}
+      aria-hidden={!visible}
+    >
       <button
         ref={buttonRef}
         className={styles.button}
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        disabled={!visible}
+        tabIndex={visible ? 0 : -1}
+        aria-hidden={!visible}
         aria-label="Scroll to top"
         title="Scroll to top"
       >

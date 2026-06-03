@@ -64,8 +64,8 @@ function FlowArrow({
   const uid = useId().replace(/:/g, '');
   const pathId = `${uid}-${variant}`;
   const isCyan = variant === 'cyan';
-  const stroke = TEAL_LINE;
-  const dot = TEAL;
+  const stroke = isCyan ? TEAL_LINE : PURPLE_LINE;
+  const dot = isCyan ? TEAL : PURPLE;
 
   return (
     <div
