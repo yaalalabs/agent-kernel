@@ -1254,6 +1254,10 @@
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
+.problemImpactPanel .problemCompareSide {
+  text-align: center;
+}
+
 .problemImpactPanel:hover {
   border-color: rgba(0, 229, 255, 0.3);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 229, 255, 0.04);
@@ -1336,6 +1340,7 @@
   border-radius: 1rem;
   border: 1.5px solid transparent;
   min-height: 6.5rem;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
 }
 
 .problemImpactStatNeg {
@@ -1343,9 +1348,23 @@
   background: rgba(239, 68, 68, 0.04);
 }
 
+.problemImpactStatNeg:hover {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: radial-gradient(circle at center, rgba(239, 68, 68, 0.12) 0%, rgba(239, 68, 68, 0.04) 100%);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.1);
+  transform: translateY(-2px);
+}
+
 .problemImpactStatPos {
   border-color: rgba(0, 229, 255, 0.4);
   background: rgba(0, 229, 255, 0.03);
+}
+
+.problemImpactStatPos:hover {
+  border-color: rgba(0, 229, 255, 0.65);
+  background: radial-gradient(circle at center, rgba(0, 229, 255, 0.12) 0%, rgba(0, 229, 255, 0.03) 100%);
+  box-shadow: 0 8px 24px rgba(0, 229, 255, 0.1);
+  transform: translateY(-2px);
 }
 
 .problemImpactStatLabel {
