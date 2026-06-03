@@ -5827,7 +5827,7 @@
 
 /* ─── Features Page Gradient ─────────────────────────────────────────────── */
 .featuresPageSection {
-  background: radial-gradient(ellipse 60% 55% at 50% 50%, #03242e 0%, #010002 70%);
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, #0d3d4d81 0%, #010002 70%);
   background-size: 250% 250%;
   animation: gradientShiftDev 16s ease-in-out infinite;
 }

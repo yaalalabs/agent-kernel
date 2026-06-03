@@ -185,10 +185,7 @@ function WhyAgentKernel() {
   }, []);
 
   return (
-    <section className={styles.whyHero}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-      
+    <section className={styles.whyHero}>      
       <div className="container">
         <div className={styles.whyHeroBlock}>
           <p ref={labelRef} className={styles.sectionLabel}>
@@ -586,7 +583,7 @@ function ProblemTable() {
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: section,
-        start: "top 60%",
+        start: "top 88%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1288,7 +1285,7 @@ function FrameworkSupport() {
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: section,
-        start: "top 60%",
+        start: "top 88%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1691,7 +1688,7 @@ function MessagingSection() {
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: sceneRef.current,
-          start: "top 78%",
+          start: "top 88%",
           toggleActions: "play none none reverse",
         },
       });
@@ -1849,7 +1846,7 @@ function ProtocolSupport() {
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: section,
-        start: 'top 70%',
+        start: 'top 88%',
         toggleActions: 'play none none reverse',
       },
     });
@@ -1923,7 +1920,10 @@ function CTASection({
       id={FEATURE_ANCHORS.cta}
       className={`${indexStyles.ctaSection} ${styles.pageAnchor}`}
     >
-      <div className="container">
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+       
+      <div className="container"> 
         <div className={indexStyles.ctaContent}>
           <h2 className={indexStyles.ctaTitle}>
             Ready to Ship Your
@@ -2002,7 +2002,7 @@ export default function Features() {
       title="Features"
       description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations."
     >
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
+      {/* <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
         <HeroAnimation
           badge="Features"
           title="Everything to Build AI Agents"
@@ -2012,9 +2012,9 @@ export default function Features() {
           secondaryCtaLabel="Explore Use Cases"
           secondaryCtaTo="/use-cases"
         />
-      </div>
+      </div> */}
 
-      <div style={{ height: '100vh' }} />
+      {/* <div style={{ height: '100vh' }} /> */}
 
       <main className={indexStyles.featuresPageSection} style={{ position: 'relative', zIndex: 10 }}>
         <WhyAgentKernel />
@@ -2027,8 +2027,9 @@ export default function Features() {
         <TestingSection />
         <MessagingSection />
         <ProtocolSupport />
-        <CTASection sectionRef={ctaRef} />
       </main>
+
+      <CTASection sectionRef={ctaRef} />
     </Layout>
   );
 }

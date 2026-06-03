@@ -472,8 +472,6 @@
 .pageMapSection {
   display: none;
   padding: 5rem 0 4.5rem;
-  backdrop-filter: blur(4px);
-  background-color: #010002;
 }
 
 /* Show on desktop only */
@@ -606,7 +604,7 @@
   text-align: left;
   cursor: pointer;
   font-family: var(--ifm-font-family-base);
-  background: rgba(1, 0, 2, 0.6);
+  background: rgba(1, 0, 2, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 1.5rem;
   padding: 1.75rem 1.5rem;
@@ -1073,8 +1071,6 @@
   border-radius: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: transparent;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   padding: 2.25rem 2rem 2.25rem;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
@@ -1255,8 +1251,6 @@
   border-radius: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(1, 0, 2, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   padding: 2.25rem 2rem 2.25rem;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
@@ -1487,7 +1481,7 @@
   padding: 2rem 2.25rem 2rem;
   border-radius: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(1, 0, 2, 0.6);
+  background: rgba(1, 0, 2, 0.3);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.25s ease, box-shadow 0.25s ease;
@@ -1665,7 +1659,7 @@
   flex: 1 1 auto;
   box-sizing: border-box;
   min-height: 100%;
-  background: rgba(1, 0, 2, 0.6);
+  background: rgba(1, 0, 2, 0.3);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1684,7 +1678,7 @@
   box-sizing: border-box;
   border-radius: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(1, 0, 2, 0.6);
+  background: rgba(1, 0, 2, 0.3);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   text-decoration: none;
@@ -1960,7 +1954,7 @@
   padding: 2rem 2.25rem 2rem;
   border-radius: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(1, 0, 2, 0.6);
+  background: rgba(1, 0, 2, 0.3);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   text-decoration: none;
@@ -2091,8 +2085,8 @@
 
 .testingModesPanel {
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0.5rem;
-  background: #010002;
+  border-radius: 1.5rem;
+  background: rgba(1, 0, 2, 0.3);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   padding: 1.35rem 1.25rem 1.25rem;
@@ -2135,7 +2129,7 @@
   padding: 1.15rem 1rem;
   border-radius: 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #010002;
+  background: transparent;
   text-decoration: none;
   transition:
     border-color 280ms ease,
@@ -2211,7 +2205,7 @@
   padding: 2rem 2.25rem 2rem;
   border-radius: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(1, 0, 2, 0.6);
+  background: rgba(1, 0, 2, 0.3);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   text-decoration: none;
@@ -2363,7 +2357,7 @@
   isolation: isolate;
 
   /* Solid premium dark background */
-  background: #010002;
+  background: rgba(1, 0, 2, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.2);
 
   /* Smooth transitions */
@@ -2434,7 +2428,7 @@
   font-size: 1.35rem;
   line-height: 0;
   color: var(--msg-brand, #00d4ff);
-  background: #010002;
+  background: transparent;
 
   /* Glowing border */
   border: 1px solid rgba(0, 221, 255, 0.4);
