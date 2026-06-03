@@ -38,56 +38,56 @@ const FLOW_STEPS: FlowStep[] = [
   {
     id: 'goal',
     label: 'Goal',
-    desc: 'Understand the goal',
+    desc: 'Define objectives',
     Icon: MdGpsFixed,
     variant: styles.node_goal,
   },
   {
     id: 'plan',
     label: 'Plan',
-    desc: 'Plan steps',
+    desc: 'Create strategy',
     Icon: MdAssignment,
     variant: styles.node_plan,
   },
   {
     id: 'question',
-    label: 'Question',
-    desc: "Clarify what's needed",
+    label: 'Question/Verify',
+    desc: 'Validate approach',
     Icon: MdHelpOutline,
     variant: styles.node_question,
   },
   {
     id: 'act',
     label: 'Act',
-    desc: 'Take actions',
+    desc: 'Execute actions',
     Icon: MdBolt,
     variant: styles.node_act,
   },
   {
     id: 'feedback',
     label: 'Get Feedback',
-    desc: 'Capture signals and outcomes',
+    desc: 'User input & results',
     Icon: MdFeedback,
     variant: styles.node_feedback,
   },
   {
     id: 'observe',
     label: 'Observe',
-    desc: 'Observe the results',
+    desc: 'Monitor outcomes',
     Icon: MdVisibility,
     variant: styles.node_observe,
   },
   {
     id: 'improve',
     label: 'Improve',
-    desc: 'Gets smarter',
+    desc: 'Optimize & learn',
     Icon: MdTrendingUp,
     variant: styles.node_improve,
   },
   {
     id: 'repeat',
     label: 'Repeat',
-    desc: 'Always on, always learning',
+    desc: 'Continuous cycle',
     Icon: MdRefresh,
     variant: styles.node_repeat,
   },
@@ -133,7 +133,9 @@ function FlowStepCard({
       data-flow-node={step.id}
       className={`${styles.flowNode} ${step.variant}`}
     >
-      <Icon className={styles.flowIcon} aria-hidden />
+      <div className={styles.flowIconWrap}>
+        <Icon className={styles.flowIcon} aria-hidden />
+      </div>
       <h4 className={styles.flowLabel}>{step.label}</h4>
       <p className={styles.flowDesc}>{step.desc}</p>
     </div>

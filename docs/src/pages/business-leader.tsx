@@ -7,6 +7,7 @@ import {
   MdRocketLaunch,
   MdMessage,
   MdCloud,
+  MdCheck,
 } from "react-icons/md";
 import styles from "./index.module.css";
 import AgentExecutionFlowDiagram from "../components/AgentExecutionFlowDiagram";
@@ -14,7 +15,6 @@ import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
 import BusinessLeaderScenarios from "../components/BusinessLeaderScenarios";
 import { StepTimeline } from "../components/StepTimeline";
 import HeroAnimation from "../components/HeroAnimation";
-import heroStyles from "../components/HeroAnimation/styles.module.css";
 import { FaGithub } from "react-icons/fa";
 
 export default function BusinessLeaderPage() {
@@ -273,35 +273,53 @@ export default function BusinessLeaderPage() {
 
               <div className={styles.contentGrid}>
                 <div className={styles.contentCard}>
-                  <h3 className={styles.contentCardLabel}>SaaS / Product</h3>
+                  <h3 className={styles.contentCardLabel}>SaaS | Product</h3>
                   <p className={styles.contentCardTitle}>
                     Do you have an existing product?
                   </p>
                   <ul className={styles.bulletList}>
-                    <li>Users still do too much manually inside your app</li>
                     <li>
-                      Support tickets pile up for questions your product could
-                      answer
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>Users still do too much manually inside your app</span>
                     </li>
                     <li>
-                      Repetitive workflows require human involvement every time
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>
+                        Support tickets pile up for questions your product could
+                        answer
+                      </span>
+                    </li>
+                    <li>
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>
+                        Repetitive workflows require human involvement every time
+                      </span>
                     </li>
                   </ul>
                 </div>
                 <div className={styles.contentCard}>
                   <h3 className={styles.contentCardLabel}>
-                    Enterprise / Large Org
+                    Enterprise | Large Org
                   </h3>
                   <p className={styles.contentCardTitle}>
                     Do you run complex operations?
                   </p>
                   <ul className={styles.bulletList}>
                     <li>
-                      Thousands of customer queries handled by an overstretched
-                      team
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>
+                        Thousands of customer queries handled by an overstretched
+                        team
+                      </span>
                     </li>
-                    <li>Knowledge locked across systems and documents</li>
-                    <li>Cross-team hand-offs are slow and error-prone</li>
+                    <li>
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>Knowledge locked across systems and documents</span>
+                    </li>
+                    <li>
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>Cross-team hand-offs are slow and error-prone</span>
+                    </li>
                   </ul>
                 </div>
                 <div className={styles.contentCard}>
@@ -309,21 +327,35 @@ export default function BusinessLeaderPage() {
                     Building Something New
                   </h3>
                   <p className={styles.contentCardTitle}>
-                    Do you have a product idea?
+                    <span>Do you have a</span>
+                    {' '}<br />
+                    <span>product idea?</span>
                   </p>
                   <ul className={styles.bulletList}>
                     <li>
-                      You see an opportunity for an AI-powered service in your
-                      industry
-                    </li>
-                    <li>You're not sure which AI technology to commit to</li>
-                    <li>
-                      Building from scratch feels like months before anything
-                      reaches users
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>
+                        You see an opportunity for an AI-powered service in your
+                        industry
+                      </span>
                     </li>
                     <li>
-                      You want to build a prototype / proof-of-concept quickly
-                      without having to invest too much on it
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>You're not sure which AI technology to commit to</span>
+                    </li>
+                    <li>
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>
+                        Building from scratch feels like months before anything
+                        reaches users
+                      </span>
+                    </li>
+                    <li>
+                      <MdCheck className={styles.bulletCheck} />
+                      <span>
+                        You want to build a prototype / proof-of-concept quickly
+                        without having to invest too much on it
+                      </span>
                     </li>
                   </ul>
                 </div>
@@ -335,7 +367,7 @@ export default function BusinessLeaderPage() {
               <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
               <h2 className={styles.contentTitle}>
                 <span>An AI agent doesn't just answer,</span>
-                  {' '}<br/>
+                {' '}<br />
                 <span>it gets things done.</span>
               </h2>
 
@@ -347,7 +379,7 @@ export default function BusinessLeaderPage() {
               <p className={styles.stepLabel}>Step 03 / Agent Kernel</p>
               <h2 className={styles.contentTitle}>
                 <span>Agent Kernel is the engine that powers it at scale to run</span>
-                  {' '}
+                {' '}
                 <span>compliant AI agents</span>
               </h2>
 
@@ -373,7 +405,7 @@ export default function BusinessLeaderPage() {
               {/* 3 value props */}
               <div className={styles.blValueGrid}>
                 <div className={styles.blValueCard}>
-                  <div className={styles.blValueIcon}>
+                  <div className={styles.blValueIcon} aria-hidden="true">
                     <MdRocketLaunch />
                   </div>
                   <h4 className={styles.blValueTitle}>Days, not months</h4>
@@ -383,7 +415,7 @@ export default function BusinessLeaderPage() {
                   </p>
                 </div>
                 <div className={styles.blValueCard}>
-                  <div className={styles.blValueIcon}>
+                  <div className={styles.blValueIcon} aria-hidden="true">
                     <MdMessage />
                   </div>
                   <h4 className={styles.blValueTitle}>Works where you are</h4>
@@ -394,7 +426,7 @@ export default function BusinessLeaderPage() {
                   </p>
                 </div>
                 <div className={styles.blValueCard}>
-                  <div className={styles.blValueIcon}>
+                  <div className={styles.blValueIcon} aria-hidden="true">
                     <MdCloud />
                   </div>
                   <h4 className={styles.blValueTitle}>Runs on any cloud</h4>

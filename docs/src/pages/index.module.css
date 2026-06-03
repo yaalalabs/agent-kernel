@@ -1620,8 +1620,10 @@
 /* ─── Business Leader Step 03 — Highlight Card ─────────────────────────────── */
 
 .blHighlightCard {
+  position: relative;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 0.5rem;
+  border-radius: 1.5rem;
   padding: 2rem 2.25rem;
   margin-bottom: 2rem;
   backdrop-filter: blur(4px);
@@ -1629,10 +1631,42 @@
   text-align: center;
 }
 
+.blHighlightCard::before,
+.blValueCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 30%,
+      rgba(142, 93, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.15) 70%,
+      transparent 100%);
+  z-index: 2;
+}
+
+.blHighlightCard::after,
+.blValueCard::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 35px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(142, 93, 255, 0.04) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .blHighlightEyebrow {
-  font-size: 0.75rem;
+  font-size: 1rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
+  color: #A1FCEA;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin: 0 auto 0.75rem auto;
@@ -1667,9 +1701,11 @@
 }
 
 .blValueCard {
+  position: relative;
+  overflow: hidden;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
+  border-radius: 1.5rem;
   padding: 1.75rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -1686,9 +1722,35 @@
 }
 
 .blValueIcon {
-  font-size: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid rgba(142, 93, 255, 0.6);
+  background: rgba(142, 93, 255, 0.03);
   color: #8E5DFF;
-  opacity: 0.8;
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  position: relative;
+  box-shadow: 0 0 12px rgba(142, 93, 255, 0.15), inset 0 0 6px rgba(142, 93, 255, 0.12);
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+  margin-bottom: 0.5rem;
+}
+
+.blValueIcon::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(142, 93, 255, 0.15);
+  border-radius: 0.8rem;
+  pointer-events: none;
+}
+
+.blValueCard:hover .blValueIcon {
+  border-color: rgba(142, 93, 255, 0.85);
+  background: rgba(142, 93, 255, 0.08);
 }
 
 .blValueTitle {
@@ -3880,36 +3942,76 @@
 .contentGrid {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 2rem;
+  gap: 1.5rem;
   width: 100%;
 }
 
+@media (min-width: 992px) {
+  .contentGrid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+}
+
 .contentCard {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
+  border: none;
+  border-radius: 2rem;
   padding: 2rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  transition: border-color 1s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
-  background: transparent;
+  background: #0500094f;
+  z-index: 0;
+  transition: transform 0.3s ease;
+}
+
+/* Gradient border — top highlight fading to transparent bottom */
+.contentCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 2rem;
+  padding: 1px;
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.25) 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      rgba(255, 255, 255, 0.037) 100%);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+  transition: background 0.4s ease;
+}
+
+.contentCard:hover::after {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0.12) 50%,
+      transparent 100%);
 }
 
 .contentCard::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 60% 80%,
-      rgba(120, 40, 160, 0.45) 0%,
-      rgba(180, 40, 100, 0.2) 40%,
-      #010002 70%);
+  background: linear-gradient(to top,
+      #512847 0%,
+      rgba(81, 40, 71, 0.6) 25%,
+      rgba(81, 40, 71, 0.2) 60%,
+      transparent 90%);
   opacity: 0;
   z-index: 0;
-  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   pointer-events: none;
 }
 
@@ -3918,7 +4020,7 @@
 }
 
 .contentCard:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
 }
 
 .contentCardLabel,
@@ -3929,16 +4031,16 @@
 }
 
 .contentCardLabel {
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #A1FCEA;
   margin: 0 0 0.5rem 0;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
 .contentCardTitle {
-  font-size: 1.75rem;
+  font-size: 1.6rem;
   font-weight: 700;
   color: #ffffff;
   margin: 0 0 1.5rem 0;
@@ -3947,11 +4049,14 @@
 
 .bulletList {
   list-style: none;
-  padding: 0;
+  padding: 1.25rem 1.5rem;
   margin: 0;
   display: flex;
   flex-direction: column;
   gap: 0.875rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
 }
 
 .bulletList li {
@@ -3963,13 +4068,13 @@
   gap: 0.75rem;
 }
 
-.bulletList li::before {
-  content: "✓";
+.bulletCheck {
   color: #e879a0;
+  font-size: 1.1rem;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   margin-top: 0.1rem;
-  font-weight: 700;
-  font-size: 0.85rem;
 }
 
 /* ─── Developer Analogy Styles ────────────────────────────────────────────── */
