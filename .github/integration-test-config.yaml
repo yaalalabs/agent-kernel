@@ -68,40 +68,40 @@ weekly:
       deploy_dir: deploy
 
     # # Memory options 
-    # - type: aws-serverless
-    #   path: examples/memory/redis
-    # - type: aws-serverless
-    #   path: examples/memory/dynamodb
-    # - type: azure-serverless
-    #   path: examples/memory/cosmos
-    #   deploy_dir: deploy
+    - type: aws-serverless
+      path: examples/memory/redis
+    - type: aws-serverless
+      path: examples/memory/dynamodb
+    - type: azure-serverless
+      path: examples/memory/cosmos
+      deploy_dir: deploy
 
-    # # Azure Serverless
-    # - type: azure-serverless
-    #   path: examples/azure-serverless/openai
-    #   deploy_dir: deploy
+    # Azure Serverless
+    - type: azure-serverless
+      path: examples/azure-serverless/openai
+      deploy_dir: deploy
     
-    # # Azure Containerized
-    # - type: azure-containerized
-    #   path: examples/azure-containerized/openai-cosmos
-    #   deploy_dir: deploy
+    # Azure Containerized
+    - type: azure-containerized
+      path: examples/azure-containerized/openai-cosmos
+      deploy_dir: deploy
 
-    # # GCP Serverless
-    # - type: gcp-serverless
-    #   path: examples/gcp-serverless/openai-firestore
-    #   deploy_dir: deploy
-    # - type: gcp-serverless
-    #   path: examples/gcp-serverless/openai
-    #   deploy_dir: deploy
-    # - type: gcp-serverless
-    #   path: examples/gcp-serverless/openai-auth
-    #   deploy_dir: deploy
+    # GCP Serverless
+    - type: gcp-serverless
+      path: examples/gcp-serverless/openai-firestore
+      deploy_dir: deploy
+    - type: gcp-serverless
+      path: examples/gcp-serverless/openai
+      deploy_dir: deploy
+    - type: gcp-serverless
+      path: examples/gcp-serverless/openai-auth
+      deploy_dir: deploy
     
-    # # # GCP Containerized
-    # - type: gcp-containerized
-    #   path: examples/gcp-containerized/openai
-    #   deploy_dir: deploy
-    # - type: gcp-containerized
-    #   path: examples/gcp-containerized/openai-auth
-    #   deploy_dir: deploy
+    # # GCP Containerized
+    - type: gcp-containerized
+      path: examples/gcp-containerized/openai
+      deploy_dir: deploy
+    - type: gcp-containerized
+      path: examples/gcp-containerized/openai-auth
+      deploy_dir: deploy
     
