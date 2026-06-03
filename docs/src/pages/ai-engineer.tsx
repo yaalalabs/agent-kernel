@@ -650,17 +650,7 @@ export default function AIEngineerPage() {
             </h2>
             <div className={styles.aiDescription}>
               <p className={styles.devIntro}>
-                Agent Kernel is a unified, capable runtime for AI agents.
-                Its pluggable architecture lets you attach capabilities to
-                your agents effortlessly. A comprehensive list of pre-built
-                connectors smooths the agent-building process, enabling a
-                capability is a matter of setting configuration. All out of
-                the box.
-              </p>
-              <p className={styles.devIntro}>
-                Agent Kernel takes care of how agents run, scale from single
-                execution to thousands of agent invocations in parallel, and
-                interact with the real world.
+                Agent Kernel is a unified, capable runtime for the AI agents. Its pluggable architecture allows you to attach capabilities to your effortlessly.
               </p>
             </div>
           </div>

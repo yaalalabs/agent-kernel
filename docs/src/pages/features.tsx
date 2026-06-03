@@ -299,10 +299,10 @@ function FeaturesPageMap({
       role="region"
       aria-labelledby="features-page-map-heading"
     >
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
       <div className="container">
+        {/* Top border + gradient glow */}
+        <div className={styles.topGlow} />
+
         <div className={styles.sectionHeader}>
           <div className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
@@ -384,11 +384,15 @@ function FeaturesPageMap({
           {/* ── Hub ── */}
           <div
             className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ""}`}
+            style={{ backgroundColor: "#010002" }}
           >
-            <img
-              src="/img/branding/agent-kernel-icon-color.svg"
-              alt="Agent Kernel"
+            <video
+              src="/video/hero.mp4"
               className={styles.pageMapHubIcon}
+              autoPlay
+              loop
+              muted
+              playsInline
             />
           </div>
 
@@ -522,12 +526,6 @@ function ProblemTable() {
     },
   ];
 
-  const impactRow = {
-    problem: "Time to production",
-    without: "Months",
-    with: "Days to weeks",
-  };
-
   const [active, setActive] = useState(0);
   const activeRow = rows[active];
 
@@ -563,10 +561,9 @@ function ProblemTable() {
       section.querySelectorAll(`.${styles.problemTopicBtn}`),
     );
     const comparePanel = section.querySelector(`.${styles.problemComparePanelOuter}`);
-    const impactPanel = section.querySelector(`.${styles.problemImpactPanel}`);
 
     if (reducedMotion) {
-      gsap.set([header1, header2, ...topicButtons, comparePanel, impactPanel], {
+      gsap.set([header1, header2, ...topicButtons, comparePanel], {
         opacity: 1,
         y: 0,
       });
@@ -581,15 +578,11 @@ function ProblemTable() {
       opacity: 0,
       y: 16,
     });
-    gsap.set([header2, impactPanel], {
-      opacity: 0,
-      y: 24,
-    });
 
     const tl1 = gsap.timeline({
       scrollTrigger: {
         trigger: header1,
-        start: "top 95%",
+        start: "top 72%",
         toggleActions: "play none none reverse",
       },
     });
@@ -622,36 +615,9 @@ function ProblemTable() {
         "-=0.15",
       );
 
-    const tl2 = gsap.timeline({
-      scrollTrigger: {
-        trigger: header2,
-        start: "top 95%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    tl2.to(header2, {
-      opacity: 1,
-      y: 0,
-      duration: 0.6,
-      ease: "power2.out",
-    })
-      .to(
-        impactPanel,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.65,
-          ease: "power2.out",
-        },
-        "-=0.35",
-      );
-
     return () => {
       tl1.scrollTrigger?.kill();
       tl1.kill();
-      tl2.scrollTrigger?.kill();
-      tl2.kill();
     };
   }, []);
 
@@ -785,58 +751,6 @@ function ProblemTable() {
               </div>
             </div>
           </div>
-          <div className={styles.sectionHeader} style={{ marginTop: "5rem" }}>
-            <h2 className={styles.sectionTitle}>Timeline & Development Impact</h2>
-            <p className={styles.sectionSubtitle}>The effect on your timeline when Agent Kernel owns the platform work.</p>
-          </div>
-          <aside
-            className={styles.problemImpactPanel}
-            style={{ marginTop: "-2rem" }}
-            aria-label={`${impactRow.problem}: ${impactRow.without} versus ${impactRow.with}`}
-          >
-            <div className={styles.problemImpactGrid}>
-              <article
-                className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}
-              >
-                <p className={styles.problemCompareSideLabel}>
-                  Without Agent Kernel
-                </p>
-                <p className={styles.problemCompareSideSub}>
-                  What you take on today
-                </p>
-                <div
-                  className={`${styles.problemImpactStat} ${styles.problemImpactStatNeg}`}
-                >
-                  <span className={styles.problemImpactStatLabel}>
-                    Without Agent Kernel
-                  </span>
-                  <p className={styles.problemImpactStatValue}>
-                    {impactRow.without}
-                  </p>
-                </div>
-              </article>
-              <article
-                className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}
-              >
-                <p className={styles.problemCompareSideLabel}>
-                  With Agent Kernel
-                </p>
-                <p className={styles.problemCompareSideSub}>
-                  What the platform covers
-                </p>
-                <div
-                  className={`${styles.problemImpactStat} ${styles.problemImpactStatPos}`}
-                >
-                  <span className={styles.problemImpactStatLabel}>
-                    With Agent Kernel
-                  </span>
-                  <p className={styles.problemImpactStatValue}>
-                    {impactRow.with}
-                  </p>
-                </div>
-              </article>
-            </div>
-          </aside>
         </div>
       </div>
     </section>
@@ -1005,7 +919,7 @@ function CoreFeatures() {
       ease: "power2.out",
       scrollTrigger: {
         trigger: header,
-        start: "top 82%",
+        start: "top 70%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1045,7 +959,7 @@ function CoreFeatures() {
         ease: "back.out(1.5)",
         scrollTrigger: {
           trigger: rowCards[0],
-          start: "top 88%",
+          start: "top 75%",
           toggleActions: "play none none reverse",
         },
       });
@@ -1244,7 +1158,9 @@ function FrameworkSupport() {
       <div className={styles.frameworkFeaturedContent}>
         <div className={styles.frameworkFeaturedMain}>
           <div className={styles.frameworkFeaturedMark}>
-            {multiFramework.logo}
+            <div className={styles.frameworkFeaturedIconCircle}>
+              {multiFramework.logo}
+            </div>
           </div>
           <div className={styles.frameworkFeaturedText}>
             <p className={styles.frameworkFeaturedBadge}>
@@ -1305,7 +1221,7 @@ function FrameworkSupport() {
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: header,
-        start: "top 95%",
+        start: "top 72%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1511,7 +1427,7 @@ function TestingSection() {
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: header,
-        start: "top 95%",
+        start: "top 72%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1648,43 +1564,43 @@ function TestingSection() {
 const MESSAGING_PLATFORMS = [
   {
     name: "Slack",
-    icon: <FaSlack />,
+    icon: <img src="/img/integrations/slack-logo.png" alt="" width={28} height={28} />,
     color: "#EC407A",
     link: "/docs/integrations/slack",
   },
   {
     name: "Microsoft Teams",
-    icon: <TbBrandTeams />,
+    icon: <img src="/img/integrations/teams-logo.png" alt="" width={28} height={24} />,
     color: "#A8B2FF",
     link: "/docs/next/integrations/teams",
   },
   {
     name: "WhatsApp",
-    icon: <FaWhatsapp />,
+    icon: <img src="/img/integrations/whatsapp-logo.png" alt="" width={28} height={28} />,
     color: "#3DFF9A",
     link: "/docs/integrations/whatsapp",
   },
   {
     name: "Messenger",
-    icon: <FaFacebookMessenger />,
+    icon: <img src="/img/integrations/messenger-logo.png" alt="" width={28} height={28} />,
     color: "#1AACFF",
     link: "/docs/integrations/messenger",
   },
   {
     name: "Telegram",
-    icon: <FaTelegram />,
+    icon: <img src="/img/integrations/telegram-logo.png" alt="" width={28} height={28} />,
     color: "#40BFFF",
     link: "/docs/integrations/telegram",
   },
   {
     name: "Instagram",
-    icon: <FaInstagram />,
+    icon: <img src="/img/integrations/instagram-logo.png" alt="" width={28} height={28} />,
     color: "#FF6BA3",
     link: "/docs/integrations/instagram",
   },
   {
     name: "Gmail",
-    icon: <SiGmail />,
+    icon: <img src="/img/integrations/gmail-logo.png" alt="" width={28} height={20} />,
     color: "#FF7B6E",
     link: "/docs/integrations/gmail",
   },
@@ -1725,7 +1641,7 @@ function MessagingSection() {
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: header || sceneRef.current,
-          start: "top 95%",
+          start: "top 72%",
           toggleActions: "play none none reverse",
         },
       });
@@ -1887,7 +1803,7 @@ function ProtocolSupport() {
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: header,
-        start: 'top 95%',
+        start: 'top 72%',
         toggleActions: 'play none none reverse',
       },
     });
@@ -1961,9 +1877,6 @@ function CTASection({
       id={FEATURE_ANCHORS.cta}
       className={`${indexStyles.ctaSection} ${styles.pageAnchor}`}
     >
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
       <div className="container">
         <div className={indexStyles.ctaContent}>
           <h2 className={indexStyles.ctaTitle}>
