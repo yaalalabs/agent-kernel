@@ -40,7 +40,7 @@ create_deployment_package() {
 
 create_deployment_package $1
 
-pushd ../ || exit 1
+pushd ../dist || exit 1
 push_to_ecr "openai-dynamodb-ext" "Dockerfile"
 popd || exit 1
 
