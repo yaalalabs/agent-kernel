@@ -736,14 +736,15 @@
 }
 
 .goDeeperCard {
-  --card-accent: #00c896; /* default accent fallback */
+  --card-accent: #00c896;
+  /* default accent fallback */
 
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   padding: 3rem;
   border-radius: 1.25rem;
-  background: 
+  background:
     radial-gradient(circle at bottom left, color-mix(in srgb, var(--card-accent) 26%, transparent) 0%, transparent 70%),
     radial-gradient(circle at bottom right, color-mix(in srgb, var(--card-accent) 16%, transparent) 0%, transparent 60%),
     radial-gradient(circle at top right, color-mix(in srgb, var(--card-accent) 6%, transparent) 0%, transparent 45%),
@@ -831,7 +832,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.85rem 2.2rem;
+  padding: 0.6rem 1rem;
   background: linear-gradient(to left, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.03) 100%);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -843,7 +844,7 @@
   letter-spacing: 0.01em;
   white-space: nowrap;
   text-decoration: none !important;
-  box-shadow: 
+  box-shadow:
     0 0 15px rgba(255, 255, 255, 0.15),
     inset 0 0 10px rgba(255, 255, 255, 0.05);
   transition:

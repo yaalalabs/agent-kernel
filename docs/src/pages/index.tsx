@@ -237,17 +237,23 @@ function Hero() {
           </p>
 
           <div ref={buttonsRef} className={styles.heroButtons}>
+            <button
+              type="button"
+              className={`button button--secondary button--sm ${styles.heroBtnPrimary}`}
+              onClick={() =>
+                document
+                  .getElementById("agent-skills")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+            >
+              Download Agent Skills
+            </button>
             <Link
-              className={styles.heroBtnPrimary}
+              className={`button button--primary button--lg ${styles.btnPrimary}`}
               to="/docs"
             >
-              Get Started Free
-            </Link>
-            <Link
-              className={styles.heroBtnLink}
-              to="/docs"
-            >
-              Documentations
+              <span className={styles.btnIcon}>→</span>
+              Get Started
             </Link>
           </div>
 
