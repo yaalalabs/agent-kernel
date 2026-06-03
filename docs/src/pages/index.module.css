@@ -682,12 +682,127 @@
   border-color: color-mix(in srgb, var(--card-accent) 50%, transparent);
 }
 
-@media (max-width: 768px) {
-  .exploreGrid {
-    grid-template-columns: 1fr;
-  }
+/* ─── Go Deeper Section ──────────────────────────────────────────────────── */
 
-  .exploreInner {
+.goDeeperSection {
+  padding: 6rem 0;
+  position: relative;
+  text-align: center;
+}
+
+.goDeeperInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.goDeeperBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1.1rem;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.06);
+  color: #38bdf8;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 999px;
+  margin-bottom: 1.25rem;
+}
+
+.goDeeperTitle {
+  font-size: clamp(2rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 1rem 0;
+  letter-spacing: -0.02em;
+}
+
+.goDeeperSubtitle {
+  font-size: clamp(0.95rem, 1.2vw, 1.1rem);
+  color: #94a3b8;
+  max-width: 640px;
+  margin: 0 auto 3.5rem auto;
+  line-height: 1.6;
+}
+
+.goDeeperGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  text-align: left;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.goDeeperCard {
+  --card-accent: #00c896; /* default accent fallback */
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 3rem;
+  border-radius: 1.25rem;
+  background: 
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--card-accent) 26%, transparent) 0%, transparent 70%),
+    radial-gradient(circle at bottom right, color-mix(in srgb, var(--card-accent) 16%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--card-accent) 6%, transparent) 0%, transparent 45%),
+    rgba(10, 8, 20, 0.6);
+  border: 1px solid color-mix(in srgb, var(--card-accent) 20%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  text-decoration: none !important;
+  color: inherit;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.goDeeperCard:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--card-accent) 50%, transparent);
+  box-shadow: 0 12px 35px color-mix(in srgb, var(--card-accent) 16%, transparent);
+  text-decoration: none !important;
+}
+
+.goDeeperCardTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 1rem 0;
+}
+
+.goDeeperCardBody {
+  font-size: 0.95rem;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin: 0 0 2.5rem 0;
+  flex-grow: 1;
+}
+
+.goDeeperCardCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 1.6rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #ffffff !important;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none !important;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.2s ease;
+}
+
+.goDeeperCard:hover .goDeeperCardCta {
+  background: #ffffff;
+  color: #000000 !important;
+  border-color: #ffffff;
+}
+
+@media (max-width: 768px) {
+  .goDeeperGrid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
     padding: 0 1rem;
   }
 }
@@ -717,11 +832,11 @@
   align-items: center;
   justify-content: center;
   padding: 0.85rem 2.2rem;
-  background: rgba(18, 12, 38, 0.6);
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.03) 100%);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   color: #ffffff !important;
-  border: 1px solid rgba(242, 0, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 9999px;
   font-weight: 600;
   font-size: 0.95rem;
@@ -729,23 +844,22 @@
   white-space: nowrap;
   text-decoration: none !important;
   box-shadow: 
-    0 0 20px rgba(242, 0, 255, 0.15),
-    inset 0 0 12px rgba(242, 0, 255, 0.1);
+    0 0 15px rgba(255, 255, 255, 0.15),
+    inset 0 0 10px rgba(255, 255, 255, 0.05);
   transition:
-    background 0.25s ease,
-    border-color 0.25s ease,
-    transform 0.2s ease,
-    box-shadow 0.25s ease;
+    background 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
 }
 
 .heroBtnPrimary:hover {
-  background: rgba(26, 14, 46, 0.85);
-  border-color: rgba(242, 0, 255, 0.65);
-  box-shadow:
-    0 0 30px rgba(242, 0, 255, 0.35),
-    inset 0 0 16px rgba(242, 0, 255, 0.25);
+  background: #ffffff;
+  border-color: #ffffff;
+  box-shadow: 0 0 25px rgba(255, 255, 255, 0.6);
   transform: translateY(-1px);
-  color: #ffffff !important;
+  color: #000000 !important;
   text-decoration: none !important;
 }
 
@@ -5474,7 +5588,7 @@
 }
 
 .blPageSection {
-  background: radial-gradient(ellipse 55% 50% at 50% 50%, #1a0020 0%, #010002 65%);
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, #23002b 0%, #010002 70%);
   background-size: 250% 250%;
   animation: gradientShift 16s ease-in-out infinite;
 }
@@ -5503,7 +5617,7 @@
 }
 
 .devPageSection {
-  background: radial-gradient(ellipse 55% 50% at 50% 50%, #1a0f02 0%, #010002 65%);
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, #291503 0%, #010002 70%);
   background-size: 250% 250%;
   animation: gradientShiftDev 16s ease-in-out infinite;
 }
@@ -5532,7 +5646,21 @@
 }
 
 .aiEngineerSection {
-  background: radial-gradient(ellipse 55% 50% at 50% 50%, #0d2018 0%, #010002 65%);
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, #0f261b 0%, #010002 70%);
   background-size: 250% 250%;
   animation: gradientShiftAI 16s ease-in-out infinite;
+}
+
+/* ─── Features Page Gradient ─────────────────────────────────────────────── */
+.featuresPageSection {
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, #03242e 0%, #010002 70%);
+  background-size: 250% 250%;
+  animation: gradientShiftDev 16s ease-in-out infinite;
+}
+
+/* ─── Use Cases Page Gradient ────────────────────────────────────────────── */
+.useCasesPageSection {
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, #160a2c 0%, #010002 70%);
+  background-size: 250% 250%;
+  animation: gradientShiftDev 16s ease-in-out infinite;
 }

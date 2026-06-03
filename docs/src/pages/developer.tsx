@@ -578,60 +578,54 @@ export default function DeveloperPage() {
         </div>
       </section>
 
-      {/* <section className={styles.exploreSection} aria-labelledby="explore-paths-dev">
+      <section className={styles.goDeeperSection}>
         <div className={styles.topGlow} />
 
-        <div className="container exploreInner">
-          <div className={heroStyles.Badge}>
-            <span className={heroStyles.badgeStar}>✦</span>
-            Explore Other Paths
-          </div>
-          <h3 id="explore-paths-dev" className={heroStyles.heroTitle}>
-            Agent Kernel adapts to every role
-          </h3>
-          <p className={heroStyles.heroSubtitle}>
-            See how different teams build with Kernel
-          </p>
+        <div className="container">
+          <div className={styles.goDeeperInner}>
+            <div className={styles.goDeeperBadge}>
+              ✦ Continue Exploring
+            </div>
+            <h2 className={styles.goDeeperTitle}>
+              Go deeper with Agent Kernel
+            </h2>
+            <p className={styles.goDeeperSubtitle}>
+              Explore the platform capabilities and real-world workflows behind secure,
+              production-ready AI agents.
+            </p>
 
-          <div className={styles.exploreGrid}>
-            <Link
-              className={styles.exploreCard}
-              to="/ai-engineer"
-              style={{ '--card-accent': '#26A64D' } as React.CSSProperties}
-            >
-              <h4 className={styles.exploreCardTitle}>AI Engineer</h4>
-              <p className={styles.exploreCardSubtitle}>
-                Advanced agent systems built for scale. Design, fine-tune, and orchestrate multi-model
-                pipelines with full observability baked in.
-              </p>
-              <ul className={styles.exploreCardFeatures}>
-                <li>Zero-config CLI with guided project setup</li>
-                <li>Seamless integration with your existing CI pipelines</li>
-                <li>Built-in retry and fallback routing logic</li>
-              </ul>
-              <span className={styles.exploreCardCta}>Read More</span>
-            </Link>
+            <div className={styles.goDeeperGrid}>
+              <Link
+                className={styles.goDeeperCard}
+                to="/features"
+                style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
+              >
+                <h3 className={styles.goDeeperCardTitle}>Features</h3>
+                <p className={styles.goDeeperCardBody}>
+                  Explore the core runtime, memory, guardrails, testing,
+                  integrations, and deployment capabilities that make Agent
+                  Kernel production-ready.
+                </p>
+                <span className={styles.goDeeperCardCta}>Read More</span>
+              </Link>
 
-            <Link
-              className={styles.exploreCard}
-              to="/business-leader"
-              style={{ '--card-accent': '#6F45CC' } as React.CSSProperties}
-            >
-              <h4 className={styles.exploreCardTitle}>Business Leader</h4>
-              <p className={styles.exploreCardSubtitle}>
-                Deploy compliant AI agents without managing complex infrastructure or hidden technical debt.
-                Accelerate time-to-value with pre-built templates and executive-ready analytics.
-              </p>
-              <ul className={styles.exploreCardFeatures}>
-                <li>Zero-config CLI with guided project setup</li>
-                <li>Seamless integration with your existing CI pipelines</li>
-                <li>Built-in retry and fallback routing logic</li>
-              </ul>
-              <span className={styles.exploreCardCta}>Read More</span>
-            </Link>
+              <Link
+                className={styles.goDeeperCard}
+                to="/use-cases"
+                style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
+              >
+                <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
+                <p className={styles.goDeeperCardBody}>
+                  See how teams use Agent Kernel to build assistants,
+                  automate workflows, monitor systems, and ship reliable AI
+                  agents faster.
+                </p>
+                <span className={styles.goDeeperCardCta}>Read More</span>
+              </Link>
+            </div>
           </div>
         </div>
-      </section> */}
+      </section>
 
       <section className={styles.ctaSection}>
         <div className={styles.topGlow} />
