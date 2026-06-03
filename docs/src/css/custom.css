@@ -917,11 +917,36 @@ code {
     top: calc(var(--ifm-navbar-height) + 1.5rem) !important;
     transition: all 0.25s ease;
     overflow-y: auto;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
   }
 
   .theme-doc-toc-desktop:hover {
     border-color: rgba(0, 221, 255, 0.55) !important;
     box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
+  }
+
+  .theme-doc-toc-desktop::-webkit-scrollbar {
+    width: 5px !important;
+  }
+
+  .theme-doc-toc-desktop::-webkit-scrollbar-track {
+    background: transparent !important;
+    margin-top: 15px !important;
+    margin-bottom: 15px !important;
+  }
+
+  .theme-doc-toc-desktop::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border-radius: 9999px !important;
+  }
+
+  .theme-doc-toc-desktop::-webkit-scrollbar-thumb:hover {
+    background: var(--ak-blue) !important;
+  }
+
+  .theme-doc-toc-desktop::-webkit-scrollbar-button {
+    display: none !important;
   }
 }
 
