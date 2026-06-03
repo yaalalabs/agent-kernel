@@ -38,11 +38,7 @@ crewai = [
 ]
 langgraph = [
     "langgraph~=1.0.5",
-    "langgraph-prebuilt<1.0.9",
-    "langgraph-checkpoint<4.0.0",
-    "langgraph-sdk<0.4.0",
-    "langchain~=1.2.0",
-    "langchain-core~=1.2.0",
+    "langchain~=1.2.3",
     "langchain_community~=0.4.1",
     "litellm~=1.74.9"
 ]
