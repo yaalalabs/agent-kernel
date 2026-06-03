@@ -28,6 +28,41 @@ const config = {
 
   // SEO head tags
   headTags: [
+    // Preconnect to Google Fonts domains to reduce latency
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.googleapis.com',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossorigin: 'anonymous',
+      },
+    },
+    // Preload the Google Fonts stylesheet
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preload',
+        as: 'style',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap',
+      },
+    },
+    // Load stylesheet asynchronously to prevent render-blocking
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap',
+        media: 'print',
+        onload: "this.media='all'",
+      },
+    },
     {
       tagName: 'meta',
       attributes: {
