@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Deployment Overview
 
-Agent Kernel is a **multi-cloud AI agent runtime** that supports multiple deployment modes across AWS and Azure for different use cases.
+Agent Kernel is a **multi-cloud AI agent runtime** that supports multiple deployment modes across AWS, Azure, and GCP for different use cases.
 
 ## Deployment Modes
 
@@ -17,17 +17,22 @@ graph TB
     B --> F[AWS ECS/Fargate]
     B --> G[Azure Functions]
     B --> H[Azure Container Apps]
-    B --> I[MCP Server]
-    B --> J[A2A Server]
+    B --> I[GCP Cloud Run Serverless]
+    B --> J[GCP Cloud Run Containerized]
+    B --> K[MCP Server]
+    B --> L[A2A Server]
     
-    E --> K[AWS Cloud]
-    F --> K
-    G --> L[Azure Cloud]
-    H --> L
+    E --> M[AWS Cloud]
+    F --> M
+    G --> N[Azure Cloud]
+    H --> N
+    I --> O[GCP Cloud]
+    J --> O
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style K fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
-    style L fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
+    style M fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
+    style N fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
+    style O fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Quick Comparison
@@ -40,6 +45,8 @@ graph TB
 | **AWS ECS** | Consistent load (AWS) | Auto-scaling | Instant | Running containers | **Very High** - Multi-AZ, auto-recovery |
 | **Azure Functions** | Variable load (Azure) | Auto-scaling | 1-3s | Pay per use | **High** - Auto-retry, multi-region |
 | **Azure Container Apps** | Consistent load (Azure) | Auto-scaling | Instant | Running containers | **Very High** - Multi-zone, auto-recovery |
+| **GCP Cloud Run Serverless** | Variable load (GCP) | Auto-scaling (scale-to-zero) | 1-3s | Pay per use | **High** - Auto-retry, multi-zone |
+| **GCP Cloud Run Containerized** | Consistent load (GCP) | Auto-scaling (min≥1) | Instant | Running containers | **Very High** - Always-on, auto-recovery |
 | **MCP Server** | AI integrations | Manual | Instant | Server costs | Manual |
 | **A2A Server** | Agent networks | Manual | Instant | Server costs | Manual |
 
@@ -136,6 +143,38 @@ terraform init && terraform apply
 
 [Learn more →](./azure-containerized)
 
+## GCP Serverless
+
+Uses Agent Kernel terraform modules
+
+```bash
+# Configure the modules and run
+terraform init && terraform apply
+```
+
+- Cloud Run (scale-to-zero)
+- API Gateway
+- Auto-scaling
+- Pay per request
+
+[Learn more →](./gcp-serverless)
+
+## GCP Containerized
+
+Uses Agent Kernel terraform modules
+
+```bash
+# Configure the modules and run
+terraform init && terraform apply
+```
+
+- Cloud Run (always-on, min_instance_count≥1)
+- API Gateway
+- Consistent performance
+- Lower latency
+
+[Learn more →](./gcp-containerized)
+
 ## Choosing a Deployment Mode
 
 ### Development
@@ -156,6 +195,12 @@ terraform init && terraform apply
 ### High Traffic on Azure
 → **Azure Container Apps**: Consistent performance, KEDA-based scaling
 
+### Variable Traffic on GCP
+→ **GCP Cloud Run Serverless**: Auto-scales to zero, pay per use
+
+### High Traffic on GCP
+→ **GCP Cloud Run Containerized**: Consistent performance, no cold starts
+
 ### AI Integration
 → **MCP/A2A**: Protocol-based integration
 
@@ -163,11 +208,11 @@ terraform init && terraform apply
 
 Agent Kernel's **multi-cloud support** enables you to:
 
-- **Deploy the same agent code** to AWS or Azure without modification
+- **Deploy the same agent code** to AWS, Azure, or GCP without modification
 - **Avoid vendor lock-in** - switch clouds or run on multiple clouds
 - **Optimize costs** - choose the best pricing model for each workload
 - **Geographic redundancy** - distribute across cloud providers
-- **Leverage cloud-specific services** - use the best of both platforms
+- **Leverage cloud-specific services** - use the best of each platform
 
 ## Fault Tolerance Considerations
 
@@ -213,6 +258,24 @@ Agent Kernel provides different levels of fault tolerance depending on your depl
 
 [Learn more about Azure serverless fault tolerance →](./azure-serverless#fault-tolerance)
 
+**GCP Cloud Run Serverless** provides built-in fault tolerance:
+- Serverless architecture with automatic scaling (scale-to-zero)
+- Multi-zone execution by default
+- Automatic retry on failures
+- No infrastructure management
+- Inherently resilient to hardware failures
+
+[Learn more about GCP serverless →](./gcp-serverless)
+
+**GCP Cloud Run Containerized** offers high fault tolerance on GCP:
+- Always-on instances (min_instance_count≥1) for consistent performance
+- Automatic replica replacement on failures
+- Multi-zone distribution
+- Auto-scaling based on traffic
+- No cold starts
+
+[Learn more about GCP containerized →](./gcp-containerized)
+
 ### State Persistence
 
 All production deployment modes support resilient state management:
@@ -225,6 +288,10 @@ All production deployment modes support resilient state management:
 - **Cosmos DB**: Multi-region replication, automatic backups, 99.999% SLA
 - **Azure Cache for Redis**: Cluster mode with automatic failover, replication
 
+**GCP Options:**
+- **Firestore**: Multi-region replication, automatic backups, 99.999% SLA
+- **Memorystore Redis**: High availability with automatic failover
+
 [Learn more about fault tolerance →](../core-concepts/fault-tolerance)
 
 ## Next Steps
@@ -236,5 +303,8 @@ All production deployment modes support resilient state management:
 - **Azure Deployments:**
   - [Azure Serverless](./azure-serverless)
   - [Azure Containerized](./azure-containerized)
+- **GCP Deployments:**
+  - [GCP Serverless](./gcp-serverless)
+  - [GCP Containerized](./gcp-containerized)
 - [Fault Tolerance](../core-concepts/fault-tolerance)
 - [Configuration](../core-concepts/configuration)

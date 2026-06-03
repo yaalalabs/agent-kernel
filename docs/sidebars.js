@@ -79,6 +79,14 @@ const sidebars = {
             'deployment/azure-containerized',
           ],
         },
+        {
+          type: 'category',
+          label: 'GCP',
+          items: [
+            'deployment/gcp-serverless',
+            'deployment/gcp-containerized',
+          ],
+        },
       ],
     },
     {
