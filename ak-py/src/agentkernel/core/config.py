@@ -46,12 +46,33 @@ class _CosmosDBConfig(BaseModel):
     )
 
 
+class _FirestoreConfig(BaseModel):
+    collection_name: str = Field(
+        default="ak_sessions",
+        description="Firestore collection name for session storage. Each document ID is a session_id.",
+    )
+    project_id: Optional[str] = Field(
+        default=None,
+        description="GCP project ID. If null, inferred from Application Default Credentials.",
+    )
+    database_id: Optional[str] = Field(
+        default=None,
+        description="Firestore database ID. If null, defaults to '(default)' database for backward compatibility.",
+    )
+    ttl: int = Field(
+        default=604800,
+        description="Session TTL in seconds (0 disables). Sets an 'expiry_time' field on each document. "
+        "Requires a Firestore TTL policy configured on the collection pointing to 'expiry_time'.",
+    )
+
+
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb|cosmosdb)$")
+    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb|cosmosdb|firestore)$")
     cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
     cosmosdb: Optional[_CosmosDBConfig] = None
+    firestore: Optional[_FirestoreConfig] = None
 
 
 class _RoutesConfig(BaseModel):

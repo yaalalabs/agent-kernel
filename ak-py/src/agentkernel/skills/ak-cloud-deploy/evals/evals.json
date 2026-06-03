@@ -183,6 +183,53 @@
         "ak-init"
       ],
       "description": "Should suggest using ak-init skill when no project is found"
+    },
+    {
+      "id": "deploy-gcp-serverless",
+      "name": "Deploy to GCP Cloud Run serverless",
+      "input": "Deploy my agent to GCP Cloud Run serverless",
+      "expected_outputs": [
+        "from agentkernel.gcp import CloudRun",
+        "CloudRun.run()",
+        "ak-deployment/ak-gcp/serverless",
+        "project_id",
+        "deploy/main.tf",
+        "terraform init",
+        "terraform apply"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm",
+        "ak-containerized"
+      ]
+    },
+    {
+      "id": "deploy-gcp-containerized",
+      "name": "Deploy to GCP Cloud Run containerized",
+      "input": "Deploy my agent to GCP Cloud Run containerized (always-on)",
+      "expected_outputs": [
+        "from agentkernel.gcp import CloudRun",
+        "CloudRun.run()",
+        "ak-deployment/ak-gcp/containerized",
+        "min_instance_count",
+        "container_port",
+        "deploy/main.tf"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-session-firestore",
+      "name": "GCP deployment with Firestore sessions",
+      "input": "Deploy to GCP Cloud Run with Firestore session persistence",
+      "expected_outputs": [
+        "session:",
+        "type: firestore",
+        "create_firestore_db",
+        "agentkernel[", "gcp"
+      ]
     }
   ]
 }
