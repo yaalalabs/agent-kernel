@@ -12,7 +12,6 @@
   right: 0;
   z-index: 200;
   height: 90px;
-  margin-bottom: 1rem;
   opacity: 1;
   visibility: visible;
   pointer-events: none;
@@ -56,12 +55,12 @@
   margin: 0 auto;
   height: 100%;
   transform: translateY(-8px);
-  
+
   /* Hide by default */
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  
+
   transition:
     transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     opacity 0.35s ease,
@@ -225,7 +224,7 @@
 
 .backBtn {
   position: absolute;
-  left: 80px;          
+  left: 80px;
   top: 50%;
   transform: translateY(-50%);
   pointer-events: auto;
@@ -235,12 +234,15 @@
   justify-content: center;
   flex-shrink: 0;
 
-  width: 38px;         
-  height: 38px;        
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 221, 255, 0.25);        /* cyan tint always visible */
-  background: rgba(0, 221, 255, 0.08);              /* subtle cyan fill */
-  color: rgba(0, 221, 255, 0.7);                    /* icon clearly cyan */
+  border: 1px solid rgba(0, 221, 255, 0.25);
+  /* cyan tint always visible */
+  background: rgba(0, 221, 255, 0.08);
+  /* subtle cyan fill */
+  color: rgba(0, 221, 255, 0.7);
+  /* icon clearly cyan */
   cursor: pointer;
   padding: 0;
   outline: none;

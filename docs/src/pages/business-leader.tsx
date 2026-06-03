@@ -468,65 +468,70 @@ export default function BusinessLeaderPage() {
               </p>
 
               <div className={styles.devArchitectureWrapper}>
-                <AgentKernelArchDiagram accentColor="#8E5DFF" />
+                <AgentKernelArchDiagram accentColor="#D946EF" />
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <section className={styles.goDeeperSection}>
-        <div className={styles.topGlow} />
+            <section className={styles.goDeeperSection}>
+              <div className={styles.topGlow} />
 
-        <div className="container">
-          <div className={styles.goDeeperInner}>
-            <div className={styles.Badge}>
-              <span className={styles.badgeStar}>✦</span>
-              Continue Exploring
-            </div>
-            <h2 className={styles.goDeeperTitle}>
-              Go deeper with Agent Kernel
-            </h2>
-            <p className={styles.goDeeperSubtitle}>
-              Explore the platform capabilities and real-world workflows behind secure,
-              production-ready AI agents.
-            </p>
+              <div className="container">
+                <div className={styles.goDeeperInner}>
+                  <div className={styles.Badge}>
+                    <span className={styles.badgeStar}>✦</span>
+                    Continue Exploring
+                  </div>
+                  <h2 className={styles.goDeeperTitle}>
+                    Go deeper with Agent Kernel
+                  </h2>
+                  <p className={styles.goDeeperSubtitle}>
+                    Explore the platform capabilities and real-world workflows behind secure,
+                    production-ready AI agents.
+                  </p>
 
-            <div className={styles.goDeeperGrid}>
-              <a
-                className={styles.goDeeperCard}
-                href="/features"
-                style={{ '--card-accent': '#6F45CC' } as React.CSSProperties}
-              >
-                <h3 className={styles.goDeeperCardTitle}>Features</h3>
-                <p className={styles.goDeeperCardBody}>
-                  Explore the core runtime, memory, guardrails, testing,
-                  integrations, and deployment capabilities that make Agent
-                  Kernel production-ready.
-                </p>
-                <span className={styles.goDeeperCardCta}>Read More</span>
-              </a>
+                  <div className={styles.goDeeperGrid}>
+                    <a
+                      className={styles.goDeeperCard}
+                      href="/features"
+                      style={{
+                        '--card-accent': '#6F45CC',
+                        '--card-glow-color': '#230E23'
+                      } as React.CSSProperties}
+                    >
+                      <h3 className={styles.goDeeperCardTitle}>Features</h3>
+                      <p className={styles.goDeeperCardBody}>
+                        Explore the core runtime, memory, guardrails, testing,
+                        integrations, and deployment capabilities that make Agent
+                        Kernel production-ready.
+                      </p>
+                      <span className={styles.goDeeperCardCta}>Read More</span>
+                    </a>
 
-              <a
-                className={styles.goDeeperCard}
-                href="/use-cases"
-                style={{ '--card-accent': '#6F45CC' } as React.CSSProperties}
-              >
-                <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
-                <p className={styles.goDeeperCardBody}>
-                  See how teams use Agent Kernel to build assistants,
-                  automate workflows, monitor systems, and ship reliable AI
-                  agents faster.
-                </p>
-                <span className={styles.goDeeperCardCta}>Read More</span>
-              </a>
-            </div>
+                    <a
+                      className={styles.goDeeperCard}
+                      href="/use-cases"
+                      style={{
+                        '--card-accent': '#6F45CC',
+                        '--card-glow-color': '#230E23'
+                      } as React.CSSProperties}
+                    >
+                      <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
+                      <p className={styles.goDeeperCardBody}>
+                        See how teams use Agent Kernel to build assistants,
+                        automate workflows, monitor systems, and ship reliable AI
+                        agents faster.
+                      </p>
+                      <span className={styles.goDeeperCardCta}>Read More</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </section>
 
       <section className={styles.ctaSection}>
-        <div className={styles.topGlow} />
         <div className="container">
           <div className={styles.ctaContent}>
             <h2 className={styles.ctaTitle}>

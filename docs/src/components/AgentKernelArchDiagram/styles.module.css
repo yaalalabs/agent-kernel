@@ -16,22 +16,22 @@
 
   /* Derived tints used throughout — computed from the base accent.          */
   /* color-mix() is supported in all modern browsers (Safari 15.4+).         */
-  --ak-accent-glow:         color-mix(in srgb, var(--ak-accent) 60%, transparent);
-  --ak-accent-line:         color-mix(in srgb, var(--ak-accent) 28%, transparent);
-  --ak-accent-halo:         color-mix(in srgb, var(--ak-accent) 10%, transparent);
-  --ak-accent-fill:         color-mix(in srgb, var(--ak-accent) 12%, transparent);
-  --ak-accent-border:       color-mix(in srgb, var(--ak-accent) 30%, transparent);
+  --ak-accent-glow: color-mix(in srgb, var(--ak-accent) 60%, transparent);
+  --ak-accent-line: color-mix(in srgb, var(--ak-accent) 28%, transparent);
+  --ak-accent-halo: color-mix(in srgb, var(--ak-accent) 10%, transparent);
+  --ak-accent-fill: color-mix(in srgb, var(--ak-accent) 12%, transparent);
+  --ak-accent-border: color-mix(in srgb, var(--ak-accent) 30%, transparent);
   --ak-accent-hover-border: color-mix(in srgb, var(--ak-accent) 50%, transparent);
-  --ak-accent-shadow:       color-mix(in srgb, var(--ak-accent)  7%, transparent);
+  --ak-accent-shadow: color-mix(in srgb, var(--ak-accent) 7%, transparent);
 
   /* Card backgrounds: a near-black base mixed with the accent so every      */
   /* surface shifts hue when accentColor changes.                             */
   /* --ak-card-bg : used by topBox, deployBox (subtle tint)                  */
   /* --ak-chip-bg : used by moduleChip (slightly stronger)                   */
   /* --ak-hub-bg  : used by hubCard (most saturated, matches the image glow) */
-  --ak-card-bg: color-mix(in srgb, var(--ak-accent)  8%, #05090f);
+  --ak-card-bg: color-mix(in srgb, var(--ak-accent) 8%, #05090f);
   --ak-chip-bg: color-mix(in srgb, var(--ak-accent) 10%, #05090f);
-  --ak-hub-bg:  color-mix(in srgb, var(--ak-accent) 18%, #05090f);
+  --ak-hub-bg: color-mix(in srgb, var(--ak-accent) 18%, #05090f);
 
   padding: 2rem 0;
   position: relative;
@@ -41,12 +41,18 @@
 /* ─── Diagram container ──────────────────────────────────────────────────── */
 
 .diagram {
-  max-width: 900px;
+  max-width: 1400px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
+  padding: 3.5rem 3rem;
+  border-radius: 1.75rem;
+  border: 2px solid var(--ak-accent-border);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.6),
+    0 0 32px color-mix(in srgb, var(--ak-accent) 6%, transparent);
 }
 
 .connectorSvg {
@@ -60,8 +66,15 @@
 /* ─── Entrance animations ────────────────────────────────────────────────── */
 
 @keyframes layerFadeUp {
-  from { opacity: 0; transform: scale(0.88) translateY(16px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .layerIn {
@@ -75,22 +88,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ak-card-bg);
-  border: 1px solid var(--ak-accent-border);
-  border-radius: 1.25rem;
+  background: transparent;
+  border: none;
   padding: 1rem 2rem;
   z-index: 1;
   opacity: 0;
   width: fit-content;
   max-width: 100%;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .topBox:hover {
-  border-color: var(--ak-accent-hover-border);
-  box-shadow: 0 8px 28px var(--ak-accent-shadow);
   transform: translateY(-2px);
 }
 
@@ -181,18 +189,25 @@
   position: absolute;
   inset: -28px;
   border-radius: 50%;
-  background: radial-gradient(
-    circle at center,
-    var(--ak-accent-fill) 0%,
-    transparent 70%
-  );
+  background: radial-gradient(circle at center,
+      var(--ak-accent-fill) 0%,
+      transparent 70%);
   animation: corePulse 3s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes corePulse {
-  0%, 100% { opacity: 0.75; transform: scale(1); }
-  50%       { opacity: 1;    transform: scale(1.15); }
+
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
 }
 
 .hubLogo {
@@ -217,20 +232,27 @@
 .modulesGrid {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 1.25rem;
   width: 100%;
-  margin-top: 1rem;
+  margin-top: 3.5rem;
 }
 
 .modulesRow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.55rem;
+  gap: 1.25rem;
 }
 
 @keyframes moduleReveal {
-  from { opacity: 0; transform: scale(0.88) translateY(6px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .moduleChip {
@@ -275,18 +297,25 @@
   position: absolute;
   inset: 2px;
   border-radius: 0.4rem;
-  background: radial-gradient(
-    circle at 50% 60%,
-    var(--ak-accent-fill) 0%,
-    transparent 75%
-  );
+  background: radial-gradient(circle at 50% 60%,
+      var(--ak-accent-fill) 0%,
+      transparent 75%);
   animation: iconPulse 2.8s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes iconPulse {
-  0%, 100% { opacity: 0.55; transform: scale(0.92); }
-  50%       { opacity: 1;    transform: scale(1.06); }
+
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }
 
 .moduleIcon {
@@ -328,15 +357,22 @@
   display: flex;
   justify-content: center;
   align-items: stretch;
-  gap: 0.65rem;
+  gap: 1.25rem;
   flex-wrap: wrap;
   width: 100%;
   z-index: 1;
 }
 
 @keyframes deployFadeUp {
-  from { opacity: 0; transform: scale(0.88) translateY(10px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .deployBox {
@@ -402,6 +438,8 @@
 
   .diagram {
     gap: 0;
+    padding: 2rem 1.5rem;
+    border-radius: 1.25rem;
   }
 
   .topBox {

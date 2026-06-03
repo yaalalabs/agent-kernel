@@ -11,6 +11,12 @@ import {
   MdSmartToy,
   MdLink,
   MdPermMedia,
+  MdSecurity,
+  MdCloud,
+  MdLanguage,
+  MdMessage,
+  MdScience,
+  MdVisibility,
 } from "react-icons/md";
 import styles from "./index.module.css";
 import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
@@ -65,6 +71,48 @@ const DEV_FEATURE_GROUPS = [
         icon: MdPermMedia,
         title: "Multimodal Support",
         body: "In-built framework-neutral multimodal support across all integration channels. Handle files/images cleanly and keep sessions lightweight. Additional voice and video support via LiveKit.",
+      },
+    ],
+  },
+  {
+    title: "Ship & Secure",
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdSecurity,
+        title: "Guardrails and Content Safety",
+        body: "Input and output protection in the same runtime pipeline. Supports policy checks for safety, PII handling, and jailbreak defense.",
+      },
+      {
+        icon: MdCloud,
+        title: "Cloud Deployment",
+        body: "Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions.",
+      },
+      {
+        icon: MdLanguage,
+        title: "Reliability",
+        body: "Built for resilient cloud deployments with health checks and failover patterns.",
+      },
+    ],
+  },
+  {
+    title: "Integrate & Observe",
+    cols: 3 as const,
+    features: [
+      {
+        icon: MdMessage,
+        title: "Messaging Integrations",
+        body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams, Messenger plug and play.",
+      },
+      {
+        icon: MdScience,
+        title: "Testing Framework",
+        body: "pytest-integrated test runner. Write deterministic automated test scenarios for your AI agents like any other code.",
+      },
+      {
+        icon: MdVisibility,
+        title: "Observability",
+        body: "Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
       },
     ],
   },
@@ -491,7 +539,7 @@ export default function DeveloperPage() {
               <h2 className={styles.devTitle}>
                 <span>
                   All Enterprise Features Available
-                </span><br/>
+                </span><br />
                 <span>
                   Free And Open-Source
                 </span>
@@ -504,11 +552,10 @@ export default function DeveloperPage() {
                       {group.title}
                     </h3>
                     <div
-                      className={`${styles.devFeaturesGrid} ${
-                        group.cols === 4
-                          ? styles.devFeaturesGrid4
-                          : styles.devFeaturesGrid3
-                      }`}
+                      className={`${styles.devFeaturesGrid} ${group.cols === 4
+                        ? styles.devFeaturesGrid4
+                        : styles.devFeaturesGrid3
+                        }`}
                     >
                       {group.features.map((feature) => {
                         const IconComponent = feature.icon;
@@ -574,56 +621,56 @@ export default function DeveloperPage() {
                 <AgentKernelArchDiagram accentColor="#CC7D21" />
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <section className={styles.goDeeperSection}>
-        <div className={styles.topGlow} />
+            <section className={styles.goDeeperSection}>
+              <div className={styles.topGlow} />
 
-        <div className="container">
-          <div className={styles.goDeeperInner}>
-            <div className={styles.Badge}>
-              <span className={styles.badgeStar}>✦</span>
-              Continue Exploring
-            </div>
-            <h2 className={styles.goDeeperTitle}>
-              Go deeper with Agent Kernel
-            </h2>
-            <p className={styles.goDeeperSubtitle}>
-              Explore the platform capabilities and real-world workflows behind secure,
-              production-ready AI agents.
-            </p>
+              <div className="container">
+                <div className={styles.goDeeperInner}>
+                  <div className={styles.Badge}>
+                    <span className={styles.badgeStar}>✦</span>
+                    Continue Exploring
+                  </div>
+                  <h2 className={styles.goDeeperTitle}>
+                    Go deeper with Agent Kernel
+                  </h2>
+                  <p className={styles.goDeeperSubtitle}>
+                    Explore the platform capabilities and real-world workflows behind secure,
+                    production-ready AI agents.
+                  </p>
 
-            <div className={styles.goDeeperGrid}>
-              <a
-                className={styles.goDeeperCard}
-                href="/features"
-                style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
-              >
-                <h3 className={styles.goDeeperCardTitle}>Features</h3>
-                <p className={styles.goDeeperCardBody}>
-                  Explore the core runtime, memory, guardrails, testing,
-                  integrations, and deployment capabilities that make Agent
-                  Kernel production-ready.
-                </p>
-                <span className={styles.goDeeperCardCta}>Read More</span>
-              </a>
+                  <div className={styles.goDeeperGrid}>
+                    <a
+                      className={styles.goDeeperCard}
+                      href="/features"
+                      style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
+                    >
+                      <h3 className={styles.goDeeperCardTitle}>Features</h3>
+                      <p className={styles.goDeeperCardBody}>
+                        Explore the core runtime, memory, guardrails, testing,
+                        integrations, and deployment capabilities that make Agent
+                        Kernel production-ready.
+                      </p>
+                      <span className={styles.goDeeperCardCta}>Read More</span>
+                    </a>
 
-              <a
-                className={styles.goDeeperCard}
-                href="/use-cases"
-                style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
-              >
-                <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
-                <p className={styles.goDeeperCardBody}>
-                  See how teams use Agent Kernel to build assistants,
-                  automate workflows, monitor systems, and ship reliable AI
-                  agents faster.
-                </p>
-                <span className={styles.goDeeperCardCta}>Read More</span>
-              </a>
-            </div>
+                    <a
+                      className={styles.goDeeperCard}
+                      href="/use-cases"
+                      style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
+                    >
+                      <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
+                      <p className={styles.goDeeperCardBody}>
+                        See how teams use Agent Kernel to build assistants,
+                        automate workflows, monitor systems, and ship reliable AI
+                        agents faster.
+                      </p>
+                      <span className={styles.goDeeperCardCta}>Read More</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </section>

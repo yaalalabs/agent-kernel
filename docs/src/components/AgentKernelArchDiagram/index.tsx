@@ -117,7 +117,8 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
           {/* ── Connector 1: topBox → hubCard ── */}
           <svg
             className={styles.connectorSvg}
-            viewBox="0 0 900 36"
+            style={{ height: '80px' }}
+            viewBox="0 0 900 80"
             preserveAspectRatio="none"
             aria-hidden="true"
           >
@@ -133,15 +134,17 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
                 <feGaussianBlur stdDeviation="5" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              <path id="akDown1" d="M 450 0 L 450 36" />
+              <path id="akDown1" d="M 450 0 L 450 80" />
             </defs>
-            <line x1="450" y1="0" x2="450" y2="30" stroke={TEAL_HALO} strokeWidth="8" filter="url(#akHaloTop)" />
+            {/* Dot at the start of the connector */}
+            <circle cx="450" cy="4" r="5.5" fill={TEAL} filter="url(#akGlowTop)" />
+            <line x1="450" y1="4" x2="450" y2="74" stroke={TEAL_HALO} strokeWidth="8" filter="url(#akHaloTop)" />
             <line
-              x1="450" y1="0" x2="450" y2="30"
+              x1="450" y1="4" x2="450" y2="74"
               stroke={TEAL_LINE}
               strokeWidth="1.5"
-              strokeDasharray="30"
-              strokeDashoffset={visible ? 0 : 30}
+              strokeDasharray="70"
+              strokeDashoffset={visible ? 0 : 70}
               style={{ transition: 'stroke-dashoffset 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s' }}
               markerEnd="url(#akArrow1)"
             />
@@ -222,7 +225,8 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
           {/* ── Connector 3: modulesGrid → deployRow (fan) ── */}
           <svg
             className={styles.connectorSvg}
-            viewBox="0 0 900 44"
+            style={{ height: '80px' }}
+            viewBox="0 0 900 80"
             preserveAspectRatio="none"
             aria-hidden="true"
           >
@@ -239,13 +243,13 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
               {DEPLOY_X.map((x, i) => (
-                <path key={i} id={`akFan${i}`} d={`M 450 0 C 450 22, ${x} 22, ${x} 44`} />
+                <path key={i} id={`akFan${i}`} d={`M 450 0 C 450 40, ${x} 40, ${x} 80`} />
               ))}
             </defs>
             {DEPLOY_X.map((x, i) => (
               <path
                 key={`halo${i}`}
-                d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
+                d={`M 450 0 C 450 40, ${x} 40, ${x} 80`}
                 fill="none"
                 stroke={TEAL_HALO}
                 strokeWidth="8"
@@ -254,11 +258,11 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
             ))}
             {DEPLOY_X.map((x, i) => {
               const dx = x - 450;
-              const len = Math.round(Math.sqrt(dx * dx + 44 * 44) + 20);
+              const len = Math.round(Math.sqrt(dx * dx + 80 * 80) + 30);
               return (
                 <path
                   key={i}
-                  d={`M 450 0 C 450 22, ${x} 22, ${x} 44`}
+                  d={`M 450 0 C 450 40, ${x} 40, ${x} 80`}
                   fill="none"
                   stroke={TEAL_LINE}
                   strokeWidth="1.5"
@@ -271,6 +275,8 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
                 />
               );
             })}
+            {/* Glowing dot at the top center of the fan connector */}
+            <circle cx="450" cy="0" r="5.5" fill={TEAL} filter="url(#akGlowFan)" />
             {visible && !reducedMotion && [0, 2, 4, 1, 3].map((targetIdx, j) => (
               <circle key={j} r="3.5" fill={TEAL} filter="url(#akGlowFan)" opacity="0.9">
                 <animateMotion

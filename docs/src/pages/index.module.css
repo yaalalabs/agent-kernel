@@ -745,6 +745,7 @@
 .goDeeperCard {
   --card-accent: #00c896;
   /* default accent fallback */
+  --card-glow-color: color-mix(in srgb, var(--card-accent) 24%, transparent);
 
   display: flex;
   flex-direction: column;
@@ -752,22 +753,18 @@
   padding: 3rem;
   border-radius: 1.25rem;
   background:
-    radial-gradient(circle at bottom left, color-mix(in srgb, var(--card-accent) 26%, transparent) 0%, transparent 70%),
-    radial-gradient(circle at bottom right, color-mix(in srgb, var(--card-accent) 16%, transparent) 0%, transparent 60%),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--card-accent) 6%, transparent) 0%, transparent 45%),
-    rgba(10, 8, 20, 0.6);
-  border: 1px solid color-mix(in srgb, var(--card-accent) 20%, transparent);
+    radial-gradient(circle at bottom right, var(--card-glow-color) 0%, transparent 65%),
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--card-glow-color) 40%, transparent) 0%, transparent 45%),
+    #050406;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   text-decoration: none !important;
   color: inherit;
-  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  transition: border-color 0.3s ease;
 }
 
 .goDeeperCard:hover {
-  transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--card-accent) 50%, transparent);
-  box-shadow: 0 12px 35px color-mix(in srgb, var(--card-accent) 16%, transparent);
   text-decoration: none !important;
 }
 
@@ -798,13 +795,15 @@
   font-size: 0.9rem;
   font-weight: 500;
   text-decoration: none !important;
-  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.2s ease;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
 }
 
-.goDeeperCard:hover .goDeeperCardCta {
+.goDeeperCardCta:hover {
   background: #ffffff;
   color: #000000 !important;
   border-color: #ffffff;
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.6);
+  transform: scale(1.03);
 }
 
 @media (max-width: 768px) {
@@ -3017,6 +3016,7 @@
   padding: 7rem 0 0;
   position: relative;
   overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .ctaGlow {
@@ -6160,4 +6160,106 @@
   background: radial-gradient(ellipse 60% 55% at 50% 50%, #160a2c 0%, #010002 70%);
   background-size: 250% 250%;
   animation: gradientShiftDev 16s ease-in-out infinite;
+}
+
+/* ─── Developer Page Features Layout Overrides ────────────────────────────── */
+.devPageSection .devFeatureGroupTitle {
+  color: #FCCFA1;
+  text-align: left;
+}
+
+.devPageSection .devFeatureIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid rgba(252, 207, 161, 0.6);
+  background: rgba(252, 207, 161, 0.03);
+  color: #FCCFA1;
+  flex-shrink: 0;
+  position: relative;
+  box-shadow: 0 0 12px rgba(252, 207, 161, 0.15), inset 0 0 6px rgba(252, 207, 161, 0.12);
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+.devPageSection .devFeatureIconWrap::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(252, 207, 161, 0.15);
+  border-radius: 0.8rem;
+  pointer-events: none;
+}
+
+.devPageSection .devFeatureCard:hover .devFeatureIconWrap {
+  border-color: rgba(252, 207, 161, 0.85);
+  background: rgba(252, 207, 161, 0.08);
+}
+
+.devPageSection .devFeatureIcon {
+  width: 1.35rem;
+  height: 1.35rem;
+  color: #CC7D21;
+}
+
+/* Card Inner Glow Effects */
+.devPageSection .devFeatureCard {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.1);
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.devPageSection .devFeatureCard:hover {
+  border-color: rgba(252, 207, 161, 0.35);
+  background-color: rgba(252, 207, 161, 0.03);
+}
+
+.devPageSection .devFeatureCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(252, 207, 161, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.devPageSection .devFeatureCard:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(252, 207, 161, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.devPageSection .devFeatureCard::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(252, 207, 161, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.devPageSection .devFeatureCard:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(252, 207, 161, 0.12) 0%,
+      transparent 100%);
 }
