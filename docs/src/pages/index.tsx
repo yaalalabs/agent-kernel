@@ -70,7 +70,7 @@ function WhatsNewBanner() {
             width="16"
             height="16"
             viewBox="0 0 24 24"
-            fill="none"
+            fill="currentColor"
             stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
@@ -284,8 +284,14 @@ function Hero() {
 
         {/* ── Scroll label ────────────────────── */}
         <div ref={scrollLabelRef} className={styles.scrollLabel} aria-hidden="true">
-          <span className={styles.scrollLine} />
-          <span className={styles.scrollText}>Scroll down to <strong>Begin</strong></span>
+          <div className={styles.scrollLabelInner}>
+            <span className={styles.scrollLine} />
+            <span className={styles.scrollText}>
+              Scroll down to
+              <br />
+              <strong>Begin</strong>
+            </span>
+          </div>
         </div>
       </div>
     </section>
@@ -962,7 +968,7 @@ function Deployment() {
               <ul className={styles.cloudModes}>
                 {c.modes.map((m, j) => (
                   <li key={j}>
-                    <span className={styles.checkmark}>✓</span>
+                    <MdCheck className={styles.checkmark} />
                     {m}
                   </li>
                 ))}
@@ -1192,7 +1198,7 @@ function Levels() {
         <div className={styles.levelsHeader}>
           <div ref={badgeRef} className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Just like any other operating system
+            Built for Everyone
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
             <span>Agent Kernel is designed</span>
@@ -1204,35 +1210,37 @@ function Levels() {
           </p>
         </div>
 
-        <div ref={cardsWrapRef} className={styles.levelsGrid}>
-          {levels.map((level) => (
-            <div key={level.id} className={styles.flipCardWrapper}>
-              <div className={styles.flipCardInner}>
-                {/* Front Face */}
-                <div className={styles.flipCardFront}>
-                  <div className={styles.levelCardImageArea}>
-                    <img
-                      src={level.image}
-                      alt={level.title}
-                      className={styles.levelCardImage}
-                    />
+        <div className={styles.levelsOuterContainer}>
+          <div ref={cardsWrapRef} className={styles.levelsGrid}>
+            {levels.map((level) => (
+              <div key={level.id} className={styles.flipCardWrapper}>
+                <div className={styles.flipCardInner}>
+                  {/* Front Face */}
+                  <div className={styles.flipCardFront}>
+                    <div className={styles.levelCardImageArea}>
+                      <img
+                        src={level.image}
+                        alt={level.title}
+                        className={styles.levelCardImage}
+                      />
+                    </div>
+                    <div className={styles.levelCardContent}>
+                      <h3 className={styles.levelCardTitle}>{level.title}</h3>
+                    </div>
                   </div>
-                  <div className={styles.levelCardContent}>
-                    <h3 className={styles.levelCardTitle}>{level.title}</h3>
-                  </div>
-                </div>
 
-                {/* Back Face */}
-                <div className={styles.flipCardBack}>
-                  <h3 className={styles.flipCardTitleBack}>{level.title}</h3>
-                  <p className={styles.flipCardDescription}>{level.description}</p>
-                  <Link className={styles.flipCardLinkBtn} to={levelPages[level.id]}>
-                    Read More
-                  </Link>
+                  {/* Back Face */}
+                  <div className={styles.flipCardBack}>
+                    <h3 className={styles.flipCardTitleBack}>{level.title}</h3>
+                    <p className={styles.flipCardDescription}>{level.description}</p>
+                    <Link className={styles.flipCardLinkBtn} to={levelPages[level.id]}>
+                      Read More
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </section>

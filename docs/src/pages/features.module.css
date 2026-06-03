@@ -122,9 +122,9 @@
   height: 1px;
   background: linear-gradient(90deg,
       transparent 0%,
-      rgba(120, 180, 255, 0.25) 20%,
-      rgba(160, 210, 255, 0.7) 50%,
-      rgba(120, 180, 255, 0.25) 80%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(255, 255, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
       transparent 100%);
 }
 
@@ -134,28 +134,29 @@
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 70%;
-  height: 220px;
+  width: 60%;
+  height: 150px;
   background: radial-gradient(ellipse at top center,
-      rgba(100, 170, 255, 0.1) 0%,
-      rgba(80, 140, 255, 0.05) 40%,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.03) 40%,
       transparent 70%);
   pointer-events: none;
 }
 
+/* Badge */
 .Badge {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 1rem;
-  border: 1px solid rgba(99, 179, 237, 0.55);
+  border: 2px solid #2A272E;
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
   color: rgba(147, 210, 255, 0.9);
   letter-spacing: 0.01em;
   margin-bottom: 1.5rem;
-  background: rgba(99, 179, 237, 0.06);
+  background: #131017;
   position: relative;
 }
 
@@ -314,6 +315,7 @@
     box-shadow: none !important;
   }
 }
+
 /* ─── Why Agent Kernel (hero) ─────────────────────────────────────────────── */
 
 .whyHero {
