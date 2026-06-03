@@ -70,6 +70,38 @@
   pointer-events: none;
 }
 
+/* Top border + gradient glow */
+.shortTopGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      transparent 30%,
+      rgba(255, 255, 255, 0.15) 38%,
+      rgba(255, 255, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 62%,
+      transparent 70%,
+      transparent 100%);
+}
+
+.shortTopGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50%;
+  height: 150px;
+  background: radial-gradient(ellipse at top center,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.03) 40%,
+      transparent 70%);
+  pointer-events: none;
+}
+
 
 /* ─── Hero ────────────────────────────────────────────────────────────────── */
 

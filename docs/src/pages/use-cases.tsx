@@ -495,7 +495,7 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
   return (
     <section className={styles.diffSection}>
       {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
+      <div className={styles.shortTopGlow} />
 
       <div className="container">
         <div className={styles.sectionHeader}>
