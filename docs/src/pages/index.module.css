@@ -360,6 +360,24 @@
   border-color: rgba(0, 221, 255, 0.3) !important;
 }
 
+@media (max-width: 768px) {
+  .btnPrimary {
+    position: relative !important;
+    justify-content: center !important;
+    padding: 0.85rem 2.5rem !important;
+  }
+
+  .btnSecondary {
+    position: relative !important;
+    justify-content: center !important;
+    padding: 0.65rem 2.5rem !important;
+  }
+
+  .btnIcon {
+    display: none;
+  }
+}
+
 /* ─── What's New Banner ──────────────────────────────────────────────────── */
 
 .whatsNewBanner {
@@ -696,30 +714,18 @@
   padding: 0 2rem;
 }
 
-.goDeeperBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 1.1rem;
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  background: rgba(56, 189, 248, 0.06);
-  color: #38bdf8;
-  font-size: 0.85rem;
-  font-weight: 500;
-  border-radius: 999px;
-  margin-bottom: 1.25rem;
-}
 
 .goDeeperTitle {
-  font-size: clamp(2rem, 3.5vw, 2.5rem);
+  font-size: clamp(1.6rem, 3.5vw, 2.5rem);
   font-weight: 700;
   color: #ffffff;
   margin: 0 0 1rem 0;
+  line-height: 1.2;
   letter-spacing: -0.02em;
 }
 
 .goDeeperSubtitle {
-  font-size: clamp(0.95rem, 1.2vw, 1.1rem);
+  font-size: clamp(0.9rem, 1.2vw, 1.05rem);
   color: #94a3b8;
   max-width: 640px;
   margin: 0 auto 3.5rem auto;
@@ -801,10 +807,67 @@
 }
 
 @media (max-width: 768px) {
+  .goDeeperSection {
+    padding: 4rem 0;
+  }
+
+  .goDeeperInner {
+    padding: 0 1rem;
+  }
+
+  .goDeeperTitle {
+    font-size: 1.8rem;
+    line-height: 1.25;
+    margin-bottom: 0.75rem;
+  }
+
+  .goDeeperSubtitle {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 2rem;
+  }
+
   .goDeeperGrid {
     grid-template-columns: 1fr;
-    gap: 1.5rem;
-    padding: 0 1rem;
+    gap: 1.25rem;
+    padding: 0;
+  }
+
+  .goDeeperCard {
+    padding: 2rem;
+    border-radius: 1rem;
+  }
+
+  .goDeeperCardTitle {
+    font-size: 1.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .goDeeperCardBody {
+    margin-bottom: 1.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .goDeeperSection {
+    padding: 3rem 0;
+  }
+
+  .goDeeperTitle {
+    font-size: 1.5rem;
+  }
+
+  .goDeeperSubtitle {
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .goDeeperCard {
+    padding: 1.5rem;
+  }
+
+  .goDeeperCardTitle {
+    font-size: 1.25rem;
   }
 }
 
@@ -2909,12 +2972,15 @@
 /* Rainbow/multi-colour gradient on "Agent" — matching the screenshot */
 .ctaTitleGradient {
   background: linear-gradient(90deg,
-      #e53e3e 0%,
-      #ed8936 18%,
-      #ecc94b 36%,
-      #48bb78 54%,
-      #4299e1 72%,
-      #9f7aea 90%);
+      #ffffff 0%,
+      #e0f2fe 12%,
+      #38bdf8 25%,
+      #818cf8 40%,
+      #a78bfa 52%,
+      #f472b6 65%,
+      #fb923c 80%,
+      #fef08a 92%,
+      #ffffff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

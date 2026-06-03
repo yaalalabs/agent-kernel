@@ -256,7 +256,8 @@
 @media (max-width: 768px) {
   .frameworkTitle  { font-size: 1.5rem; }
   .frameworkBody   { font-size: 0.9375rem; margin-bottom: 1.5rem; }
-  .frameworkButton { font-size: 0.875rem; padding: 0.5rem 1rem; }
+  .frameworkButton { font-size: 0.875rem; padding: 0.5rem 1.125rem; }
+  .frameworkButtons { margin-bottom: 1.5rem; gap: 0.625rem; }
   .codeTable       { font-size: 0.75rem; }
   .lineNumber      { padding: 0 0.75rem 0 0.75rem; min-width: 2rem; }
   .lineContent     { padding: 0 0.875rem; }
@@ -264,11 +265,31 @@
   .codeCard        { padding: 0.875rem; }
 }
 
+@media (max-width: 560px) {
+  .frameworkButtons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.625rem;
+    max-width: 440px;
+    margin: 0 auto 1.5rem auto;
+  }
+  .frameworkButton {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 0.55rem 0.5rem;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 @media (max-width: 480px) {
   .frameworkTitle   { font-size: 1.25rem; }
   .frameworkBody    { font-size: 0.875rem; }
-  .frameworkButton  { font-size: 0.8125rem; padding: 0.5rem 0.875rem; }
   .frameworkButtons { gap: 0.5rem; }
+  .frameworkButton  { font-size: 0.78rem; padding: 0.5rem 0.25rem; }
   .codeTable        { font-size: 0.6875rem; }
   .macTitleBar      { padding: 0.5rem 0.75rem; }
   .dot              { width: 10px; height: 10px; }

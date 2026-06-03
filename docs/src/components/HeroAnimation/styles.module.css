@@ -191,3 +191,18 @@
   font-style: normal;
   line-height: 1;
 }
+
+@media (max-width: 639px) {
+  .btnPrimary,
+  .btnSecondary {
+    position: relative !important;
+    justify-content: center !important;
+    padding: 0.75rem 2.5rem !important;
+    width: 100% !important;
+  }
+
+  .btnIcon,
+  .btnIconSecondary {
+    display: none !important;
+  }
+}

@@ -448,8 +448,9 @@ export default function BusinessLeaderPage() {
 
         <div className="container">
           <div className={styles.goDeeperInner}>
-            <div className={styles.goDeeperBadge}>
-              ✦ Continue Exploring
+            <div className={styles.Badge}>
+              <span className={styles.badgeStar}>✦</span>
+              Continue Exploring
             </div>
             <h2 className={styles.goDeeperTitle}>
               Go deeper with Agent Kernel
