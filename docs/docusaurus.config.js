@@ -402,7 +402,7 @@ const config = {
             ],
           },
         ],
-        copyright: `© ${new Date().getFullYear()} Yala Labs. All rights reserved.`,
+        copyright: `© ${new Date().getFullYear()} Yaala Labs. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

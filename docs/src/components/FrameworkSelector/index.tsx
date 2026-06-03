@@ -143,10 +143,14 @@ export default function FrameworkSelector({
   const [selectedFramework, setSelectedFramework] = useState<string>("openai");
   const [copiedCode, setCopiedCode]               = useState<string | null>(null);
 
-  const copyToClipboard = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(id);
-    setTimeout(() => setCopiedCode(null), 2000);
+  const copyToClipboard = async (code: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(id);
+      setTimeout(() => setCopiedCode(null), 2000);
+    } catch (error) {
+      console.error("Failed to copy code to clipboard:", error);
+    }
   };
 
   const fw = FRAMEWORK_DATA[selectedFramework as keyof typeof FRAMEWORK_DATA];
