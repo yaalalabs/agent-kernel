@@ -188,7 +188,7 @@ export default function AIEngineerPage() {
         "Stop unsafe or invalid requests early and return a controlled response.",
         "Useful for input guardrails, rate limits, cached shortcuts, and circuit breakers.",
       ],
-      highlight: true,
+      highlight: false,
     },
   ] as const;
 
@@ -646,17 +646,14 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 01 | Analogy</p>
             <h2 className={styles.aiTitle}>
-              {/* <span>Unify Your Existing Agents On A Compliant</span>
-                {' '}
-                <span>Enterprise Runtime</span> */}
-              Bring your already existing agentic AI code onto a unified Operating System and Deployment Infrastructure for your AI Agents while making it enterprise ready and compliant.
+              Guardrails, Traceability, Memory and Other Enterprise Features for Your Agent Code.
             </h2>
             <div className={styles.aiDescription}>
               <p className={styles.devIntro}>
                 Agent Kernel is a unified, capable runtime for AI agents.
                 Its pluggable architecture lets you attach capabilities to
                 your agents effortlessly. A comprehensive list of pre-built
-                connectors smooths the agent-building process—enabling a
+                connectors smooths the agent-building process, enabling a
                 capability is a matter of setting configuration. All out of
                 the box.
               </p>
@@ -943,19 +940,26 @@ export default function AIEngineerPage() {
               {TABS.map((tab, i) => {
                 const TabIcon = tab.Icon;
                 return (
-                  <button
-                    key={tab.id}
-                    ref={(el) => { tabRefs.current[i] = el; }}
-                    className={`${styles.aiBuildTabCard} ${activeTab === tab.id ? styles.aiBuildTabCardActive : ""}`}
-                    onClick={() => handleTabChange(tab.id, i)}
-                    type="button"
-                  >
-                    <span className={styles.aiBuildTabIcon} aria-hidden="true">
-                      <TabIcon style={{ width: 18, height: 18 }} />
-                    </span>
-                    <h3 className={styles.aiBuildTabTitle}>{tab.title}</h3>
-                    <p className={styles.aiBuildTabBody}>{tab.body}</p>
-                  </button>
+                  <React.Fragment key={tab.id}>
+                    {i > 0 && (
+                      <div className={styles.aiBuildTabConnector} aria-hidden="true">
+                        <div className={styles.aiBuildTabConnectorLine} />
+                        <div className={styles.aiBuildTabConnectorDot} />
+                      </div>
+                    )}
+                    <button
+                      ref={(el) => { tabRefs.current[i] = el; }}
+                      className={`${styles.aiBuildTabCard} ${activeTab === tab.id ? styles.aiBuildTabCardActive : ""}`}
+                      onClick={() => handleTabChange(tab.id, i)}
+                      type="button"
+                    >
+                      <span className={styles.aiBuildTabIcon} aria-hidden="true">
+                        <TabIcon style={{ width: 18, height: 18 }} />
+                      </span>
+                      <h3 className={styles.aiBuildTabTitle}>{tab.title}</h3>
+                      <p className={styles.aiBuildTabBody}>{tab.body}</p>
+                    </button>
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -987,6 +991,19 @@ export default function AIEngineerPage() {
                 </div>
               );
             })()}
+
+            {/* Dots Indicator */}
+            <div className={styles.aiBuildDotsIndicator}>
+              {TABS.map((tab, idx) => (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id, idx)}
+                  className={`${styles.aiBuildDot} ${activeTab === tab.id ? styles.aiBuildDotActive : ""}`}
+                  aria-label={`Go to diagram ${tab.title}`}
+                  type="button"
+                />
+              ))}
+            </div>
           </div>
 
           {/* Step 07 — How Agent Kernel Fits In */}
@@ -1101,15 +1118,6 @@ export default function AIEngineerPage() {
                               : ""
                               }`}
                           >
-                            <div className={styles.devFeatureCardBadgeSlot}>
-                              {"badge" in step && step.badge ? (
-                                <span
-                                  className={styles.devFeatureHighlightBadge}
-                                >
-                                  {step.badge}
-                                </span>
-                              ) : null}
-                            </div>
                             <div className={styles.devFeatureCardHeader}>
                               <div className={styles.devFeatureIconWrap}>
                                 <IconComponent

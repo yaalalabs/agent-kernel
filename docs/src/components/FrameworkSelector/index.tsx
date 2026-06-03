@@ -9,10 +9,10 @@ interface FrameworkSelectorProps {
 }
 
 const FRAMEWORKS = [
-  { id: "openai",    label: "OpenAI Agents" },
-  { id: "crewai",   label: "CrewAI"         },
-  { id: "langgraph", label: "LangGraph"     },
-  { id: "adk",      label: "Google ADK"     },
+  { id: "openai", label: "OpenAI Agents" },
+  { id: "crewai", label: "CrewAI" },
+  { id: "langgraph", label: "LangGraph" },
+  { id: "adk", label: "Google ADK" },
 ];
 
 const FRAMEWORK_DATA = {
@@ -43,10 +43,10 @@ type TokenType = "keyword" | "builtin" | "string" | "comment" | "number" | "oper
 interface Token { type: TokenType; value: string }
 
 const PY_KEYWORDS = new Set([
-  "from","import","as","def","class","return","if","else","elif","for",
-  "while","in","not","and","or","True","False","None","with","pass",
-  "raise","try","except","finally","lambda","yield","del","global",
-  "nonlocal","assert","break","continue","__name__","__main__",
+  "from", "import", "as", "def", "class", "return", "if", "else", "elif", "for",
+  "while", "in", "not", "and", "or", "True", "False", "None", "with", "pass",
+  "raise", "try", "except", "finally", "lambda", "yield", "del", "global",
+  "nonlocal", "assert", "break", "continue", "__name__", "__main__",
 ]);
 
 function tokeniseLine(line: string): Token[] {
@@ -116,32 +116,32 @@ function ToolbarIcons() {
   return (
     <div className={styles.toolbarIcons}>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <rect x="1" y="1" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-        <rect x="8" y="1" width="5" height="5"  rx="1" stroke="currentColor" strokeWidth="1.2"/>
-        <rect x="8" y="8" width="5" height="5"  rx="1" stroke="currentColor" strokeWidth="1.2"/>
+        <rect x="1" y="1" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
+        <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+        <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" />
       </svg>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <rect x="1" y="1" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-        <rect x="8" y="1" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+        <rect x="1" y="1" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
+        <rect x="8" y="1" width="5" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" />
       </svg>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M11.5 9A5 5 0 1 1 5 2.5a4 4 0 0 0 6.5 6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+        <path d="M11.5 9A5 5 0 1 1 5 2.5a4 4 0 0 0 6.5 6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
       </svg>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
         <path d="M7 1v2M7 11v2M1 7h2M11 7h2M2.93 2.93l1.41 1.41M9.66 9.66l1.41 1.41M2.93 11.07l1.41-1.41M9.66 4.34l1.41-1.41"
-          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     </div>
   );
 }
 
 export default function FrameworkSelector({
-  showTitle       = true,
+  showTitle = true,
   showDescription = true,
-  accentColor     = "#CC7D21",
+  accentColor = "#CC7D21",
 }: FrameworkSelectorProps) {
   const [selectedFramework, setSelectedFramework] = useState<string>("openai");
-  const [copiedCode, setCopiedCode]               = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const copyToClipboard = async (code: string, id: string) => {
     try {
@@ -156,7 +156,7 @@ export default function FrameworkSelector({
   const fw = FRAMEWORK_DATA[selectedFramework as keyof typeof FRAMEWORK_DATA];
   const accentRgb = hexToRgb(accentColor);
   const cssVars = {
-    "--accent":    accentColor,
+    "--accent": accentColor,
     "--accent-10": `rgba(${accentRgb}, 0.10)`,
     "--accent-15": `rgba(${accentRgb}, 0.15)`,
     "--accent-40": `rgba(${accentRgb}, 0.40)`,
@@ -182,9 +182,8 @@ export default function FrameworkSelector({
           <button
             key={f.id}
             onClick={() => setSelectedFramework(f.id)}
-            className={`${styles.frameworkButton} ${
-              selectedFramework === f.id ? styles.frameworkButtonActive : ""
-            }`}
+            className={`${styles.frameworkButton} ${selectedFramework === f.id ? styles.frameworkButtonActive : ""
+              }`}
           >
             {f.label}
           </button>
@@ -214,9 +213,6 @@ export default function FrameworkSelector({
               <CodeWithLines code={fw.installation} />
             </div>
           </div>
-          <Link to={fw.docLink} className={styles.docLink}>
-            View Full Documentation →
-          </Link>
         </div>
 
         {/* Right — Basic Usage */}

@@ -19,7 +19,7 @@
   padding: 2rem 1.75rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.5rem;
-  background: rgba(10, 12, 22, 0.28);
+  background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -131,7 +131,7 @@
   border-radius: 1rem;
   background: var(--node-surface);
   backdrop-filter: blur(8px);
-  box-shadow: 
+  box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.08),
     0 4px 20px rgba(0, 0, 0, 0.25);
   transition:
@@ -143,7 +143,7 @@
 .flowNode:hover {
   border-color: color-mix(in srgb, var(--node-color, #00d5be) 45%, transparent);
   transform: translateY(-3px) scale(1.02);
-  box-shadow: 
+  box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.15),
     0 10px 30px color-mix(in srgb, var(--node-color, #00d5be) 20%, transparent);
 }
@@ -230,6 +230,7 @@
   from {
     stroke-dashoffset: 44;
   }
+
   to {
     stroke-dashoffset: 0;
   }
@@ -239,6 +240,7 @@
   from {
     stroke-dashoffset: 10;
   }
+
   to {
     stroke-dashoffset: 0;
   }
@@ -259,5 +261,3 @@
     display: block;
   }
 }
-
-

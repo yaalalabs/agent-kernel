@@ -10,21 +10,21 @@
 .flowScene {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(6.5rem, auto) minmax(10.5rem, auto) minmax(8.75rem, auto);
+  grid-template-columns: minmax(8rem, auto) minmax(12.5rem, auto) minmax(10.5rem, auto);
   grid-template-rows: auto auto auto;
   grid-template-areas:
     '. memory .'
     'api logic testAuto'
     '. deployment .';
-  column-gap: 2.5rem;
-  row-gap: 0.75rem;
+  column-gap: 3.25rem;
+  row-gap: 1.25rem;
   align-items: center;
   justify-items: center;
-  min-height: 26rem;
-  padding: 2.25rem 2rem 2rem;
+  min-height: 29rem;
+  padding: 2.5rem 2.25rem 2.25rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.5rem;
-  background: rgba(10, 12, 22, 0.28);
+  background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -70,10 +70,10 @@
   position: relative;
   z-index: 2;
   width: 100%;
-  min-width: 12.5rem;
-  max-width: 14.5rem;
+  min-width: 14.5rem;
+  max-width: 16.5rem;
   margin-top: 0.15rem;
-  padding: 1.35rem 1.35rem 1.85rem;
+  padding: 1.5rem 1.5rem 2rem;
   border: 1.5px solid rgba(244, 114, 182, 0.45);
   border-top: none;
   border-radius: 0 0 1rem 1rem;
@@ -132,7 +132,7 @@
   border-radius: 0.75rem;
   background: var(--node-surface);
   backdrop-filter: blur(8px);
-  box-shadow: 
+  box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.08),
     0 4px 20px rgba(0, 0, 0, 0.25);
   transition:
@@ -144,41 +144,41 @@
 .flowNode:hover {
   border-color: color-mix(in srgb, var(--node-color, #00d5be) 45%, transparent);
   transform: translateY(-3px) scale(1.02);
-  box-shadow: 
+  box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.15),
     0 10px 30px color-mix(in srgb, var(--node-color, #00d5be) 20%, transparent);
 }
 
 .flowNodeLabel {
-  font-size: 0.8125rem;
+  font-size: 0.9rem;
   font-weight: 700;
   line-height: 1.3;
   color: #dfe1f0;
-  padding: 0.75rem 0.875rem;
+  padding: 0.85rem 1rem;
 }
 
 .node_logic {
   --node-surface: rgba(26, 31, 48, 0.8);
-  min-width: 10.5rem;
+  min-width: 12.5rem;
   border-width: 1.5px;
   border-style: solid;
   border-color: rgba(255, 255, 255, 0.38);
 }
 
 .node_logic .flowNodeLabel {
-  font-size: 0.875rem;
+  font-size: 0.95rem;
 }
 
 .node_kernel {
   --node-surface: rgba(18, 32, 46, 0.75);
-  min-width: 6.75rem;
+  min-width: 8.25rem;
   border-style: dashed;
   border-color: rgba(96, 165, 250, 0.55);
 }
 
 .node_memory {
   --node-surface: rgba(42, 21, 32, 0.75);
-  min-width: 7.5rem;
+  min-width: 9rem;
   border-width: 1.5px;
   border-style: solid;
   border-color: rgba(244, 114, 182, 0.5);
@@ -187,28 +187,28 @@
 .node_framework {
   --node-surface: rgba(43, 37, 16, 0.75);
   width: 100%;
-  min-height: 2.85rem;
+  min-height: 3.3rem;
   border-radius: 0.5rem;
   border-style: dashed;
   border-color: rgba(250, 204, 21, 0.45);
 }
 
 .node_framework .flowNodeLabel {
-  font-size: 0.75rem;
+  font-size: 0.825rem;
   line-height: 1.35;
-  padding: 0.7rem 0.875rem 0.7rem 0.75rem;
+  padding: 0.8rem 1rem 0.8rem 0.85rem;
 }
 
 .node_test {
   --node-surface: rgba(22, 43, 34, 0.75);
-  min-width: 8.25rem;
+  min-width: 9.75rem;
   border-radius: 0.5rem;
   border-style: dashed;
   border-color: rgba(74, 222, 128, 0.45);
 }
 
 .node_test .flowNodeLabel {
-  font-size: 0.75rem;
+  font-size: 0.825rem;
   line-height: 1.35;
 }
 
@@ -225,14 +225,14 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 2.1rem;
+  height: 2.1rem;
   padding-left: 0.25rem;
 }
 
 .akNodeIcon {
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 2.2rem;
+  height: 2.2rem;
   object-fit: contain;
   display: block;
 }
@@ -248,6 +248,7 @@
   from {
     stroke-dashoffset: 44;
   }
+
   to {
     stroke-dashoffset: 0;
   }
@@ -268,5 +269,3 @@
     display: block;
   }
 }
-
-

@@ -4516,6 +4516,7 @@
 .aiStepLabel {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   font-size: 0.7rem;
   font-weight: 700;
@@ -4524,11 +4525,6 @@
   letter-spacing: 0.18em;
   margin-bottom: 1.25rem;
   margin-top: 0;
-}
-
-/* center the step label contents when parent is centered */
-.aiStepLabel {
-  justify-content: center;
 }
 
 .aiStepLabel::before {
@@ -4558,18 +4554,13 @@
 .aiDescription {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.75rem;
   text-align: center;
   max-width: 780px;
   margin-left: auto;
   margin-right: auto;
 }
-
-/* centre column children (intro, bullets) */
-.aiDescription {
-  align-items: center;
-}
-
 
 .aiEngineerBlock {
   margin-top: 5rem;
@@ -4587,20 +4578,20 @@
   margin-bottom: 1.5rem;
 }
 
+/* ── Panel wrapper ── */
 .akComparePanel {
-  border: 1px solid rgba(38, 166, 77, 0.25);
+  border: 1px solid rgba(38, 166, 77, 0.35);
   border-radius: 0.5rem;
-  background: #010002;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: #04080a;
   overflow: hidden;
   transition: border-color 300ms ease;
 }
 
 .akComparePanel:hover {
-  border-color: rgba(38, 166, 77, 0.4);
+  border-color: rgba(38, 166, 77, 0.5);
 }
 
+/* ── Scroll hint (tablet) ── */
 .akCompareScrollHint {
   display: none;
   margin: 0;
@@ -4613,6 +4604,7 @@
   border-bottom: 1px solid rgba(38, 166, 77, 0.15);
 }
 
+/* ── Table wrapper ── */
 .akCompareTableWrap {
   overflow-x: auto;
   overflow-y: hidden;
@@ -4620,6 +4612,7 @@
   scrollbar-color: rgba(38, 166, 77, 0.3) transparent;
 }
 
+/* ── Table base ── */
 .akCompareTable {
   width: 100%;
   min-width: 44rem;
@@ -4631,28 +4624,37 @@
 }
 
 .akCompareColFeature {
-  width: 32%;
+  width: 28%;
 }
 
 .akCompareColData {
-  width: 22.6667%;
+  width: 24%;
 }
 
+/* ── Header row: gradient green band ── */
 .akCompareTable thead tr {
-  background: linear-gradient(90deg, rgba(38, 166, 77, 0.05) 0%, rgba(38, 166, 77, 0.25) 50%, rgba(38, 166, 77, 0.05) 100%);
+  background: linear-gradient(
+    90deg,
+    rgba(10, 60, 20, 0.85) 0%,
+    rgba(20, 100, 40, 0.95) 35%,
+    rgba(20, 100, 40, 0.95) 65%,
+    rgba(10, 60, 20, 0.85) 100%
+  );
 }
 
+/* ── Cell defaults ── */
 .akCompareTable th,
 .akCompareTable td {
-  padding: 0.875rem 1rem;
+  padding: 0.9rem 1rem;
   vertical-align: middle;
-  border: 1px solid rgba(38, 166, 77, 0.15);
+  border: 1px solid rgba(38, 166, 77, 0.18);
   text-align: center;
 }
 
+/* ── Header cells ── */
 .akCompareHeadCell {
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.75);
   background: transparent;
   font-size: 0.75rem;
   line-height: 1.35;
@@ -4669,22 +4671,25 @@
   display: none;
 }
 
+/* Agent Kernel header — bright green text, stronger green bg */
 .akCompareHeadCellHighlight {
   color: #26A64D;
-  background: rgba(38, 166, 77, 0.1);
-  border-color: rgba(38, 166, 77, 0.3);
-  box-shadow: inset 0 0 0 1px rgba(38, 166, 77, 0.12);
+  background: rgba(20, 80, 35, 0.6);
+  border-color: rgba(38, 166, 77, 0.4);
 }
 
+/* ── Feature column (left) ── */
 .akCompareFeatureCell {
   text-align: left;
-  font-weight: 600;
+  font-weight: 700;
   color: #ffffff;
   background: transparent;
+  padding-left: 1.25rem;
 }
 
 .akCompareFeatureText {
   display: block;
+  font-size: 0.875rem;
 }
 
 .akCompareFeatureHint {
@@ -4692,73 +4697,95 @@
   margin-top: 0.25rem;
   font-size: 0.75rem;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.45);
 }
 
-.akCompareRowAlt .akCompareFeatureCell,
-.akCompareRowAlt .akCompareDataCell:not(.akCompareDataCellHighlight) {
-  background: rgba(255, 255, 255, 0.02);
+/* ── Row backgrounds ── */
+/* Even rows: very dark base */
+.akCompareTable tbody tr:nth-child(even) .akCompareFeatureCell,
+.akCompareTable tbody tr:nth-child(even) .akCompareDataCell:not(.akCompareDataCellHighlight) {
+  background: #040706;
 }
 
+/* Odd rows: true black */
+.akCompareTable tbody tr:nth-child(odd) .akCompareFeatureCell,
+.akCompareTable tbody tr:nth-child(odd) .akCompareDataCell:not(.akCompareDataCellHighlight) {
+  background: #040706;
+}
+
+/* ── Data cells ── */
 .akCompareDataCell {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.75);
   font-weight: 500;
 }
 
+/* Agent Kernel data column highlight */
 .akCompareDataCellHighlight {
-  background: rgba(38, 166, 77, 0.06);
-  border-color: rgba(38, 166, 77, 0.2);
+  background: #040E08 !important;
+  border-color: rgba(38, 166, 77, 0.25);
 }
 
-.akCompareRowAlt .akCompareDataCellHighlight {
-  background: rgba(38, 166, 77, 0.1);
+.akCompareTable tbody tr:nth-child(even) .akCompareDataCellHighlight {
+  background: #040E08;
 }
 
+/* ── Cell content wrapper ── */
 .akCompareCellValue {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
+/* ── Icons ── */
 .akCompareIconPos {
   flex-shrink: 0;
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1.1rem;
+  height: 1.1rem;
   color: #26A64D;
 }
 
 .akCompareIconNeg {
   flex-shrink: 0;
-  width: 1.125rem;
-  height: 1.125rem;
-  color: #ef4444;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: #e53935;
 }
 
+/* ── Text values ── */
 .akCompareTextPos {
   color: #26A64D;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 0.8125rem;
 }
 
 .akCompareTextNeg {
-  color: #ef4444;
-  font-weight: 500;
+  color: #e53935;
+  font-weight: 600;
+  font-size: 0.8125rem;
 }
 
 .akComparePartial {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.6);
   font-weight: 600;
+  font-size: 0.8125rem;
 }
 
+/* ── Footer ── */
 .akCompareFooter {
   margin: 0;
-  padding: 1rem 1.25rem;
-  background: linear-gradient(90deg, rgba(38, 166, 77, 0.05) 0%, rgba(38, 166, 77, 0.25) 50%, rgba(38, 166, 77, 0.05) 100%);
-  border-top: 1px solid rgba(38, 166, 77, 0.3);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.9375rem;
-  line-height: 1.5;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(
+    90deg,
+    rgba(6, 30, 12, 0.9) 0%,
+    rgba(15, 70, 28, 0.95) 50%,
+    rgba(6, 30, 12, 0.9) 100%
+  );
+  border-top: 1px solid rgba(38, 166, 77, 0.35);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.9rem;
+  line-height: 1.6;
   text-align: center;
 }
 
@@ -4767,7 +4794,7 @@
   color: #ffffff;
 }
 
-/* Mobile: stacked cards */
+/* ── Mobile card layout ── */
 .akCompareMobileList {
   display: none;
   flex-direction: column;
@@ -4776,12 +4803,10 @@
 }
 
 .akCompareMobileCard {
-  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(38, 166, 77, 0.2);
   border-radius: 0.75rem;
   padding: 1rem;
-  background: transparent;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(10, 20, 12, 0.6);
 }
 
 .akCompareMobileFeature {
@@ -4805,13 +4830,13 @@
   gap: 0.75rem;
   padding: 0.625rem 0.75rem;
   border-radius: 0.5rem;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .akCompareMobileRowHighlight {
-  background: rgba(38, 166, 77, 0.07);
-  border-color: rgba(38, 166, 77, 0.28);
+  background: rgba(15, 50, 22, 0.7);
+  border-color: rgba(38, 166, 77, 0.3);
 }
 
 .akCompareMobileLabel {
@@ -4819,7 +4844,7 @@
   min-width: 0;
   font-size: 0.75rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   line-height: 1.3;
 }
 
@@ -4827,7 +4852,7 @@
   color: #ffffff;
 }
 
-/* Tablet: horizontal scroll + shorter headers */
+/* ── Tablet: horizontal scroll + shorter headers ── */
 @media (max-width: 996px) and (min-width: 641px) {
   .akCompareScrollHint {
     display: block;
@@ -4852,7 +4877,7 @@
   }
 }
 
-/* Mobile: card layout */
+/* ── Mobile: card layout ── */
 @media (max-width: 640px) {
   .akStandOutSection .devTitle {
     font-size: 1.25rem;
@@ -4886,9 +4911,10 @@
 
 /* ── Tab row ── */
 .aiBuildTabsRow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.5rem;
   margin-top: 2.5rem;
 }
 
@@ -4899,7 +4925,7 @@
   align-items: flex-start;
   gap: 0.55rem;
   padding: 1.25rem 1.25rem 1.5rem;
-  background: rgba(10, 20, 12, 0.7);
+  background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0.75rem;
   cursor: pointer;
@@ -4909,6 +4935,8 @@
   font-family: inherit;
   color: inherit;
   outline: none;
+  flex: 1 1 0%;
+  min-width: 0;
 }
 
 .aiBuildTabCard:hover {
@@ -4928,13 +4956,37 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.375rem;
-  background: rgba(34, 197, 94, 0.15);
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid rgba(34, 197, 94, 0.6);
+  background: rgba(34, 197, 94, 0.03);
   color: #22c55e;
   flex-shrink: 0;
-  margin-bottom: 0.15rem;
+  position: relative;
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.15), inset 0 0 6px rgba(34, 197, 94, 0.12);
+  margin-bottom: 0.5rem;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+.aiBuildTabIcon::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  border-radius: 0.8rem;
+  pointer-events: none;
+}
+
+.aiBuildTabIcon svg {
+  width: 1.35rem !important;
+  height: 1.35rem !important;
+  display: block;
+}
+
+.aiBuildTabCard:hover .aiBuildTabIcon {
+  border-color: rgba(34, 197, 94, 0.85);
+  background: rgba(34, 197, 94, 0.08);
 }
 
 .aiBuildTabTitle {
@@ -4974,11 +5026,14 @@
 /* ── Expanded panel ── */
 .aiBuildPanel {
   margin-top: 0;
-  background: rgba(8, 18, 10, 0.85);
-  border: 1px solid rgba(34, 197, 94, 0.18);
+  background: transparent;
+  border: 1.5px solid rgba(34, 197, 94, 0.7);
   border-radius: 1rem;
   padding: 1.75rem 2rem 2rem;
   will-change: transform, opacity;
+  box-shadow:
+    0 0 0 1px rgba(34, 197, 94, 0.25),
+    0 0 24px rgba(34, 197, 94, 0.12);
 }
 
 .aiBuildPanelHeader {
@@ -5001,10 +5056,26 @@
   overflow-x: auto;
 }
 
-/* ── Responsive ── */
 @media (max-width: 900px) {
   .aiBuildTabsRow {
-    grid-template-columns: 1fr;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    justify-content: flex-start;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(34, 197, 94, 0.3) transparent;
+  }
+
+  .aiBuildTabCard {
+    flex: 0 0 17rem;
+    min-width: 17rem;
+  }
+
+  .aiBuildTabConnector {
+    flex-shrink: 0;
+    width: 1.5rem;
   }
 
   .aiBuildPanel {
@@ -6262,4 +6333,174 @@
   background: radial-gradient(50% 50% at 50% 0%,
       rgba(252, 207, 161, 0.12) 0%,
       transparent 100%);
+}
+
+/* ─── AI Engineer Page Features Layout Overrides ──────────────────────────── */
+.aiEngineerSection .devFeatureGroupTitle {
+  color: #86FEAB;
+  text-align: left;
+}
+
+.aiEngineerSection .devFeatureIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid rgba(38, 166, 77, 0.6);
+  background: rgba(38, 166, 77, 0.03);
+  color: #26A64D;
+  flex-shrink: 0;
+  position: relative;
+  box-shadow: 0 0 12px rgba(38, 166, 77, 0.15), inset 0 0 6px rgba(38, 166, 77, 0.12);
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+.aiEngineerSection .devFeatureIconWrap::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(38, 166, 77, 0.15);
+  border-radius: 0.8rem;
+  pointer-events: none;
+}
+
+.aiEngineerSection .aiEngineerFeatureCard:hover .devFeatureIconWrap {
+  border-color: rgba(38, 166, 77, 0.85);
+  background: rgba(38, 166, 77, 0.08);
+}
+
+.aiEngineerSection .devFeatureIcon {
+  width: 1.35rem;
+  height: 1.35rem;
+  color: #26A64D;
+}
+
+/* Card Inner Glow Effects (Green) */
+.aiEngineerSection .aiEngineerFeatureCard {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.1);
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.aiEngineerSection .aiEngineerFeatureCard:hover {
+  border-color: rgba(38, 166, 77, 0.35);
+  background-color: rgba(38, 166, 77, 0.03);
+}
+
+.aiEngineerSection .aiEngineerFeatureCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(38, 166, 77, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.aiEngineerSection .aiEngineerFeatureCard:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(38, 166, 77, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.aiEngineerSection .aiEngineerFeatureCard::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(38, 166, 77, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.aiEngineerSection .aiEngineerFeatureCard:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(38, 166, 77, 0.12) 0%,
+      transparent 100%);
+}
+
+/* Dots indicator for Build Agents section */
+.aiBuildDotsIndicator {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.75rem;
+}
+
+.aiBuildDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.15);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.aiBuildDot:hover {
+  background-color: rgba(34, 197, 94, 0.5);
+  transform: scale(1.15);
+}
+
+.aiBuildDotActive {
+  background-color: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  transform: scale(1.15);
+}
+
+/* Tab connectors */
+.aiBuildTabConnector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  position: relative;
+}
+
+.aiBuildTabConnectorLine {
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    rgba(34, 197, 94, 0.2) 0%, 
+    rgba(34, 197, 94, 0.7) 50%, 
+    rgba(34, 197, 94, 0.2) 100%
+  );
+}
+
+.aiBuildTabConnectorDot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+}
+
+@media (max-width: 900px) {
+  .aiBuildTabConnector {
+    display: none;
+  }
 }

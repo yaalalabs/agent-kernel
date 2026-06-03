@@ -36,24 +36,24 @@ const CONNECTIONS: Array<{
   to: string;
   dashed?: boolean;
 }> = [
-  { from: 'input', to: 'guardIn' },
-  { from: 'guardIn', to: 'supervisor' },
-  { from: 'supervisor', to: 'general', dashed: true },
-  { from: 'supervisor', to: 'travel', dashed: true },
-  { from: 'supervisor', to: 'booking', dashed: true },
-  { from: 'travel', to: 'toolFlight', dashed: true },
-  { from: 'travel', to: 'toolHotel', dashed: true },
-  { from: 'travel', to: 'toolKnowledge', dashed: true },
-  { from: 'travel', to: 'toolDest', dashed: true },
-  { from: 'travel', to: 'toolLang', dashed: true },
-  { from: 'booking', to: 'toolKnowledge', dashed: true },
-  { from: 'booking', to: 'toolDest', dashed: true },
-  { from: 'booking', to: 'toolLang', dashed: true },
-  { from: 'booking', to: 'toolFlight', dashed: true },
-  { from: 'booking', to: 'toolHotel', dashed: true },
-  { from: 'coreZone', to: 'guardOut' },
-  { from: 'guardOut', to: 'output' },
-];
+    { from: 'input', to: 'guardIn' },
+    { from: 'guardIn', to: 'supervisor' },
+    { from: 'supervisor', to: 'general', dashed: true },
+    { from: 'supervisor', to: 'travel', dashed: true },
+    { from: 'supervisor', to: 'booking', dashed: true },
+    { from: 'travel', to: 'toolFlight', dashed: true },
+    { from: 'travel', to: 'toolHotel', dashed: true },
+    { from: 'travel', to: 'toolKnowledge', dashed: true },
+    { from: 'travel', to: 'toolDest', dashed: true },
+    { from: 'travel', to: 'toolLang', dashed: true },
+    { from: 'booking', to: 'toolKnowledge', dashed: true },
+    { from: 'booking', to: 'toolDest', dashed: true },
+    { from: 'booking', to: 'toolLang', dashed: true },
+    { from: 'booking', to: 'toolFlight', dashed: true },
+    { from: 'booking', to: 'toolHotel', dashed: true },
+    { from: 'coreZone', to: 'guardOut' },
+    { from: 'guardOut', to: 'output' },
+  ];
 
 type Point = { x: number; y: number };
 
@@ -275,7 +275,7 @@ export default function BuildingAgentsFlowDiagram() {
     };
 
     // 1. Input Message → Guardrails (forced horizontal, right→left)
-    const inputB   = boundsOf('input');
+    const inputB = boundsOf('input');
     const guardInB = boundsOf('guardIn');
     if (inputB && guardInB) {
       drawSolidLine(inputB.right, inputB.cy, guardInB.left, guardInB.cy, true);
@@ -284,13 +284,13 @@ export default function BuildingAgentsFlowDiagram() {
     // 2. Guardrails → Supervisor Agent (right edge of guardIn → circle edge)
     const supervisorB = boundsOf('supervisor');
     if (guardInB && supervisorB) {
-      const start = edgePoint(guardInB,    { x: supervisorB.cx, y: supervisorB.cy });
-      const end   = edgePoint(supervisorB, { x: guardInB.cx,    y: guardInB.cy });
+      const start = edgePoint(guardInB, { x: supervisorB.cx, y: supervisorB.cy });
+      const end = edgePoint(supervisorB, { x: guardInB.cx, y: guardInB.cy });
       drawSolidLine(start.x, start.y, end.x, end.y, true);
     }
 
     // 3. coreZone right edge → output Guardrails left edge (forced horizontal)
-    const coreB     = boundsOf('coreZone');
+    const coreB = boundsOf('coreZone');
     const guardOutB = boundsOf('guardOut');
     if (coreB && guardOutB) {
       drawSolidLine(coreB.right, coreB.cy, guardOutB.left, guardOutB.cy, true);
@@ -311,11 +311,11 @@ export default function BuildingAgentsFlowDiagram() {
 
     supervisorAgentConns.forEach(([fromId, toId]) => {
       const from = boundsOf(fromId);
-      const to   = boundsOf(toId);
+      const to = boundsOf(toId);
       if (!from || !to) return;
 
       const start = edgePoint(from, { x: to.cx, y: to.cy });
-      const end   = edgePoint(to,   { x: from.cx, y: from.cy });
+      const end = edgePoint(to, { x: from.cx, y: from.cy });
 
       const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       p.setAttribute('d', `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
