@@ -253,8 +253,8 @@ export default function BusinessLeaderPage() {
         title="Scale AI Agents Across Your Organization"
         subtitle="Agent Kernel helps business teams move from AI experimentation to production outcomes. Launch compliant AI agents quickly, connect to real channels, and deploy across AWS, Azure, GCP, or your own infrastructure without rebuilding your platform each time."
       /> */}
+      <StepTimeline levelId="01" contentRef={contentRef} />
       <section ref={sectionRef} className={styles.blPageSection}>
-        <StepTimeline levelId="01" contentRef={contentRef} />
         <div className="container">
           <div ref={contentRef} className={styles.levelContent}>
             {/* ── STEP 01 ── */}

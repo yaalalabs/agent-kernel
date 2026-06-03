@@ -636,8 +636,8 @@ export default function AIEngineerPage() {
         title="Run Advanced Agent Systems on a Unified Runtime"
         subtitle="Bring your existing agentic code and operate it with production discipline. Agent Kernel unifies execution, memory, hooks, observability, integrations, and multi-cloud deployment so AI engineering teams can ship compliant, scalable systems faster."
       /> */}
+      <StepTimeline levelId="03" contentRef={contentRef} />
       <section ref={contentRef} className={styles.aiEngineerSection}>
-        <StepTimeline levelId="03" contentRef={contentRef} />
         <div className="container">
           {/* Step 01 — AI Engineer Analogy */}
           <div

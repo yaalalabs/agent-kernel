@@ -11,40 +11,38 @@
   left: 0;
   right: 0;
   z-index: 200;
-  height: 0;
-  margin-bottom: 0;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  padding: 0 48px;
-
-  /* Premium Dark Surface */
-  background-color: rgba(6, 6, 9, 0.65);
-  border-bottom: 1px solid rgba(255, 255, 255, 0);
-
-  /* Frosted glass */
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
-
-  /* Transition for smooth slide and fade */
-  transition:
-    height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-    margin-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.35s ease,
-    border-bottom-color 0.35s ease,
-    visibility 0.35s;
-}
-
-.bar--visible {
   height: 90px;
   margin-bottom: 1rem;
   opacity: 1;
   visibility: visible;
+  pointer-events: none;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  padding: 0 48px;
+
+  /* Premium Dark Surface - transparent by default */
+  background-color: rgba(6, 6, 9, 0);
+  border-bottom: 1px solid rgba(255, 255, 255, 0);
+
+  /* Frosted glass - transparent by default */
+  backdrop-filter: saturate(180%) blur(0px);
+  -webkit-backdrop-filter: saturate(180%) blur(0px);
+
+  /* Transition for smooth background fade */
+  transition:
+    background-color 0.35s ease,
+    border-bottom-color 0.35s ease,
+    backdrop-filter 0.35s ease,
+    -webkit-backdrop-filter 0.35s ease;
+}
+
+.bar--visible {
   pointer-events: auto;
+  background-color: rgba(6, 6, 9, 0.65);
   border-bottom-color: rgba(255, 255, 255, 0.05);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
 }
 
 /* ── Inner layout ────────────────────────────────────────────────────── */
@@ -58,11 +56,23 @@
   margin: 0 auto;
   height: 100%;
   transform: translateY(-8px);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  
+  /* Hide by default */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.35s ease,
+    visibility 0.35s;
 }
 
 .bar--visible .inner {
   transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 /* ── Connector line ──────────────────────────────────────────────────── */
@@ -218,6 +228,7 @@
   left: 80px;          
   top: 50%;
   transform: translateY(-50%);
+  pointer-events: auto;
 
   display: flex;
   align-items: center;
