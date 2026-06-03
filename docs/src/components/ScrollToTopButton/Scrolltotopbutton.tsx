@@ -53,12 +53,6 @@ const ScrollToTopButton: React.FC = () => {
     }
   }, [visible]);
 
-  useEffect(() => {
-    if (visible) return;
-    if (buttonRef.current && document.activeElement === buttonRef.current) {
-      buttonRef.current.blur();
-    }
-  }, [visible]);
 
   /* ── Hover ── */
   const handleMouseEnter = () => {
@@ -75,7 +69,7 @@ const ScrollToTopButton: React.FC = () => {
 
   /* ── Click ── */
   const handleClick = () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !visible) return;
 
     if (rippleRef.current) {
       gsap.fromTo(
@@ -117,7 +111,6 @@ const ScrollToTopButton: React.FC = () => {
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        disabled={!visible}
         tabIndex={visible ? 0 : -1}
         aria-hidden={!visible}
         aria-label="Scroll to top"

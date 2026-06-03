@@ -1200,23 +1200,32 @@ function Levels() {
 
         <div ref={cardsWrapRef} className={styles.levelsGrid}>
           {levels.map((level) => (
-            <Link
-              key={level.id}
-              to={levelPages[level.id]}
-              className={styles.levelCard}
-            >
-              <div className={styles.levelCardImageArea}>
-                <img
-                  src={level.image}
-                  alt={level.title}
-                  className={styles.levelCardImage}
-                />
+            <div key={level.id} className={styles.flipCardWrapper}>
+              <div className={styles.flipCardInner}>
+                {/* Front Face */}
+                <div className={styles.flipCardFront}>
+                  <div className={styles.levelCardImageArea}>
+                    <img
+                      src={level.image}
+                      alt={level.title}
+                      className={styles.levelCardImage}
+                    />
+                  </div>
+                  <div className={styles.levelCardContent}>
+                    <h3 className={styles.levelCardTitle}>{level.title}</h3>
+                  </div>
+                </div>
+
+                {/* Back Face */}
+                <div className={styles.flipCardBack}>
+                  <h3 className={styles.flipCardTitleBack}>{level.title}</h3>
+                  <p className={styles.flipCardDescription}>{level.description}</p>
+                  <Link className={styles.flipCardLinkBtn} to={levelPages[level.id]}>
+                    Read More
+                  </Link>
+                </div>
               </div>
-              <div className={styles.levelCardContent}>
-                <h3 className={styles.levelCardTitle}>{level.title}</h3>
-                <p className={styles.levelCardDescription}>{level.description}</p>
-              </div>
-            </Link>
+            </div>
           ))}
         </div>
       </div>

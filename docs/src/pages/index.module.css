@@ -3141,41 +3141,59 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
-  max-width: 950px;
+  max-width: 1140px;
   margin: 0 auto;
 }
 
-.levelCard {
-  background: rgba(14, 16, 23, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.flipCardWrapper {
+  perspective: 1000px;
+  height: 330px;
+  width: 100%;
+}
+
+.flipCardInner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.flipCardWrapper:hover .flipCardInner {
+  transform: rotateY(180deg);
+}
+
+.flipCardFront,
+.flipCardBack {
+  position: absolute;
+  inset: 0;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   border-radius: 16px;
-  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.flipCardFront {
+  background: rgba(14, 16, 23, 0.35);
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  cursor: pointer;
-  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
-  text-decoration: none !important;
-  color: inherit !important;
+  padding: 1.5rem;
 }
 
-.levelCard:hover {
-  transform: translateY(-4px);
-  background: radial-gradient(ellipse 150% 100% at 50% 120%,
-      rgba(30, 100, 255, 0.28) 0%,
-      rgba(0, 140, 255, 0.18) 30%,
-      rgba(0, 100, 220, 0.10) 55%,
-      transparent 75%);
+.flipCardWrapper:hover .flipCardFront {
   border-color: rgba(0, 221, 255, 0.35);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 221, 255, 0.08);
 }
 
 .levelCardImageArea {
   width: 100%;
-  height: 160px;
+  height: 200px;
   background: #000000;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3184,18 +3202,18 @@
   transition: border-color 0.3s ease;
 }
 
-.levelCard:hover .levelCardImageArea {
+.flipCardWrapper:hover .levelCardImageArea {
   border-color: rgba(0, 221, 255, 0.2);
 }
 
 .levelCardImage {
-  width: 150px;
+  width: 170px;
   height: auto;
   object-fit: contain;
   transition: transform 0.4s ease;
 }
 
-.levelCard:hover .levelCardImage {
+.flipCardWrapper:hover .levelCardImage {
   transform: scale(1.05);
 }
 
@@ -3208,18 +3226,64 @@
 }
 
 .levelCardTitle {
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #ffffff;
   margin: 0;
   letter-spacing: -0.01em;
 }
 
-.levelCardDescription {
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.6);
+.flipCardBack {
+  background: radial-gradient(ellipse at bottom, rgba(0, 221, 255, 0.12) 0%, rgba(14, 16, 23, 0.8) 100%), #06050a;
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: rotateY(180deg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2.2rem 1.8rem;
+}
+
+.flipCardWrapper:hover .flipCardBack {
+  border-color: rgba(0, 221, 255, 0.35);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 221, 255, 0.08);
+}
+
+.flipCardTitleBack {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 1rem 0;
+  letter-spacing: -0.01em;
+}
+
+.flipCardDescription {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
   line-height: 1.55;
-  margin: 0;
+  margin: 0 0 2rem 0;
+}
+
+.flipCardLinkBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 2rem;
+  background: #ffffff;
+  border-radius: 999px;
+  color: #000000 !important;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none !important;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+  transition: background 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
+}
+
+.flipCardLinkBtn:hover {
+  background: #f3f4f6;
+  transform: scale(1.02);
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.85);
 }
 
 /* ─── Tablet ── */
@@ -3262,7 +3326,7 @@
     grid-template-columns: 1fr !important;
     max-width: 100%;
     margin: 0 auto;
-    gap: 1.25rem;
+    gap: 1.5rem;
   }
 
   .levelsGrid>*:last-child:nth-child(odd) {
@@ -3272,14 +3336,60 @@
     width: 100%;
   }
 
-  .levelCard {
+  .flipCardWrapper {
+    height: auto !important;
+    perspective: none !important;
+    background: rgba(14, 16, 23, 0.35);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    padding: 1.5rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .flipCardInner {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    transform: none !important;
+    transform-style: flat !important;
+    transition: none !important;
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 1rem;
-    padding: 1.25rem;
-    width: 100%;
-    box-sizing: border-box;
+    gap: 1.25rem !important;
+  }
+
+  .flipCardWrapper:hover .flipCardInner {
+    transform: none !important;
+  }
+
+  .flipCardFront,
+  .flipCardBack {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    -webkit-backface-visibility: visible !important;
+    backface-visibility: visible !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+  }
+
+  .flipCardFront {
+    gap: 1.25rem !important;
+  }
+
+  .flipCardBack {
+    gap: 1rem !important;
   }
 
   .levelCardImageArea {
@@ -3306,11 +3416,21 @@
     width: 100%;
   }
 
-  .levelCardDescription {
-    font-size: 0.88rem;
-    line-height: 1.55;
+  .flipCardTitleBack {
+    display: none !important;
+  }
+
+  .flipCardDescription {
+    font-size: 0.88rem !important;
+    line-height: 1.55 !important;
     text-align: center !important;
-    width: 100%;
+    width: 100% !important;
+    margin: 0 !important;
+    color: rgba(255, 255, 255, 0.75) !important;
+  }
+
+  .flipCardLinkBtn {
+    margin-top: 0.5rem;
   }
 }
 
@@ -3348,12 +3468,10 @@
 
   .levelsGrid {
     grid-template-columns: 1fr;
-    /* single column, cards stacked */
     gap: 1rem;
     max-width: 100%;
   }
 
-  /* reset tablet centering rule */
   .levelsGrid>*:last-child:nth-child(odd) {
     grid-column: auto;
     max-width: 100%;
@@ -3361,16 +3479,60 @@
     width: 100%;
   }
 
-  .levelCard {
-    display: flex !important;
-    flex-direction: column !important;
-    /* image on top, text below */
-    align-items: stretch !important;
-    gap: 0.875rem;
-    padding: 1rem;
+  .flipCardWrapper {
+    height: auto !important;
+    perspective: none !important;
+    background: rgba(14, 16, 23, 0.35);
     border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    padding: 1.25rem;
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .flipCardInner {
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    transform: none !important;
+    transform-style: flat !important;
+    transition: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 1rem !important;
+  }
+
+  .flipCardWrapper:hover .flipCardInner {
+    transform: none !important;
+  }
+
+  .flipCardFront,
+  .flipCardBack {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    -webkit-backface-visibility: visible !important;
+    backface-visibility: visible !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+  }
+
+  .flipCardFront {
+    gap: 1rem !important;
+  }
+
+  .flipCardBack {
+    gap: 1rem !important;
   }
 
   .levelCardImageArea {
@@ -3393,15 +3555,27 @@
   }
 
   .levelCardTitle {
-    font-size: 1rem;
+    font-size: 1.1rem;
     text-align: center !important;
     width: 100%;
-    margin-top: 1.5rem;
+    margin: 0;
   }
 
-  .levelCardDescription {
-    font-size: 0.82rem;
-    line-height: 1.5;
+  .flipCardTitleBack {
+    display: none !important;
+  }
+
+  .flipCardDescription {
+    font-size: 0.82rem !important;
+    line-height: 1.5 !important;
+    text-align: center !important;
+    width: 100% !important;
+    margin: 0 !important;
+    color: rgba(255, 255, 255, 0.75) !important;
+  }
+
+  .flipCardLinkBtn {
+    margin-top: 0.5rem;
   }
 }
 
