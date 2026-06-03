@@ -1594,13 +1594,13 @@ const MESSAGING_PLATFORMS = [
   },
   {
     name: "Instagram",
-    icon: <img src="/img/integrations/instagram-logo.png" alt="" width={28} height={28} />,
+    icon: <img src="/img/integrations/instagram-logo.png" alt="" width={26} height={26} />,
     color: "#FF6BA3",
     link: "/docs/integrations/instagram",
   },
   {
     name: "Gmail",
-    icon: <img src="/img/integrations/gmail-logo.png" alt="" width={28} height={20} />,
+    icon: <img src="/img/integrations/gmail-logo.png" alt="" width={26} height={20} />,
     color: "#FF7B6E",
     link: "/docs/integrations/gmail",
   },
@@ -1761,7 +1761,7 @@ function ProtocolSupport() {
     {
       key: "mcp",
       icon: <MdExtension />,
-      title: "MCP — Model Context Protocol",
+      title: "MCP - Model Context Protocol",
       description:
         "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
       link: "/docs/api/mcp-server",
@@ -1770,7 +1770,7 @@ function ProtocolSupport() {
     {
       key: "a2a",
       icon: <MdHub />,
-      title: "A2A — Agent-to-Agent",
+      title: "A2A - Agent-to-Agent",
       description:
         "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
       link: "/docs/api/a2a-server",

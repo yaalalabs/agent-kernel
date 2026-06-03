@@ -363,7 +363,7 @@ export default function DeveloperPage() {
               className={`${styles.developerAnalogy} ${styles.developerBlock}`}
               data-step="dev-01"
             >
-              <p className={styles.devStepLabel}>Step 01 | Analogy</p>
+              <p className={styles.devStepLabel}>Step 01 / Analogy</p>
               <h1 className={styles.devTitle}>
                 <span>Building blocks and deployment infrastructure</span>
                 {' '}
@@ -534,7 +534,7 @@ export default function DeveloperPage() {
             {/* Step 02 — Available Features */}
             <div className={styles.devFeatureSection} data-step="dev-03">
               <p className={styles.devStepLabel}>
-                Step 02 | Features
+                Step 02 / Features
               </p>
               <h2 className={styles.devTitle}>
                 <span>
@@ -592,7 +592,7 @@ export default function DeveloperPage() {
               className={`${styles.devFrameworkSection} ${styles.developerBlock}`}
               data-step="dev-04"
             >
-              <p className={styles.devStepLabel}>Step 03 | Framework</p>
+              <p className={styles.devStepLabel}>Step 03 / Framework</p>
               <h2 className={styles.devTitle}>
                 <span>
                   Use The Framework You Prefer
@@ -604,7 +604,7 @@ export default function DeveloperPage() {
 
             {/* Step 04 — How Agent Kernel Fits In */}
             <div className={styles.devArchitectureSection} data-step="dev-05">
-              <p className={styles.devStepLabel}>Step 05 | How it works</p>
+              <p className={styles.devStepLabel}>Step 04 / How it works</p>
               <h2 className={styles.devTitle}>
                 <span>How Agent Kernel Fits In</span>
               </h2>

@@ -58,7 +58,7 @@
 
 .sectionTitle {
   font-size: clamp(1.875rem, 4vw, 2.5rem);
-  font-weight: 900;
+  font-weight: 600;
   background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;

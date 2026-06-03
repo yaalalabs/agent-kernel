@@ -1202,7 +1202,7 @@ function Levels() {
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
             <span>Agent Kernel is designed</span>
-            {""}<br />
+            {" "}
             <span>to adapt to your level of expertise</span>
           </h2>
           <p ref={subtitleRef} className={styles.levelsSubtitle}>

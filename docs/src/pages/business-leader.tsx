@@ -262,7 +262,7 @@ export default function BusinessLeaderPage() {
               <div className={styles.contentStep}>
                 <p className={styles.stepLabel}>Step 01 / Identify the gap</p>
                 <h1 className={styles.contentTitle}>
-                  Where is the gap in your business?
+                  Where Is The Gap In Your Business?
                 </h1>
                 <p className={styles.contentDescription}>
                   Most businesses have processes that still depend too much on
@@ -366,9 +366,9 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-02">
               <p className={styles.stepLabel}>Step 02 / Meet the solution</p>
               <h2 className={styles.contentTitle}>
-                <span>An AI agent doesn't just answer,</span>
+                <span>An AI Agent Doesn't Just Answer,</span>
                 {' '}<br />
-                <span>it gets things done.</span>
+                <span>It Gets Things Done.</span>
               </h2>
 
               <AgentExecutionFlowDiagram />
@@ -378,9 +378,9 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-03">
               <p className={styles.stepLabel}>Step 03 / Agent Kernel</p>
               <h2 className={styles.contentTitle}>
-                <span>Agent Kernel is the engine that powers it at scale to run</span>
+                <span>Agent Kernel Is The Engine That Powers It At Scale To Run</span>
                 {' '}
-                <span>compliant AI agents</span>
+                <span>Compliant AI Agents</span>
               </h2>
 
               {/* OS analogy highlight card */}
@@ -443,7 +443,7 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-04">
               <p className={styles.stepLabel}>Step 04 / See it in action</p>
               <h2 className={styles.contentTitle}>
-                <span>See your Agent Kernel in action</span>
+                <span>See Your Agent Kernel In Action</span>
               </h2>
               <p className={styles.contentDescription}>
                 Curious what your agent can actually do? Here are some real
@@ -457,7 +457,7 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "3rem" }} data-step="bl-05">
               <p className={styles.stepLabel}>Step 05 / How it works</p>
               <h2 className={styles.contentTitle}>
-                <span>Agent Kernel is the engine that powers it all</span>
+                <span>Agent Kernel Is The Engine That Powers It All</span>
               </h2>
               <p className={styles.contentDescription}>
                 You write your AI agent's logic. Agent Kernel handles everything

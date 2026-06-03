@@ -644,7 +644,7 @@ export default function AIEngineerPage() {
             className={`${styles.developerAnalogy} ${styles.aiEngineerBlock}`}
             data-step="ai-01"
           >
-            <p className={styles.aiStepLabel}>Step 01 | Analogy</p>
+            <p className={styles.aiStepLabel}>Step 01 / Analogy</p>
             <h2 className={styles.aiTitle}>
               Guardrails, Traceability, Memory and Other Enterprise Features for Your Agent Code.
             </h2>
@@ -704,7 +704,7 @@ export default function AIEngineerPage() {
             className={`${styles.akStandOutSection} ${styles.developerBlock}`}
             data-step="ai-03"
           >
-            <p className={styles.aiStepLabel}>Step 02 | Stand Out</p>
+            <p className={styles.aiStepLabel}>Step 02 / Stand Out</p>
             <h2 className={styles.aiTitle}>
               <span>What Makes Agent Kernel Stand Out</span>
             </h2>
@@ -846,16 +846,16 @@ export default function AIEngineerPage() {
           {/* Step 04 — Available Features */}
           <div className={styles.devFeatureSection} data-step="ai-04">
             <p className={styles.aiStepLabel}>
-              Step 03 | Features
+              Step 03 / Features
             </p>
             <h2 className={styles.aiTitle}>
-              <span>All Enterprise Features Available</span>
+              <span>Focus on Agent Logic.</span>
               {' '}<br />
-              <span>Free And Open-Source</span>
+              <span>We Handle the Rest.</span>
             </h2>
 
             <p className={styles.aiDescription}>
-              Focus on Agent Logic. We Handle the Rest.
+              All Enterprise Features Available Free And Open-Source
             </p>
 
             <div className={styles.devFeatureGroups}>
@@ -906,7 +906,7 @@ export default function AIEngineerPage() {
             data-step="ai-05"
           >
             <p className={styles.aiStepLabel}>
-              Step 04 | Frameworks
+              Step 04 / Frameworks
             </p>
             <h2 className={styles.aiTitle}>
               <span>Use The Framework You Prefer</span>
@@ -920,7 +920,7 @@ export default function AIEngineerPage() {
             className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}
             data-step="ai-06"
           >
-            <p className={styles.aiStepLabel}>Step 05 | Build Agents</p>
+            <p className={styles.aiStepLabel}>Step 05 / Build Agents</p>
             <h2 className={styles.aiTitle}>
               <span>How Agent Kernel Helps You Build Production-Ready Compliant AI Agents</span>
             </h2>
@@ -1001,7 +1001,7 @@ export default function AIEngineerPage() {
             className={`${styles.devArchitectureSection} ${styles.developerBlock}`}
             data-step="ai-07"
           >
-            <p className={styles.aiStepLabel}>Step 06 | Complete Picture</p>
+            <p className={styles.aiStepLabel}>Step 06 / Complete Picture</p>
             <h2 className={styles.aiTitle}>
               <span>How Agent Kernel Fits In</span>
             </h2>
@@ -1024,7 +1024,7 @@ export default function AIEngineerPage() {
             className={`${styles.devFeatureSection} ${styles.developerBlock}`}
             data-step="ai-08"
           >
-            <p className={styles.aiStepLabel}>Step 07 | Operating system depth</p>
+            <p className={styles.aiStepLabel}>Step 07 / Operating system depth</p>
             <h2 className={styles.aiTitle}>
               <span>Why Agent Kernel is a Powerful</span>
               {' '}<br />

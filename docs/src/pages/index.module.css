@@ -86,7 +86,7 @@
 
 .sectionTitle {
   font-size: 2.8rem;
-  font-weight: 800;
+  font-weight: 600;
   background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -1002,6 +1002,7 @@
 .title {
   font-size: clamp(2.4rem, 4.2vw, 3.5rem);
   font-weight: 600;
+  font-family: 'Archivo', sans-serif;
   line-height: 1.1;
   letter-spacing: -0.03em;
   color: #ffffff;
@@ -2507,7 +2508,7 @@
 
 .deployTitle {
   font-size: 2.4rem;
-  font-weight: 800;
+  font-weight: 600;
   background: linear-gradient(to bottom, #ffffff 0%, #a0a0a0 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -3040,7 +3041,8 @@
 
 .ctaTitle {
   font-size: clamp(2.4rem, 6vw, 4rem);
-  font-weight: 800;
+  font-weight: 600;
+  font-family: 'Archivo', sans-serif;
   color: #ffffff;
   letter-spacing: -0.03em;
   line-height: 1.15;
@@ -3907,8 +3909,8 @@
 
 .contentTitle {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
-  font-weight: 900;
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  font-weight: 600;
+  background: linear-gradient(to bottom, #ffffff 0%, #858387 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -4131,11 +4133,11 @@
 
 .devTitle {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, #ffffff 0%, #858387 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin-bottom: 1.75rem;
@@ -4538,11 +4540,11 @@
 
 .aiTitle {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, #ffffff 0%, #858387 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin-bottom: 1.75rem;
