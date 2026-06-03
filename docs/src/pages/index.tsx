@@ -238,25 +238,30 @@ function Hero() {
 
           <div ref={buttonsRef} className={styles.heroButtons}>
             <Link
-              className={`button button--primary button--lg ${styles.btnPrimary}`}
+              className={styles.heroBtnPrimary}
               to="/docs"
             >
-              <span className={styles.btnIcon}>→</span>
-              Get Started
+              Get Started Free
             </Link>
-            <button
-              type="button"
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
-              onClick={() =>
-                document
-                  .getElementById("agent-skills")
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
+            <Link
+              className={styles.heroBtnLink}
+              to="/docs"
             >
-              <span className={styles.btnIconSecondary}>→</span>
-              Agent Skills
-            </button>
+              Documentations
+            </Link>
           </div>
+
+          <ul ref={bulletsRef} className={styles.heroBullets}>
+            <li>
+              <span className={styles.heroCheck}>✓</span> Install in minutes
+            </li>
+            <li>
+              <span className={styles.heroCheck}>✓</span> Zero vendor lock-in
+            </li>
+            <li>
+              <span className={styles.heroCheck}>✓</span> Enterprise-grade observability
+            </li>
+          </ul>
         </div>
 
         {/* ── RIGHT – particle video ───────────── */}

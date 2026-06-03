@@ -707,10 +707,89 @@
 
 .heroButtons {
   display: flex;
-  gap: 0.75rem;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.heroBtnPrimary {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0.85rem 2.2rem;
+  background: rgba(18, 12, 38, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff !important;
+  border: 1px solid rgba(242, 0, 255, 0.35);
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-decoration: none !important;
+  box-shadow: 
+    0 0 20px rgba(242, 0, 255, 0.15),
+    inset 0 0 12px rgba(242, 0, 255, 0.1);
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.2s ease,
+    box-shadow 0.25s ease;
+}
+
+.heroBtnPrimary:hover {
+  background: rgba(26, 14, 46, 0.85);
+  border-color: rgba(242, 0, 255, 0.65);
+  box-shadow:
+    0 0 30px rgba(242, 0, 255, 0.35),
+    inset 0 0 16px rgba(242, 0, 255, 0.25);
+  transform: translateY(-1px);
+  color: #ffffff !important;
+  text-decoration: none !important;
+}
+
+.heroBtnLink {
+  display: inline-flex;
+  align-items: center;
+  color: #cbd5e1 !important;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none !important;
+  padding: 0.85rem 1.25rem;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.heroBtnLink:hover {
+  color: #ffffff !important;
+  text-decoration: none !important;
+  transform: translateY(-1px);
+}
+
+.heroBullets {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
   flex-wrap: wrap;
+  list-style: none;
+  margin: 1.5rem 0 0 0;
+  padding: 0;
+}
+
+.heroBullets li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+
+.heroCheck {
+  color: #F200FF;
+  font-size: 1.1rem;
+  font-weight: bold;
+  flex-shrink: 0;
+  display: block;
 }
 
 /* ── layout wrapper */
@@ -744,7 +823,7 @@
 
 .title {
   font-size: clamp(2.4rem, 4.2vw, 3.5rem);
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.03em;
   color: #ffffff;
@@ -897,7 +976,8 @@
     display: none;
   }
 
-  .bullets {
+  .bullets,
+  .heroBullets {
     justify-content: center;
   }
 
@@ -964,7 +1044,8 @@
     display: none;
   }
 
-  .bullets {
+  .bullets,
+  .heroBullets {
     justify-content: center;
     gap: 1rem;
   }
@@ -3070,7 +3151,7 @@
     gap: 1.25rem;
   }
 
-  .levelsGrid > *:last-child:nth-child(odd) {
+  .levelsGrid>*:last-child:nth-child(odd) {
     grid-column: auto;
     max-width: 100%;
     margin: 0;
@@ -3152,13 +3233,14 @@
   }
 
   .levelsGrid {
-    grid-template-columns: 1fr; /* single column, cards stacked */
+    grid-template-columns: 1fr;
+    /* single column, cards stacked */
     gap: 1rem;
     max-width: 100%;
   }
 
   /* reset tablet centering rule */
-  .levelsGrid > *:last-child:nth-child(odd) {
+  .levelsGrid>*:last-child:nth-child(odd) {
     grid-column: auto;
     max-width: 100%;
     margin: 0;
@@ -3167,7 +3249,8 @@
 
   .levelCard {
     display: flex !important;
-    flex-direction: column !important; /* image on top, text below */
+    flex-direction: column !important;
+    /* image on top, text below */
     align-items: stretch !important;
     gap: 0.875rem;
     padding: 1rem;
@@ -4319,7 +4402,8 @@
   }
 
   .aiBuildArrowTrack {
-    display: none; /* Arrow only makes sense in 3-column layout */
+    display: none;
+    /* Arrow only makes sense in 3-column layout */
   }
 }
 
@@ -4342,7 +4426,7 @@
   }
 }
 
-.devArchitectureSection + .devFeatureSection {
+.devArchitectureSection+.devFeatureSection {
   margin-top: 5rem;
 }
 
