@@ -1171,9 +1171,9 @@ export default function AIEngineerPage() {
             </p>
 
             <div className={styles.goDeeperGrid}>
-              <Link
+              <a
                 className={styles.goDeeperCard}
-                to="/features"
+                href="/features"
                 style={{ '--card-accent': '#26A64D' } as React.CSSProperties}
               >
                 <h3 className={styles.goDeeperCardTitle}>Features</h3>
@@ -1183,11 +1183,11 @@ export default function AIEngineerPage() {
                   Kernel production-ready.
                 </p>
                 <span className={styles.goDeeperCardCta}>Read More</span>
-              </Link>
+              </a>
 
-              <Link
+              <a
                 className={styles.goDeeperCard}
-                to="/use-cases"
+                href="/use-cases"
                 style={{ '--card-accent': '#26A64D' } as React.CSSProperties}
               >
                 <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
@@ -1197,7 +1197,7 @@ export default function AIEngineerPage() {
                   agents faster.
                 </p>
                 <span className={styles.goDeeperCardCta}>Read More</span>
-              </Link>
+              </a>
             </div>
           </div>
         </div>

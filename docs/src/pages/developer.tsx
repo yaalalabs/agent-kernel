@@ -596,9 +596,9 @@ export default function DeveloperPage() {
             </p>
 
             <div className={styles.goDeeperGrid}>
-              <Link
+              <a
                 className={styles.goDeeperCard}
-                to="/features"
+                href="/features"
                 style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
               >
                 <h3 className={styles.goDeeperCardTitle}>Features</h3>
@@ -608,11 +608,11 @@ export default function DeveloperPage() {
                   Kernel production-ready.
                 </p>
                 <span className={styles.goDeeperCardCta}>Read More</span>
-              </Link>
+              </a>
 
-              <Link
+              <a
                 className={styles.goDeeperCard}
-                to="/use-cases"
+                href="/use-cases"
                 style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
               >
                 <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
@@ -622,7 +622,7 @@ export default function DeveloperPage() {
                   agents faster.
                 </p>
                 <span className={styles.goDeeperCardCta}>Read More</span>
-              </Link>
+              </a>
             </div>
           </div>
         </div>
