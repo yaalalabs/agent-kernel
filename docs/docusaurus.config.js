@@ -19,12 +19,50 @@ const config = {
   projectName: 'agent-kernel',
   trailingSlash: false,
 
-  clientModules: ['./src/clientModules/scrollReveal.ts'],
+  clientModules: [
+    './src/clientModules/ensureGtagGlobal.ts',
+    './src/clientModules/scrollReveal.ts',
+  ],
 
   onBrokenLinks: 'throw',
 
   // SEO head tags
   headTags: [
+    // Preconnect to Google Fonts domains to reduce latency
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.googleapis.com',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossorigin: 'anonymous',
+      },
+    },
+    // Preload the Google Fonts stylesheet
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preload',
+        as: 'style',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap',
+      },
+    },
+    // Load stylesheet asynchronously to prevent render-blocking
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap',
+        media: 'print',
+        onload: "this.media='all'",
+      },
+    },
     {
       tagName: 'meta',
       attributes: {
@@ -43,7 +81,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
+        content: 'Agent Kernel - From Agent Logic to Production in Minutes',
       },
     },
     {
@@ -85,7 +123,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
+        content: 'Agent Kernel - From Agent Logic to Production in Minutes',
       },
     },
     {
@@ -269,30 +307,30 @@ const config = {
           ignorePatterns: ['/tags/**'],
           filename: 'sitemap.xml',
           createSitemapItems: async (params) => {
-            const {defaultCreateSitemapItems, ...rest} = params;
+            const { defaultCreateSitemapItems, ...rest } = params;
             const items = await defaultCreateSitemapItems(rest);
             return items.map((item) => {
               // Set highest priority for key landing pages
               if (item.url === 'https://kernel.yaala.ai/' ||
-                  item.url === 'https://kernel.yaala.ai/docs' ||
-                  item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
-                  item.url === 'https://kernel.yaala.ai/docs/installation' ||
-                  item.url === 'https://kernel.yaala.ai/features' ||
-                  item.url === 'https://kernel.yaala.ai/use-cases' ||
-                  item.url === 'https://kernel.yaala.ai/blog') {
-                return {...item, priority: 1.0, changefreq: 'daily'};
+                item.url === 'https://kernel.yaala.ai/docs' ||
+                item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
+                item.url === 'https://kernel.yaala.ai/docs/installation' ||
+                item.url === 'https://kernel.yaala.ai/features' ||
+                item.url === 'https://kernel.yaala.ai/use-cases' ||
+                item.url === 'https://kernel.yaala.ai/blog') {
+                return { ...item, priority: 1.0, changefreq: 'daily' };
               }
               // High priority for blog posts
               if (item.url.includes('/blog/') && !item.url.includes('/blog/tags') && !item.url.includes('/blog/archive')) {
-                return {...item, priority: 0.8, changefreq: 'weekly'};
+                return { ...item, priority: 0.8, changefreq: 'weekly' };
               }
               // Medium priority for documentation pages
               if (item.url.includes('/docs/')) {
-                return {...item, priority: 0.7, changefreq: 'weekly'};
+                return { ...item, priority: 0.7, changefreq: 'weekly' };
               }
               // Lower priority for blog tags and archives
               if (item.url.includes('/blog/tags') || item.url.includes('/blog/archive') || item.url.includes('/blog/authors')) {
-                return {...item, priority: 0.3};
+                return { ...item, priority: 0.3 };
               }
               return item;
             });
@@ -322,10 +360,11 @@ const config = {
       ],
       image: 'img/card.png',
       navbar: {
-        title: 'Agent Kernel',
+        hideOnScroll: true,
+        title: '',
         logo: {
           alt: 'Agent Kernel Logo',
-          src: 'img/branding/agent-kernel-icon-color.svg',
+          src: 'img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg',
         },
         items: [
           { to: '/features', label: 'Features', position: 'left' },
@@ -336,122 +375,49 @@ const config = {
             position: 'left',
             label: 'Documentation',
           },
-          { to: '/blog', label: 'Blog', position: 'left' }, 
+          { to: '/blog', label: 'Blog', position: 'left' },
           {
             type: 'docsVersionDropdown',
             position: 'right',
             dropdownActiveClassDisabled: true,
             dropdownItemsAfter: [],
+            className: 'navbar-version-dropdown',
           },
-          {
-            href: 'https://discord.gg/snrPzb46uu',
-            position: 'right',
-            className: 'header-discord-link',
-            'aria-label': 'Discord Community',
-          },
-          {
-            href: 'https://pypi.org/project/agentkernel/',
-            position: 'right',
-            className: 'header-pypi-link',
-            'aria-label': 'PyPI package',
-          },
-          {
-            href: 'https://registry.terraform.io/modules/yaalalabs',
-            position: 'right',
-            className: 'header-terraform-link',
-            'aria-label': 'Terraform registry',
-          },
-          {
-            href: 'https://github.com/yaalalabs/agent-kernel',
-            position: 'right',
-            className: 'header-github-link',
-            'aria-label': 'GitHub repository',
-          },
+
+
         ],
       },
       footer: {
         style: 'dark',
-        logo: {
-          alt: 'Yaala Labs Logo',
-          src: 'img/yaala_white.png',
-          href: 'https://www.yaalalabs.com/',
-          width: 160,
-        },
+        // Remove the logo key entirely — logo is now handled in FooterLayout
         links: [
           {
             title: 'Docs',
             items: [
-              {
-                label: 'Getting Started',
-                to: '/docs',
-              },
-              {
-                label: 'Use Cases',
-                to: '/use-cases',
-              },
-              {
-                label: 'Architecture',
-                to: '/docs/architecture/overview',
-              },
-              {
-                label: 'API Reference',
-                to: '/docs/api/rest-api',
-              },
+              { label: 'Getting Started', to: '/docs' },
+              { label: 'Use Cases', to: '/use-cases' },
+              { label: 'Architecture', to: '/docs/architecture/overview' },
+              { label: 'API Reference', to: '/docs/api/rest-api' },
             ],
           },
           {
             title: 'Community',
             items: [
-              {
-                label: 'Discord',
-                href: 'https://discord.gg/snrPzb46uu',
-              },
-              {
-                label: 'GitHub',
-                href: 'https://github.com/yaalalabs/agent-kernel',
-              },
-              {
-                label: 'Issues',
-                href: 'https://github.com/yaalalabs/agent-kernel/issues',
-              },
+              { label: 'Discord', href: 'https://discord.gg/snrPzb46uu' },
+              { label: 'GitHub', href: 'https://github.com/yaalalabs/agent-kernel' },
+              { label: 'Issues', href: 'https://github.com/yaalalabs/agent-kernel/issues' },
             ],
           },
           {
             title: 'More',
             items: [
-              {
-                label: 'Blog',
-                to: '/blog',
-              },
-              {
-                label: 'PyPI',
-                href: 'https://pypi.org/project/agentkernel/',
-              },
-              {
-                label: 'Terraform',
-                href: 'https://registry.terraform.io/modules/yaalalabs',
-              },
-            ],
-          },
-          {
-            title: 'Legal',
-            items: [
-              {
-                label: 'Privacy Policy',
-                to: '/privacy-policy',
-              },
-              {
-                label: 'Terms of Use',
-                to: '/terms-of-use',
-              },
-              {
-                label: 'Cookie Policy',
-                to: '/cookie-policy',
-              },
+              { label: 'Blog', to: '/blog' },
+              { label: 'PyPI', href: 'https://pypi.org/project/agentkernel/' },
+              { label: 'Terraform', href: 'https://registry.terraform.io/modules/yaalalabs' },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs`,
+        copyright: `© ${new Date().getFullYear()} Yaala Labs. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

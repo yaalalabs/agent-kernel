@@ -8,21 +8,21 @@ slug: /
 **An Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
-🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
+🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
 :::
 
 ## What is Agent Kernel?
 
-Agent Kernel is an **open-source runtime** that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code. Built-in integrations for Slack, WhatsApp, and more mean your agents can reach users instantly.
+Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
 
-**Think of it like Express.js for web servers, or Spring Boot for Java microservices** — but for AI agents. It gives you the scaffolding, execution environment, session management, and deployment infrastructure so you can focus on writing the logic that matters.
+**Think of it like Express.js for web servers, or Spring Boot for Java microservices** — but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
 
 **Supported Python Versions:** 3.12 - 3.13.x
 **Supported Cloud Platforms:** AWS, Azure
 
 It's not:
-- a substitute for popular agent frameworks and SDKs like LangGraph, OpenAI Agents, CrewAI, or Google ADK
-- another heavy abstraction that you have to learn
+- A substitute for popular agent frameworks and SDKs like LangGraph, OpenAI Agents, CrewAI, or Google ADK
+- Another heavy abstraction that you have to learn
 
 It's a **lightweight, thin adapter** that wraps your existing agents and instantly provides everything else — testing, deployment, integrations, session management, observability.
 

@@ -1,0 +1,95 @@
+/* ── Brand tokens ── */
+:local {
+  --brand-bg:   #010002;
+  --brand-cyan: #00DDFF;
+  --brand-blue: #00AADE;
+}
+
+/* ── Container ── */
+.container {
+  position: fixed;
+  right: 24px;
+  bottom: 104px;
+  z-index: 9997;
+  will-change: transform, opacity;
+}
+
+.containerHidden {
+  pointer-events: none;
+}
+
+/* ── Button ── */
+.button {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+
+  background: rgba(13, 0, 26, 0.88);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  color: var(--brand-bg);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  transition: box-shadow 0.2s ease;
+  will-change: transform;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--brand-cyan);
+  outline-offset: 3px;
+}
+
+/* ── Click ripple ── */
+.ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 221, 255, 0.45) 0%, transparent 70%);
+  opacity: 0;
+  scale: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* ── Arrow icon ── */
+.icon {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: var(--brand-bg);
+  will-change: transform, opacity;
+}
+
+@media (max-width: 1024px) {
+  .container {
+    right: 20px;
+    bottom: 96px;
+  }
+
+  .button {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    right: 20px;
+    bottom: 94px;
+  }
+
+  .button {
+    width: 56px;
+    height: 56px;
+  }
+
+  .icon {
+    width: 18px;
+    height: 18px;
+  }
+}

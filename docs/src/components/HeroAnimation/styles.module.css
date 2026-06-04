@@ -1,0 +1,184 @@
+/* ─── Hero ────────────────────────────────────────────────────────────────── */
+
+.hero {
+  position: relative;
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  overflow: hidden;
+  text-align: center;
+  animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', 'Liberation Sans', sans-serif;
+}
+
+@media (min-width: 640px) {
+  .hero {
+    padding: 3.5rem 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero {
+    padding: 5rem 1.5rem;
+  }
+}
+
+.hero :global(.container) {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.heroContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 48rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+  .heroContent {
+    margin: 0 auto;
+  }
+}
+
+/* Badge */
+.Badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 2px solid #2A272E;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.5rem;
+  background: #131017;
+  position: relative;
+}
+
+.badgeStar {
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
+}
+
+.heroTitle {
+  font-size: clamp(0.9rem, 3.78vw, 3.15rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.75rem;
+  text-rendering: optimizeLegibility;
+}
+
+.heroSubtitle {
+  font-size: clamp(0.875rem, 2vw, 1.125rem);
+  color: #ffffff;
+  line-height: 1.75;
+  max-width: 40rem;
+  margin: 0 auto 2.25rem;
+}
+
+.heroButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2.5rem;
+}
+
+@media (min-width: 640px) {
+  .heroButtons {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: clamp(0.5rem, 2vw, 0.75rem);
+  }
+}
+
+/* ─── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btnPrimary {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.65rem 1.8rem !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+  font-size: 0.92rem !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap;
+  text-decoration: none !important;
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease !important;
+}
+
+.btnPrimary:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+  border-color: var(--ak-blue, #00ddff) !important;
+  box-shadow:
+    0 0 16px rgba(0, 221, 255, 0.65),
+    0 0 8px rgba(0, 221, 255, 0.3) !important;
+  transform: translateY(-2px) !important;
+  text-decoration: none !important;
+}
+
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1 !important;
+  font-size: 0.92rem !important;
+  font-weight: 600;
+  text-decoration: none !important;
+  padding: 0.65rem 1.6rem !important;
+  background: transparent !important;
+  border: none !important;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.btnSecondary:hover {
+  color: #ffffff !important;
+  text-decoration: none !important;
+  transform: translateY(-1px);
+}
+
+@media (max-width: 639px) {
+
+  .btnPrimary,
+  .btnSecondary {
+    position: relative !important;
+    justify-content: center !important;
+    padding: 0.75rem 2.5rem !important;
+    width: 100% !important;
+  }
+
+  .btnIcon,
+  .btnIconSecondary {
+    display: none !important;
+  }
+}
