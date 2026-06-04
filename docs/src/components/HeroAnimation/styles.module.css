@@ -77,7 +77,10 @@
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  color: #ffffff;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin-bottom: 0.75rem;
   text-rendering: optimizeLegibility;
 }
@@ -112,85 +115,56 @@
 .btnPrimary {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 0.625rem;
-  padding: 0.4rem 1.375rem 0.4rem 0.4rem !important;
-  background: rgba(14, 8, 28, 0.72) !important;
+  justify-content: center !important;
+  padding: 0.65rem 1.8rem !important;
+  background: rgba(255, 255, 255, 0.06) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 9999px !important;
-  font-weight: 600 !important;
-  font-size: 0.9rem !important;
-  text-transform: none !important;
-  letter-spacing: 0.01em !important;
-  white-space: nowrap;
-  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease !important;
-}
-
-.btnPrimary:hover {
-  background: rgba(26, 14, 46, 0.88) !important;
-  border-color: rgba(0, 221, 255, 0.35) !important;
-  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 221, 255, 0.12) !important;
-  transform: translateY(-1px) !important;
-  color: #ffffff !important;
-}
-
-.btnIcon {
-  width: 1.875rem;
-  height: 1.875rem;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #4facfe 0%, #2979ff 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 0.85rem;
-  color: #ffffff;
-  font-style: normal;
-  line-height: 1;
-}
-
-.btnSecondary {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 0.625rem;
-  padding: 0.4rem 1.375rem 0.4rem 0.4rem !important;
-  background: rgba(14, 8, 28, 0.5) !important;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  color: rgba(255, 255, 255, 0.85) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   border-radius: 9999px !important;
   font-weight: 600 !important;
-  font-size: 0.9rem !important;
-  text-transform: none !important;
+  font-size: 0.92rem !important;
   letter-spacing: 0.01em !important;
   white-space: nowrap;
-  transition: background 0.25s ease, border-color 0.25s ease, transform 0.2s ease !important;
+  text-decoration: none !important;
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease !important;
+}
+
+.btnPrimary:hover {
+  background: #ffffff !important;
+  color: #060213 !important;
+  border-color: #ffffff !important;
+  box-shadow:
+    0 0 16px rgba(255, 255, 255, 0.65),
+    0 0 8px rgba(255, 255, 255, 0.3) !important;
+  transform: translateY(-2px) !important;
+  text-decoration: none !important;
+}
+
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1 !important;
+  font-size: 0.92rem !important;
+  font-weight: 600;
+  text-decoration: none !important;
+  padding: 0.65rem 1.6rem !important;
+  background: transparent !important;
+  border: none !important;
+  transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .btnSecondary:hover {
-  background: rgba(0, 221, 255, 0.07) !important;
-  border-color: rgba(0, 221, 255, 0.4) !important;
-  transform: translateY(-1px) !important;
   color: #ffffff !important;
-}
-
-.btnIconSecondary {
-  width: 1.875rem;
-  height: 1.875rem;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.85);
-  font-style: normal;
-  line-height: 1;
+  text-decoration: none !important;
+  transform: translateY(-1px);
 }
 
 @media (max-width: 639px) {

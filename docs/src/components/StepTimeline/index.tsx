@@ -48,6 +48,28 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
   const rafRef = useRef<number | null>(null);
   const obsRef = useRef<IntersectionObserver | null>(null);
   const stepLayoutsRef = useRef<{ top: number; height: number }[]>([]);
+  const [isNavbarVisible, setIsNavbarVisible] = useState(true);
+
+  useEffect(() => {
+    const navbar = document.querySelector('.navbar');
+    if (!navbar) return;
+
+    const updateVisibility = () => {
+      const classes = Array.from(navbar.classList);
+      const isHidden = classes.some(cls => cls.includes('navbarHidden') || cls === 'navbar--hidden');
+      setIsNavbarVisible(!isHidden);
+    };
+
+    updateVisibility();
+
+    const observer = new MutationObserver(updateVisibility);
+    observer.observe(navbar, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   const steps = levelId ? (LEVEL_STEPS[levelId] ?? []) : [];
 
@@ -162,7 +184,8 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
   const scrollToStep = (index: number) => {
     const el = contentRef.current?.querySelector(steps[index]?.selector) as HTMLElement | null;
     if (el) {
-      const top = el.getBoundingClientRect().top + window.scrollY - 72;
+      const offset = isNavbarVisible ? 160 : 100;
+      const top = el.getBoundingClientRect().top + window.scrollY - offset;
       window.scrollTo({ top, behavior: 'smooth' });
     }
   };
@@ -170,7 +193,7 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
   if (steps.length === 0) return null;
 
   return (
-    <nav className={`${styles.bar} ${visible ? styles['bar--visible'] : ''}`} aria-label="Section progress">
+    <nav className={`${styles.bar} ${visible ? styles['bar--visible'] : ''} ${isNavbarVisible ? styles['bar--navbar-visible'] : ''}`} aria-label="Section progress">
       <button
         className={styles.backBtn}
         onClick={() => {

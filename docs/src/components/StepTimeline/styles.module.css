@@ -10,7 +10,7 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 200;
+  z-index: 90;
   height: 90px;
   opacity: 1;
   visibility: visible;
@@ -28,12 +28,17 @@
   backdrop-filter: saturate(180%) blur(0px);
   -webkit-backdrop-filter: saturate(180%) blur(0px);
 
-  /* Transition for smooth background fade */
+  /* Transition for smooth background fade and positioning */
   transition:
+    top 0.3s ease,
     background-color 0.35s ease,
     border-bottom-color 0.35s ease,
     backdrop-filter 0.35s ease,
     -webkit-backdrop-filter 0.35s ease;
+}
+
+.bar--navbar-visible {
+  top: var(--ifm-navbar-height, 60px);
 }
 
 .bar--visible {

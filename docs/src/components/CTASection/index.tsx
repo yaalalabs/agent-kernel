@@ -6,7 +6,6 @@ import styles from "../../pages/index.module.css";
 export default function CTASection() {
   return (
     <section className={styles.ctaSection}>
-      <div className={styles.topGlow} />
       <div className="container">
         <div className={styles.ctaContent}>
           <h2 className={styles.ctaTitle}>
@@ -21,21 +20,17 @@ export default function CTASection() {
           </p>
           <div className={styles.ctaButtons}>
             <Link
-              className={`button button--primary button--lg ${styles.btnPrimary}`}
+              className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              <span className={styles.btnIcon}>→</span>
               Get Started Free
             </Link>
             <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              className={styles.heroBtnLink}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <span className={styles.btnIconSecondary}>
-                <FaGithub />
-              </span>
               View On GitHub
             </Link>
           </div>

@@ -3,6 +3,7 @@ import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
 import Link from "@docusaurus/Link";
 import Layout from "@theme/Layout";
+import { useHistory } from "@docusaurus/router";
 import {
   MdTerminal,
   MdBolt,
@@ -119,6 +120,7 @@ const DEV_FEATURE_GROUPS = [
 ];
 
 export default function DeveloperPage() {
+  const history = useHistory();
   const contentRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
 
@@ -668,6 +670,21 @@ export default function DeveloperPage() {
                       <span className={styles.goDeeperCardCta}>Read More</span>
                     </a>
                   </div>
+
+                  <div style={{ marginTop: '4rem', display: 'flex', justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      className={`button button--primary button--md ${styles.terraformLink}`}
+                      onClick={() => {
+                        history.push('/');
+                        setTimeout(() => {
+                          document.getElementById('levels')?.scrollIntoView({ behavior: 'smooth' });
+                        }, 100);
+                      }}
+                    >
+                      Back to Path Selection
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -676,7 +693,6 @@ export default function DeveloperPage() {
       </section>
 
       <section className={styles.ctaSection}>
-        <div className={styles.topGlow} />
         <div className="container">
           <div className={styles.ctaContent}>
             <h2 className={styles.ctaTitle}>
@@ -692,21 +708,17 @@ export default function DeveloperPage() {
             </p>
             <div className={styles.ctaButtons}>
               <Link
-                className={`button button--primary button--lg ${styles.btnPrimary}`}
+                className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
                 to="/docs"
               >
-                <span className={styles.btnIcon}>→</span>
                 Get Started Free
               </Link>
               <Link
-                className={`button button--secondary button--lg ${styles.btnSecondary}`}
+                className={styles.heroBtnLink}
                 to="https://github.com/yaalalabs/agent-kernel"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <span className={styles.btnIconSecondary}>
-                  <FaGithub />
-                </span>
                 View On GitHub
               </Link>
             </div>

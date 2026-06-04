@@ -307,30 +307,30 @@ const config = {
           ignorePatterns: ['/tags/**'],
           filename: 'sitemap.xml',
           createSitemapItems: async (params) => {
-            const {defaultCreateSitemapItems, ...rest} = params;
+            const { defaultCreateSitemapItems, ...rest } = params;
             const items = await defaultCreateSitemapItems(rest);
             return items.map((item) => {
               // Set highest priority for key landing pages
               if (item.url === 'https://kernel.yaala.ai/' ||
-                  item.url === 'https://kernel.yaala.ai/docs' ||
-                  item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
-                  item.url === 'https://kernel.yaala.ai/docs/installation' ||
-                  item.url === 'https://kernel.yaala.ai/features' ||
-                  item.url === 'https://kernel.yaala.ai/use-cases' ||
-                  item.url === 'https://kernel.yaala.ai/blog') {
-                return {...item, priority: 1.0, changefreq: 'daily'};
+                item.url === 'https://kernel.yaala.ai/docs' ||
+                item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
+                item.url === 'https://kernel.yaala.ai/docs/installation' ||
+                item.url === 'https://kernel.yaala.ai/features' ||
+                item.url === 'https://kernel.yaala.ai/use-cases' ||
+                item.url === 'https://kernel.yaala.ai/blog') {
+                return { ...item, priority: 1.0, changefreq: 'daily' };
               }
               // High priority for blog posts
               if (item.url.includes('/blog/') && !item.url.includes('/blog/tags') && !item.url.includes('/blog/archive')) {
-                return {...item, priority: 0.8, changefreq: 'weekly'};
+                return { ...item, priority: 0.8, changefreq: 'weekly' };
               }
               // Medium priority for documentation pages
               if (item.url.includes('/docs/')) {
-                return {...item, priority: 0.7, changefreq: 'weekly'};
+                return { ...item, priority: 0.7, changefreq: 'weekly' };
               }
               // Lower priority for blog tags and archives
               if (item.url.includes('/blog/tags') || item.url.includes('/blog/archive') || item.url.includes('/blog/authors')) {
-                return {...item, priority: 0.3};
+                return { ...item, priority: 0.3 };
               }
               return item;
             });
@@ -360,6 +360,7 @@ const config = {
       ],
       image: 'img/card.png',
       navbar: {
+        hideOnScroll: true,
         title: '',
         logo: {
           alt: 'Agent Kernel Logo',
@@ -374,7 +375,7 @@ const config = {
             position: 'left',
             label: 'Documentation',
           },
-          { to: '/blog', label: 'Blog', position: 'left' }, 
+          { to: '/blog', label: 'Blog', position: 'left' },
           {
             type: 'docsVersionDropdown',
             position: 'right',

@@ -563,21 +563,17 @@ function Community({ sectionRef }: CommunityProps) {
           </p>
           <div className={indexStyles.ctaButtons}>
             <Link
-              className={`button button--primary button--lg ${indexStyles.btnPrimary}`}
+              className={`button button--primary button--lg ${indexStyles.heroBtnSecondary}`}
               to="/docs"
             >
-              <span className={indexStyles.btnIcon}>→</span>
               Get Started Free
             </Link>
             <Link
-              className={`button button--secondary button--lg ${indexStyles.btnSecondary}`}
+              className={indexStyles.heroBtnLink}
               to="https://github.com/yaalalabs/agent-kernel"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <span className={indexStyles.btnIconSecondary}>
-                <FaGithub />
-              </span>
               View On GitHub
             </Link>
           </div>

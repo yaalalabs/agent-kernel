@@ -213,14 +213,12 @@ export default function HeroAnimation({
               className={`button button--primary button--lg ${styles.btnPrimary}`}
               to={primaryCtaTo}
             >
-              <span className={styles.btnIcon}>→</span>
               {primaryCtaLabel}
             </Link>
             <Link
-              className={`button button--secondary button--lg ${styles.btnSecondary}`}
+              className={styles.btnSecondary}
               to={secondaryCtaTo}
             >
-              <span className={styles.btnIconSecondary}>→</span>
               {secondaryCtaLabel}
             </Link>
           </div>

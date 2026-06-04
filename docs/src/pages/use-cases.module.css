@@ -9,7 +9,6 @@
 }
 
 :global(.navbar) {
-  position: relative;
   z-index: 11;
 }
 
@@ -277,7 +276,7 @@
   flex-shrink: 0;
   position: relative;
   box-shadow: 0 0 12px color-mix(in srgb, var(--icon-color, #00e5ff) 15%, transparent),
-              inset 0 0 6px color-mix(in srgb, var(--icon-color, #00e5ff) 12%, transparent);
+    inset 0 0 6px color-mix(in srgb, var(--icon-color, #00e5ff) 12%, transparent);
   transition: border-color 0.25s ease, background-color 0.25s ease, filter 0.22s ease, transform 0.22s ease;
 }
 
