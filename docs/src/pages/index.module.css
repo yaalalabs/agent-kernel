@@ -2379,9 +2379,9 @@
   font-weight: 600;
   padding: 0.35rem 0.8rem;
   border-radius: 999px;
-  background: rgba(0, 221, 255, 0.05);
-  color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(0, 221, 255, 0.06);
+  background: #303031;
+  color: #dfe1f0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   will-change: transform, opacity;
 }
 
@@ -3683,6 +3683,13 @@
     align-items: center !important;
   }
 
+  .flipCardFront::before,
+  .flipCardBack::before,
+  .flipCardFront::after,
+  .flipCardBack::after {
+    display: none !important;
+  }
+
   .flipCardFront {
     gap: 1.25rem !important;
   }
@@ -3852,6 +3859,13 @@
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
+  }
+
+  .flipCardFront::before,
+  .flipCardBack::before,
+  .flipCardFront::after,
+  .flipCardBack::after {
+    display: none !important;
   }
 
   .flipCardFront {

@@ -380,7 +380,7 @@ function FrameworksStrip() {
       </div>
 
       <p ref={labelRef} className={styles.frameworksLabel}>
-        Works with your stack. No migration. One adapter line.
+        Works with the frameworks you already use.
       </p>
 
       <div ref={rowRef} className={styles.frameworksRow}>
@@ -914,7 +914,7 @@ function Deployment() {
       icon: <SiGooglecloud className={styles.cloudIconSvg} />,
       name: "Google Cloud",
       description:
-        "Cloud Run and Cloud Functions deployments — Terraform modules in progress.",
+        "Cloud Run and Cloud Functions deployments - Terraform modules in progress.",
       modes: ["Cloud Run (Containerized)", "Cloud Functions (Containerized)"],
       modules: [],
       comingSoon: true,
@@ -934,9 +934,9 @@ function Deployment() {
           </div>
           <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
           <p className={styles.deploySubtitle}>
-            Run the same agent code on AWS, Azure, or Google Cloud. Zero rewrites.
+            Run the same agent code on AWS, Azure, or your own on-prem Docker. Zero rewrites.
             <br />
-            Production-ready Terraform modules with best practices baked in.
+            Includes production-ready Terraform modules with best practices baked in.
           </p>
         </div>
 
@@ -1076,7 +1076,7 @@ function Levels() {
       title: "Business Leader",
       image: "/img/business_leader.png",
       description:
-        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand.",
+        "You run or work in a business / enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand the tech.",
     },
     {
       id: "02",
@@ -1192,7 +1192,7 @@ function Levels() {
         <div className={styles.levelsHeader}>
           <div ref={badgeRef} className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Built for Everyone
+            Just like any other operating system
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
             <span>Agent Kernel is designed</span>

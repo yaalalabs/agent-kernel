@@ -825,7 +825,7 @@ function CoreFeatures() {
         "Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL",
         "semantic_map keeps agent prompts portable",
       ],
-      link: "/docs/architecture/memory-management",
+      link: "/docs/architecture/knowledge-bases",
     },
     {
       icon: <MdCloud />,
