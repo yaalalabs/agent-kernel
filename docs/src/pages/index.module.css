@@ -2632,11 +2632,11 @@
   position: absolute;
   inset: 0;
   border-radius: 2rem;
-  background: radial-gradient(ellipse 130% 120% at 0% 100%,
-      rgba(16, 115, 140, 0.65) 0%,
-      rgba(12, 85, 105, 0.46) 25%,
-      rgba(8, 60, 75, 0.28) 50%,
-      rgba(4, 30, 40, 0.12) 75%,
+  background: radial-gradient(ellipse 180% 160% at 0% 100%,
+      rgba(16, 115, 140, 0.75) 0%,
+      rgba(12, 85, 105, 0.55) 30%,
+      rgba(8, 60, 75, 0.35) 60%,
+      rgba(4, 30, 40, 0.15) 85%,
       transparent 100%);
   opacity: 0;
   pointer-events: none;
