@@ -81,7 +81,7 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Knowledge Base Support</strong> — ChromaDB, Neo4j &amp;
+          <strong>Knowledge Base Support</strong> - ChromaDB, Neo4j &amp;
           Starburst Galaxy built-in, plus a custom adapter API{" "}
           to plug in any backend.
         </span>
@@ -1076,7 +1076,7 @@ function Levels() {
       title: "Business Leader",
       image: "/img/business_leader.png",
       description:
-        "You run or work in a business / enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand the tech.",
+        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand the tech.",
     },
     {
       id: "02",

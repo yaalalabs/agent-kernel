@@ -4310,6 +4310,102 @@
   background-color: rgba(38, 166, 77, 0.1);
 }
 
+/* Top border & radial glow effects for Developer Architecture cards */
+.developerArchitectureLayerGroup .layerContentBox::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(252, 207, 161, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.developerArchitectureLayerGroup:hover .layerContentBox::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(252, 207, 161, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.developerArchitectureLayerGroup .layerContentBox::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(252, 207, 161, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.developerArchitectureLayerGroup:hover .layerContentBox::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(252, 207, 161, 0.12) 0%,
+      transparent 100%);
+}
+
+/* Top border & radial glow effects for AI Engineering Architecture cards */
+.aiEngineeringLayerGroup .layerContentBox::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(38, 166, 77, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.aiEngineeringLayerGroup:hover .layerContentBox::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(38, 166, 77, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.aiEngineeringLayerGroup .layerContentBox::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(38, 166, 77, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.aiEngineeringLayerGroup:hover .layerContentBox::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(38, 166, 77, 0.12) 0%,
+      transparent 100%);
+}
+
 
 .layerNumberWrapper {
   display: flex;
@@ -4348,6 +4444,8 @@
 }
 
 .layerContentBox {
+  position: relative;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 0.5rem;
   padding: 1.5rem;
@@ -4355,6 +4453,7 @@
   -webkit-backdrop-filter: blur(4px);
   transition: all 300ms ease;
   min-width: 0;
+  text-align: left;
 }
 
 .layerLabel {
