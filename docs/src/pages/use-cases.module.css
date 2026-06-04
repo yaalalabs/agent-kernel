@@ -264,67 +264,42 @@
 
 /* ── Icon cell ───────────────────────────────────────────────── */
 .iconCell {
-  position: relative;
-  width: 52px;
-  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid color-mix(in srgb, var(--icon-color, #00e5ff) 60%, transparent);
+  background: color-mix(in srgb, var(--icon-color, #00e5ff) 3%, transparent);
+  color: var(--icon-color, #00e5ff);
+  font-size: 1.35rem;
   flex-shrink: 0;
-  transition: filter 0.22s ease, transform 0.22s ease;
+  position: relative;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--icon-color, #00e5ff) 15%, transparent),
+              inset 0 0 6px color-mix(in srgb, var(--icon-color, #00e5ff) 12%, transparent);
+  transition: border-color 0.25s ease, background-color 0.25s ease, filter 0.22s ease, transform 0.22s ease;
 }
 
-/* Pulsing radial bg */
-.iconCellBg {
+.iconCell::after {
+  content: '';
   position: absolute;
-  inset: 4px;
-  border-radius: 0.35rem;
-  background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--icon-color, #40bbde) 22%, transparent) 0%, transparent 75%);
-  animation: iconPulse 2.8s ease-in-out infinite;
+  inset: -4px;
+  border: 1px solid color-mix(in srgb, var(--icon-color, #00e5ff) 15%, transparent);
+  border-radius: 0.8rem;
   pointer-events: none;
 }
 
-/* The icon itself */
-.iconCellGlyph {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.55rem;
-  color: var(--icon-color, #40bbde);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--icon-color, #40bbde) 60%, transparent));
-  transition: filter 0.22s ease;
-}
-
 /* Hover state — glow brightens */
-.orbitCard:hover .iconCellGlyph {
-  filter: drop-shadow(0 0 11px color-mix(in srgb, var(--icon-color, #40bbde) 85%, transparent));
-}
-
-.orbitCard:hover .iconCellBg {
-  animation-play-state: paused;
-  opacity: 1;
+.orbitCard:hover .iconCell {
+  border-color: color-mix(in srgb, var(--icon-color, #00e5ff) 85%, transparent);
+  background: color-mix(in srgb, var(--icon-color, #00e5ff) 8%, transparent);
 }
 
 /* Card border tints to match icon accent on hover */
 .orbitCard:hover {
-  border-color: color-mix(in srgb, var(--card-color, #40bbde) 30%, transparent);
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--card-color, #40bbde) 12%, transparent);
-}
-
-@keyframes iconPulse {
-
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(0.92);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.06);
-  }
+  border-color: color-mix(in srgb, var(--card-color, #00e5ff) 30%, transparent);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--card-color, #00e5ff) 12%, transparent);
 }
 
 .bentoTag {
@@ -940,10 +915,34 @@
   .iconCell {
     width: 46px;
     height: 46px;
+    font-size: 1.4rem;
   }
 
-  .iconCellGlyph {
-    font-size: 1.4rem;
+  .featureCard {
+    padding: 1.5rem;
+    border-radius: 1.5rem;
+  }
+
+  .featureCard::before {
+    border-radius: 1.5rem;
+  }
+
+  .featureCardHeader {
+    padding: 0.8rem 1rem;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 1rem;
+  }
+
+  .featureIndex {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.15rem;
+    border-radius: 0.5rem;
+  }
+
+  .featureIndex::after {
+    border-radius: 0.65rem;
   }
 
   .ctaButtons {
@@ -1019,9 +1018,6 @@
   .iconCell {
     width: 42px;
     height: 42px;
-  }
-
-  .iconCellGlyph {
     font-size: 1.25rem;
   }
 
@@ -1102,10 +1098,34 @@
   .iconCell {
     width: 38px;
     height: 38px;
+    font-size: 1.1rem;
   }
 
-  .iconCellGlyph {
-    font-size: 1.1rem;
+  .featureCard {
+    padding: 1.25rem;
+    border-radius: 1.25rem;
+  }
+
+  .featureCard::before {
+    border-radius: 1.25rem;
+  }
+
+  .featureCardHeader {
+    padding: 0.7rem 0.85rem;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+    border-radius: 0.8rem;
+  }
+
+  .featureIndex {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 1.05rem;
+    border-radius: 0.45rem;
+  }
+
+  .featureIndex::after {
+    border-radius: 0.6rem;
   }
 
   .bentoTitle {
@@ -1178,15 +1198,14 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 1.75rem 1.75rem 1.5rem;
-  border-radius: 1rem;
+  padding: 1.5rem 1.75rem;
+  border-radius: 2rem;
   background: #010002;
   position: relative;
   z-index: 0;
   transition:
-    border-color 280ms ease,
-    box-shadow 280ms ease,
-    transform 280ms ease;
+    transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    background-color 0.4s ease;
   text-decoration: none;
   color: inherit;
 }
@@ -1195,7 +1214,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 1rem;
+  border-radius: 2rem;
   padding: 1px;
   background: linear-gradient(160deg,
       rgba(255, 255, 255, 0.55) 0%,
@@ -1215,25 +1234,9 @@
   transition: background 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-.featureCard::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 1rem;
-  background: radial-gradient(ellipse 150% 100% at 50% 120%,
-      rgba(30, 100, 255, 0.28) 0%,
-      rgba(0, 140, 255, 0.18) 30%,
-      rgba(0, 100, 220, 0.10) 55%,
-      transparent 75%);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 0;
-  transition: opacity 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
 .featureCard:hover,
 .featureCard:focus-visible {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
 }
 
 .featureCard:focus-visible {
@@ -1260,26 +1263,50 @@
 
 .featureCardHeader {
   display: flex;
-  align-items: flex-start;
-  margin-bottom: 1.75rem;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.15rem;
+  padding: 0.9rem 1.15rem;
+  background: #010002;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-/* Numbered badge — rounded square, matching the image */
+/* Numbered badge — rounded square with outline glow */
 .featureIndex {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 0.625rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #1a1c20;
+  border-radius: 0.65rem;
+  border: 1.5px solid rgba(0, 229, 255, 0.6);
+  background: rgba(0, 229, 255, 0.03);
+  color: #00e5ff;
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
-  color: #c8cad8;
+  flex-shrink: 0;
+  position: relative;
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.15), inset 0 0 6px rgba(0, 229, 255, 0.12);
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+}
+
+.featureIndex::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px solid rgba(0, 229, 255, 0.15);
+  border-radius: 0.8rem;
+  pointer-events: none;
+}
+
+.featureCard:hover .featureIndex {
+  border-color: rgba(0, 229, 255, 0.85);
+  background: rgba(0, 229, 255, 0.08);
 }
 
 .featureCardBody {
@@ -1316,28 +1343,31 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 1.25rem;
-  border-radius: 2rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: #1e2026;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #d8dae8;
+  padding: 0.55rem 1.35rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
   letter-spacing: 0.01em;
   text-decoration: none;
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease,
-    box-shadow 0.2s ease;
+    background 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    border-color 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.3s ease,
+    color 0.3s ease,
+    transform 0.2s ease;
 }
 
 .featureLink:hover,
 .featureLink:focus-visible {
   background: #ffffff;
   border-color: #ffffff;
-  color: #000000;
-  box-shadow: 0 0 24px rgba(255, 255, 255, 0.5);
+  color: #010002;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 0 8px rgba(255, 255, 255, 0.35);
+  transform: translateY(-1.5px);
+  text-decoration: none;
 }
 
 @media (min-width: 768px) {

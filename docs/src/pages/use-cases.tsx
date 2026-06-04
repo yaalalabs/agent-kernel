@@ -320,9 +320,9 @@ function IconCell({ color, children }: { color: string; children: React.ReactNod
     <div
       className={styles.iconCell}
       style={{ '--icon-color': color } as React.CSSProperties}
+      aria-hidden="true"
     >
-      <div className={styles.iconCellBg} />
-      <span className={styles.iconCellGlyph}>{children}</span>
+      {children}
     </div>
   );
 }

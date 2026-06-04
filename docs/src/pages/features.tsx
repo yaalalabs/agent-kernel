@@ -570,7 +570,11 @@ function ProblemTable() {
       return;
     }
 
-    gsap.set([header1, comparePanel], {
+    gsap.set(header1, {
+      opacity: 0,
+      y: 24,
+    });
+    gsap.set(comparePanel, {
       opacity: 0,
       y: 24,
     });
@@ -582,7 +586,7 @@ function ProblemTable() {
     const tl1 = gsap.timeline({
       scrollTrigger: {
         trigger: header1,
-        start: "top 72%",
+        start: "top 75%",
         toggleActions: "play none none reverse",
       },
     });
@@ -594,25 +598,25 @@ function ProblemTable() {
       ease: "power2.out",
     })
       .to(
-        topicButtons,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.45,
-          stagger: 0.05,
-          ease: "power2.out",
-        },
-        "-=0.2",
-      )
-      .to(
         comparePanel,
         {
           opacity: 1,
           y: 0,
-          duration: 0.65,
+          duration: 0.6,
           ease: "power2.out",
         },
-        "-=0.15",
+        "-=0.35",
+      )
+      .to(
+        topicButtons,
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.4,
+          stagger: 0.03,
+          ease: "power2.out",
+        },
+        "-=0.4",
       );
 
     return () => {
@@ -912,7 +916,7 @@ function CoreFeatures() {
 
     // Header: fade + slide up
     gsap.set(header, { opacity: 0, y: 24 });
-    gsap.to(header, {
+    const headerTween = gsap.to(header, {
       opacity: 1,
       y: 0,
       duration: 0.65,
@@ -941,6 +945,8 @@ function CoreFeatures() {
     });
     if (currentRow.length) rows.push(currentRow);
 
+    const rowTweens: gsap.core.Tween[] = [];
+
     // Animate each row when its first card scrolls into view
     rows.forEach((rowCards) => {
       gsap.set(rowCards, {
@@ -950,7 +956,7 @@ function CoreFeatures() {
         transformOrigin: "center bottom",
       });
 
-      gsap.to(rowCards, {
+      const tween = gsap.to(rowCards, {
         opacity: 1,
         y: 0,
         scale: 1,
@@ -963,10 +969,16 @@ function CoreFeatures() {
           toggleActions: "play none none reverse",
         },
       });
+      rowTweens.push(tween);
     });
 
     return () => {
-      ScrollTrigger.getAll().forEach((t) => t.kill());
+      headerTween.scrollTrigger?.kill();
+      headerTween.kill();
+      rowTweens.forEach((t) => {
+        t.scrollTrigger?.kill();
+        t.kill();
+      });
     };
   }, []);
 
@@ -1214,14 +1226,13 @@ function FrameworkSupport() {
     }
 
     gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(block, { opacity: 0, y: 22 });
     gsap.set(cards, { opacity: 0, y: 28, scale: 0.95 });
     gsap.set(featuredRow, { opacity: 0, y: 28, scale: 0.98 });
 
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: header,
-        start: "top 72%",
+        start: "top 75%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1233,26 +1244,16 @@ function FrameworkSupport() {
       ease: "power2.out",
     })
       .to(
-        block,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.45,
-          ease: "power2.out",
-        },
-        "-=0.12",
-      )
-      .to(
         cards,
         {
           opacity: 1,
           y: 0,
           scale: 1,
           duration: 0.5,
-          stagger: 0.07,
+          stagger: 0.05,
           ease: "power2.out",
         },
-        "-=0.18",
+        "-=0.35",
       )
       .to(
         featuredRow,
@@ -1260,10 +1261,10 @@ function FrameworkSupport() {
           opacity: 1,
           y: 0,
           scale: 1,
-          duration: 0.55,
+          duration: 0.5,
           ease: "power2.out",
         },
-        "-=0.15",
+        "-=0.25",
       );
 
     return () => {
@@ -1419,15 +1420,13 @@ function TestingSection() {
     }
 
     gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(block, { opacity: 0, y: 22 });
     gsap.set(approachCards, { opacity: 0, y: 28, scale: 0.95 });
-    gsap.set(modePanel, { opacity: 0, y: 24 });
     gsap.set(modeCards, { opacity: 0, y: 22, scale: 0.96 });
 
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: header,
-        start: "top 72%",
+        start: "top 75%",
         toggleActions: "play none none reverse",
       },
     });
@@ -1439,36 +1438,16 @@ function TestingSection() {
       ease: "power2.out",
     })
       .to(
-        block,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.38,
-          ease: "power2.out",
-        },
-        "-=0.1",
-      )
-      .to(
         approachCards,
         {
           opacity: 1,
           y: 0,
           scale: 1,
-          duration: 0.42,
-          stagger: 0.05,
+          duration: 0.45,
+          stagger: 0.06,
           ease: "power2.out",
         },
-        "-=0.14",
-      )
-      .to(
-        modePanel,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.42,
-          ease: "power2.out",
-        },
-        "-=0.06",
+        "-=0.3",
       )
       .to(
         modeCards,
@@ -1476,11 +1455,11 @@ function TestingSection() {
           opacity: 1,
           y: 0,
           scale: 1,
-          duration: 0.38,
-          stagger: 0.045,
+          duration: 0.4,
+          stagger: 0.05,
           ease: "power2.out",
         },
-        "-=0.12",
+        "-=0.25",
       );
 
     return () => {
@@ -1619,9 +1598,6 @@ function MessagingSection() {
 
     const ctx = gsap.context(() => {
       const header = sectionRef.current?.querySelector(`.${styles.sectionHeader}`);
-      const strip = sceneRef.current?.querySelector(
-        `.${styles.msgRuntimeStrip}`,
-      );
       const cards = sceneRef.current?.querySelectorAll(
         `.${styles.msgChannelCard}`,
       );
@@ -1629,19 +1605,17 @@ function MessagingSection() {
 
       if (reducedMotion) {
         if (header) gsap.set(header, { opacity: 1, y: 0 });
-        if (strip) gsap.set(strip, { opacity: 1, y: 0 });
         gsap.set(cards, { opacity: 1, y: 0 });
         return;
       }
 
       if (header) gsap.set(header, { opacity: 0, y: 24 });
-      if (strip) gsap.set(strip, { opacity: 0, y: 22 });
       gsap.set(cards, { opacity: 0, y: 18 });
 
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: header || sceneRef.current,
-          start: "top 72%",
+          start: "top 75%",
           toggleActions: "play none none reverse",
         },
       });
@@ -1650,24 +1624,16 @@ function MessagingSection() {
         tl.to(header, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" });
       }
 
-      if (strip) {
-        tl.to(
-          strip,
-          { opacity: 1, y: 0, duration: 0.55, ease: "power2.out" },
-          header ? "-=0.25" : "0",
-        );
-      }
-
       tl.to(
         cards,
         {
           opacity: 1,
           y: 0,
-          duration: 0.42,
-          stagger: 0.055,
+          duration: 0.45,
+          stagger: 0.04,
           ease: "power2.out",
         },
-        strip ? "-=0.28" : (header ? "-=0.2" : "0"),
+        header ? "-=0.35" : "0",
       );
     }, sectionRef);
 
@@ -1797,27 +1763,21 @@ function ProtocolSupport() {
     }
 
     gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(grid, { opacity: 0, y: 20 });
     gsap.set(cells, { opacity: 0, y: 28, scale: 0.98 });
 
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: header,
-        start: 'top 72%',
+        start: 'top 75%',
         toggleActions: 'play none none reverse',
       },
     });
 
     tl.to(header, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' })
       .to(
-        grid,
-        { opacity: 1, y: 0, duration: 0.38, ease: 'power2.out' },
-        '-=0.1',
-      )
-      .to(
         cells,
-        { opacity: 1, y: 0, scale: 1, duration: 0.42, stagger: 0.05, ease: 'power2.out' },
-        '-=0.14',
+        { opacity: 1, y: 0, scale: 1, duration: 0.45, stagger: 0.05, ease: 'power2.out' },
+        '-=0.3',
       );
 
     return () => {
