@@ -269,7 +269,7 @@ const ORBIT_CARDS = [
     icon: <MdSwapHoriz />,
     color: '#00DDFF',
     title: 'Framework-Neutral',
-    desc: 'The only runtime that lets you bring inswap between  agents written from OpenAI Agents,  CrewAI, LangGraph, and Google ADK, Smolagents, LiveKit with near-zero code change — and run all of them simultaneously in a single runtime.',
+    desc: 'The only runtime that lets you bring inswap between  agents written from OpenAI Agents,  CrewAI, LangGraph, and Google ADK, Smolagents, LiveKit with near-zero code change - and run all of them simultaneously in a single runtime.',
   },
   {
     icon: <MdCloud />,
@@ -293,19 +293,19 @@ const ORBIT_CARDS = [
     icon: <MdSecurity />,
     color: '#00DDFF',
     title: 'Production-Ready',
-    desc: 'Fault tolerance, guardrails, observability, and session management built in from day one — not bolted on later.',
+    desc: 'Fault tolerance, guardrails, observability, and session management built in from day one - not bolted on later.',
   },
   {
     icon: <MdMessage />,
     color: '#00DDFF',
     title: 'Built-in Messaging',
-    desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail — ship working integrations on day one, not months later.',
+    desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail - ship working integrations on day one, not months later.',
   },
   {
     icon: <FaLock />,
     color: '#00DDFF',
     title: 'Open-Source',
-    desc: 'No usage fees, no proprietary lock-in. Community-driven with full codebase access — fork it, extend it, contribute back.',
+    desc: 'No usage fees, no proprietary lock-in. Community-driven with full codebase access - fork it, extend it, contribute back.',
   },
   {
     icon: <MdNetworkCheck />,
@@ -331,7 +331,7 @@ const REAL_WORLD_USE_CASES = [
   {
     title: 'Agentic AI Assisted Market Surveillance',
     description:
-      'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. Agent Kernel enables, AI agents to monitor orders and flag potential / suspicious trades which violate regulations.',
+      'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. Agent Kernel enables, AI agents to monitor orders and flag potential/suspicious trades which violate regulations.',
     link: '/blog/agent-kernel-live-at-climate-impact-x',
   },
   {

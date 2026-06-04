@@ -614,7 +614,7 @@ export default function DeveloperPage() {
               <p className={styles.devFrameworkBody}>
                 You write your AI agent's logic. Agent Kernel handles everything
                 else: the infrastructure, the cloud deployment, memory, knowledge
-                bases, hooks, observability & traceability, LLM cost tracking,
+                bases, hooks, observability & traceability, LLM cost tracking, and
                 the integrations so your agent is live and talking to real users
                 in days.
               </p>

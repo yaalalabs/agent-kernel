@@ -22,17 +22,17 @@ const tracks: Track[] = [
   {
     id: 'traditional',
     title: 'Traditional',
-    timeLabel: '3–6 months',
+    timeLabel: '3 - 6 months',
     doneLabel: 'Months later…',
     doneIcon: <FaRegClock />,
     steps: [
       { label: 'Platform engineering', sub: 'Set up base infrastructure' },
-      { label: 'Framework setup',      sub: 'Choose, configure, scaffold' },
-      { label: 'Cloud config',         sub: 'Regions, roles, networking' },
-      { label: 'Session management',   sub: 'Auth, state, tokens' },
-      { label: 'Integrations',         sub: 'APIs, queues, data sources' },
-      { label: 'Testing setup',        sub: 'Harnesses, CI, coverage' },
-      { label: 'Deploy pipeline',      sub: 'Build, push, release gates' },
+      { label: 'Framework setup', sub: 'Choose, configure, scaffold' },
+      { label: 'Cloud config', sub: 'Regions, roles, networking' },
+      { label: 'Session management', sub: 'Auth, state, tokens' },
+      { label: 'Integrations', sub: 'APIs, queues, data sources' },
+      { label: 'Testing setup', sub: 'Harnesses, CI, coverage' },
+      { label: 'Deploy pipeline', sub: 'Build, push, release gates' },
     ],
   },
   {
@@ -42,8 +42,8 @@ const tracks: Track[] = [
     doneLabel: 'Shipped',
     doneIcon: <FaRocket />,
     steps: [
-      { label: 'Write your logic', sub: 'Focus on what your agent does — not how it runs' },
-      { label: 'Deploy',           sub: 'Agent Kernel handles the rest' },
+      { label: 'Write your logic', sub: 'Focus on what your agent does - not how it runs' },
+      { label: 'Deploy', sub: 'Agent Kernel handles the rest' },
     ],
   },
 ];
@@ -158,11 +158,10 @@ export default function UseCaseJourneyMap() {
                 <div
                   className={`${styles.doneBadge} ${styles[`done_${track.id}`]} ${visible ? styles.doneBadgeVisible : ''}`}
                   style={{
-                    '--done-delay': `${
-                      trackIdx === 0
-                        ? track.steps.length * 120 + 100
-                        : 200 + track.steps.length * 220
-                    }ms`,
+                    '--done-delay': `${trackIdx === 0
+                      ? track.steps.length * 120 + 100
+                      : 200 + track.steps.length * 220
+                      }ms`,
                   } as React.CSSProperties}
                 >
                   <span>{track.doneIcon}</span>
@@ -176,7 +175,7 @@ export default function UseCaseJourneyMap() {
                   className={`${styles.savingsCard} ${visible ? styles.savingsCardVisible : ''}`}
                 >
                   <p className={styles.savingsLabel}>Time saved</p>
-                  <p className={styles.savingsValue}>~90% less</p>
+                  <p className={styles.savingsValue}>~90%</p>
                 </div>
               )}
             </div>

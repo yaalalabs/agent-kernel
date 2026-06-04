@@ -606,6 +606,8 @@
 
 /* Node cards — dark glassmorphism matching orbitCard */
 .pageMapSection .pageMapNode {
+  position: relative;
+  overflow: hidden;
   appearance: none;
   -webkit-appearance: none;
   box-sizing: border-box;
@@ -623,7 +625,11 @@
   color: #dfe1f0;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+  transition:
+    transform 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.3s ease;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -634,7 +640,55 @@
 .pageMapSection .pageMapNode:hover {
   transform: translateY(-4px);
   border-color: rgba(0, 229, 255, 0.35);
+  background-color: rgba(0, 229, 255, 0.03);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 229, 255, 0.05);
+}
+
+.pageMapSection .pageMapNode::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(0, 229, 255, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.pageMapSection .pageMapNode:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(0, 229, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.pageMapSection .pageMapNode::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 229, 255, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.pageMapSection .pageMapNode:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 229, 255, 0.12) 0%,
+      transparent 100%);
 }
 
 .pageMapSection .pageMapNode:focus-visible {
@@ -722,7 +776,38 @@
 
 [data-theme='light'] .pageMapSection .pageMapNode:hover {
   border-color: rgba(0, 180, 220, 0.4);
+  background-color: rgba(0, 180, 220, 0.02);
   box-shadow: 0 8px 28px rgba(0, 180, 220, 0.1);
+}
+
+[data-theme='light'] .pageMapSection .pageMapNode::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(0, 180, 220, 0.05) 20%,
+      rgba(0, 180, 220, 0.15) 50%,
+      rgba(0, 180, 220, 0.05) 80%,
+      transparent 100%);
+}
+
+[data-theme='light'] .pageMapSection .pageMapNode:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(0, 180, 220, 0.1) 20%,
+      rgba(0, 180, 220, 0.25) 50%,
+      rgba(0, 180, 220, 0.1) 80%,
+      transparent 100%);
+}
+
+[data-theme='light'] .pageMapSection .pageMapNode::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 180, 220, 0.03) 0%,
+      transparent 100%);
+}
+
+[data-theme='light'] .pageMapSection .pageMapNode:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 180, 220, 0.06) 0%,
+      transparent 100%);
 }
 
 [data-theme='light'] .pageMapNodeTitle {
@@ -846,10 +931,7 @@
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.problemComparePanelOuter:hover {
-  border-color: rgba(0, 229, 255, 0.3);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 229, 255, 0.04);
-}
+
 
 .problemTopicGrid {
   list-style: none;
@@ -1087,10 +1169,7 @@
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.problemComparePanel:hover {
-  border-color: rgba(0, 229, 255, 0.3);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 229, 255, 0.04);
-}
+
 
 .problemComparePanelInner {
   animation: problemCompareReveal 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -2982,4 +3061,274 @@
     font-size: 0.5rem;
     padding: 0.05rem 0.3rem;
   }
+}
+
+/* Card Glow Effects for All Cards on the Features Page */
+.featureCard,
+.frameworkCard,
+.frameworkFeaturedRow,
+.testingApproachCard,
+.testingModeCard,
+.protocolCard,
+.msgChannelCard {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.25s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.3s ease;
+}
+
+.featureCard:hover,
+.frameworkCard:hover,
+.frameworkFeaturedRow:hover,
+.testingApproachCard:hover,
+.testingModeCard:hover,
+.protocolCard:hover,
+.msgChannelCard:hover {
+  background-color: rgba(0, 229, 255, 0.03);
+}
+
+.featureCard::before,
+.frameworkCard::before,
+.frameworkFeaturedRow::before,
+.testingApproachCard::before,
+.testingModeCard::before,
+.protocolCard::before,
+.msgChannelCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(0, 229, 255, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.featureCard:hover::before,
+.frameworkCard:hover::before,
+.frameworkFeaturedRow:hover::before,
+.testingApproachCard:hover::before,
+.testingModeCard:hover::before,
+.protocolCard:hover::before,
+.msgChannelCard:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(0, 229, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.featureCard::after,
+.frameworkCard::after,
+.frameworkFeaturedRow::after,
+.testingApproachCard::after,
+.testingModeCard::after,
+.protocolCard::after,
+.msgChannelCard::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 229, 255, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.featureCard:hover::after,
+.frameworkCard:hover::after,
+.frameworkFeaturedRow:hover::after,
+.testingApproachCard:hover::after,
+.testingModeCard:hover::after,
+.protocolCard:hover::after,
+.msgChannelCard:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 229, 255, 0.12) 0%,
+      transparent 100%);
+}
+
+/* Light Theme Overrides */
+[data-theme='light'] .featureCard:hover,
+[data-theme='light'] .frameworkCard:hover,
+[data-theme='light'] .frameworkFeaturedRow:hover,
+[data-theme='light'] .testingApproachCard:hover,
+[data-theme='light'] .testingModeCard:hover,
+[data-theme='light'] .protocolCard:hover,
+[data-theme='light'] .msgChannelCard:hover {
+  background-color: rgba(0, 180, 220, 0.02);
+}
+
+[data-theme='light'] .featureCard::before,
+[data-theme='light'] .frameworkCard::before,
+[data-theme='light'] .frameworkFeaturedRow::before,
+[data-theme='light'] .testingApproachCard::before,
+[data-theme='light'] .testingModeCard::before,
+[data-theme='light'] .protocolCard::before,
+[data-theme='light'] .msgChannelCard::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(0, 180, 220, 0.05) 20%,
+      rgba(0, 180, 220, 0.15) 50%,
+      rgba(0, 180, 220, 0.05) 80%,
+      transparent 100%);
+}
+
+[data-theme='light'] .featureCard:hover::before,
+[data-theme='light'] .frameworkCard:hover::before,
+[data-theme='light'] .frameworkFeaturedRow:hover::before,
+[data-theme='light'] .testingApproachCard:hover::before,
+[data-theme='light'] .testingModeCard:hover::before,
+[data-theme='light'] .protocolCard:hover::before,
+[data-theme='light'] .msgChannelCard:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(0, 180, 220, 0.1) 20%,
+      rgba(0, 180, 220, 0.25) 50%,
+      rgba(0, 180, 220, 0.1) 80%,
+      transparent 100%);
+}
+
+[data-theme='light'] .featureCard::after,
+[data-theme='light'] .frameworkCard::after,
+[data-theme='light'] .frameworkFeaturedRow::after,
+[data-theme='light'] .testingApproachCard::after,
+[data-theme='light'] .testingModeCard::after,
+[data-theme='light'] .protocolCard::after,
+[data-theme='light'] .msgChannelCard::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 180, 220, 0.03) 0%,
+      transparent 100%);
+}
+
+[data-theme='light'] .featureCard:hover::after,
+[data-theme='light'] .frameworkCard:hover::after,
+[data-theme='light'] .frameworkFeaturedRow:hover::after,
+[data-theme='light'] .testingApproachCard:hover::after,
+[data-theme='light'] .testingModeCard:hover::after,
+[data-theme='light'] .protocolCard:hover::after,
+[data-theme='light'] .msgChannelCard:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 180, 220, 0.06) 0%,
+      transparent 100%);
+}
+
+/* Disable Hover translation (translateY) for all cards */
+.pageMapSection .pageMapNode:hover,
+.featureCard:hover,
+.frameworkCard:hover,
+.frameworkFeaturedRow:hover,
+.testingApproachCard:hover,
+.testingModeCard:hover,
+.protocolCard:hover,
+.msgChannelCard:hover,
+.problemImpactStatNeg:hover,
+.problemImpactStatPos:hover {
+  transform: none !important;
+}
+
+/* Statically apply top glow to outer and inner problem compare panels without card border/background changes on hover */
+.problemComparePanelOuter,
+.problemComparePanel {
+  position: relative;
+  overflow: hidden;
+}
+
+.problemComparePanelOuter::before,
+.problemComparePanel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 20%,
+      rgba(0, 229, 255, 0.25) 50%,
+      rgba(255, 255, 255, 0.1) 80%,
+      transparent 100%);
+  z-index: 2;
+  transition: background 0.3s ease;
+}
+
+.problemComparePanelOuter:hover::before,
+.problemComparePanel:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(0, 229, 255, 0.4) 50%,
+      rgba(255, 255, 255, 0.15) 80%,
+      transparent 100%);
+}
+
+.problemComparePanelOuter::after,
+.problemComparePanel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 40px;
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 229, 255, 0.06) 0%,
+      transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.problemComparePanelOuter:hover::after,
+.problemComparePanel:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 229, 255, 0.12) 0%,
+      transparent 100%);
+}
+
+/* Light Theme Overrides for problem compare panels */
+[data-theme='light'] .problemComparePanelOuter::before,
+[data-theme='light'] .problemComparePanel::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(0, 180, 220, 0.05) 20%,
+      rgba(0, 180, 220, 0.15) 50%,
+      rgba(0, 180, 220, 0.05) 80%,
+      transparent 100%);
+}
+
+[data-theme='light'] .problemComparePanelOuter:hover::before,
+[data-theme='light'] .problemComparePanel:hover::before {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(0, 180, 220, 0.1) 20%,
+      rgba(0, 180, 220, 0.25) 50%,
+      rgba(0, 180, 220, 0.1) 80%,
+      transparent 100%);
+}
+
+[data-theme='light'] .problemComparePanelOuter::after,
+[data-theme='light'] .problemComparePanel::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 180, 220, 0.03) 0%,
+      transparent 100%);
+}
+
+[data-theme='light'] .problemComparePanelOuter:hover::after,
+[data-theme='light'] .problemComparePanel:hover::after {
+  background: radial-gradient(50% 50% at 50% 0%,
+      rgba(0, 180, 220, 0.06) 0%,
+      transparent 100%);
 }
