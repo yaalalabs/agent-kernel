@@ -213,6 +213,7 @@ article {
   -webkit-backdrop-filter: blur(16px);
   height: 60px;
   padding: 0 2rem;
+  z-index: 100 !important;
 }
 
 @media (max-width: 996px) {
@@ -1851,6 +1852,11 @@ article {
 
 .navbar-version-dropdown:hover::after {
   transform: translateY(1px);
+}
+
+/* Increase z-index of the version dropdown menu to float on top of the sticky timeline progress bar */
+.navbar-version-dropdown ~ .dropdown__menu {
+  z-index: 200 !important;
 }
 
 /* Hide default Docusaurus back-to-top button in favor of our custom ScrollToTopButton */
