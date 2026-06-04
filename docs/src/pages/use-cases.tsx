@@ -332,7 +332,7 @@ const REAL_WORLD_USE_CASES = [
     title: 'Agentic AI Assisted Market Surveillance',
     description:
       'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. Agent Kernel enables, AI agents to monitor orders and flag potential / suspicious trades which violate regulations.',
-    link: '#',
+    link: '/blog/agent-kernel-live-at-climate-impact-x',
   },
   {
     title: 'AI First SDLC',
