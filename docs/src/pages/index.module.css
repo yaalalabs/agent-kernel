@@ -891,12 +891,26 @@
   flex-wrap: wrap;
 }
 
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 .heroBtnPrimary {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   padding: 0.5rem 1.45rem !important;
-  background: #ffffff !important;
+  background: linear-gradient(135deg, #ffffff, #a6f2ff, #fca6ff, #ffffff) !important;
+  background-size: 300% 300% !important;
+  animation: gradientShift 3s ease infinite !important;
   color: #060213 !important;
   border: 1px solid #ffffff !important;
   border-radius: 9999px !important;
@@ -905,8 +919,8 @@
   letter-spacing: 0.01em !important;
   white-space: nowrap;
   text-decoration: none !important;
+  box-shadow: 0 0 15px rgba(0, 221, 255, 0.45), 0 0 5px rgba(242, 0, 255, 0.25) !important;
   transition:
-    background 0.25s ease,
     color 0.25s ease,
     border-color 0.25s ease,
     box-shadow 0.25s ease,
@@ -914,10 +928,8 @@
 }
 
 .heroBtnPrimary:hover {
-  background: #ffffff !important;
-  color: #060213 !important;
-  border-color: #ffffff !important;
-  box-shadow: 0 0 12px rgba(0, 221, 255, 0.6), 0 0 24px rgba(0, 221, 255, 0.25) !important;
+  border-color: var(--ak-blue, #00ddff) !important;
+  box-shadow: 0 0 25px rgba(0, 221, 255, 0.8), 0 0 12px rgba(242, 0, 255, 0.45) !important;
   transform: translateY(-2px) !important;
   text-decoration: none !important;
 }
@@ -947,12 +959,12 @@
 }
 
 .heroBtnSecondary:hover {
-  background: #ffffff !important;
-  color: #060213 !important;
-  border-color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+  border-color: var(--ak-blue, #00ddff) !important;
   box-shadow:
-    0 0 16px rgba(255, 255, 255, 0.65),
-    0 0 8px rgba(255, 255, 255, 0.3) !important;
+    0 0 16px rgba(0, 221, 255, 0.65),
+    0 0 8px rgba(0, 221, 255, 0.3) !important;
   transform: translateY(-2px) !important;
   text-decoration: none !important;
 }
@@ -960,6 +972,7 @@
 .heroBtnLink {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   color: #cbd5e1 !important;
   font-size: 0.95rem;
   font-weight: 500;
@@ -5936,6 +5949,7 @@
   .ctaButtons a {
     width: 100%;
     text-align: center;
+    justify-content: center;
   }
 
   /* Levels section */

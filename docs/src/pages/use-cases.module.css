@@ -1080,6 +1080,7 @@
   .ctaButtons a {
     width: 100%;
     text-align: center;
+    justify-content: center;
   }
 }
 

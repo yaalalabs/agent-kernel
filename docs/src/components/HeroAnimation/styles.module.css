@@ -137,12 +137,12 @@
 }
 
 .btnPrimary:hover {
-  background: #ffffff !important;
-  color: #060213 !important;
-  border-color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+  border-color: var(--ak-blue, #00ddff) !important;
   box-shadow:
-    0 0 16px rgba(255, 255, 255, 0.65),
-    0 0 8px rgba(255, 255, 255, 0.3) !important;
+    0 0 16px rgba(0, 221, 255, 0.65),
+    0 0 8px rgba(0, 221, 255, 0.3) !important;
   transform: translateY(-2px) !important;
   text-decoration: none !important;
 }
