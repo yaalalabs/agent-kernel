@@ -16,25 +16,25 @@ import { FaMicrosoft, FaGoogle } from 'react-icons/fa';
 /* ─── Data ───────────────────────────────────────────────────────────────── */
 
 const capabilityModulesRow1 = [
-  { id: 'adapters',   label: 'Framework Adapters', icon: <MdSwapHoriz /> },
-  { id: 'memory',     label: 'Session & Memory',   icon: <MdMemory /> },
-  { id: 'hooks',      label: 'Execution Nodes',    icon: <MdSettings /> },
-  { id: 'knowledge',  label: 'Knowledge Bases',    icon: <MdMenuBook /> },
+  { id: 'adapters', label: 'Framework Adapters', icon: <MdSwapHoriz /> },
+  { id: 'memory', label: 'Session & Memory', icon: <MdMemory /> },
+  { id: 'hooks', label: 'Execution Nodes', icon: <MdSettings /> },
+  { id: 'knowledge', label: 'Knowledge Bases', icon: <MdMenuBook /> },
 ];
 
 const capabilityModulesRow2 = [
-  { id: 'messaging',  label: 'Messaging',          icon: <MdMessage /> },
-  { id: 'observ',     label: 'Observability',      icon: <MdVisibility /> },
-  { id: 'guardrails', label: 'Guardrails',         icon: <MdSecurity /> },
-  { id: 'integrations', label: 'Integrations',     icon: <MdExtension /> },
+  { id: 'messaging', label: 'Messaging', icon: <MdMessage /> },
+  { id: 'observ', label: 'Observability', icon: <MdVisibility /> },
+  { id: 'guardrails', label: 'Guardrails', icon: <MdSecurity /> },
+  { id: 'integrations', label: 'Integrations', icon: <MdExtension /> },
 ];
 
 const deployTargets = [
-  { id: 'lambda',   label: 'AWS Lambda',      icon: <FaAws /> },
-  { id: 'ecs',      label: 'AWS ECS',         icon: <FaAws /> },
-  { id: 'azfunc',   label: 'Azure Functions', icon: <FaMicrosoft /> },
-  { id: 'gapps',    label: 'Google Apps',     icon: <FaGoogle /> },
-  { id: 'docker',   label: 'Docker',          icon: <FaDocker /> },
+  { id: 'lambda', label: 'AWS Lambda', icon: <FaAws /> },
+  { id: 'ecs', label: 'AWS ECS', icon: <FaAws /> },
+  { id: 'azfunc', label: 'Azure Functions', icon: <FaMicrosoft /> },
+  { id: 'gapps', label: 'Google Apps', icon: <FaGoogle /> },
+  { id: 'docker', label: 'Docker', icon: <FaDocker /> },
 ];
 
 // 5 deploy targets; their x-center positions spread across 900px
@@ -57,7 +57,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
 
   useEffect(() => {
     if (typeof window !== 'undefined' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setVisible(true);
       return;
     }
@@ -85,7 +85,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
     ? ({ '--ak-accent': accentColor } as React.CSSProperties)
     : undefined;
 
-  const TEAL      = 'var(--ak-accent)';
+  const TEAL = 'var(--ak-accent)';
   const TEAL_LINE = 'color-mix(in srgb, var(--ak-accent) 28%, transparent)';
   const TEAL_HALO = 'color-mix(in srgb, var(--ak-accent) 10%, transparent)';
 

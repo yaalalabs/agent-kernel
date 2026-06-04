@@ -85,21 +85,43 @@
 /* ─── Layer 1: Your Agent Logic ──────────────────────────────────────────── */
 
 .topBox {
+  --logic-accent: #00E5FF;
+  --logic-accent-glow: color-mix(in srgb, var(--logic-accent) 60%, transparent);
+  --logic-accent-halo: color-mix(in srgb, var(--logic-accent) 10%, transparent);
+  --logic-accent-fill: color-mix(in srgb, var(--logic-accent) 12%, transparent);
+  --logic-accent-border: color-mix(in srgb, var(--logic-accent) 30%, transparent);
+  --logic-accent-hover-border: color-mix(in srgb, var(--logic-accent) 50%, transparent);
+  --logic-card-bg: color-mix(in srgb, var(--logic-accent) 8%, #05090f);
+
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  padding: 1rem 2rem;
+  background: var(--logic-card-bg);
+  border: 1px solid var(--logic-accent-border);
+  border-radius: 1.25rem;
+  padding: 1.5rem 2rem;
   z-index: 1;
   opacity: 0;
   width: fit-content;
   max-width: 100%;
-  transition: transform 0.2s ease;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  box-shadow:
+    0 0 0 1px var(--logic-accent-border),
+    0 0 24px 2px var(--logic-accent-fill),
+    0 0 60px 4px color-mix(in srgb, var(--logic-accent) 10%, transparent),
+    inset 0 0 30px var(--logic-accent-halo);
 }
 
 .topBox:hover {
   transform: translateY(-2px);
+  border-color: var(--logic-accent-hover-border);
+  box-shadow:
+    0 0 0 1px var(--logic-accent-hover-border),
+    0 0 32px 4px var(--logic-accent-fill),
+    0 0 80px 8px color-mix(in srgb, var(--logic-accent) 15%, transparent),
+    inset 0 0 40px var(--logic-accent-fill);
 }
 
 .topBoxContent {
@@ -112,7 +134,7 @@
 .topBoxLabel {
   font-size: 1rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--ak-accent) 45%, #ffffff);
+  color: color-mix(in srgb, var(--logic-accent) 85%, #ffffff);
   letter-spacing: -0.01em;
 }
 
@@ -127,9 +149,9 @@
 .topBoxChip {
   font-size: 0.8rem;
   font-weight: 500;
-  color: color-mix(in srgb, var(--ak-accent) 35%, #ffffff);
-  background: color-mix(in srgb, var(--ak-accent) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ak-accent) 45%, #ffffff);
+  color: color-mix(in srgb, var(--logic-accent) 75%, #ffffff);
+  background: color-mix(in srgb, var(--logic-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--logic-accent) 45%, #ffffff);
   border-radius: 0.4rem;
   padding: 0.2rem 0.6rem;
   white-space: nowrap;
@@ -137,9 +159,9 @@
 }
 
 .topBox:hover .topBoxChip {
-  color: var(--ak-accent);
-  border-color: var(--ak-accent-border);
-  background: color-mix(in srgb, var(--ak-accent) 12%, transparent);
+  color: var(--logic-accent);
+  border-color: var(--logic-accent-hover-border);
+  background: color-mix(in srgb, var(--logic-accent) 12%, transparent);
 }
 
 /* ─── Layer 2: Hub card (icon + label only, prominent) ───────────────────── */
