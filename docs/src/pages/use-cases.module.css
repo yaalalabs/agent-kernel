@@ -1412,3 +1412,33 @@
   font-size: 0.9rem;
   color: rgba(147, 210, 255, 0.7);
 }
+
+/* ─── Right Side White Gradient for Hero ──────────────────────────────────── */
+.rightGlowGradientHero {
+  position: absolute;
+  top: -700px;
+  right: -1200px;
+  width: 2200px;
+  height: 1400px;
+  background: radial-gradient(ellipse at center, rgba(244, 246, 250, 0.75) 0%, rgba(226, 231, 240, 0.42) 30%, rgba(203, 213, 225, 0.18) 55%, rgba(148, 163, 184, 0.05) 75%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: screen;
+  filter: blur(400px);
+  animation: gradientFadeInOut 10s ease-in-out infinite;
+
+  /* Force GPU rendering context to eliminate lag and banding/ripples */
+  transform: translate3d(0, 0, 0);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+@keyframes gradientFadeInOut {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}

@@ -102,8 +102,8 @@
   width: 100%;
   transform: scaleX(var(--fill, 0));
   transform-origin: left;
-  background: linear-gradient(90deg, #00bfff 0%, #00ddff 100%);
-  box-shadow: 0 0 8px 1px rgba(0, 221, 255, 0.5);
+  background: var(--timeline-color);
+  box-shadow: 0 0 8px 1px var(--timeline-color-glow);
   transition: transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -163,8 +163,8 @@
 .pip--active {
   width: 12px;
   height: 12px;
-  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #00d5ff 30%, #0088cc 70%, #004466 100%);
-  box-shadow: 0 0 14px 4px rgba(0, 221, 255, 0.8), inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--timeline-color) 35%, var(--timeline-color-dark) 75%, #000000 100%);
+  box-shadow: 0 0 14px 4px var(--timeline-color-glow-strong), inset 0 -1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .pip--done {
@@ -213,8 +213,8 @@
 
 .label--active {
   font-weight: 600;
-  color: #00ddff;
-  text-shadow: 0 0 8px rgba(0, 221, 255, 0.3);
+  color: var(--timeline-color);
+  text-shadow: 0 0 8px var(--timeline-color-glow);
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
@@ -242,11 +242,11 @@
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 221, 255, 0.25);
+  border: 1px solid var(--timeline-color-border);
   /* cyan tint always visible */
-  background: rgba(0, 221, 255, 0.08);
+  background: var(--timeline-color-bg);
   /* subtle cyan fill */
-  color: rgba(0, 221, 255, 0.7);
+  color: var(--timeline-color-text-dim);
   /* icon clearly cyan */
   cursor: pointer;
   padding: 0;
@@ -256,14 +256,14 @@
 }
 
 .backBtn:hover {
-  background: rgba(0, 221, 255, 0.15);
-  border-color: rgba(0, 221, 255, 0.6);
-  color: #00ddff;
-  box-shadow: 0 0 10px 2px rgba(0, 221, 255, 0.25);
+  background: var(--timeline-color-bg-hover);
+  border-color: var(--timeline-color);
+  color: var(--timeline-color);
+  box-shadow: 0 0 10px 2px var(--timeline-color-glow);
   transform: translateY(-50%) translateX(-2px);
 }
 
 .backBtn:focus-visible {
-  outline: 2px solid #00ddff;
+  outline: 2px solid var(--timeline-color);
   outline-offset: 2px;
 }

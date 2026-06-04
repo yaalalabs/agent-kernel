@@ -35,12 +35,57 @@ const LEVEL_STEPS: Record<string, StepDef[]> = {
   ],
 };
 
+const DEFAULT_THEME = {
+  '--timeline-color': '#00ddff',
+  '--timeline-color-glow': 'rgba(0, 221, 255, 0.5)',
+  '--timeline-color-glow-strong': 'rgba(0, 221, 255, 0.8)',
+  '--timeline-color-dark': '#0088cc',
+  '--timeline-color-border': 'rgba(0, 221, 255, 0.25)',
+  '--timeline-color-bg': 'rgba(0, 221, 255, 0.08)',
+  '--timeline-color-bg-hover': 'rgba(0, 221, 255, 0.15)',
+  '--timeline-color-text-dim': 'rgba(0, 221, 255, 0.7)',
+};
+
+const LEVEL_THEMES: Record<string, Record<string, string>> = {
+  '01': { // Business Leader: Pink/Magenta (#D946EF)
+    '--timeline-color': '#D946EF',
+    '--timeline-color-glow': 'rgba(217, 70, 239, 0.5)',
+    '--timeline-color-glow-strong': 'rgba(217, 70, 239, 0.8)',
+    '--timeline-color-dark': '#9d17ab',
+    '--timeline-color-border': 'rgba(217, 70, 239, 0.25)',
+    '--timeline-color-bg': 'rgba(217, 70, 239, 0.08)',
+    '--timeline-color-bg-hover': 'rgba(217, 70, 239, 0.15)',
+    '--timeline-color-text-dim': 'rgba(217, 70, 239, 0.7)',
+  },
+  '02': { // Developer: Orange (#CC7D21)
+    '--timeline-color': '#CC7D21',
+    '--timeline-color-glow': 'rgba(204, 125, 33, 0.5)',
+    '--timeline-color-glow-strong': 'rgba(204, 125, 33, 0.8)',
+    '--timeline-color-dark': '#8b4d08',
+    '--timeline-color-border': 'rgba(204, 125, 33, 0.25)',
+    '--timeline-color-bg': 'rgba(204, 125, 33, 0.08)',
+    '--timeline-color-bg-hover': 'rgba(204, 125, 33, 0.15)',
+    '--timeline-color-text-dim': 'rgba(204, 125, 33, 0.7)',
+  },
+  '03': { // AI Engineer: Green (#03C540)
+    '--timeline-color': '#03C540',
+    '--timeline-color-glow': 'rgba(3, 197, 64, 0.5)',
+    '--timeline-color-glow-strong': 'rgba(3, 197, 64, 0.8)',
+    '--timeline-color-dark': '#017d27',
+    '--timeline-color-border': 'rgba(3, 197, 64, 0.25)',
+    '--timeline-color-bg': 'rgba(3, 197, 64, 0.08)',
+    '--timeline-color-bg-hover': 'rgba(3, 197, 64, 0.15)',
+    '--timeline-color-text-dim': 'rgba(3, 197, 64, 0.7)',
+  },
+};
+
 interface StepTimelineProps {
   levelId: string | null;
   contentRef: React.RefObject<HTMLDivElement>;
 }
 
 export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
+  const themeStyle = levelId ? (LEVEL_THEMES[levelId] ?? DEFAULT_THEME) : DEFAULT_THEME;
   const history = useHistory();
   const [activeStep, setActiveStep] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -193,7 +238,11 @@ export function StepTimeline({ levelId, contentRef }: StepTimelineProps) {
   if (steps.length === 0) return null;
 
   return (
-    <nav className={`${styles.bar} ${visible ? styles['bar--visible'] : ''} ${isNavbarVisible ? styles['bar--navbar-visible'] : ''}`} aria-label="Section progress">
+    <nav
+      className={`${styles.bar} ${visible ? styles['bar--visible'] : ''} ${isNavbarVisible ? styles['bar--navbar-visible'] : ''}`}
+      aria-label="Section progress"
+      style={themeStyle as React.CSSProperties}
+    >
       <button
         className={styles.backBtn}
         onClick={() => {
