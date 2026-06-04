@@ -1851,4 +1851,9 @@ article {
 
 .navbar-version-dropdown:hover::after {
   transform: translateY(1px);
+}
+
+/* Hide default Docusaurus back-to-top button in favor of our custom ScrollToTopButton */
+.theme-back-to-top-button {
+  display: none !important;
 }
