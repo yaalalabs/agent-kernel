@@ -381,6 +381,7 @@ const config = {
             position: 'right',
             dropdownActiveClassDisabled: true,
             dropdownItemsAfter: [],
+            className: 'navbar-version-dropdown',
           },
           {
             href: 'https://discord.gg/snrPzb46uu',

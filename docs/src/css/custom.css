@@ -286,6 +286,42 @@ article {
   opacity: 1;
 }
 
+/* Center Navbar Links on Desktop */
+@media (min-width: 997px) {
+  .navbar__inner {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .navbar__brand {
+    position: absolute;
+    left: 2rem;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .navbar__inner > .navbar__items:first-child {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-right: 0 !important;
+  }
+
+  .navbar__items--right {
+    position: absolute;
+    right: 2rem;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    margin-left: 0 !important;
+  }
+}
+
 /* =============================================================================
    Footer
    ============================================================================= */
@@ -1778,3 +1814,41 @@ article {
     transform: none; /* disable horizontal hover shift on mobile */
   }
 }
+
+/* Navbar Version Dropdown Matte Badge Style */
+.navbar-version-dropdown {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 9999px !important;
+  padding: 0.35rem 0.85rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  height: 30px !important;
+  line-height: 1 !important;
+  transition: all 0.25s ease !important;
+  margin-top: auto;
+  margin-bottom: auto;
+  margin-right: 0.75rem;
+}
+
+.navbar-version-dropdown:hover {
+  background: rgba(0, 221, 255, 0.08) !important;
+  border-color: rgba(0, 221, 255, 0.35) !important;
+  color: var(--ak-blue) !important;
+  text-decoration: none !important;
+}
+
+/* Caret alignment inside the version badge */
+.navbar-version-dropdown::after {
+  margin-left: 0.35rem !important;
+  vertical-align: middle !important;
+  transition: transform 0.25s ease !important;
+}
+
+.navbar-version-dropdown:hover::after {
+  transform: translateY(1px);
+}
