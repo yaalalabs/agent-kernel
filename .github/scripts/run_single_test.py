@@ -61,7 +61,7 @@ def run_simple_test(path: str) -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore=dist'],
         cwd=path,
         description=f"Testing {path}"
     )
