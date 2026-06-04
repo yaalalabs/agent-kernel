@@ -61,7 +61,7 @@ def run_simple_test(path: str) -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore=dist'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore=dist*'],
         cwd=path,
         description=f"Testing {path}"
     )
@@ -231,7 +231,7 @@ def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore=dist*'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -382,7 +382,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore=dist*'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -525,7 +525,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore=dist*'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
