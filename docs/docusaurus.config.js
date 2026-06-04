@@ -81,7 +81,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
+        content: 'Agent Kernel - From Agent Logic to Production in Minutes',
       },
     },
     {
@@ -123,7 +123,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
+        content: 'Agent Kernel - From Agent Logic to Production in Minutes',
       },
     },
     {

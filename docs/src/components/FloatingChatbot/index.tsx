@@ -268,7 +268,7 @@ const FloatingChatbot: React.FC = () => {
                   />
                 </div>
                 <h4>How can I help?</h4>
-                <p>Ask me anything about Agent Kernel — setup, agents, integrations, and more.</p>
+                <p>Ask me anything about Agent Kernel - setup, agents, integrations, and more.</p>
                 <div className={styles.promptChips}>
                   {QUICK_PROMPTS.map((prompt) => (
                     <button
