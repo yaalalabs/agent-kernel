@@ -112,7 +112,7 @@
 .topBoxLabel {
   font-size: 1rem;
   font-weight: 700;
-  color: var(--ak-accent);
+  color: color-mix(in srgb, var(--ak-accent) 55%, #000000);
   letter-spacing: -0.01em;
 }
 
@@ -127,18 +127,19 @@
 .topBoxChip {
   font-size: 0.8rem;
   font-weight: 500;
-  color: var(--ak-accent);
-  background: color-mix(in srgb, var(--ak-accent) 6%, transparent);
-  border: 1px solid var(--ak-accent-border);
+  color: color-mix(in srgb, var(--ak-accent) 55%, #000000);
+  background: color-mix(in srgb, var(--ak-accent) 8%, #000000);
+  border: 1px solid color-mix(in srgb, var(--ak-accent) 20%, #000000);
   border-radius: 0.4rem;
   padding: 0.2rem 0.6rem;
   white-space: nowrap;
-  transition: color 0.2s ease, border-color 0.2s ease;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
 .topBox:hover .topBoxChip {
-  color: color-mix(in srgb, var(--ak-accent) 85%, #fff);
+  color: var(--ak-accent);
   border-color: var(--ak-accent-border);
+  background: color-mix(in srgb, var(--ak-accent) 12%, transparent);
 }
 
 /* ─── Layer 2: Hub card (icon + label only, prominent) ───────────────────── */
