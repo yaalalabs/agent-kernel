@@ -383,30 +383,8 @@ const config = {
             dropdownItemsAfter: [],
             className: 'navbar-version-dropdown',
           },
-          {
-            href: 'https://discord.gg/snrPzb46uu',
-            position: 'right',
-            className: 'header-discord-link',
-            'aria-label': 'Discord Community',
-          },
-          {
-            href: 'https://pypi.org/project/agentkernel/',
-            position: 'right',
-            className: 'header-pypi-link',
-            'aria-label': 'PyPI package',
-          },
-          {
-            href: 'https://registry.terraform.io/modules/yaalalabs',
-            position: 'right',
-            className: 'header-terraform-link',
-            'aria-label': 'Terraform registry',
-          },
-          {
-            href: 'https://github.com/yaalalabs/agent-kernel',
-            position: 'right',
-            className: 'header-github-link',
-            'aria-label': 'GitHub repository',
-          },
+
+
         ],
       },
       footer: {

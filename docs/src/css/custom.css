@@ -287,7 +287,7 @@ article {
 }
 
 /* Center Navbar Links on Desktop */
-@media (min-width: 997px) {
+@media (min-width: 1200px) {
   .navbar__inner {
     position: relative;
     display: flex;
