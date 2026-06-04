@@ -33,3 +33,6 @@ disallow_incomplete_defs = true
 [tool.black]
 line-length = 120
 target-version = ["py312"]
+
+[tool.pytest.ini_options]
+norecursedirs = ["dist*"]
