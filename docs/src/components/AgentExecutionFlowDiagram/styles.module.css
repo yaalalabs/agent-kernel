@@ -1,0 +1,233 @@
+/* AgentExecutionFlowDiagram — horizontal agent loop with parallel branch */
+
+.figure {
+  margin: 0;
+  width: 100%;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.flowScene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 14rem;
+  min-width: min(100%, 72rem);
+  padding: 3rem 2.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+}
+
+.flowSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.mainRow {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center; 
+  justify-content: center;
+  column-gap: 4rem;
+  row-gap: 1.75rem;
+  flex-wrap: nowrap;
+}
+
+.parallelCol {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;   /* both cards same width */
+  justify-content: center;
+  gap: 3rem;
+  padding: 0.35rem 0;
+  margin: 0 0.25rem;
+  flex-shrink: 0;
+}
+
+/* ── Base node ── */
+.flowNode {
+  --node-color: #00ddff;
+  --node-surface: #0d0f22;
+  --node-glow-opacity: 0.18;
+
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 7rem;
+  flex-shrink: 0;
+  width: 7rem;
+  min-width: 7rem;
+  padding: 1rem 0.65rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--node-color) 30%, transparent);
+  border-radius: 1.125rem;
+  /* Radial gradient: accent glow from top-center, fading to dark base */
+  background:
+    radial-gradient(
+      ellipse 80% 55% at 50% 0%,
+      color-mix(in srgb, var(--node-color) var(--node-glow-opacity-pct, 22%), transparent),
+      transparent 70%
+    ),
+    var(--node-surface);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--node-color) 12%, transparent),
+    0 4px 24px color-mix(in srgb, var(--node-color) 8%, transparent);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.flowNode:hover {
+  border-color: color-mix(in srgb, var(--node-color) 55%, transparent);
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--node-color) 20%, transparent),
+    0 10px 36px color-mix(in srgb, var(--node-color) 18%, transparent);
+}
+
+/* ── Icon circle ── */
+.flowIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 20%;
+  border: 1.5px solid color-mix(in srgb, var(--node-color) 55%, transparent);
+  background: color-mix(in srgb, var(--node-color) 10%, transparent);
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
+.flowIcon {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--node-color);
+  flex-shrink: 0;
+}
+
+.flowLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #e8eaf6;
+  margin: 0 0 0.15rem;
+}
+
+.flowDesc {
+  font-size: 0.595rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: rgba(200, 205, 230, 0.55);
+  margin: 0;
+}
+
+/* ── Per-node colour tokens ── */
+
+.node_goal {
+  --node-color: #9d6cff;
+  --node-surface: #1c1035;
+  --node-glow-opacity-pct: 28%;
+  border-color: rgba(157, 108, 255, 0.4);
+}
+
+.node_plan {
+  --node-color: #9d6cff;
+  --node-surface: #1a0e32;
+  --node-glow-opacity-pct: 24%;
+  border-color: rgba(157, 108, 255, 0.35);
+}
+
+.node_question {
+  --node-color: #4a90c4;
+  --node-surface: #0c1e32;
+  --node-glow-opacity-pct: 30%;
+  border-color: rgba(74, 144, 196, 0.45);
+}
+
+.node_act {
+  --node-color: #f59e0b;
+  --node-surface: #191208;
+  --node-glow-opacity-pct: 32%;
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.node_feedback {
+  --node-color: #d94f7c;
+  --node-surface: #2a0d1a;
+  --node-glow-opacity-pct: 35%;
+  border-color: rgba(217, 79, 124, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(217, 79, 124, 0.18),
+    0 0 28px rgba(217, 79, 124, 0.22);
+  padding-top: 1.2rem;
+  padding-bottom: 1rem;
+}
+
+.node_observe {
+  --node-color: #10b981;
+  --node-surface: #061a14;
+  --node-glow-opacity-pct: 30%;
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(16, 185, 129, 0.14),
+    0 0 24px rgba(16, 185, 129, 0.16);
+}
+
+.node_improve {
+  --node-color: #4a90c4;
+  --node-surface: #0c1e32;
+  --node-glow-opacity-pct: 26%;
+  border-color: rgba(74, 144, 196, 0.4);
+}
+
+.node_repeat {
+  --node-color: #9d6cff;
+  --node-surface: #1c1035;
+  --node-glow-opacity-pct: 24%;
+  border-color: rgba(157, 108, 255, 0.4);
+}
+
+@media (max-width: 900px) {
+  .flowScene {
+    justify-content: flex-start;
+    padding: 1.5rem 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    min-width: unset;
+    width: 100%;
+  }
+
+  .mainRow {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    column-gap: 4rem;
+    row-gap: 1.75rem;
+    width: max-content;
+  }
+
+  .parallelCol {
+    gap: 3rem;
+    flex-shrink: 0;
+  }
+
+  .flowSvg {
+    display: block;
+  }
+}
