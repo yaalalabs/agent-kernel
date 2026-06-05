@@ -23,7 +23,7 @@ export default function CTASection() {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
             <Link
               className={styles.heroBtnLink}

@@ -252,7 +252,7 @@ function Hero() {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
           </div>
 
@@ -1028,7 +1028,7 @@ function Community({ sectionRef }: CommunityProps) {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
             <Link
               className={styles.heroBtnLink}
@@ -1076,7 +1076,7 @@ function Levels() {
       title: "Business Leader",
       image: "/img/business_leader.png",
       description:
-        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand the tech.",
+        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to handle the complexities of the tech.",
     },
     {
       id: "02",
