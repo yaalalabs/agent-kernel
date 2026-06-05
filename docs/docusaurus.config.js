@@ -347,12 +347,34 @@ const config = {
           lastmod: 'date',
           changefreq: 'weekly',
           priority: 0.5,
-          ignorePatterns: ['/tags/**'],
+          ignorePatterns: [
+            '/blog/tags/**',
+            '/blog/authors/**',
+            '/blog/archive/**',
+            '/blog/page/**',
+            '/search/**',
+          ],
           filename: 'sitemap.xml',
           createSitemapItems: async (params) => {
             const { defaultCreateSitemapItems, ...rest } = params;
             const items = await defaultCreateSitemapItems(rest);
-            return items.map((item) => {
+            return items
+              .filter((item) => {
+                const { url } = item;
+                // Keep sitemap focused on canonical and high-value routes.
+                if (url.includes('/blog/tags') || url.includes('/blog/blog') || url.includes('/blog/authors') || url.includes('/blog/archive') || url.includes('/blog/page/')) {
+                  return false;
+                }
+                if (url.endsWith('/search') || url.includes('/search/')) {
+                  return false;
+                }
+                // Exclude versioned/preview docs routes from sitemap to reduce noise.
+                if (url.includes('/docs/next/') || url.match(/\/docs\/0\.[0-9]+\.[0-9]+/)) {
+                  return false;
+                }
+                return true;
+              })
+              .map((item) => {
               // Set highest priority for key landing pages
               if (item.url === 'https://kernel.yaala.ai/' ||
                 item.url === 'https://kernel.yaala.ai/docs' ||
@@ -390,7 +412,7 @@ const config = {
       metadata: [
         {
           name: 'description',
-          content: 'Agent Kernel is theh open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
+          content: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
         },
         {
           property: 'og:image',
