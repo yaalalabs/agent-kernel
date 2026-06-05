@@ -66,10 +66,11 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                 if not body.prompt:
                     raise HTTPException(status_code=400, detail="prompt is required")
 
-                # Generate request_id
-                request_id = body.request_id if hasattr(body, 'request_id') and body.request_id else body.session_id
+                # Generate unique request_id (different from session_id)
+                import uuid
+                request_id = str(uuid.uuid4())
 
-                self._log.info(f"Enqueuing request: session_id={body.session_id}, agent={body.agent}")
+                self._log.info(f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}")
 
                 # Send to Input Queue
                 queue_result = SQSHandler.send_message_to_input_queue(
@@ -79,12 +80,12 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     request_id=request_id  # This becomes a custom message attribute
                 )
 
-                self._log.info(f"Message enqueued: {queue_result}")
+                self._log.info(f"[ENQUEUED] MessageId={queue_result.get('MessageId')}, request_id={request_id}")
 
                 # Handle based on execution mode
                 if self._config.execution.mode == ExecutionMode.REST_SYNC:
                     # Wait for response in DynamoDB
-                    self._log.info(f"Waiting for response: request_id={request_id}")
+                    self._log.info(f"[WAITING] Polling DynamoDB for request_id={request_id}")
                     
                     response = self._wait_for_response(
                         request_id=request_id,
@@ -96,9 +97,12 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                             status_code=504,
                             detail={
                                 "error": f"No response received for request_id: {request_id}",
-                                "session_id": body.session_id
+                                "session_id": body.session_id,
+                                "request_id": request_id
                             }
                         )
+                    
+                    self._log.info(f"[RESPONSE FOUND] request_id={request_id}, response_keys={list(response.keys())}")
                     
                     # Return the response body
                     return response.get("body", response)
@@ -184,15 +188,17 @@ class ECSQueueRequestHandler(RESTRequestHandler):
 
         import time
 
+        self._log.info(f"[WAIT START] request_id={request_id}, max_retries={max_retries}, delay={delay}s")
+
         for attempt in range(max_retries):
             response = self._get_response_store().get_message(request_id)
             if response:
-                self._log.info(f"Response found on attempt {attempt + 1}/{max_retries}")
+                self._log.info(f"[WAIT SUCCESS] Found response on attempt {attempt + 1}/{max_retries} for request_id={request_id}")
                 return response
 
             if attempt < max_retries - 1:
-                self._log.debug(f"Response not ready, waiting {delay}s (attempt {attempt + 1}/{max_retries})")
+                self._log.debug(f"[WAIT RETRY] Response not ready, waiting {delay}s (attempt {attempt + 1}/{max_retries}) for request_id={request_id}")
                 time.sleep(delay)
 
-        self._log.warning(f"Response not found after {max_retries} attempts")
+        self._log.warning(f"[WAIT TIMEOUT] Response not found after {max_retries} attempts for request_id={request_id}")
         return None

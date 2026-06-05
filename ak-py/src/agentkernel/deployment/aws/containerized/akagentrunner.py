@@ -112,13 +112,29 @@ class ECSAgentRunner:
 
         :param record: boto3 SQS message dict
         """
-        cls._log.info(f"Processing message {record.get('MessageId')}")
+        message_id = record.get('MessageId')
+        cls._log.info(f"[AGENT START] Processing message {message_id}")
+        
         body = BaseRunRequest.model_validate(json.loads(record["Body"]))
-        _, agent_response = cls._get_chat_service().process_chat_request(req=body)
         record_attributes = cls._get_record_attributes(raw_queue_message=record)
-        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes)
+        
         cls._log.info(
-            f"Sent response to output queue: {SQSHandler.get_output_queue_url()}"
+            f"[AGENT PROCESSING] request_id={record_attributes['request_id']}, "
+            f"session_id={body.session_id}, agent={body.agent}, prompt={body.prompt[:50] if body.prompt else 'N/A'}"
+        )
+        
+        _, agent_response = cls._get_chat_service().process_chat_request(req=body)
+        
+        cls._log.info(
+            f"[AGENT RESPONSE] request_id={record_attributes['request_id']}, "
+            f"response_keys={list(agent_response.keys()) if isinstance(agent_response, dict) else 'N/A'}"
+        )
+        
+        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes)
+        
+        cls._log.info(
+            f"[AGENT DONE] Sent to output queue: {SQSHandler.get_output_queue_url()}, "
+            f"request_id={record_attributes['request_id']}"
         )
 
     @classmethod

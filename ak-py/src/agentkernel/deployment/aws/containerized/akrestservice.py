@@ -140,15 +140,20 @@ class ECSRESTService:
 
         :param record: boto3 SQS ``receive_message`` record
         """
-        cls._log.info(f"Processing output message {record.get('MessageId')}")
+        message_id = record.get('MessageId')
+        cls._log.info(f"[OUTPUT START] Processing output message {message_id}")
 
         if cls._config.execution.mode == ExecutionMode.ASYNC:
             cls._broadcast_via_websocket(record)
         else:
             message = cls._construct_message_for_store(record)
+            cls._log.info(
+                f"[OUTPUT STORE] Writing to DynamoDB — request_id={message['request_id']}, "
+                f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
+            )
             cls._get_response_store().add_message(message)
             cls._log.info(
-                f"Stored response — session_id={message['session_id']} "
+                f"[OUTPUT DONE] Stored response — session_id={message['session_id']} "
                 f"request_id={message['request_id']}"
             )
 
