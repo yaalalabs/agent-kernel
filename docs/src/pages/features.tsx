@@ -1909,7 +1909,7 @@ export default function Features() {
   return (
     <Layout
       title="Features"
-      description="Comprehensive overview of Agent Kernel features — framework-agnostic, multi-cloud AI agent runtime with built-in testing, observability, guardrails, and messaging integrations."
+      description="Comprehensive overview of Agent Kernel features: a framework-neutral, multi-cloud AI agent runtime with built-in testing, observability, guardrails, knowledge bases, and messaging integrations."
     >
       {/* <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
         <HeroAnimation
