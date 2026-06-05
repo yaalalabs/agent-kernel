@@ -91,8 +91,12 @@ class ECSRESTService:
         t2.start()
         cls._log.info("ECSRESTService: Thread 2 (output-queue poller) started")
 
-        cls._log.info("ECSRESTService: starting REST API (Thread 1)")
-        RESTAPI.run()
+        # Use queue-aware request handler that bypasses ChatService
+        # This directly enqueues to SQS without agent validation
+        from .ecs_queue_handler import ECSQueueRequestHandler
+        
+        cls._log.info("ECSRESTService: starting REST API with queue-aware handler (Thread 1)")
+        RESTAPI.run(handlers=[ECSQueueRequestHandler()])
 
     # ------------------------------------------------------------------
     # Lazy initialisers
