@@ -369,6 +369,9 @@ resource "aws_ecs_task_definition" "agent_runner" {
       image     = var.agent_runner_image_uri != null ? var.agent_runner_image_uri : module.docker_image[0].docker_image_uri
       essential = true
 
+      # Command override - if provided, replaces the Docker image's CMD
+      command = var.agent_runner_command
+
       environment = [
         for k, v in merge(
           var.environment_variables,

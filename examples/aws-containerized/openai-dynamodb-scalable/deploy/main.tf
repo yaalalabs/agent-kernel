@@ -75,6 +75,10 @@ module "containerized_agents" {
   package_path       = "../dist-rest-service"
   container_type     = "ecs"
   ecs_container_port = 8000
+  
+  # Override the command to use the correct entrypoint
+  # The ECR module adds a Lambda-style CMD, so we override it here
+  ecs_container_command = ["python", "app_rest_service.py"]
 
   # ---- agent memory (session store) ----
   create_dynamodb_memory_table = true
@@ -85,6 +89,10 @@ module "containerized_agents" {
 
   # Agent Runner uses its own image (different CMD)
   agent_runner_image_uri = module.agent_runner_image.docker_image_uri
+  
+  # Override the command to use the correct entrypoint
+  # The ECR module adds a Lambda-style CMD, so we override it here
+  agent_runner_command = ["python", "app_agent_runner.py"]
 
   # SQS visibility timeout should exceed agent processing time
   sqs_input_visibility_timeout  = 120

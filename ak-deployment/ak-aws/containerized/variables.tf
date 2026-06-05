@@ -163,6 +163,12 @@ variable "container_type" {
   }
 }
 
+variable "ecs_container_command" {
+  type        = list(string)
+  description = "Command override for the main ECS task (REST service). If not set, uses the Docker image's CMD. Example: [\"python\", \"app_rest_service.py\"]"
+  default     = null
+}
+
 # CORS configuration for HTTP API (API Gateway v2)
 variable "enable_cors" {
   type        = bool
@@ -356,5 +362,11 @@ variable "agent_runner_desired_count" {
 variable "agent_runner_image_uri" {
   type        = string
   description = "Docker image URI for the Agent Runner ECS task. Defaults to the same image as the REST Service if not set."
+  default     = null
+}
+
+variable "agent_runner_command" {
+  type        = list(string)
+  description = "Command override for the Agent Runner ECS task. If not set, uses the Docker image's CMD. Example: [\"python\", \"app_agent_runner.py\"]"
   default     = null
 }

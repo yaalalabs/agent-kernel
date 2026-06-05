@@ -85,6 +85,10 @@ module "ecs" {
           image                  = module.docker_image[0].docker_image_uri
           essential              = true
           readonlyRootFilesystem = false
+          
+          # Command override - if provided, replaces the Docker image's CMD
+          command = var.ecs_container_command
+          
           portMappings = [
             {
               name          = local.container_name,
