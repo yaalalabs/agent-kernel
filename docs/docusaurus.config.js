@@ -199,7 +199,7 @@ const config = {
           url: 'https://www.yaalalabs.com',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent Kernel, agentkernel, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
+        keywords: 'Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
         featureList: [
           'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit',
           'Run multiple frameworks simultaneously in a single runtime',
@@ -390,7 +390,7 @@ const config = {
       metadata: [
         {
           name: 'description',
-          content: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
+          content: 'Agent Kernel is theh open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
         },
         {
           property: 'og:image',
