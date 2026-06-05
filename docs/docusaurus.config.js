@@ -199,7 +199,7 @@ const config = {
           url: 'https://www.yaalalabs.com',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
+        keywords: 'Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
         featureList: [
           'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit',
           'Run multiple frameworks simultaneously in a single runtime',
