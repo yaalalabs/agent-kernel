@@ -37,5 +37,5 @@ create_deployment_packages() {
 
 create_deployment_packages "$1"
 
-terrafor init
+terraform init
 terraform apply
