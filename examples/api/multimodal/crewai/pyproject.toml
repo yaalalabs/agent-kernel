@@ -4,8 +4,7 @@ version = "0.1.0"
 description = "CrewAI multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,crewai,multimodal]>=0.4.0",
-    "crewai==0.165.1"
+    "agentkernel[api,crewai,multimodal]>=0.4.0"
 ]
 
 [dependency-groups]

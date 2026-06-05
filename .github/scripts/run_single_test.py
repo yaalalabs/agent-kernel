@@ -61,7 +61,7 @@ def run_simple_test(path: str) -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}"
     )
@@ -159,7 +159,7 @@ def deploy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
     if vpc_id:
         tf_env['TF_VAR_vpc_id'] = vpc_id
                 
-        print(f"\n✅ Injecting VPC configuration as Terraform variables:")
+        print("\n✅ Injecting VPC configuration as Terraform variables:")
         print(f"   TF_VAR_vpc_id={vpc_id}")    
     if private_subnet_ids:
         try:
@@ -199,7 +199,7 @@ def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     # Get agent_invoke_url terraform output and set AK_TEST_ENDPOINT
     try:
         print(f"\n{'='*80}")
-        print(f"Retrieving agent_invoke_url terraform output")
+        print("Retrieving agent_invoke_url terraform output")
         print(f"{'='*80}\n")
         
         result = subprocess.run(
@@ -231,7 +231,7 @@ def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -260,7 +260,7 @@ def destroy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str 
     if vnet_id:
         tf_env['TF_VAR_vnet_id'] = vnet_id
         
-        print(f"\n✅ Injecting VNet configuration as environment variables for destroy:")
+        print("\n✅ Injecting VNet configuration as environment variables for destroy:")
         print(f"   TF_VAR_VNET_ID={vnet_id}")
         
     if subnet_ids:
@@ -310,7 +310,7 @@ def deploy_azure_resources(path: str, deploy_dir: str = 'deploy', vnet_id: str =
     if vnet_id:
         tf_env['TF_VAR_vnet_id'] = vnet_id
         
-        print(f"\n✅ Injecting VNet configuration as environment variables:")
+        print("\n✅ Injecting VNet configuration as environment variables:")
         print(f"   TF_VAR_vnet_id={vnet_id}")
     if subnet_ids:
         try:
@@ -348,7 +348,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     # Get agent_invoke_url terraform output and set AK_TEST_ENDPOINT
     try:
         print(f"\n{'='*80}")
-        print(f"Retrieving agent_invoke_url terraform output")
+        print("Retrieving agent_invoke_url terraform output")
         print(f"{'='*80}\n")
         
         result = subprocess.run(
@@ -382,7 +382,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -461,7 +461,7 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
     if vpc_id:
         tf_env['TF_VAR_vpc_id'] = vpc_id
         
-        print(f"\n✅ Injecting VPC configuration as Terraform variables:")
+        print("\n✅ Injecting VPC configuration as Terraform variables:")
         print(f"   TF_VAR_vpc_id={vpc_id}")    
     if private_subnet_ids:
         try:
@@ -501,7 +501,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     # Get agent_invoke_url terraform output and set AK_TEST_ENDPOINT
     try:
         print(f"\n{'='*80}")
-        print(f"Retrieving agent_invoke_url terraform output")
+        print("Retrieving agent_invoke_url terraform output")
         print(f"{'='*80}\n")
         
         result = subprocess.run(
@@ -525,7 +525,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
+        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env

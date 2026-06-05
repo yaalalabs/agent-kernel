@@ -5,7 +5,6 @@ description = "smolagents multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[api,smolagents,multimodal]>=0.4.0",
-    "python-multipart>=0.0.12",
     "smolagents",
 ]
 

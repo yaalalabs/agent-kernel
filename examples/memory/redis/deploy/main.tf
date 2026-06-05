@@ -21,7 +21,7 @@ module "serverless_agents" {
     module_name          = var.module_name
     package_path         = "../dist"
     package_type         = "Image"
-    memory_size          = 256
+    memory_size          = 512
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }

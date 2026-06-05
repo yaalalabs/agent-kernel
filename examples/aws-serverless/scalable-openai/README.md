@@ -22,9 +22,9 @@ This demo deploys the following AWS resources:
   - Agent Runner: Executes agent logic asynchronously
   - Response Handler: Processes and stores responses
 - **SQS Queues**: Input and output queues (DLQs disabled in this example)
-- **DynamoDB**: Session storage and response store tables
+- **Redis Cluster**: Session storage and response store (shared with openai example)
 - **API Gateway**: REST API with custom endpoints
-- **VPC**: Private networking for Lambda functions
+- **VPC**: Private networking for Lambda functions (shared with openai example)
 - **CloudWatch**: Logging and monitoring
 
 ## Execution Mode
@@ -45,20 +45,34 @@ Both modes keep the scalable multi-Lambda architecture (`request_handler`, `agen
 - Terraform (`1.9.5` or higher) installed
 - Docker installed (for building container images)
 - UV package manager installed
+- The openai example must be deployed first to create the shared Redis cluster and VPC resources
 
 ## Deployment Steps
 
-1. Configure environment variables:
+1. Deploy the openai example first to create the shared infrastructure:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    cd ../openai/deploy && ./deploy.sh
     ```
 
-2. Build the deployment packages:
+2. Get the VPC ID and private subnet IDs from the openai deployment:
+    ```bash
+    cd ../openai/deploy && terraform output vpc_id
+    cd ../openai/deploy && terraform output private_subnet_ids
+    ```
+
+3. Configure environment variables:
+    ```bash
+    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    export TF_VAR_vpc_id=<VPC_ID_FROM_OPENAI>
+    export TF_VAR_private_subnet_ids='["<SUBNET_ID_1>", "<SUBNET_ID_2>"]'
+    ```
+
+4. Build the deployment packages:
     ```bash
     ./build.sh  # or ./build.sh local for local development
     ```
 
-3. Navigate to the deployment directory and run the deployment script:
+5. Navigate to the deployment directory and run the deployment script:
     ```bash
     cd deploy && ./deploy.sh
     ```
@@ -147,5 +161,5 @@ The architecture automatically scales based on:
 Monitor through CloudWatch:
 - Lambda function metrics and logs
 - SQS queue depth and processing rates
-- DynamoDB read/write metrics
+- Redis cluster metrics
 - API Gateway request metrics

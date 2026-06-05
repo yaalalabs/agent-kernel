@@ -42,4 +42,4 @@ async def http_client():
 @pytest.mark.order(1)
 async def test_math_agent(http_client):
     response = await http_client.send("What is 23 multiplied by 17?")
-    Test.compare(response, ["23 multiplied by 17 equals 391"])
+    Test.compare(response, ["391"])

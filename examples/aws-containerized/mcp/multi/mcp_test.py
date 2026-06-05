@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 import subprocess
 import sys
 
@@ -7,6 +9,8 @@ import pytest_asyncio
 from agentkernel.test import Test
 
 from client import MCPHttpClient
+
+log = logging.getLogger("ak.awscontainerized.mcptest")
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -17,7 +21,15 @@ async def mcp_client():
         stderr=sys.stderr,
     )
     await asyncio.sleep(10)
-    client = MCPHttpClient(server_url="https://426o2htx06.execute-api.us-east-1.amazonaws.com/agents/api/v1/mcp")
+    test_endpoint = os.getenv("AK_TEST_ENDPOINT")
+    log.info(f"Test endpoint: {test_endpoint}")
+
+    if test_endpoint and "/api/v1/chat" in test_endpoint:
+        mcp_endpoint = test_endpoint.replace("/api/v1/chat", "/api/v1/mcp")
+    else:
+        mcp_endpoint = test_endpoint
+    log.info(f"MCP endpoint: {mcp_endpoint}")
+    client = MCPHttpClient(server_url=mcp_endpoint)
     await client.init()
     try:
         yield client
