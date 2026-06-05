@@ -95,11 +95,19 @@ module "ecs" {
           ]
           enable_cloudwatch_logging = true
           environment               = [
-            for k, v in merge(var.environment_variables, local.redis_url != null ? {
-              AK_SESSION__REDIS__URL = local.redis_url
-            } : {},
-                local.dynamodb_memory_table_arn != null ? {
+            for k, v in merge(
+              var.environment_variables,
+              local.redis_url != null ? {
+                AK_SESSION__REDIS__URL = local.redis_url
+              } : {},
+              local.dynamodb_memory_table_arn != null ? {
                 AK_SESSION__DYNAMODB__TABLE_NAME = local.dynamodb_memory_table_name
+              } : {},
+              # Queue mode — inject queue URLs and response store table name
+              var.enable_queue_mode ? {
+                AK_EXECUTION__QUEUES__INPUT__URL                   = module.input_queue[0].queue_url
+                AK_EXECUTION__QUEUES__OUTPUT__URL                  = module.output_queue[0].queue_url
+                AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = aws_dynamodb_table.response_store[0].name
               } : {}
             ) : {
               name  = k

@@ -228,3 +228,133 @@ variable "enable_mcp_server" {
 
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
+
+# ---------------------------------------------------------------------------
+# Queue Mode Variables (ECS + SQS)
+# ---------------------------------------------------------------------------
+
+variable "enable_queue_mode" {
+  type        = bool
+  description = "Enable SQS queue mode. Creates Input/Output queues, DynamoDB response store, and Agent Runner ECS service."
+  default     = false
+}
+
+variable "queue_mode_type" {
+  type        = string
+  description = "Queue mode type: 'sync' (client waits on same connection) or 'async' (client polls a separate GET endpoint)."
+  default     = "sync"
+  validation {
+    condition     = contains(["sync", "async"], var.queue_mode_type)
+    error_message = "queue_mode_type must be either 'sync' or 'async'."
+  }
+}
+
+# --- SQS shared ---
+
+variable "sqs_managed_sse_enabled" {
+  type        = bool
+  description = "Enable SQS-managed server-side encryption for both queues."
+  default     = true
+}
+
+variable "sqs_max_message_size" {
+  type        = number
+  description = "Maximum SQS message size in bytes (applies to both queues)."
+  default     = 262144 # 256 KB
+}
+
+variable "sqs_receive_wait_time_seconds" {
+  type        = number
+  description = "Long-poll wait time for ReceiveMessage calls (applies to both queues)."
+  default     = 0
+}
+
+# --- Input Queue ---
+
+variable "sqs_input_visibility_timeout" {
+  type        = number
+  description = "Visibility timeout (seconds) for the Input Queue. Should be >= agent processing time."
+  default     = 60
+}
+
+variable "sqs_input_message_retention_seconds" {
+  type        = number
+  description = "How long messages stay in the Input Queue before being automatically deleted."
+  default     = 1800 # 30 minutes
+}
+
+variable "sqs_input_max_receive_count" {
+  type        = number
+  description = "Number of times a message can be received before being sent to the DLQ (if enabled)."
+  default     = 5
+}
+
+variable "sqs_input_create_dlq" {
+  type        = bool
+  description = "Create a dead-letter queue for the Input Queue."
+  default     = false
+}
+
+variable "sqs_input_dlq_message_retention_seconds" {
+  type        = number
+  description = "How long messages stay in the Input DLQ."
+  default     = 1800
+}
+
+# --- Output Queue ---
+
+variable "sqs_output_visibility_timeout" {
+  type        = number
+  description = "Visibility timeout (seconds) for the Output Queue."
+  default     = 60
+}
+
+variable "sqs_output_message_retention_seconds" {
+  type        = number
+  description = "How long messages stay in the Output Queue before being automatically deleted."
+  default     = 1800
+}
+
+variable "sqs_output_max_receive_count" {
+  type        = number
+  description = "Number of times a message can be received before being sent to the DLQ (if enabled)."
+  default     = 5
+}
+
+variable "sqs_output_create_dlq" {
+  type        = bool
+  description = "Create a dead-letter queue for the Output Queue."
+  default     = false
+}
+
+variable "sqs_output_dlq_message_retention_seconds" {
+  type        = number
+  description = "How long messages stay in the Output DLQ."
+  default     = 1800
+}
+
+# --- Agent Runner ECS Service ---
+
+variable "agent_runner_cpu" {
+  type        = number
+  description = "Fargate CPU units for the Agent Runner ECS task."
+  default     = 512
+}
+
+variable "agent_runner_memory" {
+  type        = number
+  description = "Fargate memory (MiB) for the Agent Runner ECS task."
+  default     = 1024
+}
+
+variable "agent_runner_desired_count" {
+  type        = number
+  description = "Desired number of Agent Runner ECS tasks."
+  default     = 1
+}
+
+variable "agent_runner_image_uri" {
+  type        = string
+  description = "Docker image URI for the Agent Runner ECS task. Defaults to the same image as the REST Service if not set."
+  default     = null
+}

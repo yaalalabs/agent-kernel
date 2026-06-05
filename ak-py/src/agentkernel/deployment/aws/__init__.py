@@ -11,6 +11,7 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
+from .containerized import ECSAgentRunner, ECSRESTService
 from .core.sqs_handler import SQSHandler
 from .serverless import APIGatewayAuthorizer, Lambda, ResponseHandler, ServerlessAgentRunner, WebsocketConnectionHandler
 from .serverless.core import LambdaSQSConsumer
