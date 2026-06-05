@@ -72,6 +72,9 @@ class ECSAgentRunner:
         """
         Extract routing attributes from a raw SQS message.
 
+        Works with both boto3 receive_message records (PascalCase keys)
+        and Lambda event records (camelCase keys).
+
         :param raw_queue_message: boto3 SQS message dict
         :return: Extracted attributes dict
         :raises ValueError: If request_id is missing
@@ -84,6 +87,7 @@ class ECSAgentRunner:
             raise ValueError("request_id is required in SQS message attributes")
 
         return {
+            # boto3: "MessageGroupId" under Attributes; Lambda: "MessageGroupId" under attributes
             "message_group_id": attributes.get("MessageGroupId"),
             "message_deduplication_id": attributes.get("MessageDeduplicationId"),
             "request_id": request_id,

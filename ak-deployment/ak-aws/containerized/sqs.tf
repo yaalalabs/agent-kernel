@@ -184,6 +184,30 @@ resource "aws_iam_role_policy_attachment" "rest_service_response_store_attachmen
 }
 
 # ---------- IAM — Agent Runner ECS Task Role ----------
+# Separate execution role (pull image, write logs) and task role (SQS, DynamoDB).
+
+resource "aws_iam_role" "agent_runner_execution_role" {
+  count = var.enable_queue_mode ? 1 : 0
+
+  name = "${local.prefix}-agent-runner-exec-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_execution_policy" {
+  count      = var.enable_queue_mode ? 1 : 0
+  role       = aws_iam_role.agent_runner_execution_role[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
 
 resource "aws_iam_role" "agent_runner_task_role" {
   count = var.enable_queue_mode ? 1 : 0
@@ -202,10 +226,29 @@ resource "aws_iam_role" "agent_runner_task_role" {
   tags = var.tags
 }
 
-resource "aws_iam_role_policy_attachment" "agent_runner_task_execution" {
+# CloudWatch Logs — agent runner needs to write its own logs
+resource "aws_iam_policy" "agent_runner_logs_policy" {
+  count = var.enable_queue_mode ? 1 : 0
+  name  = "${local.prefix}-agent-runner-logs"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ]
+      Resource = "arn:aws:logs:${var.region}:*:log-group:/ecs/${local.prefix}-agent-runner:*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_logs_attachment" {
   count      = var.enable_queue_mode ? 1 : 0
   role       = aws_iam_role.agent_runner_task_role[0].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  policy_arn = aws_iam_policy.agent_runner_logs_policy[0].arn
 }
 
 resource "aws_iam_policy" "agent_runner_sqs_policy" {
@@ -251,6 +294,38 @@ resource "aws_iam_role_policy_attachment" "agent_runner_sqs_attachment" {
   policy_arn = aws_iam_policy.agent_runner_sqs_policy[0].arn
 }
 
+# DynamoDB session store access for agent runner (same table as REST Service)
+resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
+  count = var.enable_queue_mode && var.create_dynamodb_memory_table ? 1 : 0
+  name  = "${local.prefix}-agent-runner-dynamodb-memory"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ]
+      Resource = [
+        local.dynamodb_memory_table_arn,
+        "${local.dynamodb_memory_table_arn}/index/*"
+      ]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachment" {
+  count      = var.enable_queue_mode && var.create_dynamodb_memory_table ? 1 : 0
+  role       = aws_iam_role.agent_runner_task_role[0].name
+  policy_arn = aws_iam_policy.agent_runner_dynamodb_memory_policy[0].arn
+}
+
 # ---------- ECS Agent Runner Service ----------
 
 resource "aws_security_group" "agent_runner" {
@@ -285,7 +360,7 @@ resource "aws_ecs_task_definition" "agent_runner" {
   network_mode             = "awsvpc"
   cpu                      = var.agent_runner_cpu
   memory                   = var.agent_runner_memory
-  execution_role_arn       = aws_iam_role.agent_runner_task_role[0].arn
+  execution_role_arn       = aws_iam_role.agent_runner_execution_role[0].arn
   task_role_arn            = aws_iam_role.agent_runner_task_role[0].arn
 
   container_definitions = jsonencode([

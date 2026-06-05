@@ -154,27 +154,41 @@ class SQSHandler:
     @staticmethod
     def get_message_system_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
         """
-        Return the SQS system attributes from a raw Lambda queue record.
+        Return the SQS system attributes from a raw SQS message record.
 
-        :param raw_queue_message_record: Raw SQS record from Lambda containing the ``attributes`` block
-        :return: A shallow copy of the record's system ``attributes`` mapping
+        Handles both Lambda event records (``attributes`` key, camelCase)
+        and boto3 receive_message records (``Attributes`` key, PascalCase).
+
+        :param raw_queue_message_record: Raw SQS record
+        :return: A shallow copy of the record's system attributes mapping
         """
-        return dict(raw_queue_message_record.get("attributes", {}) or {})
+        # Lambda uses "attributes", boto3 receive_message uses "Attributes"
+        attrs = raw_queue_message_record.get("Attributes") or raw_queue_message_record.get("attributes") or {}
+        return dict(attrs)
 
     @staticmethod
     def get_message_custom_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
         """
-        Return the custom SQS message attributes from a raw Lambda queue record.
+        Return the custom SQS message attributes from a raw SQS message record.
 
-        :param raw_queue_message_record: Raw SQS record from Lambda containing ``messageAttributes``
+        Handles both Lambda event records (``messageAttributes`` key, camelCase)
+        and boto3 receive_message records (``MessageAttributes`` key, PascalCase).
+
+        :param raw_queue_message_record: Raw SQS record
         :return: A dictionary mapping custom attribute names to their scalar values
         """
-        message_attributes = raw_queue_message_record.get("messageAttributes", {}) or {}
+        # Lambda uses "messageAttributes", boto3 receive_message uses "MessageAttributes"
+        message_attributes = (
+            raw_queue_message_record.get("MessageAttributes")
+            or raw_queue_message_record.get("messageAttributes")
+            or {}
+        )
         flattened_attributes: Dict[str, Any] = {}
         for attribute_name, attribute in message_attributes.items():
             if isinstance(attribute, Mapping):
                 attribute_value = (
-                    attribute.get("stringValue") or attribute.get("StringValue") or attribute.get("binaryValue") or attribute.get("BinaryValue")
+                    attribute.get("StringValue") or attribute.get("stringValue")
+                    or attribute.get("BinaryValue") or attribute.get("binaryValue")
                 )
             else:
                 attribute_value = attribute
