@@ -17,13 +17,11 @@ module "serverless_agents" {
   queue_mode = true # recommended for production
   execution_mode = "rest_sync" # rest_sync or rest_async
 
-  # Memory DB Config
-  # create_redis_cluster = true
-  create_dynamodb_memory_table = true
+  # Memory DB Config - uses existing Redis cluster
+  create_redis_cluster = false
 
-  # Response Store Config 
-  # create_redis_response_store = true # if True, it will use the memory Redis cluster for response store or may create.
-  create_dynamodb_response_store = true
+  # Response Store Config - uses existing Redis cluster
+  create_redis_response_store = false
 
   # API Gateway configuration
   api_version    = "v1"

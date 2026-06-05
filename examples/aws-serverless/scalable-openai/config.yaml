@@ -2,7 +2,10 @@ logging:
   ak:
     level: DEBUG
 session:
-  type: dynamodb
+  type: redis
+  redis:
+    prefix: "ak:scalable-openai:example:"
+    url: "redis://ak-openai-serverless-dev-examples-redis.zinik6.0001.apse2.cache.amazonaws.com:6379"
 execution:
   mode: rest_sync
   queues:
@@ -13,9 +16,8 @@ execution:
       # url: "https://sqs.<region>.amazonaws.com/<account-id>/<output-queue-name>"
       max_receive_count: 3
   response_store:
-    type: dynamodb
+    type: redis
+    redis:
+      prefix: "ak:scalable-openai:response:"
     retry_count: 5
     delay: 5
-    # dynamodb:
-      # table_name: "<your table name>"
-      # ttl: 30
