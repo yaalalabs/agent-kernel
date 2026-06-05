@@ -175,13 +175,6 @@ const config = {
         content: 'AI Infrastructure, Machine Learning, Software Development, Agentic AI',
       },
     },
-    {
-      tagName: 'link',
-      attributes: {
-        rel: 'canonical',
-        href: 'https://kernel.yaala.ai',
-      },
-    },
     // Structured Data (JSON-LD) for better SEO
     {
       tagName: 'script',
@@ -220,6 +213,56 @@ const config = {
           'LangFuse and OpenLLMetry observability',
           'MCP Server and A2A protocol support',
           'Open-source under the Apache 2.0 license',
+        ],
+      }),
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: 'Agent Kernel',
+        alternateName: 'Agent Kernel by Yaala Labs',
+        url: 'https://kernel.yaala.ai/',
+      }),
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'ItemList',
+        name: 'Primary Site Navigation',
+        itemListElement: [
+          {
+            '@type': 'SiteNavigationElement',
+            position: 1,
+            name: 'Features',
+            url: 'https://kernel.yaala.ai/features',
+          },
+          {
+            '@type': 'SiteNavigationElement',
+            position: 2,
+            name: 'Use Cases',
+            url: 'https://kernel.yaala.ai/use-cases',
+          },
+          {
+            '@type': 'SiteNavigationElement',
+            position: 3,
+            name: 'Documentation',
+            url: 'https://kernel.yaala.ai/docs',
+          },
+          {
+            '@type': 'SiteNavigationElement',
+            position: 4,
+            name: 'Blog',
+            url: 'https://kernel.yaala.ai/blog',
+          },
         ],
       }),
     },
