@@ -76,7 +76,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     message_body=body.model_dump(),
                     message_group_id=body.session_id,
                     message_deduplication_id=request_id,
-                    message_attributes={"request_id": request_id}
+                    request_id=request_id  # This becomes a custom message attribute
                 )
 
                 self._log.info(f"Message enqueued: {queue_result}")
