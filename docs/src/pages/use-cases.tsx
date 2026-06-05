@@ -566,7 +566,7 @@ function Community({ sectionRef }: CommunityProps) {
               className={`button button--primary button--lg ${indexStyles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
             <Link
               className={indexStyles.heroBtnLink}

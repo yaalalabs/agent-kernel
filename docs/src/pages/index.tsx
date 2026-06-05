@@ -252,7 +252,7 @@ function Hero() {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
           </div>
 
@@ -1028,7 +1028,7 @@ function Community({ sectionRef }: CommunityProps) {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
             <Link
               className={styles.heroBtnLink}
