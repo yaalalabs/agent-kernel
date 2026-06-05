@@ -19,5 +19,6 @@ execution:
     type: redis
     redis:
       prefix: "ak:scalable-openai:response:"
+      url: "redis://ak-openai-serverless-dev-examples-redis.zinik6.0001.apse2.cache.amazonaws.com:6379"
     retry_count: 5
     delay: 5
