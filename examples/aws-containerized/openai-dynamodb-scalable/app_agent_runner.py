@@ -23,7 +23,7 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
-# Agent Runner entrypoint — polls Input Queue, runs agent, sends to Output Queue.
+# Agent Runner entrypoint - polls Input Queue, runs agent, sends to Output Queue.
 handler = ECSAgentRunner.run
 
 if __name__ == "__main__":

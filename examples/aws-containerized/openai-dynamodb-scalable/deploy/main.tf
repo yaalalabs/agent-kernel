@@ -28,14 +28,14 @@ provider "docker" {
 }
 
 # ---------------------------------------------------------------------------
-# Agent Runner image — built from dist-agent-runner/
+# Agent Runner image - built from dist-agent-runner/
 # ---------------------------------------------------------------------------
 module "agent_runner_image" {
   # Points to the local ECR module.
   # Switch to registry once published:
-  #   source  = "yaalalabs/ak-common/aws//modules/ecr"
-  #   version = "0.5.0"
-  source = "../../../../ak-deployment/ak-aws/common/modules/ecr"
+  source  = "yaalalabs/ak-common/aws//modules/ecr"
+  version = "0.4.0"
+
 
   env_alias     = var.env_alias
   module_name   = "${var.module_name}-runner"
@@ -43,31 +43,16 @@ module "agent_runner_image" {
   source_path   = "../dist-agent-runner"
 }
 
-# ---------------------------------------------------------------------------
-# Main containerized deployment — REST Sync queue mode
-#
-# REST Service image  → dist-rest-service/   (FastAPI + output-queue poller)
-# Agent Runner image  → dist-agent-runner/   (Input Queue poller)
-#
-# Flow: client → API GW → ALB → REST Service → Input Queue
-#       → Agent Runner → Output Queue → REST Service (Thread 2)
-#       → DynamoDB Response Store → REST Service (Thread 1) → client
-# ---------------------------------------------------------------------------
 module "containerized_agents" {
-  # Points to the local module which includes queue-mode support.
-  # Switch to the registry source once a new version is published:
-  #   source  = "yaalalabs/ak-containerized/aws"
-  #   version = "0.5.0"
-  source = "../../../../ak-deployment/ak-aws/containerized"
+  source = "yaalalabs/ak-containerized/aws"
+  version = "0.4.0"
 
-  # ---- identity ----
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name
   region               = var.region
-  product_display_name = "OpenAI Agents — Scalable"
+  product_display_name = "OpenAI Agents - Scalable"
 
-  # ---- networking ----
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 

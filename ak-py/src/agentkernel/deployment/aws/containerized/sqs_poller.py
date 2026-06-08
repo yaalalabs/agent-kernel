@@ -92,10 +92,7 @@ class SQSPoller:
 
         try:
             if receive_count > self._max_receive_count:
-                _log.warning(
-                    f"Message {message_id} exceeded max receive count "
-                    f"({receive_count} > {self._max_receive_count})"
-                )
+                _log.warning(f"Message {message_id} exceeded max receive count " f"({receive_count} > {self._max_receive_count})")
                 if self._on_permanent_failure_fn:
                     self._on_permanent_failure_fn(msg)
                 # Delete so it stops cycling
@@ -106,10 +103,7 @@ class SQSPoller:
             self._delete_message(client, msg)
 
         except Exception:
-            _log.exception(
-                f"Failed to process message {message_id} — "
-                "leaving in queue for visibility-timeout retry"
-            )
+            _log.exception(f"Failed to process message {message_id} — " "leaving in queue for visibility-timeout retry")
             # Do NOT delete — visibility timeout will return it for retry
 
     def _delete_message(self, client, msg: dict) -> None:

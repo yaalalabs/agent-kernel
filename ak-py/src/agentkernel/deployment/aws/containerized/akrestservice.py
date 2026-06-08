@@ -70,14 +70,10 @@ class ECSRESTService:
         max_receive_count = cls._config.execution.queues.output.max_receive_count
 
         if not output_queue_url:
-            raise ValueError(
-                "AK_EXECUTION__QUEUES__OUTPUT__URL is required for ECSRESTService"
-            )
+            raise ValueError("AK_EXECUTION__QUEUES__OUTPUT__URL is required for ECSRESTService")
 
         mode = cls._config.execution.mode
-        cls._log.info(
-            f"ECSRESTService starting — mode={mode} output_queue={output_queue_url}"
-        )
+        cls._log.info(f"ECSRESTService starting — mode={mode} output_queue={output_queue_url}")
 
         poller = SQSPoller(
             queue_url=output_queue_url,
@@ -85,16 +81,14 @@ class ECSRESTService:
             max_receive_count=max_receive_count,
             on_permanent_failure_fn=cls.on_permanent_failure,
         )
-        t2 = threading.Thread(
-            target=poller.run, name="output-queue-poller", daemon=True
-        )
+        t2 = threading.Thread(target=poller.run, name="output-queue-poller", daemon=True)
         t2.start()
         cls._log.info("ECSRESTService: Thread 2 (output-queue poller) started")
 
         # Use queue-aware request handler that bypasses ChatService
         # This directly enqueues to SQS without agent validation
         from .ecs_queue_handler import ECSQueueRequestHandler
-        
+
         cls._log.info("ECSRESTService: starting REST API with queue-aware handler (Thread 1)")
         RESTAPI.run(handlers=[ECSQueueRequestHandler()])
 
@@ -113,10 +107,7 @@ class ECSRESTService:
         if cls._websocket_handler is None:
             ws_config = cls._config.websocket_api
             if not ws_config.connection_table or not ws_config.connection_table.table_name:
-                raise ValueError(
-                    "websocket_api.connection_table.table_name is required "
-                    "for ECSRESTService in WebSocket mode"
-                )
+                raise ValueError("websocket_api.connection_table.table_name is required " "for ECSRESTService in WebSocket mode")
             cls._websocket_handler = WebSocketHandler(
                 conn_table_name=ws_config.connection_table.table_name,
                 ttl=ws_config.connection_table.ttl,
@@ -140,7 +131,7 @@ class ECSRESTService:
 
         :param record: boto3 SQS ``receive_message`` record
         """
-        message_id = record.get('MessageId')
+        message_id = record.get("MessageId")
         cls._log.info(f"[OUTPUT START] Processing output message {message_id}")
 
         if cls._config.execution.mode == ExecutionMode.ASYNC:
@@ -152,10 +143,7 @@ class ECSRESTService:
                 f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
             )
             cls._get_response_store().add_message(message)
-            cls._log.info(
-                f"[OUTPUT DONE] Stored response — session_id={message['session_id']} "
-                f"request_id={message['request_id']}"
-            )
+            cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
 
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
@@ -170,10 +158,7 @@ class ECSRESTService:
         :param record: boto3 SQS ``receive_message`` record
         """
         max_retries = cls._config.execution.queues.output.max_receive_count
-        cls._log.error(
-            f"Permanent failure for output message {record.get('MessageId')} "
-            f"after {max_retries} retries"
-        )
+        cls._log.error(f"Permanent failure for output message {record.get('MessageId')} " f"after {max_retries} retries")
 
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
@@ -193,32 +178,21 @@ class ECSRESTService:
                         user_id=user_id,
                     )
                 else:
-                    cls._log.warning(
-                        "Cannot broadcast permanent-failure error: "
-                        "endpoint_url or user_id missing"
-                    )
+                    cls._log.warning("Cannot broadcast permanent-failure error: " "endpoint_url or user_id missing")
             else:
                 error_body = json.dumps(error_payload)
                 message = cls._construct_message_for_store(record, body=error_body)
                 cls._get_response_store().add_message(message)
-                cls._log.info(
-                    f"Stored permanent-failure error — "
-                    f"session_id={message['session_id']} "
-                    f"request_id={message['request_id']}"
-                )
+                cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
         except Exception:
-            cls._log.exception(
-                "Failed to handle permanent-failure output message"
-            )
+            cls._log.exception("Failed to handle permanent-failure output message")
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     @classmethod
-    def _construct_message_for_store(
-        cls, record: Dict[str, Any], body: Any = None
-    ) -> Dict[str, Any]:
+    def _construct_message_for_store(cls, record: Dict[str, Any], body: Any = None) -> Dict[str, Any]:
         """
         Build the dict to write into the Response Store.
 
@@ -254,21 +228,13 @@ class ECSRESTService:
         user_id = message_attributes.get("user_id")
 
         if not endpoint_url:
-            raise ValueError(
-                "endpoint_url is required in SQS message attributes for ASYNC mode"
-            )
+            raise ValueError("endpoint_url is required in SQS message attributes for ASYNC mode")
         if not user_id:
-            raise ValueError(
-                "user_id is required in SQS message attributes for ASYNC mode"
-            )
+            raise ValueError("user_id is required in SQS message attributes for ASYNC mode")
 
         message_body = record.get("Body", "{}")
         if isinstance(message_body, str):
             message_body = json.loads(message_body)
 
-        cls._log.info(
-            f"Broadcasting via WebSocket — user_id={user_id} endpoint={endpoint_url}"
-        )
-        cls._get_websocket_handler().broadcast(
-            endpoint_url=endpoint_url, message=message_body, user_id=user_id
-        )
+        cls._log.info(f"Broadcasting via WebSocket — user_id={user_id} endpoint={endpoint_url}")
+        cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=message_body, user_id=user_id)

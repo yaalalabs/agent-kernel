@@ -178,17 +178,12 @@ class SQSHandler:
         :return: A dictionary mapping custom attribute names to their scalar values
         """
         # Lambda uses "messageAttributes", boto3 receive_message uses "MessageAttributes"
-        message_attributes = (
-            raw_queue_message_record.get("MessageAttributes")
-            or raw_queue_message_record.get("messageAttributes")
-            or {}
-        )
+        message_attributes = raw_queue_message_record.get("MessageAttributes") or raw_queue_message_record.get("messageAttributes") or {}
         flattened_attributes: Dict[str, Any] = {}
         for attribute_name, attribute in message_attributes.items():
             if isinstance(attribute, Mapping):
                 attribute_value = (
-                    attribute.get("StringValue") or attribute.get("stringValue")
-                    or attribute.get("BinaryValue") or attribute.get("binaryValue")
+                    attribute.get("StringValue") or attribute.get("stringValue") or attribute.get("BinaryValue") or attribute.get("binaryValue")
                 )
             else:
                 attribute_value = attribute
