@@ -1,8 +1,8 @@
 #!/bin/bash
-set -e # exit if any command in this script fails
-S3_BUCKET=lambda-s3-packages-329597159169-ap-southeast-2-an
+set -euo pipefail # exit if any command in this script fails
+: "${S3_BUCKET:?S3_BUCKET must be set (bucket for Lambda ZIPs)}"
 upload_to_s3() {
-	aws s3 cp $1 s3://${2}/
+	aws s3 cp "$1" "s3://$2/"
 }
 
 push_to_ecr() {
