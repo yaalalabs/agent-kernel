@@ -5,7 +5,7 @@ slug: /
 
 # Introduction to Agent Kernel
 
-**An Operating System for Scalable & Compliant Enterprise AI Agents.**
+**The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
 🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
@@ -18,7 +18,7 @@ Agent Kernel is an **open-source runtime** that lets you build, test and deploy 
 **Think of it like Express.js for web servers, or Spring Boot for Java microservices** — but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
 
 **Supported Python Versions:** 3.12 - 3.13.x
-**Supported Cloud Platforms:** AWS, Azure
+**Supported Cloud Platforms:** AWS, Azure, GCP
 
 It's not:
 - A substitute for popular agent frameworks and SDKs like LangGraph, OpenAI Agents, CrewAI, or Google ADK
