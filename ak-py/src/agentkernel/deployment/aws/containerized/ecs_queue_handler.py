@@ -160,10 +160,11 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                         f"response session_id={response_session_id}, request_id={effective_request_id}"
                     )
                     raise HTTPException(
-                        status_code=403,
+                        status_code=404,
                         detail={
-                            "error": "FORBIDDEN",
-                            "message": "The request_id does not belong to this session",
+                            "error": "NOT_FOUND",
+                            "message": f"No response message found for request_id '{effective_request_id}'. The message may be unavailable. Please try again.",
+                            "request_id": effective_request_id,
                             "session_id": session_id,
                         },
                     )

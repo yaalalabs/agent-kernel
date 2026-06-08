@@ -252,8 +252,8 @@ class DefaultEndpointsHandler:
                     )
                     response_body = self._build_failure_body(
                         request_id=request_id,
-                        status="FORBIDDEN",
-                        message="The request_id does not belong to this session",
+                        status="NOT_FOUND",
+                        message=f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.",
                     )
                 else:
                     response_body = message
