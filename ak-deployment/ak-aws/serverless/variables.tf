@@ -300,7 +300,7 @@ variable "request_handler" {
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
     event_source_mapping              = optional(any, [])
-    lambda_package_s3          = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
@@ -336,7 +336,7 @@ variable "agent_runner" {
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
-    lambda_package_s3          = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
@@ -372,13 +372,17 @@ variable "response_handler" {
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
-    lambda_package_s3          = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
   validation {
     condition     = (!var.queue_mode || var.response_handler.package_type != "S3Zip" || try(var.response_handler.package_path, null) != null || try(var.response_handler.lambda_package_s3, null) != null)
     error_message = "response_handler: when queue_mode is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.queue_mode || var.response_handler.package_type != "Image" || try(var.response_handler.package_path, null) != null || try(var.response_handler.ecr_image_uri, null) != null)
+    error_message = "response_handler: when queue_mode is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
   }
   validation {
     condition     = !(try(var.response_handler.package_path, null) != null && try(var.response_handler.lambda_package_s3, null) != null)
