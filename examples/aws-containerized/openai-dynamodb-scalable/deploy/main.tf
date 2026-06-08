@@ -85,7 +85,8 @@ module "containerized_agents" {
 
   # ---- queue mode ----
   enable_queue_mode  = true
-  queue_mode_type    = "sync"
+  queue_mode_type    = "async"
+  
 
   # Agent Runner uses its own image (different CMD)
   agent_runner_image_uri = module.agent_runner_image.docker_image_uri
