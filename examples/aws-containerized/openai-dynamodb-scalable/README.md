@@ -189,13 +189,51 @@ See [COMMAND_OVERRIDE.md](../../ak-deployment/ak-aws/containerized/COMMAND_OVERR
 
 The architecture automatically scales based on:
 - **REST Service**: Scales with ALB target group metrics
-- **Agent Runner**: Scales based on SQS queue depth
+- **Agent Runner**: Scales based on SQS queue depth using custom BacklogPerTask metric
+
+### Agent Runner Auto Scaling
+
+The Agent Runner can automatically scale based on queue backlog per task.
+
+**Enable autoscaling:**
+```hcl
+enable_queue_mode = true
+enable_agent_runner_autoscaling = true
+```
+
+**How it works:**
+1. Lambda function runs every minute, calculates: `BacklogPerTask = QueueDepth / RunningTasks`
+2. Publishes custom CloudWatch metric: `Custom/ECS/BacklogPerTask`
+3. Target tracking policy scales agent_runner up/down to maintain target BacklogPerTask
+
+**Configuration:**
+```hcl
+enable_agent_runner_autoscaling = true  # Must also enable_queue_mode = true
+agent_runner_min_count = 1          # Minimum tasks (0 to scale to zero)
+agent_runner_max_count = 10         # Maximum tasks
+agent_runner_backlog_target = 10    # Target messages per task
+agent_runner_scale_in_cooldown = 120   # Wait before scaling in
+agent_runner_scale_out_cooldown = 30   # Wait before scaling out
+```
+
+**Example scaling behavior:**
+- Queue has 100 messages, 2 running tasks → BacklogPerTask = 50
+- Target is 10 → Scales up to 10 tasks
+- Queue drains to 20 messages, 10 running tasks → BacklogPerTask = 2  
+- Target is 10 → Scales down to 2 tasks
+
+**Benefits:**
+- Automatically handles traffic spikes
+- Scales to zero when idle (if `min_count = 0`)
+- Cost-effective: only pay for what you use
+- Fast scale-out (30s cooldown), gradual scale-in (120s cooldown)
 
 Monitor through CloudWatch:
-- ECS task metrics and logs
+- Lambda function metrics and logs
 - SQS queue depth and processing rates
 - DynamoDB read/write metrics
 - API Gateway and ALB request metrics
+- Custom metric: `Custom/ECS/BacklogPerTask`
 
 ## Troubleshooting
 

@@ -370,3 +370,41 @@ variable "agent_runner_command" {
   description = "Command override for the Agent Runner ECS task. If not set, uses the Docker image's CMD. Example: [\"python\", \"app_agent_runner.py\"]"
   default     = null
 }
+
+# --- Agent Runner Auto Scaling ---
+
+variable "enable_agent_runner_autoscaling" {
+  type        = bool
+  description = "Enable SQS-based autoscaling for Agent Runner ECS service. Requires enable_queue_mode = true."
+  default     = false
+}
+
+variable "agent_runner_min_count" {
+  type        = number
+  description = "Minimum number of agent runner tasks when autoscaling is enabled."
+  default     = 0
+}
+
+variable "agent_runner_max_count" {
+  type        = number
+  description = "Maximum number of agent runner tasks when autoscaling is enabled."
+  default     = 10
+}
+
+variable "agent_runner_backlog_target" {
+  type        = number
+  description = "Target BacklogPerTask value that triggers scaling. Lower values scale up more aggressively. Recommended: 5-20 messages per task."
+  default     = 10
+}
+
+variable "agent_runner_scale_in_cooldown" {
+  type        = number
+  description = "Seconds to wait after a scale-in before allowing another scale-in. Prevents flapping."
+  default     = 120
+}
+
+variable "agent_runner_scale_out_cooldown" {
+  type        = number
+  description = "Seconds to wait after a scale-out before allowing another scale-out. Allows new tasks to start processing before scaling again."
+  default     = 30
+}

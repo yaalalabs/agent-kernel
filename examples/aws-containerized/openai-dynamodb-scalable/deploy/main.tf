@@ -72,6 +72,9 @@ module "containerized_agents" {
   enable_queue_mode  = true
   queue_mode_type    = "async"
   
+  # Enable autoscaling for Agent Runner (optional)
+  enable_agent_runner_autoscaling = true
+  
 
   # Agent Runner uses its own image (different CMD)
   agent_runner_image_uri = module.agent_runner_image.docker_image_uri
@@ -88,6 +91,13 @@ module "containerized_agents" {
   agent_runner_cpu           = 1024
   agent_runner_memory        = 2048
   agent_runner_desired_count = 1
+
+  # Agent Runner Auto Scaling (optional)
+  agent_runner_min_count         = 1    # Minimum tasks (can be 0 to scale to zero)
+  agent_runner_max_count         = 10   # Maximum tasks
+  agent_runner_backlog_target    = 10   # Target messages per task (scale up when exceeded)
+  agent_runner_scale_in_cooldown = 120  # Wait 2min before scaling in again
+  agent_runner_scale_out_cooldown = 30  # Wait 30s before scaling out again
 
   # Environment variables for both containers
   environment_variables = {

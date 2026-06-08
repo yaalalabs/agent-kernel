@@ -306,6 +306,12 @@ module "scalable_queue_app" {
   enable_queue_mode = true
   queue_mode_type   = "sync"  # or "async" for polling mode
   
+  # Enable Autoscaling (optional)
+  enable_agent_runner_autoscaling = true
+  agent_runner_min_count          = 1
+  agent_runner_max_count          = 10
+  agent_runner_backlog_target     = 10
+  
   # Agent Runner Configuration
   agent_runner_image_uri     = module.agent_runner_image.docker_image_uri
   agent_runner_command       = ["python", "app_agent_runner.py"]
@@ -385,12 +391,18 @@ See [examples/aws-containerized/openai-dynamodb-scalable](../../../examples/aws-
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | **Queue Mode (Scalable Architecture)** |
 | `enable_queue_mode` | Enable SQS queue mode with separate Agent Runner service | `bool` | `false` | no |
+| `enable_agent_runner_autoscaling` | Enable SQS-based autoscaling for Agent Runner (requires `enable_queue_mode=true`) | `bool` | `false` | no |
 | `queue_mode_type` | Queue mode type: `sync` (client blocks) or `async` (client polls) | `string` | `"sync"` | no |
 | `agent_runner_image_uri` | Docker image URI for Agent Runner (required when `enable_queue_mode=true`) | `string` | `null` | conditional |
 | `agent_runner_command` | Command override for Agent Runner container | `list(string)` | `null` | no |
 | `agent_runner_cpu` | Fargate CPU units for Agent Runner | `number` | `1024` | no |
 | `agent_runner_memory` | Fargate memory in MiB for Agent Runner | `number` | `2048` | no |
 | `agent_runner_desired_count` | Number of Agent Runner tasks | `number` | `1` | no |
+| `agent_runner_min_count` | Minimum tasks when autoscaling enabled | `number` | `0` | no |
+| `agent_runner_max_count` | Maximum tasks when autoscaling enabled | `number` | `10` | no |
+| `agent_runner_backlog_target` | Target BacklogPerTask for autoscaling | `number` | `10` | no |
+| `agent_runner_scale_in_cooldown` | Seconds to wait before scaling in again | `number` | `120` | no |
+| `agent_runner_scale_out_cooldown` | Seconds to wait before scaling out again | `number` | `30` | no |
 | `sqs_input_visibility_timeout` | SQS Input Queue visibility timeout (seconds) | `number` | `30` | no |
 | `sqs_output_visibility_timeout` | SQS Output Queue visibility timeout (seconds) | `number` | `30` | no |
 | `ecs_container_command` | Command override for REST Service container | `list(string)` | `null` | no |
