@@ -431,8 +431,9 @@ resource "aws_apigatewayv2_integration" "async_get" {
   connection_type      = "VPC_LINK"
   connection_id        = aws_apigatewayv2_vpc_link.ecs_alb.id
   passthrough_behavior = "WHEN_NO_MATCH"
+
   request_parameters = {
-    "overwrite:path" = "/api/v1/chat/{sessionId}"
+    "overwrite:path" = "/api/v1/chat/$request.path.sessionId"
   }
 }
 
