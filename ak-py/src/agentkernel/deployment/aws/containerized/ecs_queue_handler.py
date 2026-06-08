@@ -126,7 +126,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
             """
             Poll for response (REST_ASYNC mode only).
 
-            :param session_id: Session identifier
+            :param session_id: Session identifier (must match the session in DynamoDB)
             :param request_id: Optional specific request to poll for
             """
             try:
@@ -134,12 +134,28 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     raise HTTPException(status_code=404, detail="GET endpoint only available in REST_ASYNC mode")
 
                 effective_request_id = request_id or session_id
-                self._log.info(f"Polling for response: request_id={effective_request_id}")
+                self._log.info(f"Polling for response: request_id={effective_request_id}, session_id={session_id}")
 
                 response = self._get_response_store().get_message(effective_request_id)
 
                 if not response:
                     return {"status": "PENDING", "request_id": effective_request_id, "session_id": session_id}
+
+                # SECURITY: Validate that the session_id in the response matches the URL path
+                response_session_id = response.get("session_id")
+                if response_session_id != session_id:
+                    self._log.warning(
+                        f"Session ID mismatch: URL session_id={session_id}, "
+                        f"response session_id={response_session_id}, request_id={effective_request_id}"
+                    )
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": "Session ID mismatch",
+                            "message": "The request_id does not belong to this session",
+                            "session_id": session_id,
+                        },
+                    )
 
                 # Return the response body
                 return response.get("body", response)
