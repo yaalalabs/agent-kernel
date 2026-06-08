@@ -1,10 +1,3 @@
-# ---------------------------------------------------------------------------
-# SQS Queue Mode — ECS Containerized
-#
-# Uses the shared common/modules/sqs module (same as the serverless stack).
-# Enable with:  var.enable_queue_mode = true
-# ---------------------------------------------------------------------------
-
 data "aws_region" "current" {}
 
 # ---------- Input Queue ----------
@@ -101,7 +94,6 @@ resource "aws_dynamodb_table" "response_store" {
   tags = merge(var.tags, { Type = "ResponseStore" })
 }
 
-# ---------- IAM — REST Service ECS Task Role ----------
 
 resource "aws_iam_policy" "rest_service_sqs_policy" {
   count = var.enable_queue_mode ? 1 : 0
@@ -226,7 +218,7 @@ resource "aws_iam_role" "agent_runner_task_role" {
   tags = var.tags
 }
 
-# CloudWatch Logs — agent runner needs to write its own logs
+
 resource "aws_iam_policy" "agent_runner_logs_policy" {
   count = var.enable_queue_mode ? 1 : 0
   name  = "${local.prefix}-agent-runner-logs"
