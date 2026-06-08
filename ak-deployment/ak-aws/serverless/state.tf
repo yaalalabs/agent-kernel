@@ -252,7 +252,7 @@ module "agent_runner_docker_image" {
 }
 
 module "response_handler_docker_image" {
-  count         = var.queue_mode && var.response_handler.package_type == "Image" ? 1 : 0
+  count         = var.queue_mode && var.response_handler.package_type == "Image" && try(var.response_handler.ecr_image_uri, null) == null ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.4.0"
   env_alias     = var.env_alias
