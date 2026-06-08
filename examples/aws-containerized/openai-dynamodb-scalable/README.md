@@ -127,10 +127,11 @@ Response:
 curl -X GET https://your-api-gateway-url/agents/api/v1/chat/test-1?request_id=9fce843f-f8bb-4818-bf35-5167247e17c8
 ```
 
-Response (while processing):
+Response (while processing or if not found):
 ```json
 {
-  "status": "PENDING",
+  "error": "NOT_FOUND",
+  "message": "No response message found for request_id '9fce843f-f8bb-4818-bf35-5167247e17c8'. The message may be unavailable. Please try again.",
   "request_id": "9fce843f-f8bb-4818-bf35-5167247e17c8",
   "session_id": "test-1"
 }
@@ -143,6 +144,8 @@ Response (when complete):
   "session_id": "test-1"
 }
 ```
+
+**Note**: The client should retry polling with exponential backoff when receiving NOT_FOUND. This status means the response isn't in DynamoDB yet (still processing) or the request_id is invalid.
 
 ## Architecture Details
 

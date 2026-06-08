@@ -134,12 +134,23 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     raise HTTPException(status_code=404, detail="GET endpoint only available in REST_ASYNC mode")
 
                 effective_request_id = request_id or session_id
+                if not effective_request_id:
+                    raise HTTPException(status_code=400, detail={"error": "request_id is required", "session_id": session_id})
+
                 self._log.info(f"Polling for response: request_id={effective_request_id}, session_id={session_id}")
 
                 response = self._get_response_store().get_message(effective_request_id)
 
                 if not response:
-                    return {"status": "PENDING", "request_id": effective_request_id, "session_id": session_id}
+                    raise HTTPException(
+                        status_code=404,
+                        detail={
+                            "error": "NOT_FOUND",
+                            "message": f"No response message found for request_id '{effective_request_id}'. The message may be unavailable. Please try again.",
+                            "request_id": effective_request_id,
+                            "session_id": session_id,
+                        },
+                    )
 
                 # SECURITY: Validate that the session_id in the response matches the URL path
                 response_session_id = response.get("session_id")
@@ -151,7 +162,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     raise HTTPException(
                         status_code=403,
                         detail={
-                            "error": "Session ID mismatch",
+                            "error": "FORBIDDEN",
                             "message": "The request_id does not belong to this session",
                             "session_id": session_id,
                         },
