@@ -1,17 +1,3 @@
-# --------------------------------------------------------------------------
-# SQS-based Auto Scaling for Agent Runner ECS Service
-#
-# Implements the AWS recommended BacklogPerTask metric pattern:
-# - Lambda function calculates: queue_depth / running_tasks
-# - EventBridge triggers Lambda every minute
-# - CloudWatch custom metric: Custom/ECS/BacklogPerTask
-# - Target tracking policy scales agent_runner based on backlog per task
-#
-# Requires: enable_queue_mode = true AND enable_agent_runner_autoscaling = true
-# --------------------------------------------------------------------------
-
-data "aws_caller_identity" "current" {}
-
 locals {
   enable_autoscaling = var.enable_queue_mode && var.enable_agent_runner_autoscaling
 }
