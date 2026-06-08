@@ -262,6 +262,85 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 }
 ```
 
+### Scalable Queue Mode with SQS
+
+For high-throughput workloads with asynchronous processing:
+
+```hcl
+module "agent_runner_image" {
+  source = "yaalalabs/ak-common/aws//modules/ecr"
+  
+  env_alias     = var.env_alias
+  module_name   = "${var.module_name}-runner"
+  product_alias = var.product_alias
+  source_path   = "${path.module}/dist-agent-runner"
+}
+
+module "scalable_queue_app" {
+  source = "yaalalabs/ak-containerized/aws"
+
+  region               = "us-west-2"
+  product_alias        = "myapp"
+  env_alias            = "prod"
+  product_display_name = "Scalable Agent Service"
+  
+  module_name  = "scalable"
+  package_path = "${path.module}/dist-rest-service"
+  
+  vpc_id             = var.vpc_id
+  private_subnet_ids = var.private_subnet_ids
+  
+  # ECS Configuration for REST Service
+  ecs_cpu            = 1024
+  ecs_memory         = 2048
+  ecs_desired_count  = 2
+  ecs_container_port = 8000
+  
+  # Override container command (ECR module injects Lambda-style CMD)
+  ecs_container_command = ["python", "app_rest_service.py"]
+  
+  # Session storage
+  create_dynamodb_memory_table = true
+  
+  # Enable Queue Mode
+  enable_queue_mode = true
+  queue_mode_type   = "sync"  # or "async" for polling mode
+  
+  # Agent Runner Configuration
+  agent_runner_image_uri     = module.agent_runner_image.docker_image_uri
+  agent_runner_command       = ["python", "app_agent_runner.py"]
+  agent_runner_cpu           = 1024
+  agent_runner_memory        = 2048
+  agent_runner_desired_count = 2
+  
+  # SQS Configuration
+  sqs_input_visibility_timeout  = 120  # Should exceed agent processing time
+  sqs_output_visibility_timeout = 60
+  
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+  
+  api_version    = "v1"
+  agent_endpoint = "chat"
+}
+```
+
+**Queue Mode Architecture:**
+- **REST Service** (Thread 1): Accepts HTTP requests, enqueues to Input Queue
+- **REST Service** (Thread 2): Polls Output Queue, writes to DynamoDB Response Store
+- **Agent Runner**: Polls Input Queue, executes agents, sends to Output Queue
+- **REST_SYNC**: Client blocks until response ready in DynamoDB
+- **REST_ASYNC**: Client receives `request_id`, polls GET endpoint for result
+
+**Use Cases:**
+- Long-running agent workflows (>30s)
+- Workloads requiring independent scaling of API and processing
+- High-throughput scenarios with bursty traffic
+- Decoupling request handling from agent execution
+
+See [examples/aws-containerized/openai-dynamodb-scalable](../../../examples/aws-containerized/openai-dynamodb-scalable/) for complete implementation.
+
 ## 📥 Inputs
 
 | Name | Description | Type | Default | Required |
@@ -304,6 +383,17 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | **State Management** |
 | `create_redis_cluster` | Enable Redis ElastiCache cluster | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
+| **Queue Mode (Scalable Architecture)** |
+| `enable_queue_mode` | Enable SQS queue mode with separate Agent Runner service | `bool` | `false` | no |
+| `queue_mode_type` | Queue mode type: `sync` (client blocks) or `async` (client polls) | `string` | `"sync"` | no |
+| `agent_runner_image_uri` | Docker image URI for Agent Runner (required when `enable_queue_mode=true`) | `string` | `null` | conditional |
+| `agent_runner_command` | Command override for Agent Runner container | `list(string)` | `null` | no |
+| `agent_runner_cpu` | Fargate CPU units for Agent Runner | `number` | `1024` | no |
+| `agent_runner_memory` | Fargate memory in MiB for Agent Runner | `number` | `2048` | no |
+| `agent_runner_desired_count` | Number of Agent Runner tasks | `number` | `1` | no |
+| `sqs_input_visibility_timeout` | SQS Input Queue visibility timeout (seconds) | `number` | `30` | no |
+| `sqs_output_visibility_timeout` | SQS Output Queue visibility timeout (seconds) | `number` | `30` | no |
+| `ecs_container_command` | Command override for REST Service container | `list(string)` | `null` | no |
 
 ## 📤 Outputs
 
