@@ -33,7 +33,7 @@ Agent Kernel is the runtime that handles all of it. You bring the agent logic; A
 
 The result is that shipping an agent to production feels like shipping any other service. No bespoke infrastructure work, no compliance bolt-ons, no cloud-specific rewrites. Just deploy.
 
-Agent Kernel is the only agent operating system that offers true cloud-agnostic deployment across all three major public clouds and on-premises infrastructure. That's not a coincidence of timing; it's a direct outcome of Agent Kernel's adaptor architecture. Every cloud provider, every AI framework, every LLM, and every tool integration is wired in through a clean adaptor layer. Adding a new cloud is a new adaptor, not a rewrite. This is what future-proofs AI companies: as the landscape shifts, new models emerge, and infrastructure requirements evolve, Agent Kernel extends without breaking what already runs in production.
+Agent Kernel is the only agent operating system that offers true cloud-agnostic deployment across all three major public clouds and on-premises infrastructure. That's not a coincidence of timing; it's a direct outcome of Agent Kernel's adapter architecture. Every cloud provider, every AI framework, every LLM, and every tool integration is wired in through a clean adapter layer. Adding a new cloud is a new adapter, not a rewrite. This is what future-proofs AI companies: as the landscape shifts, new models emerge, and infrastructure requirements evolve, Agent Kernel extends without breaking what already runs in production.
 
 ## The Full Picture
 
