@@ -93,6 +93,73 @@ class GoogleADKRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, GoogleADKSession())
 
     @staticmethod
+    def _process_requests(requests: list[AgentRequest]) -> tuple[str, list[types.Part]]:
+        """
+        Process requests and extract prompt text and ADK parts.
+        :param requests: The requests to process.
+        :return: Tuple of (prompt, parts).
+        """
+        prompt = ""
+        parts = []
+
+        for req in requests:
+            if isinstance(req, AgentRequestAny):
+                continue
+
+            if isinstance(req, AgentRequestText):
+                text = req.text
+                prompt = prompt + "\n" + text if prompt else text
+                parts.append(types.Part(text=text))
+
+            if isinstance(req, (AgentRequestImage, AgentRequestFile)):
+                base64_data = ""
+                if isinstance(req, AgentRequestImage):
+                    if not req.image_data:
+                        raise ValueError("no image input provided")
+                    base64_data = req.image_data
+
+                elif isinstance(req, AgentRequestFile):
+                    if not req.file_data:
+                        raise ValueError("no file input provided")
+                    base64_data = req.file_data
+
+                if base64_data.startswith(("http://", "https://", "s3://")):
+                    parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
+                    continue
+
+                if base64_data.startswith(("data:")):
+                    mime_type = base64_data.split(";")[0][5:]
+                else:
+                    if not req.mime_type:
+                        raise ValueError("mime_type is missing for image input")
+                    mime_type = req.mime_type
+
+                raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
+                parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+
+        return prompt, parts
+
+    async def _setup_session_context(self, agent: Any, session: Session, requests: list[AgentRequest]) -> tuple[str, Runner]:
+        """
+        Setup ADK session and tool context.
+        :param agent: The ADK agent.
+        :param session: The AgentKernel session.
+        :param requests: The requests.
+        :return: Tuple of (user_id, runner).
+        """
+        app_name = "AgentKernel"
+        user_id = "AgentKernel"
+        adk_session = self._session(session)
+
+        ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
+        with ctx:
+            await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+            await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
+
+            runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+            return user_id, runner
+
+    @staticmethod
     async def get_response(runner: Runner, user_id: str, session_id: str, parts: list[types.Part]) -> str:
         """
         Send a message to the agent and return the final response text asynchronously.
@@ -127,66 +194,15 @@ class GoogleADKRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        prompt = ""
-        parts = []
-
         try:
-            for req in requests:
-                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                    continue
-
-                if isinstance(req, AgentRequestText):
-                    text = req.text
-                    prompt = prompt + "\n" + text if prompt else text
-                    parts.append(types.Part(text=text))
-
-                if isinstance(req, (AgentRequestImage, AgentRequestFile)):
-                    base64_data = ""
-                    if isinstance(req, AgentRequestImage):
-                        # Handle image requests - Google ADK expects inline_data format
-                        if not req.image_data:
-                            raise ValueError("no image input provided")
-                        base64_data = req.image_data
-
-                    elif isinstance(req, AgentRequestFile):
-                        # Handle file attachments
-                        if not req.file_data:
-                            raise ValueError("no file input provided")
-                        base64_data = req.file_data
-
-                    # if its a URI directly use base64_data as is
-                    if base64_data.startswith(("http://", "https://", "s3://")):
-                        parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
-                        continue
-
-                    # If it's base64 and does have the data URI prefix
-                    if base64_data.startswith(("data:")):
-                        mime_type = base64_data.split(";")[0][5:]  # Extract mime type from data URI
-                    else:
-                        if not req.mime_type:
-                            raise ValueError("mime_type is missing for image input")
-                        mime_type = req.mime_type
-
-                    # Google ADK expects inline_data with mime_type and raw data
-                    raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
-                    parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+            prompt, parts = self._process_requests(requests)
 
             if not parts:
                 return AgentReplyText(text="Sorry. No valid content found in the requests")
 
-            app_name = "AgentKernel"
-            user_id = "AgentKernel"
-            adk_session = self._session(session)
-
-            ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
-            with ctx:
-                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-                await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
-
-                runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-                reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
-
-                return AgentReplyText(text=reply, prompt=prompt)
+            user_id, runner = await self._setup_session_context(agent, session, requests)
+            reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+            return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
 
@@ -198,65 +214,21 @@ class GoogleADKRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: An async generator yielding string token deltas.
         """
-        prompt = ""
-        parts = []
-
         try:
-            for req in requests:
-                if isinstance(req, AgentRequestAny):
-                    continue
-
-                if isinstance(req, AgentRequestText):
-                    text = req.text
-                    prompt = prompt + "\n" + text if prompt else text
-                    parts.append(types.Part(text=text))
-
-                if isinstance(req, (AgentRequestImage, AgentRequestFile)):
-                    base64_data = ""
-                    if isinstance(req, AgentRequestImage):
-                        if not req.image_data:
-                            raise ValueError("no image input provided")
-                        base64_data = req.image_data
-                    elif isinstance(req, AgentRequestFile):
-                        if not req.file_data:
-                            raise ValueError("no file input provided")
-                        base64_data = req.file_data
-
-                    if base64_data.startswith(("http://", "https://", "s3://")):
-                        parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
-                        continue
-
-                    if base64_data.startswith("data:"):
-                        mime_type = base64_data.split(";")[0][5:]
-                    else:
-                        if not req.mime_type:
-                            raise ValueError("mime_type is missing for image input")
-                        mime_type = req.mime_type
-
-                    raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
-                    parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+            prompt, parts = self._process_requests(requests)
 
             if not parts:
                 return
 
-            app_name = "AgentKernel"
-            user_id = "AgentKernel"
-            adk_session = self._session(session)
+            user_id, runner = await self._setup_session_context(agent, session, requests)
+            new_message = types.Content(role="user", parts=parts)
 
-            ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
-            with ctx:
-                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-                await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
-
-                runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-                new_message = types.Content(role="user", parts=parts)
-
-                if hasattr(runner, "run_async"):
-                    async for event in runner.run_async(user_id=user_id, session_id=session.id, new_message=new_message):
-                        if not event.is_final_response() and event.content and event.content.parts:
-                            for p in event.content.parts:
-                                if hasattr(p, "text") and p.text:
-                                    yield p.text
+            if hasattr(runner, "run_async"):
+                async for event in runner.run_async(user_id=user_id, session_id=session.id, new_message=new_message):
+                    if not event.is_final_response() and event.content and event.content.parts:
+                        for p in event.content.parts:
+                            if hasattr(p, "text") and p.text:
+                                yield p.text
         except Exception:
             return
 
