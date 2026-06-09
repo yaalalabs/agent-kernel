@@ -15,7 +15,8 @@ create_deployment_packages() {
     else
         uv pip install -r requirements.txt --target=dist-rest-service/data --find-links ../../../ak-py/dist
         uv pip install --force-reinstall --target=dist-rest-service/data --find-links ../../../ak-py/dist agentkernel[adk,api,aws,test]
-    cp config.yaml app_rest_service.py dist-rest-service/data/
+    fi
+	cp config.yaml app_rest_service.py dist-rest-service/data/
 
     # Agent Runner dist
     rm -rf dist-agent-runner
