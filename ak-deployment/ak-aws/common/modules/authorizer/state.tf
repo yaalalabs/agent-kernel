@@ -1,7 +1,7 @@
 module "authorizer_source_storage" {
   count                = (var.authorizer_info.package_type == "S3Zip") ? 1 : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
-  version              = "0.5.0"
+  version              = "0.5.1"
   region               = var.region
   env_alias            = var.env_alias
   is_production        = var.is_production
@@ -13,7 +13,7 @@ module "authorizer_source_storage" {
 module "authorizer_source_package" {
   count            = (var.authorizer_info.package_type == "S3Zip") ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.5.0"
+  version          = "0.5.1"
   env_alias        = var.env_alias
   region           = var.region
   module_name      = var.authorizer_info.module_name
@@ -26,7 +26,7 @@ module "authorizer_source_package" {
 module "authorizer_docker_image" {
   count         = (var.authorizer_info.package_type == "Image") ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.5.0"
+  version       = "0.5.1"
   env_alias     = var.env_alias
   module_name   = var.authorizer_info.module_name
   product_alias = var.product_alias

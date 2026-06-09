@@ -5,7 +5,7 @@
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
-  version = "0.5.0"
+  version = "0.5.1"
 
   # Basic ECS configuration
   product_alias        = var.product_alias
