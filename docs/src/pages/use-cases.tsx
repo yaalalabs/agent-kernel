@@ -41,7 +41,7 @@ function Hero() {
     <HeroAnimation
       badge="Use Cases"
       title="Who Is Agent Kernel Built For?"
-      subtitle="Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code."
+      subtitle="Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
     />
   );
 }
@@ -67,7 +67,7 @@ const segments = [
     valueProps: [
       'Jump-start agentic AI service offerings with a production-ready platform',
       'Focus developer time on client-specific agent logic, not infrastructure',
-      'Deliver multi-cloud solutions (AWS, Azure) from day one',
+      'Deliver multi-cloud solutions (AWS, Azure, GCP) from day one',
       'Battle-tested runtime reduces project risk vs. building from scratch',
       'Built-in integrations (Slack, WhatsApp, etc.) enable rapid demos and delivery',
     ],
@@ -88,7 +88,7 @@ const segments = [
       'Need to add AI agent capabilities without massive re-architecture',
       "Framework lock-in is a real risk — the AI landscape changes fast, and picking the wrong framework today could mean expensive rewrites tomorrow",
       'Compliance and enterprise requirements demand guardrails, observability, and fault tolerance',
-      'Customer cloud strategies span AWS and Azure — vendor lock-in is unacceptable',
+      'Customer cloud strategies span AWS, Azure, and GCP — vendor lock-in is unacceptable',
     ],
     valueProps: [
       'Embed AI agents into existing products with minimal disruption',
@@ -147,7 +147,7 @@ const segments = [
     valueProps: [
       'Dramatically reduces the "software engineering surface area" — define agent logic, Agent Kernel handles everything else',
       'Simple Python-based agent definition accessible to technical domain experts',
-      'Pre-built deployment to AWS and Azure — no DevOps expertise required',
+      'Pre-built deployment to AWS, Azure, and GCP — no DevOps expertise required',
       'Built-in messaging integrations mean products can reach end-users through familiar channels immediately',
       'Testing framework lets domain experts validate agent behavior with simple test scenarios',
       'Open-source means no vendor lock-in and no surprise pricing',
@@ -275,7 +275,7 @@ const ORBIT_CARDS = [
     icon: <MdCloud />,
     color: '#00DDFF',
     title: 'Multi-Cloud Native',
-    desc: 'Same agent code deploys to AWS and Azure out of the box. No other AI agent runtime offers this out of the box.',
+    desc: 'Same agent code deploys to AWS, Azure, and GCP out of the box. No other AI agent runtime offers this out of the box.',
   },
   {
     icon: <MdSpeed />,
@@ -566,7 +566,7 @@ function Community({ sectionRef }: CommunityProps) {
               className={`button button--primary button--lg ${indexStyles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
             <Link
               className={indexStyles.heroBtnLink}

@@ -33,7 +33,7 @@ const deployTargets = [
   { id: 'lambda', label: 'AWS Lambda', icon: <FaAws /> },
   { id: 'ecs', label: 'AWS ECS', icon: <FaAws /> },
   { id: 'azfunc', label: 'Azure Functions', icon: <FaMicrosoft /> },
-  { id: 'gapps', label: 'Google Apps', icon: <FaGoogle /> },
+  { id: 'gcr', label: 'GCP Cloud Run', icon: <FaGoogle /> },
   { id: 'docker', label: 'Docker', icon: <FaDocker /> },
 ];
 

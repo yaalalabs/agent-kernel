@@ -252,7 +252,7 @@ function Hero() {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
           </div>
 
@@ -540,6 +540,7 @@ const AGENT_SKILLS = [
       "ECS",
       "Azure Functions",
       "Container Apps",
+      "GCP Cloud Run",
       "Full Terraform",
     ],
   },
@@ -914,10 +915,22 @@ function Deployment() {
       icon: <SiGooglecloud className={styles.cloudIconSvg} />,
       name: "Google Cloud",
       description:
-        "Cloud Run and Cloud Functions deployments - Terraform modules in progress.",
-      modes: ["Cloud Run (Containerized)", "Cloud Functions (Containerized)"],
-      modules: [],
-      comingSoon: true,
+        "Cloud Run serverless or containerized deployments with Firestore session storage.",
+      modes: [
+        "Cloud Run (Serverless)",
+        "Cloud Run (Containerized)",
+      ],
+      modules: [
+        {
+          name: "GCP Serverless",
+          url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/google",
+        },
+        {
+          name: "GCP Containerized",
+          url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/google",
+        },
+      ],
+      comingSoon: false,
     },
   ];
 
@@ -934,7 +947,7 @@ function Deployment() {
           </div>
           <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
           <p className={styles.deploySubtitle}>
-            Run the same agent code on AWS, Azure, or your own on-prem Docker. Zero rewrites.
+            Run the same agent code on AWS, Azure, GCP, or your own on-prem Docker. Zero rewrites.
             <br />
             Includes production-ready Terraform modules with best practices baked in.
           </p>
@@ -1028,7 +1041,7 @@ function Community({ sectionRef }: CommunityProps) {
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
               to="/docs"
             >
-              Get Started Free
+              Get Started
             </Link>
             <Link
               className={styles.heroBtnLink}
@@ -1076,7 +1089,7 @@ function Levels() {
       title: "Business Leader",
       image: "/img/business_leader.png",
       description:
-        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to understand the tech.",
+        "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to handle the complexities of the tech.",
     },
     {
       id: "02",
@@ -1308,7 +1321,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months."
+      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, and observability."
     >
       {/* <PlantParticlesBackground ref={backgroundRef} /> */}
       <WhatsNewBanner />
