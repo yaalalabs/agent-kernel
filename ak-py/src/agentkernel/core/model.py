@@ -117,6 +117,14 @@ class ExecutionMode(str, Enum):
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
+    SSE_STREAM = "sse_stream"
+
+
+class StreamChunk(BaseModel):
+    delta: str | None = None
+    done: bool = False
+    session_id: str | None = None
+    error: str | None = None
 
 
 class SystemTool(BaseModel):

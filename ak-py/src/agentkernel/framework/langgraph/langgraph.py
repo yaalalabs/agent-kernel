@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -369,6 +370,57 @@ class LangGraphRunner(BaseRunner):
             return AgentReplyText(text=self._extract_text_content(last_message.content), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        Streams the LangGraph agent response token by token.
+        :param agent: The LangGraph agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding string token deltas.
+        """
+        prompt = ""
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            for req in requests:
+                if isinstance(req, AgentRequestAny):
+                    continue
+                if isinstance(req, AgentRequestText):
+                    prompt = prompt + "\n" + req.text if prompt else req.text
+                else:
+                    return
+
+            if prompt.strip() == "":
+                return
+
+            session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+            lg_session = self._session(session)
+            agent.agent.checkpointer = lg_session.checkpointer
+
+            messages = []
+            system_prompt = getattr(agent, "_system_prompt", "")
+            if system_prompt and not lg_session._system_prompt_injected:
+                messages.append(SystemMessage(content=system_prompt))
+                lg_session._system_prompt_injected = True
+            messages.append(HumanMessage(content=prompt))
+
+            async for event in agent.agent.astream_events(
+                input={"messages": messages},
+                config=session_config.model_dump(),
+                version="v2",
+            ):
+                if event["event"] == "on_chat_model_stream":
+                    content = event["data"]["chunk"].content
+                    if isinstance(content, str) and content:
+                        yield content
+                    elif isinstance(content, list):
+                        for item in content:
+                            if isinstance(item, dict) and item.get("text"):
+                                yield item["text"]
         finally:
             if context is not None:
                 context.reset()

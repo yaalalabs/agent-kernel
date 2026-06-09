@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import inspect
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
@@ -163,6 +164,14 @@ class SmolagentsRunner(Runner):
         finally:
             if context is not None:
                 context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        smolagents does not support SSE streaming.
+        :raises NotImplementedError: Always raised — use rest_sync mode instead.
+        """
+        raise NotImplementedError("smolagents does not support SSE streaming. Use rest_sync mode.")
+        yield  # make this an async generator to satisfy the type contract
 
 
 class SmolagentsAgent(BaseAgent):

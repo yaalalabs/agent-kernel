@@ -2,12 +2,13 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict
 
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import BaseChatRequest, BaseRunRequest
+from ..core.model import BaseChatRequest, BaseRunRequest, ExecutionMode
 from ..core.runtime import Runtime
 
 
@@ -83,5 +84,38 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 images=images,
             )
             return await self.chat_service.process_async_chat_request(req=req)
+
+        @router.post("/api/v1/stream")
+        async def stream_chat(body: BaseRunRequest):
+            if Config.get().execution.mode != ExecutionMode.SSE_STREAM:
+                raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: sse_stream in config")
+            try:
+                gen = await self.chat_service.process_stream_chat_request(req=body)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            return StreamingResponse(gen, media_type="text/event-stream")
+
+        @router.post("/api/v1/stream-multipart")
+        async def stream_multipart(
+            prompt: str = Form(...),
+            agent: Optional[str] = Form(None),
+            session_id: Optional[str] = Form(None),
+            files: Optional[List[UploadFile]] = File(None),
+            images: Optional[List[UploadFile]] = File(None),
+        ):
+            if Config.get().execution.mode != ExecutionMode.SSE_STREAM:
+                raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: sse_stream in config")
+            req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
+                prompt=prompt,
+                agent=agent,
+                session_id=session_id,
+                files=files,
+                images=images,
+            )
+            try:
+                gen = await self.chat_service.process_stream_chat_request(req=req)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            return StreamingResponse(gen, media_type="text/event-stream")
 
         return router

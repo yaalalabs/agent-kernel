@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
@@ -167,6 +168,68 @@ class OpenAIRunner(BaseRunner):
             return AgentReplyText(text=reply_text, prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        Streams the OpenAI agent response token by token.
+        :param agent: The OpenAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding string token deltas.
+        """
+        prompt = ""
+        message_content = []
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            for req in requests:
+                if isinstance(req, AgentRequestAny):
+                    continue
+
+                if isinstance(req, AgentRequestText):
+                    text = req.text
+                    prompt = prompt + "\n" + text if prompt else text
+                    message_content.append({"role": "user", "content": text})
+
+                elif isinstance(req, AgentRequestImage):
+                    if not req.image_data:
+                        raise ValueError("no image input provided")
+                    image_url = req.image_data
+                    if not image_url.startswith(("http://", "https://", "s3://", "data:")):
+                        if not req.mime_type:
+                            raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
+                        image_url = f"data:{req.mime_type};base64,{image_url}"
+                    message_content.append({"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]})
+
+                elif isinstance(req, AgentRequestFile):
+                    if not req.file_data:
+                        raise ValueError("no file input provided")
+                    file_url = req.file_data
+                    if file_url.startswith(("http://", "https://", "s3://")):
+                        message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
+                    else:
+                        if not file_url.startswith("data:"):
+                            if not req.mime_type:
+                                raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
+                            file_url = f"data:{req.mime_type};base64,{file_url}"
+                        message_content.append({"role": "user", "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}]})
+
+            if not message_content:
+                return
+
+            if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
+                result = Runner.run_streamed(agent.agent, prompt, session=self._session(session))
+            else:
+                result = Runner.run_streamed(agent.agent, message_content, session=None)
+
+            async for event in result.stream_events():
+                if event.type == "raw_response_event":
+                    data = event.data
+                    if hasattr(data, "delta") and isinstance(data.delta, str) and data.delta:
+                        yield data.delta
         finally:
             if context is not None:
                 context.reset()

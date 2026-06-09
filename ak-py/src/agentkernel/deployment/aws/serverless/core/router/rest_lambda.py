@@ -71,6 +71,10 @@ class DefaultEndpointsHandler:
             self._log.info("Initialized STREAM endpoint.")
             return {self._default_chat_path: {self._default_chat_method: self._handle_stream}}
 
+        if exec_mode == ExecutionMode.SSE_STREAM:
+            self._log.info("Initialized SSE_STREAM endpoint.")
+            return {self._default_chat_path: {self._default_chat_method: self._handle_stream}}
+
         raise ValueError(f"Unsupported EXECUTION_MODE: {exec_mode}")
 
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
@@ -278,9 +282,12 @@ class DefaultEndpointsHandler:
         :param event: API Gateway event
         :param context: Lambda context
         :return: API Gateway formatted response
-        :raises NotImplementedError: STREAM mode is not yet implemented
+        :raises ValueError: SSE streaming is not supported in serverless/Lambda deployments
         """
-        raise NotImplementedError("STREAM mode is not yet implemented")
+        raise ValueError(
+            "SSE streaming (sse_stream) is only supported in containerized REST API mode. "
+            "Use rest_sync or rest_async for serverless/Lambda deployment."
+        )
 
 
 class RESTLambdaRouter(BaseLambdaRouter):

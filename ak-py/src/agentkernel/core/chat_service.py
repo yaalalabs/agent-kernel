@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
@@ -13,6 +14,7 @@ from .model import (
     AgentRequestText,
     BaseChatRequest,
     BaseRunRequest,
+    StreamChunk,
 )
 from .service import AgentService
 
@@ -324,6 +326,38 @@ class ChatService:
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.error(500, e, handler.get_response_session_id(session_id), self.rest_api_mode)
+
+    async def process_stream_chat_request(self, req: BaseChatRequest) -> AsyncGenerator[str, None]:
+        """Validate, initialize, and return an SSE frame generator for a streaming chat request.
+
+        :param req: Base chat request with prompt, session_id, agent, and optional attachments
+        :return: Async generator yielding SSE-formatted StreamChunk JSON frames
+        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        """
+        session_id = req.session_id
+        if not session_id:
+            raise ValueError("No session_id is provided in the request")
+        if not req.prompt:
+            raise ValueError("No prompt provided in the request")
+        requests = await RequestBuilder.from_base_request_async(req)
+        handler = AgentHandler()
+        handler.initialize(session_id, req.agent)
+        return self._generate_sse_frames(handler.service, requests, session_id)
+
+    async def _generate_sse_frames(self, service: AgentService, requests: list, session_id: str) -> AsyncGenerator[str, None]:
+        """Yield SSE frames from agent streaming.
+
+        :param service: Initialized AgentService instance
+        :param requests: List of AgentRequest objects to process
+        :param session_id: Session identifier for error frames
+        :return: Async generator yielding SSE-formatted StreamChunk JSON strings
+        """
+        try:
+            async for chunk in service.stream_multi(requests):
+                yield f"data: {chunk.model_dump_json()}\n\n"
+        except Exception as e:
+            error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
+            yield f"data: {error_chunk.model_dump_json()}\n\n"
 
     @staticmethod
     def _validate(req: BaseRunRequest):

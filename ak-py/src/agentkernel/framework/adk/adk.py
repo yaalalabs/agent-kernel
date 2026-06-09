@@ -6,6 +6,7 @@ import functools
 import inspect
 import logging
 import time
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from google.adk.agents import BaseAgent
@@ -188,6 +189,76 @@ class GoogleADKRunner(BaseRunner):
                 return AgentReplyText(text=reply, prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        Streams the Google ADK agent response token by token.
+        :param agent: The ADK agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding string token deltas.
+        """
+        prompt = ""
+        parts = []
+
+        try:
+            for req in requests:
+                if isinstance(req, AgentRequestAny):
+                    continue
+
+                if isinstance(req, AgentRequestText):
+                    text = req.text
+                    prompt = prompt + "\n" + text if prompt else text
+                    parts.append(types.Part(text=text))
+
+                if isinstance(req, (AgentRequestImage, AgentRequestFile)):
+                    base64_data = ""
+                    if isinstance(req, AgentRequestImage):
+                        if not req.image_data:
+                            raise ValueError("no image input provided")
+                        base64_data = req.image_data
+                    elif isinstance(req, AgentRequestFile):
+                        if not req.file_data:
+                            raise ValueError("no file input provided")
+                        base64_data = req.file_data
+
+                    if base64_data.startswith(("http://", "https://", "s3://")):
+                        parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
+                        continue
+
+                    if base64_data.startswith("data:"):
+                        mime_type = base64_data.split(";")[0][5:]
+                    else:
+                        if not req.mime_type:
+                            raise ValueError("mime_type is missing for image input")
+                        mime_type = req.mime_type
+
+                    raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
+                    parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+
+            if not parts:
+                return
+
+            app_name = "AgentKernel"
+            user_id = "AgentKernel"
+            adk_session = self._session(session)
+
+            ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
+            with ctx:
+                await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
+                await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
+
+                runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+                new_message = types.Content(role="user", parts=parts)
+
+                if hasattr(runner, "run_async"):
+                    async for event in runner.run_async(user_id=user_id, session_id=session.id, new_message=new_message):
+                        if not event.is_final_response() and event.content and event.content.parts:
+                            for p in event.content.parts:
+                                if hasattr(p, "text") and p.text:
+                                    yield p.text
+        except Exception:
+            return
 
 
 class GoogleADKAgent(AKBaseAgent):
