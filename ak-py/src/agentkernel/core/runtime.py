@@ -126,6 +126,41 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
+    async def _prepare_requests(
+        self,
+        agent: Agent,
+        session: Session,
+        requests: list[AgentRequest],
+    ) -> list[AgentRequest] | AgentReply:
+        """
+        Runs the shared pre-hook pipeline and validates hook responses.
+
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to pass through the pre-hook chain.
+        :return: A potentially modified request list, or a reply that halts execution.
+        """
+        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
+
+        pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
+        for hook in pre_hooks:
+            reply = await hook.on_run(session, agent, requests)
+            if isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                return reply
+
+            # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
+            if isinstance(reply, list):
+                for item in reply:
+                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
+                        raise TypeError(
+                            f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
+                        )
+            else:
+                raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
+            requests = reply
+
+        return requests
+
     async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the specified agent with the multi-modal requests.
@@ -142,25 +177,11 @@ class Runtime:
         """
         async with session:
             try:
-                self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
-
-                pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
-                for hook in pre_hooks:
-                    reply = await hook.on_run(session, agent, requests)
-                    if isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                        self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
-                        return reply
-
-                    # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
-                    if isinstance(reply, list):
-                        for item in reply:
-                            if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
-                                raise TypeError(
-                                    f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
-                                )
-                    else:
-                        raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
-                    requests = reply
+                requests_or_reply = await self._prepare_requests(agent, session, requests)
+                if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage)):
+                    self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                    return requests_or_reply
+                requests = requests_or_reply
 
                 self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
@@ -193,25 +214,12 @@ class Runtime:
         """
         async with session:
             try:
-                self._log.debug(f"Executing pre hooks for streaming with agent '{agent.name}' and requests: {requests}")
-
-                pre_hooks = agent.pre_hooks + self._system_pre_hooks
-                for hook in pre_hooks:
-                    reply = await hook.on_run(session, agent, requests)
-                    if isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                        self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
-                        yield StreamChunk(error=str(reply), done=True)
-                        return
-
-                    if isinstance(reply, list):
-                        for item in reply:
-                            if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
-                                raise TypeError(
-                                    f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
-                                )
-                    else:
-                        raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
-                    requests = reply
+                requests_or_reply = await self._prepare_requests(agent, session, requests)
+                if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage)):
+                    self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                    yield StreamChunk(error=str(requests_or_reply), done=True)
+                    return
+                requests = requests_or_reply
 
                 self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
