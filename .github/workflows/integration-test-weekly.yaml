@@ -58,11 +58,11 @@ jobs:
         working-directory: ak-py
         run: ./build.sh
 
-      - name: Cache ak-py build
-        uses: actions/cache/save@v4
-        with:
-          path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+      # - name: Cache ak-py build
+      #   uses: actions/cache/save@v4
+      #   with:
+      #     path: ak-py/dist
+      #     key: ak-py-${{ github.sha }}
 
   get-base-outputs:
     needs: [setup, build-ak-py]
@@ -123,11 +123,11 @@ jobs:
       - name: Install dependencies
         run: pip install uv pyyaml
 
-      - name: Restore ak-py build
-        uses: actions/cache/restore@v4
-        with:
-          path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+      # - name: Restore ak-py build
+      #   uses: actions/cache/restore@v4
+        # with:
+        #   path: ak-py/dist
+        #   key: ak-py-${{ github.sha }}
 
       - name: Configure AWS credentials
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
@@ -282,11 +282,11 @@ jobs:
       - name: Install dependencies
         run: pip install uv pyyaml
 
-      - name: Restore ak-py build
-        uses: actions/cache/restore@v4
-        with:
-          path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+      # - name: Restore ak-py build
+      #   uses: actions/cache/restore@v4
+      #   with:
+      #     path: ak-py/dist
+      #     key: ak-py-${{ github.sha }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
