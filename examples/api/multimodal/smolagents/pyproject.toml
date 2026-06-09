@@ -4,14 +4,14 @@ version = "0.1.0"
 description = "smolagents multimodal example for Agent Kernel"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,smolagents,multimodal]>=0.4.0",
+    "agentkernel[api,smolagents,multimodal]>=0.5.1",
     "python-multipart>=0.0.12",
     "smolagents",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test,smolagents]>=0.4.0",
+    "agentkernel[test,smolagents]>=0.5.1",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
