@@ -389,7 +389,7 @@ export default function BusinessLeaderPage() {
               <div className={styles.blHighlightCard}>
                 <p className={styles.blHighlightEyebrow}>For Your Business</p>
                 <h3 className={styles.blHighlightTitle}>
-                  Agent Kernel is like the Operating System for AI agents.
+                  Agent Kernel is the Operating System for AI agents.
                 </h3>
                 <p className={styles.blHighlightBody}>
                   You don't need to understand how an operating system works to
