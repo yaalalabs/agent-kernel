@@ -31,7 +31,7 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 
 ```hcl
 module "serverless_agent" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -75,7 +75,7 @@ output "service_url" {
 
 ```hcl
 module "serverless_api_redis" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -106,7 +106,7 @@ module "serverless_api_redis" {
 
 ```hcl
 module "serverless_api_firestore" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -136,7 +136,7 @@ module "serverless_api_firestore" {
 
 ```hcl
 module "serverless_api_vpc" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -165,7 +165,7 @@ module "serverless_api_vpc" {
 
 ```hcl
 module "production_api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = "enterprise-gcp-project"
   region               = "us-central1"
@@ -227,7 +227,7 @@ module "production_api" {
 
 ```hcl
 module "custom_endpoints_api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
@@ -273,7 +273,7 @@ module "custom_endpoints_api" {
 
 ```hcl
 module "mcp_api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
@@ -688,7 +688,7 @@ locals {
 }
 
 module "api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/google"
   
   # ... other config
   cpu                       = local.env_config.cpu
