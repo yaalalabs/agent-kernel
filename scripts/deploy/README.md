@@ -79,7 +79,7 @@ If you want to use remote state, you need to create the backend storage first. T
 ./scripts/deploy/setup_backend.sh azure --storage mystorageacct --container tfstate --resource-group my-rg
 
 # GCP GCS bucket
-./scripts/deploy/setup_backend.sh gcp --bucket my-tf-state --project my-gcp-project --region us-east1
+./scripts/deploy/setup_backend.sh gcp --bucket my-tf-state --region us-east1
 ```
 
 Or run with the defaults from `state-config.yaml`:
