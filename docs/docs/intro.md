@@ -5,7 +5,7 @@ slug: /
 
 # Introduction to Agent Kernel
 
-**An Operating System for Scalable & Compliant Enterprise AI Agents.**
+**The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
 🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)

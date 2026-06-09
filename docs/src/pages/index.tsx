@@ -540,6 +540,7 @@ const AGENT_SKILLS = [
       "ECS",
       "Azure Functions",
       "Container Apps",
+      "GCP Cloud Run",
       "Full Terraform",
     ],
   },
@@ -914,10 +915,22 @@ function Deployment() {
       icon: <SiGooglecloud className={styles.cloudIconSvg} />,
       name: "Google Cloud",
       description:
-        "Cloud Run and Cloud Functions deployments - Terraform modules in progress.",
-      modes: ["Cloud Run (Containerized)", "Cloud Functions (Containerized)"],
-      modules: [],
-      comingSoon: true,
+        "Cloud Run serverless or containerized deployments with Firestore session storage.",
+      modes: [
+        "Cloud Run (Serverless)",
+        "Cloud Run (Containerized)",
+      ],
+      modules: [
+        {
+          name: "GCP Serverless",
+          url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/google",
+        },
+        {
+          name: "GCP Containerized",
+          url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/google",
+        },
+      ],
+      comingSoon: false,
     },
   ];
 
@@ -934,7 +947,7 @@ function Deployment() {
           </div>
           <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
           <p className={styles.deploySubtitle}>
-            Run the same agent code on AWS, Azure, or your own on-prem Docker. Zero rewrites.
+            Run the same agent code on AWS, Azure, GCP, or your own on-prem Docker. Zero rewrites.
             <br />
             Includes production-ready Terraform modules with best practices baked in.
           </p>
