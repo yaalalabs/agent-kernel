@@ -1,7 +1,7 @@
 # Containered module configuration for deploying MCP in ECS
 module "containered_agents" {
   source = "yaalalabs/ak-containerized/aws"
-  version = "0.4.0"
+  version = "0.5.0"
 
   # Basic ECS configuration
   product_alias        = var.product_alias

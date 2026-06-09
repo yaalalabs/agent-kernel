@@ -1,6 +1,6 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.2.14"
+  version = "0.5.0"
 
   # Basic Cloud Run configuration
   project_id           = var.project_id
