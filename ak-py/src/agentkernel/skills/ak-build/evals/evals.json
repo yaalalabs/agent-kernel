@@ -1,7 +1,7 @@
 {
   "skill": "ak-build",
   "description": "Evaluations for the ak-build (add tools, agents, handoffs) skill",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "evals": [
     {
       "id": "build-read-project",
