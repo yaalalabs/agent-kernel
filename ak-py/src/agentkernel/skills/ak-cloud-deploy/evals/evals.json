@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
   "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill with sync/async and scalable modes",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "evals": [
     {
       "id": "deploy-aws-serverless",

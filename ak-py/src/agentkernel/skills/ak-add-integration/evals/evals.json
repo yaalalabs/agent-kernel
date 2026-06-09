@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-integration",
   "description": "Evaluations for the ak-add-integration (messaging platform) skill",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "evals": [
     {
       "id": "int-slack",
