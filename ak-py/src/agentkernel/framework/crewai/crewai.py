@@ -1,8 +1,7 @@
 import logging
 from typing import Any, Callable, List
 
-from crewai import Agent, Crew, Task
-from crewai import Memory
+from crewai import Agent, Crew, Memory, Task
 from crewai.memory.storage.interface import Storage
 from crewai.tools import tool as crewai_tool
 
