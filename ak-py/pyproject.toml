@@ -152,6 +152,11 @@ dev = [
 
 [tool.uv]
 package = true
+conflicts = [
+  [{ extra = "crewai" }, { extra = "adk" }],
+  [{ extra = "crewai" }, { extra = "langgraph" }],
+  [{ extra = "crewai" }, { extra = "openllmetry" }],
+]
 
 [tool.isort]
 profile = "black"

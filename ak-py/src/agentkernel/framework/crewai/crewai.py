@@ -2,7 +2,7 @@ import logging
 from typing import Any, Callable, List
 
 from crewai import Agent, Crew, Task
-from crewai.memory.external.external_memory import ExternalMemory
+from crewai import Memory
 from crewai.memory.storage.interface import Storage
 from crewai.tools import tool as crewai_tool
 
@@ -74,7 +74,7 @@ class CrewAIRunner(Runner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
 
-    def _memory(self, session: Session) -> ExternalMemory | None:
+    def _memory(self, session: Session) -> Memory | None:
         """
         Returns the external memory associated with the session.
         :param session: The session to retrieve the memory for.
@@ -89,7 +89,7 @@ class CrewAIRunner(Runner):
         else:
             self._log.debug("Reusing existing CrewAISession")
             previous = session.get(FRAMEWORK)
-        return ExternalMemory(previous)
+        return Memory(previous)
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """

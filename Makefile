@@ -49,8 +49,8 @@ lint-examples:
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
 			$(ENSURE_PYENV_VENV) && \
-			uv run --only-dev isort --skip .venv --skip .terraform --skip dist --skip __pycache__ . || true; \
-			uv run --only-dev black --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || true; \
+			uv run --only-dev isort --skip .venv --skip .terraform --skip dist --skip-glob 'dist_*' --skip __pycache__ . || true; \
+			uv run --only-dev black --exclude '/\.venv/|/\.terraform/|/dist[_/]|/__pycache__/' . || true; \
 			cd - > /dev/null; \
 		fi; \
 	done
@@ -63,8 +63,8 @@ lint-examples-check:
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
 			$(ENSURE_PYENV_VENV) && \
-			uv run --only-dev isort --check-only --skip .venv --skip .terraform --skip dist --skip __pycache__ . || EXIT_CODE=1; \
-			uv run --only-dev black --check --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || EXIT_CODE=1; \
+			uv run --only-dev isort --check-only --skip .venv --skip .terraform --skip dist --skip-glob 'dist_*' --skip __pycache__ . || EXIT_CODE=1; \
+			uv run --only-dev black --check --exclude '/\.venv/|/\.terraform/|/dist[_/]|/__pycache__/' . || EXIT_CODE=1; \
 			cd - > /dev/null; \
 		fi; \
 	done; \
