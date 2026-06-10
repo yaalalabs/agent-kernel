@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from google.adk.agents import BaseAgent
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
@@ -208,29 +209,35 @@ class GoogleADKRunner(BaseRunner):
 
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
         """
-        Streams the Google ADK agent response token by token.
+        Streams the Google ADK agent response token by token using SSE mode.
         :param agent: The ADK agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
         :return: An async generator yielding string token deltas.
         """
-        try:
-            prompt, parts = self._process_requests(requests)
+        prompt, parts = self._process_requests(requests)
 
-            if not parts:
-                return
-
-            user_id, runner = await self._setup_session_context(agent, session, requests)
-            new_message = types.Content(role="user", parts=parts)
-
-            if hasattr(runner, "run_async"):
-                async for event in runner.run_async(user_id=user_id, session_id=session.id, new_message=new_message):
-                    if not event.is_final_response() and event.content and event.content.parts:
-                        for p in event.content.parts:
-                            if hasattr(p, "text") and p.text:
-                                yield p.text
-        except Exception:
+        if not parts:
             return
+
+        user_id, runner = await self._setup_session_context(agent, session, requests)
+        new_message = types.Content(role="user", parts=parts)
+        run_config = RunConfig(streaming_mode=StreamingMode.SSE)
+
+        if hasattr(runner, "run_async"):
+            async for event in runner.run_async(
+                user_id=user_id,
+                session_id=session.id,
+                new_message=new_message,
+                run_config=run_config,
+            ):
+                if not getattr(event, "partial", False):
+                    continue
+                if not event.content or not event.content.parts:
+                    continue
+                chunk = "".join(getattr(part, "text", "") or "" for part in event.content.parts)
+                if chunk:
+                    yield chunk
 
 
 class GoogleADKAgent(AKBaseAgent):
