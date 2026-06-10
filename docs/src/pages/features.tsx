@@ -486,7 +486,7 @@ function ProblemTable() {
     {
       problem: "Cloud lock-in",
       without: "AWS-specific code everywhere",
-      with: "Same code deploys to AWS, Azure, or on-prem",
+      with: "Same code deploys to AWS, Azure, GCP, or on-prem",
     },
     {
       problem: "Memory & state",
@@ -522,7 +522,7 @@ function ProblemTable() {
     {
       problem: "Deployment",
       without: "Write Terraform/CDK yourself",
-      with: "Pre-built Terraform modules for AWS & Azure",
+      with: "Pre-built Terraform modules for AWS, Azure & GCP",
     },
   ];
 
@@ -831,12 +831,14 @@ function CoreFeatures() {
       icon: <MdCloud />,
       title: "Multi-Cloud Deployment",
       description:
-        "One agent codebase deploys to AWS, and Azure and GCP with full Terraform modules. No vendor lock-in, ever.",
+        "One agent codebase deploys to AWS, Azure, and GCP with full Terraform modules. No vendor lock-in, ever.",
       highlights: [
         "AWS Lambda (Serverless)",
         "AWS ECS/Fargate (Containerized)",
         "Azure Functions (Serverless)",
         "Azure Container Apps (Containerized)",
+        "GCP Cloud Run (Serverless)",
+        "GCP Cloud Run (Containerized)",
       ],
       link: "/docs/deployment/overview",
     },

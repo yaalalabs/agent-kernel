@@ -13,6 +13,7 @@ const FRAMEWORKS = [
   { id: "crewai", label: "CrewAI" },
   { id: "langgraph", label: "LangGraph" },
   { id: "adk", label: "Google ADK" },
+  { id: "smolagents", label: "Smolagents" },
 ];
 
 const FRAMEWORK_DATA = {
@@ -33,8 +34,13 @@ const FRAMEWORK_DATA = {
   },
   adk: {
     installation: `# 1. Install the CLI\npip install agentkernel[adk]`,
-    usage: `from adk import Agent as ADKAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.adk import ADKModule\n\nagent = ADKAgent(\n    name="assistant",\n    model="gemini-2.0-flash-exp",\n    instructions="You are a helpful AI assistant",\n)\n\nADKModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
+    usage: `from adk import Agent as ADKAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.adk import GoogleADKModule\n\nagent = ADKAgent(\n    name="assistant",\n    model="gemini-2.0-flash-exp",\n    instructions="You are a helpful AI assistant",\n)\n\nGoogleADKModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/google-adk",
+  },
+  smolagents: {
+    installation: `# 1. Install the CLI\npip install agentkernel[smolagents]`,
+    usage: `from smolagents import LiteLLMModel, ToolCallingAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.smolagents import SmolagentsModule\n\nmodel = LiteLLMModel(model_id="openai/gpt-4o")\n\nassistant = ToolCallingAgent(\n    tools=[],\n    model=model,\n    name="assistant",\n    description="You are a helpful AI assistant",\n)\n\nSmolagentsModule([assistant])\n\nif __name__ == "__main__":\n    CLI.main()`,
+    docLink: "/docs/frameworks/smolagents",
   },
 };
 
