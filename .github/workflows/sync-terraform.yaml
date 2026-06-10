@@ -38,6 +38,18 @@ jobs:
             repo: 'yaalalabs/terraform-azurerm-ak-containerized'
             branch: 'develop'
             link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm/latest'
+          - module: 'ak-deployment/ak-gcp/common'
+            repo: 'yaalalabs/terraform-google-ak-common'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-common/google/latest'
+          - module: 'ak-deployment/ak-gcp/serverless'
+            repo: 'yaalalabs/terraform-google-ak-serverless'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/google/latest'
+          - module: 'ak-deployment/ak-gcp/containerized'
+            repo: 'yaalalabs/terraform-google-ak-containerized'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/google/latest'
 
     steps:
       - name: Generate GitHub App Token
@@ -55,6 +67,9 @@ jobs:
             terraform-azurerm-ak-common
             terraform-azurerm-ak-serverless
             terraform-azurerm-ak-containerized
+            terraform-google-ak-common
+            terraform-google-ak-serverless
+            terraform-google-ak-containerized
       
       - name: Get tag name
         id: tag
@@ -125,9 +140,11 @@ jobs:
           # Extract module name from path (e.g., 'common', 'serverless', 'containerized')
           MODULE_NAME=$(basename $MODULE)
           
-          # Determine provider based on module path (aws or azure)
+          # Determine provider based on module path (aws, azure or gcp)
           if [[ "$MODULE" == *"ak-azure"* ]]; then
             PROVIDER="azurerm"
+          elif [[ "$MODULE" == *"ak-gcp"* ]]; then
+            PROVIDER="google"
           else
             PROVIDER="aws"
           fi

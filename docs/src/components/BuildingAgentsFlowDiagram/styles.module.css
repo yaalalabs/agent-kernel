@@ -1,0 +1,263 @@
+/* BuildingAgentsFlowDiagram — multi-agent flow with straight connectors */
+
+.figure {
+  margin: 0;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.flowScene {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(7.5rem, auto) 1fr minmax(7.5rem, auto);
+  grid-template-areas:
+    'input guardIn core outputStack';
+  column-gap: 2.5rem;
+  align-items: center;
+  min-height: 32rem;
+  padding: 2rem 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.flowSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.slotInput {
+  grid-area: input;
+  z-index: 2;
+  justify-self: center;
+}
+
+.slotGuardIn {
+  grid-area: guardIn;
+  z-index: 2;
+  justify-self: center;
+}
+
+.coreZone {
+  grid-area: core;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  padding: 1.5rem 1.75rem;
+  border: 1.5px dashed rgba(255, 255, 255, 0.28);
+  border-radius: 0.625rem;
+  background: rgba(8, 10, 20, 0.35);
+}
+
+.coreZoneLabel {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.slotMemory {
+  align-self: flex-start;
+}
+
+.coreRow {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  column-gap: 2.75rem;
+  row-gap: 1.25rem;
+  width: 100%;
+}
+
+.slotSupervisor {
+  justify-self: center;
+}
+
+.agentsCol {
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  min-width: 6.75rem;
+}
+
+.toolsCol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-width: 13rem;
+  width: 100%;
+}
+
+.outputStack {
+  grid-area: outputStack;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  justify-self: center;
+  margin-left: 0.5rem;
+}
+
+/* Vertical connector spacer: Guardrails → Output Message */
+.outputConnector {
+  flex: 0 0 3.5rem;
+}
+
+/* ── Flow nodes ─────────────────────────────────────────────────────────────── */
+
+.flowNode {
+  --node-surface: rgba(18, 24, 46, 0.75);
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  background: var(--node-surface);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.08),
+    0 4px 20px rgba(0, 0, 0, 0.25);
+  transition:
+    border-color 0.3s ease,
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.flowNode:hover {
+  border-color: color-mix(in srgb, var(--node-color, #00d5be) 45%, transparent);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.15),
+    0 10px 30px color-mix(in srgb, var(--node-color, #00d5be) 20%, transparent);
+}
+
+.flowNodeLabel {
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #dfe1f0;
+  padding: 0.75rem 0.875rem;
+}
+
+.node_message,
+.node_guardrail {
+  min-width: 6.75rem;
+}
+
+.node_memory {
+  --node-surface: rgba(22, 43, 34, 0.75);
+  border-radius: 999px;
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.node_memory .flowNodeLabel {
+  font-size: 0.8125rem;
+  padding: 0.55rem 1rem;
+}
+
+.node_supervisor,
+.node_agent {
+  width: 6.25rem;
+  height: 6.25rem;
+  border-radius: 50%;
+  padding: 0.5rem;
+}
+
+.node_supervisor .flowNodeLabel,
+.node_agent .flowNodeLabel {
+  font-size: 0.8125rem;
+  padding: 0.55rem;
+  line-height: 1.25;
+}
+
+.node_supervisor {
+  --node-surface: rgba(15, 42, 53, 0.75);
+  border-color: rgba(0, 221, 255, 0.5);
+  box-shadow: 0 0 20px rgba(0, 221, 255, 0.12);
+}
+
+.node_agent {
+  --node-surface: rgba(34, 25, 56, 0.75);
+  border-color: rgba(192, 132, 252, 0.5);
+}
+
+.node_tool {
+  --node-surface: rgba(43, 37, 16, 0.75);
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+  border-color: rgba(250, 204, 21, 0.28);
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.node_tool .flowNodeLabel {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.65rem 0.875rem;
+  line-height: 1.35;
+}
+
+/* ── Animation Classes for SVG Connections ───────────────────────────────────── */
+
+.pulseFlow {
+  stroke-dasharray: 8 36;
+  animation: pulseMove 1.8s linear infinite;
+}
+
+.dashedFlow {
+  animation: dashCrawl 1s linear infinite;
+}
+
+@keyframes pulseMove {
+  from {
+    stroke-dashoffset: 44;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes dashCrawl {
+  from {
+    stroke-dashoffset: 10;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ── Tablet/Mobile Horizontal Scroll ──────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .flowScene {
+    width: 100%;
+    padding: 1.5rem 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .flowSvg {
+    display: block;
+  }
+}

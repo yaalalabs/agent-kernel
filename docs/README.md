@@ -195,6 +195,10 @@ To contribute to the documentation:
 
 The documentation is released under the same Apache License 2.0 as Agent Kernel.
 
+### Third-Party Dependency Note
+
+The docs UI uses `gsap` for client-side animations. `gsap` is distributed under GreenSock's Standard "no charge" license (not an OSI open-source license). We include it only for documentation site behavior and keep this dependency decision documented here for compliance review.
+
 ## 🆘 Need Help?
 
 - [Docusaurus Documentation](https://docusaurus.io/docs)

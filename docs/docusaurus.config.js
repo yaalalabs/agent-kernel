@@ -9,7 +9,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Agent Kernel',
-  tagline: 'An Operating System for Scalable & Compliant Enterprise AI Agents.',
+  tagline: 'The Operating System for Scalable & Compliant Enterprise AI Agents.',
   favicon: 'img/favicon.ico',
   url: 'https://kernel.yaala.ai',
   baseUrl: '/',
@@ -19,12 +19,50 @@ const config = {
   projectName: 'agent-kernel',
   trailingSlash: false,
 
-  clientModules: ['./src/clientModules/scrollReveal.ts'],
+  clientModules: [
+    './src/clientModules/ensureGtagGlobal.ts',
+    './src/clientModules/scrollReveal.ts',
+  ],
 
   onBrokenLinks: 'throw',
 
   // SEO head tags
   headTags: [
+    // Preconnect to Google Fonts domains to reduce latency
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.googleapis.com',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossorigin: 'anonymous',
+      },
+    },
+    // Preload the Google Fonts stylesheet
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preload',
+        as: 'style',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap',
+      },
+    },
+    // Load stylesheet asynchronously to prevent render-blocking
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap',
+        media: 'print',
+        onload: "this.media='all'",
+      },
+    },
     {
       tagName: 'meta',
       attributes: {
@@ -43,14 +81,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
+        content: 'Agent Kernel - The Operating System for Scalable & Compliant Enterprise AI Agents',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. Works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or your own servers with zero platform code.',
+        content: 'Agent Kernel is the open-source operating system for building and deploying scalable, compliant enterprise AI agents. Works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and runs agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or GCP with full Terraform modules and zero platform code, plus built-in messaging, memory, knowledge bases, guardrails, and observability.',
       },
     },
     {
@@ -85,14 +123,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel — From Agent Logic to Production in Minutes',
+        content: 'Agent Kernel - The Operating System for Scalable & Compliant Enterprise AI Agents',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         name: 'twitter:description',
-        content: 'Open-source, framework-agnostic, multi-cloud AI agent runtime. Build, test, and deploy production AI agents to AWS or Azure in days — not months. Works with OpenAI, LangGraph, CrewAI, and Google ADK.',
+        content: 'The open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy production agents with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging, memory, knowledge bases, guardrails, and observability.',
       },
     },
     {
@@ -137,13 +175,6 @@ const config = {
         content: 'AI Infrastructure, Machine Learning, Software Development, Agentic AI',
       },
     },
-    {
-      tagName: 'link',
-      attributes: {
-        rel: 'canonical',
-        href: 'https://kernel.yaala.ai',
-      },
-    },
     // Structured Data (JSON-LD) for better SEO
     {
       tagName: 'script',
@@ -155,7 +186,7 @@ const config = {
         '@type': 'SoftwareApplication',
         name: 'Agent Kernel',
         applicationCategory: 'DeveloperApplication',
-        description: 'Agent Kernel is an open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy AI agents to AWS or Azure in days instead of months. Works with OpenAI, LangGraph, CrewAI, and Google ADK — run multiple frameworks simultaneously in a single runtime.',
+        description: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy production AI agents with any major framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and run multiple frameworks simultaneously in a single runtime. Deploy to AWS, Azure, or GCP with full Terraform modules.',
         operatingSystem: 'Linux, macOS, Windows',
         offers: {
           '@type': 'Offer',
@@ -168,20 +199,70 @@ const config = {
           url: 'https://www.yaalalabs.com',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent Kernel, agentkernel, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK',
+        keywords: 'Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
         featureList: [
-          'Framework-agnostic runtime — OpenAI Agents, LangGraph, CrewAI, Google ADK',
-          'Multi-framework simultaneous execution in a single runtime',
-          'Multi-cloud deployment — AWS Lambda, ECS, Azure Functions, Container Apps',
-          'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail integrations',
-          'Session and memory management — Redis, DynamoDB, Cosmos DB, in-memory',
+          'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit',
+          'Run multiple frameworks simultaneously in a single runtime',
+          'Multi-cloud deployment to AWS, Azure, and GCP with full Terraform modules',
+          'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail integrations',
+          'Session and memory management with Redis, DynamoDB, Cosmos DB, and in-memory backends',
+          'Knowledge bases with Neo4j, Starburst Galaxy, ChromaDB, and custom SQL sources',
           'Execution hooks for guardrails, RAG, analytics, and moderation',
           'pytest-integrated agent testing framework',
-          'OpenAI and AWS Bedrock guardrails for content safety',
+          'Content safety guardrails via OpenAI, AWS Bedrock, and WalledAI',
           'LangFuse and OpenLLMetry observability',
-          'MCP Server and A2A Server protocol support',
-          'Full Terraform modules for AWS and Azure',
-          'Open-source — Apache 2.0 license',
+          'MCP Server and A2A protocol support',
+          'Open-source under the Apache 2.0 license',
+        ],
+      }),
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: 'Agent Kernel',
+        alternateName: 'Agent Kernel by Yaala Labs',
+        url: 'https://kernel.yaala.ai/',
+      }),
+    },
+    {
+      tagName: 'script',
+      attributes: {
+        type: 'application/ld+json',
+      },
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'ItemList',
+        name: 'Primary Site Navigation',
+        itemListElement: [
+          {
+            '@type': 'SiteNavigationElement',
+            position: 1,
+            name: 'Features',
+            url: 'https://kernel.yaala.ai/features',
+          },
+          {
+            '@type': 'SiteNavigationElement',
+            position: 2,
+            name: 'Use Cases',
+            url: 'https://kernel.yaala.ai/use-cases',
+          },
+          {
+            '@type': 'SiteNavigationElement',
+            position: 3,
+            name: 'Documentation',
+            url: 'https://kernel.yaala.ai/docs',
+          },
+          {
+            '@type': 'SiteNavigationElement',
+            position: 4,
+            name: 'Blog',
+            url: 'https://kernel.yaala.ai/blog',
+          },
         ],
       }),
     },
@@ -199,7 +280,7 @@ const config = {
         sameAs: [
           'https://github.com/yaalalabs/agent-kernel',
         ],
-        description: 'Yaala Labs is a technology company that builds next-generation cloud-native marketplace and capital markets infrastructure for both traditional and digital assets. Creator and maintainer of Agent Kernel, the open-source, framework-agnostic, multi-cloud runtime for production AI agents.',
+        description: 'Yaala Labs is a technology company that builds next-generation cloud-native marketplace and capital markets infrastructure for both traditional and digital assets. Creator and maintainer of Agent Kernel, the open-source operating system for scalable, compliant enterprise AI agents.',
       }),
     },
   ],
@@ -266,33 +347,55 @@ const config = {
           lastmod: 'date',
           changefreq: 'weekly',
           priority: 0.5,
-          ignorePatterns: ['/tags/**'],
+          ignorePatterns: [
+            '/blog/tags/**',
+            '/blog/authors/**',
+            '/blog/archive/**',
+            '/blog/page/**',
+            '/search/**',
+          ],
           filename: 'sitemap.xml',
           createSitemapItems: async (params) => {
-            const {defaultCreateSitemapItems, ...rest} = params;
+            const { defaultCreateSitemapItems, ...rest } = params;
             const items = await defaultCreateSitemapItems(rest);
-            return items.map((item) => {
+            return items
+              .filter((item) => {
+                const { url } = item;
+                // Keep sitemap focused on canonical and high-value routes.
+                if (url.includes('/blog/tags') || url.includes('/blog/blog') || url.includes('/blog/authors') || url.includes('/blog/archive') || url.includes('/blog/page/')) {
+                  return false;
+                }
+                if (url.endsWith('/search') || url.includes('/search/')) {
+                  return false;
+                }
+                // Exclude versioned/preview docs routes from sitemap to reduce noise.
+                if (url.includes('/docs/next/') || url.match(/\/docs\/0\.[0-9]+\.[0-9]+/)) {
+                  return false;
+                }
+                return true;
+              })
+              .map((item) => {
               // Set highest priority for key landing pages
               if (item.url === 'https://kernel.yaala.ai/' ||
-                  item.url === 'https://kernel.yaala.ai/docs' ||
-                  item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
-                  item.url === 'https://kernel.yaala.ai/docs/installation' ||
-                  item.url === 'https://kernel.yaala.ai/features' ||
-                  item.url === 'https://kernel.yaala.ai/use-cases' ||
-                  item.url === 'https://kernel.yaala.ai/blog') {
-                return {...item, priority: 1.0, changefreq: 'daily'};
+                item.url === 'https://kernel.yaala.ai/docs' ||
+                item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
+                item.url === 'https://kernel.yaala.ai/docs/installation' ||
+                item.url === 'https://kernel.yaala.ai/features' ||
+                item.url === 'https://kernel.yaala.ai/use-cases' ||
+                item.url === 'https://kernel.yaala.ai/blog') {
+                return { ...item, priority: 1.0, changefreq: 'daily' };
               }
               // High priority for blog posts
               if (item.url.includes('/blog/') && !item.url.includes('/blog/tags') && !item.url.includes('/blog/archive')) {
-                return {...item, priority: 0.8, changefreq: 'weekly'};
+                return { ...item, priority: 0.8, changefreq: 'weekly' };
               }
               // Medium priority for documentation pages
               if (item.url.includes('/docs/')) {
-                return {...item, priority: 0.7, changefreq: 'weekly'};
+                return { ...item, priority: 0.7, changefreq: 'weekly' };
               }
               // Lower priority for blog tags and archives
               if (item.url.includes('/blog/tags') || item.url.includes('/blog/archive') || item.url.includes('/blog/authors')) {
-                return {...item, priority: 0.3};
+                return { ...item, priority: 0.3 };
               }
               return item;
             });
@@ -309,7 +412,7 @@ const config = {
       metadata: [
         {
           name: 'description',
-          content: 'Agent Kernel: The open-source, framework-agnostic, multi-cloud runtime for production AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS or Azure — in days, not months. Built-in messaging integrations, session management, testing framework, guardrails, and observability.',
+          content: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
         },
         {
           property: 'og:image',
@@ -322,10 +425,11 @@ const config = {
       ],
       image: 'img/card.png',
       navbar: {
-        title: 'Agent Kernel',
+        hideOnScroll: true,
+        title: '',
         logo: {
           alt: 'Agent Kernel Logo',
-          src: 'img/branding/agent-kernel-icon-color.svg',
+          src: 'img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg',
         },
         items: [
           { to: '/features', label: 'Features', position: 'left' },
@@ -336,122 +440,49 @@ const config = {
             position: 'left',
             label: 'Documentation',
           },
-          { to: '/blog', label: 'Blog', position: 'left' }, 
+          { to: '/blog', label: 'Blog', position: 'left' },
           {
             type: 'docsVersionDropdown',
             position: 'right',
             dropdownActiveClassDisabled: true,
             dropdownItemsAfter: [],
+            className: 'navbar-version-dropdown',
           },
-          {
-            href: 'https://discord.gg/snrPzb46uu',
-            position: 'right',
-            className: 'header-discord-link',
-            'aria-label': 'Discord Community',
-          },
-          {
-            href: 'https://pypi.org/project/agentkernel/',
-            position: 'right',
-            className: 'header-pypi-link',
-            'aria-label': 'PyPI package',
-          },
-          {
-            href: 'https://registry.terraform.io/modules/yaalalabs',
-            position: 'right',
-            className: 'header-terraform-link',
-            'aria-label': 'Terraform registry',
-          },
-          {
-            href: 'https://github.com/yaalalabs/agent-kernel',
-            position: 'right',
-            className: 'header-github-link',
-            'aria-label': 'GitHub repository',
-          },
+
+
         ],
       },
       footer: {
         style: 'dark',
-        logo: {
-          alt: 'Yaala Labs Logo',
-          src: 'img/yaala_white.png',
-          href: 'https://www.yaalalabs.com/',
-          width: 160,
-        },
+        // Remove the logo key entirely: logo is now handled in FooterLayout
         links: [
           {
             title: 'Docs',
             items: [
-              {
-                label: 'Getting Started',
-                to: '/docs',
-              },
-              {
-                label: 'Use Cases',
-                to: '/use-cases',
-              },
-              {
-                label: 'Architecture',
-                to: '/docs/architecture/overview',
-              },
-              {
-                label: 'API Reference',
-                to: '/docs/api/rest-api',
-              },
+              { label: 'Getting Started', to: '/docs' },
+              { label: 'Use Cases', to: '/use-cases' },
+              { label: 'Architecture', to: '/docs/architecture/overview' },
+              { label: 'API Reference', to: '/docs/api/rest-api' },
             ],
           },
           {
             title: 'Community',
             items: [
-              {
-                label: 'Discord',
-                href: 'https://discord.gg/snrPzb46uu',
-              },
-              {
-                label: 'GitHub',
-                href: 'https://github.com/yaalalabs/agent-kernel',
-              },
-              {
-                label: 'Issues',
-                href: 'https://github.com/yaalalabs/agent-kernel/issues',
-              },
+              { label: 'Discord', href: 'https://discord.gg/snrPzb46uu' },
+              { label: 'GitHub', href: 'https://github.com/yaalalabs/agent-kernel' },
+              { label: 'Issues', href: 'https://github.com/yaalalabs/agent-kernel/issues' },
             ],
           },
           {
             title: 'More',
             items: [
-              {
-                label: 'Blog',
-                to: '/blog',
-              },
-              {
-                label: 'PyPI',
-                href: 'https://pypi.org/project/agentkernel/',
-              },
-              {
-                label: 'Terraform',
-                href: 'https://registry.terraform.io/modules/yaalalabs',
-              },
-            ],
-          },
-          {
-            title: 'Legal',
-            items: [
-              {
-                label: 'Privacy Policy',
-                to: '/privacy-policy',
-              },
-              {
-                label: 'Terms of Use',
-                to: '/terms-of-use',
-              },
-              {
-                label: 'Cookie Policy',
-                to: '/cookie-policy',
-              },
+              { label: 'Blog', to: '/blog' },
+              { label: 'PyPI', href: 'https://pypi.org/project/agentkernel/' },
+              { label: 'Terraform', href: 'https://registry.terraform.io/modules/yaalalabs' },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Yaala Labs`,
+        copyright: `© ${new Date().getFullYear()} Yaala Labs. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

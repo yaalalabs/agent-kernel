@@ -14,6 +14,13 @@ interface Message {
   animated?: boolean;
 }
 
+const QUICK_PROMPTS = [
+  'How do I get started with Agent Kernel?',
+  'What frameworks does Agent Kernel support?',
+  'How do I connect Slack or WhatsApp?',
+  'How does multi-agent orchestration work?',
+];
+
 const FloatingChatbot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -37,6 +44,12 @@ const FloatingChatbot: React.FC = () => {
     if (isOpen) {
       inputRef.current?.focus();
     }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    window.dispatchEvent(new Event(isOpen ? 'chatbot:open' : 'chatbot:close'));
   }, [isOpen]);
 
   const handleSendMessage = async () => {
@@ -133,6 +146,9 @@ const FloatingChatbot: React.FC = () => {
       {/* Trigger Button */}
       {!isMaximized && (
         <div className={styles.chatButtonContainer}>
+          {!isOpen && (
+            <span className={styles.chatButtonLabel}>Ask AI</span>
+          )}
           <button
             className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
             onClick={toggleChat}
@@ -152,13 +168,28 @@ const FloatingChatbot: React.FC = () => {
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             ) : (
-              <img
-                src="/img/branding/agent-kernel-icon-mono-white.svg"
-                alt="Agent Kernel"
-                className={styles.buttonLogo}
-              />
+              <span className={styles.chatButtonInner}>
+                <span className={styles.pulseRing} aria-hidden="true" />
+                <span className={styles.pulseRingDelayed} aria-hidden="true" />
+                <div className={styles.orb} aria-hidden="true">
+                  <span className={styles.orbGradient} />
+                  <span className={styles.orbGradientReverse} />
+                  <span className={styles.orbBlobField}>
+                    <span className={`${styles.orbBlob} ${styles.orbBlob1}`} />
+                    <span className={`${styles.orbBlob} ${styles.orbBlob2}`} />
+                    <span className={`${styles.orbBlob} ${styles.orbBlob3}`} />
+                    <span className={`${styles.orbBlob} ${styles.orbBlob4}`} />
+                  </span>
+                  <span className={styles.orbShine} />
+                  <span className={styles.orbVignette} />
+                </div>
+                <img
+                  src="/img/branding/agent-kernel-icon-mono-white.svg"
+                  alt=""
+                  className={styles.buttonLogo}
+                />
+              </span>
             )}
-            {!isOpen && <span className={styles.pulseRing} />}
           </button>
         </div>
       )}
@@ -169,20 +200,11 @@ const FloatingChatbot: React.FC = () => {
           {/* Header */}
           <div className={styles.chatHeader}>
             <div className={styles.headerLeft}>
-              <div className={styles.agentAvatar}>
-                <img
-                  src="/img/branding/agent-kernel-icon-color.svg"
-                  alt="Agent Kernel"
-                  className={styles.avatarLogo}
-                />
-              </div>
-              <div>
-                <h3 className={styles.chatTitle}>Agent Kernel</h3>
-                <p className={styles.chatStatus}>
-                  <span className={styles.statusDot} />
-                  Online
-                </p>
-              </div>
+              <img
+                src="/img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg"
+                alt="Agent Kernel"
+                className={styles.headerLogo}
+              />
             </div>
             <div className={styles.headerActions}>
               <button
@@ -234,6 +256,10 @@ const FloatingChatbot: React.FC = () => {
           <div className={styles.chatMessages}>
             {messages.length === 0 && (
               <div className={styles.welcomeMessage}>
+                <div className={styles.welcomeEyebrow}>
+                  <span className={styles.welcomeEyebrowDot} />
+                  Agent Kernel AI
+                </div>
                 <div className={styles.welcomeIcon}>
                   <img
                     src="/img/branding/agent-kernel-icon-color.svg"
@@ -242,7 +268,22 @@ const FloatingChatbot: React.FC = () => {
                   />
                 </div>
                 <h4>How can I help?</h4>
-                <p>Ask me anything about Agent Kernel — setup, agents, integrations, and more.</p>
+                <p>Ask me anything about Agent Kernel - setup, agents, integrations, and more.</p>
+                <div className={styles.promptChips}>
+                  {QUICK_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      className={styles.promptChip}
+                      onClick={() => {
+                        setInputValue(prompt);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {prompt}
+                      <span className={styles.promptChipArrow}>→</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {messages.map((message) => (

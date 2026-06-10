@@ -1,16 +1,23 @@
 # Terraform Dependency Injection
 
-This directory contains tools for injecting dependencies into AWS example projects for local development and CI/CD.
+This directory contains tools for injecting dependencies into AWS, Azure, and GCP example projects for local development and CI/CD.
 
 ## Files
 
-### `backend.tf.template`
-Template file for Terraform S3 backend configuration with DynamoDB state locking. This file contains placeholders that are replaced with project-specific values during injection.
+### `backend.tf.<cloud>.template`
+Per-cloud template files for the Terraform remote state backend, with placeholders that are replaced with project-specific values during injection:
+- `backend.tf.aws.template` — S3 backend (with native state locking via `use_lockfile`)
+- `backend.tf.azure.template` — Azure Storage (`azurerm`) backend
+- `backend.tf.gcp.template` — Google Cloud Storage (`gcs`) backend
+
+### `state-config.yaml`
+Default state backend settings per cloud (bucket / account / project / region). Values here are used by both `setup_backend.sh` and `inject_dependencies.py`, and can be overridden via CLI flags.
 
 ### `setup_backend.sh`
-**OPTIONAL** shell script that creates the required AWS infrastructure for Terraform remote state:
-- S3 bucket for state storage (with versioning and encryption)
-- DynamoDB table for state locking
+**OPTIONAL** multi-cloud shell script that creates the required infrastructure for Terraform remote state:
+- `aws` — S3 bucket for state storage (with versioning and encryption)
+- `azure` — Resource group, storage account and blob container
+- `gcp` — GCS bucket (with versioning)
 
 This script is NOT automatically injected into projects. You can manually copy it if needed.
 
@@ -20,17 +27,17 @@ Python script that performs three key tasks:
 1. **Injects backend.tf files**: Generates `backend.tf` from the template with project-specific values and injects it into each project's deploy directory
 
 2. **Modifies main.tf for local development**: Replaces Terraform registry module sources with local relative paths in example projects
-   - Replaces `yaalalabs/ak-serverless/aws` with `../../../../ak-deployment/ak-aws/serverless`
-   - Replaces `yaalalabs/ak-containerized/aws` with `../../../../ak-deployment/ak-aws/containerized`
+   - Replaces `yaalalabs/ak-serverless/{aws,azurerm,google}` with the matching `ak-deployment/ak-{aws,azure,gcp}/serverless`
+   - Replaces `yaalalabs/ak-containerized/{aws,azurerm,google}` with the matching `ak-deployment/ak-{aws,azure,gcp}/containerized`
    - Comments out `version` lines since they're not needed for local modules
 
 3. **Modifies Terraform files for local development**: Replaces Terraform registry module sources with local relative paths in all `.tf` files under the deployment trees and example projects
-  - Scans `ak-deployment/ak-aws`, `ak-deployment/ak-azure`, and `examples` recursively
-  - Replaces `yaalalabs/ak-common/aws//modules/*` and `yaalalabs/ak-common/azurerm//modules/*` with local relative paths
+  - Scans `ak-deployment/ak-aws`, `ak-deployment/ak-azure`, `ak-deployment/ak-gcp`, and `examples` recursively
+  - Replaces `yaalalabs/ak-common/{aws,azurerm,google}//modules/*` with local relative paths
   - Handles nested module directories as well as top-level `state.tf` files
   - Comments out `version` lines for local module references
 
-The script reads `.github/integration-test-config.yaml` to identify AWS projects.
+The script reads `.github/integration-test-config.yaml` to identify AWS, Azure, and GCP projects.
 
 ## Usage
 
@@ -43,7 +50,7 @@ python3 scripts/deploy/inject_dependencies.py
 ```
 
 This will:
-- Inject `backend.tf` into all AWS and Azure example projects listed in the integration config
+- Inject `backend.tf` into all AWS, Azure, and GCP example projects listed in the integration config
 - Modify `main.tf` files to use local module sources
 - Modify Terraform files under `ak-deployment` to use local common modules and nested module sources
 
@@ -62,24 +69,26 @@ This will:
 
 ### Setting Up Backend Infrastructure (Optional)
 
-If you want to use remote state, you need to create the S3 bucket and DynamoDB table first. 
-
-Copy the setup script to your project:
+If you want to use remote state, you need to create the backend storage first. The script takes a cloud (`aws`, `azure`, or `gcp`) and reads defaults from `state-config.yaml`, which can be overridden via flags:
 
 ```bash
-cp scripts/deploy/setup_backend.sh examples/aws-serverless/adk/deploy/
-cd examples/aws-serverless/adk/deploy
-./setup_backend.sh my-terraform-state terraform-lock ap-southeast-2
+# AWS S3 bucket
+./scripts/deploy/setup_backend.sh aws --bucket my-tf-state --region ap-southeast-2
+
+# Azure storage account + container
+./scripts/deploy/setup_backend.sh azure --storage mystorageacct --container tfstate --resource-group my-rg
+
+# GCP GCS bucket
+./scripts/deploy/setup_backend.sh gcp --bucket my-tf-state --region us-east1
 ```
 
-Or run with defaults:
+Or run with the defaults from `state-config.yaml`:
 
 ```bash
-./setup_backend.sh
-# Uses: agent-kernel-terraform-state-bucket, ak-terraform-state-lock, ap-southeast-2
+./scripts/deploy/setup_backend.sh gcp
 ```
 
-After running the setup script, update the `backend.tf` file with the same values.
+Make sure you are authenticated with the relevant CLI (`aws`, `az`, or `gcloud`) and have `yq` installed. After running the setup script, the matching `backend.tf` injected by `inject_dependencies.py` will reference the same values.
 
 ## Notes
 

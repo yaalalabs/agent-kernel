@@ -1,60 +1,60 @@
 /*
-  AgentKernelArchDiagram — vertical three-layer architecture with SVG particle flow.
-  Animation philosophy: purposeful, restrained, premium.
+  AgentKernelArchDiagram — vertical four-layer architecture with SVG particle flow.
 
-  Layout (SVG viewBox 900×420 matches CSS pixel heights of each row):
-    topBox  :  h≈74px  (y 0-74)
-    gap     :  36px    (y 74-110)  ← SVG connector line here
-    hubCard :  h≈130px (y 110-240)
-    gap     :  40px    (y 240-280) ← SVG fan lines here
-    deployRow: h≈72px  (y 280-352)
+  Accent color is fully driven by --ak-accent. Override it per-page:
+    • Green  page: style="--ak-accent: #26A64D"
+    • Orange page: style="--ak-accent: #CC7D21"
+    • Cyan   page: style="--ak-accent: #00DDFF"
 
-  Total ≈ 420px — matches SVG_H constant in index.tsx.
+  The default fallback is #26A64D (green, matching the design image).
 */
 
+/* ─── Accent token ───────────────────────────────────────────────────────── */
+
 .archSection {
-  padding: 5rem 0 4.5rem;
+  --ak-accent: #26A64D;
+
+  /* Derived tints used throughout — computed from the base accent.          */
+  /* color-mix() is supported in all modern browsers (Safari 15.4+).         */
+  --ak-accent-glow: color-mix(in srgb, var(--ak-accent) 60%, transparent);
+  --ak-accent-line: color-mix(in srgb, var(--ak-accent) 28%, transparent);
+  --ak-accent-halo: color-mix(in srgb, var(--ak-accent) 10%, transparent);
+  --ak-accent-fill: color-mix(in srgb, var(--ak-accent) 12%, transparent);
+  --ak-accent-border: color-mix(in srgb, var(--ak-accent) 30%, transparent);
+  --ak-accent-hover-border: color-mix(in srgb, var(--ak-accent) 50%, transparent);
+  --ak-accent-shadow: color-mix(in srgb, var(--ak-accent) 7%, transparent);
+
+  /* Card backgrounds: a near-black base mixed with the accent so every      */
+  /* surface shifts hue when accentColor changes.                             */
+  /* --ak-card-bg : used by topBox, deployBox (subtle tint)                  */
+  /* --ak-chip-bg : used by moduleChip (slightly stronger)                   */
+  /* --ak-hub-bg  : used by hubCard (most saturated, matches the image glow) */
+  --ak-card-bg: color-mix(in srgb, var(--ak-accent) 8%, #05090f);
+  --ak-chip-bg: color-mix(in srgb, var(--ak-accent) 10%, #05090f);
+  --ak-hub-bg: color-mix(in srgb, var(--ak-accent) 18%, #05090f);
+
+  padding: 2rem 0;
   position: relative;
-  background: linear-gradient(180deg, transparent, rgba(0, 221, 255, 0.025) 40%, transparent);
-}
-
-.header {
-  text-align: center;
-  max-width: 580px;
-  margin: 0 auto 2.5rem;
-}
-
-.title {
-  font-size: clamp(1.6rem, 3vw, 2.2rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--ak-text);
-  margin-bottom: 0.6rem;
-}
-
-.subtitle {
-  font-size: 0.95rem;
-  color: var(--ak-text-secondary);
-  line-height: 1.65;
-  margin: 0;
+  background: transparent;
 }
 
 /* ─── Diagram container ──────────────────────────────────────────────────── */
 
 .diagram {
-  max-width: 900px;
+  max-width: 1400px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
+  padding: 3.5rem 3rem;
+  border-radius: 1.75rem;
+  border: 2px solid var(--ak-accent-border);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.6),
+    0 0 32px color-mix(in srgb, var(--ak-accent) 6%, transparent);
 }
 
-/*
-  Connector SVGs are narrow strips that sit between rows.
-  They are NOT absolutely positioned — they flow naturally in the column.
-  preserveAspectRatio="none" stretches them to full container width.
-*/
 .connectorSvg {
   width: 100%;
   display: block;
@@ -63,11 +63,18 @@
   flex-shrink: 0;
 }
 
-/* ─── Layer entrance animation ───────────────────────────────────────────── */
+/* ─── Entrance animations ────────────────────────────────────────────────── */
 
 @keyframes layerFadeUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .layerIn {
@@ -75,201 +82,528 @@
   animation-delay: var(--layer-delay, 0ms);
 }
 
-/* ─── Top box ────────────────────────────────────────────────────────────── */
+/* ─── Layer 1: Your Agent Logic ──────────────────────────────────────────── */
 
 .topBox {
-  /* height ≈ 74px → matches SVG TOP_BOTTOM=74 */
+  --logic-accent: #00E5FF;
+  --logic-accent-glow: color-mix(in srgb, var(--logic-accent) 60%, transparent);
+  --logic-accent-halo: color-mix(in srgb, var(--logic-accent) 10%, transparent);
+  --logic-accent-fill: color-mix(in srgb, var(--logic-accent) 12%, transparent);
+  --logic-accent-border: color-mix(in srgb, var(--logic-accent) 30%, transparent);
+  --logic-accent-hover-border: color-mix(in srgb, var(--logic-accent) 50%, transparent);
+  --logic-card-bg: color-mix(in srgb, var(--logic-accent) 8%, #05090f);
+
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ak-surface-raised);
-  border: 1px solid var(--ak-border-accent);
-  border-radius: 0.875rem;
-  padding: 1rem 2.5rem;
-  box-shadow: 0 2px 24px var(--ak-blue-glow);
+  background: var(--logic-card-bg);
+  border: 1px solid var(--logic-accent-border);
+  border-radius: 1.25rem;
+  padding: 1.5rem 2rem;
   z-index: 1;
   opacity: 0;
   width: fit-content;
+  max-width: 100%;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  box-shadow:
+    0 0 0 1px var(--logic-accent-border),
+    0 0 24px 2px var(--logic-accent-fill),
+    0 0 60px 4px color-mix(in srgb, var(--logic-accent) 10%, transparent),
+    inset 0 0 30px var(--logic-accent-halo);
+}
+
+.topBox:hover {
+  transform: translateY(-2px);
+  border-color: var(--logic-accent-hover-border);
+  box-shadow:
+    0 0 0 1px var(--logic-accent-hover-border),
+    0 0 32px 4px var(--logic-accent-fill),
+    0 0 80px 8px color-mix(in srgb, var(--logic-accent) 15%, transparent),
+    inset 0 0 40px var(--logic-accent-fill);
 }
 
 .topBoxContent {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.6rem;
 }
 
 .topBoxLabel {
   font-size: 1rem;
   font-weight: 700;
-  color: var(--ak-text);
-}
-
-.topBoxSub {
-  font-size: 0.78rem;
-  color: var(--ak-text-muted);
-}
-
-/* topBox height sets the first connectorSvg's height (viewBox="0 0 900 36") */
-
-/* ─── Hub card ───────────────────────────────────────────────────────────── */
-
-.hubCard {
-  /* height ≈ 130px → hub_top 110, hub_bottom 240 */
-  width: 100%;
-  background: linear-gradient(135deg, rgba(0, 221, 255, 0.06), rgba(242, 0, 255, 0.06));
-  border: 1px solid var(--ak-border-accent);
-  border-radius: 1.25rem;
-  padding: 1.25rem 1.75rem;
-  box-shadow: 0 0 40px rgba(0, 221, 255, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
-  z-index: 1;
-  opacity: 0;
-}
-
-.hubHeader {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-}
-
-.hubLogo {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
-
-.hubLabel {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--ak-text);
+  color: color-mix(in srgb, var(--logic-accent) 85%, #ffffff);
   letter-spacing: -0.01em;
 }
 
-/* ─── Module chips grid ──────────────────────────────────────────────────── */
+/* Framework pill chips */
+.topBoxChips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.topBoxChip {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--logic-accent) 75%, #ffffff);
+  background: color-mix(in srgb, var(--logic-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--logic-accent) 45%, #ffffff);
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.topBox:hover .topBoxChip {
+  color: var(--logic-accent);
+  border-color: var(--logic-accent-hover-border);
+  background: color-mix(in srgb, var(--logic-accent) 12%, transparent);
+}
+
+/* ─── Layer 2: Hub card (icon + label only, prominent) ───────────────────── */
+
+.hubCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 48%;
+  min-width: 280px;
+  max-width: 460px;
+  background: var(--ak-hub-bg);
+  border: 1px solid var(--ak-accent-border);
+  border-radius: 1.25rem;
+  padding: 2rem 2.5rem;
+  z-index: 1;
+  opacity: 0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow:
+    0 0 0 1px var(--ak-accent-border),
+    0 0 32px 4px var(--ak-accent-fill),
+    0 0 80px 8px color-mix(in srgb, var(--ak-accent) 15%, transparent),
+    inset 0 0 40px var(--ak-accent-halo);
+}
+
+.hubCard:hover {
+  border-color: var(--ak-accent-hover-border);
+  box-shadow:
+    0 0 0 1px var(--ak-accent-hover-border),
+    0 0 40px 8px var(--ak-accent-fill),
+    0 0 100px 12px color-mix(in srgb, var(--ak-accent) 18%, transparent),
+    inset 0 0 48px var(--ak-accent-fill);
+}
+
+/* Radial glow behind hub logo */
+.hubLogoWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hubLogoGlow {
+  position: absolute;
+  inset: -28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center,
+      var(--ak-accent-fill) 0%,
+      transparent 70%);
+  animation: corePulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes corePulse {
+
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.hubLogo {
+  position: relative;
+  z-index: 1;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 14px var(--ak-accent-glow));
+}
+
+.hubLabel {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #dfe1f0;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+/* ─── Layer 3: Module chips grid (standalone, outside hub card) ──────────── */
 
 .modulesGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  margin-top: 3.5rem;
+}
+
+.modulesRow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.55rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.25rem;
 }
 
 @keyframes moduleReveal {
-  from { opacity: 0; transform: scale(0.88) translateY(6px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .moduleChip {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.45rem;
-  background: var(--ak-surface-raised);
-  border: 1px solid var(--ak-border);
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  background: var(--ak-chip-bg);
+  border: 1px solid var(--ak-accent-border);
+  border-radius: 0.75rem;
+  padding: 0.9rem 0.8rem 0.8rem;
   opacity: 0;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease;
+}
+
+.moduleChip:hover {
+  border-color: var(--ak-accent-border);
+  box-shadow: 0 4px 16px var(--ak-accent-shadow);
+  transform: translateY(-1px);
 }
 
 .moduleIn {
-  animation: moduleReveal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: moduleReveal 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   animation-delay: var(--mod-delay, 0ms);
 }
 
-.moduleIcon {
-  font-size: 1rem;
-  color: var(--ak-purple);
+.moduleIconCell {
+  position: relative;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 
-.moduleLabel {
-  font-size: 0.73rem;
-  font-weight: 600;
-  color: var(--ak-text-secondary);
-  line-height: 1.25;
+.moduleIconBg {
+  position: absolute;
+  inset: 2px;
+  border-radius: 0.4rem;
+  background: radial-gradient(circle at 50% 60%,
+      var(--ak-accent-fill) 0%,
+      transparent 75%);
+  animation: iconPulse 2.8s ease-in-out infinite;
+  pointer-events: none;
 }
 
-/* hubCard → connectorSvg(44px) → deployRow flows naturally in column */
+@keyframes iconPulse {
 
-/* ─── Deploy row ─────────────────────────────────────────────────────────── */
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+.moduleIcon {
+  position: relative;
+  z-index: 1;
+  font-size: 1.15rem;
+  color: var(--ak-accent);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 5px var(--ak-accent-glow));
+  transition: filter 0.22s ease;
+}
+
+.moduleChip:hover .moduleIcon {
+  filter: drop-shadow(0 0 9px var(--ak-accent-glow));
+}
+
+.moduleChip:hover .moduleIconBg {
+  animation-play-state: paused;
+  opacity: 1;
+}
+
+.moduleLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ak-accent);
+  line-height: 1.3;
+  transition: color 0.2s ease;
+}
+
+.moduleChip:hover .moduleLabel {
+  color: color-mix(in srgb, var(--ak-accent) 85%, #fff);
+}
+
+/* ─── Layer 4: Deploy row ────────────────────────────────────────────────── */
 
 .deployRow {
   display: flex;
   justify-content: center;
   align-items: stretch;
-  gap: 0.65rem;
+  gap: 1.25rem;
   flex-wrap: wrap;
   width: 100%;
   z-index: 1;
 }
 
 @keyframes deployFadeUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .deployBox {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
-  background: var(--ak-surface);
-  border: 1px solid var(--ak-border);
-  border-radius: 0.625rem;
-  padding: 0.65rem 0.9rem;
+  gap: 0.35rem;
+  background: var(--ak-card-bg);
+  border: 1px solid var(--ak-accent-border);
+  border-radius: 0.875rem;
+  padding: 0.75rem 0.9rem;
   min-width: 110px;
   flex: 1;
   opacity: 0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.deployBox:hover {
+  border-color: var(--ak-accent-border);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px var(--ak-accent-shadow);
 }
 
 .deployIn {
-  animation: deployFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: deployFadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: var(--deploy-delay, 0ms);
 }
 
 .deployIcon {
-  font-size: 1.25rem;
-  color: var(--ak-text-secondary);
+  font-size: 1.35rem;
+  color: var(--ak-accent);
   display: flex;
   align-items: center;
   justify-content: center;
+  filter: drop-shadow(0 0 6px var(--ak-accent-glow));
+  transition: filter 0.22s ease;
+}
+
+.deployBox:hover .deployIcon {
+  filter: drop-shadow(0 0 10px var(--ak-accent-glow));
 }
 
 .deployLabel {
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--ak-text-muted);
+  color: #94a3b8;
   text-align: center;
+  transition: color 0.2s ease;
 }
 
-/* ─── Responsive ─────────────────────────────────────────────────────────── */
+.deployBox:hover .deployLabel {
+  color: #dfe1f0;
+}
 
-@media (max-width: 640px) {
-  .modulesGrid {
-    grid-template-columns: repeat(2, 1fr);
+/* ─── Responsive: tablet (≤ 768px) ──────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .archSection {
+    padding: 1.5rem 0;
+  }
+
+  .diagram {
+    gap: 0;
+    padding: 2rem 1.5rem;
+    border-radius: 1.25rem;
   }
 
   .topBox {
-    padding: 0.85rem 1.5rem;
+    padding: 0.9rem 1.5rem;
+    width: 100%;
+  }
+
+  .topBoxLabel {
+    font-size: 0.95rem;
+  }
+
+  .topBoxChip {
+    font-size: 0.75rem;
   }
 
   .hubCard {
-    padding: 1rem 1.25rem;
+    width: 80%;
+    min-width: 0;
+    padding: 1.5rem 2rem;
+  }
+
+  .hubLabel {
+    font-size: 1.05rem;
+  }
+
+  .hubLogo {
+    width: 54px;
+    height: 54px;
+  }
+
+  .modulesGrid {
+    gap: 0.5rem;
+  }
+
+  .modulesRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .moduleChip {
+    padding: 0.75rem 0.6rem 0.65rem;
+  }
+
+  .moduleLabel {
+    font-size: 0.73rem;
+  }
+
+  .moduleIcon {
+    font-size: 1.05rem;
+  }
+
+  .deployRow {
+    gap: 0.55rem;
   }
 
   .deployBox {
-    min-width: 80px;
+    min-width: 90px;
+    padding: 0.7rem 0.75rem;
+  }
+
+  .deployLabel {
+    font-size: 0.73rem;
   }
 }
 
-@media (max-width: 400px) {
-  .modulesGrid {
-    grid-template-columns: repeat(2, 1fr);
+/* ─── Responsive: mobile (≤ 480px) ──────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .connectorSvg {
+    height: 26px;
+  }
+
+  .topBox {
+    padding: 0.8rem 1.1rem;
+  }
+
+  .topBoxLabel {
+    font-size: 0.9rem;
+  }
+
+  .topBoxChip {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+  }
+
+  .hubCard {
+    width: 100%;
+    padding: 1.2rem 1.25rem;
+  }
+
+  .hubLabel {
+    font-size: 1rem;
+  }
+
+  .hubLogo {
+    width: 40px;
+    height: 40px;
+  }
+
+  .modulesRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .moduleLabel {
+    font-size: 0.7rem;
   }
 
   .deployRow {
     gap: 0.4rem;
+  }
+
+  .deployBox {
+    min-width: 72px;
+    padding: 0.6rem 0.5rem;
+  }
+
+  .deployLabel {
+    font-size: 0.68rem;
+  }
+}
+
+/* ─── Responsive: very small (≤ 360px) ──────────────────────────────────── */
+
+@media (max-width: 360px) {
+  .topBoxChips {
+    gap: 0.3rem;
+  }
+
+  .topBoxChip {
+    font-size: 0.65rem;
+  }
+
+  .moduleChip {
+    padding: 0.6rem 0.4rem;
+  }
+
+  .moduleLabel {
+    font-size: 0.65rem;
+  }
+
+  .deployLabel {
+    font-size: 0.62rem;
   }
 }
