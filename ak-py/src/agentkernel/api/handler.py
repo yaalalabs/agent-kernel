@@ -85,8 +85,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             )
             return await self.chat_service.process_async_chat_request(req=req)
 
-        @router.post("/api/v1/stream")
-        async def stream_chat(body: BaseRunRequest):
+        @router.post("/api/v1/sse-chat")
+        async def sse_chat(body: BaseRunRequest):
             if Config.get().execution.mode != ExecutionMode.SSE_STREAM:
                 raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: sse_stream in config")
             try:
@@ -95,8 +95,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             return StreamingResponse(gen, media_type="text/event-stream")
 
-        @router.post("/api/v1/stream-multipart")
-        async def stream_multipart(
+        @router.post("/api/v1/sse-chat-multipart")
+        async def sse_chat_multipart(
             prompt: str = Form(...),
             agent: Optional[str] = Form(None),
             session_id: Optional[str] = Form(None),
