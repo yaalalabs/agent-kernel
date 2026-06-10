@@ -71,7 +71,7 @@ dependencies = [
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = var.project_id
   region               = var.region
@@ -99,7 +99,7 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = var.project_id
   region               = var.region
@@ -126,7 +126,7 @@ When `create_firestore_db = true`, the module automatically injects:
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source = "yaalalabs/ak-serverless/google"
 
   project_id           = var.project_id
   region               = var.region

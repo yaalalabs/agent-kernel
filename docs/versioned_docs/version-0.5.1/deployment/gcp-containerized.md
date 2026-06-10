@@ -71,7 +71,7 @@ dependencies = [
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = var.project_id
   region               = var.region
@@ -101,7 +101,7 @@ module "containerized_agent" {
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = var.project_id
   region               = var.region
