@@ -354,11 +354,12 @@ class ChatService:
         """
         def _format_sse_frame(chunk: StreamChunk) -> str:
             """Format a StreamChunk as an SSE frame.
-
             :param chunk: StreamChunk to format
             :return: SSE-formatted string with JSON payload
             """
-            return f"data: {chunk.model_dump_json()}\n\n"
+            if chunk.done and chunk.delta is None and chunk.error is None:
+                return "data: [DONE]\n\n"
+            return f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
 
         try:
             async for chunk in service.stream_multi(requests):
