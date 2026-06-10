@@ -52,8 +52,8 @@ Use official modules:
 - AWS containerized: `yaalalabs/ak-containerized/aws`
 - Azure serverless: `yaalalabs/ak-serverless/azurerm`
 - Azure containerized: `yaalalabs/ak-containerized/azurerm`
-- GCP serverless: local module at `ak-deployment/ak-gcp/serverless`
-- GCP containerized: local module at `ak-deployment/ak-gcp/containerized`
+- GCP serverless: `yaalalabs/ak-serverless/google`
+- GCP containerized: `yaalalabs/ak-containerized/google`
 
 Use current module version (`0.5.1`) unless user requests another.
 
@@ -641,7 +641,8 @@ def main() -> None:
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -669,7 +670,8 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -719,7 +721,8 @@ def main() -> None:
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
