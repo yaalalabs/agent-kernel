@@ -20,7 +20,7 @@ auth = [
     "agentkernel>=0.5.1",
     "annotated-types==0.7.0",
     "cffi==2.0.0",
-    "cryptography==46.0.4",
+    "cryptography==46.0.7",
     "PyJWT>=2.0.0",
     "pycparser==3.0",
     "pydantic==2.12.5",
