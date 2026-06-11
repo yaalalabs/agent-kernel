@@ -117,7 +117,6 @@ class ExecutionMode(str, Enum):
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
-    SSE_STREAM = "sse_stream"
 
 
 class StreamChunk(BaseModel):

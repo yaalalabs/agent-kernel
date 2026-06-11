@@ -87,8 +87,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         @router.post("/api/v1/sse-chat")
         async def sse_chat(body: BaseRunRequest):
-            if Config.get().execution.mode != ExecutionMode.SSE_STREAM:
-                raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: sse_stream in config")
+            if Config.get().execution.mode != ExecutionMode.STREAM:
+                raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: stream in config")
             try:
                 gen = await self.chat_service.process_stream_chat_request(req=body, sse_format=True)
             except ValueError as e:
@@ -103,8 +103,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             files: Optional[List[UploadFile]] = File(None),
             images: Optional[List[UploadFile]] = File(None),
         ):
-            if Config.get().execution.mode != ExecutionMode.SSE_STREAM:
-                raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: sse_stream in config")
+            if Config.get().execution.mode != ExecutionMode.STREAM:
+                raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: stream in config")
             req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
                 prompt=prompt,
                 agent=agent,
