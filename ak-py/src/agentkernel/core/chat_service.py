@@ -196,21 +196,30 @@ class AgentHandler:
         if not self.service.agent:
             raise ValueError("No agent available")
 
+    @staticmethod
+    def _run_async_sync(coro) -> Any:
+        """Run an async coroutine from sync code, handling event loop state.
+
+        :param coro: Coroutine to execute
+        :return: Result of the coroutine
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                asyncio.set_event_loop(asyncio.new_event_loop())
+                return asyncio.run(coro)
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
     def run_sync(self, requests: List[Any]) -> Any:
         """Run agent requests synchronously.
 
         :param requests: List of AgentRequest objects to process
         :return: Agent execution result
         """
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                return asyncio.run(self.service.run_multi(requests=requests))
-            else:
-                return loop.run_until_complete(self.service.run_multi(requests=requests))
-        except RuntimeError:
-            return asyncio.run(self.service.run_multi(requests=requests))
+        return AgentHandler._run_async_sync(self.service.run_multi(requests=requests))
 
     async def run_async(self, requests: List[Any]) -> Any:
         """Run agent requests asynchronously.
@@ -219,6 +228,31 @@ class AgentHandler:
         :return: Agent execution result
         """
         return await self.service.run_multi(requests=requests)
+
+    def run_stream_sync(self, requests: List[Any]) -> List[Any]:
+        """Run agent streaming requests synchronously.
+
+        Manages event loop lifecycle internally and returns all chunks as a list.
+
+        :param requests: List of AgentRequest objects to process
+        :return: List of StreamChunk objects
+        """
+        async def _collect():
+            chunks = []
+            async for chunk in self.service.stream_multi(requests=requests):
+                chunks.append(chunk)
+            return chunks
+
+        return AgentHandler._run_async_sync(_collect())
+
+    async def run_stream_async(self, requests: List[Any]) -> AsyncGenerator[Any, None]:
+        """Run agent streaming requests asynchronously.
+
+        :param requests: List of AgentRequest objects to process
+        :return: AsyncGenerator yielding StreamChunk objects
+        """
+        async for chunk in self.service.stream_multi(requests=requests):
+            yield chunk
 
     def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
         """Get the session ID for the response.
@@ -327,12 +361,14 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.error(500, e, handler.get_response_session_id(session_id), self.rest_api_mode)
 
-    async def process_stream_chat_request(
+    async def process_stream_chat_async(
         self,
         req: BaseChatRequest,
         sse_format: bool = False,
     ) -> AsyncGenerator[str, None]:
-        """Validate, initialize, and return a streaming chat response generator.
+        """Process a streaming chat request asynchronously.
+
+        Validate, initialize, and return a streaming chat response generator.
 
         :param req: Base chat request with prompt, session_id, agent, and optional attachments
         :param sse_format: When True, yield Server-Sent Events formatted frames.
@@ -347,29 +383,41 @@ class ChatService:
             raise ValueError("No prompt provided in the request")
         requests = await RequestBuilder.from_base_request_async(req)
         handler = AgentHandler()
-        handler.initialize(session_id, req.agent)
-        if sse_format:
-            return self._generate_stream_frames(handler.service, requests, session_id, sse_format=True)
-        return self._generate_stream_frames(handler.service, requests, session_id, sse_format=False)
+        try:
+            handler.initialize(session_id, req.agent)
+            async for chunk in handler.run_stream_async(requests):
+                yield ChatService.format_stream_frame(chunk, sse_format=sse_format)
+        except Exception as e:
+            error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
+            yield ChatService.format_stream_frame(error_chunk, sse_format=sse_format)
 
-    async def _generate_stream_frames(
+    def process_stream_chat_sync(
         self,
-        service: AgentService,
-        requests: list,
-        session_id: str,
-        sse_format: bool,
-    ) -> AsyncGenerator[str, None]:
-        """Yield formatted frames from agent streaming.
+        req: BaseRunRequest,
+        sse_format: bool = False,
+    ) -> None:
+        """Process a streaming chat request synchronously.
 
-        :param service: Initialized AgentService instance
-        :param requests: List of AgentRequest objects to process
-        :param session_id: Session identifier for error frames
+        Validates, initializes, and yields formatted streaming chunks synchronously.
+        Manages event loop lifecycle internally so callers do not need async boilerplate.
+
+        :param req: Base run request with prompt, session_id, agent, and attachments
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
-        :return: Async generator yielding formatted StreamChunk strings
+        :return: None - yields chunks via the returned generator
+        :raises ValueError: If session_id or prompt is missing, or no agent is available
         """
+        session_id = req.session_id
+        if not session_id:
+            raise ValueError("No session_id is provided in the request")
+        if not req.prompt:
+            raise ValueError("No prompt provided in the request")
+        requests = RequestBuilder.from_base_request_sync(req)
+        handler = AgentHandler()
         try:
-            async for chunk in service.stream_multi(requests):
+            handler.initialize(session_id, req.agent)
+            chunks = handler.run_stream_sync(requests)
+            for chunk in chunks:
                 yield ChatService.format_stream_frame(chunk, sse_format=sse_format)
         except Exception as e:
             error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
