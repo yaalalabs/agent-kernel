@@ -28,12 +28,16 @@ class Lambda:
     @classmethod
     def _get_router(cls) -> BaseLambdaRouter:
         if cls._router is None:
-            cls._router = WSLambdaRouter() if cls._is_websocket_mode() else RESTLambdaRouter()
+            if cls._is_websocket_mode():
+                cls._router = WSLambdaRouter()
+            else:
+                cls._router = RESTLambdaRouter()
         return cls._router
 
     @staticmethod
     def _is_websocket_mode() -> bool:
         return Lambda._get_config().execution.mode == ExecutionMode.ASYNC
+
 
     @classmethod
     def register(cls, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
@@ -75,9 +79,9 @@ class Lambda:
         :return: API Gateway response dictionary with status code and body
         """
         cls._log.info("Agent Kernel Agent Lambda Handler started")
+        router = cls._get_router()
         # Attempting to dispatch to custom routes
         try:
-            router = cls._get_router()
             result = router.dispatch(event, context)
             return cls._wrap_response(result)
         except Exception as e:

@@ -115,7 +115,6 @@ class ExecutionMode(str, Enum):
 
     REST_SYNC = "rest_sync"
     REST_ASYNC = "rest_async"
-    STREAM = "stream"
     ASYNC = "async"
     SSE_STREAM = "sse_stream"
 

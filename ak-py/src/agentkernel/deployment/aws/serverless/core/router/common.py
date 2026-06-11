@@ -71,12 +71,13 @@ class BaseLambdaRouter(ABC):
         pass
 
     @abstractmethod
-    def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+    def dispatch(self, event: Dict[str, Any], context: Any, **kwargs) -> Optional[Dict[str, Any]]:
         """
         Dispatch incoming event to the appropriate registered handler.
 
         :param event: Event dictionary containing request information
         :param context: AWS Lambda context object
+        :param kwargs: Additional keyword arguments (e.g. response_stream for streaming routers)
         :return: Formatted response dictionary or None if no route matches
         :raises ValueError: If no registered route matches the request
         """

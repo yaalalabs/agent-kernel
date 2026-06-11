@@ -352,20 +352,23 @@ class ChatService:
         :param session_id: Session identifier for error frames
         :return: Async generator yielding SSE-formatted StreamChunk JSON strings
         """
-        def _format_sse_frame(chunk: StreamChunk) -> str:
-            """Format a StreamChunk as an SSE frame.
-
-            :param chunk: StreamChunk to format
-            :return: SSE-formatted string with JSON payload
-            """
-            return f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
-
         try:
             async for chunk in service.stream_multi(requests):
-                yield _format_sse_frame(chunk)
+                yield ChatService.format_sse_frame(chunk)
         except Exception as e:
             error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
-            yield _format_sse_frame(error_chunk)
+            yield ChatService.format_sse_frame(error_chunk)
+
+    @staticmethod
+    def format_sse_frame(chunk: StreamChunk) -> str:
+        """Format a StreamChunk as an SSE frame.
+
+        :param chunk: StreamChunk to format
+        :return: SSE-formatted string with JSON payload
+        """
+        if chunk.done and chunk.delta is None and chunk.error is None:
+            return "data: [DONE]\n\n"
+        return f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
 
     @staticmethod
     def _validate(req: BaseRunRequest):

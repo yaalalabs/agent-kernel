@@ -286,7 +286,7 @@ class _LoggingConfig(BaseModel):
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, sse_stream for SSE token streaming REST (containerized only)",
+        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, sse_stream for SSE token streaming (containerized REST or Lambda Function URL with InvokeMode)",
     )
     queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
     response_store: Optional[_ResponseStoreConfig] = Field(
