@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # GCP Serverless (Cloud Run)
 
-Deploy Agent Kernel agents as serverless containers on **GCP Cloud Run** with scale-to-zero capability. Uses the `ak-deployment/ak-gcp/serverless` Terraform module.
+Deploy Agent Kernel agents as serverless containers on **GCP Cloud Run** with scale-to-zero capability. Uses the [`yaalalabs/ak-serverless/google`](https://registry.terraform.io/modules/yaalalabs/ak-serverless/google) Terraform module.
 
 ## Overview
 
@@ -71,7 +71,8 @@ dependencies = [
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -99,7 +100,8 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -126,7 +128,8 @@ When `create_firestore_db = true`, the module automatically injects:
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
