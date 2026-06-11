@@ -327,11 +327,17 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.error(500, e, handler.get_response_session_id(session_id), self.rest_api_mode)
 
-    async def process_stream_chat_request(self, req: BaseChatRequest) -> AsyncGenerator[str, None]:
-        """Validate, initialize, and return an SSE frame generator for a streaming chat request.
+    async def process_stream_chat_request(
+        self,
+        req: BaseChatRequest,
+        sse_format: bool = False,
+    ) -> AsyncGenerator[str, None]:
+        """Validate, initialize, and return a streaming chat response generator.
 
         :param req: Base chat request with prompt, session_id, agent, and optional attachments
-        :return: Async generator yielding SSE-formatted StreamChunk JSON frames
+        :param sse_format: When True, yield Server-Sent Events formatted frames.
+                           When False, yield raw StreamChunk JSON payloads.
+        :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
         :raises ValueError: If session_id or prompt is missing, or no agent is available
         """
         session_id = req.session_id
@@ -342,30 +348,43 @@ class ChatService:
         requests = await RequestBuilder.from_base_request_async(req)
         handler = AgentHandler()
         handler.initialize(session_id, req.agent)
-        return self._generate_sse_frames(handler.service, requests, session_id)
+        if sse_format:
+            return self._generate_stream_frames(handler.service, requests, session_id, sse_format=True)
+        return self._generate_stream_frames(handler.service, requests, session_id, sse_format=False)
 
-    async def _generate_sse_frames(self, service: AgentService, requests: list, session_id: str) -> AsyncGenerator[str, None]:
-        """Yield SSE frames from agent streaming.
+    async def _generate_stream_frames(
+        self,
+        service: AgentService,
+        requests: list,
+        session_id: str,
+        sse_format: bool,
+    ) -> AsyncGenerator[str, None]:
+        """Yield formatted frames from agent streaming.
 
         :param service: Initialized AgentService instance
         :param requests: List of AgentRequest objects to process
         :param session_id: Session identifier for error frames
-        :return: Async generator yielding SSE-formatted StreamChunk JSON strings
+        :param sse_format: When True, yield Server-Sent Events formatted frames.
+                           When False, yield raw StreamChunk JSON payloads.
+        :return: Async generator yielding formatted StreamChunk strings
         """
-        def _format_sse_frame(chunk: StreamChunk) -> str:
-            """Format a StreamChunk as an SSE frame.
-
-            :param chunk: StreamChunk to format
-            :return: SSE-formatted string with JSON payload
-            """
-            return f"data: {chunk.model_dump_json(exclude_none=True)}\n\n"
-
         try:
             async for chunk in service.stream_multi(requests):
-                yield _format_sse_frame(chunk)
+                yield ChatService.format_stream_frame(chunk, sse_format=sse_format)
         except Exception as e:
             error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
-            yield _format_sse_frame(error_chunk)
+            yield ChatService.format_stream_frame(error_chunk, sse_format=sse_format)
+
+    @staticmethod
+    def format_stream_frame(chunk: StreamChunk, sse_format: bool = False) -> str:
+        """Format a StreamChunk as JSON or SSE.
+
+        :param chunk: StreamChunk to format
+        :param sse_format: When True, wrap the JSON payload as an SSE frame.
+        :return: JSON string or SSE-formatted string with excluded None values
+        """
+        payload = chunk.model_dump_json(exclude_none=True)
+        return f"data: {payload}\n\n" if sse_format else payload
 
     @staticmethod
     def _validate(req: BaseRunRequest):
