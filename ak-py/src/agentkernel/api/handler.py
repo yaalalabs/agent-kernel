@@ -90,10 +90,12 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if Config.get().execution.mode != ExecutionMode.STREAM:
                 raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: stream in config")
             try:
-                gen = await self.chat_service.process_stream_chat_request(req=body, sse_format=True)
+                gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
+                return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
-            return StreamingResponse(gen, media_type="text/event-stream")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
 
         @router.post("/api/v1/sse-chat-multipart")
         async def sse_chat_multipart(
@@ -113,9 +115,11 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 images=images,
             )
             try:
-                gen = await self.chat_service.process_stream_chat_request(req=req, sse_format=True)
+                gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
+                return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
-            return StreamingResponse(gen, media_type="text/event-stream")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
 
         return router
