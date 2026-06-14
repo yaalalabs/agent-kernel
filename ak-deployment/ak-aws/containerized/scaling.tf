@@ -11,7 +11,6 @@ resource "null_resource" "validate_autoscaling_requires_queue_mode" {
   }
 }
 
-# ---------- Lambda IAM Role and Policy ----------
 
 resource "aws_iam_role" "backlog_metric_lambda_role" {
   count = local.enable_autoscaling ? 1 : 0
@@ -217,7 +216,7 @@ resource "aws_appautoscaling_target" "agent_runner" {
 }
 
 resource "aws_appautoscaling_policy" "agent_runner_backlog" {
-  count              = var.enable_queue_mode ? 1 : 0
+  count              = local.enable_autoscaling ? 1 : 0
   name               = "${local.prefix}-agent-runner-backlog-tracking"
   policy_type        = "TargetTrackingScaling"
   resource_id        = aws_appautoscaling_target.agent_runner[0].resource_id

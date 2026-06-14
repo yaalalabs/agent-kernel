@@ -347,6 +347,87 @@ module "scalable_queue_app" {
 
 See [examples/aws-containerized/openai-dynamodb-scalable](../../../examples/aws-containerized/openai-dynamodb-scalable/) for complete implementation.
 
+### Agent Runner Autoscaling
+
+When `enable_agent_runner_autoscaling = true`, the Agent Runner automatically scales based on queue backlog.
+
+#### How It Works
+
+A Lambda function runs every **1 minute** and calculates:
+
+```
+BacklogPerTask = ApproximateNumberOfMessages / max(RunningTasks, 1)
+```
+
+AWS Target Tracking monitors this metric and scales using:
+
+```
+New Capacity = Current Capacity × (Current Metric / Target)
+```
+
+- **Scale-out**: Aggressive and fast (~3-4 minutes)
+- **Scale-in**: Conservative and gradual (~15-30 minutes, multiple cycles)
+
+#### Configuration
+
+```hcl
+enable_agent_runner_autoscaling = true
+agent_runner_min_count          = 1    # Minimum tasks (0 = scale to zero)
+agent_runner_max_count          = 10   # Maximum tasks
+agent_runner_backlog_target     = 10   # Target messages per task
+agent_runner_scale_in_cooldown  = 120  # Seconds between scale-in
+agent_runner_scale_out_cooldown = 30   # Seconds between scale-out
+```
+
+**Choosing Target Value:**
+- **Lower target** (e.g., 5): Scales out sooner, more tasks, faster processing, higher cost
+- **Higher target** (e.g., 20): Scales out later, fewer tasks, slower processing, lower cost
+- Start with default (10), monitor queue depth and task count, then tune
+
+#### Scaling Examples
+
+**Scale-Out:**
+```
+Queue=100, Tasks=1, BacklogPerTask=100, Target=10
+→ Scales to ~10 tasks quickly (2-3 minutes)
+```
+
+**Scale-In (gradual over multiple cycles):**
+```
+Queue=20, Tasks=10, BacklogPerTask=2, Target=10
+
+Cycle 1: Remove 3 tasks → 7 tasks
+Wait 2min (cooldown)
+Cycle 2: Remove 2 tasks → 5 tasks
+...continues until stable
+```
+
+#### Monitoring
+
+**CloudWatch Metrics:**
+- `Custom/ECS/BacklogPerTask` - Custom metric
+- `RunningTaskCount` - ECS service
+- `ApproximateNumberOfMessages` - SQS queue
+
+**View Lambda Logs:**
+```bash
+aws logs tail /aws/lambda/<prefix>-backlog-metric --follow
+```
+
+**View Scaling Activity:**
+```bash
+aws application-autoscaling describe-scaling-activities \
+  --service-namespace ecs \
+  --resource-id service/<cluster>/<service>
+```
+
+#### Troubleshooting
+
+- **Scaling too aggressively**: Increase `backlog_target` or cooldown periods
+- **Not scaling fast enough**: Decrease `backlog_target`, verify Lambda is running
+- **Stuck at min/max**: Check capacity limits, verify messages are being processed
+- **Scale to zero not working**: Set `min_count = 0`, wait 30+ minutes for gradual scale-in
+
 ## 📥 Inputs
 
 | Name | Description | Type | Default | Required |
@@ -400,7 +481,7 @@ See [examples/aws-containerized/openai-dynamodb-scalable](../../../examples/aws-
 | `agent_runner_desired_count` | Number of Agent Runner tasks | `number` | `1` | no |
 | `agent_runner_min_count` | Minimum tasks when autoscaling enabled | `number` | `0` | no |
 | `agent_runner_max_count` | Maximum tasks when autoscaling enabled | `number` | `10` | no |
-| `agent_runner_backlog_target` | Target BacklogPerTask for autoscaling | `number` | `10` | no |
+| `agent_runner_backlog_target` | Target messages per task for autoscaling (lower=more aggressive) | `number` | `10` | no |
 | `agent_runner_scale_in_cooldown` | Seconds to wait before scaling in again | `number` | `120` | no |
 | `agent_runner_scale_out_cooldown` | Seconds to wait before scaling out again | `number` | `30` | no |
 | `sqs_input_visibility_timeout` | SQS Input Queue visibility timeout (seconds) | `number` | `30` | no |

@@ -227,6 +227,13 @@ agent_runner_scale_out_cooldown = 30   # Wait before scaling out
 - Scales to zero when idle (if `min_count = 0`)
 - Cost-effective: only pay for what you use
 - Fast scale-out (30s cooldown), gradual scale-in (120s cooldown)
+- **Unique per deployment**: Metrics use ClusterName and ServiceName dimensions.
+
+**Detailed documentation:** See the [containerized deployment README](../../../ak-deployment/ak-aws/containerized/README.md#agent-runner-autoscaling) for:
+- Complete timing breakdown and scaling behavior
+- How to choose the right `backlog_target` value
+- Troubleshooting and cost optimization
+- Monitoring examples
 
 Monitor through CloudWatch:
 - Lambda function metrics and logs
