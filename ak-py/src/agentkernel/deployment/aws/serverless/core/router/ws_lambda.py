@@ -8,8 +8,8 @@ from pydantic import BaseModel
 
 from ......auth.handler import AuthValidator
 from ......core.chat_service import ChatService
-from ......core.config import AKConfig
-from ......core.model import BaseRequest
+from ......core.config import AKConfig, ExecutionMode
+from ......core.model import BaseRequest, StreamChunk
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import WebSocketHandler
 from .common import BaseLambdaRouter
@@ -24,6 +24,7 @@ class BaseWSHandler:
         CHAT_RESPONSE = "CHAT_RESPONSE"
         CHAT_QUEUED = "CHAT_QUEUED"
         SYSTEM_RESPONSE = "SYSTEM_RESPONSE"
+        STREAM_CHUNK = "STREAM_CHUNK"
 
     class WSMessageInfo(BaseModel):
         """WebSocket message information."""
@@ -291,8 +292,19 @@ class SystemRoutesHandler(BaseWSHandler):
         """
         return {
             self.DEFAULT_ROUTE: self._handle_default,
-            self.CHAT_ROUTE: self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
+            self.CHAT_ROUTE: self._get_chat_handler_by_mode(),
         }
+
+    def _get_chat_handler_by_mode(self) -> Callable:
+        """
+        Return the appropriate chat handler based on execution mode and queue configuration.
+
+        :param: None
+        :return: Chat handler callable
+        """
+        if self._config.execution.mode == ExecutionMode.STREAM:
+            return self._handle_queue_mode if self._is_queue_mode() else self._handle_stream_direct
+        return self._handle_queue_mode if self._is_queue_mode() else self._handle_direct_chat
 
     def _handle_default(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         """
@@ -336,9 +348,49 @@ class SystemRoutesHandler(BaseWSHandler):
             message_type=self.MessageType.CHAT_RESPONSE,
         )
 
-    def _handle_queue_mode_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+    def _handle_stream_direct(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        """
+        Handle direct streaming chat request without queue (non-queue STREAM mode).
+
+        Streams agent response chunks directly via WebSocket.
+
+        :param event: WebSocket chat event
+        :param context: Lambda context object
+        :return: Tuple of (status_code, response_body)
+        """
+        user_id = None
+        try:
+            ws_message_info = self._parse_event_to_wsmessage(event)
+            user_id = ws_message_info.user_id
+            request = ws_message_info.request
+            if request.body is None:
+                raise ValueError("body is required")
+
+            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+
+            for raw_chunk in self._chat_service.process_stream_chat_sync(req=request.body):
+                chunk_dict = json.loads(raw_chunk)
+                message = self._build_broadcasting_message(self.MessageType.STREAM_CHUNK, **chunk_dict)
+                self.ws_handler.broadcast(endpoint_url=endpoint_url, message=message, user_id=user_id)
+
+            return 200, self._build_lambda_response(user_id=user_id, msg="Stream completed successfully", success=True)
+        except Exception as e:
+            self._log.error(f"Stream direct request failed: {e}\n{traceback.format_exc()}")
+            try:
+                endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+                error_chunk = StreamChunk(error=str(e), done=True)
+                message = self._build_broadcasting_message(self.MessageType.STREAM_CHUNK, **error_chunk.model_dump(exclude_none=True))
+                self.ws_handler.broadcast(endpoint_url=endpoint_url, message=message, user_id=user_id)
+            except Exception:
+                pass
+            return 500, self._build_lambda_response(user_id=user_id, msg="Stream request processing failed", success=False)
+
+    def _handle_queue_mode(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         """
         Handle chat request in queue mode - send message to SQS input queue.
+
+        Used for both STREAM and non-STREAM execution modes when queues are configured.
+        Response will arrive via output queue -> ResponseHandler -> WebSocket.
 
         :param event: WebSocket event
         :param context: Lambda context object
@@ -359,7 +411,7 @@ class SystemRoutesHandler(BaseWSHandler):
             if not session_id:
                 raise ValueError("session_id is required")
 
-            self._log.info(f"Sending WebSocket chat request to queue: request_id={request.request_id}, session_id={session_id}")
+            self._log.info(f"Sending WebSocket request to queue: request_id={request.request_id}, session_id={session_id}")
 
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
 
@@ -374,14 +426,14 @@ class SystemRoutesHandler(BaseWSHandler):
                 ],
             )
 
-            self._log.info(f"Message sent to input queue successfully: {response}")
+            self._log.info(f"Request sent to input queue successfully: {response}")
 
-            response_body = self._build_lambda_response(user_id=user_id, msg="Request processed successfully", success=True)
+            response_body = self._build_lambda_response(user_id=user_id, msg="Request queued successfully", success=True)
             response_body["request_id"] = request.request_id
 
             return 200, response_body
         except Exception as e:
-            self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
+            self._log.error(f"Queue request failed: {e}\n{traceback.format_exc()}")
             return (
                 500,
                 self._build_lambda_response(user_id=user_id, msg="Request processing failed", success=False),
