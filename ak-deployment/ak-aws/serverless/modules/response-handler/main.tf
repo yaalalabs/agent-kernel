@@ -15,6 +15,8 @@ locals {
   response_handler_layers               = var.response_handler.layers
   response_handler_env_vars             = var.response_handler.environment_variables
   
+  # S3 source key — passed in from parent via var.source_key (lambda-package module output)
+
   # Queue configuration
   output_queue_arn                            = var.queue_config.output_queue_arn
   batch_size                                  = var.queue_config.batch_size
@@ -29,27 +31,21 @@ locals {
   websocket_api_execution_arn = try(var.websocket_api_execution_arn, null)
 }
 
-data "aws_s3_object" "source_code" {
-  count  = local.response_handler_package_type == "S3Zip" ? 1 : 0
-  bucket = var.source_bucket
-  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${local.response_handler_module_name}/lambda/source_code.zip"
-}
-
 resource "aws_signer_signing_job" "response_handler_lambda_signing_job" {
   count = var.is_production && local.response_handler_package_type == "S3Zip" ? 1 : 0
 
   profile_name = var.lambda_signer_profile_name
   source {
     s3 {
-      bucket  = data.aws_s3_object.source_code[0].bucket
-      key     = data.aws_s3_object.source_code[0].key
-      version = data.aws_s3_object.source_code[0].version_id
+      bucket  = var.source_bucket
+      key     = var.source_key
+      version = var.source_version_id
     }
   }
   destination {
     s3 {
-      bucket = data.aws_s3_object.source_code[0].bucket
-      prefix = "${data.aws_s3_object.source_code[0].key}/signed/${data.aws_s3_object.source_code[0].version_id}"
+      bucket = var.source_bucket
+      prefix = "${var.source_key}/signed"
     }
   }
   ignore_signing_job_failure = false
@@ -228,11 +224,10 @@ module "response_handler_lambda" {
   create_layer           = false
   layers                 = local.response_handler_layers
 
-  s3_existing_package = local.response_handler_package_type == "S3Zip" ? {
-    bucket     = var.is_production ? data.aws_s3_object.signed_component_code[0].bucket : data.aws_s3_object.source_code[0].bucket
-    key        = var.is_production ? data.aws_s3_object.signed_component_code[0].key : data.aws_s3_object.source_code[0].key
-    version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
-  } : {}
+  s3_existing_package = var.is_production && local.response_handler_package_type == "S3Zip" ? {
+    bucket = data.aws_s3_object.signed_component_code[0].bucket
+    key    = data.aws_s3_object.signed_component_code[0].key
+  } : var.s3_existing_package
 
   code_signing_config_arn = (local.response_handler_package_type == "S3Zip" && var.is_production) ? var.lambda_signing_config_arn : null
 

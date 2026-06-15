@@ -62,19 +62,19 @@ variable "execution_mode" {
   description = "Execution mode for the deployment. Allowed values: rest_sync, async (always allowed), rest_async and other modes (only when queue_mode is true)."
   default     = "rest_sync"
   validation {
-    condition = contains(["rest_sync", "rest_async", "async"], var.execution_mode)
+    condition     = contains(["rest_sync", "rest_async", "async"], var.execution_mode)
     error_message = "execution_mode must be one of: rest_sync, rest_async, async."
   }
   validation {
-    condition = var.queue_mode || contains(["rest_sync", "async"], var.execution_mode)
+    condition     = var.queue_mode || contains(["rest_sync", "async"], var.execution_mode)
     error_message = "execution_mode must be rest_sync or async when queue_mode is false."
   }
 }
 
 variable "tags" {
-  type = map(string)
+  type        = map(string)
   description = "Resource tags"
-  default = {}
+  default     = {}
 }
 
 variable "vpc_cidr" {
@@ -84,9 +84,9 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the public subnets"
-  default = ["10.0.1.0/24", "10.0.2.0/24"]
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "vpc_id" {
@@ -96,7 +96,7 @@ variable "vpc_id" {
 }
 
 variable "private_subnet_ids" {
-  type = list(string)
+  type        = list(string)
   description = "When using an existing VPC to deploy, private subnet IDs need to be provided"
   default     = null
 }
@@ -138,9 +138,9 @@ variable "create_dynamodb_multimodal_memory_table" {
 }
 
 variable "private_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the private subnets"
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
+  default     = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
 variable "api_version" {
@@ -216,8 +216,8 @@ variable "gateway_endpoints" {
   description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
 
   type = list(object({
-    path   = string   # e.g. "/app/check", "/health", "/app/status/test"
-    method = string   # GET, POST, PUT, DELETE, ANY
+    path   = string # e.g. "/app/check", "/health", "/app/status/test"
+    method = string # GET, POST, PUT, DELETE, ANY
   }))
 
   default = []
@@ -267,16 +267,16 @@ variable "authorizer" {
 variable "ws_connection_handler" {
   description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be empty ({}) or null when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
   type = object({
-    function_name         = optional(string, "ws-connection-handler")
-    function_description  = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
-    timeout               = optional(number, 30)
-    memory_size           = optional(number, 256)
-    handler_path          = optional(string, "ws_connection_handler.handler")
-    module_name           = optional(string, "ws-connection-handler")
-    package_path          = optional(string, null)
-    layers                = optional(list(string), [])
+    function_name                     = optional(string, "ws-connection-handler")
+    function_description              = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
+    timeout                           = optional(number, 30)
+    memory_size                       = optional(number, 256)
+    handler_path                      = optional(string, "ws_connection_handler.handler")
+    module_name                       = optional(string, "ws-connection-handler")
+    package_path                      = optional(string, null)
+    layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
+    environment_variables             = optional(map(string), {})
   })
   default = {}
   validation {
@@ -288,67 +288,109 @@ variable "ws_connection_handler" {
 variable "request_handler" {
   description = "Request handler configuration object"
   type = object({
-    function_name         = optional(string, "request-handler")
-    function_description   = optional(string, "Request handler Lambda for processing API Gateway requests")
-    timeout               = optional(number, 45)
-    memory_size           = optional(number, 128)
-    handler_path          = optional(string, "request_handler.handler")
-    module_name           = optional(string, "request-handler")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
+    function_name                     = optional(string, "request-handler")
+    function_description              = optional(string, "Request handler Lambda for processing API Gateway requests")
+    timeout                           = optional(number, 45)
+    memory_size                       = optional(number, 128)
+    handler_path                      = optional(string, "request_handler.handler")
+    module_name                       = optional(string, "request-handler")
+    package_path                      = optional(string, null)
+    package_type                      = optional(string, "LocalZip")
+    layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
-    event_source_mapping  = optional(any, [])
+    environment_variables             = optional(map(string), {})
+    event_source_mapping              = optional(any, [])
+    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    ecr_image_uri                     = optional(string, null)
   })
   default = {}
   validation {
-    condition     = !var.enable_api_gateway || try(var.request_handler.package_path, null) != null
-    error_message = "request_handler.package_path must be set when enable_api_gateway is true."
+    condition     = (!var.enable_api_gateway || var.request_handler.package_type != "S3Zip" || try(var.request_handler.package_path, null) != null || try(var.request_handler.lambda_package_s3, null) != null)
+    error_message = "request_handler: when enable_api_gateway is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.enable_api_gateway || var.request_handler.package_type != "Image" || try(var.request_handler.package_path, null) != null || try(var.request_handler.ecr_image_uri, null) != null)
+    error_message = "request_handler: when enable_api_gateway is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
+  }
+  validation {
+    condition     = !(try(var.request_handler.package_path, null) != null && try(var.request_handler.lambda_package_s3, null) != null)
+    error_message = "request_handler: package_path and lambda_package_s3 cannot both be set."
+  }
+  validation {
+    condition     = !(try(var.request_handler.package_path, null) != null && try(var.request_handler.ecr_image_uri, null) != null)
+    error_message = "request_handler: package_path and ecr_image_uri cannot both be set."
   }
 }
 
 variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
-    function_name         = optional(string, "agent-runner")
-    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
-    timeout               = optional(number, 45)
-    memory_size           = optional(number, 512)
-    handler_path          = optional(string, "agent_runner.handler")
-    module_name           = optional(string, "agent-runner")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
+    function_name                     = optional(string, "agent-runner")
+    function_description              = optional(string, "Agent runner Lambda for processing input queue messages")
+    timeout                           = optional(number, 45)
+    memory_size                       = optional(number, 512)
+    handler_path                      = optional(string, "agent_runner.handler")
+    module_name                       = optional(string, "agent-runner")
+    package_path                      = optional(string, null)
+    package_type                      = optional(string, "LocalZip")
+    layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
+    environment_variables             = optional(map(string), {})
+    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    ecr_image_uri                     = optional(string, null)
   })
   default = {}
   validation {
-    condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
-    error_message = "agent_runner.package_path must be set when queue_mode is true."
+    condition     = (!var.queue_mode || var.agent_runner.package_type != "S3Zip" || try(var.agent_runner.package_path, null) != null || try(var.agent_runner.lambda_package_s3, null) != null)
+    error_message = "agent_runner: when queue_mode is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.queue_mode || var.agent_runner.package_type != "Image" || try(var.agent_runner.package_path, null) != null || try(var.agent_runner.ecr_image_uri, null) != null)
+    error_message = "agent_runner: when queue_mode is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
+  }
+  validation {
+    condition     = !(try(var.agent_runner.package_path, null) != null && try(var.agent_runner.lambda_package_s3, null) != null)
+    error_message = "agent_runner: package_path and lambda_package_s3 cannot both be set."
+  }
+  validation {
+    condition     = !(try(var.agent_runner.package_path, null) != null && try(var.agent_runner.ecr_image_uri, null) != null)
+    error_message = "agent_runner: package_path and ecr_image_uri cannot both be set."
   }
 }
 
 variable "response_handler" {
   description = "Response handler configuration object"
   type = object({
-    function_name         = optional(string, "response-handler")
-    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
-    timeout               = optional(number, 45)
-    memory_size           = optional(number, 256)
-    handler_path          = optional(string, "response_handler.handler")
-    module_name           = optional(string, "response-handler")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
+    function_name                     = optional(string, "response-handler")
+    function_description              = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
+    timeout                           = optional(number, 45)
+    memory_size                       = optional(number, 256)
+    handler_path                      = optional(string, "response_handler.handler")
+    module_name                       = optional(string, "response-handler")
+    package_path                      = optional(string, null)
+    package_type                      = optional(string, "LocalZip")
+    layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
+    environment_variables             = optional(map(string), {})
+    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    ecr_image_uri                     = optional(string, null)
   })
   default = {}
   validation {
-    condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
-    error_message = "response_handler.package_path must be set when queue_mode is true."
+    condition     = (!var.queue_mode || var.response_handler.package_type != "S3Zip" || try(var.response_handler.package_path, null) != null || try(var.response_handler.lambda_package_s3, null) != null)
+    error_message = "response_handler: when queue_mode is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.queue_mode || var.response_handler.package_type != "Image" || try(var.response_handler.package_path, null) != null || try(var.response_handler.ecr_image_uri, null) != null)
+    error_message = "response_handler: when queue_mode is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
+  }
+  validation {
+    condition     = !(try(var.response_handler.package_path, null) != null && try(var.response_handler.lambda_package_s3, null) != null)
+    error_message = "response_handler: package_path and lambda_package_s3 cannot both be set."
+  }
+  validation {
+    condition     = !(try(var.response_handler.package_path, null) != null && try(var.response_handler.ecr_image_uri, null) != null)
+    error_message = "response_handler: package_path and ecr_image_uri cannot both be set."
   }
 }
 
@@ -406,3 +448,4 @@ variable "queue_config" {
     error_message = "queue_config must NOT be null when queue_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
   }
 }
+

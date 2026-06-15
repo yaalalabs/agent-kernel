@@ -7,7 +7,6 @@ module "containered_agents" {
   product_alias                = var.product_alias
   env_alias                    = var.env_alias
   module_name                  = var.module_name
-  package_path                 = "../dist"
   container_type               = "ecs"
   region                       = var.region
   vpc_id                       = var.vpc_id
@@ -15,6 +14,7 @@ module "containered_agents" {
   private_subnet_ids           = var.private_subnet_ids
   product_display_name         = "OpenAI Agents"
   ecs_container_port           = 8000
+  ecr_image_uri                 = var.ecr_image_uri
 
   # Environment variables passed to container
   environment_variables = {

@@ -26,7 +26,18 @@ variable "module_name" {
 
 variable "package_path" {
   type        = string
-  description = "Docker image source path (app root)"
+  description = "Docker image source path (app root). Required when ecr_image_uri is not set."
+  default     = null
+}
+
+variable "ecr_image_uri" {
+  type        = string
+  description = "Pre-built ECR image URI to use instead of building a local Docker image. When set, package_path is not required and the local Docker build step is skipped."
+  default     = null
+  validation {
+    condition     = !(var.ecr_image_uri == null && var.package_path == null)
+    error_message = "Either package_path or ecr_image_uri must be set."
+  }
 }
 
 variable "environment_variables" {
