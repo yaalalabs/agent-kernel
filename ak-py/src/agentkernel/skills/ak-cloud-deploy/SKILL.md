@@ -225,6 +225,20 @@ Use this for high throughput and long-running requests.
 
 This is the multi-artifact pattern used by the scalable example: a request handler zip, an agent-runner image, and a response-handler zip.
 
+Each Lambda can use one of three `package_type` values:
+
+
+| `package_type` | Artifact source                    | Required field(s)                                    | What Terraform does                                                                                                                                                                                       |
+| -------------- | ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LocalZip`     | Local ZIP file or source directory | `package_path`                                       | Uses the Lambda module's local packaging support. No shared source bucket is managed by this module.                                                                                                      |
+| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` is provided, Terraform uses the existing S3 object directly. |
+| `Image`        | Container image in ECR             | **Either** `ecr_image_uri` **or** `package_path`     | If `ecr_image_uri` is provided, Terraform uses the existing image. If `package_path` is provided, Terraform builds and pushes an image to ECR and deploys it.                                             |
+
+
+`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one.
+
+**Development / local build** (build artifacts locally before running `terraform apply`):
+
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
@@ -295,6 +309,52 @@ module "serverless_agents" {
   }
 }
 ```
+
+**Production: external artifact sources (S3 / ECR)**
+
+Build and push artifacts in CI/CD, then point Terraform at them so `terraform apply` contains no local build step:
+
+```hcl
+  request_handler = {
+    module_name      = "rqst-hdlr"
+    function_name    = "request-handler"
+    handler_path     = "lambda_request_handler.handler"
+    package_type     = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_request_handler.zip"
+    }
+    timeout     = 45
+    memory_size = 256
+    environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+  }
+
+  agent_runner = {
+    module_name   = "agent-runner"
+    function_name = "agent-runner"
+    handler_path  = "lambda_agent_runner.handler"
+    package_type  = "Image"
+    ecr_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+    timeout       = 45
+    memory_size   = 512
+    environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+  }
+
+  response_handler = {
+    module_name      = "response-handler"
+    function_name    = "response-handler"
+    handler_path     = "lambda_response_handler.handler"
+    package_type     = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_response_handler.zip"
+    }
+    timeout     = 45
+    memory_size = 256
+  }
+```
+
+See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example of this pattern.
 
 **Queue mode `config.yaml`** (bundled into every Lambda package — `execution.mode`, queue URLs, table names, and `max_receive_count` are all injected automatically by Terraform as environment variables; only set values that are NOT injected):
 
@@ -513,6 +573,8 @@ if __name__ == "__main__":
 
 ### Terraform Example
 
+**Local build (development)** — `package_path` points to the Docker build context:
+
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
@@ -535,6 +597,35 @@ module "containerized_agents" {
   }
 }
 ```
+
+**Production: pre-built ECR image** — set `ecr_image_uri` instead of `package_path`. Terraform skips the local Docker build and deploys the specified image directly:
+
+```hcl
+module "containerized_agents" {
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.5.1"
+
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  ecr_image_uri        = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-app:v1.2.3"
+  region               = var.region
+  product_display_name = "AK ECS Deployment"
+
+  ecs_container_port = 8000
+  ecs_desired_count  = 2
+
+  create_dynamodb_memory_table = true
+
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+```
+
+`package_path` and `ecr_image_uri` are mutually exclusive; exactly one must be set.
+
+See [examples/aws-containerized/openai-dynamodb](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb) for a complete example using an external ECR image.
 
 ## Azure Serverless (Functions + APIM)
 
