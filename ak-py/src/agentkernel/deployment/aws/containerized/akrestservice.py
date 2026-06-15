@@ -55,7 +55,6 @@ class ECSRESTService:
     _response_store = None
     _websocket_handler = None
 
-
     @classmethod
     def run(cls) -> None:
         """
@@ -82,12 +81,10 @@ class ECSRESTService:
         t2.start()
         cls._log.info("ECSRESTService: Thread 2 (output-queue poller) started")
 
-
         from .ecs_queue_handler import ECSQueueRequestHandler
 
         cls._log.info("ECSRESTService: starting REST API with queue-aware handler (Thread 1)")
         RESTAPI.run(handlers=[ECSQueueRequestHandler()])
-
 
     @classmethod
     def _get_response_store(cls):
@@ -106,7 +103,6 @@ class ECSRESTService:
                 ttl=ws_config.connection_table.ttl,
             )
         return cls._websocket_handler
-
 
     @classmethod
     def process_output_message(cls, record: Dict[str, Any]) -> None:
@@ -175,7 +171,6 @@ class ECSRESTService:
                 cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
         except Exception:
             cls._log.exception("Failed to handle permanent-failure output message")
-
 
     @classmethod
     def _construct_message_for_store(cls, record: Dict[str, Any], body: Any = None) -> Dict[str, Any]:
