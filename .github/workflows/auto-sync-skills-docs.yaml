@@ -226,7 +226,7 @@ jobs:
 
           ## Loop Prevention
 
-          Do NOT modify files that carry these markers — they belong to automation sync output:
+          Do NOT create or modify automation sync PRs/branches/commits that carry these markers:
           - PR label: `auto-skill-doc-sync`
           - Branch prefix: `auto/skill-doc-sync/`
           - Commit message containing: `[skip skill-doc-sync]`
