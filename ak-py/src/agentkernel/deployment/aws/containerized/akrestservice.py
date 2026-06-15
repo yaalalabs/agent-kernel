@@ -55,9 +55,6 @@ class ECSRESTService:
     _response_store = None
     _websocket_handler = None
 
-    # ------------------------------------------------------------------
-    # Public entrypoint
-    # ------------------------------------------------------------------
 
     @classmethod
     def run(cls) -> None:
@@ -85,16 +82,12 @@ class ECSRESTService:
         t2.start()
         cls._log.info("ECSRESTService: Thread 2 (output-queue poller) started")
 
-        # Use queue-aware request handler that bypasses ChatService
-        # This directly enqueues to SQS without agent validation
+
         from .ecs_queue_handler import ECSQueueRequestHandler
 
         cls._log.info("ECSRESTService: starting REST API with queue-aware handler (Thread 1)")
         RESTAPI.run(handlers=[ECSQueueRequestHandler()])
 
-    # ------------------------------------------------------------------
-    # Lazy initialisers
-    # ------------------------------------------------------------------
 
     @classmethod
     def _get_response_store(cls):
@@ -114,10 +107,6 @@ class ECSRESTService:
             )
         return cls._websocket_handler
 
-    # ------------------------------------------------------------------
-    # Output-queue message handlers (Thread 2)
-    # These are public so callers can also invoke them directly if needed.
-    # ------------------------------------------------------------------
 
     @classmethod
     def process_output_message(cls, record: Dict[str, Any]) -> None:
@@ -187,9 +176,6 @@ class ECSRESTService:
         except Exception:
             cls._log.exception("Failed to handle permanent-failure output message")
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     @classmethod
     def _construct_message_for_store(cls, record: Dict[str, Any], body: Any = None) -> Dict[str, Any]:

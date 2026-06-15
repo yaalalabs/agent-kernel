@@ -1,6 +1,5 @@
 data "aws_region" "current" {}
 
-# ---------- Input Queue ----------
 
 module "input_queue" {
   count  = var.enable_queue_mode ? 1 : 0
@@ -36,8 +35,6 @@ module "input_queue" {
   tags = merge(var.tags, { Type = "InputQueue" })
 }
 
-# ---------- Output Queue ----------
-
 module "output_queue" {
   count  = var.enable_queue_mode ? 1 : 0
   source = "../common/modules/sqs"
@@ -70,9 +67,6 @@ module "output_queue" {
 
   tags = merge(var.tags, { Type = "OutputQueue" })
 }
-
-# ---------- DynamoDB Response Store ----------
-# Temporary response buffer. Thread 2 writes here; Thread 1 reads from here.
 
 resource "aws_dynamodb_table" "response_store" {
   count = var.enable_queue_mode ? 1 : 0
@@ -175,8 +169,6 @@ resource "aws_iam_role_policy_attachment" "rest_service_response_store_attachmen
   policy_arn = aws_iam_policy.rest_service_response_store_policy[0].arn
 }
 
-# ---------- IAM — Agent Runner ECS Task Role ----------
-# Separate execution role (pull image, write logs) and task role (SQS, DynamoDB).
 
 resource "aws_iam_role" "agent_runner_execution_role" {
   count = var.enable_queue_mode ? 1 : 0
@@ -411,7 +403,6 @@ resource "aws_ecs_service" "agent_runner" {
   tags = var.tags
 }
 
-# ---------- API Gateway — REST Async GET route ----------
 # Only needed for rest_async mode — adds GET /api/{version}/{endpoint}/{sessionId}
 
 resource "aws_apigatewayv2_integration" "async_get" {

@@ -374,9 +374,17 @@ variable "agent_runner_command" {
 # --- Agent Runner Auto Scaling ---
 
 variable "enable_agent_runner_autoscaling" {
-  type        = bool
-  description = "Enable SQS-based autoscaling for Agent Runner ECS service. Requires enable_queue_mode = true."
-  default     = false
+  type    = bool
+  default = false
+
+  validation {
+    condition = (
+      !var.enable_agent_runner_autoscaling ||
+      var.enable_queue_mode
+    )
+
+    error_message = "enable_agent_runner_autoscaling requires enable_queue_mode = true."
+  }
 }
 
 variable "agent_runner_min_count" {

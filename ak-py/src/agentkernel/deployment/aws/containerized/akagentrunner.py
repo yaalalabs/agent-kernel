@@ -29,10 +29,6 @@ class ECSAgentRunner:
     _chat_service: ChatService | None = None
     _config = AKConfig.get()
 
-    # ------------------------------------------------------------------
-    # Public entrypoint
-    # ------------------------------------------------------------------
-
     @classmethod
     def run(cls) -> None:
         """
@@ -54,10 +50,6 @@ class ECSAgentRunner:
             on_permanent_failure_fn=cls.on_permanent_failure,
         )
         poller.run()  # blocks forever
-
-    # ------------------------------------------------------------------
-    # Message processing (same logic as ServerlessAgentRunner)
-    # ------------------------------------------------------------------
 
     @classmethod
     def _get_chat_service(cls) -> ChatService:

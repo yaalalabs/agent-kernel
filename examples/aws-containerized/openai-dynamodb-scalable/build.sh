@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 set -euo pipefail
 if command -v pyenv >/dev/null 2>&1; then
@@ -10,7 +11,6 @@ fi
 if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
-  # For local development of agentkernel, you can force reinstall from local dist
   uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --find-links ../../../ak-py/dist agentkernel[api,openai,aws,test] || true
+  uv pip install --force-reinstall --find-links ../../../ak-py/dist agentkernel[api,openai,aws,test]
 fi
