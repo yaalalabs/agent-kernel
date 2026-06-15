@@ -581,6 +581,62 @@ This creates `dist_ws_connection_handler.zip`.
 
 The example deployment script runs all package builders before Terraform applies the infrastructure.
 
+### External Artifact Sources (Production)
+
+For production deployments, build and push artifacts in CI/CD before running `terraform apply`. Use `lambda_package_s3` or `ecr_image_uri` instead of `package_path` to reference pre-built artifacts:
+
+| Field | Used when | Description |
+|---|---|---|
+| `package_path` | `LocalZip` or `Image` (local build) | Path to local ZIP file or Docker build directory |
+| `lambda_package_s3` | `S3Zip` | `{ bucket, key }` pointing to a ZIP already uploaded to S3 |
+| `ecr_image_uri` | `Image` (pre-built) | Full ECR image URI (`account.dkr.ecr.region.amazonaws.com/repo:tag`) |
+
+`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one per handler.
+
+**Example: scalable queue mode with S3 ZIPs and an ECR image**
+
+```hcl
+request_handler = {
+  module_name      = "rqst-hdlr"
+  function_name    = "request-handler"
+  handler_path     = "lambda_request_handler.handler"
+  package_type     = "S3Zip"
+  lambda_package_s3 = {
+    bucket = "my-lambda-packages-bucket"
+    key    = "dist_request_handler.zip"
+  }
+  timeout     = 45
+  memory_size = 256
+  environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+}
+
+agent_runner = {
+  module_name   = "agent-runner"
+  function_name = "agent-runner"
+  handler_path  = "lambda_agent_runner.handler"
+  package_type  = "Image"
+  ecr_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+  timeout       = 45
+  memory_size   = 512
+  environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+}
+
+response_handler = {
+  module_name      = "response-handler"
+  function_name    = "response-handler"
+  handler_path     = "lambda_response_handler.handler"
+  package_type     = "S3Zip"
+  lambda_package_s3 = {
+    bucket = "my-lambda-packages-bucket"
+    key    = "dist_response_handler.zip"
+  }
+  timeout     = 45
+  memory_size = 256
+}
+```
+
+This pattern is recommended for production: build and upload artifacts in CI/CD, then run `terraform apply` without any local build step. See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example.
+
 ### API Endpoints
 
 After deployment, the default chat route is:
