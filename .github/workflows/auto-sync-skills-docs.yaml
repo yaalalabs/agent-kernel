@@ -163,17 +163,73 @@ jobs:
 
       - name: Prepare sync context
         run: |
-          cat <<EOF > .github/auto-sync-context.md
-          Commit SHA: ${{ needs.detect-eligible-commit.outputs.commit_sha }}
-          Source PR: #${{ needs.detect-eligible-commit.outputs.pr_number }}
-          Base Branch: develop
-          Skill to invoke: .agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md
+          cat <<'EOF' > /tmp/auto-sync-context.md
+          # Auto Sync Context
 
-          Automation intent:
-          - Analyze the above commit hash
-          - Update dev skills and published user skills if needed
-          - Update docs surfaces if needed
-          - Keep catalogs/inventories consistent
+          ## Source
+
+          - Commit SHA: ${{ needs.detect-eligible-commit.outputs.commit_sha }}
+          - Source PR: #${{ needs.detect-eligible-commit.outputs.pr_number }}
+          - Base branch: develop
+
+          ## Skill Instructions
+
+          Read and follow the full skill at:
+            .agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md
+
+          ## Scope of Work
+
+          Analyze the commit delta against its first parent. Then:
+
+          1. **Developer skills** — inspect and patch `.agents/skills/*/SKILL.md`.
+             Add a new skill only if the commit introduces a repeatable contributor task.
+             Remove only if the capability is gone and a replacement is documented.
+
+          2. **User skills** — inspect and patch `ak-py/src/agentkernel/skills/*/SKILL.md`
+             and corresponding `evals/evals.json` files.
+             Scope: ak-init, ak-build, ak-add-capabilities, ak-add-integration,
+             ak-cloud-deploy, ak-test. Add/remove only when workflow boundaries changed.
+
+          3. **Documentation surfaces** — update all relevant surfaces for any
+             behavioral or capability change:
+             - `README.md`
+             - `DEVELOPER_GUIDE.md`
+             - `ak-py/README.md`
+             - `docs/docs/**` (intro, getting-started, reference, examples)
+             - `docs/sidebars.js`
+             - `ak-deployment/**/README.md`
+             - `examples/**/README.md`
+
+          4. **Inventory/catalog sync** — if `.agents/skills/` changes, update:
+             - `docs/docs/agent-skills.md`
+             - `docs/specs/agent-skills.md`
+             Skill counts and tables must match the actual directory tree exactly.
+
+          ## Authoring Rules
+
+          - Ground every edit in the commit diff. Do not update files unrelated to the commit.
+          - Prefer patching existing skills/docs over creating new ones.
+          - Keep developer skill and user skill trees in sync with each other.
+          - Ensure code examples in docs are executable against the current codebase.
+          - If an example changed, update both its README and docs-site references.
+          - Validate all edited JSON files parse correctly.
+          - Verify docs/spec skill counts match actual `.agents/skills/` directories.
+
+          ## Output Expected
+
+          Produce the following summary before finishing:
+          1. Commit-impact summary (what changed in the commit).
+          2. Skill-impact summary (which developer and user skills were updated/added/removed).
+          3. Documentation-impact summary (which docs surfaces were updated).
+          4. List of all edited files.
+          5. Validation results (JSON parse, skill counts, example references).
+
+          ## Loop Prevention
+
+          Do NOT modify files that carry these markers — they belong to automation sync output:
+          - PR label: `auto-skill-doc-sync`
+          - Branch prefix: `auto/skill-doc-sync/`
+          - Commit message containing: `[skip skill-doc-sync]`
           EOF
 
       - name: Set up Node.js environment
@@ -201,7 +257,7 @@ jobs:
           - .agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md
 
           Context file:
-          - .github/auto-sync-context.md
+          - /tmp/auto-sync-context.md
 
           Source inputs:
           - Commit hash: ${COMMIT_SHA}
@@ -237,14 +293,17 @@ jobs:
           body: |
             Automated sync for commit `${{ needs.detect-eligible-commit.outputs.commit_sha }}` from merged PR #${{ needs.detect-eligible-commit.outputs.pr_number }}.
 
-            This PR updates skills and documentation based on:
-            - `.agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md`
+            This PR updates skills and documentation based on the merged code changes. Please review the changes to ensure they accurately reflect the commit's impact.
 
-            Loop-prevention markers are included so this merge is ignored by the automation workflow.
           labels: |
             documentation
             skill-sync
             auto-skill-doc-sync
           assignees: |
             ${{ needs.detect-eligible-commit.outputs.assignee }}
+          reviewers: |
+            ${{ needs.detect-eligible-commit.outputs.assignee }}
+            amithad
+            malithaYL
+            lakindu-yl
           draft: false
