@@ -583,15 +583,23 @@ The example deployment script runs all package builders before Terraform applies
 
 ### External Artifact Sources (Production)
 
-For production deployments, build and push artifacts in CI/CD before running `terraform apply`. Use `lambda_package_s3` or `ecr_image_uri` instead of `package_path` to reference pre-built artifacts:
+For production deployments, it is recommended to build and publish Lambda artifacts in CI/CD before running terraform apply. Terraform can then deploy using immutable artifact references (`lambda_package_s3` or `ecr_image_uri`) rather than building artifacts locally.
 
-| Field | Used when | Description |
-|---|---|---|
-| `package_path` | `LocalZip` or `Image` (local build) | Path to local ZIP file or Docker build directory |
-| `lambda_package_s3` | `S3Zip` | `{ bucket, key }` pointing to a ZIP already uploaded to S3 |
-| `ecr_image_uri` | `Image` (pre-built) | Full ECR image URI (`account.dkr.ecr.region.amazonaws.com/repo:tag`) |
+| Field               | Applicable package types     | Description                                                                                                                                  |
+| ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `package_path`      | `LocalZip`, `S3Zip`, `Image` | Path to a local ZIP file, source directory, or Docker build context. Terraform builds/uploads the artifact as needed.                        |
+| `lambda_package_s3` | `S3Zip`                      | Existing ZIP artifact in S3: `{ bucket, key }`. Terraform deploys directly from the specified object.                                        |
+| `ecr_image_uri`     | `Image`                      | Existing container image URI (for example, `account.dkr.ecr.region.amazonaws.com/repo:tag`). Terraform deploys the specified image directly. |
+
 
 `package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one per handler.
+
+| Package Type | Development                                 | Production                                      |
+| ------------ | ------------------------------------------- | ----------------------------------------------- |
+| `LocalZip`   | `package_path`                              | Generally not recommended                       |
+| `S3Zip`      | `package_path` (Terraform uploads artifact) | `lambda_package_s3` (CI/CD uploads artifact/ Already built and uploaded to S3) |
+| `Image`      | `package_path` (Terraform builds image)     | `ecr_image_uri` (CI/CD builds and pushes image/ Already built and pushed to an ECR) |
+
 
 **Example: scalable queue mode with S3 ZIPs and an ECR image**
 

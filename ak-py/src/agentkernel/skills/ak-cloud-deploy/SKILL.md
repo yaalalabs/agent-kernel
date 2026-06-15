@@ -227,11 +227,13 @@ This is the multi-artifact pattern used by the scalable example: a request handl
 
 Each Lambda can use one of three `package_type` values:
 
-| `package_type` | Artifact source | Extra field required |
-|---|---|---|
-| `LocalZip` | Local ZIP built before `terraform apply` | `package_path` pointing to local ZIP or directory |
-| `S3Zip` | ZIP pre-uploaded to S3 | `lambda_package_s3 = { bucket, key }` |
-| `Image` | Container image in ECR | `ecr_image_uri` (pre-built) **or** `package_path` (local build dir) |
+
+| `package_type` | Artifact source                    | Required field(s)                                    | What Terraform does                                                                                                                                                                                       |
+| -------------- | ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LocalZip`     | Local ZIP file or source directory | `package_path`                                       | Uses the Lambda module's local packaging support. No shared source bucket is managed by this module.                                                                                                      |
+| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` is provided, Terraform uses the existing S3 object directly. |
+| `Image`        | Container image in ECR             | **Either** `ecr_image_uri` **or** `package_path`     | If `ecr_image_uri` is provided, Terraform uses the existing image. If `package_path` is provided, Terraform builds and pushes an image to ECR and deploys it.                                             |
+
 
 `package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one.
 
