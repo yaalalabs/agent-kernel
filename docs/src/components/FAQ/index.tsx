@@ -13,7 +13,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "what-is",
     question: "What is Agent Kernel?",
     answer:
-      "Agent Kernel is an open-source operating system for building, testing, and deploying scalable, compliant enterprise AI agents. It works with any major AI framework (OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and provides a unified runtime with built-in messaging, memory management, knowledge bases, guardrails, and observability.",
+      "Agent Kernel is an open-source operating system for building, testing, and deploying scalable, compliant enterprise AI agents. It works with any major AI framework (OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and provides a unified runtime with built-in messaging, memory management, knowledge bases, guardrails, and observability. The same agent code can be deployed to AWS, Google Cloud, Azure using Terraform, or on-prem with no rewrites.",
   },
   {
     id: "do-i-need-team",

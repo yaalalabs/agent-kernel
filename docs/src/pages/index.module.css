@@ -1176,6 +1176,10 @@
   margin: 0;
 }
 
+.titleDim {
+  color: rgba(255, 255, 255, 0.45);
+}
+
 /* "Agents" colorful gradient word */
 .gradientWord {
   background: linear-gradient(90deg,

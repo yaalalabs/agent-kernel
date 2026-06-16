@@ -235,9 +235,9 @@ function Hero() {
         {/* ── LEFT ───────────────────────────────── */}
         <div ref={leftRef} className={styles.left}>
           <h1 ref={titleRef} className={styles.title}>
-            The Operating System
+            <span className={styles.titleDim}>The Operating System</span>
             <br />
-            for Scalable & Compliant
+            <span className={styles.titleDim}>for</span> Scalable & Compliant
             <br />
             Enterprise AI{" "}
             <span className={styles.gradientWord}>Agents</span>
@@ -308,9 +308,9 @@ function Hero() {
           <div className={styles.scrollLabelInner}>
             <span className={styles.scrollLine} />
             <span className={styles.scrollText}>
-              Scroll down to
+              Agent OS for
               <br />
-              <strong>Begin</strong>
+              <strong>Enterprise AI</strong>
             </span>
           </div>
         </div>
