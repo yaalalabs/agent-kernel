@@ -1,7 +1,8 @@
 import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
 import type {Props} from '@theme/Footer/Layout';
-import {FaDiscord, FaXTwitter, FaEnvelope} from 'react-icons/fa6';
+import {FaDiscord, FaEnvelope} from 'react-icons/fa6';
+import {SiTerraform} from 'react-icons/si';
 import { useLocation } from '@docusaurus/router';
 import CTASection from '../../../components/CTASection';
 
@@ -28,14 +29,14 @@ function PypiIcon(): ReactNode {
 
 const SOCIAL_LINKS: SocialLink[] = [
   {
-    href: 'https://x.com/yaalalabs',
-    label: 'X (Twitter)',
-    icon: <FaXTwitter aria-hidden="true" />,
-  },
-  {
     href: 'https://pypi.org/project/agentkernel/',
     label: 'PyPI package',
     icon: <PypiIcon />,
+  },
+  {
+    href: 'https://registry.terraform.io/namespaces/yaalalabs',
+    label: 'Terraform Registry',
+    icon: <SiTerraform aria-hidden="true" />,
   },
   {
     href: 'https://discord.gg/snrPzb46uu',
@@ -43,7 +44,7 @@ const SOCIAL_LINKS: SocialLink[] = [
     icon: <FaDiscord aria-hidden="true" />,
   },
   {
-    href: 'mailto:hello@yaalalabs.com',
+    href: 'mailto:kernal@yaala.ai',
     label: 'Email',
     icon: <FaEnvelope aria-hidden="true" />,
   },

@@ -939,6 +939,8 @@
   align-items: center !important;
   justify-content: center !important;
   padding: 0.5rem 1.45rem !important;
+  min-height: 44px !important;
+  line-height: 1.1 !important;
   background: rgba(255, 255, 255, 0.06) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -973,18 +975,39 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.55rem;
   color: #cbd5e1 !important;
-  font-size: 0.95rem;
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.1;
   text-decoration: none !important;
-  padding: 0.85rem 1.25rem;
-  transition: color 0.2s ease, transform 0.2s ease;
+  padding: 0.5rem 1.25rem;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  transition:
+    color 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
 }
 
 .heroBtnLink:hover {
   color: #ffffff !important;
+  border-color: var(--ak-blue, #00ddff);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 14px rgba(0, 221, 255, 0.4),
+    0 0 8px rgba(0, 221, 255, 0.22);
   text-decoration: none !important;
   transform: translateY(-1px);
+}
+
+.heroBtnLinkIcon {
+  flex-shrink: 0;
+  font-size: 1.05rem;
 }
 
 .heroBullets {

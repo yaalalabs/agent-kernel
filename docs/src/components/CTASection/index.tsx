@@ -31,7 +31,8 @@ export default function CTASection() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              View On GitHub
+              <FaGithub className={styles.heroBtnLinkIcon} aria-hidden="true" />
+              <span>View On GitHub</span>
             </Link>
           </div>
 
