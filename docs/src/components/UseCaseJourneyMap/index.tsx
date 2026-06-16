@@ -42,7 +42,7 @@ const tracks: Track[] = [
     doneLabel: 'Shipped',
     doneIcon: <FaRocket />,
     steps: [
-      { label: 'Write your logic', sub: 'Focus on what your agent does - not how it runs' },
+      { label: 'Write Your Logic', sub: 'Focus on what your agent does - not how it runs' },
       { label: 'Deploy', sub: 'Agent Kernel handles the rest' },
     ],
   },

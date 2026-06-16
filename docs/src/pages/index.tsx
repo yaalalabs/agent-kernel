@@ -258,13 +258,16 @@ function Hero() {
 
           <ul ref={bulletsRef} className={styles.heroBullets}>
             <li>
-              <span className={styles.heroCheck}>✓</span> Install in minutes
+              <span className={styles.heroCheck}>✓</span> Observability
             </li>
             <li>
-              <span className={styles.heroCheck}>✓</span> Zero vendor lock-in
+              <span className={styles.heroCheck}>✓</span> Guardrails & Safety
             </li>
             <li>
-              <span className={styles.heroCheck}>✓</span> Enterprise-grade observability
+              <span className={styles.heroCheck}>✓</span> Knowledge Bases
+            </li>
+            <li>
+              <span className={styles.heroCheck}>✓</span> Zero Vendor Lock-In
             </li>
           </ul>
         </div>
