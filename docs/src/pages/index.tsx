@@ -1111,6 +1111,7 @@ function Levels() {
   const subtitleRef = useRef<HTMLParagraphElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const cardsWrapRef = useRef<HTMLDivElement>(null);
+  const particleCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const levels: Level[] = [
     {
@@ -1201,127 +1202,138 @@ function Levels() {
     };
   }, [levels]);
 
+  /* ── Cosmic waves background ── */
+  useEffect(() => {
+    const canvas = particleCanvasRef.current;
+    const section = sectionRef.current;
+    if (!canvas || !section) return;
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let width = 0;
+    let height = 0;
+    let rafId = 0;
+    let running = false;
+    let t = 0;
+
+    // Layered cosmic wave bands (color, vertical anchor %, amplitude, wavelength, speed)
+    const waves = [
+      { color: "0,221,255", anchor: 0.62, amp: 34, len: 0.0042, speed: 0.0006, alpha: 0.16 },
+      { color: "167,139,250", anchor: 0.7, amp: 46, len: 0.0031, speed: 0.00045, alpha: 0.16 },
+      { color: "255,181,71", anchor: 0.8, amp: 30, len: 0.0052, speed: 0.0008, alpha: 0.11 },
+      { color: "56,189,248", anchor: 0.88, amp: 56, len: 0.0026, speed: 0.00035, alpha: 0.13 },
+    ];
+
+    const resize = () => {
+      const rect = section.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    const drawWave = (w: (typeof waves)[number]) => {
+      const baseY = height * w.anchor;
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+      ctx.lineTo(0, baseY);
+      for (let x = 0; x <= width; x += 6) {
+        const y =
+          baseY +
+          Math.sin(x * w.len + t * w.speed * 60) * w.amp +
+          Math.sin(x * w.len * 0.5 + t * w.speed * 38) * w.amp * 0.4;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(width, height);
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(0, baseY - w.amp, 0, height);
+      grad.addColorStop(0, `rgba(${w.color},${w.alpha})`);
+      grad.addColorStop(0.6, `rgba(${w.color},${w.alpha * 0.35})`);
+      grad.addColorStop(1, `rgba(${w.color},0)`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // glowing crest line
+      ctx.beginPath();
+      for (let x = 0; x <= width; x += 6) {
+        const y =
+          baseY +
+          Math.sin(x * w.len + t * w.speed * 60) * w.amp +
+          Math.sin(x * w.len * 0.5 + t * w.speed * 38) * w.amp * 0.4;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(${w.color},${Math.min(0.5, w.alpha * 2.4)})`;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    };
+
+    const draw = () => {
+      t += 1;
+      ctx.clearRect(0, 0, width, height);
+
+      // cosmic waves (additive glow)
+      ctx.globalCompositeOperation = "lighter";
+      for (const w of waves) drawWave(w);
+      ctx.globalCompositeOperation = "source-over";
+
+      rafId = requestAnimationFrame(draw);
+    };
+
+    const start = () => {
+      if (running) return;
+      running = true;
+      draw();
+    };
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+    };
+
+    resize();
+    window.addEventListener("resize", resize);
+
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) start();
+        else stop();
+      },
+      { threshold: 0.05 }
+    );
+    io.observe(section);
+
+    return () => {
+      stop();
+      io.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
+
   return (
     <section ref={sectionRef} className={styles.levelsSection}>
       {/* Top border + gradient glow */}
       <div className={styles.topGlow} />
 
-      {/* Vector animation background */}
-      <svg
-        className={styles.levelsVectorBg}
-        viewBox="0 0 1440 700"
-        preserveAspectRatio="xMidYMid slice"
+      {/* Cosmic waves animated background */}
+      <canvas
+        ref={particleCanvasRef}
+        className={styles.levelsParticles}
         aria-hidden="true"
-      >
-        <defs>
-          <radialGradient id="levelsOriginGlow" cx="50%" cy="100%" r="60%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.10)" />
-            <stop offset="45%" stopColor="rgba(0,221,255,0.05)" />
-            <stop offset="100%" stopColor="rgba(0,221,255,0)" />
-          </radialGradient>
-
-          <linearGradient id="levelsRailA" x1="0.5" y1="1" x2="0.2" y2="0">
-            <stop offset="0%" stopColor="rgba(255,181,71,0)" />
-            <stop offset="100%" stopColor="rgba(255,181,71,0.5)" />
-          </linearGradient>
-          <linearGradient id="levelsRailB" x1="0.5" y1="1" x2="0.5" y2="0">
-            <stop offset="0%" stopColor="rgba(0,221,255,0)" />
-            <stop offset="100%" stopColor="rgba(0,221,255,0.5)" />
-          </linearGradient>
-          <linearGradient id="levelsRailC" x1="0.5" y1="1" x2="0.8" y2="0">
-            <stop offset="0%" stopColor="rgba(167,139,250,0)" />
-            <stop offset="100%" stopColor="rgba(167,139,250,0.5)" />
-          </linearGradient>
-
-          <filter id="levelsGlowBlur" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        {/* Origin glow */}
-        <rect width="1440" height="700" fill="url(#levelsOriginGlow)" />
-
-        {/* Faint base rails fanning out from a single origin */}
-        <g
-          className={styles.levelsRails}
-          fill="none"
-          stroke="rgba(255,255,255,0.06)"
-          strokeWidth="1"
-        >
-          <path d="M720,700 C720,460 360,430 220,150" />
-          <path d="M720,700 C720,460 540,420 430,170" />
-          <path d="M720,700 C720,440 720,340 720,110" />
-          <path d="M720,700 C720,460 900,420 1010,170" />
-          <path d="M720,700 C720,460 1080,430 1220,150" />
-        </g>
-
-        {/* Energised rails (accent colored, animated dash flow) */}
-        <g
-          className={styles.levelsFlow}
-          fill="none"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        >
-          <path stroke="url(#levelsRailA)" d="M720,700 C720,460 360,430 220,150" />
-          <path stroke="url(#levelsRailB)" d="M720,440 720,340 720,110 M720,700 C720,440 720,340 720,110" />
-          <path stroke="url(#levelsRailC)" d="M720,700 C720,460 1080,430 1220,150" />
-        </g>
-
-        {/* Travelling pulses */}
-        <g className={styles.levelsNodes} filter="url(#levelsGlowBlur)">
-          <circle r="3.5" fill="#ffb547">
-            <animateMotion dur="5.5s" repeatCount="indefinite" path="M720,700 C720,460 360,430 220,150" />
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.5s" repeatCount="indefinite" />
-          </circle>
-          <circle r="2.5" fill="#ffb547">
-            <animateMotion dur="5.5s" begin="2.7s" repeatCount="indefinite" path="M720,700 C720,460 360,430 220,150" />
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.5s" begin="2.7s" repeatCount="indefinite" />
-          </circle>
-
-          <circle r="3.5" fill="#00ddff">
-            <animateMotion dur="5s" begin="1.2s" repeatCount="indefinite" path="M720,700 C720,440 720,340 720,110" />
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5s" begin="1.2s" repeatCount="indefinite" />
-          </circle>
-          <circle r="2.5" fill="#00ddff">
-            <animateMotion dur="5s" begin="3.6s" repeatCount="indefinite" path="M720,700 C720,440 720,340 720,110" />
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5s" begin="3.6s" repeatCount="indefinite" />
-          </circle>
-
-          <circle r="3.5" fill="#a78bfa">
-            <animateMotion dur="5.8s" begin="0.6s" repeatCount="indefinite" path="M720,700 C720,460 1080,430 1220,150" />
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.8s" begin="0.6s" repeatCount="indefinite" />
-          </circle>
-          <circle r="2.5" fill="#a78bfa">
-            <animateMotion dur="5.8s" begin="3.3s" repeatCount="indefinite" path="M720,700 C720,460 1080,430 1220,150" />
-            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.8s" begin="3.3s" repeatCount="indefinite" />
-          </circle>
-        </g>
-
-        {/* Pulsing origin node */}
-        <g className={styles.levelsOrigin} transform="translate(720 700)">
-          <circle r="5" fill="#ffffff" opacity="0.9" />
-          <circle r="5" fill="none" stroke="rgba(0,221,255,0.6)" strokeWidth="1.5">
-            <animate attributeName="r" values="5;26;26" keyTimes="0;0.7;1" dur="3.2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.6;0;0" keyTimes="0;0.7;1" dur="3.2s" repeatCount="indefinite" />
-          </circle>
-        </g>
-
-        {/* Faint constellation dots */}
-        <g className={styles.levelsStars} fill="#ffffff">
-          <circle cx="180" cy="120" r="1.4" />
-          <circle cx="360" cy="90" r="1" />
-          <circle cx="540" cy="150" r="1.2" />
-          <circle cx="900" cy="110" r="1" />
-          <circle cx="1080" cy="160" r="1.4" />
-          <circle cx="1260" cy="100" r="1.1" />
-          <circle cx="300" cy="260" r="1" />
-          <circle cx="1140" cy="280" r="1.2" />
-        </g>
-      </svg>
+      />
+      <div className={styles.levelsAurora} aria-hidden="true" />
 
       <div className={styles.levelsFrameContainer}>
         <div className={styles.levelsHeader}>
