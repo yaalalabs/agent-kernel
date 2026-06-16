@@ -117,7 +117,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
           {/* ── Connector 1: topBox → hubCard ── */}
           <svg
             className={styles.connectorSvg}
-            style={{ height: '80px' }}
+            style={{ height: '60px' }}
             viewBox="0 0 900 80"
             preserveAspectRatio="none"
             aria-hidden="true"
@@ -225,7 +225,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
           {/* ── Connector 3: modulesGrid → deployRow (fan) ── */}
           <svg
             className={styles.connectorSvg}
-            style={{ height: '80px' }}
+            style={{ height: '60px' }}
             viewBox="0 0 900 80"
             preserveAspectRatio="none"
             aria-hidden="true"
