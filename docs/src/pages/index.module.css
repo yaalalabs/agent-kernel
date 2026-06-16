@@ -889,6 +889,7 @@
   gap: 1.5rem;
   align-items: center;
   flex-wrap: wrap;
+  margin-bottom: 0.95rem;
 }
 
 @keyframes gradientShift {
@@ -1014,6 +1015,66 @@
   flex-shrink: 0;
   font-size: 0.8rem;
   margin-left: 0.4rem;
+}
+
+.heroInstallRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: -0.35rem;
+  padding: 0.4rem 0.45rem 0.4rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.heroQuickStartBelow {
+  margin-top: -0.75rem;
+  border: none !important;
+  background: #010002 !important;
+  font-weight: 400 !important;
+  box-shadow: none !important;
+}
+
+.heroQuickStartBelow:hover {
+  background: #010002 !important;
+  box-shadow: none !important;
+}
+
+.heroInstallCmd {
+  margin: 0;
+  font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+}
+
+.heroInstallCopy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(0, 221, 255, 0.35);
+  background: rgba(0, 221, 255, 0.1);
+  color: #dfffff;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.heroInstallCopyIcon {
+  font-size: 0.88rem;
+}
+
+.heroInstallCopy:hover {
+  border-color: rgba(0, 221, 255, 0.7);
+  background: rgba(0, 221, 255, 0.18);
+  transform: translateY(-1px);
 }
 
 .heroBullets {

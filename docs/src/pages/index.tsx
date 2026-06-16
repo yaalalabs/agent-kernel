@@ -18,6 +18,7 @@ import {
   MdCloudUpload,
   MdCheck,
   MdClose,
+  MdContentCopy,
   MdNorthEast,
 } from "react-icons/md";
 import {
@@ -102,13 +103,24 @@ function WhatsNewBanner() {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
+  const installCommand = "pip install agentkernel";
   const leftRef = useRef(null);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);
   const buttonsRef = useRef(null);
-  const bulletsRef = useRef(null);
   const videoRef = useRef(null);
   const scrollLabelRef = useRef(null);
+  const [copiedInstall, setCopiedInstall] = useState(false);
+
+  const handleCopyInstall = async () => {
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(installCommand);
+    setCopiedInstall(true);
+    window.setTimeout(() => setCopiedInstall(false), 1800);
+  };
 
   const subtitleLines = [
     "Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
@@ -128,7 +140,6 @@ function Hero() {
         titleRef.current,
         subtitleRef.current,
         buttonsRef.current,
-        bulletsRef.current,
         videoRef.current,
         scrollLabelRef.current,
       ],
@@ -138,7 +149,6 @@ function Hero() {
     tl.to(titleRef.current, { opacity: 1, y: 0, duration: 0.85 })
       .to(subtitleRef.current, { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
       .to(buttonsRef.current, { opacity: 1, y: 0, duration: 0.55 }, "-=0.35")
-      .to(bulletsRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.3")
       .to(videoRef.current, { opacity: 1, y: 0, duration: 0.9 }, "-=0.7")
       .to(scrollLabelRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.4");
 
@@ -250,29 +260,32 @@ function Hero() {
             >
               Download Agent Skills
             </button>
-            <Link
-              className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs/quick-start"
-            >
-              Quick Start
-              <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
-            </Link>
           </div>
 
-          <ul ref={bulletsRef} className={styles.heroBullets}>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Observability
-            </li>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Guardrails & Safety
-            </li>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Knowledge Bases
-            </li>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Zero Vendor Lock-In
-            </li>
-          </ul>
+          <div className={styles.heroInstallRow}>
+            <code className={styles.heroInstallCmd}>{installCommand}</code>
+            <button
+              type="button"
+              className={styles.heroInstallCopy}
+              onClick={handleCopyInstall}
+              aria-label="Copy pip install command"
+              title={copiedInstall ? "Copied" : "Copy command"}
+            >
+              {copiedInstall ? (
+                <MdCheck className={styles.heroInstallCopyIcon} aria-hidden="true" />
+              ) : (
+                <MdContentCopy className={styles.heroInstallCopyIcon} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+
+          <Link
+            className={`button button--primary button--lg ${styles.heroBtnSecondary} ${styles.heroQuickStartBelow}`}
+            to="/docs/quick-start"
+          >
+            Quick Start
+            <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
+          </Link>
         </div>
 
         {/* ── RIGHT – particle video ───────────── */}
