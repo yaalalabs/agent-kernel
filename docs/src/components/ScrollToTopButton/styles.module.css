@@ -9,7 +9,7 @@
 .container {
   position: fixed;
   right: 24px;
-  bottom: 104px;
+  bottom: 128px;
   z-index: 9997;
   will-change: transform, opacity;
 }
