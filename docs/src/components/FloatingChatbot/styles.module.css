@@ -21,7 +21,7 @@
 
 .chatButtonContainer {
   position: fixed;
-  bottom: 24px;
+  bottom: 40px;
   right: 24px;
   z-index: 9999;
   display: flex;
@@ -31,10 +31,10 @@
 }
 
 .chatButton {
-  width: 56px;
+  width: 64px;
   height: 56px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: 26px 26px 26px 8px;
   background: transparent;
   border: none;
   color: #010002;
@@ -51,7 +51,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 26px 26px 26px 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,7 +85,7 @@
   transition-duration: 0.12s;
 }
 
-/* "Ask AI" tooltip label */
+/* "Ask Agent Kernel" tooltip label */
 .chatButtonLabel {
   position: absolute;
   right: 68px;
@@ -141,7 +141,7 @@
 .orb {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: 26px 26px 26px 8px;
   overflow: hidden;
   z-index: 0;
   background: radial-gradient(circle at 50% 55%, #1a0530 0%, #0a0014 72%);
@@ -249,7 +249,7 @@
 .orbShine {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: 26px 26px 26px 8px;
   background: radial-gradient(
     circle at 30% 26%,
     rgba(255, 255, 255, 0.42) 0%,
@@ -264,7 +264,7 @@
 .orbVignette {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: 26px 26px 26px 8px;
   box-shadow:
     inset 0 0 14px 5px rgba(0, 0, 0, 0.45),
     inset 0 -4px 10px rgba(0, 0, 0, 0.25);
@@ -320,7 +320,7 @@
 .pulseRingDelayed {
   position: absolute;
   inset: -3px;
-  border-radius: 50%;
+  border-radius: 28px 28px 28px 10px;
   border: 2px solid rgba(0, 221, 255, 0.4);
   pointer-events: none;
   z-index: -1;
