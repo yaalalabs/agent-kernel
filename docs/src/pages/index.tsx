@@ -716,7 +716,7 @@ function AgentSkills() {
               Agent Skills
             </div>
             <h2 className={styles.sectionTitle}>
-              Your Coding Assistant, To Build Enterprise Agents
+              Boost Your Coding Assistant With Agent Kernel
             </h2>
           </div>
 
