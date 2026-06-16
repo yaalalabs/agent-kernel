@@ -263,10 +263,13 @@ function Hero() {
           </div>
 
           <div className={styles.heroInstallRow}>
+            <span className={styles.heroInstallPrompt} aria-hidden="true">$</span>
             <code className={styles.heroInstallCmd}>{installCommand}</code>
             <button
               type="button"
-              className={styles.heroInstallCopy}
+              className={`${styles.heroInstallCopy} ${
+                copiedInstall ? styles.heroInstallCopied : ""
+              }`}
               onClick={handleCopyInstall}
               aria-label="Copy pip install command"
               title={copiedInstall ? "Copied" : "Copy command"}

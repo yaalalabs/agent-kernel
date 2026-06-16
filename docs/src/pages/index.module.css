@@ -1020,14 +1020,34 @@
 .heroInstallRow {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-top: -0.35rem;
-  padding: 0.4rem 0.45rem 0.4rem 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  gap: 0.55rem;
+  margin-top: -0.15rem;
+  padding: 0.4rem 0.4rem 0.4rem 0.85rem;
+  border: 1px solid rgba(0, 221, 255, 0.18);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background:
+    linear-gradient(180deg, rgba(10, 16, 28, 0.82) 0%, rgba(2, 3, 8, 0.92) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 26px rgba(0, 0, 0, 0.32);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.heroInstallRow:hover {
+  border-color: rgba(0, 221, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(0, 221, 255, 0.12),
+    0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.heroInstallPrompt {
+  font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+  color: rgba(0, 221, 255, 0.85);
+  user-select: none;
 }
 
 .heroQuickStartBelow {
@@ -1046,9 +1066,10 @@
 .heroInstallCmd {
   margin: 0;
   font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   letter-spacing: 0.01em;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(232, 248, 255, 0.95);
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -1056,25 +1077,38 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(0, 221, 255, 0.35);
-  background: rgba(0, 221, 255, 0.1);
-  color: #dfffff;
-  border-radius: 999px;
+  width: 30px;
+  height: 30px;
   padding: 0;
+  border: 1px solid rgba(0, 221, 255, 0.28);
+  background: rgba(0, 221, 255, 0.1);
+  color: #e9fdff;
+  border-radius: 999px;
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .heroInstallCopyIcon {
-  font-size: 0.88rem;
+  font-size: 0.86rem;
 }
 
 .heroInstallCopy:hover {
   border-color: rgba(0, 221, 255, 0.7);
   background: rgba(0, 221, 255, 0.18);
+  box-shadow: 0 0 12px rgba(0, 221, 255, 0.25);
   transform: translateY(-1px);
+}
+
+.heroInstallCopied {
+  border-color: rgba(64, 224, 160, 0.6);
+  background: rgba(64, 224, 160, 0.16);
+  color: #d6ffe9;
+}
+
+.heroInstallCopied:hover {
+  border-color: rgba(64, 224, 160, 0.8);
+  background: rgba(64, 224, 160, 0.22);
+  box-shadow: 0 0 12px rgba(64, 224, 160, 0.25);
 }
 
 .heroBullets {
@@ -1369,6 +1403,21 @@
 
   .buttons {
     justify-content: center;
+  }
+
+  .heroInstallRow {
+    width: min(100%, 340px);
+    justify-content: space-between;
+  }
+
+  .heroInstallCmd {
+    font-size: 0.76rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .heroInstallCopy {
+    padding: 0;
   }
 
   /* Video as full-bleed background on mobile */
