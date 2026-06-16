@@ -262,6 +262,10 @@ function Hero() {
             </button>
           </div>
 
+          <div className={styles.heroOrDivider} aria-hidden="true">
+            <span>or</span>
+          </div>
+
           <div className={styles.heroInstallRow}>
             <span className={styles.heroInstallPrompt} aria-hidden="true">$</span>
             <code className={styles.heroInstallCmd}>{installCommand}</code>
