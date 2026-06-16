@@ -1096,6 +1096,9 @@ interface Level {
   title: string;
   image: string;
   description: string;
+  accent: string;
+  tag: string;
+  expertise: number;
 }
 
 function Levels() {
@@ -1104,7 +1107,6 @@ function Levels() {
   const subtitleRef = useRef<HTMLParagraphElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const cardsWrapRef = useRef<HTMLDivElement>(null);
-  const [isDesktop, setIsDesktop] = useState(false);
 
   const levels: Level[] = [
     {
@@ -1113,6 +1115,9 @@ function Levels() {
       image: "/img/business_leader.png",
       description:
         "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to handle the complexities of the tech.",
+      accent: "#ffb547",
+      tag: "No code required",
+      expertise: 1,
     },
     {
       id: "02",
@@ -1120,6 +1125,9 @@ function Levels() {
       image: "/img/developer.png",
       description:
         "You build software but haven't built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.",
+      accent: "#00ddff",
+      tag: "Some coding",
+      expertise: 2,
     },
     {
       id: "03",
@@ -1127,6 +1135,9 @@ function Levels() {
       image: "/img/ai.png",
       description:
         "You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework that doesn't get in your way.",
+      accent: "#a78bfa",
+      tag: "Deep tech",
+      expertise: 3,
     },
   ];
 
@@ -1135,14 +1146,6 @@ function Levels() {
     "02": "/developer",
     "03": "/ai-engineer",
   };
-
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 992px)");
-    setIsDesktop(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
 
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
@@ -1195,80 +1198,190 @@ function Levels() {
   }, [levels]);
 
   return (
-    <section
-      ref={sectionRef}
-      className={styles.levelsSection}
-      style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}
-    >
-      {isDesktop && (
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="none"
-          className={styles.levelsSectionVideo}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            zIndex: 0,
-            opacity: 0.6,
-            pointerEvents: "none",
-            transformOrigin: "center center",
-          }}
+    <section ref={sectionRef} className={styles.levelsSection}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
+      {/* Vector animation background */}
+      <svg
+        className={styles.levelsVectorBg}
+        viewBox="0 0 1440 700"
+        preserveAspectRatio="xMidYMid slice"
+        aria-hidden="true"
+      >
+        <defs>
+          <radialGradient id="levelsOriginGlow" cx="50%" cy="100%" r="60%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.10)" />
+            <stop offset="45%" stopColor="rgba(0,221,255,0.05)" />
+            <stop offset="100%" stopColor="rgba(0,221,255,0)" />
+          </radialGradient>
+
+          <linearGradient id="levelsRailA" x1="0.5" y1="1" x2="0.2" y2="0">
+            <stop offset="0%" stopColor="rgba(255,181,71,0)" />
+            <stop offset="100%" stopColor="rgba(255,181,71,0.5)" />
+          </linearGradient>
+          <linearGradient id="levelsRailB" x1="0.5" y1="1" x2="0.5" y2="0">
+            <stop offset="0%" stopColor="rgba(0,221,255,0)" />
+            <stop offset="100%" stopColor="rgba(0,221,255,0.5)" />
+          </linearGradient>
+          <linearGradient id="levelsRailC" x1="0.5" y1="1" x2="0.8" y2="0">
+            <stop offset="0%" stopColor="rgba(167,139,250,0)" />
+            <stop offset="100%" stopColor="rgba(167,139,250,0.5)" />
+          </linearGradient>
+
+          <filter id="levelsGlowBlur" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Origin glow */}
+        <rect width="1440" height="700" fill="url(#levelsOriginGlow)" />
+
+        {/* Faint base rails fanning out from a single origin */}
+        <g
+          className={styles.levelsRails}
+          fill="none"
+          stroke="rgba(255,255,255,0.06)"
+          strokeWidth="1"
         >
-          <source src="/video/path-bg.mp4" type="video/mp4" />
-        </video>
-      )}
+          <path d="M720,700 C720,460 360,430 220,150" />
+          <path d="M720,700 C720,460 540,420 430,170" />
+          <path d="M720,700 C720,440 720,340 720,110" />
+          <path d="M720,700 C720,460 900,420 1010,170" />
+          <path d="M720,700 C720,460 1080,430 1220,150" />
+        </g>
+
+        {/* Energised rails (accent colored, animated dash flow) */}
+        <g
+          className={styles.levelsFlow}
+          fill="none"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        >
+          <path stroke="url(#levelsRailA)" d="M720,700 C720,460 360,430 220,150" />
+          <path stroke="url(#levelsRailB)" d="M720,440 720,340 720,110 M720,700 C720,440 720,340 720,110" />
+          <path stroke="url(#levelsRailC)" d="M720,700 C720,460 1080,430 1220,150" />
+        </g>
+
+        {/* Travelling pulses */}
+        <g className={styles.levelsNodes} filter="url(#levelsGlowBlur)">
+          <circle r="3.5" fill="#ffb547">
+            <animateMotion dur="5.5s" repeatCount="indefinite" path="M720,700 C720,460 360,430 220,150" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.5s" repeatCount="indefinite" />
+          </circle>
+          <circle r="2.5" fill="#ffb547">
+            <animateMotion dur="5.5s" begin="2.7s" repeatCount="indefinite" path="M720,700 C720,460 360,430 220,150" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.5s" begin="2.7s" repeatCount="indefinite" />
+          </circle>
+
+          <circle r="3.5" fill="#00ddff">
+            <animateMotion dur="5s" begin="1.2s" repeatCount="indefinite" path="M720,700 C720,440 720,340 720,110" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5s" begin="1.2s" repeatCount="indefinite" />
+          </circle>
+          <circle r="2.5" fill="#00ddff">
+            <animateMotion dur="5s" begin="3.6s" repeatCount="indefinite" path="M720,700 C720,440 720,340 720,110" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5s" begin="3.6s" repeatCount="indefinite" />
+          </circle>
+
+          <circle r="3.5" fill="#a78bfa">
+            <animateMotion dur="5.8s" begin="0.6s" repeatCount="indefinite" path="M720,700 C720,460 1080,430 1220,150" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.8s" begin="0.6s" repeatCount="indefinite" />
+          </circle>
+          <circle r="2.5" fill="#a78bfa">
+            <animateMotion dur="5.8s" begin="3.3s" repeatCount="indefinite" path="M720,700 C720,460 1080,430 1220,150" />
+            <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="5.8s" begin="3.3s" repeatCount="indefinite" />
+          </circle>
+        </g>
+
+        {/* Pulsing origin node */}
+        <g className={styles.levelsOrigin} transform="translate(720 700)">
+          <circle r="5" fill="#ffffff" opacity="0.9" />
+          <circle r="5" fill="none" stroke="rgba(0,221,255,0.6)" strokeWidth="1.5">
+            <animate attributeName="r" values="5;26;26" keyTimes="0;0.7;1" dur="3.2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.6;0;0" keyTimes="0;0.7;1" dur="3.2s" repeatCount="indefinite" />
+          </circle>
+        </g>
+
+        {/* Faint constellation dots */}
+        <g className={styles.levelsStars} fill="#ffffff">
+          <circle cx="180" cy="120" r="1.4" />
+          <circle cx="360" cy="90" r="1" />
+          <circle cx="540" cy="150" r="1.2" />
+          <circle cx="900" cy="110" r="1" />
+          <circle cx="1080" cy="160" r="1.4" />
+          <circle cx="1260" cy="100" r="1.1" />
+          <circle cx="300" cy="260" r="1" />
+          <circle cx="1140" cy="280" r="1.2" />
+        </g>
+      </svg>
 
       <div className={styles.levelsFrameContainer}>
         <div className={styles.levelsHeader}>
           <div ref={badgeRef} className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Just like any other operating system
+            Built for every level of expertise
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
-            <span>Agent Kernel is designed</span>
+            <span>Agent Kernel, Explained</span>
             {" "}
-            <span>to adapt to your level of expertise</span>
+            <span>For Your Level of Expertise</span>
           </h2>
           <p ref={subtitleRef} className={styles.levelsSubtitle}>
-            Which path describes you the best
+            Pick the path that fits you best
           </p>
         </div>
 
         <div className={styles.levelsOuterContainer}>
           <div ref={cardsWrapRef} className={styles.levelsGrid}>
             {levels.map((level) => (
-              <div key={level.id} className={styles.flipCardWrapper}>
-                <div className={styles.flipCardInner}>
-                  {/* Front Face */}
-                  <div className={styles.flipCardFront}>
-                    <div className={styles.levelCardImageArea}>
-                      <img
-                        src={level.image}
-                        alt={level.title}
-                        className={styles.levelCardImage}
+              <Link
+                key={level.id}
+                to={levelPages[level.id]}
+                className={styles.pathCard}
+                style={{ ["--accent" as any]: level.accent }}
+              >
+                <div className={styles.pathCardTop}>
+                  <span className={styles.pathCardNumber}>{level.id}</span>
+                  <div
+                    className={styles.pathCardMeter}
+                    title={`Expertise: ${level.tag}`}
+                    aria-label={`Expertise: ${level.tag}`}
+                  >
+                    {[1, 2, 3].map((dot) => (
+                      <span
+                        key={dot}
+                        className={`${styles.pathMeterDot} ${
+                          dot <= level.expertise ? styles.pathMeterDotOn : ""
+                        }`}
                       />
-                    </div>
-                    <div className={styles.levelCardContent}>
-                      <h3 className={styles.levelCardTitle}>{level.title}</h3>
-                    </div>
-                  </div>
-
-                  {/* Back Face */}
-                  <div className={styles.flipCardBack}>
-                    <h3 className={styles.flipCardTitleBack}>{level.title}</h3>
-                    <p className={styles.flipCardDescription}>{level.description}</p>
-                    <Link className={styles.flipCardLinkBtn} to={levelPages[level.id]}>
-                      Read More
-                    </Link>
+                    ))}
                   </div>
                 </div>
-              </div>
+
+                <div className={styles.pathCardImageArea}>
+                  <img
+                    src={level.image}
+                    alt={level.title}
+                    className={styles.pathCardImage}
+                  />
+                </div>
+
+                <span className={styles.pathCardTag}>{level.tag}</span>
+                <h3 className={styles.pathCardTitle}>{level.title}</h3>
+                <p className={styles.pathCardDesc}>{level.description}</p>
+
+                <span className={styles.pathCardCta}>
+                  Choose this path
+                  <MdNorthEast
+                    className={styles.pathCardCtaIcon}
+                    aria-hidden="true"
+                  />
+                </span>
+              </Link>
             ))}
           </div>
         </div>

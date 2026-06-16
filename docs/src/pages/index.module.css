@@ -3410,16 +3410,78 @@
   padding: 0;
   position: relative;
   overflow: hidden;
+  isolation: isolate;
   min-height: 700px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(0, 221, 255, 0.05) 0%, transparent 55%),
+    #010002;
 }
 
-.levelsSectionVideo {
+.levelsVectorBg {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.95;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 92%);
+}
+
+.levelsFlow path {
+  stroke-dasharray: 14 200;
+  animation: levelsFlow 5s linear infinite;
+}
+
+.levelsFlow path:nth-child(2) {
+  animation-duration: 4.4s;
+  animation-delay: -1.6s;
+}
+
+.levelsFlow path:nth-child(3) {
+  animation-duration: 5.6s;
+  animation-delay: -3s;
+}
+
+@keyframes levelsFlow {
+  to {
+    stroke-dashoffset: -640;
+  }
+}
+
+.levelsStars circle {
+  animation: levelsTwinkle 4s ease-in-out infinite;
+}
+
+.levelsStars circle:nth-child(2n) {
+  animation-duration: 5.5s;
+  animation-delay: -1.5s;
+}
+
+.levelsStars circle:nth-child(3n) {
+  animation-duration: 6.5s;
+  animation-delay: -2.8s;
+}
+
+@keyframes levelsTwinkle {
+  0%, 100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .levelsFlow path,
+  .levelsStars circle {
+    animation: none;
+  }
+  .levelsNodes,
+  .levelsOrigin circle:nth-child(2) {
+    display: none;
+  }
 }
 
 .levelsFrameContainer {
@@ -3465,43 +3527,14 @@
   position: relative;
   max-width: 1200px;
   margin: 0 auto;
-  background: linear-gradient(to bottom, transparent 0%, #010002 100%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(6, 6, 10, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   padding: 3rem 2.5rem;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
 }
-
-.levelsOuterContainer::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.25) 30%,
-      rgba(0, 221, 255, 0.25) 50%,
-      rgba(255, 255, 255, 0.25) 70%,
-      transparent 100%);
-  z-index: 2;
-}
-
-.levelsOuterContainer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 40px;
-  background: radial-gradient(50% 50% at 50% 0%,
-      rgba(255, 255, 255, 0.08) 0%,
-      transparent 100%);
-  pointer-events: none;
-  z-index: 1;
-}
-
 
 .levelsGrid {
   display: grid;
@@ -3511,200 +3544,171 @@
   margin: 0 auto;
 }
 
-.flipCardWrapper {
-  perspective: 1000px;
-  height: 330px;
-  width: 100%;
-}
+/* ── Path Card (clean, subtle) ── */
 
-.flipCardInner {
+.pathCard {
   position: relative;
-  width: 100%;
-  height: 100%;
-  transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1);
-  transform-style: preserve-3d;
-}
-
-.flipCardWrapper:hover .flipCardInner {
-  transform: rotateY(180deg);
-}
-
-.flipCardFront,
-.flipCardBack {
-  position: absolute;
-  inset: 0;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-bottom-color: #010002;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.flipCardFront::before,
-.flipCardBack::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.25) 30%,
-      rgba(0, 221, 255, 0.25) 50%,
-      rgba(255, 255, 255, 0.25) 70%,
-      transparent 100%);
-  z-index: 2;
-}
-
-.flipCardFront::after,
-.flipCardBack::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 40px;
-  background: radial-gradient(50% 50% at 50% 0%,
-      rgba(255, 255, 255, 0.08) 0%,
-      transparent 100%);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.flipCardFront {
-  background: #010002;
   display: flex;
   flex-direction: column;
-  padding: 1.5rem 1.5rem 0 1.5rem;
+  padding: 1.5rem 1.5rem 1.6rem;
+  border-radius: 16px;
+  background: #08080c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-decoration: none !important;
+  color: inherit !important;
+  transition:
+    transform 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
-.flipCardWrapper:hover .flipCardFront {
-  border-color: rgba(255, 255, 255, 0.4);
-  border-bottom-color: #010002;
+.pathCard:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
 }
 
-.levelCardImageArea {
+/* Subtle accent line at the very top of each card */
+.pathCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 1.5rem;
+  right: 1.5rem;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--accent);
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+}
+
+.pathCard:hover::before {
+  opacity: 1;
+}
+
+.pathCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+}
+
+.pathCardNumber {
+  font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  color: color-mix(in srgb, var(--accent) 85%, #ffffff);
+  letter-spacing: 0.02em;
+}
+
+.pathCardMeter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pathMeterDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 0.3s ease;
+}
+
+.pathMeterDotOn {
+  background: var(--accent);
+}
+
+.pathCardImageArea {
   width: 100%;
-  height: 220px;
-  background: #000000;
+  height: 180px;
+  margin-bottom: 1.25rem;
   border-radius: 12px;
-  border: 1px solid rgba(255, 254, 254, 0.2);
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  position: relative;
-  transition: border-color 0.3s ease;
 }
 
-.flipCardWrapper:hover .levelCardImageArea {
-  border-color: rgba(0, 221, 255, 0.2);
-}
-
-.levelCardImage {
-  width: 190px;
+.pathCardImage {
+  width: 170px;
   height: auto;
   object-fit: contain;
   transition: transform 0.4s ease;
 }
 
-.flipCardWrapper:hover .levelCardImage {
-  transform: scale(1.05);
+.pathCard:hover .pathCardImage {
+  transform: scale(1.04);
 }
 
-.levelCardContent {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.pathCardTag {
+  align-self: flex-start;
+  display: inline-flex;
   align-items: center;
-  text-align: center;
+  padding: 0.2rem 0.6rem;
+  margin-bottom: 0.7rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.pathCardTitle {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.55rem;
+  letter-spacing: -0.01em;
+}
+
+.pathCardDesc {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+  margin: 0 0 1.4rem;
   flex: 1;
 }
 
-.levelCardTitle {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.flipCardBack {
-  background: #010002;
-  border-color: rgba(255, 255, 255, 0.25);
-  border-bottom-color: #010002;
-  transform: rotateY(180deg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 2.2rem 1.8rem;
-}
-
-.flipCardWrapper:hover .flipCardBack {
-  border-color: rgba(255, 255, 255, 0.4);
-  border-bottom-color: #010002;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(255, 255, 255, 0.1);
-}
-
-.flipCardTitleBack {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0 0 1rem 0;
-  letter-spacing: -0.01em;
-}
-
-.flipCardDescription {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.75);
-  line-height: 1.55;
-  margin: 0 0 2rem 0;
-}
-
-.flipCardLinkBtn {
+.pathCardCta {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 0.65rem 2rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 999px;
-  color: #ffffff !important;
+  gap: 0.4rem;
+  align-self: flex-start;
   font-size: 0.85rem;
   font-weight: 600;
-  text-decoration: none !important;
-  box-shadow: none;
-  transition:
-    background 0.25s ease,
-    color 0.25s ease,
-    border-color 0.25s ease,
-    transform 0.2s ease,
-    box-shadow 0.25s ease;
+  color: color-mix(in srgb, var(--accent) 80%, #ffffff);
+  transition: gap 0.3s ease;
 }
 
-.flipCardLinkBtn:hover {
-  background: #ffffff;
-  color: #000000 !important;
-  border-color: #ffffff;
-  transform: scale(1.02);
-  box-shadow: 0 0 22px rgba(255, 255, 255, 0.85);
+.pathCard:hover .pathCardCta {
+  gap: 0.6rem;
 }
+
+.pathCardCtaIcon {
+  font-size: 0.95rem;
+  transition: transform 0.3s ease;
+}
+
+.pathCard:hover .pathCardCtaIcon {
+  transform: translate(2px, -2px);
+}
+
 
 /* ─── Tablet ── */
 
 @media (min-width: 601px) and (max-width: 991px) {
   .levelsSection {
     min-height: unset;
-    background: transparent;
   }
 
-  .levelsSectionVideo {
+  .levelsVectorBg {
     display: none;
   }
 
@@ -3719,8 +3723,8 @@
   .levelsOuterContainer {
     padding: 2rem 1.5rem;
     border-radius: 20px;
-    background: linear-gradient(to bottom, transparent 0%, #010002 100%);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(6, 6, 10, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     position: relative;
     overflow: hidden;
   }
@@ -3755,127 +3759,16 @@
     width: 100%;
   }
 
-  .flipCardWrapper {
-    height: auto !important;
-    perspective: none !important;
-    background: #010002;
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-bottom-color: #010002;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-    padding: 1.5rem;
-    width: 100%;
-    box-sizing: border-box;
-    position: relative;
-    overflow: hidden;
+  .pathCard {
+    padding: 1.4rem 1.4rem 1.5rem;
   }
 
-  .flipCardWrapper::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(255, 255, 255, 0.25) 30%,
-        rgba(255, 255, 255, 0.5) 50%,
-        rgba(255, 255, 255, 0.25) 70%,
-        transparent 100%);
-    z-index: 2;
+  .pathCardImageArea {
+    height: 170px;
   }
 
-  .flipCardInner {
-    position: relative !important;
-    width: 100% !important;
-    height: auto !important;
-    transform: none !important;
-    transform-style: flat !important;
-    transition: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 1.25rem !important;
-  }
-
-  .flipCardWrapper:hover .flipCardInner {
-    transform: none !important;
-  }
-
-  .flipCardFront,
-  .flipCardBack {
-    position: relative !important;
-    inset: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    -webkit-backface-visibility: visible !important;
-    backface-visibility: visible !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    overflow: visible !important;
-    transform: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-  }
-
-  .flipCardFront::before,
-  .flipCardBack::before,
-  .flipCardFront::after,
-  .flipCardBack::after {
-    display: none !important;
-  }
-
-  .flipCardFront {
-    gap: 1.25rem !important;
-  }
-
-  .flipCardBack {
-    gap: 1rem !important;
-  }
-
-  .levelCardImageArea {
-    width: 100% !important;
-    height: 180px;
-  }
-
-  .levelCardImage {
-    width: 130px;
-  }
-
-  .levelCardContent {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center !important;
-    gap: 0.6rem;
-    width: 100%;
-  }
-
-  .levelCardTitle {
-    font-size: 1.15rem;
-    text-align: center !important;
-    width: 100%;
-  }
-
-  .flipCardTitleBack {
-    display: none !important;
-  }
-
-  .flipCardDescription {
-    font-size: 0.88rem !important;
-    line-height: 1.55 !important;
-    text-align: center !important;
-    width: 100% !important;
-    margin: 0 !important;
-    color: rgba(255, 255, 255, 0.75) !important;
-  }
-
-  .flipCardLinkBtn {
-    margin-top: 0.5rem;
+  .pathCardImage {
+    width: 150px;
   }
 }
 
@@ -3884,10 +3777,9 @@
 @media (max-width: 600px) {
   .levelsSection {
     min-height: unset;
-    background: transparent;
   }
 
-  .levelsSectionVideo {
+  .levelsVectorBg {
     display: none;
   }
 
@@ -3901,8 +3793,8 @@
   .levelsOuterContainer {
     padding: 1.5rem 1rem;
     border-radius: 16px;
-    background: linear-gradient(to bottom, transparent 0%, #010002 100%);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(6, 6, 10, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     position: relative;
     overflow: hidden;
   }
@@ -3933,129 +3825,25 @@
     width: 100%;
   }
 
-  .flipCardWrapper {
-    height: auto !important;
-    perspective: none !important;
-    background: #010002;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-bottom-color: #010002;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
-    padding: 1.25rem;
-    width: 100%;
-    box-sizing: border-box;
-    position: relative;
-    overflow: hidden;
+  .pathCard {
+    padding: 1.25rem 1.25rem 1.4rem;
+    border-radius: 14px;
   }
 
-  .flipCardWrapper::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(255, 255, 255, 0.25) 30%,
-        rgba(255, 255, 255, 0.5) 50%,
-        rgba(255, 255, 255, 0.25) 70%,
-        transparent 100%);
-    z-index: 2;
+  .pathCardImageArea {
+    height: 150px;
   }
 
-  .flipCardInner {
-    position: relative !important;
-    width: 100% !important;
-    height: auto !important;
-    transform: none !important;
-    transform-style: flat !important;
-    transition: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 1rem !important;
+  .pathCardImage {
+    width: 130px;
   }
 
-  .flipCardWrapper:hover .flipCardInner {
-    transform: none !important;
+  .pathCardTitle {
+    font-size: 1.2rem;
   }
 
-  .flipCardFront,
-  .flipCardBack {
-    position: relative !important;
-    inset: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    -webkit-backface-visibility: visible !important;
-    backface-visibility: visible !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    overflow: visible !important;
-    transform: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-  }
-
-  .flipCardFront::before,
-  .flipCardBack::before,
-  .flipCardFront::after,
-  .flipCardBack::after {
-    display: none !important;
-  }
-
-  .flipCardFront {
-    gap: 1rem !important;
-  }
-
-  .flipCardBack {
-    gap: 1rem !important;
-  }
-
-  .levelCardImageArea {
-    width: 100% !important;
-    height: 140px;
-    border-radius: 10px;
-  }
-
-  .levelCardImage {
-    width: 90px;
-  }
-
-  .levelCardContent {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0.5rem;
-    width: 100%;
-  }
-
-  .levelCardTitle {
-    font-size: 1.1rem;
-    text-align: center !important;
-    width: 100%;
-    margin: 0;
-  }
-
-  .flipCardTitleBack {
-    display: none !important;
-  }
-
-  .flipCardDescription {
-    font-size: 0.82rem !important;
-    line-height: 1.5 !important;
-    text-align: center !important;
-    width: 100% !important;
-    margin: 0 !important;
-    color: rgba(255, 255, 255, 0.75) !important;
-  }
-
-  .flipCardLinkBtn {
-    margin-top: 0.5rem;
+  .pathCardDesc {
+    font-size: 0.82rem;
   }
 }
 
