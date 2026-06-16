@@ -8,6 +8,7 @@ import { ScrambleTextPlugin } from "gsap/dist/ScrambleTextPlugin";
 import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { StepTimeline } from "../components/StepTimeline";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
+import FAQ from "../components/FAQ";
 import {
   MdRocketLaunch,
   MdBugReport,
@@ -17,6 +18,7 @@ import {
   MdCloudUpload,
   MdCheck,
   MdClose,
+  MdNorthEast,
 } from "react-icons/md";
 import {
   FaGithub,
@@ -250,9 +252,10 @@ function Hero() {
             </button>
             <Link
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs"
+              to="/docs/quick-start"
             >
-              Get Started
+              Quick Start
+              <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
             </Link>
           </div>
 
@@ -713,7 +716,7 @@ function AgentSkills() {
               Agent Skills
             </div>
             <h2 className={styles.sectionTitle}>
-              Your Coding Assistant, Supercharged.
+              Your Coding Assistant, To Build Enterprise Agents
             </h2>
           </div>
 
@@ -829,7 +832,7 @@ function AgentSkills() {
             </p>
             <Link
               className={`button button--primary button--md ${styles.terraformLink}`}
-              to="/docs"
+              to="/docs/agent-skills"
             >
               Learn more
             </Link>
@@ -1042,9 +1045,10 @@ function Community({ sectionRef }: CommunityProps) {
           <div className={styles.ctaButtons}>
             <Link
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs"
+              to="/docs/quick-start"
             >
-              Get Started
+              Quick Start
+              <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
             </Link>
             <Link
               className={styles.heroBtnLink}
@@ -1336,6 +1340,7 @@ export default function Home() {
         </div>
         <AgentSkills />
         <Deployment />
+        <FAQ />
         <Community sectionRef={communityRef} />
       </main>
     </Layout>

@@ -1010,6 +1010,12 @@
   font-size: 1.05rem;
 }
 
+.quickStartIcon {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  margin-left: 0.4rem;
+}
+
 .heroBullets {
   display: flex;
   align-items: center;

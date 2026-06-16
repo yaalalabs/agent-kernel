@@ -450,13 +450,62 @@ OpenAIModule([triage_agent, math_agent, history_agent])
 
 handler = Lambda.handler
 ```
+
+Create a deployment folder and add `deploy/main.tf`:
+
+```hcl
+terraform {
+    required_version = ">= 1.5.0"
+}
+
+variable "region" {
+    type    = string
+    default = "us-east-1"
+}
+
+variable "openai_api_key" {
+    type      = string
+    sensitive = true
+}
+
+module "serverless_agents" {
+    source  = "yaalalabs/ak-serverless/aws"
+    version = "0.5.1"
+
+    product_alias        = "ak"
+    env_alias            = "dev"
+    module_name          = "quickstart"
+    region               = var.region
+    product_display_name = "AK Quick Start"
+
+    request_handler = {
+        function_name       = "ak-quickstart"
+        function_description = "Agent Kernel Quick Start Lambda"
+        handler_path        = "lambda.handler"
+        module_name         = "quickstart"
+        package_path        = "../dist"
+        package_type        = "Image"
+        memory_size         = 256
+        timeout             = 45
+        environment_variables = {
+            OPENAI_API_KEY = var.openai_api_key
+        }
+    }
+}
+```
+
+Then initialize and deploy:
+
 ```bash
 # Deploy requires AWS credentials configured
-# Terraform module imported and configured (see examples)
+cd deploy
 terraform init
-terraform apply
+terraform plan -var="openai_api_key=$OPENAI_API_KEY"
+terraform apply -var="openai_api_key=$OPENAI_API_KEY"
 
 ```
+
+For advanced patterns (queue/scalable mode, S3 ZIP artifacts, ECR image URI, custom endpoints), see [AWS Serverless Deployment](./deployment/aws-serverless).
 
 ### Configure Memory
 

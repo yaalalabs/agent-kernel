@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "@docusaurus/Link";
-import { FaGithub } from "react-icons/fa";
+import { FaGithub, FaExternalLinkAlt } from "react-icons/fa";
 import styles from "../../pages/index.module.css";
 
 export default function CTASection() {
@@ -21,9 +21,10 @@ export default function CTASection() {
           <div className={styles.ctaButtons}>
             <Link
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs"
+              to="/docs/quick-start"
             >
-              Get Started
+              Quick Start
+              <FaExternalLinkAlt className={styles.quickStartIcon} aria-hidden="true" />
             </Link>
             <Link
               className={styles.heroBtnLink}
