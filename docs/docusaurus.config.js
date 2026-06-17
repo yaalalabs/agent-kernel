@@ -487,6 +487,14 @@ const config = {
               { label: 'Terraform', href: 'https://registry.terraform.io/modules/yaalalabs' },
             ],
           },
+          {
+            title: 'Legal',
+            items: [
+              { label: 'Privacy Policy', to: '/privacy-policy' },
+              { label: 'Cookie Policy', to: '/cookie-policy' },
+              { label: 'Terms of Use', to: '/terms-of-use' },
+            ],
+          },
         ],
         copyright: `© ${new Date().getFullYear()} <a href="https://yaalalabs.com" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. All rights reserved.`,
       },
