@@ -110,6 +110,8 @@ export default function FAQ() {
           {FAQ_ITEMS.map((item) => (
             <div key={item.id} className={styles.faqItem}>
               <button
+                id={`question-${item.id}`}
+                type="button"
                 className={`${styles.faqQuestion} ${
                   expandedId === item.id ? styles.expanded : ""
                 }`}
