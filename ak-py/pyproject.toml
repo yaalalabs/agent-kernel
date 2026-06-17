@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 auth = [
-    "PyJWT>=2.0.0",
+    "PyJWT>=2.13.0",
 ]
 langfuse = [
     "langfuse>=4.2.0",
