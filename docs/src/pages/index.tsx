@@ -1413,7 +1413,7 @@ function Levels() {
         <div className={styles.levelsHeader}>
           <div ref={badgeRef} className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Built for every level of expertise
+            Built for Every Level of Expertise
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
             <span>Agent Kernel, Explained</span>

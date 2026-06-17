@@ -438,7 +438,7 @@ const config = {
             type: 'docSidebar',
             sidebarId: 'tutorialSidebar',
             position: 'left',
-            label: 'Documentation',
+            label: 'Docs',
           },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
@@ -488,7 +488,7 @@ const config = {
             ],
           },
         ],
-        copyright: `© ${new Date().getFullYear()} Yaala Labs. All rights reserved.`,
+        copyright: `© ${new Date().getFullYear()} <a href="https://yaalalabs.com" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

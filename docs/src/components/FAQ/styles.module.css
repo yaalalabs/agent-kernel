@@ -20,29 +20,33 @@
 .faqBadge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: rgba(0, 221, 255, 0.08);
-  border: 1px solid rgba(0, 221, 255, 0.2);
-  border-radius: 9999px;
-  color: rgba(0, 221, 255, 0.85);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  background: #131017;
+  border: 2px solid #2A272E;
+  border-radius: 999px;
+  color: rgba(147, 210, 255, 0.9);
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   margin-bottom: 1.5rem;
 }
 
 .badgeStar {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  color: rgba(147, 210, 255, 0.7);
 }
 
 .faqTitle {
   font-size: clamp(1.75rem, 5vw, 2.5rem);
-  line-height: 1.2;
-  color: #ffffff;
+  line-height: 1.15;
+  font-weight: 600;
+  background: linear-gradient(to bottom, #ffffff 0%, #a0a0a0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
   margin: 0 0 1rem 0;
-  font-weight: 700;
 }
 
 .faqSubtitle {
