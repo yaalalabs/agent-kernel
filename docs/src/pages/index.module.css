@@ -6701,7 +6701,8 @@
   max-height: 0;
   overflow: hidden;
   opacity: 0;
-  transition: max-height 0.35s ease, opacity 0.25s ease, margin-top 0.3s ease;
+  visibility: hidden;
+  transition: max-height 0.35s ease, opacity 0.25s ease, margin-top 0.3s ease, visibility 0s linear 0.35s;
 }
 
 .trustCertTile:hover .trustCertDesc {
