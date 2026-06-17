@@ -924,6 +924,7 @@
   color: #ffffff !important;
   border: 1px solid rgba(255, 255, 255, 0.28) !important;
   border-radius: 9999px !important;
+  font-family: 'Archivo', sans-serif !important;
   font-weight: 400 !important;
   font-size: 0.85rem !important;
   letter-spacing: 0.01em !important;
@@ -6619,5 +6620,106 @@
 @media (max-width: 900px) {
   .aiBuildTabConnector {
     display: none;
+  }
+}
+
+/* ─── Trust / Compliance Section ─────────────────────────────────────────── */
+
+.trustSection {
+  position: relative;
+  padding: 4rem 1.5rem 5rem;
+  text-align: center;
+  background: transparent;
+  overflow: hidden;
+}
+
+.trustLabel {
+  text-align: center;
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 2.5rem;
+  letter-spacing: -0.01em;
+  position: relative;
+}
+
+.trustCertRow {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.trustCertTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: #010002;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  flex: 1;
+  min-width: 0;
+}
+
+.trustCertTile:hover,
+.trustCertTile:focus-visible {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-2px);
+}
+
+.trustCertTile:focus-visible {
+  outline: 2px solid rgba(147, 210, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.trustCertLogo {
+  width: 100%;
+  max-width: 90px;
+  height: 72px;
+  object-fit: contain;
+  display: block;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0.9;
+}
+
+.trustCertTile:hover .trustCertLogo,
+.trustCertTile:focus-visible .trustCertLogo {
+  transform: scale(1.05);
+  opacity: 1;
+}
+
+.trustCertDesc {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+  margin: 0;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transition: max-height 0.35s ease, opacity 0.25s ease, margin-top 0.3s ease, visibility 0s linear 0.35s;
+}
+
+.trustCertTile:hover .trustCertDesc,
+.trustCertTile:focus-visible .trustCertDesc {
+  max-height: 6rem;
+  opacity: 1;
+  visibility: visible;
+  margin-top: 0.75rem;
+  transition-delay: 0s;
+}
+
+@media (max-width: 540px) {
+  .trustCertRow {
+    max-width: 100%;
+  }
+
+  .trustSection {
+    padding: 3rem 1rem 4rem;
   }
 }

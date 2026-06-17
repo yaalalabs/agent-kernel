@@ -11,8 +11,7 @@
   overflow: hidden;
   text-align: center;
   animation: pageFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans', 'Liberation Sans', sans-serif;
+  font-family: 'Archivo', sans-serif;
 }
 
 @media (min-width: 640px) {

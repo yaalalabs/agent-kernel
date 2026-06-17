@@ -15,10 +15,10 @@ interface Message {
 }
 
 const QUICK_PROMPTS = [
-  'How do I get started with Agent Kernel?',
-  'What frameworks does Agent Kernel support?',
-  'How do I connect Slack or WhatsApp?',
-  'How does multi-agent orchestration work?',
+  'How do I install Agent Kernel skills into my coding agent?',
+  'How do I deploy Agent Kernel on AWS?',
+  'How do I connect my agent to Slack or WhatsApp?',
+  'How do I add guardrails and compliance to my AI agents?',
 ];
 
 const FloatingChatbot: React.FC = () => {

@@ -1,7 +1,7 @@
 /* =============================================================================
    Agent Kernel Design System — Dark Technical Premium
    Brand Colors: Cyan (#00DDFF) + Magenta (#F200FF) on Deep Black (#0D001A)
-   Fonts: Inter (body) + JetBrains Mono (code)
+   Fonts: Archivo (body) + JetBrains Mono (code)
    ============================================================================= */
 
 /* Google Fonts loaded asynchronously in docusaurus.config.js */
@@ -57,7 +57,7 @@
   --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
 
   /* Typography */
-  --ifm-font-family-base: 'Inter', sans-serif;
+  --ifm-font-family-base: 'Archivo', sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --ifm-heading-font-weight: 700;
   --ifm-font-color-base: #E8E4F0;

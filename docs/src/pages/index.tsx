@@ -1045,6 +1045,76 @@ function Deployment() {
   );
 }
 
+/* ─── Trust / Compliance ─────────────────────────────────────────────────── */
+
+function TrustSection() {
+  const sectionRef = useRef(null);
+  const badgeRef = useRef(null);
+  const labelRef = useRef(null);
+  const rowRef = useRef(null);
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger);
+
+    gsap.set([badgeRef.current, labelRef.current], { opacity: 0, y: 16 });
+    gsap.set(rowRef.current?.children || [], { opacity: 0, y: 24 });
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: sectionRef.current,
+        start: "top 85%",
+        toggleActions: "play none none none",
+        once: true,
+      },
+    });
+
+    tl.to(badgeRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" })
+      .to(labelRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
+      .to(
+        rowRef.current?.children || [],
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", stagger: 0.1 },
+        "-=0.2"
+      );
+
+    return () => {
+      tl.kill();
+      if (tl.scrollTrigger) {
+        tl.scrollTrigger.kill();
+      }
+    };
+  }, []);
+
+  return (
+    <section ref={sectionRef} className={styles.trustSection}>
+      <div className={styles.topGlow} />
+
+      <div ref={badgeRef} className={styles.Badge}>
+        <span className={styles.badgeStar}>✦</span>
+        Security &amp; Compliance
+      </div>
+
+      <p ref={labelRef} className={styles.trustLabel}>
+        Built on a certified ISO 27001 and SOC 2 environment.
+      </p>
+
+      <div ref={rowRef} className={styles.trustCertRow}>
+        <div className={styles.trustCertTile} tabIndex={0}>
+          <img src="/img/iso.png" alt="ISO 27001 Certified" className={styles.trustCertLogo} />
+          <p className={styles.trustCertDesc}>
+            Information Security Management System certified to the international standard.
+          </p>
+        </div>
+        <div className={styles.trustCertTile} tabIndex={0}>
+          <img src="/img/soc.png" alt="SOC 2 Type 2 Audited" className={styles.trustCertLogo} />
+          <p className={styles.trustCertDesc}>
+            Security, availability, and confidentiality independently audited against the AICPA SOC 2 framework.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Community / CTA ───────────────────────────────────────────────────── */
 interface CommunityProps {
   sectionRef?: React.Ref<HTMLElement>;
@@ -1343,7 +1413,7 @@ function Levels() {
         <div className={styles.levelsHeader}>
           <div ref={badgeRef} className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Built for every level of expertise
+            Built for Every Level of Expertise
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
             <span>Agent Kernel, Explained</span>
@@ -1489,6 +1559,7 @@ export default function Home() {
         </div>
         <AgentSkills />
         <Deployment />
+        <TrustSection />
         <FAQ />
         <Community sectionRef={communityRef} />
       </main>
