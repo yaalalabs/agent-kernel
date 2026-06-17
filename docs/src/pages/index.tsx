@@ -1098,7 +1098,7 @@ function TrustSection() {
       </p>
 
       <div ref={rowRef} className={styles.trustCertRow}>
-        <div className={styles.trustCertTile}>
+        <div className={styles.trustCertTile} tabIndex={0}>
           <img src="/img/iso.png" alt="ISO 27001 Certified" className={styles.trustCertLogo} />
           <p className={styles.trustCertDesc}>
             Information Security Management System certified to the international standard.
