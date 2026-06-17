@@ -455,7 +455,7 @@ Create a deployment folder and add `deploy/main.tf`:
 
 ```hcl
 terraform {
-    required_version = ">= 1.5.0"
+    required_version = ">= 1.9.5"
 }
 
 variable "region" {
