@@ -8,6 +8,7 @@ import { ScrambleTextPlugin } from "gsap/dist/ScrambleTextPlugin";
 import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { StepTimeline } from "../components/StepTimeline";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
+import FAQ from "../components/FAQ";
 import {
   MdRocketLaunch,
   MdBugReport,
@@ -17,6 +18,8 @@ import {
   MdCloudUpload,
   MdCheck,
   MdClose,
+  MdContentCopy,
+  MdNorthEast,
 } from "react-icons/md";
 import {
   FaGithub,
@@ -100,13 +103,28 @@ function WhatsNewBanner() {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
+  const installCommand = "pip install agentkernel";
   const leftRef = useRef(null);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);
   const buttonsRef = useRef(null);
-  const bulletsRef = useRef(null);
   const videoRef = useRef(null);
   const scrollLabelRef = useRef(null);
+  const [copiedInstall, setCopiedInstall] = useState(false);
+
+  const handleCopyInstall = async () => {
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      setCopiedInstall(true);
+      window.setTimeout(() => setCopiedInstall(false), 1800);
+    } catch {
+      // Clipboard may be unavailable due to permissions or non-secure context.
+    }
+  };
 
   const subtitleLines = [
     "Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
@@ -126,7 +144,6 @@ function Hero() {
         titleRef.current,
         subtitleRef.current,
         buttonsRef.current,
-        bulletsRef.current,
         videoRef.current,
         scrollLabelRef.current,
       ],
@@ -136,7 +153,6 @@ function Hero() {
     tl.to(titleRef.current, { opacity: 1, y: 0, duration: 0.85 })
       .to(subtitleRef.current, { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
       .to(buttonsRef.current, { opacity: 1, y: 0, duration: 0.55 }, "-=0.35")
-      .to(bulletsRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.3")
       .to(videoRef.current, { opacity: 1, y: 0, duration: 0.9 }, "-=0.7")
       .to(scrollLabelRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.4");
 
@@ -223,9 +239,9 @@ function Hero() {
         {/* ── LEFT ───────────────────────────────── */}
         <div ref={leftRef} className={styles.left}>
           <h1 ref={titleRef} className={styles.title}>
-            The Operating System
+            <span className={styles.titleDim}>The Operating System</span>
             <br />
-            for Scalable & Compliant
+            <span className={styles.titleDim}>for</span> Scalable & Compliant
             <br />
             Enterprise AI{" "}
             <span className={styles.gradientWord}>Agents</span>
@@ -248,25 +264,39 @@ function Hero() {
             >
               Download Agent Skills
             </button>
-            <Link
-              className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs"
-            >
-              Get Started
-            </Link>
           </div>
 
-          <ul ref={bulletsRef} className={styles.heroBullets}>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Install in minutes
-            </li>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Zero vendor lock-in
-            </li>
-            <li>
-              <span className={styles.heroCheck}>✓</span> Enterprise-grade observability
-            </li>
-          </ul>
+          <div className={styles.heroOrDivider} aria-hidden="true">
+            <span>or</span>
+          </div>
+
+          <div className={styles.heroInstallRow}>
+            <span className={styles.heroInstallPrompt} aria-hidden="true">$</span>
+            <code className={styles.heroInstallCmd}>{installCommand}</code>
+            <button
+              type="button"
+              className={`${styles.heroInstallCopy} ${
+                copiedInstall ? styles.heroInstallCopied : ""
+              }`}
+              onClick={handleCopyInstall}
+              aria-label="Copy pip install command"
+              title={copiedInstall ? "Copied" : "Copy command"}
+            >
+              {copiedInstall ? (
+                <MdCheck className={styles.heroInstallCopyIcon} aria-hidden="true" />
+              ) : (
+                <MdContentCopy className={styles.heroInstallCopyIcon} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+
+          <Link
+            className={`button button--primary button--lg ${styles.heroBtnSecondary} ${styles.heroQuickStartBelow}`}
+            to="/docs/quick-start"
+          >
+            Quick Start
+            <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
+          </Link>
         </div>
 
         {/* ── RIGHT – particle video ───────────── */}
@@ -286,9 +316,9 @@ function Hero() {
           <div className={styles.scrollLabelInner}>
             <span className={styles.scrollLine} />
             <span className={styles.scrollText}>
-              Scroll down to
+              Agent OS for
               <br />
-              <strong>Begin</strong>
+              <strong>Enterprise AI</strong>
             </span>
           </div>
         </div>
@@ -710,7 +740,7 @@ function AgentSkills() {
               Agent Skills
             </div>
             <h2 className={styles.sectionTitle}>
-              Your Coding Assistant, Supercharged.
+              Boost Your Coding Assistant With Agent Kernel
             </h2>
           </div>
 
@@ -826,7 +856,7 @@ function AgentSkills() {
             </p>
             <Link
               className={`button button--primary button--md ${styles.terraformLink}`}
-              to="/docs"
+              to="/docs/agent-skills"
             >
               Learn more
             </Link>
@@ -1039,9 +1069,10 @@ function Community({ sectionRef }: CommunityProps) {
           <div className={styles.ctaButtons}>
             <Link
               className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs"
+              to="/docs/quick-start"
             >
-              Get Started
+              Quick Start
+              <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
             </Link>
             <Link
               className={styles.heroBtnLink}
@@ -1073,6 +1104,9 @@ interface Level {
   title: string;
   image: string;
   description: string;
+  accent: string;
+  tag: string;
+  expertise: number;
 }
 
 function Levels() {
@@ -1081,7 +1115,7 @@ function Levels() {
   const subtitleRef = useRef<HTMLParagraphElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
   const cardsWrapRef = useRef<HTMLDivElement>(null);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const particleCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const levels: Level[] = [
     {
@@ -1090,6 +1124,9 @@ function Levels() {
       image: "/img/business_leader.png",
       description:
         "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to handle the complexities of the tech.",
+      accent: "#ffb547",
+      tag: "No code required",
+      expertise: 1,
     },
     {
       id: "02",
@@ -1097,6 +1134,9 @@ function Levels() {
       image: "/img/developer.png",
       description:
         "You build software but haven't built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.",
+      accent: "#00ddff",
+      tag: "Some coding",
+      expertise: 2,
     },
     {
       id: "03",
@@ -1104,6 +1144,9 @@ function Levels() {
       image: "/img/ai.png",
       description:
         "You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework that doesn't get in your way.",
+      accent: "#a78bfa",
+      tag: "Deep tech",
+      expertise: 3,
     },
   ];
 
@@ -1112,14 +1155,6 @@ function Levels() {
     "02": "/developer",
     "03": "/ai-engineer",
   };
-
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 992px)");
-    setIsDesktop(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
 
   useEffect(() => {
     gsap.registerPlugin(ScrollTrigger);
@@ -1169,83 +1204,204 @@ function Levels() {
         tl.scrollTrigger.kill();
       }
     };
-  }, [levels]);
+  }, []);
+
+  /* ── Cosmic waves background ── */
+  useEffect(() => {
+    const canvas = particleCanvasRef.current;
+    const section = sectionRef.current;
+    if (!canvas || !section) return;
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let width = 0;
+    let height = 0;
+    let rafId = 0;
+    let running = false;
+    let t = 0;
+
+    // Layered cosmic wave bands (color, vertical anchor %, amplitude, wavelength, speed)
+    const waves = [
+      { color: "0,221,255", anchor: 0.62, amp: 34, len: 0.0042, speed: 0.0006, alpha: 0.16 },
+      { color: "167,139,250", anchor: 0.7, amp: 46, len: 0.0031, speed: 0.00045, alpha: 0.16 },
+      { color: "255,181,71", anchor: 0.8, amp: 30, len: 0.0052, speed: 0.0008, alpha: 0.11 },
+      { color: "56,189,248", anchor: 0.88, amp: 56, len: 0.0026, speed: 0.00035, alpha: 0.13 },
+    ];
+
+    const resize = () => {
+      const rect = section.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    const drawWave = (w: (typeof waves)[number]) => {
+      const baseY = height * w.anchor;
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+      ctx.lineTo(0, baseY);
+      for (let x = 0; x <= width; x += 6) {
+        const y =
+          baseY +
+          Math.sin(x * w.len + t * w.speed * 60) * w.amp +
+          Math.sin(x * w.len * 0.5 + t * w.speed * 38) * w.amp * 0.4;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(width, height);
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(0, baseY - w.amp, 0, height);
+      grad.addColorStop(0, `rgba(${w.color},${w.alpha})`);
+      grad.addColorStop(0.6, `rgba(${w.color},${w.alpha * 0.35})`);
+      grad.addColorStop(1, `rgba(${w.color},0)`);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // glowing crest line
+      ctx.beginPath();
+      for (let x = 0; x <= width; x += 6) {
+        const y =
+          baseY +
+          Math.sin(x * w.len + t * w.speed * 60) * w.amp +
+          Math.sin(x * w.len * 0.5 + t * w.speed * 38) * w.amp * 0.4;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(${w.color},${Math.min(0.5, w.alpha * 2.4)})`;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    };
+
+    const draw = () => {
+      t += 1;
+      ctx.clearRect(0, 0, width, height);
+
+      // cosmic waves (additive glow)
+      ctx.globalCompositeOperation = "lighter";
+      for (const w of waves) drawWave(w);
+      ctx.globalCompositeOperation = "source-over";
+
+      rafId = requestAnimationFrame(draw);
+    };
+
+    const start = () => {
+      if (running) return;
+      running = true;
+      draw();
+    };
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+    };
+
+    resize();
+    window.addEventListener("resize", resize);
+
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) start();
+        else stop();
+      },
+      { threshold: 0.05 }
+    );
+    io.observe(section);
+
+    return () => {
+      stop();
+      io.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
 
   return (
-    <section
-      ref={sectionRef}
-      className={styles.levelsSection}
-      style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}
-    >
-      {isDesktop && (
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="none"
-          className={styles.levelsSectionVideo}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            zIndex: 0,
-            opacity: 0.6,
-            pointerEvents: "none",
-            transformOrigin: "center center",
-          }}
-        >
-          <source src="/video/path-bg.mp4" type="video/mp4" />
-        </video>
-      )}
+    <section ref={sectionRef} className={styles.levelsSection}>
+      {/* Top border + gradient glow */}
+      <div className={styles.topGlow} />
+
+      {/* Cosmic waves animated background */}
+      <canvas
+        ref={particleCanvasRef}
+        className={styles.levelsParticles}
+        aria-hidden="true"
+      />
+      <div className={styles.levelsAurora} aria-hidden="true" />
 
       <div className={styles.levelsFrameContainer}>
         <div className={styles.levelsHeader}>
           <div ref={badgeRef} className={styles.Badge}>
             <span className={styles.badgeStar}>✦</span>
-            Just like any other operating system
+            Built for every level of expertise
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
-            <span>Agent Kernel is designed</span>
+            <span>Agent Kernel, Explained</span>
             {" "}
-            <span>to adapt to your level of expertise</span>
+            <span>For Your Level of Expertise</span>
           </h2>
           <p ref={subtitleRef} className={styles.levelsSubtitle}>
-            Which path describes you the best
+            Pick the path that fits you best
           </p>
         </div>
 
         <div className={styles.levelsOuterContainer}>
           <div ref={cardsWrapRef} className={styles.levelsGrid}>
             {levels.map((level) => (
-              <div key={level.id} className={styles.flipCardWrapper}>
-                <div className={styles.flipCardInner}>
-                  {/* Front Face */}
-                  <div className={styles.flipCardFront}>
-                    <div className={styles.levelCardImageArea}>
-                      <img
-                        src={level.image}
-                        alt={level.title}
-                        className={styles.levelCardImage}
+              <Link
+                key={level.id}
+                to={levelPages[level.id]}
+                className={styles.pathCard}
+                style={{ ["--accent" as any]: level.accent }}
+              >
+                <div className={styles.pathCardTop}>
+                  <span className={styles.pathCardNumber}>{level.id}</span>
+                  <div
+                    className={styles.pathCardMeter}
+                    title={`Expertise: ${level.tag}`}
+                    aria-label={`Expertise: ${level.tag}`}
+                  >
+                    {[1, 2, 3].map((dot) => (
+                      <span
+                        key={dot}
+                        className={`${styles.pathMeterDot} ${
+                          dot <= level.expertise ? styles.pathMeterDotOn : ""
+                        }`}
                       />
-                    </div>
-                    <div className={styles.levelCardContent}>
-                      <h3 className={styles.levelCardTitle}>{level.title}</h3>
-                    </div>
-                  </div>
-
-                  {/* Back Face */}
-                  <div className={styles.flipCardBack}>
-                    <h3 className={styles.flipCardTitleBack}>{level.title}</h3>
-                    <p className={styles.flipCardDescription}>{level.description}</p>
-                    <Link className={styles.flipCardLinkBtn} to={levelPages[level.id]}>
-                      Read More
-                    </Link>
+                    ))}
                   </div>
                 </div>
-              </div>
+
+                <div className={styles.pathCardImageArea}>
+                  <img
+                    src={level.image}
+                    alt={level.title}
+                    className={styles.pathCardImage}
+                  />
+                </div>
+
+                <span className={styles.pathCardTag}>{level.tag}</span>
+                <h3 className={styles.pathCardTitle}>{level.title}</h3>
+                <p className={styles.pathCardDesc}>{level.description}</p>
+
+                <span className={styles.pathCardCta}>
+                  Choose this path
+                  <MdNorthEast
+                    className={styles.pathCardCtaIcon}
+                    aria-hidden="true"
+                  />
+                </span>
+              </Link>
             ))}
           </div>
         </div>
@@ -1333,6 +1489,7 @@ export default function Home() {
         </div>
         <AgentSkills />
         <Deployment />
+        <FAQ />
         <Community sectionRef={communityRef} />
       </main>
     </Layout>

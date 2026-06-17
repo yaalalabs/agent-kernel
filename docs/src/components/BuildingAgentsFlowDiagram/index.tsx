@@ -129,6 +129,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
 
 export default function BuildingAgentsFlowDiagram() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fitWrapRef = useRef<HTMLDivElement>(null);
   const coreZoneRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -337,6 +338,35 @@ export default function BuildingAgentsFlowDiagram() {
 
   }, []);
 
+  const fitToWidth = useCallback(() => {
+    const wrap = fitWrapRef.current;
+    const scene = containerRef.current;
+    if (!wrap || !scene) return;
+    // Lay the scene out at its natural width, then scale it down to fit.
+    scene.style.transform = 'none';
+    scene.style.width = 'max-content';
+    const natural = scene.offsetWidth;
+    const avail = wrap.clientWidth;
+    const scale = natural > avail && natural > 0 ? avail / natural : 1;
+    scene.style.transformOrigin = 'top left';
+    scene.style.transform = scale < 1 ? `scale(${scale})` : 'none';
+    wrap.style.height = scale < 1 ? `${scene.offsetHeight * scale}px` : '';
+    drawLines();
+  }, [drawLines]);
+
+  useEffect(() => {
+    fitToWidth();
+    const timer = setTimeout(fitToWidth, 150);
+    const ro = new ResizeObserver(fitToWidth);
+    if (fitWrapRef.current) ro.observe(fitWrapRef.current);
+    window.addEventListener('resize', fitToWidth);
+    return () => {
+      clearTimeout(timer);
+      ro.disconnect();
+      window.removeEventListener('resize', fitToWidth);
+    };
+  }, [fitToWidth]);
+
   useEffect(() => {
     const timer = setTimeout(drawLines, 100);
     const ro = new ResizeObserver(drawLines);
@@ -386,8 +416,9 @@ export default function BuildingAgentsFlowDiagram() {
       className={styles.figure}
       aria-label="Multi-agent architecture: input passes through guardrails, a supervisor coordinates specialist agents with tools, then output guardrails produce the response"
     >
-      <div ref={containerRef} className={styles.flowScene}>
-        <svg ref={svgRef} className={styles.flowSvg} aria-hidden="true" />
+      <div ref={fitWrapRef} className={styles.fitWrap}>
+        <div ref={containerRef} className={styles.flowScene}>
+          <svg ref={svgRef} className={styles.flowSvg} aria-hidden="true" />
 
         <div ref={setNodeRef('input')} className={styles.slotInput}>
           <FlowNodeCard node={getNode('input')} />
@@ -441,13 +472,14 @@ export default function BuildingAgentsFlowDiagram() {
           </div>
         </div>
 
-        <div className={styles.outputStack}>
-          <div ref={setNodeRef('guardOut')} className={styles.slotGuardOut}>
-            <FlowNodeCard node={getNode('guardOut')} />
-          </div>
-          <div className={styles.outputConnector} aria-hidden="true" />
-          <div ref={setNodeRef('output')} className={styles.slotOutput}>
-            <FlowNodeCard node={getNode('output')} />
+          <div className={styles.outputStack}>
+            <div ref={setNodeRef('guardOut')} className={styles.slotGuardOut}>
+              <FlowNodeCard node={getNode('guardOut')} />
+            </div>
+            <div className={styles.outputConnector} aria-hidden="true" />
+            <div ref={setNodeRef('output')} className={styles.slotOutput}>
+              <FlowNodeCard node={getNode('output')} />
+            </div>
           </div>
         </div>
       </div>

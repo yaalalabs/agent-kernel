@@ -442,6 +442,12 @@ const config = {
           },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
+            href: 'https://github.com/yaalalabs/agent-kernel',
+            position: 'right',
+            className: 'header-github-link',
+            'aria-label': 'GitHub repository',
+          },
+          {
             type: 'docsVersionDropdown',
             position: 'right',
             dropdownActiveClassDisabled: true,

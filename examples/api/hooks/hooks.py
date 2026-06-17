@@ -2,7 +2,7 @@
 Hook implementations demonstrating pre-execution and post-execution hooks.
 
 Pre-execution hooks:
-- GuardRailHook: Validates input for guard rails
+- GuardRailHook: Validates input for guardrails
 - RAGHook: Simulates RAG context injection
 
 Post-execution hooks:
@@ -17,7 +17,7 @@ from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, Age
 
 class GuardRailHook(PreHook):
     """
-    Guard rail hook that validates user input before execution.
+    Guardrail hook that validates user input before execution.
 
     This hook checks for inappropriate content, blocked topics, or harmful requests.
     If detected, it halts execution and returns a polite rejection message.
@@ -94,7 +94,7 @@ class RAGHook(PreHook):
         ),
         "hooks": (
             "Hooks in Agent Kernel are pre-execution and post-execution callbacks that allow "
-            "you to modify prompts or responses. Pre-hooks can inject context (RAG) or validate input (guard rails). "
+            "you to modify prompts or responses. Pre-hooks can inject context (RAG) or validate input (guardrails). "
             "Post-hooks can modify agent replies or add disclaimers."
         ),
         "python": (

@@ -423,7 +423,7 @@ export default function BusinessLeaderPage() {
                   <h4 className={styles.blValueTitle}>Works where you are</h4>
                   <p className={styles.blValueBody}>
                     Pre-built messaging connectors such as Slack, WhatsApp,
-                    Instagram, Telegrams, Gmail, and Teams. No custom wiring
+                    Instagram, Telegram, Gmail, and Teams. No custom wiring
                     required.
                   </p>
                 </div>

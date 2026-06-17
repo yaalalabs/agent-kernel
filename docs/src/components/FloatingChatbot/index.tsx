@@ -147,7 +147,7 @@ const FloatingChatbot: React.FC = () => {
       {!isMaximized && (
         <div className={styles.chatButtonContainer}>
           {!isOpen && (
-            <span className={styles.chatButtonLabel}>Ask AI</span>
+            <span className={styles.chatButtonLabel}>Ask Agent Kernel</span>
           )}
           <button
             className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}

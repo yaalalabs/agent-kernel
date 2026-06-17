@@ -23,7 +23,7 @@ class PreHook(ABC):
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
           - RAG context injection
-          - Prompt validation like input guard rails
+          - Prompt validation like input guardrails
           - Logging or analytics
 
         :param: session (Session): The session instance.
