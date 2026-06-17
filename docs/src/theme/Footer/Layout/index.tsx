@@ -44,7 +44,7 @@ const SOCIAL_LINKS: SocialLink[] = [
     icon: <FaDiscord aria-hidden="true" />,
   },
   {
-    href: 'mailto:kernal@yaala.ai',
+    href: 'mailto:kernel@yaala.ai',
     label: 'Email',
     icon: <FaEnvelope aria-hidden="true" />,
   },
