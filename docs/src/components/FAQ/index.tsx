@@ -31,7 +31,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "non-technical",
     question: "Is Agent Kernel suitable for non-technical users?",
     answer:
-      "Honestly, Agent Kernel is built for developers and technical teams. That said, non-technical people can still get value from it through low-code/no-code interfaces, our published skills (which plug into any coding agent), or by teaming up with developers who can build what they need. Pre-built skills make it possible to deploy common agent patterns without writing code.",
+      "Honestly, Agent Kernel is built for developers and technical teams. That said, non-technical users can still get value from it through low-code/no-code interfaces, our published skills (which plug into any coding agent), or by teaming up with developers who can build what they need. Pre-built skills make it possible to deploy common agent patterns without writing code.",
   },
   {
     id: "costs",
