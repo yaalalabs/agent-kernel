@@ -6665,10 +6665,16 @@
   min-width: 0;
 }
 
-.trustCertTile:hover {
+.trustCertTile:hover,
+.trustCertTile:focus-visible {
   border-color: rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.04);
   transform: translateY(-2px);
+}
+
+.trustCertTile:focus-visible {
+  outline: 2px solid rgba(147, 210, 255, 0.6);
+  outline-offset: 2px;
 }
 
 .trustCertLogo {
