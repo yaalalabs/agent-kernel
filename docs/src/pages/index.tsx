@@ -1104,7 +1104,7 @@ function TrustSection() {
             Information Security Management System certified to the international standard.
           </p>
         </div>
-        <div className={styles.trustCertTile}>
+        <div className={styles.trustCertTile} tabIndex={0}>
           <img src="/img/soc.png" alt="SOC 2 Type 2 Audited" className={styles.trustCertLogo} />
           <p className={styles.trustCertDesc}>
             Security, availability, and confidentiality independently audited against the AICPA SOC 2 framework.
