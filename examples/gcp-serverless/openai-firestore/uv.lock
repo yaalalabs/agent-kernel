@@ -983,7 +983,7 @@ requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "gcp"], spec
 [package.metadata.requires-dev]
 dev = [
     { name = "agentkernel", extras = ["test"], specifier = ">=0.5.1" },
-    { name = "black", specifier = ">=23.0.0" },
+    { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
 ]

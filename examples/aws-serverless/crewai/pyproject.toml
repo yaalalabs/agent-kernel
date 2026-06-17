@@ -12,7 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.5.1",
-    "black>=23.0.0",
+    "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
 ]
