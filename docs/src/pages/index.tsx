@@ -117,9 +117,13 @@ function Hero() {
       return;
     }
 
-    await navigator.clipboard.writeText(installCommand);
-    setCopiedInstall(true);
-    window.setTimeout(() => setCopiedInstall(false), 1800);
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      setCopiedInstall(true);
+      window.setTimeout(() => setCopiedInstall(false), 1800);
+    } catch {
+      // Clipboard may be unavailable due to permissions or non-secure context.
+    }
   };
 
   const subtitleLines = [
