@@ -6705,10 +6705,13 @@
   transition: max-height 0.35s ease, opacity 0.25s ease, margin-top 0.3s ease, visibility 0s linear 0.35s;
 }
 
-.trustCertTile:hover .trustCertDesc {
+.trustCertTile:hover .trustCertDesc,
+.trustCertTile:focus-visible .trustCertDesc {
   max-height: 6rem;
   opacity: 1;
+  visibility: visible;
   margin-top: 0.75rem;
+  transition-delay: 0s;
 }
 
 @media (max-width: 540px) {
