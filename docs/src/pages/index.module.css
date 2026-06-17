@@ -6687,7 +6687,8 @@
   opacity: 0.9;
 }
 
-.trustCertTile:hover .trustCertLogo {
+.trustCertTile:hover .trustCertLogo,
+.trustCertTile:focus-visible .trustCertLogo {
   transform: scale(1.05);
   opacity: 1;
 }
