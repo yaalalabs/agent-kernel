@@ -1204,7 +1204,7 @@ function Levels() {
         tl.scrollTrigger.kill();
       }
     };
-  }, [levels]);
+  }, []);
 
   /* ── Cosmic waves background ── */
   useEffect(() => {
