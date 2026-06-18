@@ -133,9 +133,10 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                 if self._config.execution.mode != ExecutionMode.REST_ASYNC:
                     raise HTTPException(status_code=404, detail="GET endpoint only available in REST_ASYNC mode")
 
-                effective_request_id = request_id or session_id
-                if not effective_request_id:
+                if not request_id:
                     raise HTTPException(status_code=400, detail={"error": "request_id is required", "session_id": session_id})
+
+                effective_request_id = request_id
 
                 self._log.info(f"Polling for response: request_id={effective_request_id}, session_id={session_id}")
 
