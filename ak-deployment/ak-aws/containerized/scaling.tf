@@ -74,14 +74,14 @@ resource "aws_iam_policy" "backlog_metric_lambda_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "backlog_metric_lambda" {
-  count      = var.enable_queue_mode ? 1 : 0
+  count      = local.enable_autoscaling ? 1 : 0
   role       = aws_iam_role.backlog_metric_lambda_role[0].name
   policy_arn = aws_iam_policy.backlog_metric_lambda_policy[0].arn
 }
 
 
 data "archive_file" "backlog_metric_lambda" {
-  count       = var.enable_queue_mode ? 1 : 0
+  count       = local.enable_autoscaling ? 1 : 0
   type        = "zip"
   output_path = "${path.module}/.terraform/lambda/backlog_metric.zip"
 
@@ -152,7 +152,7 @@ PYTHON
 }
 
 resource "aws_lambda_function" "backlog_metric" {
-  count            = var.enable_queue_mode ? 1 : 0
+  count            = local.enable_autoscaling ? 1 : 0
   function_name    = "${local.prefix}-backlog-metric"
   role             = aws_iam_role.backlog_metric_lambda_role[0].arn
   runtime          = "python3.12"
@@ -175,14 +175,14 @@ resource "aws_lambda_function" "backlog_metric" {
 }
 
 resource "aws_cloudwatch_log_group" "backlog_metric_lambda" {
-  count             = var.enable_queue_mode ? 1 : 0
+  count             = local.enable_autoscaling ? 1 : 0
   name              = "/aws/lambda/${local.prefix}-backlog-metric"
   retention_in_days = 7
   tags              = var.tags
 }
 
 resource "aws_cloudwatch_event_rule" "backlog_metric_schedule" {
-  count               = var.enable_queue_mode ? 1 : 0
+  count               = local.enable_autoscaling ? 1 : 0
   name                = "${local.prefix}-backlog-metric-schedule"
   description         = "Trigger BacklogPerTask metric calculation every minute"
   schedule_expression = "rate(1 minute)"
@@ -196,7 +196,7 @@ resource "aws_cloudwatch_event_target" "backlog_metric_lambda" {
 }
 
 resource "aws_lambda_permission" "allow_eventbridge" {
-  count         = var.enable_queue_mode ? 1 : 0
+  count         = local.enable_autoscaling ? 1 : 0
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.backlog_metric[0].function_name
@@ -205,7 +205,7 @@ resource "aws_lambda_permission" "allow_eventbridge" {
 }
 
 resource "aws_appautoscaling_target" "agent_runner" {
-  count              = var.enable_queue_mode ? 1 : 0
+  count              = local.enable_autoscaling ? 1 : 0
   max_capacity       = var.agent_runner_max_count
   min_capacity       = var.agent_runner_min_count
   resource_id        = "service/${module.ecs.cluster_name}/${local.prefix}-agent-runner"
