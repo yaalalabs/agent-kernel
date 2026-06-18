@@ -1,9 +1,7 @@
 import logging
 from typing import Any, Callable, List
 
-from crewai import Agent, Crew, Task
-from crewai.memory.external.external_memory import ExternalMemory
-from crewai.memory.storage.interface import Storage
+from crewai import Agent, Crew, Memory, Task
 from crewai.tools import tool as crewai_tool
 
 from ...core import Agent as BaseAgent
@@ -17,7 +15,7 @@ from ...trace import Trace
 FRAMEWORK = "crewai"
 
 
-class CrewAISession(Storage):
+class CrewAISession:
     """
     CrewAISession class provides a session for CrewAI based agents.
     """
@@ -74,11 +72,11 @@ class CrewAIRunner(Runner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
 
-    def _memory(self, session: Session) -> ExternalMemory | None:
+    def _memory(self, session: Session) -> Memory | None:
         """
-        Returns the external memory associated with the session.
+        Returns the unified memory associated with the session.
         :param session: The session to retrieve the memory for.
-        :return: The external memory for the session, or None if the session is not provided.
+        :return: The unified memory for the session, or None if the session is not provided.
         """
         if session is None:
             self._log.debug("Running without session")
@@ -89,7 +87,7 @@ class CrewAIRunner(Runner):
         else:
             self._log.debug("Reusing existing CrewAISession")
             previous = session.get(FRAMEWORK)
-        return ExternalMemory(previous)
+        return Memory(storage=previous)
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -117,11 +115,7 @@ class CrewAIRunner(Runner):
             if prompt.strip() == "":
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-            ext_memory = self._memory(session)
-
-            # Persist the user's prompt so it is available via external memory search on subsequent turns
-            if ext_memory and ext_memory.storage:
-                ext_memory.storage.save(f"User: {prompt}")
+            memory = self._memory(session)
 
             task = Task(
                 description=prompt,
@@ -132,7 +126,7 @@ class CrewAIRunner(Runner):
                 agents=agent.crew,
                 tasks=[task],
                 verbose=False,
-                external_memory=ext_memory,
+                memory=memory,
             )
             reply = crew.kickoff(inputs={})
             if hasattr(reply, "raw"):

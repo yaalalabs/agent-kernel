@@ -3,10 +3,10 @@ name = "aws-containerized-crewai-auth"
 version = "0.1.0"
 description = "Demo of CrewAI based agents with authentication running in Agent Kernel on AWS ECS"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "agentkernel[crewai,api,redis,auth]>=0.5.1",
-    "crewai==0.165.1"
+    "crewai~=1.14.7"
 ]
 
 [dependency-groups]

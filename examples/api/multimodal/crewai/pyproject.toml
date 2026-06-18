@@ -2,10 +2,10 @@
 name = "api-crewai-multimodal-example"
 version = "0.1.0"
 description = "CrewAI multimodal example for Agent Kernel"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "agentkernel[api,crewai,multimodal]>=0.5.1",
-    "crewai==0.165.1"
+    "crewai~=1.14.7"
 ]
 
 [dependency-groups]
