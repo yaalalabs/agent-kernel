@@ -62,7 +62,7 @@ Both queues are **FIFO** with:
 |---------|---------|
 | `MessageGroupId = SessionID` | Preserves order within a session |
 | `MessageDeduplicationId` | Prevents the agent running the same turn twice |
-| `MessageVisiibilityTimeout` | Makes undeleted messages reappear for retry |
+| `MessageVisibilityTimeout` | Makes undeleted messages reappear for retry |
 | `MessageRetentionPeriod` | Auto-deletes stuck messages, breaks infinite loops |
 | DLQ (optional) | Catches messages that exceed `maxReceiveCount` |
 
