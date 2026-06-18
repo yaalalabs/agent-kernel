@@ -40,7 +40,7 @@ langgraph = [
     "langgraph~=1.0.5",
     "langchain~=1.2.3",
     "langchain_community~=0.4.1",
-    "litellm~=1.74.9"
+    "litellm~=1.89.2"
 ]
 smolagents = [
     "smolagents>=1.0.0",
@@ -78,7 +78,7 @@ openai = [
 ]
 adk = [
     "google-adk>=1.14.1",
-    "litellm~=1.74.3",
+    "litellm~=1.89.2",
     "openinference-instrumentation-google-adk>=0.1.6",
 ]
 walledai = [
@@ -130,7 +130,7 @@ test = [
     "ragas>=0.4.1",
     "datasets>=2.14.0",
     "pandas>=2.0.0",
-    "litellm>=1.74.9",
+    "litellm>=1.89.2",
 ]
 a2a = [
     "a2a-sdk[http-server]>=0.3.6",
