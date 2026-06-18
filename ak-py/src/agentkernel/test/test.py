@@ -1,13 +1,13 @@
 import asyncio
-import importlib.machinery
-import importlib.util
 import re
 import sys
-import types
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Optional
 
+from datasets import Dataset
+from ragas import evaluate
+from ragas.metrics import answer_relevancy, answer_similarity
 from rapidfuzz import fuzz
 
 from agentkernel.core.config import AKConfig
@@ -162,21 +162,6 @@ class Test:
         :raises AssertionError: If no similarity/relevancy score meets the threshold.
         :return: None - Returns implicitly when the score is above the threshold.
         """
-        vertexai_module_name = "langchain_community.chat_models.vertexai"
-        try:
-            vertexai_spec = importlib.util.find_spec(vertexai_module_name)
-        except ValueError:
-            vertexai_spec = sys.modules.get(vertexai_module_name).__spec__ if vertexai_module_name in sys.modules else None
-        if vertexai_spec is None:
-            vertexai_module = types.ModuleType("langchain_community.chat_models.vertexai")
-            vertexai_module.__spec__ = importlib.machinery.ModuleSpec(vertexai_module_name, loader=None)
-            vertexai_module.ChatVertexAI = type("ChatVertexAI", (), {})
-            sys.modules[vertexai_module_name] = vertexai_module
-
-        from datasets import Dataset
-        from ragas import evaluate
-        from ragas.metrics import answer_relevancy, answer_similarity
-
         # Initialize Ragas clients using LiteLLM lazily
         if Test._ragas_llm is None or Test._ragas_embeddings is None:
             from litellm import completion
