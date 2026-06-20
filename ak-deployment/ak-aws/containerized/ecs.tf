@@ -87,7 +87,7 @@ module "ecs" {
           readonlyRootFilesystem = false
           
           # Command override - if provided, replaces the Docker image's CMD
-          command = var.ecs_container_command
+          command = var.container_entrypoint_override
           
           portMappings = [
             {

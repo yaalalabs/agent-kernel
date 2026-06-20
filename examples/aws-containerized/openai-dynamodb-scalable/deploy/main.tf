@@ -63,7 +63,7 @@ module "containerized_agents" {
   
   # Override the command to use the correct entrypoint
   # The ECR module adds a Lambda-style CMD, so we override it here
-  ecs_container_command = ["python", "app_rest_service.py"]
+  container_entrypoint_override = ["python", "app_rest_service.py"]
 
   # ---- agent memory (session store) ----
   create_dynamodb_memory_table = true

@@ -3,7 +3,8 @@ data "aws_region" "current" {}
 
 module "input_queue" {
   count  = var.enable_queue_mode ? 1 : 0
-  source = "../common/modules/sqs"
+  source               = "yaalalabs/ak-common/aws//modules/sqs"
+  version              = "0.5.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -37,7 +38,8 @@ module "input_queue" {
 
 module "output_queue" {
   count  = var.enable_queue_mode ? 1 : 0
-  source = "../common/modules/sqs"
+  source               = "yaalalabs/ak-common/aws//modules/sqs"
+  version              = "0.5.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias

@@ -297,7 +297,7 @@ module "scalable_queue_app" {
   ecs_container_port = 8000
   
   # Override container command (ECR module injects Lambda-style CMD)
-  ecs_container_command = ["python", "app_rest_service.py"]
+  container_entrypoint_override = ["python", "app_rest_service.py"]
   
   # Session storage
   create_dynamodb_memory_table = true
@@ -486,7 +486,7 @@ aws application-autoscaling describe-scaling-activities \
 | `agent_runner_scale_out_cooldown` | Seconds to wait before scaling out again | `number` | `30` | no |
 | `sqs_input_visibility_timeout` | SQS Input Queue visibility timeout (seconds) | `number` | `30` | no |
 | `sqs_output_visibility_timeout` | SQS Output Queue visibility timeout (seconds) | `number` | `30` | no |
-| `ecs_container_command` | Command override for REST Service container | `list(string)` | `null` | no |
+| `container_entrypoint_override` | Command override for REST Service container | `list(string)` | `null` | no |
 
 ## 📤 Outputs
 

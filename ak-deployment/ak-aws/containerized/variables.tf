@@ -163,7 +163,7 @@ variable "container_type" {
   }
 }
 
-variable "ecs_container_command" {
+variable "container_entrypoint_override" {
   type        = list(string)
   description = "Command override for the main ECS task (REST service). If not set, uses the Docker image's CMD. Example: [\"python\", \"app_rest_service.py\"]"
   default     = null

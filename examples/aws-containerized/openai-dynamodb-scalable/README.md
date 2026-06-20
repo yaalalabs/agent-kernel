@@ -180,7 +180,7 @@ CMD ["python","-c","from app import runner; runner()"]
 ```
 
 This is overridden at ECS task definition level using:
-- `ecs_container_command = ["python", "app_rest_service.py"]`
+- `container_entrypoint_override = ["python", "app_rest_service.py"]`
 - `agent_runner_command = ["python", "app_agent_runner.py"]`
 
 See [COMMAND_OVERRIDE.md](../../ak-deployment/ak-aws/containerized/COMMAND_OVERRIDE.md) for details.
