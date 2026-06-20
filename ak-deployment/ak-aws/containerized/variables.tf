@@ -122,35 +122,32 @@ variable "create_dynamodb_memory_table" {
   default     = false
 }
 
+# ---------------------------------------------------------------------------
+# REST Service Configuration
+# ---------------------------------------------------------------------------
 
-variable "ecs_cpu" {
-  type        = number
-  description = "Fargate CPU units"
-  default     = 256
-}
-
-variable "ecs_memory" {
-  type        = number
-  description = "Fargate memory in MiB"
-  default     = 512
-}
-
-variable "ecs_desired_count" {
-  type        = number
-  description = "Desired count for ECS service"
-  default     = 1
-}
-
-variable "ecs_container_port" {
-  type        = number
-  description = "Container port exposed by the ECS service"
-  default     = 8000
-}
-
-variable "ecs_health_check_endpoint" {
-  type        = string
-  description = "Health check path for ALB target group"
-  default     = "/health"
+variable "rest_service" {
+  description = "REST service configuration object"
+  type = object({
+    cpu                   = optional(number, 256)
+    memory                = optional(number, 512)
+    desired_count         = optional(number, 1)
+    container_port        = optional(number, 8000)
+    health_check_endpoint = optional(string, "/health")
+    image_uri             = optional(string, null)  # Defaults to package_path Docker image
+    command               = optional(list(string), null)
+    environment_variables = optional(map(string), {})
+  })
+  default = {
+    cpu                   = 256
+    memory                = 512
+    desired_count         = 1
+    container_port        = 8000
+    health_check_endpoint = "/health"
+    image_uri             = null
+    command               = null
+    environment_variables = {}
+  }
 }
 
 variable "container_type" {
@@ -158,15 +155,9 @@ variable "container_type" {
   description = "Container type (ECS or EKS)"
   default     = "ecs"
   validation {
-    condition = contains(["ecs", "eks"], lower(var.container_type))
+    condition     = contains(["ecs", "eks"], lower(var.container_type))
     error_message = "Container type must be either 'ecs' or 'eks'."
   }
-}
-
-variable "container_entrypoint_override" {
-  type        = list(string)
-  description = "Command override for the main ECS task (REST service). If not set, uses the Docker image's CMD. Example: [\"python\", \"app_rest_service.py\"]"
-  default     = null
 }
 
 # CORS configuration for HTTP API (API Gateway v2)
@@ -236,7 +227,7 @@ data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
 
 # ---------------------------------------------------------------------------
-# Queue Mode Variables (ECS + SQS)
+# Queue Mode Configuration
 # ---------------------------------------------------------------------------
 
 variable "enable_queue_mode" {
@@ -255,164 +246,103 @@ variable "queue_mode_type" {
   }
 }
 
-# --- SQS shared ---
+# --- Queue Configuration Object ---
 
-variable "sqs_managed_sse_enabled" {
-  type        = bool
-  description = "Enable SQS-managed server-side encryption for both queues."
-  default     = true
-}
+variable "queue_config" {
+  description = "Queue configuration object"
+  type = object({
+    # Queue names
+    input_queue_name  = optional(string, "input-queue")  # Queue name suffix
+    output_queue_name = optional(string, "output-queue") # Queue name suffix
 
-variable "sqs_max_message_size" {
-  type        = number
-  description = "Maximum SQS message size in bytes (applies to both queues)."
-  default     = 262144 # 256 KB
-}
+    # Shared settings
+    sqs_managed_sse_enabled   = optional(bool, true)
+    max_message_size          = optional(number, 262144)  # 256 KB
+    receive_wait_time_seconds = optional(number, 0)
 
-variable "sqs_receive_wait_time_seconds" {
-  type        = number
-  description = "Long-poll wait time for ReceiveMessage calls (applies to both queues)."
-  default     = 0
-}
+    # Input queue settings
+    input_queue_visibility_timeout            = optional(number, 60)
+    input_queue_message_retention_seconds     = optional(number, 1800)  # 30 minutes
+    input_queue_max_receive_count             = optional(number, 5)
+    input_queue_create_dlq                    = optional(bool, false)
+    input_queue_dlq_message_retention_seconds = optional(number, 1800)
 
-# --- Input Queue ---
-
-variable "sqs_input_visibility_timeout" {
-  type        = number
-  description = "Visibility timeout (seconds) for the Input Queue. Should be >= agent processing time."
-  default     = 60
-}
-
-variable "sqs_input_message_retention_seconds" {
-  type        = number
-  description = "How long messages stay in the Input Queue before being automatically deleted."
-  default     = 1800 # 30 minutes
-}
-
-variable "sqs_input_max_receive_count" {
-  type        = number
-  description = "Number of times a message can be received before being sent to the DLQ (if enabled)."
-  default     = 5
-}
-
-variable "sqs_input_create_dlq" {
-  type        = bool
-  description = "Create a dead-letter queue for the Input Queue."
-  default     = false
-}
-
-variable "sqs_input_dlq_message_retention_seconds" {
-  type        = number
-  description = "How long messages stay in the Input DLQ."
-  default     = 1800
-}
-
-# --- Output Queue ---
-
-variable "sqs_output_visibility_timeout" {
-  type        = number
-  description = "Visibility timeout (seconds) for the Output Queue."
-  default     = 60
-}
-
-variable "sqs_output_message_retention_seconds" {
-  type        = number
-  description = "How long messages stay in the Output Queue before being automatically deleted."
-  default     = 1800
-}
-
-variable "sqs_output_max_receive_count" {
-  type        = number
-  description = "Number of times a message can be received before being sent to the DLQ (if enabled)."
-  default     = 5
-}
-
-variable "sqs_output_create_dlq" {
-  type        = bool
-  description = "Create a dead-letter queue for the Output Queue."
-  default     = false
-}
-
-variable "sqs_output_dlq_message_retention_seconds" {
-  type        = number
-  description = "How long messages stay in the Output DLQ."
-  default     = 1800
-}
-
-# --- Agent Runner ECS Service ---
-
-variable "agent_runner_cpu" {
-  type        = number
-  description = "Fargate CPU units for the Agent Runner ECS task."
-  default     = 512
-}
-
-variable "agent_runner_memory" {
-  type        = number
-  description = "Fargate memory (MiB) for the Agent Runner ECS task."
-  default     = 1024
-}
-
-variable "agent_runner_desired_count" {
-  type        = number
-  description = "Desired number of Agent Runner ECS tasks."
-  default     = 1
-}
-
-variable "agent_runner_image_uri" {
-  type        = string
-  description = "Docker image URI for the Agent Runner ECS task. Defaults to the same image as the REST Service if not set."
-  default     = null
-}
-
-variable "agent_runner_command" {
-  type        = list(string)
-  description = "Command override for the Agent Runner ECS task. If not set, uses the Docker image's CMD. Example: [\"python\", \"app_agent_runner.py\"]"
-  default     = null
-}
-
-# --- Agent Runner Auto Scaling ---
-
-variable "enable_agent_runner_autoscaling" {
-  type    = bool
-  default = false
-
-  validation {
-    condition = (
-      !var.enable_agent_runner_autoscaling ||
-      var.enable_queue_mode
-    )
-
-    error_message = "enable_agent_runner_autoscaling requires enable_queue_mode = true."
+    # Output queue settings
+    output_queue_visibility_timeout            = optional(number, 60)
+    output_queue_message_retention_seconds     = optional(number, 1800)
+    output_queue_max_receive_count             = optional(number, 5)
+    output_queue_create_dlq                    = optional(bool, false)
+    output_queue_dlq_message_retention_seconds = optional(number, 1800)
+  })
+  default = {
+    input_queue_name                          = "input-queue"
+    output_queue_name                         = "output-queue"
+    sqs_managed_sse_enabled                   = true
+    max_message_size                          = 262144
+    receive_wait_time_seconds                 = 0
+    input_queue_visibility_timeout            = 60
+    input_queue_message_retention_seconds     = 1800
+    input_queue_max_receive_count             = 5
+    input_queue_create_dlq                    = false
+    input_queue_dlq_message_retention_seconds = 1800
+    output_queue_visibility_timeout            = 60
+    output_queue_message_retention_seconds     = 1800
+    output_queue_max_receive_count             = 5
+    output_queue_create_dlq                    = false
+    output_queue_dlq_message_retention_seconds = 1800
   }
 }
 
-variable "agent_runner_min_count" {
-  type        = number
-  description = "Minimum number of agent runner tasks when autoscaling is enabled."
-  default     = 0
+# --- Agent Runner Configuration Object ---
+
+variable "agent_runner" {
+  description = "Agent runner configuration object"
+  type = object({
+    cpu                   = optional(number, 512)
+    memory                = optional(number, 1024)
+    desired_count         = optional(number, 1)
+    package_path          = optional(string, null)  # Path to agent runner Docker source (builds separate image)
+    image_uri             = optional(string, null)  # Or provide pre-built image URI
+    command               = optional(list(string), null)
+    environment_variables = optional(map(string), {})
+  })
+  default = {
+    cpu                   = 512
+    memory                = 1024
+    desired_count         = 1
+    package_path          = null
+    image_uri             = null
+    command               = null
+    environment_variables = {}
+  }
 }
 
-variable "agent_runner_max_count" {
-  type        = number
-  description = "Maximum number of agent runner tasks when autoscaling is enabled."
-  default     = 10
-}
+# --- Scaling Configuration Object ---
 
-variable "agent_runner_backlog_target" {
-  type        = number
-  description = "Target BacklogPerTask value that triggers scaling. Lower values scale up more aggressively. Recommended: 5-20 messages per task."
-  default     = 10
-}
+variable "scaling_config" {
+  description = "Auto scaling configuration object for agent runner"
+  type = object({
+    enabled            = optional(bool, false)
+    min_count          = optional(number, 0)
+    max_count          = optional(number, 10)
+    backlog_target     = optional(number, 10)
+    scale_in_cooldown  = optional(number, 120)
+    scale_out_cooldown = optional(number, 30)
+  })
+  default = {
+    enabled            = false
+    min_count          = 0
+    max_count          = 10
+    backlog_target     = 10
+    scale_in_cooldown  = 120
+    scale_out_cooldown = 30
+  }
 
-variable "agent_runner_scale_in_cooldown" {
-  type        = number
-  description = "Seconds to wait after a scale-in before allowing another scale-in. Prevents flapping."
-  default     = 120
-}
-
-variable "agent_runner_scale_out_cooldown" {
-  type        = number
-  description = "Seconds to wait after a scale-out before allowing another scale-out. Allows new tasks to start processing before scaling again."
-  default     = 30
+  validation {
+    condition = (
+      !var.scaling_config.enabled ||
+      var.enable_queue_mode
+    )
+    error_message = "scaling_config.enabled requires enable_queue_mode = true."
+  }
 }

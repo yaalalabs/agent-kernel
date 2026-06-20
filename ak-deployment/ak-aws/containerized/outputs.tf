@@ -1,5 +1,5 @@
 output "alb_dns_name" {
-  value = aws_lb.app.dns_name
+  value = module.rest_service.alb_dns_name
 }
 
 output "cluster_arn" {
@@ -30,12 +30,12 @@ output "private_subnet_ids" {
 
 output "input_queue_url" {
   description = "URL of the SQS Input Queue (queue mode only)"
-  value       = var.enable_queue_mode ? module.input_queue[0].queue_url : null
+  value       = var.enable_queue_mode ? module.queues[0].input_queue_url : null
 }
 
 output "output_queue_url" {
   description = "URL of the SQS Output Queue (queue mode only)"
-  value       = var.enable_queue_mode ? module.output_queue[0].queue_url : null
+  value       = var.enable_queue_mode ? module.queues[0].output_queue_url : null
 }
 
 output "response_store_table_name" {
@@ -45,10 +45,20 @@ output "response_store_table_name" {
 
 output "agent_runner_service_name" {
   description = "ECS Agent Runner service name (queue mode only)"
-  value       = var.enable_queue_mode ? aws_ecs_service.agent_runner[0].name : null
+  value       = var.enable_queue_mode ? module.agent_runner[0].service_name : null
 }
 
 output "rest_service_image_uri" {
   description = "Docker image URI used by the REST Service ECS task"
   value       = module.docker_image[0].docker_image_uri
+}
+
+output "rest_service_name" {
+  description = "ECS REST service name"
+  value       = module.rest_service.service_name
+}
+
+output "rest_service_task_role_arn" {
+  description = "ECS REST service task role ARN"
+  value       = module.rest_service.task_role_arn
 }

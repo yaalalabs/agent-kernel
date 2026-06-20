@@ -151,10 +151,30 @@ Response (when complete):
 
 ### Two-Image Pattern
 
-| Image | Source | Role |
-|-------|--------|------|
-| REST Service | `app_rest_service.py` | Thread 1: FastAPI API server<br/>Thread 2: Output queue poller → DynamoDB |
-| Agent Runner | `app_agent_runner.py` | Input queue consumer → Agent executor → Output queue |
+This example uses separate images for REST service and Agent Runner:
+
+| Image | Source | Configuration | Role |
+|-------|--------|---------------|------|
+| REST Service | `dist-rest-service/` | `rest_service` object | Thread 1: FastAPI API server<br/>Thread 2: Output queue poller → DynamoDB |
+| Agent Runner | `dist-agent-runner/` | `agent_runner` object | Input queue consumer → Agent executor → Output queue |
+
+**Key Configuration in `deploy/main.tf`:**
+```hcl
+# REST Service image from package_path
+package_path = "../dist-rest-service"
+
+rest_service = {
+  command = ["python", "app_rest_service.py"]
+  # ...
+}
+
+# Agent Runner uses dedicated image
+agent_runner = {
+  image_uri = module.agent_runner_image.docker_image_uri
+  command   = ["python", "app_agent_runner.py"]
+  # ...
+}
+```
 
 ### Request Flow
 
@@ -174,47 +194,50 @@ Response (when complete):
 
 ### CMD Override
 
-The ECR module (`terraform-aws-modules/lambda/aws//modules/docker-build`) is Lambda-oriented and automatically injects:
-```dockerfile
-CMD ["python","-c","from app import runner; runner()"]
+The ECR module (`yaalalabs/ak-common/aws//modules/ecr`) is Lambda-oriented and automatically injects a Lambda-style CMD. This is overridden at ECS task definition level using the new config objects:
+
+```hcl
+rest_service = {
+  command = ["python", "app_rest_service.py"]
+  # ... other settings
+}
+
+agent_runner = {
+  command = ["python", "app_agent_runner.py"]
+  # ... other settings
+}
 ```
 
-This is overridden at ECS task definition level using:
-- `container_entrypoint_override = ["python", "app_rest_service.py"]`
-- `agent_runner_command = ["python", "app_agent_runner.py"]`
-
-See [COMMAND_OVERRIDE.md](../../ak-deployment/ak-aws/containerized/COMMAND_OVERRIDE.md) for details.
+This ensures the correct Python script runs for each container.
 
 ## Monitoring and Scaling
 
 The architecture automatically scales based on:
-- **REST Service**: Scales with ALB target group metrics
-- **Agent Runner**: Scales based on SQS queue depth using custom BacklogPerTask metric
+- **REST Service**: Can be manually scaled by adjusting `rest_service.desired_count`
+- **Agent Runner**: Scales automatically based on SQS queue depth using custom BacklogPerTask metric
 
 ### Agent Runner Auto Scaling
 
-The Agent Runner can automatically scale based on queue backlog per task.
+The Agent Runner automatically scales based on queue backlog per task.
 
-**Enable autoscaling:**
+**Enable autoscaling in `deploy/main.tf`:**
 ```hcl
 enable_queue_mode = true
-enable_agent_runner_autoscaling = true
+
+scaling_config = {
+  enabled            = true
+  min_count          = 1   # Minimum tasks (0 to scale to zero)
+  max_count          = 10  # Maximum tasks
+  backlog_target     = 10  # Target messages per task
+  scale_in_cooldown  = 120 # Wait 2min before scaling in
+  scale_out_cooldown = 30  # Wait 30s before scaling out
+}
 ```
 
 **How it works:**
 1. Lambda function runs every minute, calculates: `BacklogPerTask = QueueDepth / RunningTasks`
 2. Publishes custom CloudWatch metric: `Custom/ECS/BacklogPerTask`
 3. Target tracking policy scales agent_runner up/down to maintain target BacklogPerTask
-
-**Configuration:**
-```hcl
-enable_agent_runner_autoscaling = true  # Must also enable_queue_mode = true
-agent_runner_min_count = 1          # Minimum tasks (0 to scale to zero)
-agent_runner_max_count = 10         # Maximum tasks
-agent_runner_backlog_target = 10    # Target messages per task
-agent_runner_scale_in_cooldown = 120   # Wait before scaling in
-agent_runner_scale_out_cooldown = 30   # Wait before scaling out
-```
 
 **Example scaling behavior:**
 - Queue has 100 messages, 2 running tasks → BacklogPerTask = 50

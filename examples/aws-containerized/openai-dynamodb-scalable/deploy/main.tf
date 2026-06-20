@@ -28,24 +28,12 @@ provider "docker" {
 }
 
 # ---------------------------------------------------------------------------
-# Agent Runner image - built from dist-agent-runner/
+# Containerized Agents Deployment
 # ---------------------------------------------------------------------------
-module "agent_runner_image" {
-  # Points to the local ECR module.
-  # Switch to registry once published:
-  source  = "yaalalabs/ak-common/aws//modules/ecr"
-  version = "0.4.0"
-
-
-  env_alias     = var.env_alias
-  module_name   = "${var.module_name}-runner"
-  product_alias = var.product_alias
-  source_path   = "../dist-agent-runner"
-}
-
 module "containerized_agents" {
-  source = "yaalalabs/ak-containerized/aws"
-  version = "0.4.0"
+  # When using from registry:
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.5.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -56,55 +44,96 @@ module "containerized_agents" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
-  # ---- REST Service image (Thread 1 + Thread 2) ----
-  package_path       = "../dist-rest-service"
-  container_type     = "ecs"
-  ecs_container_port = 8000
-  
-  # Override the command to use the correct entrypoint
-  # The ECR module adds a Lambda-style CMD, so we override it here
-  container_entrypoint_override = ["python", "app_rest_service.py"]
+  # ---- REST Service Docker Image ----
+  # This image contains Thread 1 (request handler) and Thread 2 (response handler)
+  package_path = "../dist-rest-service"
 
-  # ---- agent memory (session store) ----
+  # ---- REST Service Configuration ----
+  # In queue mode, this service handles HTTP requests and manages the queue interaction
+  rest_service = {
+    cpu                   = 256
+    memory                = 512
+    desired_count         = 1
+    container_port        = 8000
+    health_check_endpoint = "/health"
+    # Override the Docker CMD to specify the correct entrypoint
+    command = ["python", "app_rest_service.py"]
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  # ---- Agent Memory (Session Store) ----
+  # DynamoDB table to store agent conversation history and state
   create_dynamodb_memory_table = true
 
-  # ---- queue mode ----
-  enable_queue_mode  = true
-  queue_mode_type    = "async"
-  
-  # Enable autoscaling for Agent Runner (optional)
-  enable_agent_runner_autoscaling = true
-  
+  # ---- Queue Mode ----
+  # Enable queue-based execution for scalable, async processing
+  enable_queue_mode = true
+  queue_mode_type   = "async" # "async" | "sync"
 
-  # Agent Runner uses its own image (different CMD)
-  agent_runner_image_uri = module.agent_runner_image.docker_image_uri
-  
-  # Override the command to use the correct entrypoint
-  # The ECR module adds a Lambda-style CMD, so we override it here
-  agent_runner_command = ["python", "app_agent_runner.py"]
+  # ---- Queue Configuration ----
+  # SQS queues for request/response handling
+  queue_config = {
+    # Optional: customize queue names
+    input_queue_name  = "input-queue"  # Default
+    output_queue_name = "output-queue" # Default
 
-  # SQS visibility timeout should exceed agent processing time
-  sqs_input_visibility_timeout  = 120
-  sqs_output_visibility_timeout = 60
+    # Input queue settings (requests from REST service to agent runner)
+    input_queue_visibility_timeout        = 120 # Should be >= agent processing time
+    input_queue_message_retention_seconds = 1800
+    input_queue_max_receive_count         = 3
+    input_queue_create_dlq                = true
 
-  # Agent Runner Fargate sizing
-  agent_runner_cpu           = 1024
-  agent_runner_memory        = 2048
-  agent_runner_desired_count = 1
+    # Output queue settings (responses from agent runner to REST service)
+    output_queue_visibility_timeout        = 60
+    output_queue_message_retention_seconds = 1800
+    output_queue_max_receive_count         = 3
+    output_queue_create_dlq                = true
 
-  # Agent Runner Auto Scaling (optional)
-  agent_runner_min_count         = 1    # Minimum tasks (can be 0 to scale to zero)
-  agent_runner_max_count         = 10   # Maximum tasks
-  agent_runner_backlog_target    = 10   # Target messages per task (scale up when exceeded)
-  agent_runner_scale_in_cooldown = 120  # Wait 2min before scaling in again
-  agent_runner_scale_out_cooldown = 30  # Wait 30s before scaling out again
+    # Shared settings
+    sqs_managed_sse_enabled   = true
+    max_message_size          = 262144 # 256 KB
+    receive_wait_time_seconds = 0      # Long polling disabled
+  }
 
-  # Environment variables for both containers
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
+  # ---- Agent Runner Configuration ----
+  # Separate ECS service that processes messages from the input queue
+  # This runs the actual agent logic
+  agent_runner = {
+    cpu           = 1024
+    memory        = 2048
+    desired_count = 1
+    # Provide package_path to build a separate Docker image for agent runner
+    package_path = "../dist-agent-runner"
+    # Override the Docker CMD to specify the correct entrypoint
+    command = ["python", "app_agent_runner.py"]
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  # ---- Agent Runner Auto Scaling ----
+  # Scale based on queue depth (BacklogPerTask metric)
+  scaling_config = {
+    enabled = true
+
+    # Scaling limits
+    min_count = 1  # Minimum tasks (can be 0 to scale to zero)
+    max_count = 10 # Maximum tasks
+
+    # Scaling behavior
+    backlog_target = 10 # Target messages per task (scale up when exceeded)
+    # Lower values = more aggressive scaling
+    # Example: backlog_target = 5 means scale up when >5 msgs per task
+
+    # Cooldown periods (prevent flapping)
+    scale_in_cooldown  = 120 # Wait 2min before scaling in again
+    scale_out_cooldown = 30  # Wait 30s before scaling out again
   }
 
   tags = {
-    Example = "openai-dynamodb-scalable"
+    Example     = "openai-dynamodb-scalable"
+    Environment = var.env_alias
   }
 }

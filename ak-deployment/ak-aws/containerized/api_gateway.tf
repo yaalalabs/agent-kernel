@@ -18,20 +18,20 @@ resource "aws_apigatewayv2_api" "http_api" {
 }
 
 resource "aws_apigatewayv2_vpc_link" "ecs_alb" {
-  name       = "${var.product_alias}-${var.env_alias}-httpapi-vpclink"
-  security_group_ids = [aws_security_group.ecs_alb.id]
-  subnet_ids = local.subnet_ids
-  tags       = var.tags
+  name               = "${var.product_alias}-${var.env_alias}-httpapi-vpclink"
+  security_group_ids = [module.rest_service.alb_security_group_id]
+  subnet_ids         = local.subnet_ids
+  tags               = var.tags
 }
 
 resource "aws_apigatewayv2_integration" "alb_proxy" {
-  for_each           = local.gateway_endpoints_map
-  api_id             = aws_apigatewayv2_api.http_api.id
-  integration_type   = "HTTP_PROXY"
-  integration_method = "ANY"
-  integration_uri    = aws_lb_listener.http.arn
-  connection_type    = "VPC_LINK"
-  connection_id      = aws_apigatewayv2_vpc_link.ecs_alb.id
+  for_each             = local.gateway_endpoints_map
+  api_id               = aws_apigatewayv2_api.http_api.id
+  integration_type     = "HTTP_PROXY"
+  integration_method   = "ANY"
+  integration_uri      = module.rest_service.alb_listener_arn
+  connection_type      = "VPC_LINK"
+  connection_id        = aws_apigatewayv2_vpc_link.ecs_alb.id
   passthrough_behavior = "WHEN_NO_MATCH"
   request_parameters = try(each.value["overwrite_path"], null) != null ? {
     "overwrite:path" = each.value["overwrite_path"]

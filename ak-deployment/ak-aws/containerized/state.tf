@@ -85,6 +85,17 @@ module "docker_image" {
   source_path   = var.package_path
 }
 
+# Agent Runner Docker Image (optional - only if package_path is provided)
+module "agent_runner_docker_image" {
+  count         = var.enable_queue_mode && var.agent_runner.package_path != null ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.5.1"
+  env_alias     = var.env_alias
+  module_name   = "${var.module_name}-runner"
+  product_alias = var.product_alias
+  source_path   = var.agent_runner.package_path
+}
+
 module dynamodb_memory {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
   version = "0.5.1"
