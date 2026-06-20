@@ -11,6 +11,13 @@ import sys
 from pathlib import Path
 import json
 
+CREWAI_QUIET_ENV = {
+    "CREWAI_DISABLE_TELEMETRY": "true",
+    "CREWAI_DISABLE_TRACKING": "true",
+    "CREWAI_TRACING_ENABLED": "false",
+    "OTEL_SDK_DISABLED": "true",
+}
+
 def run_command(command: list[str], cwd: str = None, description: str = "", env: dict = None) -> bool:
     """Run a shell command and return success status."""
     try:
