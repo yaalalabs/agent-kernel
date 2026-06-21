@@ -40,9 +40,9 @@ weekly:
     # - type: aws-containerized
     #   path: examples/aws-containerized/adk
       # deploy_dir: deploy
-    - type: aws-containerized
-      path: examples/aws-containerized/openai-dynamodb
-      deploy_dir: deploy
+    # - type: aws-containerized
+    #   path: examples/aws-containerized/openai-dynamodb
+    #   deploy_dir: deploy
     # - type: aws-containerized
     #   path: examples/aws-containerized/crewai
     #   deploy_dir: deploy
