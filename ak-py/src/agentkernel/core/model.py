@@ -122,7 +122,6 @@ class ExecutionMode(str, Enum):
 class StreamChunk(BaseModel):
     delta: str | None = None
     done: bool = False
-    session_id: str | None = None
     error: str | None = None
 
 

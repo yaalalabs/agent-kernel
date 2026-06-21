@@ -6,8 +6,8 @@ from ....core.config import AKConfig
 from ....core.model import ExecutionMode, StreamChunk
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
-from ..core.websocket_service import WebSocketHandler
 from .core import LambdaSQSConsumer
+from .core.router.ws_lambda import BaseWSHandler
 
 
 class ResponseHandler(LambdaSQSConsumer):
@@ -17,7 +17,7 @@ class ResponseHandler(LambdaSQSConsumer):
 
     _log = logging.getLogger("ak.aws.responsehandler")
     _response_store = None
-    _websocket_handler = None
+    _base_ws_handler = None
     _config = AKConfig.get()
     max_receive_count: int = _config.execution.queues.output.max_receive_count
 
@@ -28,13 +28,10 @@ class ResponseHandler(LambdaSQSConsumer):
         return cls._response_store
 
     @classmethod
-    def _get_websocket_handler(cls):
-        if cls._websocket_handler is None:
-            ws_config = cls._config.websocket_api
-            if not ws_config.connection_table or not ws_config.connection_table.table_name:
-                raise ValueError("websocket_api.connection_table.table_name is required for WebSocket handler")
-            cls._websocket_handler = WebSocketHandler(conn_table_name=ws_config.connection_table.table_name, ttl=ws_config.connection_table.ttl)
-        return cls._websocket_handler
+    def _get_base_ws_handler(cls):
+        if cls._base_ws_handler is None:
+            cls._base_ws_handler = BaseWSHandler()
+        return cls._base_ws_handler
 
     @classmethod
     def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[Any] = None) -> Dict[str, Any]:
@@ -81,9 +78,11 @@ class ResponseHandler(LambdaSQSConsumer):
         message_body = record.get("body")
         if isinstance(message_body, str):
             message_body = json.loads(message_body)
+        if not isinstance(message_body, dict):
+            raise ValueError("SQS record body must be a JSON object")
 
         cls._log.info(f"Broadcasting message via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
-        cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=message_body, user_id=user_id)
+        cls._get_base_ws_handler().ws_handler.broadcast(endpoint_url=endpoint_url, message=message_body, user_id=user_id)
         cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
 
     @classmethod
@@ -109,12 +108,14 @@ class ResponseHandler(LambdaSQSConsumer):
         message_body = record.get("body")
         if isinstance(message_body, str):
             message_body = json.loads(message_body)
+        if not isinstance(message_body, dict):
+            raise ValueError("SQS record body must be a JSON object")
 
-        message = {"type": "STREAM_CHUNK"}
-        message.update(message_body)
+        base_ws = cls._get_base_ws_handler()
+        message = base_ws._build_broadcasting_message(BaseWSHandler.MessageType.STREAM_CHUNK, **message_body)
 
         cls._log.info(f"Broadcasting stream chunk via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
-        cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=message, user_id=user_id)
+        base_ws.ws_handler.broadcast(endpoint_url=endpoint_url, message=message, user_id=user_id)
         cls._log.info(f"Successfully broadcasted stream chunk for user_id: {user_id}")
 
     @classmethod
@@ -153,26 +154,27 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._log.error(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times")
 
         try:
+            message_attributes = SQSHandler.get_message_custom_attributes(record)
             error_message = {
                 "error": f"Failed to process message after {cls.max_receive_count} retries",
-                "request_id": SQSHandler.get_message_custom_attributes(record).get("request_id"),
+                "request_id": message_attributes.get("request_id"),
             }
 
             if cls._config.execution.mode == ExecutionMode.ASYNC:
                 # Broadcast error via WebSocket for ASYNC mode
-                message_attributes = SQSHandler.get_message_custom_attributes(record)
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")
 
                 if endpoint_url and user_id:
+                    base_ws = cls._get_base_ws_handler()
+                    error_broadcast = base_ws._build_broadcasting_message(BaseWSHandler.MessageType.SYSTEM_RESPONSE, **error_message)
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
-                    cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=error_message, user_id=user_id)
+                    base_ws.ws_handler.broadcast(endpoint_url=endpoint_url, message=error_broadcast, user_id=user_id)
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")
             elif cls._config.execution.mode == ExecutionMode.STREAM:
                 # Broadcast error chunk via WebSocket for STREAM mode
-                message_attributes = SQSHandler.get_message_custom_attributes(record)
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")
 
@@ -181,17 +183,19 @@ class ResponseHandler(LambdaSQSConsumer):
                         error=f"Failed to process message after {cls.max_receive_count} retries",
                         done=True,
                     )
-                    stream_error_message = {"type": "STREAM_CHUNK"}
-                    stream_error_message.update(error_chunk.model_dump(exclude_none=True))
+                    base_ws = cls._get_base_ws_handler()
+                    stream_error_message = base_ws._build_broadcasting_message(
+                        BaseWSHandler.MessageType.STREAM_CHUNK,
+                        **error_chunk.model_dump(exclude_none=True),
+                    )
                     cls._log.info(f"Broadcasting permanent failure stream chunk via WebSocket for user_id: {user_id}")
-                    cls._get_websocket_handler().broadcast(endpoint_url=endpoint_url, message=stream_error_message, user_id=user_id)
+                    base_ws.ws_handler.broadcast(endpoint_url=endpoint_url, message=stream_error_message, user_id=user_id)
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")
             else:
                 # Store error message in response store for non-ASYNC/STREAM modes
-                error_body = json.dumps(error_message)
-                message = cls._construct_message_for_store(record, body=error_body)
+                message = cls._construct_message_for_store(record, body=error_message)
                 cls._get_response_store().add_message(message)
                 cls._log.info(f"Stored permanent failure message for session_id: {message['session_id']}, request_id: {message['request_id']}")
         except Exception as e:

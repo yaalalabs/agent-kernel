@@ -88,6 +88,21 @@ class BaseWSHandler:
         if not user_id:
             raise ValueError(f"No user_id found for connection_id: {connection_id}")
         return self.WSMessageInfo(user_id=user_id, request=request)
+    
+
+    def _build_broadcasting_message(self, message_type: BaseWSHandler.MessageType, **kwargs) -> Dict[str, Any]:
+        """
+        Build a standardized broadcast message format.
+
+        :param message_type: The type of message from MessageType enum
+        :param kwargs: Additional fields to include in the message
+        :return: Standardized message dictionary
+        """
+        message = {
+            "type": message_type.value,
+        }
+        message.update(kwargs)
+        return message
 
     def _handle_msg_and_brdcst(
         self,
@@ -268,20 +283,6 @@ class SystemRoutesHandler(BaseWSHandler):
         :return: True if both input and output queues are configured
         """
         return self._config.execution.queues.input.url is not None
-
-    def _build_broadcasting_message(self, message_type: BaseWSHandler.MessageType, **kwargs) -> Dict[str, Any]:
-        """
-        Build a standardized broadcast message format.
-
-        :param message_type: The type of message from MessageType enum
-        :param kwargs: Additional fields to include in the message
-        :return: Standardized message dictionary
-        """
-        message = {
-            "type": message_type.value,
-        }
-        message.update(kwargs)
-        return message
 
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         """
