@@ -24,11 +24,6 @@ variable "module_name" {
   description = "Module name"
 }
 
-variable "package_path" {
-  type        = string
-  description = "Docker image source path (app root)"
-}
-
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
@@ -134,20 +129,11 @@ variable "rest_service" {
     desired_count         = optional(number, 1)
     container_port        = optional(number, 8000)
     health_check_endpoint = optional(string, "/health")
-    image_uri             = optional(string, null)  # Defaults to package_path Docker image
+    package_path          = string  # Docker image source path (required)
+    image_uri             = optional(string, null)  # Or provide pre-built image URI
     command               = optional(list(string), null)
     environment_variables = optional(map(string), {})
   })
-  default = {
-    cpu                   = 256
-    memory                = 512
-    desired_count         = 1
-    container_port        = 8000
-    health_check_endpoint = "/health"
-    image_uri             = null
-    command               = null
-    environment_variables = {}
-  }
 }
 
 variable "container_type" {

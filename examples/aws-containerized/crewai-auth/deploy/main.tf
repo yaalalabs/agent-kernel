@@ -17,11 +17,9 @@ module "containered_agents" {
   vpc_id             = "vpc-09033229d67314c1c"
   private_subnet_ids = ["subnet-00e888e445f16d1b1", "subnet-0ab5240262cd77119"]
 
-  # Docker image path
-  package_path = "../dist"
-
   # REST Service configuration
   rest_service = {
+    package_path          = "../dist"
     cpu                   = 256
     memory                = 512
     desired_count         = 1

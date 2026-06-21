@@ -82,7 +82,7 @@ module "docker_image" {
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
-  source_path   = var.package_path
+  source_path   = var.rest_service.package_path
 }
 
 # Agent Runner Docker Image (optional - only if package_path is provided)

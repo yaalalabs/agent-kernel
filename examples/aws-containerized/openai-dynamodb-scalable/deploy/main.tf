@@ -44,13 +44,11 @@ module "containerized_agents" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
-  # ---- REST Service Docker Image ----
-  # This image contains Thread 1 (request handler) and Thread 2 (response handler)
-  package_path = "../dist-rest-service"
 
   # ---- REST Service Configuration ----
   # In queue mode, this service handles HTTP requests and manages the queue interaction
   rest_service = {
+    package_path          = "../dist-rest-service"
     cpu                   = 256
     memory                = 512
     desired_count         = 1
@@ -70,7 +68,7 @@ module "containerized_agents" {
   # ---- Queue Mode ----
   # Enable queue-based execution for scalable, async processing
   enable_queue_mode = true
-  queue_mode_type   = "async" # "async" | "sync"
+  queue_mode_type   = "sync" # "async" | "sync"
 
   # ---- Queue Configuration ----
   # SQS queues for request/response handling
