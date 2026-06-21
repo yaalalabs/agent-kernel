@@ -90,7 +90,7 @@ class BaseWSHandler:
         return self.WSMessageInfo(user_id=user_id, request=request)
     
 
-    def _build_broadcasting_message(self, message_type: BaseWSHandler.MessageType, **kwargs) -> Dict[str, Any]:
+    def _build_broadcasting_message(self, message_type: "BaseWSHandler.MessageType", **kwargs) -> Dict[str, Any]:
         """
         Build a standardized broadcast message format.
 
