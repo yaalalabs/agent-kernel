@@ -8,7 +8,7 @@ session:
     table_name: "ak-oai-scl-ecs-dev-scalable-session_store"
 
 execution:
-  mode: rest_async
+  mode: rest_sync
   queues:
     input:
       url: ""      # injected by Terraform via AK_EXECUTION__QUEUES__INPUT__URL
