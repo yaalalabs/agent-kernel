@@ -44,10 +44,7 @@ class BaseWSHandler:
         self.CONNECT_ROUTE = "$connect"
         self.DISCONNECT_ROUTE = "$disconnect"
         self.DEFAULT_ROUTE = "$default"
-        chat_route = self._config.websocket_api.chat_route
-        if not chat_route:
-            raise ValueError("websocket_api.chat_route must be configured")
-        self.CHAT_ROUTE = chat_route
+        self.CHAT_ROUTE = self._config.websocket_api.chat_route
 
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
         """
@@ -273,6 +270,8 @@ class SystemRoutesHandler(BaseWSHandler):
     def __init__(self):
         """Initialize system routes handler."""
         super().__init__()
+        if not self.CHAT_ROUTE:
+            raise ValueError("websocket_api.chat_route must be configured")
         self._chat_service = ChatService()
 
     def _is_queue_mode(self) -> bool:
