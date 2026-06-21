@@ -5,14 +5,7 @@ module "serverless_agents" {
   # Basic configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "Agent Kernel OpenAI WebSocket Streaming Lambda"
-  function_name        = "request-handler"
   module_name          = var.module_name
-  handler_path         = "lambda_request_handler.handler"
-  package_path         = "../dist_request_handler.zip"
-  package_type         = "LocalZip"
-  memory_size          = 256
-  timeout              = 45
   product_display_name = "AK OpenAI WebSocket Streaming Serverless Example"
   region               = var.region
   is_production        = var.is_production
@@ -30,9 +23,19 @@ module "serverless_agents" {
     { route = "app_info" }
   ]
 
-  # Environment variables for request handler
-  environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+  # Request handler configuration
+  request_handler = {
+    module_name           = "rqst-hdlr"
+    function_name         = "rqh-func"
+    function_description  = "Agent Kernel OpenAI WebSocket Streaming Sample Lambda"
+    handler_path          = "lambda_request_handler.handler"
+    package_type          = "LocalZip"
+    package_path          = "../dist_request_handler.zip"
+    memory_size           = 256
+    timeout               = 45
+    environment_variables = {
+      "OPENAI_API_KEY" = var.openai_api_key
+    }
   }
 
   # Agent runner configuration
