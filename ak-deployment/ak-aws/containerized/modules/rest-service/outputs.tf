@@ -1,21 +1,21 @@
 output "service_arn" {
   description = "ECS service ARN"
-  value       = module.ecs_service.services[var.service_name].service_arn
+  value       = module.ecs_service.id
 }
 
 output "service_name" {
   description = "ECS service name"
-  value       = module.ecs_service.services[var.service_name].service_name
+  value       = module.ecs_service.name
 }
 
 output "task_role_name" {
   description = "ECS task role name"
-  value       = module.ecs_service.services[var.service_name].tasks_iam_role_name
+  value       = module.ecs_service.tasks_iam_role_name
 }
 
 output "task_role_arn" {
   description = "ECS task role ARN"
-  value       = module.ecs_service.services[var.service_name].tasks_iam_role_arn
+  value       = module.ecs_service.tasks_iam_role_arn
 }
 
 output "alb_arn" {
