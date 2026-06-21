@@ -59,6 +59,12 @@ variable "redis_url" {
   default     = null
 }
 
+variable "create_dynamodb_memory_table" {
+  type        = bool
+  description = "Whether DynamoDB memory table is created"
+  default     = false
+}
+
 variable "dynamodb_memory_table_arn" {
   type        = string
   description = "DynamoDB memory table ARN"

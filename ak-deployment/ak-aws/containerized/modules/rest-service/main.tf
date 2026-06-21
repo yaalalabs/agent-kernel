@@ -27,7 +27,7 @@ resource "aws_service_discovery_http_namespace" "this" {
 # ---------- IAM Policies ----------
 
 resource "aws_iam_policy" "dynamodb_policy" {
-  count       = var.dynamodb_memory_table_arn != null ? 1 : 0
+  count       = var.create_dynamodb_memory_table ? 1 : 0
   name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-policy"
   description = "Policy for DynamoDB access"
 
@@ -180,7 +180,7 @@ module "ecs_service" {
 
   # Attach DynamoDB access to the task role if a memory table exists
   create_tasks_iam_role   = true
-  tasks_iam_role_policies = var.dynamodb_memory_table_arn != null ? {
+  tasks_iam_role_policies = var.create_dynamodb_memory_table ? {
     DynamoDB = aws_iam_policy.dynamodb_policy[0].arn
   } : {}
 

@@ -119,7 +119,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_sqs_attachment" {
 }
 
 resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
-  count = var.dynamodb_memory_table_arn != null ? 1 : 0
+  count = var.create_dynamodb_memory_table ? 1 : 0
   name  = "${var.prefix}-agent-runner-dynamodb-memory"
 
   policy = jsonencode({
@@ -146,7 +146,7 @@ resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachment" {
-  count      = var.dynamodb_memory_table_arn != null ? 1 : 0
+  count      = var.create_dynamodb_memory_table ? 1 : 0
   role       = aws_iam_role.agent_runner_task_role.name
   policy_arn = aws_iam_policy.agent_runner_dynamodb_memory_policy[0].arn
 }

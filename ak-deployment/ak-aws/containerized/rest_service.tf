@@ -19,9 +19,10 @@ module "rest_service" {
   service_name   = local.service_name
   container_name = local.container_name
 
-  redis_url                  = local.redis_url
-  dynamodb_memory_table_arn  = local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name = local.dynamodb_memory_table_name
+  redis_url                     = local.redis_url
+  create_dynamodb_memory_table  = var.create_dynamodb_memory_table
+  dynamodb_memory_table_arn     = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name    = local.dynamodb_memory_table_name
 
   rest_service = {
     cpu                   = var.rest_service.cpu
