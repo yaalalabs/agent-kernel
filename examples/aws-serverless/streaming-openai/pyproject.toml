@@ -1,0 +1,52 @@
+[project]
+name = "aws-serverless-websocket-streaming-openai"
+version = "0.1.0"
+description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS Lambda with WebSocket token streaming"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[aws,openai,redis]>=0.5.1"
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.5.1",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+auth = [
+    "agentkernel>=0.5.1",
+    "annotated-types==0.7.0",
+    "cffi==2.0.0",
+    "cryptography==46.0.4",
+    "PyJWT>=2.0.0",
+    "pycparser==3.0",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.12.0",
+    "pydantic_core==2.41.5",
+    "python-dotenv==1.2.1",
+    "PyYAML==6.0.3",
+    "singleton-type==0.0.5",
+    "typing-inspection==0.4.2",
+    "typing_extensions==4.15.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
