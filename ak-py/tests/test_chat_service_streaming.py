@@ -97,6 +97,26 @@ async def test_process_stream_chat_async_can_return_sse_frames(monkeypatch):
     ]
 
 
+def test_process_stream_chat_sync_raises_immediately_on_missing_session_id():
+    from agentkernel.core.model import BaseRunRequest
+
+    service = ChatService()
+    req = BaseRunRequest(prompt="Hi", session_id=None, agent="test-agent")
+
+    with pytest.raises(ValueError, match="session_id"):
+        service.process_stream_chat_sync(req=req)
+
+
+def test_process_stream_chat_sync_raises_immediately_on_missing_prompt():
+    from agentkernel.core.model import BaseRunRequest
+
+    service = ChatService()
+    req = BaseRunRequest(prompt="", session_id="session-1", agent="test-agent")
+
+    with pytest.raises(ValueError, match="prompt"):
+        service.process_stream_chat_sync(req=req)
+
+
 def test_process_stream_chat_sync_yields_chunks(monkeypatch):
     from agentkernel.core.model import BaseRunRequest
 
