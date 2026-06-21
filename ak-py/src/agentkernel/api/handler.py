@@ -90,7 +90,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             if Config.get().execution.mode != ExecutionMode.STREAM:
                 raise HTTPException(status_code=400, detail="SSE streaming requires execution.mode: stream in config")
             try:
-                gen = self.chat_service.process_stream_chat_async(req=body, sse_format=True)
+                gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
@@ -115,7 +115,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 images=images,
             )
             try:
-                gen = self.chat_service.process_stream_chat_async(req=req, sse_format=True)
+                gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))

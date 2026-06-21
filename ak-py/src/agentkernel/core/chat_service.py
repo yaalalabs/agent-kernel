@@ -383,13 +383,17 @@ class ChatService:
             raise ValueError("No prompt provided in the request")
         requests = await RequestBuilder.from_base_request_async(req)
         handler = AgentHandler()
-        try:
-            handler.initialize(session_id, req.agent)
-            async for chunk in handler.run_stream_async(requests):
-                yield ChatService.format_stream_frame(chunk, sse_format=sse_format)
-        except Exception as e:
-            error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
-            yield ChatService.format_stream_frame(error_chunk, sse_format=sse_format)
+        handler.initialize(session_id, req.agent)
+
+        async def _stream() -> AsyncGenerator[str, None]:
+            try:
+                async for chunk in handler.run_stream_async(requests):
+                    yield ChatService.format_stream_frame(chunk, sse_format=sse_format)
+            except Exception as e:
+                error_chunk = StreamChunk(error=str(e), done=True, session_id=session_id)
+                yield ChatService.format_stream_frame(error_chunk, sse_format=sse_format)
+
+        return _stream()
 
     def process_stream_chat_sync(
         self,
