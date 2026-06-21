@@ -19,8 +19,16 @@ class MockRunner(Runner):
     def __init__(self):
         super().__init__("mock")
 
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         return AgentReply(content="mock")
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
 
 
 class MockAgent(Agent):
@@ -374,7 +382,7 @@ class TestGoogleADKRunnerToolContext:
             patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply text"),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
-            result = await runner.run(mock_agent, session, requests)
+            await runner.run(mock_agent, session, requests)
 
         assert "ak_tool_context" in updated_state
         # The id should be a non-empty hex string (uuid4)
@@ -582,6 +590,67 @@ class TestGoogleADKRunnerToolContext:
 
         result = await runner.run(mock_agent, session, requests)
         assert "No valid content" in result.text
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_partial_event_text(self):
+        """stream() yields text only from partial events via run_async with SSE mode."""
+        runner = GoogleADKRunner()
+        session = Session("stream-partial-session")
+        requests = [AgentRequestText(text="hello")]
+        mock_agent = MagicMock()
+
+        partial_event = MagicMock()
+        part = MagicMock()
+        part.text = "hello "
+        partial_event.content = MagicMock(parts=[part])
+        partial_event.partial = True
+
+        final_event = MagicMock()
+        part2 = MagicMock()
+        part2.text = "hello world"
+        final_event.content = MagicMock(parts=[part2])
+        final_event.partial = False
+
+        async def mock_run_async(**kwargs):
+            yield partial_event
+            yield final_event
+
+        mock_runner = MagicMock()
+        mock_runner.run_async = mock_run_async
+
+        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner)):
+            chunks = []
+            async for delta in runner.stream(mock_agent, session, requests):
+                chunks.append(delta)
+
+        assert chunks == ["hello "]
+
+    @pytest.mark.asyncio
+    async def test_stream_skips_non_partial_events(self):
+        """stream() does not yield text from non-partial events."""
+        runner = GoogleADKRunner()
+        session = Session("stream-non-partial-session")
+        requests = [AgentRequestText(text="hello")]
+        mock_agent = MagicMock()
+
+        event = MagicMock()
+        part = MagicMock()
+        part.text = "full response"
+        event.content = MagicMock(parts=[part])
+        event.partial = False
+
+        async def mock_run_async(**kwargs):
+            yield event
+
+        mock_runner = MagicMock()
+        mock_runner.run_async = mock_run_async
+
+        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner)):
+            chunks = []
+            async for delta in runner.stream(mock_agent, session, requests):
+                chunks.append(delta)
+
+        assert chunks == []
 
 
 # Edge cases
