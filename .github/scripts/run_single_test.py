@@ -71,6 +71,7 @@ def run_simple_test(path: str) -> bool:
         ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
         cwd=path,
         description=f"Testing {path}"
+        env=CREWAI_QUIET_ENV
     )
 
 
