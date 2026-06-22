@@ -57,3 +57,11 @@ class AttachmentStore(ABC):
         :param attachment_id: Attachment ID
         """
         pass
+
+    @abstractmethod
+    def list_ids(self) -> list[str]:
+        """
+        List attachment IDs for this session in insertion order.
+        :return: Attachment IDs stored for the session.
+        """
+        pass

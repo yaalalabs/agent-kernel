@@ -70,6 +70,13 @@ class InMemoryAttachmentStore(AttachmentStore):
             self._index[self._session_id].remove(attachment_id)
         self._log.debug(f"Deleted attachment: {attachment_id}")
 
+    def list_ids(self) -> list[str]:
+        """
+        Lists attachment IDs for this session in insertion order.
+        :return: Attachment IDs stored for the session.
+        """
+        return list(self._index.get(self._session_id, []))
+
     def clear(self) -> None:
         """
         Clears all stored attachments for this session.
