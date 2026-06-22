@@ -23,14 +23,12 @@ locals {
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
 
-  # True for both "async" (full-response WS) and "stream" (chunk-per-message WS)
-  is_websocket_mode = contains(["async", "stream"], var.execution_mode)
-
   request_handler_enabled               = var.enable_api_gateway
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
   request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
 
+  is_websocket_mode = contains(["async", "stream"], var.execution_mode) # True for both "async" (full-response WS) and "stream" (chunk-per-message WS)
   websocket_api_enabled                  = var.enable_api_gateway && local.is_websocket_mode
   rest_api_enabled                       = var.enable_api_gateway && !local.is_websocket_mode
 
