@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 import json
 
-CREWAI_TRACE_ENV = {
+CREWAI_DISABLE_TRACE_ENV = {
     "CREWAI_TRACING_ENABLED": "false",
     "CREWAI_TESTING": "true",
     "OTEL_SDK_DISABLED": "true",
@@ -63,7 +63,7 @@ def run_simple_test(path: str) -> bool:
         ['./build.sh', 'local'],
         cwd=path,
         description=f"Building {path}",
-        env=CREWAI_TRACE_ENV
+        env=CREWAI_DISABLE_TRACE_ENV
     ):
         return False
     
@@ -72,7 +72,7 @@ def run_simple_test(path: str) -> bool:
         ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
         cwd=path,
         description=f"Testing {path}",
-        env=CREWAI_TRACE_ENV
+        env=CREWAI_DISABLE_TRACE_ENV
     )
 
 
