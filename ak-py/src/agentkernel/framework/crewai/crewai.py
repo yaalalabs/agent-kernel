@@ -4,6 +4,18 @@ from typing import Any, Callable, List
 
 from crewai import Agent, Crew, Memory, Task
 from crewai.memory import MemoryRecord, ScopeInfo
+
+try:
+    from crewai.events.listeners.tracing.utils import (
+        set_suppress_tracing_messages,
+        set_tracing_enabled,
+    )
+
+    set_suppress_tracing_messages(True)
+    set_tracing_enabled(False)
+except ImportError:
+    pass
+
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
 
@@ -318,6 +330,7 @@ class CrewAIRunner(Runner):
                 tasks=[task],
                 verbose=False,
                 memory=memory,
+                tracing=False,
             )
             reply = await crew.kickoff_async(inputs={})
             if hasattr(reply, "raw"):
