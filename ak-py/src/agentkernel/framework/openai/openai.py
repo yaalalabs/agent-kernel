@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
+from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
@@ -208,10 +209,9 @@ class OpenAIRunner(BaseRunner):
             result = Runner.run_streamed(agent.agent, input_data, session=session_to_use)
 
             async for event in result.stream_events():
-                if event.type == "raw_response_event":
-                    data = event.data
-                    if hasattr(data, "delta") and isinstance(data.delta, str) and data.delta:
-                        yield data.delta
+                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                    if event.data.delta:
+                        yield event.data.delta
         finally:
             if context is not None:
                 context.reset()
