@@ -83,7 +83,7 @@ jobs:
         run: ./build.sh
 
       - name: Cache ak-py build
-        if: ${{ inputs.enable_cache }}
+        if: ${{ inputs.enable_cache && inputs.checkout_ref == github.sha }}
         uses: actions/cache/save@v4
         with:
           path: ak-py/dist
@@ -138,7 +138,7 @@ jobs:
         run: pip install uv
 
       - name: Restore ak-py build
-        if: ${{ inputs.enable_cache }}
+        if: ${{ inputs.enable_cache && inputs.checkout_ref == github.sha }}
         uses: actions/cache/restore@v4
         with:
           path: ak-py/dist
