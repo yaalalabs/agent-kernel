@@ -5,13 +5,13 @@ description = "Demo of CrewAI based agents running in Agent Kernel with a CLI"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "agentkernel[cli,crewai]",
+    "agentkernel[cli,crewai]>=0.5.1",
     "crewai~=1.14.7"
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]",
+    "agentkernel[test]>=0.5.1",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -19,9 +19,6 @@ dev = [
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-agentkernel = { path = "../../../ak-py", editable = true }
 
 [tool.isort]
 profile = "black"
