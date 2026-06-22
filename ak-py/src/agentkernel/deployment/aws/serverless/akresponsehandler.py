@@ -56,14 +56,18 @@ class ResponseHandler(LambdaSQSConsumer):
         return message
 
     @classmethod
-    def _broadcast_via_websocket(cls, record: Dict[str, Any]) -> None:
+    def _broadcast_via_websocket(
+        cls, record: Dict[str, Any], message_type: Optional[BaseWSHandler.MessageType] = None
+    ) -> None:
         """
-        Broadcast the message via WebSocket for ASYNC execution mode.
+        Broadcast a message via WebSocket.
 
-        Extracts endpoint_url, user_id from custom attributes and broadcasts the message body.
+        When message_type is provided the body is wrapped in a typed envelope via
+        _build_broadcasting_message before sending (e.g. STREAM_CHUNK for STREAM mode).
+        When omitted the raw message body is sent as-is (ASYNC mode).
 
         :param record: SQS record containing the response payload
-        :return: None
+        :param message_type: Optional envelope type; if None the body is broadcast directly
         :raises ValueError: If endpoint_url or user_id is missing in message attributes
         """
         message_attributes = SQSHandler.get_message_custom_attributes(record)
@@ -71,39 +75,9 @@ class ResponseHandler(LambdaSQSConsumer):
         user_id = message_attributes.get("user_id")
 
         if not endpoint_url:
-            raise ValueError("endpoint_url is required in SQS message attributes for ASYNC mode")
+            raise ValueError("endpoint_url is required in SQS message attributes")
         if not user_id:
-            raise ValueError("user_id is required in SQS message attributes for ASYNC mode")
-
-        message_body = record.get("body")
-        if isinstance(message_body, str):
-            message_body = json.loads(message_body)
-        if not isinstance(message_body, dict):
-            raise ValueError("SQS record body must be a JSON object")
-
-        cls._log.info(f"Broadcasting message via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
-        cls._get_base_ws_handler().ws_handler.broadcast(endpoint_url=endpoint_url, message=message_body, user_id=user_id)
-        cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
-
-    @classmethod
-    def _broadcast_stream_chunk_via_websocket(cls, record: Dict[str, Any]) -> None:
-        """
-        Broadcast a single stream chunk via WebSocket for STREAM execution mode.
-
-        Wraps the chunk body with a STREAM_CHUNK type envelope before broadcasting.
-
-        :param record: SQS record containing a StreamChunk payload
-        :return: None
-        :raises ValueError: If endpoint_url or user_id is missing in message attributes
-        """
-        message_attributes = SQSHandler.get_message_custom_attributes(record)
-        endpoint_url = message_attributes.get("endpoint_url")
-        user_id = message_attributes.get("user_id")
-
-        if not endpoint_url:
-            raise ValueError("endpoint_url is required in SQS message attributes for STREAM mode")
-        if not user_id:
-            raise ValueError("user_id is required in SQS message attributes for STREAM mode")
+            raise ValueError("user_id is required in SQS message attributes")
 
         message_body = record.get("body")
         if isinstance(message_body, str):
@@ -112,11 +86,9 @@ class ResponseHandler(LambdaSQSConsumer):
             raise ValueError("SQS record body must be a JSON object")
 
         base_ws = cls._get_base_ws_handler()
-        message = base_ws._build_broadcasting_message(BaseWSHandler.MessageType.STREAM_CHUNK, **message_body)
-
-        cls._log.info(f"Broadcasting stream chunk via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
-        base_ws.ws_handler.broadcast(endpoint_url=endpoint_url, message=message, user_id=user_id)
-        cls._log.info(f"Successfully broadcasted stream chunk for user_id: {user_id}")
+        cls._log.info(f"Broadcasting message via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
+        base_ws.broadcast_message(endpoint_url, user_id, message_type=message_type, message=message_body)
+        cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
 
     @classmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
@@ -132,9 +104,9 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._log.info(f"Processing message: {record}")
 
         if cls._config.execution.mode == ExecutionMode.ASYNC:
-            cls._broadcast_via_websocket(record)
+            cls._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.CHAT_RESPONSE)
         elif cls._config.execution.mode == ExecutionMode.STREAM:
-            cls._broadcast_stream_chunk_via_websocket(record)
+            cls._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.STREAM_CHUNK)
         else:
             message = cls._construct_message_for_store(record)
             cls._get_response_store().add_message(message)
@@ -167,9 +139,8 @@ class ResponseHandler(LambdaSQSConsumer):
 
                 if endpoint_url and user_id:
                     base_ws = cls._get_base_ws_handler()
-                    error_broadcast = base_ws._build_broadcasting_message(BaseWSHandler.MessageType.SYSTEM_RESPONSE, **error_message)
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
-                    base_ws.ws_handler.broadcast(endpoint_url=endpoint_url, message=error_broadcast, user_id=user_id)
+                    base_ws.broadcast_message(endpoint_url, user_id, message_type=BaseWSHandler.MessageType.SYSTEM_RESPONSE, message=error_message)
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")
@@ -184,12 +155,8 @@ class ResponseHandler(LambdaSQSConsumer):
                         done=True,
                     )
                     base_ws = cls._get_base_ws_handler()
-                    stream_error_message = base_ws._build_broadcasting_message(
-                        BaseWSHandler.MessageType.STREAM_CHUNK,
-                        **error_chunk.model_dump(exclude_none=True),
-                    )
                     cls._log.info(f"Broadcasting permanent failure stream chunk via WebSocket for user_id: {user_id}")
-                    base_ws.ws_handler.broadcast(endpoint_url=endpoint_url, message=stream_error_message, user_id=user_id)
+                    base_ws.broadcast_message(endpoint_url, user_id, message_type=BaseWSHandler.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True))
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")
