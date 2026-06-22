@@ -67,7 +67,7 @@ weekly:
       path: examples/aws-serverless/scalable-openai
       deploy_dir: deploy
 
-    # Memory options 
+     # Memory options 
     - type: aws-serverless
       path: examples/memory/redis
     - type: aws-serverless
@@ -76,12 +76,12 @@ weekly:
       path: examples/memory/cosmos
       deploy_dir: deploy
 
-    # Azure Serverless
+    # # Azure Serverless
     - type: azure-serverless
       path: examples/azure-serverless/openai
       deploy_dir: deploy
     
-    # Azure Containerized
+    # # Azure Containerized
     - type: azure-containerized
       path: examples/azure-containerized/openai-cosmos
       deploy_dir: deploy
@@ -97,7 +97,7 @@ weekly:
       path: examples/gcp-serverless/openai-auth
       deploy_dir: deploy
     
-    # # GCP Containerized
+    # GCP Containerized
     - type: gcp-containerized
       path: examples/gcp-containerized/openai
       deploy_dir: deploy

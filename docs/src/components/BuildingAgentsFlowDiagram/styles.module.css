@@ -7,6 +7,11 @@
   overflow: hidden;
 }
 
+.fitWrap {
+  width: 100%;
+  overflow: hidden;
+}
+
 .flowScene {
   position: relative;
   display: grid;
@@ -20,8 +25,6 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.5rem;
   background: transparent;
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 
 .flowSvg {
@@ -250,11 +253,7 @@
 
 @media (max-width: 900px) {
   .flowScene {
-    width: 100%;
     padding: 1.5rem 1rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
   }
 
   .flowSvg {

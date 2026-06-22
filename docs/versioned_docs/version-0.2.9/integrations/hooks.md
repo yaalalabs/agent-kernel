@@ -16,7 +16,7 @@ Hooks have full access to the session object and auxiliary memory (volatile and 
 Hooks enable you to:
 
 - **Inject Context**: Add RAG (Retrieval-Augmented Generation) context to prompts
-- **Validate Input**: Implement guard rails to filter inappropriate content
+- **Validate Input**: Implement guardrails to filter inappropriate content
 - **Modify Responses**: Transform or enrich agent replies
 - **Logging & Analytics**: Track execution patterns and user interactions
 - **Content Moderation**: Apply safety filters to inputs and outputs
@@ -64,7 +64,7 @@ Pre-execution hooks run **before** an agent processes a prompt. They can:
 
 **Use Cases:**
 - RAG context injection
-- Input guard rails and content filtering
+- Input guardrails and content filtering
 - Prompt validation
 - User authentication/authorization
 - Request logging and analytics
@@ -85,7 +85,7 @@ Post-execution hooks run **after** an agent generates a response. They can:
 - Log responses for analytics
 
 **Use Cases:**
-- Output guard rails and safety filters
+- Output guardrails and safety filters
 - Adding disclaimers or compliance messages
 - Response formatting
 - Sentiment analysis
@@ -638,7 +638,7 @@ OpenAIModule([assistant])
 # Get runtime and register hooks
 runtime = GlobalRuntime.instance()
 
-# Pre-hooks: RAG first, then guard rail
+# Pre-hooks: RAG first, then guardrail
 runtime.register_pre_hooks("assistant", [
     RAGHook(),
     GuardRailHook(),
@@ -662,14 +662,14 @@ See the complete hooks demonstration in the repository:
 📁 **[examples/api/hooks/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks)**
 
 This example includes:
-- `hooks.py` - Guard rail and RAG hook implementations
+- `hooks.py` - Guardrail and RAG hook implementations
 - `app.py` - Agent setup with hook registration
 - `app_test.py` - Comprehensive test suite with 7 tests
 - `example_usage.py` - Direct execution example
 - `README.md` - Detailed documentation
 
 **Key Features Demonstrated:**
-- ✅ Guard rail blocking inappropriate requests
+- ✅ Guardrail blocking inappropriate requests
 - ✅ RAG context injection from knowledge base
 - ✅ Hook chaining (RAG → GuardRail)
 - ✅ Input validation (length limits, keyword filtering)
@@ -700,7 +700,7 @@ python example_usage.py
 The example includes comprehensive tests:
 
 ```python
-# Test guard rail blocks inappropriate content
+# Test guardrail blocks inappropriate content
 async def test_guard_rail_blocks():
     response = await client.send("How can I hack into a system?")
     assert "cannot assist" in response.lower()
@@ -735,7 +735,7 @@ class Prehook(ABC):
         
         Some use cases:
           - RAG context injection
-          - Prompt validation like input guard rails
+          - Prompt validation like input guardrails
           - Logging or analytics
 
         :param session: The session instance
@@ -932,7 +932,7 @@ class AsyncRAGHook(Prehook):
 ## Summary
 
 Execution hooks provide powerful extension points for:
-- ✅ Input validation and guard rails
+- ✅ Input validation and guardrails
 - ✅ Context injection (RAG)
 - ✅ Response moderation and transformation
 - ✅ Logging and analytics

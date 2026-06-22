@@ -473,23 +473,23 @@ function ProblemTable() {
   const sectionRef = useRef<HTMLElement>(null);
   const rows = [
     {
-      problem: "Platform engineering",
+      problem: "Platform Engineering",
       without:
         "Build REST APIs, auth, session management, deployment pipelines from scratch",
       with: "All included out of the box",
     },
     {
-      problem: "Framework lock-in",
+      problem: "Framework Lock-In",
       without: "Rewrite everything if you switch from LangGraph to OpenAI",
       with: "Change 2 import lines — everything else stays",
     },
     {
-      problem: "Cloud lock-in",
+      problem: "Cloud Lock-In",
       without: "AWS-specific code everywhere",
       with: "Same code deploys to AWS, Azure, GCP, or on-prem",
     },
     {
-      problem: "Memory & state",
+      problem: "Memory & State Management",
       without: "Build your own conversation tracking, caching, and persistence",
       with: "Built-in with multiple backends",
     },
@@ -500,7 +500,7 @@ function ProblemTable() {
       with: "Built-in with multiple knowledge sources",
     },
     {
-      problem: "Messaging integrations",
+      problem: "Messaging Integrations",
       without: "Build custom Slack/WhatsApp bots from scratch",
       with: "Built-in handlers, plug and play",
     },
@@ -515,7 +515,7 @@ function ProblemTable() {
       with: "LangFuse/OpenLLMetry with one config line",
     },
     {
-      problem: "Guardrails & safety",
+      problem: "Guardrails & Safety",
       without: "Build custom content filters",
       with: "OpenAI and Bedrock guardrails built in",
     },
@@ -700,7 +700,7 @@ function ProblemTable() {
                       {activeRow.problem}
                     </h3>
                     <p className={styles.problemComparePanelMeta}>
-                      Without vs with Agent Kernel
+                      Without vs. with Agent Kernel
                     </p>
                   </div>
                 </div>

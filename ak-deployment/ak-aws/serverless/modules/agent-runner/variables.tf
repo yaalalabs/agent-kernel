@@ -21,8 +21,29 @@ variable "module_type" {
 
 variable "source_bucket" {
   type        = string
-  description = "S3 bucket used to store the agent runner source package"
+  description = "S3 bucket containing the agent runner source package (used for signing job)"
   default     = null
+}
+
+variable "source_key" {
+  type        = string
+  description = "S3 key of the agent runner source package (used for signing job)"
+  default     = null
+}
+
+variable "source_version_id" {
+  type        = string
+  description = "S3 object version ID of the source package (required for production code signing)"
+  default     = null
+}
+
+variable "s3_existing_package" {
+  description = "Pre-built s3_existing_package object from lambda-package module (bucket + key). Pass null for non-S3Zip deployments."
+  type = object({
+    bucket = string
+    key    = string
+  })
+  default = null
 }
 
 variable "docker_image_uri" {

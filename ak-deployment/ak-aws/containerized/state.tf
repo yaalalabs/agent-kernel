@@ -49,6 +49,9 @@ locals {
     }
   } : {}
   gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
+
+  # Resolved ECR image URI — uses external if provided, otherwise falls back to the built image
+  ecr_image_uri = var.ecr_image_uri != null ? var.ecr_image_uri : module.docker_image[0].docker_image_uri
 }
 
 module "vpc" {
@@ -76,7 +79,7 @@ module "redis" {
 }
 
 module "docker_image" {
-  count         = 1
+  count         = var.ecr_image_uri == null ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.5.1"
   env_alias     = var.env_alias

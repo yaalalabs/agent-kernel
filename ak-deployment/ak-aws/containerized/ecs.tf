@@ -82,7 +82,7 @@ module "ecs" {
         (local.container_name) = {
           cpu                    = var.ecs_cpu
           memory                 = var.ecs_memory
-          image                  = module.docker_image[0].docker_image_uri
+          image                  = local.ecr_image_uri
           essential              = true
           readonlyRootFilesystem = false
           portMappings = [

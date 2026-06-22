@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # GCP Containerized (Cloud Run)
 
-Deploy Agent Kernel agents as always-on containerized services on **GCP Cloud Run** with `min_instance_count ≥ 1`. Uses the `ak-deployment/ak-gcp/containerized` Terraform module.
+Deploy Agent Kernel agents as always-on containerized services on **GCP Cloud Run** with `min_instance_count ≥ 1`. Uses the [`yaalalabs/ak-containerized/google`](https://registry.terraform.io/modules/yaalalabs/ak-containerized/google) Terraform module.
 
 ## Overview
 
@@ -71,7 +71,8 @@ dependencies = [
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -101,7 +102,8 @@ module "containerized_agent" {
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region

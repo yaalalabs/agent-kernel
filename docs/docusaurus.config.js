@@ -438,9 +438,15 @@ const config = {
             type: 'docSidebar',
             sidebarId: 'tutorialSidebar',
             position: 'left',
-            label: 'Documentation',
+            label: 'Docs',
           },
           { to: '/blog', label: 'Blog', position: 'left' },
+          {
+            href: 'https://github.com/yaalalabs/agent-kernel',
+            position: 'right',
+            className: 'header-github-link',
+            'aria-label': 'GitHub repository',
+          },
           {
             type: 'docsVersionDropdown',
             position: 'right',
@@ -481,8 +487,16 @@ const config = {
               { label: 'Terraform', href: 'https://registry.terraform.io/modules/yaalalabs' },
             ],
           },
+          {
+            title: 'Legal',
+            items: [
+              { label: 'Privacy Policy', to: '/privacy-policy' },
+              { label: 'Cookie Policy', to: '/cookie-policy' },
+              { label: 'Terms of Use', to: '/terms-of-use' },
+            ],
+          },
         ],
-        copyright: `© ${new Date().getFullYear()} Yaala Labs. All rights reserved.`,
+        copyright: `© ${new Date().getFullYear()} <a href="https://yaalalabs.com" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

@@ -641,6 +641,70 @@ This creates `dist_ws_connection_handler.zip`.
 
 The example deployment script runs all package builders before Terraform applies the infrastructure.
 
+### External Artifact Sources (Production)
+
+For production deployments, it is recommended to build and publish Lambda artifacts in CI/CD before running terraform apply. Terraform can then deploy using immutable artifact references (`lambda_package_s3` or `ecr_image_uri`) rather than building artifacts locally.
+
+| Field               | Applicable package types     | Description                                                                                                                                  |
+| ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `package_path`      | `LocalZip`, `S3Zip`, `Image` | Path to a local ZIP file, source directory, or Docker build context. Terraform builds/uploads the artifact as needed.                        |
+| `lambda_package_s3` | `S3Zip`                      | Existing ZIP artifact in S3: `{ bucket, key }`. Terraform deploys directly from the specified object.                                        |
+| `ecr_image_uri`     | `Image`                      | Existing container image URI (for example, `account.dkr.ecr.region.amazonaws.com/repo:tag`). Terraform deploys the specified image directly. |
+
+
+`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one per handler.
+
+| Package Type | Development                                 | Production                                      |
+| ------------ | ------------------------------------------- | ----------------------------------------------- |
+| `LocalZip`   | `package_path`                              | Generally not recommended                       |
+| `S3Zip`      | `package_path` (Terraform uploads artifact) | `lambda_package_s3` (CI/CD uploads artifact/ Already built and uploaded to S3) |
+| `Image`      | `package_path` (Terraform builds image)     | `ecr_image_uri` (CI/CD builds and pushes image/ Already built and pushed to an ECR) |
+
+
+**Example: scalable queue mode with S3 ZIPs and an ECR image**
+
+```hcl
+request_handler = {
+  module_name      = "rqst-hdlr"
+  function_name    = "request-handler"
+  handler_path     = "lambda_request_handler.handler"
+  package_type     = "S3Zip"
+  lambda_package_s3 = {
+    bucket = "my-lambda-packages-bucket"
+    key    = "dist_request_handler.zip"
+  }
+  timeout     = 45
+  memory_size = 256
+  environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+}
+
+agent_runner = {
+  module_name   = "agent-runner"
+  function_name = "agent-runner"
+  handler_path  = "lambda_agent_runner.handler"
+  package_type  = "Image"
+  ecr_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+  timeout       = 45
+  memory_size   = 512
+  environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+}
+
+response_handler = {
+  module_name      = "response-handler"
+  function_name    = "response-handler"
+  handler_path     = "lambda_response_handler.handler"
+  package_type     = "S3Zip"
+  lambda_package_s3 = {
+    bucket = "my-lambda-packages-bucket"
+    key    = "dist_response_handler.zip"
+  }
+  timeout     = 45
+  memory_size = 256
+}
+```
+
+This pattern is recommended for production: build and upload artifacts in CI/CD, then run `terraform apply` without any local build step. See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example.
+
 ### API Endpoints
 
 After deployment, the default chat route is:

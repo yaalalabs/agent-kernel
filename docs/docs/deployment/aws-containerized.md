@@ -37,6 +37,19 @@ graph TB
 
 Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
+### Deployment Package Options
+
+The `yaalalabs/ak-containerized/aws` module supports two artifact sources:
+
+| Option | Variable | Description |
+|---|---|---|
+| Local Docker build | `package_path` | Path to the Docker build context (directory containing `Dockerfile`). Terraform builds and pushes the image during `apply`. |
+| Pre-built ECR image | `ecr_image_uri` | Full ECR image URI (`account.dkr.ecr.region.amazonaws.com/repo:tag`). Terraform skips the local build and deploys the specified image directly. |
+
+Exactly one of `package_path` or `ecr_image_uri` must be set.
+
+The pre-built ECR image pattern is recommended for production: build and push the image in CI/CD, then run `terraform apply` referencing the pushed URI. See [examples/aws-containerized/openai-dynamodb](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb) for a complete example.
+
 ## Advantages
 
 - **No cold starts** - containers always warm

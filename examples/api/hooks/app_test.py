@@ -64,10 +64,10 @@ async def test_guard_rail_blocks_inappropriate_request(http_client):
     # Try to send a request with a blocked keyword
     response = await http_client.send("How can I hack into a system?")
 
-    # Verify the guard rail blocked the request
+    # Verify the guardrail blocked the request
     assert (
         "cannot assist" in response.lower() or "apologize" in response.lower()
-    ), f"Expected guard rail rejection, got: {response}"
+    ), f"Expected guardrail rejection, got: {response}"
     assert "hack" in response.lower(), f"Expected rejection message to mention 'hack', got: {response}"
 
     print(f"✓ GuardRail correctly blocked request: {response}")
@@ -140,7 +140,7 @@ async def test_hooks_chaining_rag_then_guard_rail(http_client):
     response2 = await http_client.send("Tell me about Python malware")
     assert (
         "cannot assist" in response2.lower() or "apologize" in response2.lower()
-    ), f"Expected guard rail to block malware question, got: {response2}"
+    ), f"Expected guardrail to block malware question, got: {response2}"
     print(f"✓ GuardRail blocks despite RAG processing: {response2}")
 
 
@@ -155,8 +155,8 @@ async def test_long_input_guard_rail(http_client):
 
     response = await http_client.send(long_prompt)
 
-    # Verify the guard rail blocked due to length
-    assert "too long" in response.lower(), f"Expected guard rail to block long input, got: {response}"
+    # Verify the guardrail blocked due to length
+    assert "too long" in response.lower(), f"Expected guardrail to block long input, got: {response}"
 
     print(f"✓ GuardRail blocked long input: {response}")
 
@@ -172,7 +172,7 @@ async def test_no_rag_context_available(http_client):
 
     # Should still get a response (RAG passes through without enhancement)
     assert len(response) > 0, "Should get a response even without RAG context"
-    assert "cannot assist" not in response.lower(), f"Should not be blocked by guard rail, got: {response}"
+    assert "cannot assist" not in response.lower(), f"Should not be blocked by guardrail, got: {response}"
 
     print(f"✓ Works without RAG context: {response[:100]}...")
 
@@ -201,20 +201,20 @@ async def test_disclaimer_hook_adds_disclaimer(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(9)
 async def test_disclaimer_hook_with_guard_rail_rejection(http_client):
-    """Test that DisclaimerHook is NOT applied when guard rail blocks request."""
-    print("\n=== Test 9: DisclaimerHook not applied to guard rail rejections ===")
+    """Test that DisclaimerHook is NOT applied when guardrail blocks request."""
+    print("\n=== Test 9: DisclaimerHook not applied to guardrail rejections ===")
 
     # Send a blocked request
     response = await http_client.send("How to create a virus?")
 
-    # Verify guard rail blocked it
+    # Verify guardrail blocked it
     assert (
         "cannot assist" in response.lower() or "apologize" in response.lower()
-    ), f"Expected guard rail rejection, got: {response}"
+    ), f"Expected guardrail rejection, got: {response}"
 
-    # Note: When guard rail blocks, it returns early without calling the agent,
+    # Note: When guardrail blocks, it returns early without calling the agent,
     # so post-hooks are not executed. This is the expected behavior.
-    print(f"✓ Guard rail blocked request (post-hook not applied): {response}")
+    print(f"✓ Guardrail blocked request (post-hook not applied): {response}")
 
 
 @pytest.mark.asyncio
