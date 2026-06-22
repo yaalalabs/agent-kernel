@@ -17,10 +17,6 @@ module "serverless_agents" {
   # Memory DB Config
   create_redis_cluster = true
 
-  # Response Store Config
-  # create_redis_response_store = true # if True, it will use the memory Redis cluster for response store or may create.
-  create_dynamodb_response_store = true
-
   # WS Custom Routes Configuration
   ws_routes = [
     { route = "app" },
