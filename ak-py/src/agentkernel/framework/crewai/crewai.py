@@ -3,8 +3,14 @@ from datetime import datetime
 from typing import Any, Callable, List
 
 from crewai import Agent, Crew, Memory, Task
-from crewai.events.listeners.tracing.utils import set_suppress_tracing_messages
 from crewai.memory import MemoryRecord, ScopeInfo
+
+try:
+    from crewai.events.listeners.tracing.utils import set_suppress_tracing_messages
+    set_suppress_tracing_messages(True)
+except ImportError:
+    pass
+
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
 
@@ -291,7 +297,6 @@ class CrewAIRunner(Runner):
         """
         prompt = ""
         context: ToolContext | None = None
-        suppress_tracing_messages_token = set_suppress_tracing_messages(True)
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             for req in requests:
@@ -332,7 +337,6 @@ class CrewAIRunner(Runner):
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
-            suppress_tracing_messages_token.var.reset(suppress_tracing_messages_token)
             if context is not None:
                 context.reset()
 
