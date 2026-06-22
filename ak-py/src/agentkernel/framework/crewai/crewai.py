@@ -7,6 +7,7 @@ from crewai.memory import MemoryRecord, ScopeInfo
 
 try:
     from crewai.events.listeners.tracing.utils import set_suppress_tracing_messages
+
     set_suppress_tracing_messages(True)
 except ImportError:
     pass
