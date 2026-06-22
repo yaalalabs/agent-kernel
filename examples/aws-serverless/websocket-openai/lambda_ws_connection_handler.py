@@ -10,7 +10,7 @@ class CustomAuthTokenValidator(AuthValidator):
             payload = jwt.decode(token, options={"verify_signature": False})
             email = payload.get("email", "")
             user_id = payload.get("userId", "")
-            if user_id == "user-1" and email == "test@test.com":
+            if user_id in ["user-1", "user-2"] and email in ["test1@test.com", "test2@test.com"]:
                 return ValidationResult(is_valid=True, claims={"userId": user_id})
             return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
         except Exception as e:
