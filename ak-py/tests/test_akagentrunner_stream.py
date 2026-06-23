@@ -6,7 +6,13 @@ import pytest
 from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessStreamAgentRunner
 
 
-def _make_record(body: dict, message_group_id: str = "session-1", request_id: str = "req-1", user_id: str = "user-1", endpoint_url: str = "https://example.execute-api.us-east-1.amazonaws.com/prod"):
+def _make_record(
+    body: dict,
+    message_group_id: str = "session-1",
+    request_id: str = "req-1",
+    user_id: str = "user-1",
+    endpoint_url: str = "https://example.execute-api.us-east-1.amazonaws.com/prod",
+):
     return {
         "body": json.dumps(body),
         "attributes": {
@@ -101,8 +107,10 @@ def test_process_message_streams_chunks_to_output_queue():
     mock_chat_service = MagicMock()
     mock_chat_service.process_stream_chat_sync = _mock_process_stream_sync
 
-    with patch.object(ServerlessStreamAgentRunner, "_get_chat_service", return_value=mock_chat_service), \
-         patch("agentkernel.deployment.aws.serverless.akagentrunner.SQSHandler") as mock_sqs:
+    with (
+        patch.object(ServerlessStreamAgentRunner, "_get_chat_service", return_value=mock_chat_service),
+        patch("agentkernel.deployment.aws.serverless.akagentrunner.SQSHandler") as mock_sqs,
+    ):
         ServerlessStreamAgentRunner.process_message(record)
 
     assert mock_sqs.send_message_to_output_queue.call_count == 3

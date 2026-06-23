@@ -162,7 +162,7 @@ class AgentService:
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
 
-        async for chunk in self._runtime.stream(self._agent, self._session, requests): # using async due to aync iterator
+        async for chunk in self._runtime.stream(self._agent, self._session, requests):  # using async due to aync iterator
             yield chunk
 
     def get_response_session_id(self, session_id: str | None = None) -> str | None:

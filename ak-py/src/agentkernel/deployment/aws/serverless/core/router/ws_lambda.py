@@ -85,7 +85,6 @@ class BaseWSHandler:
         if not user_id:
             raise ValueError(f"No user_id found for connection_id: {connection_id}")
         return self.WSMessageInfo(user_id=user_id, request=request)
-    
 
     def broadcast_message(
         self,
@@ -397,7 +396,9 @@ class SystemRoutesHandler(BaseWSHandler):
             try:
                 endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
                 error_chunk = StreamChunk(error=str(e), done=True)
-                self.broadcast_message(endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True))
+                self.broadcast_message(
+                    endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True)
+                )
             except Exception:
                 pass
             return 500, self._build_lambda_response(user_id=user_id, msg="Stream request processing failed", success=False)
@@ -566,7 +567,8 @@ class WSLambdaRouter(BaseLambdaRouter):
 
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
             self._base_route_handler.broadcast_message(
-                endpoint_url, user_id,
+                endpoint_url,
+                user_id,
                 message_type=BaseWSHandler.MessageType.SYSTEM_RESPONSE,
                 message={"status": "FAILED", "message": error_message},
             )

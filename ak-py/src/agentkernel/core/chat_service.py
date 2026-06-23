@@ -238,6 +238,7 @@ class AgentHandler:
         :param requests: List of AgentRequest objects to process
         :return: List of StreamChunk objects
         """
+
         async def _collect():
             chunks = []
             async for chunk in self.service.stream_multi(requests=requests):

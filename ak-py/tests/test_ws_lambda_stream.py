@@ -11,21 +11,25 @@ def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
             "domainName": "example.execute-api.us-east-1.amazonaws.com",
             "stage": "prod",
         },
-        "body": json.dumps({
-            "request_id": request_id,
-            "user_id": user_id,
-            "body": {
-                "prompt": "Hello",
-                "session_id": session_id,
-            },
-        }),
+        "body": json.dumps(
+            {
+                "request_id": request_id,
+                "user_id": user_id,
+                "body": {
+                    "prompt": "Hello",
+                    "session_id": session_id,
+                },
+            }
+        ),
     }
 
 
 def _make_system_routes_handler():
-    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AKConfig") as mock_config_cls, \
-         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler"), \
-         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.ChatService"):
+    with (
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AKConfig") as mock_config_cls,
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler"),
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.ChatService"),
+    ):
         mock_config = MagicMock()
         mock_config.websocket_api.connection_table.table_name = "connections"
         mock_config.websocket_api.connection_table.ttl = 86400
@@ -87,8 +91,10 @@ def test_handle_queue_mode_sends_to_sqs_and_returns_200():
     handler.ws_handler = MagicMock()
     handler.ws_handler.get_user_id.return_value = "user-1"
 
-    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls, \
-         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.SQSHandler") as mock_sqs:
+    with (
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls,
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.SQSHandler") as mock_sqs,
+    ):
         mock_ws_cls.construct_endpoint_url_from_event.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
         mock_sqs.send_message_to_input_queue.return_value = {"MessageId": "msg-1"}
         mock_sqs.CustomAttribute = MagicMock(side_effect=lambda **kwargs: kwargs)

@@ -56,9 +56,7 @@ class ResponseHandler(LambdaSQSConsumer):
         return message
 
     @classmethod
-    def _broadcast_via_websocket(
-        cls, record: Dict[str, Any], message_type: Optional[BaseWSHandler.MessageType] = None
-    ) -> None:
+    def _broadcast_via_websocket(cls, record: Dict[str, Any], message_type: Optional[BaseWSHandler.MessageType] = None) -> None:
         """
         Broadcast a message via WebSocket.
 
@@ -156,7 +154,9 @@ class ResponseHandler(LambdaSQSConsumer):
                     )
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure stream chunk via WebSocket for user_id: {user_id}")
-                    base_ws.broadcast_message(endpoint_url, user_id, message_type=BaseWSHandler.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True))
+                    base_ws.broadcast_message(
+                        endpoint_url, user_id, message_type=BaseWSHandler.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True)
+                    )
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")

@@ -117,8 +117,7 @@ def test_handle_stream_returns_400_not_raises():
         400,
         {
             "error": (
-                "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. "
-                "Use streaming_handler as your Lambda entry point."
+                "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. " "Use streaming_handler as your Lambda entry point."
             )
         },
     )
