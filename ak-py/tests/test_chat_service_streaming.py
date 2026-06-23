@@ -68,8 +68,8 @@ async def test_process_stream_chat_async_defaults_to_json(monkeypatch):
     assert fake_handler.initialized_with == ("session-1", "test-agent")
     assert fake_service.received_requests == ["request-1"]
     assert payloads == [
-        '{"delta":"Hello","done":false}',
-        '{"done":true,"session_id":"session-1"}',
+        '{"delta": "Hello", "done": false, "session_id": "session-1"}',
+        '{"done": true, "session_id": "session-1"}',
     ]
 
 
@@ -92,8 +92,8 @@ async def test_process_stream_chat_async_can_return_sse_frames(monkeypatch):
     payloads = [payload async for payload in gen]
 
     assert payloads == [
-        'data: {"delta":"Hello","done":false}\n\n',
-        'data: {"done":true,"session_id":"session-1"}\n\n',
+        'data: {"delta": "Hello", "done": false, "session_id": "session-1"}\n\n',
+        'data: {"done": true, "session_id": "session-1"}\n\n',
     ]
 
 
@@ -137,6 +137,6 @@ def test_process_stream_chat_sync_yields_chunks(monkeypatch):
 
     assert fake_handler.initialized_with == ("session-1", "test-agent")
     assert collected == [
-        '{"delta":"Hello","done":false}',
-        '{"done":true,"session_id":"session-1"}',
+        '{"delta": "Hello", "done": false, "session_id": "session-1"}',
+        '{"done": true, "session_id": "session-1"}',
     ]

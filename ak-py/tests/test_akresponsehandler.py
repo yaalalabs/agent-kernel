@@ -39,7 +39,7 @@ def test_broadcast_stream_chunk_raises_when_endpoint_url_missing():
         },
     }
     with pytest.raises(ValueError, match="endpoint_url is required"):
-        ResponseHandler._broadcast_stream_chunk_via_websocket(record)
+        ResponseHandler._broadcast_via_websocket(record)
 
 
 def test_broadcast_stream_chunk_raises_when_user_id_missing():
@@ -50,10 +50,12 @@ def test_broadcast_stream_chunk_raises_when_user_id_missing():
         },
     }
     with pytest.raises(ValueError, match="user_id is required"):
-        ResponseHandler._broadcast_stream_chunk_via_websocket(record)
+        ResponseHandler._broadcast_via_websocket(record)
 
 
 def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
+    from agentkernel.deployment.aws.serverless.core.router.ws_lambda import BaseWSHandler
+
     record = {
         "body": json.dumps({"delta": "hello", "done": False, "session_id": "s1"}),
         "messageAttributes": {
@@ -63,27 +65,32 @@ def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
     }
 
     mock_ws_handler = MagicMock()
-    with patch.object(ResponseHandler, "_get_websocket_handler", return_value=mock_ws_handler):
-        ResponseHandler._broadcast_stream_chunk_via_websocket(record)
+    with patch.object(ResponseHandler, "_get_base_ws_handler", return_value=mock_ws_handler):
+        ResponseHandler._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.STREAM_CHUNK)
 
-    mock_ws_handler.broadcast.assert_called_once()
-    call_kwargs = mock_ws_handler.broadcast.call_args
+    mock_ws_handler.broadcast_message.assert_called_once()
+    call_kwargs = mock_ws_handler.broadcast_message.call_args
+    endpoint_url = call_kwargs.args[0]
+    user_id = call_kwargs.args[1]
+    message_type = call_kwargs.kwargs["message_type"]
     broadcasted_message = call_kwargs.kwargs["message"]
-    assert broadcasted_message["type"] == "STREAM_CHUNK"
+    assert endpoint_url == "https://example.execute-api.us-east-1.amazonaws.com/prod"
+    assert user_id == "user-1"
+    assert message_type == BaseWSHandler.MessageType.STREAM_CHUNK
     assert broadcasted_message["delta"] == "hello"
     assert broadcasted_message["done"] is False
 
 
 @patch("agentkernel.deployment.aws.serverless.akresponsehandler.AKConfig")
 def test_process_message_stream_mode_calls_broadcast_stream_chunk(mock_config_cls):
+    from agentkernel.core.model import ExecutionMode
+    from agentkernel.deployment.aws.serverless.core.router.ws_lambda import BaseWSHandler
+
     mock_config = MagicMock()
-    mock_config.execution.mode.value = "stream"
+    mock_config.execution.mode = ExecutionMode.STREAM
     mock_config_cls.get.return_value = mock_config
 
-    from agentkernel.core.model import ExecutionMode
-
-    ResponseHandler._config = MagicMock()
-    ResponseHandler._config.execution.mode = ExecutionMode.STREAM
+    ResponseHandler._config = mock_config
 
     record = {
         "body": json.dumps({"delta": "token", "done": False, "session_id": "s1"}),
@@ -95,10 +102,12 @@ def test_process_message_stream_mode_calls_broadcast_stream_chunk(mock_config_cl
     }
 
     mock_ws_handler = MagicMock()
-    with patch.object(ResponseHandler, "_get_websocket_handler", return_value=mock_ws_handler):
+    with patch.object(ResponseHandler, "_get_base_ws_handler", return_value=mock_ws_handler):
         ResponseHandler.process_message(record)
 
-    mock_ws_handler.broadcast.assert_called_once()
-    broadcasted = mock_ws_handler.broadcast.call_args.kwargs["message"]
-    assert broadcasted["type"] == "STREAM_CHUNK"
+    mock_ws_handler.broadcast_message.assert_called_once()
+    call_kwargs = mock_ws_handler.broadcast_message.call_args
+    message_type = call_kwargs.kwargs["message_type"]
+    broadcasted = call_kwargs.kwargs["message"]
+    assert message_type == BaseWSHandler.MessageType.STREAM_CHUNK
     assert broadcasted["delta"] == "token"
