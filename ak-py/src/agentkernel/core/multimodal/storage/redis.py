@@ -118,12 +118,6 @@ class RedisAttachmentDriver:
         """Return the number of attachments tracked for this session."""
         return self.client.llen(self.index_key(session_id))
 
-    def list_ids(self, session_id: str) -> list[str]:
-        """Return attachment IDs for this session in insertion order."""
-        raw_ids = self.client.lrange(self.index_key(session_id), 0, -1)
-        return [attachment_id.decode() if isinstance(attachment_id, bytes) else attachment_id for attachment_id in raw_ids]
-
-
 class RedisAttachmentStore(AttachmentStore):
     """
     Redis-backed attachment storage.
@@ -163,6 +157,3 @@ class RedisAttachmentStore(AttachmentStore):
 
     def delete(self, attachment_id: str) -> None:
         self._driver.delete(self._session_id, attachment_id)
-
-    def list_ids(self) -> list[str]:
-        return self._driver.list_ids(self._session_id)

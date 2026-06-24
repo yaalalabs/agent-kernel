@@ -78,7 +78,3 @@ class SessionNonVolatileCacheAttachmentStore(AttachmentStore):
             ids.remove(attachment_id)
             index["ids"] = ids
             self._cache.set(ATTACHMENT_INDEX_KEY, index)
-
-    def list_ids(self) -> list[str]:
-        index = self._cache.get(ATTACHMENT_INDEX_KEY) or {"ids": []}
-        return list(index.get("ids", []))

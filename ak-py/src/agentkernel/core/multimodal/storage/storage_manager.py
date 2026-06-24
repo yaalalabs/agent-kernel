@@ -120,19 +120,6 @@ class AttachmentStorageManager:
         _log.info(f"Saved {attachment_type}: {attachment_id} ({name})")
         return attachment_id
 
-    def list_attachment_summaries(self) -> list[tuple[str, str]]:
-        """
-        List attachment IDs and descriptions stored for this session.
-
-        :return: List of (attachment_id, description) tuples in insertion order.
-        """
-        summaries: list[tuple[str, str]] = []
-        for attachment_id in self._driver.list_ids():
-            attachment = self._driver.get(attachment_id)
-            if attachment:
-                summaries.append((attachment_id, attachment.get("description", "")))
-        return summaries
-
     def get_attachment_data(
         self,
         attachment_ids: list[str],

@@ -189,6 +189,3 @@ class DynamoDBAttachmentStore(AttachmentStore):
             self._driver.put(self._session_id, "_index", index_ids)
         self._log.debug(f"Deleted attachment: {attachment_id}")
 
-    def list_ids(self) -> list[str]:
-        index_ids = self._driver.get(self._session_id, "_index") or []
-        return list(index_ids)

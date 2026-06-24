@@ -211,8 +211,6 @@ class MultimodalPreHook(PreHook):
                 max_attachments=config.max_attachments,
             )
 
-            self._log.debug(f"Saved +++++++{att_type} {attachment_id}: {name}")
-
             descriptions.append((attachment_id, description))
             self._log.info(f"Saved {att_type} {attachment_id}: {name}")
 
