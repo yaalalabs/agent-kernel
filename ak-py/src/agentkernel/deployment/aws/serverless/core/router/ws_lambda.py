@@ -377,12 +377,14 @@ class SystemRoutesHandler(BaseWSHandler):
         :return: Tuple of (status_code, response_body)
         """
         user_id = None
+        session_id = None
         try:
             ws_message_info = self._parse_event_to_wsmessage(event)
             user_id = ws_message_info.user_id
             request = ws_message_info.request
             if request.body is None:
                 raise ValueError("body is required")
+            session_id = request.body.session_id
 
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
 
@@ -396,9 +398,10 @@ class SystemRoutesHandler(BaseWSHandler):
             try:
                 endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
                 error_chunk = StreamChunk(error=str(e), done=True)
-                self.broadcast_message(
-                    endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True)
-                )
+                error_chunk_dict = error_chunk.model_dump(exclude_none=True)
+                if session_id:
+                    error_chunk_dict["session_id"] = session_id
+                self.broadcast_message(endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=error_chunk_dict)
             except Exception:
                 pass
             return 500, self._build_lambda_response(user_id=user_id, msg="Stream request processing failed", success=False)
