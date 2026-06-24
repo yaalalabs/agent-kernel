@@ -5,12 +5,12 @@ description = "Demo of Google ADK based agents running in Agent Kernel with a CL
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,adk]>=0.5.1",
+    "agentkernel[cli,adk]>=0.6.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.5.1",
+    "agentkernel[test]>=0.6.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
