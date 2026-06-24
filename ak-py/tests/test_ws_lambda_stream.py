@@ -180,3 +180,31 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
     assert msg["type"] == "STREAM_CHUNK"
     assert msg.get("error") is not None
     assert msg.get("done") is True
+
+
+def test_handle_stream_direct_broadcasts_error_chunk_with_session_id_on_failure():
+    from agentkernel.core.model import ExecutionMode
+
+    handler = _make_system_routes_handler()
+    handler._config.execution.mode = ExecutionMode.STREAM
+
+    event = _make_ws_event(session_id="session-123")
+    handler.ws_handler = MagicMock()
+    handler.ws_handler.get_user_id.return_value = "user-1"
+
+    def _mock_process_stream_sync_error(req, sse_format=False):
+        raise ValueError("Agent error")
+
+    handler._chat_service = MagicMock()
+    handler._chat_service.process_stream_chat_sync = _mock_process_stream_sync_error
+
+    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls:
+        mock_ws_cls.construct_endpoint_url_from_event.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
+
+        status, body = handler._handle_stream_direct(event)
+
+    assert status == 500
+    last_call = handler.ws_handler.broadcast.call_args_list[-1]
+    msg = last_call.kwargs["message"]
+    assert msg["type"] == "STREAM_CHUNK"
+    assert msg["session_id"] == "session-123"
