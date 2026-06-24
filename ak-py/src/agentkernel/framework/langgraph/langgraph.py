@@ -240,7 +240,7 @@ class LangGraphAgent(BaseAgent):
                         )
                     )
         # TODO extract description from graph
-        return A2ACardBuilder.build(name=self.name, description="", skills=skills)
+        return A2ACardBuilder.build(name=self.name, description="", skills=skills, streaming=self.runner.supports_streaming)
 
     def attach_tool(self, tool: Any) -> None:
         """

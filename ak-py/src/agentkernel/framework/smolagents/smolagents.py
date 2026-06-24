@@ -70,6 +70,10 @@ class SmolagentsRunner(Runner):
         """
         super().__init__(FRAMEWORK)
 
+    @property
+    def supports_streaming(self) -> bool:
+        return False
+
     @staticmethod
     def _session(session: Session) -> SmolagentsSession | None:
         """
@@ -276,7 +280,7 @@ class SmolagentsAgent(BaseAgent):
 
         for tool in tools_list:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=getattr(tool, "description", ""), tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills)
+        return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills, streaming=self.runner.supports_streaming)
 
 
 class SmolagentsModule(Module):

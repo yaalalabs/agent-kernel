@@ -3,13 +3,9 @@ from uuid import uuid4
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig
 from a2a.client.base_client import BaseClient
+from a2a.client.client import SendMessageRequest
 from a2a.client.transports import RestTransport
-from a2a.types import (
-    Message,
-    Part,
-    Role,
-    TextPart,
-)
+from a2a.types import Message, Part, Role
 
 
 class A2AHttpClient:
@@ -30,22 +26,38 @@ class A2AHttpClient:
             except Exception as e:
                 raise RuntimeError("Failed to fetch the public agent card. Cannot continue.") from e
 
-    async def send(self, message: str):
+    async def send(self, message: str) -> str:
         async with httpx.AsyncClient() as httpx_client:
             config = ClientConfig(streaming=False)
             client = BaseClient(
                 card=self.card,
                 config=config,
-                transport=RestTransport(httpx_client, self.card),
-                consumers=[],
-                middleware=[],
+                transport=RestTransport(httpx_client, self.card, url=self.base_url),
+                interceptors=[],
             )
 
-            first_message = Message(
-                role=Role.user,
-                message_id=uuid4().hex,
-                context_id=self.context_id,
-                parts=[Part(root=TextPart(text=message))],
-            )
+            msg = Message()
+            msg.message_id = uuid4().hex
+            msg.context_id = self.context_id
+            msg.role = Role.ROLE_USER
+            part = Part()
+            part.text = message
+            msg.parts.append(part)
 
-            return [event async for event in client.send_message(first_message)][0].parts[0].root.text
+            req = SendMessageRequest()
+            req.message.CopyFrom(msg)
+
+            events = [event async for event in client.send_message(req)]
+            if not events:
+                return ""
+
+            # Non-streaming response: first event carries the reply as a Message or Task
+            first = events[0]
+            if first.HasField("message"):
+                parts = first.message.parts
+                return parts[0].text if parts else ""
+            if first.HasField("task"):
+                artifacts = first.task.artifacts
+                if artifacts and artifacts[0].parts:
+                    return artifacts[0].parts[0].text
+            return ""

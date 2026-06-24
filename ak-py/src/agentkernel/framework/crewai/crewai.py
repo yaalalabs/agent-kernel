@@ -75,6 +75,10 @@ class CrewAIRunner(Runner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
 
+    @property
+    def supports_streaming(self) -> bool:
+        return False
+
     def _memory(self, session: Session) -> ExternalMemory | None:
         """
         Returns the external memory associated with the session.
@@ -206,7 +210,7 @@ class CrewAIAgent(BaseAgent):
         skills = []
         for tool in self.agent.tools:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.backstory, skills=skills)
+        return A2ACardBuilder.build(name=self.name, description=self.agent.backstory, skills=skills, streaming=self.runner.supports_streaming)
 
     def attach_tool(self, tool: Any) -> None:
         """

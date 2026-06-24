@@ -220,6 +220,10 @@ class Runner(ABC):
         """
         return self._name
 
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     @abstractmethod
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """

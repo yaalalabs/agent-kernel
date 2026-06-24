@@ -279,7 +279,7 @@ class OpenAIAgent(BaseAgent):
         skills = []
         for tool in self.agent.tools:
             skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
+        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills, streaming=self.runner.supports_streaming)
 
 
 class OpenAIModule(Module):

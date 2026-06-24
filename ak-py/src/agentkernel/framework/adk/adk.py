@@ -297,8 +297,22 @@ class GoogleADKAgent(AKBaseAgent):
         """
         Returns the A2A AgentCard associated with the agent.
         """
-        # TODO Add A2A card support
-        pass
+        from a2a.types import AgentSkill
+
+        from ...core.builder import A2ACardBuilder
+
+        skills = []
+        raw_tools = getattr(self.agent, "tools", []) or []
+        for tool in raw_tools:
+            tool_name = getattr(tool, "name", None) or getattr(tool, "__name__", str(tool))
+            tool_desc = getattr(tool, "description", "") or ""
+            skills.append(AgentSkill(id=tool_name, name=tool_name, description=tool_desc, tags=[]))
+        return A2ACardBuilder.build(
+            name=self.name,
+            description=self.get_description() or "",
+            skills=skills,
+            streaming=self.runner.supports_streaming,
+        )
 
 
 class GoogleADKModule(Module):

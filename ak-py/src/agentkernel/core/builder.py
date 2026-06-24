@@ -23,27 +23,36 @@ class A2ACardBuilder(Builder):
     """
 
     @staticmethod
-    def build(name: str, description: str, skills: list[Any]) -> Any:
+    def build(name: str, description: str, skills: list[Any], streaming: bool = False) -> Any:
         """
         Build and return an A2A AgentCard instance.
         :param name: Name of the agent.
         :param description: Description of the agent.
         :param skills: List of AgentSkill objects.
+        :param streaming: Whether the agent supports SSE streaming.
         :return: An A2A AgentCard instance.
         """
-        from a2a.types import AgentCapabilities, AgentCard
+        from a2a.types import AgentCapabilities, AgentCard, AgentInterface
 
-        return AgentCard(
-            name=name,
-            description=description,
-            url=f"{AKConfig.get().a2a.url}/{name}",
-            version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            preferred_transport="HTTP+JSON",
-            capabilities=AgentCapabilities(streaming=False),
-            skills=skills,
-        )
+        card = AgentCard()
+        card.name = name
+        card.description = description
+        card.version = AKConfig.get().library_version
+
+        iface = AgentInterface()
+        iface.url = f"{AKConfig.get().a2a.url}/{name}"
+        card.supported_interfaces.append(iface)
+
+        cap = AgentCapabilities()
+        cap.streaming = streaming
+        card.capabilities.CopyFrom(cap)
+
+        for skill in skills:
+            card.skills.append(skill)
+
+        card.default_input_modes.append("text")
+        card.default_output_modes.append("text")
+        return card
 
 
 class SessionCacheBuilder(Builder):
