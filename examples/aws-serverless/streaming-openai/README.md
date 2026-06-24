@@ -6,7 +6,7 @@ Instead of buffering the full agent response and sending it once (async mode), s
 
 The deployment exposes:
 
-- A REST API (custom endpoints: `/api/app`, `/api/app_info`)
+- WebSocket routes registered in `lambda_request_handler.py` (for example `app` and `app_info`)
 - A WebSocket API (connect/disconnect handled by `lambda_ws_connection_handler.py`)
 - A streaming pipeline: request handler → input SQS → agent runner (streams chunks) → output SQS → response handler (broadcasts each chunk via WebSocket)
 
@@ -71,7 +71,7 @@ Provide values via `terraform.tfvars` (recommended) or via `-var` flags.
 
 1. Ensure dependencies are installed (`uv sync --all-extras` or run `./build.sh`).
 
-2. From `examples/aws-serverless/websocket-streaming-openai/deploy/` run:
+2. From `examples/aws-serverless/streaming-openai/deploy/` run:
 
 ```bash
 ./deploy.sh
@@ -108,35 +108,36 @@ wss://{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=your-jwt-tok
 
 The `$connect` route validates the JWT token via `CustomAuthTokenValidator` in `lambda_ws_connection_handler.py`.
 
-- The validator decodes a JWT (signature verification is disabled in this example).
-- The connection is allowed only if the JWT payload contains `userId: "user-1"` and `email: "test@test.com"`.
+- The validator decodes a JWT without signature verification in this example.
+- **Warning:** this makes the sample auth trivially forgeable; use real JWT verification in production.
+- The connection is allowed only if the JWT payload contains `userId` set to `user-1` or `user-2` and `email` set to `test1@test.com` or `test2@test.com`.
 
 ### Example token
 
-Any JWT-formatted token with `userId: "user-1"` and `email: "test@test.com"` claims will pass validation.
+Any JWT-formatted token with a matching allowlisted combination will pass validation, for example `userId: "user-1"` with `email: "test1@test.com"`.
 
 ### Receiving stream chunks
 
 After connecting and sending a chat message, you will receive a sequence of WebSocket messages:
 
 ```json
-{"type": "STREAM_CHUNK", "chunk": "Hello", "done": false}
-{"type": "STREAM_CHUNK", "chunk": " world", "done": false}
-{"type": "STREAM_CHUNK", "chunk": "!", "done": true}
+{"type": "STREAM_CHUNK", "delta": "Hello", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": "!", "done": true, "session_id": "user-1"}
 ```
 
-Reassemble the `chunk` fields in order to build the full response. The chunk with `"done": true` signals the end of the stream.
+Reassemble the `delta` fields in order to build the full response. The chunk with `"done": true` signals the end of the stream, and `session_id` identifies the conversation the stream belongs to.
 
-## Custom REST endpoints
+## Custom WebSocket routes
 
-The request handler registers two example endpoints:
+The request handler registers two example routes:
 
-- `GET /api/app`
-- `POST /api/app_info`
+- `app`
+- `app_info`
 
 ## Cleanup
 
-From `examples/aws-serverless/websocket-streaming-openai/deploy/` run:
+From `examples/aws-serverless/streaming-openai/deploy/` run:
 
 ```bash
 terraform destroy

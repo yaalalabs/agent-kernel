@@ -7,6 +7,8 @@ class CustomAuthTokenValidator(AuthValidator):
     def validate(self, token: str) -> ValidationResult:
         """Validate JWT token and return validation result."""
         try:
+            # WARNING: Signature verification is disabled here for documentation purposes only.
+            # This makes the example auth trivially forgeable; use real JWT verification in production.
             payload = jwt.decode(token, options={"verify_signature": False})
             email = payload.get("email", "")
             user_id = payload.get("userId", "")
