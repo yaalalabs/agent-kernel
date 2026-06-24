@@ -278,10 +278,12 @@ class CustomAuthTokenValidator(AuthValidator):
     def validate(self, token: str) -> ValidationResult:
         """Validate JWT token and return validation result."""
         try:
+            # WARNING: Signature verification is disabled here for documentation purposes only.
+            # This makes the example auth trivially forgeable; use real JWT verification in production.
             payload = jwt.decode(token, options={"verify_signature": False})
             email = payload.get("email", "")
             user_id = payload.get("userId", "")
-            if user_id == "user-1" and email == "test@test.com":
+            if user_id in ["user-1", "user-2"] and email in ["test1@test.com", "test2@test.com"]:
                 return ValidationResult(is_valid=True, claims={"userId": user_id})
             return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
         except Exception as e:
@@ -938,7 +940,7 @@ When you use queue-backed execution, configure the `execution` block:
 
 The response store is configured as a single object with one selected backend:
 
-**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used — responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true` or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode has no effect; the module silently ignores it.
+**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used — responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true` or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
 
 ```json
 {
