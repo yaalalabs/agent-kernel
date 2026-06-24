@@ -127,8 +127,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times. Sending error message to Output Queue`")
         try:
-            error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
             record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
+            error_message_body["session_id"] = record_attributes["message_group_id"]
             cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
             cls._log.info(f"Sent Permanent Failure message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
         except Exception as e:
@@ -264,8 +265,10 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
                 error=f"Failed to process message. Retried {cls.max_receive_count} times",
                 done=True,
             )
+            error_chunk_body = error_chunk.model_dump(exclude_none=True)
+            error_chunk_body["session_id"] = record_attributes["message_group_id"]
             cls._send_chunk_to_output_queue(
-                chunk_body=error_chunk.model_dump(exclude_none=True),
+                chunk_body=error_chunk_body,
                 record_attributes=record_attributes,
                 chunk_dedup_suffix="error",
             )

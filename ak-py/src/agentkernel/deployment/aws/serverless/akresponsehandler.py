@@ -125,6 +125,7 @@ class ResponseHandler(LambdaSQSConsumer):
 
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
+            session_id = message_attributes["message_group_id"]
             error_message = {
                 "error": f"Failed to process message after {cls.max_receive_count} retries",
                 "request_id": message_attributes.get("request_id"),
@@ -138,6 +139,7 @@ class ResponseHandler(LambdaSQSConsumer):
                 if endpoint_url and user_id:
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
+                    error_message["session_id"] = session_id
                     base_ws.broadcast_message(endpoint_url, user_id, message_type=BaseWSHandler.MessageType.SYSTEM_RESPONSE, message=error_message)
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
@@ -152,10 +154,12 @@ class ResponseHandler(LambdaSQSConsumer):
                         error=f"Failed to process message after {cls.max_receive_count} retries",
                         done=True,
                     )
+                    error_chunk_body = error_chunk.model_dump(exclude_none=True)
+                    error_chunk_body["session_id"] = session_id
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure stream chunk via WebSocket for user_id: {user_id}")
                     base_ws.broadcast_message(
-                        endpoint_url, user_id, message_type=BaseWSHandler.MessageType.STREAM_CHUNK, message=error_chunk.model_dump(exclude_none=True)
+                        endpoint_url, user_id, message_type=BaseWSHandler.MessageType.STREAM_CHUNK, message=error_chunk_body
                     )
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
