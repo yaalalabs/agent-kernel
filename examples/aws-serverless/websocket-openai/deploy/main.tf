@@ -1,7 +1,7 @@
 # Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   # Basic configuration
   product_alias        = var.product_alias
