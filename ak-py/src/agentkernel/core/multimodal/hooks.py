@@ -37,10 +37,8 @@ class MultimodalPreHook(PreHook):
     2. For each: call LLM → generate description → save to storage
     3. Remove raw binary data from requests
     4. Append attachment metadata (IDs + descriptions) to the user's text
-    5. Re-inject all session attachments on every turn so follow-up requests
-       expose the real IDs from storage. Framework conversation memory may
-       summarize prior turns and not preserve exact attachment UUIDs; storage
-       is the source of truth for IDs usable by analyze_attachments.
+
+    Conversation memory handles history — no need to re-inject previous attachments.
     """
 
     def __init__(self):
@@ -137,31 +135,11 @@ class MultimodalPreHook(PreHook):
         if not session or not config or not config.enabled:
             return requests
 
-        manager = AttachmentStorageManager(session_id=session.id)
-
-        # Describe and save any new attachments in the current request
-        await self._process_attachments(requests, config, manager)
-
-        # Re-inject all stored session attachments on every turn. Framework
-        # memory may not preserve exact attachment UUIDs across turns.
-        descriptions = manager.list_attachment_summaries()
+        # Describe and save all current attachments
+        descriptions = await self._process_attachments(session, requests, config)
         if not descriptions:
             return requests
 
-        return self._inject_attachment_metadata(requests, descriptions)
-
-    @staticmethod
-    def _inject_attachment_metadata(
-        requests: list[AgentRequest],
-        descriptions: list[tuple[str, str]],
-    ) -> list[AgentRequest]:
-        """
-        Inject attachment IDs and descriptions into the last text request.
-
-        :param requests: Current agent requests.
-        :param descriptions: Attachment IDs and descriptions for the session.
-        :return: Requests with attachment metadata appended to the prompt text.
-        """
         # Build description text for attachment metadata
         desc_text = "\n\n[Attached Images/Files:]\n"
         for att_id, desc in descriptions:
@@ -196,17 +174,21 @@ class MultimodalPreHook(PreHook):
 
     async def _process_attachments(
         self,
+        session: "Session",
         requests: list[AgentRequest],
         config: _MultimodalConfig,
-        manager: AttachmentStorageManager,
-    ) -> None:
+    ) -> list[tuple[str, str]]:
         """
         Describe and save each attachment in the current request.
 
+        :param session: The current session.
         :param requests: List of current agent requests.
         :param config: Multimodal configuration.
-        :param manager: Attachment storage manager for the session.
+        :return: List of (attachment_id, description) tuples.
         """
+        descriptions: list[tuple[str, str]] = []
+        manager = AttachmentStorageManager(session_id=session.id)
+
         for req in requests:
             data, att_type, name, mime_type = self._extract_attachment(req)
             if data is None:
@@ -229,7 +211,12 @@ class MultimodalPreHook(PreHook):
                 max_attachments=config.max_attachments,
             )
 
+            self._log.debug(f"Saved +++++++{att_type} {attachment_id}: {name}")
+
+            descriptions.append((attachment_id, description))
             self._log.info(f"Saved {att_type} {attachment_id}: {name}")
+
+        return descriptions
 
     @staticmethod
     def _extract_attachment(req: AgentRequest) -> tuple[Optional[str], str, str, str]:
