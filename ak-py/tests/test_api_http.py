@@ -338,8 +338,20 @@ class TestRESTAPIIntegration:
         # Get the app that was passed to uvicorn.run
         app = mock_uvicorn.call_args[1]["app"]
 
-        # Test the routes
-        route_paths = [route.path for route in app.routes]
+        # Test the routes — Starlette 1.3+ uses _IncludedRouter objects for
+        # routers added after app construction, so collect paths from both
+        # direct routes and included routers.
+        def collect_paths(routes, prefix=""):
+            paths = []
+            for route in routes:
+                if hasattr(route, "path"):
+                    paths.append(prefix + route.path)
+                elif hasattr(route, "include_context") and hasattr(route, "original_router"):
+                    ctx_prefix = getattr(route.include_context, "prefix", "")
+                    paths.extend(collect_paths(route.original_router.routes, prefix + ctx_prefix))
+            return paths
+
+        route_paths = collect_paths(app.routes)
         assert "/health" in route_paths
         assert "/custom/test" in route_paths
         assert "/test" not in route_paths

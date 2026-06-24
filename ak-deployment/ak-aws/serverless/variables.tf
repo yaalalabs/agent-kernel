@@ -59,15 +59,15 @@ variable "enable_api_gateway" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Allowed values: rest_sync, async (always allowed), rest_async and other modes (only when queue_mode is true)."
+  description = "Execution mode for the deployment. Allowed values: rest_sync, async, stream (always allowed), rest_async (only when queue_mode is true). Use 'stream' for WebSocket streaming where each chunk is sent individually via SQS."
   default     = "rest_sync"
   validation {
-    condition     = contains(["rest_sync", "rest_async", "async"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async, async."
+    condition = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream."
   }
   validation {
-    condition     = var.queue_mode || contains(["rest_sync", "async"], var.execution_mode)
-    error_message = "execution_mode must be rest_sync or async when queue_mode is false."
+    condition = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false."
   }
 }
 
@@ -115,19 +115,27 @@ variable "create_dynamodb_memory_table" {
 
 variable "create_redis_response_store" {
   type        = bool
-  description = "Create or reuse Redis for response storage"
+  description = "Create or reuse Redis for response storage. Must be false in WebSocket modes (async/stream) — responses are pushed over the WebSocket connection and a response store is not used."
   default     = false
   nullable    = false
+  validation {
+    condition     = !(var.create_redis_response_store && contains(["async", "stream"], var.execution_mode))
+    error_message = "create_redis_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
+  }
 }
 
 variable "create_dynamodb_response_store" {
   type        = bool
-  description = "Create a DynamoDB table for response storage"
+  description = "Create a DynamoDB table for response storage. Must be false in WebSocket modes (async/stream) — responses are pushed over the WebSocket connection and a response store is not used."
   default     = false
   nullable    = false
   validation {
     condition     = !(var.create_redis_response_store && var.create_dynamodb_response_store)
     error_message = "create_redis_response_store and create_dynamodb_response_store cannot both be true."
+  }
+  validation {
+    condition     = !(var.create_dynamodb_response_store && contains(["async", "stream"], var.execution_mode))
+    error_message = "create_dynamodb_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
   }
 }
 
@@ -148,8 +156,8 @@ variable "api_version" {
   description = "API version"
   default     = "v1"
   validation {
-    condition     = var.execution_mode == "async" || (var.api_version != null && length(trimspace(var.api_version)) > 0)
-    error_message = "api_version must not be null, empty, or whitespace-only when execution_mode is not 'async'."
+    condition     = contains(["async", "stream"], var.execution_mode) || (var.api_version != null && length(trimspace(var.api_version)) > 0)
+    error_message = "api_version must not be null, empty, or whitespace-only when execution_mode is not a websocket mode ('async' or 'stream')."
   }
 }
 
@@ -158,8 +166,8 @@ variable "agent_endpoint" {
   description = "Agent invocation endpoint"
   default     = "chat"
   validation {
-    condition     = var.execution_mode == "async" || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
-    error_message = "agent_endpoint must not be null, empty, or whitespace-only when execution_mode is not 'async'."
+    condition     = contains(["async", "stream"], var.execution_mode) || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
+    error_message = "agent_endpoint must not be null, empty, or whitespace-only when execution_mode is not a websocket mode ('async' or 'stream')."
   }
 }
 
@@ -168,8 +176,8 @@ variable "api_base_path" {
   description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
   default     = "api"
   validation {
-    condition     = var.execution_mode == "async" || (var.api_base_path != null && length(trimspace(var.api_base_path)) > 0)
-    error_message = "api_base_path must not be whitespace-only when provided and execution_mode is not 'async'. Use null or empty string to omit."
+    condition     = contains(["async", "stream"], var.execution_mode) || (var.api_base_path != null && length(trimspace(var.api_base_path)) > 0)
+    error_message = "api_base_path must not be whitespace-only when provided and execution_mode is not a websocket mode ('async' or 'stream'). Use null or empty string to omit."
   }
 }
 
@@ -179,12 +187,12 @@ variable "ws_chat_route" {
   default     = "chat"
 
   validation {
-    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
+    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
     error_message = "ws_chat_route must not be null, empty, or whitespace-only."
   }
 
   validation {
-    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
+    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
     error_message = "ws_chat_route must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
@@ -197,17 +205,17 @@ variable "ws_routes" {
   default     = []
 
   validation {
-    condition     = var.execution_mode == "async" || length(var.ws_routes) == 0
-    error_message = "'ws_routes' can only be defined in 'async' (websocket) execution mode."
+    condition     = contains(["async", "stream"], var.execution_mode) || length(var.ws_routes) == 0
+    error_message = "'ws_routes' can only be defined in 'async' or 'stream' (websocket) execution modes."
   }
 
   validation {
-    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
     error_message = "Routes in 'ws_routes' must not be null, empty, or whitespace-only."
   }
 
   validation {
-    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
     error_message = "Routes in 'ws_routes' must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
@@ -237,8 +245,8 @@ variable "gateway_endpoints" {
   }
 
   validation {
-    condition     = var.execution_mode != "async" || length(var.gateway_endpoints) == 0
-    error_message = "'gateway_endpoints' cannot be defined in 'async' (websocket) execution mode."
+    condition     = !contains(["async", "stream"], var.execution_mode) || length(var.gateway_endpoints) == 0
+    error_message = "'gateway_endpoints' cannot be defined in 'async' or 'stream' (websocket) execution modes."
   }
 }
 
@@ -259,8 +267,8 @@ variable "authorizer" {
   })
   default = null
   validation {
-    condition     = !(var.execution_mode == "async" && var.authorizer != null)
-    error_message = "'authorizer' cannot be defined in 'async' (websocket) execution mode."
+    condition     = !(contains(["async", "stream"], var.execution_mode) && var.authorizer != null)
+    error_message = "'authorizer' cannot be defined in 'async' or 'stream' (websocket) execution modes."
   }
 }
 
@@ -280,8 +288,8 @@ variable "ws_connection_handler" {
   })
   default = {}
   validation {
-    condition     = var.execution_mode != "async" || try(var.ws_connection_handler.package_path, null) != null
-    error_message = "ws_connection_handler.package_path is required when execution_mode is 'async'."
+    condition     = !contains(["async", "stream"], var.execution_mode) || try(var.ws_connection_handler.package_path, null) != null
+    error_message = "ws_connection_handler.package_path is required when execution_mode is 'async' or 'stream'."
   }
 }
 

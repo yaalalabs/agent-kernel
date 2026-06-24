@@ -67,6 +67,20 @@ class PostHook(ABC):
         """
         raise NotImplementedError
 
+    async def on_stream_chunk(
+        self,
+        session: "Session",
+        requests: list[AgentRequest],
+        agent: "Agent",
+        delta: str,
+    ) -> str | None:
+        """
+        Called for each streaming token delta before it is sent to the client.
+        Return the (optionally modified) delta string, or None to drop the token.
+        Default implementation passes the delta through unchanged.
+        """
+        return delta
+
     @abstractmethod
     def name(self) -> str:
         """

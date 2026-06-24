@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+from collections.abc import AsyncGenerator
 from threading import RLock
 from types import ModuleType
 from typing import Optional
@@ -20,6 +21,7 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    StreamChunk,
 )
 from .multimodal import MultimodalPreHookFactory
 from .session import SessionStore
@@ -124,6 +126,41 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
+    async def _prepare_requests(
+        self,
+        agent: Agent,
+        session: Session,
+        requests: list[AgentRequest],
+    ) -> list[AgentRequest] | AgentReply:
+        """
+        Runs the shared pre-hook pipeline and validates hook responses.
+
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to pass through the pre-hook chain.
+        :return: A potentially modified request list, or a reply that halts execution.
+        """
+        self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
+
+        pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
+        for hook in pre_hooks:
+            reply = await hook.on_run(session, agent, requests)
+            if isinstance(reply, (AgentReplyText, AgentReplyImage)):
+                return reply
+
+            # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
+            if isinstance(reply, list):
+                for item in reply:
+                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
+                        raise TypeError(
+                            f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
+                        )
+            else:
+                raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
+            requests = reply
+
+        return requests
+
     async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the specified agent with the multi-modal requests.
@@ -140,25 +177,11 @@ class Runtime:
         """
         async with session:
             try:
-                self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
-
-                pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
-                for hook in pre_hooks:
-                    reply = await hook.on_run(session, agent, requests)
-                    if isinstance(reply, (AgentReplyText, AgentReplyImage)):
-                        self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook '{hook.name()}' with reply: {reply}")
-                        return reply
-
-                    # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
-                    if isinstance(reply, list):
-                        for item in reply:
-                            if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
-                                raise TypeError(
-                                    f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
-                                )
-                    else:
-                        raise TypeError(f"PreHook '{hook.name()}' returned an invalid type. Expected list[AgentRequest], got {type(reply)}")
-                    requests = reply
+                requests_or_reply = await self._prepare_requests(agent, session, requests)
+                if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage)):
+                    self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                    return requests_or_reply
+                requests = requests_or_reply
 
                 self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
@@ -173,6 +196,44 @@ class Runtime:
 
                 self.sessions().store(session)
                 return reply
+            finally:
+                session.get_volatile_cache().clear()
+
+    async def stream(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamChunk, None]:
+        """
+        Streams the specified agent response token by token.
+
+        Pre-hooks run first; if halted, yields a StreamChunk with error and done=True.
+        Each token delta from the runner is passed through the post-hook chain via
+        on_stream_chunk() before being yielded. The volatile cache is cleared on exit.
+
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The multi-modal inputs provided to the agent.
+        :return: An async generator of StreamChunk objects.
+        """
+        async with session:
+            try:
+                requests_or_reply = await self._prepare_requests(agent, session, requests)
+                if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage)):
+                    self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                    yield StreamChunk(error=str(requests_or_reply), done=True)
+                    return
+                requests = requests_or_reply
+
+                self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
+
+                post_hooks = self._system_post_hooks + agent.post_hooks
+                async for delta in agent.runner.stream(agent, session, requests):
+                    for hook in post_hooks:
+                        delta = await hook.on_stream_chunk(session, requests, agent, delta)
+                        if delta is None:
+                            break
+                    if delta is not None:
+                        yield StreamChunk(delta=delta)
+
+                self.sessions().store(session)
+                yield StreamChunk(done=True, session_id=session.id)
             finally:
                 session.get_volatile_cache().clear()
 

@@ -8,9 +8,17 @@ from agentkernel.core.runtime import Runtime
 
 
 class DummyRunner(Runner):
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     async def run(self, agent, session, requests):
         prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
         return AgentReplyText(text=f"ok:{prompt}")
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
 
 
 class FrameworkAgent:

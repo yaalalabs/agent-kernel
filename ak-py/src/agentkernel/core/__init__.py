@@ -21,6 +21,7 @@ from .model import (
     AgentReply,
     AgentReplyText,
     AgentReplyImage,
+    StreamChunk,
 )
 from .config import AKConfig as Config
 from .module import Module

@@ -104,3 +104,20 @@ def test_dispatch_raises_for_unknown_route_with_env_vars(router, monkeypatch):
     msg = str(ei.value)
     assert "/api/v1/unknown" in msg
     assert "GET" in msg
+
+
+def test_handle_stream_returns_400_not_raises():
+    """Test that _handle_stream returns a 400 tuple instead of raising ValueError."""
+    from agentkernel.deployment.aws.serverless.core.router.rest_lambda import DefaultEndpointsHandler
+
+    event = {"httpMethod": "POST", "path": "/"}
+    result = DefaultEndpointsHandler._handle_stream(MagicMock(), event, context=None)
+
+    assert result == (
+        400,
+        {
+            "error": (
+                "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. " "Use streaming_handler as your Lambda entry point."
+            )
+        },
+    )

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from crewai import Agent, Crew, Task
@@ -147,6 +148,14 @@ class CrewAIRunner(Runner):
         finally:
             if context is not None:
                 context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        CrewAI does not support SSE streaming.
+        :raises NotImplementedError: Always raised — use rest_sync mode instead.
+        """
+        raise NotImplementedError("CrewAI does not support SSE streaming. Use rest_sync mode.")
+        yield  # make this an async generator to satisfy the type contract
 
 
 class CrewAIAgent(BaseAgent):
