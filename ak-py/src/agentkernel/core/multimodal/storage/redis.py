@@ -118,6 +118,7 @@ class RedisAttachmentDriver:
         """Return the number of attachments tracked for this session."""
         return self.client.llen(self.index_key(session_id))
 
+
 class RedisAttachmentStore(AttachmentStore):
     """
     Redis-backed attachment storage.

@@ -188,4 +188,3 @@ class DynamoDBAttachmentStore(AttachmentStore):
             index_ids.remove(attachment_id)
             self._driver.put(self._session_id, "_index", index_ids)
         self._log.debug(f"Deleted attachment: {attachment_id}")
-
