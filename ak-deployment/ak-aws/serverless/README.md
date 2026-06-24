@@ -171,8 +171,8 @@ module "websocket_api" {
   }
   
   # The WebSocket connection DynamoDB table is created automatically.
-  # create_dynamodb_response_store / create_redis_response_store are
-  # silently ignored in WebSocket modes (async/stream).
+  # Note: in WebSocket modes (async/stream), a response store is not used and
+  # `create_dynamodb_response_store` / `create_redis_response_store` must be `false` (Terraform validation enforces this).
 
   environment_variables = {
     ENVIRONMENT = "production"
