@@ -72,9 +72,7 @@ class SessionNonVolatileCacheAttachmentStore(AttachmentStore):
 
     def delete(self, attachment_id: str) -> None:
         self._cache.delete(f"{ATTACHMENT_KEY_PREFIX}{attachment_id}")
-        index = self._cache.get(ATTACHMENT_INDEX_KEY) or {"ids": []}
-        ids = index.get("ids", [])
-        if attachment_id in ids:
-            ids.remove(attachment_id)
-            index["ids"] = ids
+        index = self._cache.get(ATTACHMENT_INDEX_KEY)
+        if index and attachment_id in index["ids"]:
+            index["ids"].remove(attachment_id)
             self._cache.set(ATTACHMENT_INDEX_KEY, index)
