@@ -29,11 +29,11 @@ langfuse = [
     "nest-asyncio>=1.6.0",
 ]
 openllmetry = [
-    "traceloop-sdk>=0.45.0",
+    "traceloop-sdk>=0.61.0",
 ]
 crewai = [
-    "crewai~=1.14.7",
-    "openinference-instrumentation-crewai>=0.1.16",
+    "crewai~=1.6.1",
+    "openinference-instrumentation-crewai>=0.1.16,<1.0.0",
     "openinference-instrumentation-litellm>=0.1.28",
 ]
 langgraph = [
