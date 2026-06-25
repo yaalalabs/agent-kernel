@@ -1,0 +1,1 @@
+agentkernel[openai,aws]>=0.6.0
