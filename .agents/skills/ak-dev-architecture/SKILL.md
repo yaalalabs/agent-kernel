@@ -4,7 +4,9 @@ description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
   interact, or before making changes to core functionality. Covers Session, Agent,
-  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, and the adapter pattern.
+  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, the adapter pattern,
+  and the AWS ECS containerized deployment classes (ECSIOHandler, ECSOutputConsumer,
+  ECSAgentRunner, ECSSQSConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -205,7 +207,17 @@ ak-py/src/agentkernel/
 │   ├── a2a/                 # Agent-to-Agent server
 │   └── mcp/                 # MCP server
 ├── deployment/              # Cloud deployment adapters
-│   ├── aws/                 # Lambda handler
+│   ├── aws/
+│   │   ├── serverless/      # Lambda handlers: Lambda, ResponseHandler, ServerlessAgentRunner, etc.
+│   │   ├── containerized/   # ECS Fargate handlers
+│   │   │   ├── core/
+│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer — ABC: SQS poll loop
+│   │   │   │   └── thread_runner.py     # ThreadRunner — run N callables as peer threads
+│   │   │   ├── akagentrunner.py         # ECSAgentRunner — polls Input Queue, runs agent
+│   │   │   ├── akoutputconsumer.py      # ECSOutputConsumer — polls Output Queue, writes to DB/WS
+│   │   │   ├── ecs_io_handler.py        # ECSIOHandler — entrypoint: wires both threads
+│   │   │   └── ecs_queue_handler.py     # ECSQueueRequestHandler — FastAPI routes
+│   │   └── core/            # Shared: SQSHandler, WebSocketHandler, ResponseStore
 │   └── azure/               # Azure Functions handler
 ├── integration/             # Messaging integrations
 │   ├── slack/
@@ -239,6 +251,83 @@ ak-py/src/agentkernel/
         ├── redis.py           # RedisAttachmentStore
         ├── dynamodb.py        # DynamoDBAttachmentStore
         └── session_cache.py   # SessionNonVolatileCacheAttachmentStore (legacy)
+```
+
+## AWS ECS Containerized Deployment
+
+The containerized deployment runs on ECS Fargate and uses a two-container architecture for scalable queue-based processing.
+
+### Class Hierarchy
+
+| Class | File | Role |
+|---|---|---|
+| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Abstract base: SQS long-poll loop, retry/DLQ logic |
+| `ThreadRunner` | `containerized/core/thread_runner.py` | Runs N callables as peer threads via `ThreadPoolExecutor` |
+| `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer` — polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
+| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer` — polls Input Queue, runs the agent, sends to Output Queue |
+| `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST API + output consumer as peer threads |
+| `ECSQueueRequestHandler` | `containerized/ecs_queue_handler.py` | FastAPI routes: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{id}` polls |
+
+### Two-Container Layout
+
+```
+Container 1 — ECSIOHandler
+  Thread 1 (ThreadRunner):  RESTAPI.run(handlers=[ECSQueueRequestHandler()])
+                            — FastAPI/uvicorn, handles POST /chat and GET /chat/{id}
+  Thread 2 (ThreadRunner):  ECSOutputConsumer.run()
+                            — polls Output Queue, writes to DynamoDB / broadcasts via WebSocket
+
+Container 2 — ECSAgentRunner
+  Main thread:              ECSSQSConsumer.run()
+                            — polls Input Queue, runs agent, sends result to Output Queue
+```
+
+### ECSSQSConsumer Contract
+
+- **`_get_queue_url(cls) → str`** *(abstract)*: return the SQS queue URL to poll.
+- **`process_message(cls, record)`** *(abstract)*: handle one message; called on every successful receive.
+- **`on_permanent_failure(cls, record)`** *(abstract)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions** — if it raises, the message is not deleted and loops back.
+- **`delete_message(cls, client, msg)`** *(public)*: subclasses may call this directly when manual deletion is needed.
+- **`run(cls)`**: blocking poll loop — the container entry-point.
+
+### ThreadRunner Contract
+
+`ThreadRunner.run(*targets, thread_names=..., exit_on_failure=True)` submits all callables to a `ThreadPoolExecutor` and waits for `FIRST_COMPLETED`:
+
+- Thread **raises** → logs exception; if `exit_on_failure=True`, calls `os._exit(1)` inside the `with` block so the container restarts cleanly via ECS (the `_exit` is placed before `executor.shutdown(wait=True)` to avoid blocking on the other infinite-loop thread).
+- Thread **returns normally** (no exception) → logs unexpected exit; `os._exit` is **not** called.
+
+### Entry Point Pattern
+
+```python
+# Container 1 — app_rest_service.py
+from agentkernel.deployment.aws.containerized import ECSIOHandler
+
+runner = ECSIOHandler.run
+
+if __name__ == "__main__":
+    runner()
+
+# Container 2 — app_agent_runner.py
+from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+if __name__ == "__main__":
+    ECSAgentRunner.run()
+```
+
+### Public Exports
+
+```python
+# agentkernel.deployment.aws
+from agentkernel.deployment.aws import (
+    ECSAgentRunner,      # Container 2 entry-point
+    ECSIOHandler,        # Container 1 entry-point
+    ECSOutputConsumer,   # Subclass ECSSQSConsumer for custom output processing
+)
+from agentkernel.deployment.aws.containerized.core import ECSSQSConsumer, ThreadRunner
 ```
 
 ## Execution Flow

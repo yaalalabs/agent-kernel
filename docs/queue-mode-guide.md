@@ -1,7 +1,7 @@
-# Queue Mode — How It Works and How to Add It to ECS
+# Queue Mode — How It Works in Lambda and ECS
 
-This document explains what's already built for the Lambda (serverless) queue modes and
-how to replicate the same pattern in the ECS (containerized) deployment.
+This document explains the queue mode architecture for both Lambda (serverless) and
+ECS (containerized) deployments.
 
 ---
 
@@ -117,120 +117,152 @@ Located under `ak-deployment/ak-aws/serverless/modules/`:
 
 ---
 
-## How to Add Queue Mode to ECS (Containerized)
+## How Queue Mode Works in ECS (Containerized)
 
-The ECS deployment is fundamentally the same pipeline, **except Lambda functions are
-replaced by a long-running ECS service** that runs two threads:
+The ECS deployment uses the same pipeline as Lambda, **except Lambda functions are
+replaced by long-running ECS services**. The IO container runs two threads via
+`ThreadRunner`; the Agent Runner is a separate ECS service that extends `ECSSQSConsumer`.
 
-| Thread | Responsibility |
-|--------|---------------|
-| Thread 1 | Runs the FastAPI/REST service (receives requests, returns responses) |
-| Thread 2 | Polls the Output Queue and writes to DynamoDB (REST modes) or sends via WebSocket |
+### Python Class Hierarchy
 
-The **Agent Runner** is already a separate ECS service that polls the Input Queue.
+| Class | Container | Role |
+|-------|-----------|------|
+| `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner` |
+| `ECSQueueRequestHandler` | IO container / Thread 1 | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{id}` polls |
+| `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer` — polls Output Queue → DynamoDB / WebSocket |
+| `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer` — polls Input Queue, runs agent, sends to Output Queue |
+| `ECSSQSConsumer` | both | Abstract base: SQS long-poll loop, retry/permanent-failure logic |
+| `ThreadRunner` | IO container | Runs N callables as peer threads; calls `os._exit(1)` if any thread crashes |
 
-### REST Sync — ECS Queue Mode
+### Request Flow — REST Sync
 
 ```
 Client
   │
   ▼
-API Gateway (HTTP) — existing aws_apigatewayv2_api.http_api
-  │  routes to ALB via VPC Link — existing aws_apigatewayv2_integration.alb_proxy
+API Gateway (HTTP)
+  │  routes to ALB via VPC Link
   ▼
-ALB → ECS REST Service (Thread 1)
-  │  PUT message on Input Queue
-  │  wait / poll DynamoDB Response Store
-  │  return response on same connection
+ALB → ECSIOHandler container
+        │
+        ├── Thread 1 — ECSQueueRequestHandler (FastAPI/uvicorn)
+        │     PUT message on Input Queue
+        │     poll DynamoDB Response Store
+        │     return response on same connection
+        │
+        └── Thread 2 — ECSOutputConsumer.run()
+              poll Output Queue → write to DynamoDB Response Store
   │
-  │  (Thread 2 running in same container)
-  │  poll Output Queue → write to DynamoDB Response Store
   ▼
 Input SQS FIFO Queue
+  │
   ▼
-Agent Runner ECS Service (separate ECS task/service)
-  │  polls queue, processes, puts result on Output Queue
+ECSAgentRunner container (separate ECS service, auto-scales)
+  │  polls Input Queue, runs agent, puts result on Output Queue
   ▼
 Output SQS FIFO Queue
+  │
   ▼
-ECS REST Service Thread 2  →  DynamoDB Response Store
+ECSOutputConsumer (Thread 2)  →  DynamoDB Response Store
 ```
 
-New AWS resources needed:
+### Request Flow — REST Async
+
+Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequestHandler`:
+
+- `POST /api/v1/chat` returns **202 Accepted** with a `request_id` immediately after
+  enqueuing (Thread 1 does not wait on DynamoDB).
+- `GET /api/v1/chat/{sessionId}?request_id=...` reads from DynamoDB Response Store
+  and returns the result when ready (or 404 while still processing).
+
+### Entrypoint Code
+
+**IO container — `app_rest_service.py`** (no agent definitions):
+
+```python
+from agentkernel.deployment.aws.containerized import ECSIOHandler
+
+runner = ECSIOHandler.run
+
+if __name__ == "__main__":
+    runner()
+```
+
+**Agent Runner container — `app_agent_runner.py`**:
+
+```python
+from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])  # agent definitions here only
+
+if __name__ == "__main__":
+    ECSAgentRunner.run()
+```
+
+### Required AWS Resources
+
 - `aws_sqs_queue` — Input Queue (FIFO)
 - `aws_sqs_queue` — Output Queue (FIFO)
-- `aws_dynamodb_table` — Response Store (keyed by `session_id`, with TTL)
-- IAM policies giving the REST Service ECS Task Role:
-  - `sqs:SendMessage` on Input Queue
-  - `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Output Queue
-  - `dynamodb:PutItem / GetItem / Query / DeleteItem` on Response Store
-- IAM policies giving the Agent Runner ECS Task Role:
-  - `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Input Queue
-  - `sqs:SendMessage` on Output Queue
-- Existing API Gateway + ALB routes are reused as-is; only the application code changes
-  (Thread 2 is added to the REST Service container).
+- `aws_dynamodb_table` — Response Store (keyed by `request_id`, with TTL)
+- IAM for IO container task role: `sqs:SendMessage` on Input Queue; `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Output Queue; `dynamodb:PutItem / GetItem / Query / DeleteItem` on Response Store
+- IAM for Agent Runner task role: `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Input Queue; `sqs:SendMessage` on Output Queue
 
-Environment variables to inject into the REST Service container:
+All of these are provisioned automatically by the `yaalalabs/ak-containerized/aws` Terraform module when `enable_queue_mode = true`.
+
+### Required Environment Variables
+
+IO container:
 
 ```
-AK_EXECUTION__QUEUES__INPUT__URL        = <input-queue-url>
-AK_EXECUTION__QUEUES__OUTPUT__URL       = <output-queue-url>
+AK_EXECUTION__QUEUES__INPUT__URL                   = <input-queue-url>
+AK_EXECUTION__QUEUES__OUTPUT__URL                  = <output-queue-url>
 AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = <response-store-table-name>
 ```
 
-Environment variables for the Agent Runner container:
+Agent Runner container:
 
 ```
-AK_EXECUTION__QUEUES__INPUT__URL        = <input-queue-url>
-AK_EXECUTION__QUEUES__OUTPUT__URL       = <output-queue-url>
-AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT = <max_receive_count - 1>
+AK_EXECUTION__QUEUES__INPUT__URL              = <input-queue-url>
+AK_EXECUTION__QUEUES__OUTPUT__URL             = <output-queue-url>
+AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT = <max_receive_count>
 ```
-
-### REST Async — ECS Queue Mode
-
-Identical infrastructure to REST Sync. The difference is purely in the application:
-
-- `POST /api/v1/chat` returns **202 Accepted** with a `session_id` immediately after
-  enqueuing (Thread 1 does not wait).
-- `GET /api/v1/chat/{sessionId}` reads from DynamoDB Response Store and returns the
-  result when ready (or 202 if still processing).
-
-No additional AWS resources are needed beyond the REST Sync setup. The API Gateway already
-supports both `POST` and `GET` routes to the ALB.
 
 ### Scaling the Agent Runner ECS Service
 
 Unlike Lambda (which auto-scales 1:1 with queue batches), ECS needs an explicit scaling
 policy. The recommended approach is **backlog-per-task target tracking**:
 
-1. A Lambda function (or EventBridge scheduled rule) periodically reads
-   `ApproximateNumberOfMessages` from SQS and the current running task count.
-2. It computes `BacklogPerTask = queueDepth / runningTasks` and publishes this as a
-   custom CloudWatch metric.
-3. An ECS Target Tracking scaling policy scales the Agent Runner service to keep
-   `BacklogPerTask` at or below the configured target.
+1. A Lambda function (EventBridge rule, 1-minute schedule) reads
+   `ApproximateNumberOfMessages` from the Input Queue and the current running task count.
+2. It computes `BacklogPerTask = queueDepth / max(runningTasks, 1)` and publishes
+   this as a custom CloudWatch metric (`Custom/ECS/BacklogPerTask`).
+3. An ECS Target Tracking policy scales the Agent Runner service to keep
+   `BacklogPerTask` at or below `backlog_target`.
 
-This is covered in detail in `scalability.md` under the **SQS + ECS → Scaling** section.
+The `scaling_config` block in the `yaalalabs/ak-containerized/aws` module provisions
+this automatically. See the [containerized README](../ak-deployment/ak-aws/containerized/README.md#auto-scaling) for details.
 
 ### Key Differences vs Lambda
 
 | Aspect | Lambda | ECS |
 |--------|--------|-----|
-| Input Queue trigger | Event Source Mapping (push) | Agent Runner polls the queue |
-| Partial failure reporting | `batchItemFailures` return value | Failed messages not deleted (visibility timeout) |
-| Scaling | Automatic, 1 Lambda per batch | Manual target tracking policy |
-| Response Handler | Separate Lambda triggered by Output Queue ESM | Thread 2 inside the REST Service container |
-| Session DB writes | Response Handler Lambda | REST Service Thread 2 |
+| Input Queue trigger | Event Source Mapping (push) | `ECSAgentRunner` polls (`ECSSQSConsumer.run`) |
+| Partial failure | `batchItemFailures` return value | Failed messages not deleted — visibility timeout retries |
+| Scaling | Automatic, 1 Lambda per batch | `backlog-per-task` target tracking policy |
+| Response Handler | Separate Lambda triggered by Output Queue ESM | `ECSOutputConsumer` (Thread 2 in IO container) |
+| Crash recovery | Lambda restarts automatically | `ThreadRunner` calls `os._exit(1)` → ECS restarts the task |
 
 ---
 
-## Summary of What's Already Built
+## Summary — Implementation Status
 
-| Component | Lambda (done) | ECS (todo) |
-|-----------|--------------|------------|
-| Input/Output SQS Queues | ✅ `modules/queues/` | ❌ needs new TF resources |
-| Agent Runner | ✅ `modules/agent-runner/` | ❌ separate ECS service |
-| Request Handler / REST Service | ✅ `modules/request-handler/` | ❌ add queue env vars + thread 2 |
-| Response Handler | ✅ `modules/response-handler/` | ❌ merged into REST Service Thread 2 |
-| DynamoDB Response Store | ✅ provisioned inside serverless stack | ❌ needs new TF resource |
-| WebSocket Mode | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ❌ not yet |
+| Component | Lambda | ECS |
+|-----------|--------|-----|
+| Input/Output SQS Queues | ✅ `modules/queues/` | ✅ `modules/queues/` (same TF module) |
+| Agent Runner | ✅ `modules/agent-runner/` | ✅ `ECSAgentRunner` (`akagentrunner.py`) |
+| IO Handler / REST Service | ✅ `modules/request-handler/` | ✅ `ECSIOHandler` (`ecs_io_handler.py`) |
+| Output Queue Consumer | ✅ `modules/response-handler/` (separate Lambda) | ✅ `ECSOutputConsumer` (Thread 2 in IO container) |
+| DynamoDB Response Store | ✅ serverless stack | ✅ containerized stack |
+| Thread management | N/A | ✅ `ThreadRunner` (`core/thread_runner.py`) |
+| WebSocket Mode | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ⚠️ `ECSOutputConsumer` supports WebSocket broadcast; API Gateway WebSocket wiring not yet in TF module |

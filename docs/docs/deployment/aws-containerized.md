@@ -37,6 +37,95 @@ graph TB
 
 Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
+## Scalable Queue Mode
+
+For high-throughput or long-running agents, use the two-container queue architecture.
+The IO container and the Agent Runner are separate ECS services sharing SQS queues.
+
+```mermaid
+graph TB
+    A[Client] --> B[API Gateway]
+    B --> C[ALB]
+    C --> D["IO Container<br/>(ECSIOHandler)"]
+
+    D --> |Thread 1 — ECSQueueRequestHandler| E[Input Queue SQS]
+    D --> |Thread 2 — ECSOutputConsumer| F[Output Queue SQS]
+
+    E --> G["Agent Runner<br/>(ECSAgentRunner)"]
+    G --> F
+    F --> H[DynamoDB Response Store]
+
+    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+### Container 1 — IO container (`ECSIOHandler`)
+
+`ECSIOHandler.run()` starts two threads via `ThreadRunner`:
+
+- **Thread 1** — `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`: FastAPI/uvicorn. Handles `POST /api/v1/chat` (enqueues to Input Queue, then either waits on DynamoDB or returns a `request_id`) and `GET /api/v1/chat/{session_id}` (polls DynamoDB for the result).
+- **Thread 2** — `ECSOutputConsumer.run()`: polls the Output Queue and writes results to DynamoDB (REST modes) or broadcasts via WebSocket.
+
+If either thread crashes, `ThreadRunner` calls `os._exit(1)` so ECS restarts the task cleanly.
+
+**Entrypoint — `app_rest_service.py`** (no agent definitions):
+
+```python
+from agentkernel.deployment.aws.containerized import ECSIOHandler
+
+runner = ECSIOHandler.run
+
+if __name__ == "__main__":
+    runner()
+```
+
+### Container 2 — Agent Runner (`ECSAgentRunner`)
+
+Extends `ECSSQSConsumer`: polls the Input Queue in a blocking loop, executes the agent, and puts the result on the Output Queue.
+
+**Entrypoint — `app_agent_runner.py`**:
+
+```python
+from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])  # register agents here only
+
+if __name__ == "__main__":
+    ECSAgentRunner.run()
+```
+
+### Terraform
+
+Enable queue mode in the `yaalalabs/ak-containerized/aws` module:
+
+```hcl
+enable_queue_mode = true
+queue_mode_type   = "sync"   # or "async"
+
+rest_service = {
+  command = ["python", "app_rest_service.py"]
+  # ...
+}
+
+agent_runner = {
+  command  = ["python", "app_agent_runner.py"]
+  image_uri = "..."   # separate image with agent definitions
+  # ...
+}
+
+scaling_config = {
+  enabled        = true
+  min_count      = 1
+  max_count      = 10
+  backlog_target = 5
+}
+```
+
+For the full example see [examples/aws-containerized/openai-dynamodb-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable).
+
+For queue mode internals see [queue-mode-guide.md](../../queue-mode-guide.md).
+
 ## Advantages
 
 - **No cold starts** - containers always warm
