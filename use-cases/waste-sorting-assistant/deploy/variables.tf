@@ -27,9 +27,3 @@ variable "openai_api_key" {
   type        = string
   sensitive   = true
 }
-
-variable "ak_log_level" {
-  description = "Agent Kernel log level for Lambda."
-  type        = string
-  default     = "INFO"
-}

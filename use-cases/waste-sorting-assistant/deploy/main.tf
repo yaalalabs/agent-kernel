@@ -1,6 +1,5 @@
 locals {
   lambda_function_name = "waste-sorting-assistant"
-  session_table_name   = "${var.product_alias}-${var.env_alias}-${var.module_name}-session_store"
 }
 
 module "serverless_agents" {
@@ -27,10 +26,6 @@ module "serverless_agents" {
 
     environment_variables = {
       OPENAI_API_KEY                   = var.openai_api_key
-      AK_SESSION__TYPE                 = "dynamodb"
-      AK_SESSION__CACHE__SIZE          = "256"
-      AK_SESSION__DYNAMODB__TABLE_NAME = local.session_table_name
-      AK_LOGGING__AK__LEVEL            = var.ak_log_level
     }
   }
 }

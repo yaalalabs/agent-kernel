@@ -12,8 +12,3 @@ output "private_subnet_ids" {
   description = "Private subnet IDs used by the Agent Kernel deployment."
   value       = module.serverless_agents.private_subnet_ids
 }
-
-output "dynamodb_session_table_name" {
-  description = "DynamoDB session table name expected by the Lambda runtime."
-  value       = local.session_table_name
-}
