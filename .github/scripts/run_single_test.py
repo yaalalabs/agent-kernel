@@ -11,6 +11,13 @@ import sys
 from pathlib import Path
 import json
 
+CREWAI_DISABLE_TRACE_ENV = {
+    "CREWAI_TRACING_ENABLED": "false",
+    "CREWAI_TESTING": "true",
+    "OTEL_SDK_DISABLED": "true",
+    "CREWAI_DISABLE_TELEMETRY": "true",
+}
+
 def run_command(command: list[str], cwd: str = None, description: str = "", env: dict = None) -> bool:
     """Run a shell command and return success status."""
     try:
@@ -55,7 +62,8 @@ def run_simple_test(path: str) -> bool:
     if not run_command(
         ['./build.sh', 'local'],
         cwd=path,
-        description=f"Building {path}"
+        description=f"Building {path}",
+        env=CREWAI_DISABLE_TRACE_ENV
     ):
         return False
     
@@ -63,7 +71,8 @@ def run_simple_test(path: str) -> bool:
     return run_command(
         ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml'],
         cwd=path,
-        description=f"Testing {path}"
+        description=f"Testing {path}",
+        env=CREWAI_DISABLE_TRACE_ENV
     )
 
 

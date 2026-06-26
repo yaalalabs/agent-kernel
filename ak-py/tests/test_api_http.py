@@ -302,7 +302,7 @@ class TestRESTAPIIntegration:
 
         # Test that app was created successfully
         assert isinstance(app, FastAPI)
-        route_paths = [route.path for route in app.routes]
+        route_paths = [route.path for route in app.routes if hasattr(route, "path")]
         assert "/health" in route_paths
         assert len(RESTAPI._auth_token_validators) == 1
         assert RESTAPI._auth_token_validators[0].dependency is not None
@@ -327,6 +327,7 @@ class TestRESTAPIIntegration:
 
         # Add custom router
         RESTAPI._custom_routers.clear()
+        RESTAPI._auth_token_validators.clear()
         RESTAPI.add(custom_router)
 
         # Run the RESTAPI (this won't start server due to mock)
@@ -339,10 +340,13 @@ class TestRESTAPIIntegration:
         app = mock_uvicorn.call_args[1]["app"]
 
         # Test the routes
-        route_paths = [route.path for route in app.routes]
+        route_paths = [route.path for route in app.routes if hasattr(route, "path")]
         assert "/health" in route_paths
-        assert "/custom/test" in route_paths
-        assert "/test" not in route_paths
+        client = TestClient(app)
+        response = client.get("/custom/test")
+        assert response.status_code == 200
+        assert response.json() == {"message": "custom test"}
+        assert client.get("/test").status_code == 404
 
     def test_logging_configuration(self):
         """Test that logging is properly configured."""
