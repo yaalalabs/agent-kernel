@@ -307,7 +307,8 @@ class CrewAIRunner(Runner):
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
             memory = self._memory(session)
-            memory.remember(content=prompt)
+            if memory:
+                memory.remember(content=prompt)
 
             task = Task(
                 description=prompt,
