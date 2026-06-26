@@ -7,17 +7,18 @@ from ....core.chat_service import ChatService
 from ....core.config import AKConfig
 from ....core.model import BaseRunRequest
 from ..core.sqs_handler import SQSHandler
-from .sqs_poller import SQSPoller
+from .core import ECSSQSConsumer
 
 
-class ECSAgentRunner:
+class ECSAgentRunner(ECSSQSConsumer):
     """
     ECS Agent Runner — polls the Input Queue, runs the agent, and puts
     the result on the Output Queue.
 
-    This is the ECS equivalent of ``ServerlessAgentRunner``.  Instead of
-    being triggered by a Lambda Event Source Mapping, it runs a blocking
-    ``SQSPoller`` loop (meant to be the container's main process).
+    The ECS equivalent of ServerlessAgentRunner. Instead of being triggered
+    by a Lambda Event Source Mapping, it inherits run() from ECSSQSConsumer,
+    which drives a blocking long-poll loop — meant to be the container's
+    main process.
 
     Usage::
 
@@ -28,28 +29,11 @@ class ECSAgentRunner:
     _log = logging.getLogger("ak.ecs.agentrunner")
     _chat_service: ChatService | None = None
     _config = AKConfig.get()
+    max_receive_count = _config.execution.queues.input.max_receive_count
 
     @classmethod
-    def run(cls) -> None:
-        """
-        Start the blocking poll loop.  Call this as the container entry-point.
-        """
-        config = cls._config
-        input_queue_url = config.execution.queues.input.url
-        max_receive_count = config.execution.queues.input.max_receive_count
-
-        if not input_queue_url:
-            raise ValueError("AK_EXECUTION__QUEUES__INPUT__URL is required for ECSAgentRunner")
-
-        cls._log.info(f"ECSAgentRunner starting — input queue: {input_queue_url}")
-
-        poller = SQSPoller(
-            queue_url=input_queue_url,
-            process_fn=cls.process_message,
-            max_receive_count=max_receive_count,
-            on_permanent_failure_fn=cls.on_permanent_failure,
-        )
-        poller.run()  # blocks forever
+    def _get_queue_url(cls) -> str:
+        return cls._config.execution.queues.input.url
 
     @classmethod
     def _get_chat_service(cls) -> ChatService:
@@ -96,12 +80,7 @@ class ECSAgentRunner:
 
     @classmethod
     def process_message(cls, record: dict) -> None:
-        """
-        Process a single SQS message: run the agent and put the response
-        on the Output Queue.
-
-        :param record: boto3 SQS message dict
-        """
+        """Implements ECSSQSConsumer.process_message."""
         message_id = record.get("MessageId")
         cls._log.info(f"[AGENT START] Processing message {message_id}")
 
@@ -126,12 +105,7 @@ class ECSAgentRunner:
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
-        """
-        Handle a message that exceeded max retries — send an error response
-        to the Output Queue so the REST Service can return it to the caller.
-
-        :param record: boto3 SQS message dict
-        """
+        """Implements ECSSQSConsumer.on_permanent_failure. Catches own exceptions."""
         cls._log.error(f"Permanent failure for message {record.get('MessageId')}")
         try:
             record_attributes = cls._get_record_attributes(raw_queue_message=record)

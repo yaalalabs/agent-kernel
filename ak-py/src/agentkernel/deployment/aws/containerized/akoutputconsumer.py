@@ -2,89 +2,35 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from typing import Any, Dict
 
-from ....api.http import RESTAPI
 from ....core.config import AKConfig
 from ....core.model import ExecutionMode
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
 from ..core.websocket_service import WebSocketHandler
-from .sqs_poller import SQSPoller
+from .core import ECSSQSConsumer
 
 
-class ECSRESTService:
+class ECSOutputConsumer(ECSSQSConsumer):
     """
-    ECS REST Service — handles all queue-based execution modes:
+    ECS Output Consumer — polls the Output Queue and writes results to the
+    DynamoDB Response Store or broadcasts via WebSocket.
 
-    - **REST Sync** (``execution.mode = rest_sync``)
-      Thread 2 writes output messages to the DynamoDB Response Store.
-      Thread 1 (FastAPI) waits on the same store and returns the response
-      on the original HTTP connection.
-
-    - **REST Async** (``execution.mode = rest_async``)
-      Same as REST Sync for the output-queue side.  Thread 1 exposes a
-      separate ``GET`` endpoint that the client polls.
-
-    - **WebSocket / Async** (``execution.mode = async``)
-      Thread 2 pushes output messages directly to the client over the
-      still-open WebSocket connection via API Gateway Management API
-      (PostToConnection).  No DynamoDB response store is used.
-
-    Runs two threads:
-
-    - **Thread 1** — FastAPI/uvicorn (via ``RESTAPI.run``).
-    - **Thread 2** — ``SQSPoller`` daemon on the Output Queue.
-
-    Can be used standalone — just set ``execution.mode`` in ``config.yaml``
-    (or via env vars) and call ``ECSRESTService.run()``.
-
-    Usage::
-
-        from agentkernel.deployment.aws.containerized import ECSRESTService
-
-        if __name__ == "__main__":
-            ECSRESTService.run()
+    Extends ECSSQSConsumer so it inherits the blocking SQS poll loop via
+    run(). Started as Thread 2 by ECSIOHandler.
     """
 
-    _log = logging.getLogger("ak.ecs.restservice")
+    _log = logging.getLogger("ak.ecs.outputconsumer")
     _config = AKConfig.get()
+    max_receive_count = _config.execution.queues.output.max_receive_count
 
-    # lazily initialised, shared across Thread 2 calls
     _response_store = None
     _websocket_handler = None
 
     @classmethod
-    def run(cls) -> None:
-        """
-        Start the output-queue poller (Thread 2) as a daemon, then start
-        the REST API (Thread 1) in the main thread.  Blocks until the
-        REST API exits.
-        """
-        output_queue_url = cls._config.execution.queues.output.url
-        max_receive_count = cls._config.execution.queues.output.max_receive_count
-
-        if not output_queue_url:
-            raise ValueError("AK_EXECUTION__QUEUES__OUTPUT__URL is required for ECSRESTService")
-
-        mode = cls._config.execution.mode
-        cls._log.info(f"ECSRESTService starting — mode={mode} output_queue={output_queue_url}")
-
-        poller = SQSPoller(
-            queue_url=output_queue_url,
-            process_fn=cls.process_output_message,
-            max_receive_count=max_receive_count,
-            on_permanent_failure_fn=cls.on_permanent_failure,
-        )
-        t2 = threading.Thread(target=poller.run, name="output-queue-poller", daemon=True)
-        t2.start()
-        cls._log.info("ECSRESTService: Thread 2 (output-queue poller) started")
-
-        from .ecs_queue_handler import ECSQueueRequestHandler
-
-        cls._log.info("ECSRESTService: starting REST API with queue-aware handler (Thread 1)")
-        RESTAPI.run(handlers=[ECSQueueRequestHandler()])
+    def _get_queue_url(cls) -> str:
+        return cls._config.execution.queues.output.url
 
     @classmethod
     def _get_response_store(cls):
@@ -97,7 +43,10 @@ class ECSRESTService:
         if cls._websocket_handler is None:
             ws_config = cls._config.websocket_api
             if not ws_config.connection_table or not ws_config.connection_table.table_name:
-                raise ValueError("websocket_api.connection_table.table_name is required " "for ECSRESTService in WebSocket mode")
+                raise ValueError(
+                    "websocket_api.connection_table.table_name is required "
+                    "for ECSOutputConsumer in WebSocket mode"
+                )
             cls._websocket_handler = WebSocketHandler(
                 conn_table_name=ws_config.connection_table.table_name,
                 ttl=ws_config.connection_table.ttl,
@@ -105,7 +54,7 @@ class ECSRESTService:
         return cls._websocket_handler
 
     @classmethod
-    def process_output_message(cls, record: Dict[str, Any]) -> None:
+    def process_message(cls, record: Dict[str, Any]) -> None:
         """
         Process one message from the Output Queue.
 
@@ -128,7 +77,10 @@ class ECSRESTService:
                 f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
             )
             cls._get_response_store().add_message(message)
-            cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
+            cls._log.info(
+                f"[OUTPUT DONE] Stored response — session_id={message['session_id']} "
+                f"request_id={message['request_id']}"
+            )
 
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
@@ -143,7 +95,10 @@ class ECSRESTService:
         :param record: boto3 SQS ``receive_message`` record
         """
         max_retries = cls._config.execution.queues.output.max_receive_count
-        cls._log.error(f"Permanent failure for output message {record.get('MessageId')} " f"after {max_retries} retries")
+        cls._log.error(
+            f"Permanent failure for output message {record.get('MessageId')} "
+            f"after {max_retries} retries"
+        )
 
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
@@ -163,12 +118,19 @@ class ECSRESTService:
                         user_id=user_id,
                     )
                 else:
-                    cls._log.warning("Cannot broadcast permanent-failure error: " "endpoint_url or user_id missing")
+                    cls._log.warning(
+                        "Cannot broadcast permanent-failure error: "
+                        "endpoint_url or user_id missing"
+                    )
             else:
                 error_body = json.dumps(error_payload)
                 message = cls._construct_message_for_store(record, body=error_body)
                 cls._get_response_store().add_message(message)
-                cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
+                cls._log.info(
+                    f"Stored permanent-failure error — "
+                    f"session_id={message['session_id']} "
+                    f"request_id={message['request_id']}"
+                )
         except Exception:
             cls._log.exception("Failed to handle permanent-failure output message")
 

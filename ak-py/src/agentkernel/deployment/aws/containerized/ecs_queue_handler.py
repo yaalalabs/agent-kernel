@@ -4,7 +4,7 @@ ECS Queue-aware REST Request Handler
 This handler bypasses ChatService and directly enqueues requests to SQS,
 similar to how the Lambda serverless DefaultEndpointsHandler works.
 
-Used by ECSRESTService when queue mode is enabled.
+Used by ECSIOHandler (Thread 1 — REST API) when queue mode is enabled.
 """
 
 import logging
