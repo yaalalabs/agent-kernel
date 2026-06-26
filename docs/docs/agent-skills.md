@@ -159,6 +159,19 @@ The skills carry the same architectural knowledge the core team has — patterns
 
 4. The coding agent reads the relevant skill and **generates all the code**, configuration, and infrastructure files for you.
 
+## Real-World Use Cases
+
+The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory in the repository contains complete agent projects built using this exact workflow. Each project starts from a `SPEC.md` describing the agent's purpose, and the coding assistant uses the Agent Kernel skills to generate all code, configuration, and deployment files.
+
+**Example: Waste Sorting Assistant**
+
+The [`waste-sorting-assistant`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/waste-sorting-assistant) is a domain-specific agent that recommends waste disposal categories based on item material and local recycling rules. It demonstrates:
+- OpenAI Agents SDK agent with custom tools
+- Agent Kernel session memory for region-specific rules
+- AWS Lambda deployment with DynamoDB-backed session persistence
+
+See [`use-cases/README.md`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/README.md) for the full workflow to build your own agent from a spec file.
+
 ## Compatibility
 
 Agent Skills work with any coding agent that supports the [Agent Skills Open Standard](https://agentskills.io), including:
