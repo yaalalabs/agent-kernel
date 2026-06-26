@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "agentkernel[crewai,api,redis]>=0.6.0",
-    "crewai>=1.6.1"
 ]
 
 [dependency-groups]
