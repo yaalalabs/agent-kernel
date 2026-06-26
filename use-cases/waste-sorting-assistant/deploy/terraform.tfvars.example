@@ -1,8 +1,8 @@
-region         = "us-east-2"
-product_alias  = "ak"
-env_alias      = "dev"
-module_name    = "waste-sorting"
-ak_log_level   = "INFO"
+region        = "us-east-2"
+product_alias = "ak"
+env_alias     = "dev"
+module_name   = "waste-sorting"
+ak_log_level  = "INFO"
 
 openai_api_key = "REPLACE_WITH_YOUR_OPENAI_API_KEY"
 

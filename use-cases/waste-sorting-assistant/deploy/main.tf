@@ -1,18 +1,3 @@
-terraform {
-  required_version = ">= 1.9.5"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.region
-}
-
 locals {
   lambda_function_name = "waste-sorting-assistant"
   session_table_name = coalesce(
@@ -44,11 +29,11 @@ module "serverless_agents" {
     memory_size          = 512
 
     environment_variables = {
-      OPENAI_API_KEY                         = var.openai_api_key
-      AK_SESSION__TYPE                       = "dynamodb"
-      AK_SESSION__CACHE__SIZE                = "256"
-      AK_SESSION__DYNAMODB__TABLE_NAME       = local.session_table_name
-      AK_LOGGING__AK__LEVEL                  = var.ak_log_level
+      OPENAI_API_KEY                   = var.openai_api_key
+      AK_SESSION__TYPE                 = "dynamodb"
+      AK_SESSION__CACHE__SIZE          = "256"
+      AK_SESSION__DYNAMODB__TABLE_NAME = local.session_table_name
+      AK_LOGGING__AK__LEVEL            = var.ak_log_level
     }
   }
 }

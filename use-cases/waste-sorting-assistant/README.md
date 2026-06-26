@@ -22,10 +22,11 @@ The project includes:
 
 - `demo.py` registers the `waste_sorting_advisor` Agent Kernel agent.
 - `lambda.py` registers the same agent for AWS Lambda via `agentkernel.aws.Lambda`.
-- `agent.py` holds the shared OpenAI Agents SDK definition used by both entry points.
+- `agent.py` holds the shared OpenAI Agents SDK definition used by local and deployed execution.
 - `tool.py` contains Agent Kernel tools: `lookup_disposal_category`, `remember_region_rule`, and `get_region_memory`.
 - `config.yaml` configures Agent Kernel local sessions and test mode.
-- `deploy/` contains Terraform for AWS serverless deployment.
+- `SPEC.md` documents the agent requirements used to generate the project.
+- `deploy/` contains Terraform, `deploy.sh`, and `Dockerfile` for AWS Lambda deployment.
 
 ## Setup
 
@@ -54,22 +55,14 @@ Inside the CLI, the default agent is `waste_sorting_advisor`. You can also run:
 
 The Terraform deployment uses Agent Kernel's AWS serverless module in synchronous REST mode and DynamoDB for session storage. Region-specific rules remembered by the agent are stored in Agent Kernel's non-volatile session cache, which becomes durable through DynamoDB in Lambda.
 
-Build the Lambda image context:
-
-```bash
-chmod +x build_aws.sh
-./build_aws.sh
-```
-
-Deploy with Terraform:
+Deploy from the `deploy` folder:
 
 ```bash
 cd deploy
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars and set openai_api_key.
-terraform init
-terraform plan
-terraform apply
+chmod +x deploy.sh
+./deploy.sh
 ```
 
 Invoke the deployed agent:
@@ -104,11 +97,3 @@ Useful Terraform variables:
 - `module_name`: module namespace, default `waste-sorting`.
 - `openai_api_key`: OpenAI API key loaded from `terraform.tfvars`.
 - `dynamodb_session_table_name`: optional override for the DynamoDB session table name.
-
-Terraform injects these Lambda environment variables for DynamoDB sessions:
-
-```text
-AK_SESSION__TYPE=dynamodb
-AK_SESSION__DYNAMODB__TABLE_NAME=<session table>
-AK_SESSION__CACHE__SIZE=256
-```
