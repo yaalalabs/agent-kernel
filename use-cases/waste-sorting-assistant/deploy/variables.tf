@@ -28,12 +28,6 @@ variable "openai_api_key" {
   sensitive   = true
 }
 
-variable "dynamodb_session_table_name" {
-  description = "Optional override for the Agent Kernel DynamoDB session table name."
-  type        = string
-  default     = null
-}
-
 variable "ak_log_level" {
   description = "Agent Kernel log level for Lambda."
   type        = string

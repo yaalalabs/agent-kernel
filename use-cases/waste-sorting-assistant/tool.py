@@ -166,7 +166,9 @@ def _get_session_region_overrides(region: str) -> dict[str, dict[str, str]]:
     try:
         cache = ToolContext.get().session.get_non_volatile_cache()
         region_rules = cache.get(SESSION_REGION_RULES_KEY, {})
-        return region_rules.get(region, {})
+        if isinstance(region_rules, dict):
+            return region_rules.get(region, {})
+        return {}
     except RuntimeError:
         return {}
 
@@ -175,6 +177,8 @@ def _set_session_region_rule(region: str, material: str, category: str, instruct
     try:
         cache = ToolContext.get().session.get_non_volatile_cache()
         region_rules = cache.get(SESSION_REGION_RULES_KEY, {})
+        if not isinstance(region_rules, dict):
+            region_rules = {}
         region_rules.setdefault(region, {})[material] = {
             "category": category,
             "instructions": instructions,

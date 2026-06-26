@@ -1,9 +1,6 @@
 locals {
   lambda_function_name = "waste-sorting-assistant"
-  session_table_name = coalesce(
-    var.dynamodb_session_table_name,
-    "${var.product_alias}-${local.lambda_function_name}-${var.env_alias}-${var.module_name}_session_store"
-  )
+  session_table_name   = "${var.product_alias}-${var.env_alias}-${var.module_name}-session_store"
 }
 
 module "serverless_agents" {

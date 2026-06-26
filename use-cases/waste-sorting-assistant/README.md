@@ -96,4 +96,3 @@ Useful Terraform variables:
 - `env_alias`: environment alias, default `dev`.
 - `module_name`: module namespace, default `waste-sorting`.
 - `openai_api_key`: OpenAI API key loaded from `terraform.tfvars`.
-- `dynamodb_session_table_name`: optional override for the DynamoDB session table name.
