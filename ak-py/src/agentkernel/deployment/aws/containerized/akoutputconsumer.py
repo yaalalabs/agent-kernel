@@ -29,7 +29,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
     _websocket_handler = None
 
     @classmethod
-    def _get_queue_url(cls) -> str:
+    def get_queue_url(cls) -> str:
         return cls._config.execution.queues.output.url
 
     @classmethod

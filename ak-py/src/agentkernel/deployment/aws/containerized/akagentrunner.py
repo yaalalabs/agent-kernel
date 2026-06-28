@@ -32,7 +32,7 @@ class ECSAgentRunner(ECSSQSConsumer):
     max_receive_count = _config.execution.queues.input.max_receive_count
 
     @classmethod
-    def _get_queue_url(cls) -> str:
+    def get_queue_url(cls) -> str:
         return cls._config.execution.queues.input.url
 
     @classmethod

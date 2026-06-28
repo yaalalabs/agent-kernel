@@ -33,10 +33,11 @@ class ECSSQSConsumer(ABC):
     max_receive_count: int = 3  # overridden by classes that inherit this
     _DEFAULT_PARALLEL_WORKERS: int = 10
     _log = logging.getLogger("ak.ecs.sqsconsumer")
+    _client = None
 
     @classmethod
     @abstractmethod
-    def _get_queue_url(cls) -> str:
+    def get_queue_url(cls) -> str:
         """
         Return the SQS queue URL to poll.
 
@@ -44,19 +45,24 @@ class ECSSQSConsumer(ABC):
         configure the queue externally as in Lambda.
         """
         raise NotImplementedError
-    
+
     @classmethod
-    def poll(cls, client) -> list:
+    def _get_client(cls):
+        if cls._client is None:
+            cls._client = boto3.client("sqs")
+        return cls._client
+
+    @classmethod
+    def poll(cls) -> list:
         """
         Receive one batch of SQS messages and return them.
 
         Override to customise MaxNumberOfMessages, WaitTimeSeconds, or
-        MessageAttributeNames. Overriding implementations must accept the
-        boto3 SQS client as the second argument and return a list of raw
-        boto3 receive_message records.
+        MessageAttributeNames. Overriding implementations must return a list of
+        raw boto3 receive_message records.
         """
-        resp = client.receive_message(
-            QueueUrl=cls._get_queue_url(),
+        resp = cls._get_client().receive_message(
+            QueueUrl=cls.get_queue_url(),
             MaxNumberOfMessages=10,
             WaitTimeSeconds=20,
             AttributeNames=["All"],
@@ -88,14 +94,14 @@ class ECSSQSConsumer(ABC):
         :param record: Raw boto3 receive_message record.
         """
         raise NotImplementedError
-    
+
     @classmethod
-    def delete_message(cls, client, msg: dict) -> None:
-        client.delete_message(
-            QueueUrl=cls._get_queue_url(),
+    def delete_message(cls, msg: dict) -> None:
+        cls._get_client().delete_message(
+            QueueUrl=cls.get_queue_url(),
             ReceiptHandle=msg["ReceiptHandle"],
         )
-    
+
     @classmethod
     def _get_parallel_workers(cls) -> int:
         try:
@@ -105,14 +111,15 @@ class ECSSQSConsumer(ABC):
             return cls._DEFAULT_PARALLEL_WORKERS
 
     @staticmethod
-    def _get_message_group_key(msg: dict) -> str:
+    def _get_group_key(msg: dict) -> str:
         group_id = msg.get("Attributes", {}).get("MessageGroupId")
         if group_id:
             return group_id
         return msg.get("MessageId", "<unknown>")
 
     @classmethod
-    def _process_single(cls, client, msg: dict, group_id: str, loop=None) -> None:
+    def _process_single(cls, msg: dict, event_loop=None) -> None:
+        group_id = cls._get_group_key(msg)
         message_id = msg.get("MessageId", "<unknown>")
         receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
         try:
@@ -122,15 +129,15 @@ class ECSSQSConsumer(ABC):
                     f"max_receive_count ({receive_count} > {cls.max_receive_count})"
                 )
                 cls.on_permanent_failure(msg)
-                cls.delete_message(client, msg)
+                cls.delete_message(msg)
                 return
 
-            if loop is not None:
-                loop.run_until_complete(cls.process_message(msg))
+            if event_loop is not None:
+                event_loop.run_until_complete(cls.process_message(msg))
             else:
                 cls.process_message(msg)
 
-            cls.delete_message(client, msg)
+            cls.delete_message(msg)
 
         except Exception:
             cls._log.exception(
@@ -140,7 +147,7 @@ class ECSSQSConsumer(ABC):
             # Do NOT delete — visibility timeout returns it for retry
 
     @classmethod
-    def _process_group(cls, client, messages: list, group_id: str) -> None:
+    def _process_group(cls, messages: list) -> None:
         # @classmethod wraps the underlying function, so inspect on cls.process_message
         # returns False even for async classmethods. Unwrap __func__ first.
         underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
@@ -149,19 +156,19 @@ class ECSSQSConsumer(ABC):
         if is_async:
             # Each group thread gets its own event loop — asyncio event loops are
             # not thread-safe and must never be shared across threads.
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            new_event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_event_loop)
             try:
                 for msg in messages:
-                    cls._process_single(client, msg, group_id, loop=loop)
+                    cls._process_single(msg, event_loop=new_event_loop)
             finally:
-                loop.close()
+                new_event_loop.close()
         else:
             for msg in messages:
-                cls._process_single(client, msg, group_id)
+                cls._process_single(msg)
 
     @classmethod
-    def _process_batch(cls, client, messages: List[Dict[str, Any]]) -> None:
+    def _process_batch(cls, messages: List[Dict[str, Any]]) -> None:
         """
         Group messages by MessageGroupId and dispatch each group to its own
         thread via ThreadPoolExecutor. Messages within a group execute
@@ -175,7 +182,7 @@ class ECSSQSConsumer(ABC):
 
         groups: dict = defaultdict(list)
         for msg in messages:
-            key = cls._get_message_group_key(msg)
+            key = cls._get_group_key(msg)
             groups[key].append(msg)
 
         max_workers = cls._get_parallel_workers()
@@ -184,11 +191,9 @@ class ECSSQSConsumer(ABC):
             f"{len(groups)} group(s) with max_workers={max_workers}"
         )
 
-        with ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="sqs-group"
-        ) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sqs-group") as executor:
             futures = {
-                executor.submit(cls._process_group, client, msgs, group_id): group_id
+                executor.submit(cls._process_group, msgs): group_id
                 for group_id, msgs in groups.items()
             }
             for future in as_completed(futures):
@@ -210,18 +215,17 @@ class ECSSQSConsumer(ABC):
         Analogous to the Lambda runtime invoking handle(event, context) per
         batch: the runtime drives Lambda; run() drives the ECS consumer.
         """
-        queue_url = cls._get_queue_url()
+        queue_url = cls.get_queue_url()
         if not queue_url:
             raise ValueError(f"{cls.__name__}: queue URL is required")
 
         cls._log.info(f"{cls.__name__} starting — queue: {queue_url}")
-        client = boto3.client("sqs")
         while True:
             try:
-                messages = cls.poll(client)
+                messages = cls.poll()
             except Exception:
                 cls._log.exception("Unexpected error in poll loop — retrying in 5 s")
                 time.sleep(5)
                 continue
 
-            cls._process_batch(client, messages)
+            cls._process_batch(messages)
