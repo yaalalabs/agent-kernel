@@ -113,6 +113,17 @@ def test_session_cache_env(monkeypatch):
     assert cfg.session.cache.size == 500
 
 
+def test_parallel_workers_default():
+    cfg = AKConfig()
+    assert cfg.execution.queues.parallel_workers == 10
+
+
+def test_parallel_workers_env_override(monkeypatch):
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PARALLEL_WORKERS", "20")
+    cfg = AKConfig()
+    assert cfg.execution.queues.parallel_workers == 20
+
+
 def test_guardrail_pii_default():
     cfg = AKConfig()
     assert cfg.guardrail.input.pii is True

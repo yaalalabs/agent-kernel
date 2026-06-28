@@ -268,6 +268,16 @@ class _OutputQueueConfig(BaseModel):
 class _QueuesConfig(BaseModel):
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
+    parallel_workers: int = Field(
+        default=10,
+        description=(
+            "Max concurrent threads for processing MessageGroups within a batch. "
+            "Each distinct MessageGroupId gets its own thread; messages within a "
+            "group are still sequential. Tune based on LLM API rate limits and "
+            "downstream DB connection pool size. Override via env var "
+            "AK_EXECUTION__QUEUES__PARALLEL_WORKERS."
+        ),
+    )
 
 
 class _LogLevelConfig(BaseModel):

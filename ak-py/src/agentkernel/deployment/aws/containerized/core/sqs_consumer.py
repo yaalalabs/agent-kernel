@@ -1,6 +1,10 @@
+import asyncio
+import inspect
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
 
 import boto3
@@ -26,7 +30,8 @@ class ECSSQSConsumer(ABC):
     next visibility-timeout cycle.
     """
 
-    max_receive_count: int = 3 # overridden by classes that inherit this
+    max_receive_count: int = 3  # overridden by classes that inherit this
+    _DEFAULT_PARALLEL_WORKERS: int = 10
     _log = logging.getLogger("ak.ecs.sqsconsumer")
 
     @classmethod
@@ -92,38 +97,110 @@ class ECSSQSConsumer(ABC):
         )
     
     @classmethod
+    def _get_parallel_workers(cls) -> int:
+        try:
+            from .....core.config import AKConfig
+            return AKConfig.get().execution.queues.parallel_workers
+        except Exception:
+            return cls._DEFAULT_PARALLEL_WORKERS
+
+    @staticmethod
+    def _get_message_group_key(msg: dict) -> str:
+        group_id = msg.get("Attributes", {}).get("MessageGroupId")
+        if group_id:
+            return group_id
+        return msg.get("MessageId", "<unknown>")
+
+    @classmethod
+    def _process_single(cls, client, msg: dict, group_id: str, loop=None) -> None:
+        message_id = msg.get("MessageId", "<unknown>")
+        receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
+        try:
+            if receive_count > cls.max_receive_count:
+                cls._log.warning(
+                    f"[group={group_id}] Message {message_id} exceeded "
+                    f"max_receive_count ({receive_count} > {cls.max_receive_count})"
+                )
+                cls.on_permanent_failure(msg)
+                cls.delete_message(client, msg)
+                return
+
+            if loop is not None:
+                loop.run_until_complete(cls.process_message(msg))
+            else:
+                cls.process_message(msg)
+
+            cls.delete_message(client, msg)
+
+        except Exception:
+            cls._log.exception(
+                f"[group={group_id}] Failed to process message {message_id} "
+                "— leaving in queue for visibility-timeout retry"
+            )
+            # Do NOT delete — visibility timeout returns it for retry
+
+    @classmethod
+    def _process_group(cls, client, messages: list, group_id: str) -> None:
+        # @classmethod wraps the underlying function, so inspect on cls.process_message
+        # returns False even for async classmethods. Unwrap __func__ first.
+        underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
+        is_async = inspect.iscoroutinefunction(underlying_fn)
+
+        if is_async:
+            # Each group thread gets its own event loop — asyncio event loops are
+            # not thread-safe and must never be shared across threads.
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                for msg in messages:
+                    cls._process_single(client, msg, group_id, loop=loop)
+            finally:
+                loop.close()
+        else:
+            for msg in messages:
+                cls._process_single(client, msg, group_id)
+
+    @classmethod
     def _process_batch(cls, client, messages: List[Dict[str, Any]]) -> None:
         """
-        Dispatch each message in a batch: retry-count check → process_message
-        or on_permanent_failure → delete on success.
+        Group messages by MessageGroupId and dispatch each group to its own
+        thread via ThreadPoolExecutor. Messages within a group execute
+        sequentially (preserving FIFO); messages across groups run concurrently.
 
-        On exception: logs and leaves the message in the queue so the
-        visibility timeout returns it for a retry — mirroring Lambda's
-        batchItemFailures behaviour.
+        On exception within a group: logs and leaves the message in the queue
+        so the visibility timeout returns it for retry.
         """
+        if not messages:
+            return
+
+        groups: dict = defaultdict(list)
         for msg in messages:
-            message_id = msg.get("MessageId", "<unknown>")
-            receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
-            try:
-                if receive_count > cls.max_receive_count:
-                    cls._log.warning(
-                        f"Message {message_id} exceeded max_receive_count "
-                        f"({receive_count} > {cls.max_receive_count})"
+            key = cls._get_message_group_key(msg)
+            groups[key].append(msg)
+
+        max_workers = cls._get_parallel_workers()
+        cls._log.info(
+            f"{cls.__name__} dispatching {len(messages)} messages across "
+            f"{len(groups)} group(s) with max_workers={max_workers}"
+        )
+
+        with ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="sqs-group"
+        ) as executor:
+            futures = {
+                executor.submit(cls._process_group, client, msgs, group_id): group_id
+                for group_id, msgs in groups.items()
+            }
+            for future in as_completed(futures):
+                group_id = futures[future]
+                exc = future.exception()
+                if exc is not None:
+                    cls._log.exception(
+                        f"[group={group_id}] Group processor raised unexpectedly",
+                        exc_info=exc,
                     )
-                    cls.on_permanent_failure(msg)
-                    cls.delete_message(client, msg)
-                    continue
-
-                cls.process_message(msg)
-                cls.delete_message(client, msg)
-
-            except Exception:
-                cls._log.exception(
-                    f"Failed to process message {message_id} — "
-                    "leaving in queue for visibility-timeout retry"
-                )
-                # Do NOT delete — visibility timeout returns it for retry,
-                # mirroring how Lambda batchItemFailures re-enqueues a record.
+                else:
+                    cls._log.debug(f"[group={group_id}] Completed successfully")
 
     @classmethod
     def run(cls) -> None:
