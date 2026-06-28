@@ -92,7 +92,7 @@ class ECSSQSConsumer(ABC):
         )
     
     @classmethod
-    def process_messages(cls, client, messages: List[Dict[str, Any]]) -> None:
+    def _process_batch(cls, client, messages: List[Dict[str, Any]]) -> None:
         """
         Dispatch each message in a batch: retry-count check → process_message
         or on_permanent_failure → delete on success.
@@ -147,4 +147,4 @@ class ECSSQSConsumer(ABC):
                 time.sleep(5)
                 continue
 
-            cls.process_messages(client, messages)
+            cls._process_batch(client, messages)
