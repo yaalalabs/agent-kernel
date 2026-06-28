@@ -1,7 +1,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import boto3
 
@@ -26,7 +26,7 @@ class ECSSQSConsumer(ABC):
     next visibility-timeout cycle.
     """
 
-    max_receive_count: int = 3 # overidden by classes that inherit this
+    max_receive_count: int = 3 # overridden by classes that inherit this
     _log = logging.getLogger("ak.ecs.sqsconsumer")
 
     @classmethod
@@ -39,6 +39,25 @@ class ECSSQSConsumer(ABC):
         configure the queue externally as in Lambda.
         """
         raise NotImplementedError
+    
+    @classmethod
+    def poll(cls, client) -> list:
+        """
+        Receive one batch of SQS messages and return them.
+
+        Override to customise MaxNumberOfMessages, WaitTimeSeconds, or
+        MessageAttributeNames. Overriding implementations must accept the
+        boto3 SQS client as the second argument and return a list of raw
+        boto3 receive_message records.
+        """
+        resp = client.receive_message(
+            QueueUrl=cls._get_queue_url(),
+            MaxNumberOfMessages=10,
+            WaitTimeSeconds=20,
+            AttributeNames=["All"],
+            MessageAttributeNames=["All"],
+        )
+        return resp.get("Messages", [])
 
     @classmethod
     @abstractmethod
@@ -63,7 +82,48 @@ class ECSSQSConsumer(ABC):
 
         :param record: Raw boto3 receive_message record.
         """
-        pass
+        raise NotImplementedError
+    
+    @classmethod
+    def delete_message(cls, client, msg: dict) -> None:
+        client.delete_message(
+            QueueUrl=cls._get_queue_url(),
+            ReceiptHandle=msg["ReceiptHandle"],
+        )
+    
+    @classmethod
+    def process_messages(cls, client, messages: List[Dict[str, Any]]) -> None:
+        """
+        Dispatch each message in a batch: retry-count check → process_message
+        or on_permanent_failure → delete on success.
+
+        On exception: logs and leaves the message in the queue so the
+        visibility timeout returns it for a retry — mirroring Lambda's
+        batchItemFailures behaviour.
+        """
+        for msg in messages:
+            message_id = msg.get("MessageId", "<unknown>")
+            receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
+            try:
+                if receive_count > cls.max_receive_count:
+                    cls._log.warning(
+                        f"Message {message_id} exceeded max_receive_count "
+                        f"({receive_count} > {cls.max_receive_count})"
+                    )
+                    cls.on_permanent_failure(msg)
+                    cls.delete_message(client, msg)
+                    continue
+
+                cls.process_message(msg)
+                cls.delete_message(client, msg)
+
+            except Exception:
+                cls._log.exception(
+                    f"Failed to process message {message_id} — "
+                    "leaving in queue for visibility-timeout retry"
+                )
+                # Do NOT delete — visibility timeout returns it for retry,
+                # mirroring how Lambda batchItemFailures re-enqueues a record.
 
     @classmethod
     def run(cls) -> None:
@@ -81,69 +141,10 @@ class ECSSQSConsumer(ABC):
         client = boto3.client("sqs")
         while True:
             try:
-                cls.poll(client)
+                messages = cls.poll(client)
             except Exception:
                 cls._log.exception("Unexpected error in poll loop — retrying in 5 s")
                 time.sleep(5)
+                continue
 
-    @classmethod
-    def poll(cls, client) -> None:
-        """
-        Receive one batch of SQS messages and process each.
-
-        Analogous to one Lambda invocation: handle() processes event.Records;
-        poll() processes one receive_message response.
-
-        Override to customise MaxNumberOfMessages, WaitTimeSeconds, or
-        MessageAttributeNames. Overriding implementations must accept the
-        boto3 SQS client as the second argument.
-        """
-        resp = client.receive_message(
-            QueueUrl=cls._get_queue_url(),
-            MaxNumberOfMessages=10,
-            WaitTimeSeconds=20,
-            AttributeNames=["All"],
-            MessageAttributeNames=["All"],
-        )
-        for msg in resp.get("Messages", []):
-            cls._handle_message(client, msg)
-
-    @classmethod
-    def _handle_message(cls, client, msg: dict) -> None:
-        """
-        Retry-count check → dispatch to process_message or on_permanent_failure
-        → delete on success.
-
-        On exception: logs and leaves the message in the queue so the
-        visibility timeout returns it for a retry — mirroring Lambda's
-        batchItemFailures behaviour.
-        """
-        message_id = msg.get("MessageId", "<unknown>")
-        receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
-        try:
-            if receive_count > cls.max_receive_count:
-                cls._log.warning(
-                    f"Message {message_id} exceeded max_receive_count "
-                    f"({receive_count} > {cls.max_receive_count})"
-                )
-                cls.on_permanent_failure(msg)
-                cls.delete_message(client, msg)
-                return
-
-            cls.process_message(msg)
-            cls.delete_message(client, msg)
-
-        except Exception:
-            cls._log.exception(
-                f"Failed to process message {message_id} — "
-                "leaving in queue for visibility-timeout retry"
-            )
-            # Do NOT delete — visibility timeout returns it for retry,
-            # mirroring how Lambda batchItemFailures re-enqueues a record.
-
-    @classmethod
-    def delete_message(cls, client, msg: dict) -> None:
-        client.delete_message(
-            QueueUrl=cls._get_queue_url(),
-            ReceiptHandle=msg["ReceiptHandle"],
-        )
+            cls.process_messages(client, messages)
