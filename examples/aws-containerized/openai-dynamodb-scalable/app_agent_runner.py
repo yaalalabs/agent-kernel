@@ -1,4 +1,4 @@
-from agentkernel.deployment.aws.containerized import ECSAgentRunner
+from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
