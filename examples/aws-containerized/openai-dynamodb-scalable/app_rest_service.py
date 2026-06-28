@@ -1,4 +1,4 @@
-from agentkernel.deployment.aws.containerized import ECSIOHandler
+from agentkernel.aws import ECSIOHandler
 
 runner = ECSIOHandler.run
 
