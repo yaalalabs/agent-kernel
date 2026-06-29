@@ -1,4 +1,8 @@
-# Queue Mode — How It Works in Lambda and ECS
+---
+sidebar_position: 10
+---
+
+# Queue Mode Guide
 
 This document explains the queue mode architecture for both Lambda (serverless) and
 ECS (containerized) deployments.
@@ -180,7 +184,7 @@ Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequ
 **IO container — `app_rest_service.py`** (no agent definitions):
 
 ```python
-from agentkernel.deployment.aws.containerized import ECSIOHandler
+from agentkernel.aws import ECSIOHandler
 
 runner = ECSIOHandler.run
 
@@ -191,13 +195,15 @@ if __name__ == "__main__":
 **Agent Runner container — `app_agent_runner.py`**:
 
 ```python
-from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
 
 OpenAIModule([...])  # agent definitions here only
 
+handler = ECSAgentRunner.run
+
 if __name__ == "__main__":
-    ECSAgentRunner.run()
+    handler()
 ```
 
 ### Required AWS Resources
@@ -223,8 +229,8 @@ AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = <response-store-table-name>
 Agent Runner container:
 
 ```
-AK_EXECUTION__QUEUES__INPUT__URL              = <input-queue-url>
-AK_EXECUTION__QUEUES__OUTPUT__URL             = <output-queue-url>
+AK_EXECUTION__QUEUES__INPUT__URL               = <input-queue-url>
+AK_EXECUTION__QUEUES__OUTPUT__URL              = <output-queue-url>
 AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT = <max_receive_count>
 ```
 
@@ -241,7 +247,7 @@ policy. The recommended approach is **backlog-per-task target tracking**:
    `BacklogPerTask` at or below `backlog_target`.
 
 The `scaling_config` block in the `yaalalabs/ak-containerized/aws` module provisions
-this automatically. See the [containerized README](../ak-deployment/ak-aws/containerized/README.md#auto-scaling) for details.
+this automatically. See the [AWS Containerized deployment docs](/docs/deployment/aws-containerized#auto-scaling-for-resilience) for details.
 
 ### Key Differences vs Lambda
 

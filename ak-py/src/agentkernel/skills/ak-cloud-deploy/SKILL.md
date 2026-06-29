@@ -579,18 +579,19 @@ module "containerized_agents" {
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name
-  package_path         = "../dist"
   region               = var.region
   product_display_name = "AK ECS Deployment"
 
-  ecs_container_port = 8000
-  ecs_desired_count  = 2
+  rest_service = {
+    package_path  = "../dist"
+    container_port = 8000
+    desired_count  = 2
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
 
   create_dynamodb_memory_table = true
-
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
-  }
 }
 ```
 
@@ -604,7 +605,7 @@ Use this for high-throughput or long-running agents. Two separate ECS services s
 **`app_rest_service.py`** (IO container entrypoint — NO agent definitions here):
 
 ```python
-from agentkernel.deployment.aws.containerized import ECSIOHandler
+from agentkernel.aws import ECSIOHandler
 
 runner = ECSIOHandler.run
 
@@ -615,13 +616,15 @@ if __name__ == "__main__":
 **`app_agent_runner.py`** (Agent Runner container entrypoint):
 
 ```python
-from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
 
 OpenAIModule([...])  # register agents here only
 
+handler = ECSAgentRunner.run
+
 if __name__ == "__main__":
-    ECSAgentRunner.run()
+    handler()
 ```
 
 **`config.yaml`** (same file included in both images — queue URLs and table names are injected by Terraform):
@@ -641,17 +644,15 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
   module_name   = var.module_name
   region        = var.region
 
-  # IO container image
-  package_path = "../dist-rest-service"
-
   rest_service = {
+    package_path  = "../dist-rest-service"
     cpu           = 512
     memory        = 1024
     desired_count = 2
@@ -676,7 +677,7 @@ module "containerized_agents" {
     cpu           = 1024
     memory        = 2048
     desired_count = 1
-    image_uri     = module.agent_runner_image.docker_image_uri
+    package_path  = "../dist-agent-runner"
     command       = ["python", "app_agent_runner.py"]
     environment_variables = {
       OPENAI_API_KEY = var.openai_api_key

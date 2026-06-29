@@ -97,20 +97,18 @@ The REST service handles HTTP requests while Agent Runner processes the actual a
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias = "my-agent"
   env_alias     = "dev"
   module_name   = "chatbot"
   region        = "us-east-1"
   
-  # Docker image path
-  package_path = "./dist"
-  
   # REST Service configuration
   rest_service = {
-    cpu    = 256
-    memory = 512
+    package_path = "./dist"
+    cpu          = 256
+    memory       = 512
     environment_variables = {
       OPENAI_API_KEY = var.api_key
     }
@@ -126,17 +124,16 @@ module "containerized_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias = "my-agent"
   env_alias     = "prod"
   module_name   = "assistant"
   region        = "us-east-1"
   
-  package_path = "./dist-rest-service"
-  
   # REST Service (handles HTTP requests)
   rest_service = {
+    package_path  = "./dist-rest-service"
     cpu           = 512
     memory        = 1024
     desired_count = 2
@@ -190,12 +187,13 @@ module "containerized_agents" {
 
 ```hcl
 rest_service = {
+  package_path          = null         # Path to build Docker image (required)
   cpu                   = 256          # Fargate CPU units (256, 512, 1024, etc.)
   memory                = 512          # Fargate memory in MiB
   desired_count         = 1            # Number of tasks
   container_port        = 8000         # Container port
   health_check_endpoint = "/health"    # Health check path
-  image_uri             = null         # Docker image (defaults to package_path)
+  image_uri             = null         # Pre-built image URI (alternative to package_path)
   command               = null         # Override Docker CMD
   environment_variables = {}           # Service-specific env vars
 }

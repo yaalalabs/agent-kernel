@@ -71,7 +71,7 @@ If either thread crashes, `ThreadRunner` calls `os._exit(1)` so ECS restarts the
 **Entrypoint — `app_rest_service.py`** (no agent definitions):
 
 ```python
-from agentkernel.deployment.aws.containerized import ECSIOHandler
+from agentkernel.aws import ECSIOHandler
 
 runner = ECSIOHandler.run
 
@@ -86,13 +86,15 @@ Extends `ECSSQSConsumer`: polls the Input Queue in a blocking loop, executes the
 **Entrypoint — `app_agent_runner.py`**:
 
 ```python
-from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
 
 OpenAIModule([...])  # register agents here only
 
+handler = ECSAgentRunner.run
+
 if __name__ == "__main__":
-    ECSAgentRunner.run()
+    handler()
 ```
 
 ### Terraform
@@ -104,27 +106,37 @@ enable_queue_mode = true
 queue_mode_type   = "sync"   # or "async"
 
 rest_service = {
-  command = ["python", "app_rest_service.py"]
-  # ...
+  package_path  = "../dist-rest-service"
+  command       = ["python", "app_rest_service.py"]
+  cpu           = 256
+  memory        = 512
+  desired_count = 1
 }
 
 agent_runner = {
-  command  = ["python", "app_agent_runner.py"]
-  image_uri = "..."   # separate image with agent definitions
-  # ...
+  package_path  = "../dist-agent-runner"
+  command       = ["python", "app_agent_runner.py"]
+  cpu           = 1024
+  memory        = 2048
+  desired_count = 1
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
 }
 
 scaling_config = {
-  enabled        = true
-  min_count      = 1
-  max_count      = 10
-  backlog_target = 5
+  enabled            = true
+  min_count          = 1
+  max_count          = 10
+  backlog_target     = 5
+  scale_in_cooldown  = 180
+  scale_out_cooldown = 60
 }
 ```
 
 For the full example see [examples/aws-containerized/openai-dynamodb-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable).
 
-For queue mode internals see [queue-mode-guide.md](../../queue-mode-guide.md).
+For queue mode internals see [Queue Mode Guide](/docs/advanced/queue-mode-guide).
 
 ## Advantages
 
@@ -188,14 +200,18 @@ Application Load Balancer performs continuous health monitoring:
 4. Failed tasks replaced automatically
 5. Connection draining ensures graceful shutdown
 
-### Auto-Scaling for Resilience (Available soon)
+### Auto-Scaling for Resilience
 
 ECS Service auto-scaling maintains capacity during failures and load spikes.
 
+In queue mode, the Agent Runner scales automatically based on queue depth using a custom CloudWatch metric (`Custom/ECS/BacklogPerTask`). A Lambda function runs every minute, computes `BacklogPerTask = QueueDepth / max(RunningTasks, 1)`, and a Target Tracking policy adjusts the task count to keep this metric at or below `backlog_target`.
+
+Enable this in the `scaling_config` block — see [Scalable Queue Mode](#scalable-queue-mode) for configuration details.
+
 **Auto-scaling triggers:**
+- Queue backlog per task (queue mode — recommended)
 - CPU utilization
 - Memory utilization
-- Request count per target
 - Custom CloudWatch metrics
 
 **Benefits:**
@@ -257,7 +273,7 @@ docker stop container-id
 - Load balanced across remaining tasks
 - Metrics show recovery
 
-[Learn more about fault tolerance →](../core-concepts/fault-tolerance)
+[Learn more about fault tolerance →](/docs/core-concepts/fault-tolerance)
 
 ## Session Storage
 
@@ -306,22 +322,9 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days
 - Simplicity and low operational overhead preferred
 - Variable workload patterns
 - AWS-native infrastructure
+- Moderate latency is acceptable (single-digit milliseconds)
 
 [See DynamoDB configuration details →](/docs/core-concepts/session#dynamodb-storage)
-```
-
-**Benefits:**
-- Fully managed, serverless
-- Auto-scaling
-- No infrastructure to maintain
-- Pay-per-use pricing
-- No VPC complexity
-
-**Use when:**
-- You want serverless infrastructure
-- Moderate latency is acceptable (single-digit milliseconds)
-- Simplified infrastructure management
-- AWS-native integration preferred
 
 **Requirements:**
 - DynamoDB table with partition key `session_id` (String) and sort key `key` (String)
