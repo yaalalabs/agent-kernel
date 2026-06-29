@@ -49,11 +49,14 @@ locals {
     }
   } : {}
   gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
+
+  # Resolved ECR image URI — uses external if provided, otherwise falls back to the built image
+  ecr_image_uri = var.ecr_image_uri != null ? var.ecr_image_uri : module.docker_image[0].docker_image_uri
 }
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.5.1"
+  version              = "0.6.0"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -65,7 +68,7 @@ module "vpc" {
 
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.5.1"
+  version       = "0.6.0"
   count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -76,9 +79,9 @@ module "redis" {
 }
 
 module "docker_image" {
-  count         = 1
+  count         = var.ecr_image_uri == null ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.5.1"
+  version       = "0.6.0"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -98,7 +101,7 @@ module "agent_runner_docker_image" {
 
 module dynamodb_memory {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.5.1"
+  version = "0.6.0"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },

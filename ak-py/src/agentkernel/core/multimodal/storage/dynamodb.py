@@ -183,4 +183,8 @@ class DynamoDBAttachmentStore(AttachmentStore):
         :param attachment_id: Attachment ID.
         """
         self._driver.delete(self._session_id, attachment_id)
+        index_ids = self._driver.get(self._session_id, "_index") or []
+        if attachment_id in index_ids:
+            index_ids.remove(attachment_id)
+            self._driver.put(self._session_id, "_index", index_ids)
         self._log.debug(f"Deleted attachment: {attachment_id}")

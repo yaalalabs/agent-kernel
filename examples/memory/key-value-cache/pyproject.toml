@@ -5,13 +5,13 @@ description = "Demo of use of key value cache with OpenAI Agents in Agent Kernel
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,api]>=0.5.1",
+    "agentkernel[openai,api]>=0.6.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.5.1",
-    "black>=23.0.0",
+    "agentkernel[test]>=0.6.0",
+    "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
 ]

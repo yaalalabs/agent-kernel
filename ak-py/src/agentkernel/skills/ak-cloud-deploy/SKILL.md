@@ -9,7 +9,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.5.1"
+  version: "0.6.0"
   category: user
 ---
 
@@ -52,10 +52,10 @@ Use official modules:
 - AWS containerized: `yaalalabs/ak-containerized/aws`
 - Azure serverless: `yaalalabs/ak-serverless/azurerm`
 - Azure containerized: `yaalalabs/ak-containerized/azurerm`
-- GCP serverless: local module at `ak-deployment/ak-gcp/serverless`
-- GCP containerized: local module at `ak-deployment/ak-gcp/containerized`
+- GCP serverless: `yaalalabs/ak-serverless/google`
+- GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.5.1`) unless user requests another.
+Use current module version (`0.6.0`) unless user requests another.
 
 AWS-only features in this skill:
 - `execution_mode`
@@ -77,7 +77,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.5.1"
+  "agentkernel[openai,api,redis]>=0.6.0"
 ]
 ```
 
@@ -100,7 +100,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.5.1"
+  "agentkernel[openai,api,aws]>=0.6.0"
 ]
 ```
 
@@ -121,7 +121,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.5.1"
+  "agentkernel[openai,api,azure]>=0.6.0"
 ]
 ```
 
@@ -143,7 +143,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.5.1"
+  "agentkernel[openai,api,gcp]>=0.6.0"
 ]
 ```
 
@@ -188,7 +188,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -225,10 +225,24 @@ Use this for high throughput and long-running requests.
 
 This is the multi-artifact pattern used by the scalable example: a request handler zip, an agent-runner image, and a response-handler zip.
 
+Each Lambda can use one of three `package_type` values:
+
+
+| `package_type` | Artifact source                    | Required field(s)                                    | What Terraform does                                                                                                                                                                                       |
+| -------------- | ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LocalZip`     | Local ZIP file or source directory | `package_path`                                       | Uses the Lambda module's local packaging support. No shared source bucket is managed by this module.                                                                                                      |
+| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` is provided, Terraform uses the existing S3 object directly. |
+| `Image`        | Container image in ECR             | **Either** `ecr_image_uri` **or** `package_path`     | If `ecr_image_uri` is provided, Terraform uses the existing image. If `package_path` is provided, Terraform builds and pushes an image to ECR and deploys it.                                             |
+
+
+`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one.
+
+**Development / local build** (build artifacts locally before running `terraform apply`):
+
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -296,6 +310,52 @@ module "serverless_agents" {
 }
 ```
 
+**Production: external artifact sources (S3 / ECR)**
+
+Build and push artifacts in CI/CD, then point Terraform at them so `terraform apply` contains no local build step:
+
+```hcl
+  request_handler = {
+    module_name      = "rqst-hdlr"
+    function_name    = "request-handler"
+    handler_path     = "lambda_request_handler.handler"
+    package_type     = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_request_handler.zip"
+    }
+    timeout     = 45
+    memory_size = 256
+    environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+  }
+
+  agent_runner = {
+    module_name   = "agent-runner"
+    function_name = "agent-runner"
+    handler_path  = "lambda_agent_runner.handler"
+    package_type  = "Image"
+    ecr_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+    timeout       = 45
+    memory_size   = 512
+    environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+  }
+
+  response_handler = {
+    module_name      = "response-handler"
+    function_name    = "response-handler"
+    handler_path     = "lambda_response_handler.handler"
+    package_type     = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_response_handler.zip"
+    }
+    timeout     = 45
+    memory_size = 256
+  }
+```
+
+See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example of this pattern.
+
 **Queue mode `config.yaml`** (bundled into every Lambda package — `execution.mode`, queue URLs, table names, and `max_receive_count` are all injected automatically by Terraform as environment variables; only set values that are NOT injected):
 
 ```yaml
@@ -317,7 +377,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.5.1"  # include 'redis' if using Redis session/response store
+  "agentkernel[openai,api,aws]>=0.6.0"  # include 'redis' if using Redis session/response store
 ]
 ```
 
@@ -330,7 +390,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -474,7 +534,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.5.1"
+  "agentkernel[openai,api,aws,redis,auth]>=0.6.0"
 ]
 ```
 
@@ -514,7 +574,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -668,7 +728,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -712,7 +772,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -755,7 +815,8 @@ def main() -> None:
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -783,7 +844,8 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -808,8 +870,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.5.1"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.5.1"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.6.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.6.0"  # for Redis sessions
 ]
 ```
 
@@ -833,7 +895,8 @@ def main() -> None:
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region

@@ -3,16 +3,15 @@ name = "aws-serverless-crewai"
 version = "0.1.0"
 description = "Demo of CrewAI based agents running in Agent Kernel on AWS ECS"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    "agentkernel[crewai,api,redis]>=0.5.1",
-    "crewai==0.165.1"
+    "agentkernel[crewai,api,redis]>=0.6.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.5.1",
-    "black>=23.0.0",
+    "agentkernel[test]>=0.6.0",
+    "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
 ]

@@ -41,14 +41,14 @@
 /* ─── Diagram container ──────────────────────────────────────────────────── */
 
 .diagram {
-  max-width: 1400px;
+  max-width: 980px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
-  padding: 3.5rem 3rem;
-  border-radius: 1.75rem;
+  padding: 2.5rem 2.25rem;
+  border-radius: 1.5rem;
   border: 2px solid var(--ak-accent-border);
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.6),
@@ -99,7 +99,7 @@
   background: var(--logic-card-bg);
   border: 1px solid var(--logic-accent-border);
   border-radius: 1.25rem;
-  padding: 1.5rem 2rem;
+  padding: 1.2rem 1.75rem;
   z-index: 1;
   opacity: 0;
   width: fit-content;
@@ -171,14 +171,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.85rem;
-  width: 48%;
-  min-width: 280px;
-  max-width: 460px;
+  gap: 0.75rem;
+  width: 46%;
+  min-width: 260px;
+  max-width: 400px;
   background: var(--ak-hub-bg);
   border: 1px solid var(--ak-accent-border);
   border-radius: 1.25rem;
-  padding: 2rem 2.5rem;
+  padding: 1.5rem 2rem;
   z-index: 1;
   opacity: 0;
   backdrop-filter: blur(12px);
@@ -236,14 +236,14 @@
 .hubLogo {
   position: relative;
   z-index: 1;
-  width: 60px;
-  height: 60px;
+  width: 50px;
+  height: 50px;
   flex-shrink: 0;
   filter: drop-shadow(0 0 14px var(--ak-accent-glow));
 }
 
 .hubLabel {
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #dfe1f0;
   letter-spacing: -0.02em;
@@ -255,15 +255,15 @@
 .modulesGrid {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
   width: 100%;
-  margin-top: 3.5rem;
+  margin-top: 2.25rem;
 }
 
 .modulesRow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 @keyframes moduleReveal {

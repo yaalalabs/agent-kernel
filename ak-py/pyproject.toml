@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.5.1"
+version = "0.6.0"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -22,25 +22,25 @@ dependencies = [
 
 [project.optional-dependencies]
 auth = [
-    "PyJWT>=2.0.0",
+    "PyJWT>=2.13.0",
 ]
 langfuse = [
     "langfuse>=4.2.0",
     "nest-asyncio>=1.6.0",
 ]
 openllmetry = [
-    "traceloop-sdk>=0.48.0",
+    "traceloop-sdk>=0.61.0",
 ]
 crewai = [
-    "crewai>=0.150.0",
+    "crewai>=1.15.0",
     "openinference-instrumentation-crewai>=0.1.16",
     "openinference-instrumentation-litellm>=0.1.28",
 ]
 langgraph = [
     "langgraph~=1.0.5",
     "langchain~=1.2.3",
-    "langchain_community~=0.4.1",
-    "litellm~=1.74.9"
+    "langchain_community==0.4.1",
+    "litellm~=1.89.2"
 ]
 smolagents = [
     "smolagents>=1.0.0",
@@ -78,7 +78,7 @@ openai = [
 ]
 adk = [
     "google-adk>=1.14.1",
-    "litellm~=1.74.3",
+    "litellm~=1.89.2",
     "openinference-instrumentation-google-adk>=0.1.6",
 ]
 walledai = [
@@ -130,7 +130,7 @@ test = [
     "ragas>=0.4.1",
     "datasets>=2.14.0",
     "pandas>=2.0.0",
-    "litellm>=1.74.9",
+    "litellm>=1.89.2",
 ]
 a2a = [
     "a2a-sdk[http-server]>=0.3.6",
@@ -144,7 +144,7 @@ ak = "agentkernel.cli.ak:main"
 
 [dependency-groups]
 dev = [
-    "black>=23.0.0",
+    "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
 ]

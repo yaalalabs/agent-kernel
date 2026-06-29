@@ -1,9 +1,10 @@
 import logging
+from datetime import datetime
 from typing import Any, Callable, List
 
-from crewai import Agent, Crew, Task
-from crewai.memory.external.external_memory import ExternalMemory
-from crewai.memory.storage.interface import Storage
+from crewai import Agent, Crew, Memory, Task
+from crewai.memory import MemoryRecord, ScopeInfo
+from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
 
 from ...core import Agent as BaseAgent
@@ -26,40 +27,228 @@ class CrewAISession(Storage):
         """
         Initializes a CrewAISession instance.
         """
-        self._items = []
+        self._items: list[MemoryRecord] = []
         self._log = logging.getLogger("ak.crewai.session")
 
-    def save(self, value: Any, metadata=None, agent=None) -> None:
-        """
-        Saves an item to the session.
-        :param value: The value to save.
-        :param metadata: Optional metadata associated with the value.
-        :param agent: Optional agent associated with the value.
-        """
-        self._log.debug(f"save: {value}, {metadata}, {agent}")
-        if metadata is None:
-            metadata = {}
-        if agent is None:
-            agent = "Unknown"
-        self._items.append({"value": value, "metadata": metadata, "agent": agent})
+    @staticmethod
+    def _normalize_scope(scope: str | None) -> str:
+        if not scope:
+            return "/"
+        normalized = scope if scope.startswith("/") else f"/{scope}"
+        return normalized.rstrip("/") or "/"
 
-    def search(self, query: str, limit: int = 10, score_threshold: float = 0.5) -> list[dict]:
+    @classmethod
+    def _is_in_scope(cls, record_scope: str, scope_prefix: str | None) -> bool:
+        if scope_prefix is None:
+            return True
+        normalized_scope = cls._normalize_scope(record_scope)
+        normalized_prefix = cls._normalize_scope(scope_prefix)
+        return normalized_prefix == "/" or normalized_scope == normalized_prefix or normalized_scope.startswith(f"{normalized_prefix}/")
+
+    @staticmethod
+    def _metadata_matches(record: MemoryRecord, metadata_filter: dict[str, Any] | None) -> bool:
+        if metadata_filter is None:
+            return True
+        return all(record.metadata.get(key) == value for key, value in metadata_filter.items())
+
+    def save(self, records: list[MemoryRecord]) -> None:
         """
-        Searches for items in the session that match the query.
-        :param query: The search query.
+        Saves memory records to the session.
+        :param records: The memory records to save.
+        """
+        self._log.debug(f"save: {records}")
+        for record in records:
+            stored = record.model_copy(deep=True)
+            for index, existing in enumerate(self._items):
+                if existing.id == stored.id:
+                    self._items[index] = stored
+                    break
+            else:
+                self._items.append(stored)
+
+    def search(
+        self,
+        query_embedding: list[float],
+        scope_prefix: str | None = None,
+        categories: list[str] | None = None,
+        metadata_filter: dict[str, Any] | None = None,
+        limit: int = 10,
+        min_score: float = 0.0,
+    ) -> list[tuple[MemoryRecord, float]]:
+        """
+        Searches for memory records in the session.
+        :param query_embedding: Embedding vector for the query.
+        :param scope_prefix: Optional scope prefix to filter by.
+        :param categories: Optional categories to filter by.
+        :param metadata_filter: Optional metadata filter.
         :param limit: Maximum number of results to return.
-        :param score_threshold: Minimum score threshold for results.
-        :return: List of items matching the query.
+        :param min_score: Minimum similarity score threshold.
+        :return: Matching memory records with similarity scores.
         """
-        self._log.debug(f"search: {query}, {limit}, {score_threshold}")
-        return list(map(lambda item: {"content": item["value"], "context": item["value"]}, self._items[-limit:]))
+        self._log.debug(f"search: {scope_prefix}, {categories}, {metadata_filter}, {limit}, {min_score}")
+        if limit <= 0:
+            return []
 
-    def reset(self) -> None:
+        results: list[tuple[MemoryRecord, float]] = []
+        for record in self._items:
+            if not self._is_in_scope(record.scope, scope_prefix):
+                continue
+            if categories and not all(category in set(record.categories) for category in categories):
+                continue
+            if not self._metadata_matches(record, metadata_filter):
+                continue
+
+            if not query_embedding or not record.embedding:
+                score = 1.0
+            else:
+                length = min(len(query_embedding), len(record.embedding))
+                query = query_embedding[:length]
+                embedding = record.embedding[:length]
+                dot = sum(left * right for left, right in zip(query, embedding))
+                query_norm = sum(value * value for value in query) ** 0.5
+                embedding_norm = sum(value * value for value in embedding) ** 0.5
+                score = 0.0 if query_norm == 0 or embedding_norm == 0 else dot / (query_norm * embedding_norm)
+
+            if score >= min_score:
+                results.append((record.model_copy(deep=True), score))
+
+        results.sort(key=lambda item: (item[1], item[0].created_at), reverse=True)
+        return results[:limit]
+
+    def reset(self, scope_prefix: str | None = None) -> None:
         """
         Resets the session by clearing all items.
+        :param scope_prefix: Optional scope prefix to reset.
         """
-        self._log.debug("reset")
-        self._items = []
+        self._log.debug(f"reset: {scope_prefix}")
+        if scope_prefix is None:
+            self._items = []
+            return
+        self._items = [record for record in self._items if not self._is_in_scope(record.scope, scope_prefix)]
+
+    def list_scopes(self, parent: str = "/") -> list[str]:
+        """
+        Lists immediate child scopes under the parent scope.
+        :param parent: Parent scope path.
+        :return: Immediate child scope paths.
+        """
+        normalized_parent = self._normalize_scope(parent)
+        children: set[str] = set()
+        for record in self._items:
+            scope = self._normalize_scope(record.scope)
+            if normalized_parent == "/":
+                remainder = scope.strip("/")
+            elif scope.startswith(f"{normalized_parent}/"):
+                remainder = scope[len(normalized_parent) + 1 :]
+            else:
+                continue
+            if remainder:
+                children.add(f"{normalized_parent.rstrip('/')}/{remainder.split('/')[0]}")
+        return sorted(children)
+
+    def list_categories(self, scope_prefix: str | None = None) -> dict[str, int]:
+        """
+        Lists categories and their counts within a scope.
+        :param scope_prefix: Optional scope prefix to filter by.
+        :return: Mapping of category name to record count.
+        """
+        categories: dict[str, int] = {}
+        for record in self._items:
+            if not self._is_in_scope(record.scope, scope_prefix):
+                continue
+            for category in record.categories:
+                categories[category] = categories.get(category, 0) + 1
+        return categories
+
+    def get_scope_info(self, scope: str) -> ScopeInfo:
+        """
+        Returns summary information for a scope.
+        :param scope: Scope path.
+        :return: Scope information.
+        """
+        normalized_scope = self._normalize_scope(scope)
+        records = [record for record in self._items if self._is_in_scope(record.scope, normalized_scope)]
+        categories = sorted({category for record in records for category in record.categories})
+        created_at = [record.created_at for record in records]
+        return ScopeInfo(
+            path=normalized_scope,
+            record_count=len(records),
+            categories=categories,
+            oldest_record=min(created_at) if created_at else None,
+            newest_record=max(created_at) if created_at else None,
+            child_scopes=self.list_scopes(normalized_scope),
+        )
+
+    def list_records(self, scope_prefix: str | None = None, limit: int = 200, offset: int = 0) -> list[MemoryRecord]:
+        """
+        Lists stored memory records.
+        :param scope_prefix: Optional scope prefix to filter by.
+        :param limit: Maximum number of records to return.
+        :param offset: Number of records to skip.
+        :return: Matching memory records.
+        """
+        if limit <= 0:
+            return []
+        records = [record for record in self._items if self._is_in_scope(record.scope, scope_prefix)]
+        return [record.model_copy(deep=True) for record in records[offset : offset + limit]]
+
+    def count(self, scope_prefix: str | None = None) -> int:
+        """
+        Counts stored memory records.
+        :param scope_prefix: Optional scope prefix to filter by.
+        :return: Number of matching records.
+        """
+        return len([record for record in self._items if self._is_in_scope(record.scope, scope_prefix)])
+
+    def delete(
+        self,
+        scope_prefix: str | None = None,
+        categories: list[str] | None = None,
+        record_ids: list[str] | None = None,
+        older_than: datetime | None = None,
+        metadata_filter: dict[str, Any] | None = None,
+    ) -> int:
+        """
+        Deletes matching memory records.
+        :return: Number of records deleted.
+        """
+        remaining: list[MemoryRecord] = []
+        deleted = 0
+        record_id_set = set(record_ids) if record_ids else None
+        for record in self._items:
+            matches = self._is_in_scope(record.scope, scope_prefix)
+            matches = matches and (record_id_set is None or record.id in record_id_set)
+            matches = matches and (not categories or all(category in set(record.categories) for category in categories))
+            matches = matches and (older_than is None or record.created_at < older_than)
+            matches = matches and self._metadata_matches(record, metadata_filter)
+            if matches:
+                deleted += 1
+            else:
+                remaining.append(record)
+        self._items = remaining
+        return deleted
+
+    def update(self, record: MemoryRecord) -> None:
+        """
+        Updates an existing memory record.
+        :param record: Memory record to update.
+        """
+        for index, existing in enumerate(self._items):
+            if existing.id == record.id:
+                self._items[index] = record.model_copy(deep=True)
+                return
+        self._items.append(record.model_copy(deep=True))
+
+    def get_record(self, record_id: str) -> MemoryRecord | None:
+        """
+        Returns a memory record by id.
+        :param record_id: Memory record id.
+        :return: Matching memory record, if any.
+        """
+        for record in self._items:
+            if record.id == record_id:
+                return record.model_copy(deep=True)
+        return None
 
 
 class CrewAIRunner(Runner):
@@ -74,11 +263,11 @@ class CrewAIRunner(Runner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
 
-    def _memory(self, session: Session) -> ExternalMemory | None:
+    def _memory(self, session: Session) -> Memory | None:
         """
-        Returns the external memory associated with the session.
+        Returns the unified memory associated with the session.
         :param session: The session to retrieve the memory for.
-        :return: The external memory for the session, or None if the session is not provided.
+        :return: The unified memory for the session, or None if the session is not provided.
         """
         if session is None:
             self._log.debug("Running without session")
@@ -89,7 +278,7 @@ class CrewAIRunner(Runner):
         else:
             self._log.debug("Reusing existing CrewAISession")
             previous = session.get(FRAMEWORK)
-        return ExternalMemory(previous)
+        return Memory(storage=previous)
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -117,11 +306,9 @@ class CrewAIRunner(Runner):
             if prompt.strip() == "":
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-            ext_memory = self._memory(session)
-
-            # Persist the user's prompt so it is available via external memory search on subsequent turns
-            if ext_memory and ext_memory.storage:
-                ext_memory.storage.save(f"User: {prompt}")
+            memory = self._memory(session)
+            if memory:
+                memory.remember(content=prompt)
 
             task = Task(
                 description=prompt,
@@ -132,9 +319,9 @@ class CrewAIRunner(Runner):
                 agents=agent.crew,
                 tasks=[task],
                 verbose=False,
-                external_memory=ext_memory,
+                memory=memory,
             )
-            reply = crew.kickoff(inputs={})
+            reply = await crew.kickoff_async(inputs={})
             if hasattr(reply, "raw"):
                 raw_reply = reply.raw
                 reply_text = "" if raw_reply is None else str(raw_reply)

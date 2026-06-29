@@ -29,7 +29,7 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 ```hcl
 module "container_app" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -92,7 +92,7 @@ output "container_app_fqdn" {
 
 ```hcl
 module "container_app_redis" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -133,7 +133,7 @@ module "container_app_redis" {
 
 ```hcl
 module "container_app_cosmosdb" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"

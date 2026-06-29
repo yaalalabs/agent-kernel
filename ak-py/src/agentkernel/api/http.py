@@ -72,7 +72,10 @@ class RESTAPI:
         """
         cls._log.debug(f"Adding custom router")
         for route in router.routes:
-            cls._log.debug(f"Route: {route.path} [{route.methods}]")
+            route_path = getattr(route, "path", None)
+            route_methods = getattr(route, "methods", None)
+            if route_path is not None:
+                cls._log.debug(f"Route: {route_path} [{route_methods}]")
         cls._custom_routers.append(router)
 
     @classmethod

@@ -26,13 +26,13 @@ const tracks: Track[] = [
     doneLabel: 'Months later…',
     doneIcon: <FaRegClock />,
     steps: [
-      { label: 'Platform engineering', sub: 'Set up base infrastructure' },
-      { label: 'Framework setup', sub: 'Choose, configure, scaffold' },
-      { label: 'Cloud config', sub: 'Regions, roles, networking' },
-      { label: 'Session management', sub: 'Auth, state, tokens' },
+      { label: 'Platform Engineering', sub: 'Set up base infrastructure' },
+      { label: 'Framework Setup', sub: 'Choose, configure, scaffold' },
+      { label: 'Cloud Config', sub: 'Regions, roles, networking' },
+      { label: 'Session Management', sub: 'Auth, state, tokens' },
       { label: 'Integrations', sub: 'APIs, queues, data sources' },
-      { label: 'Testing setup', sub: 'Harnesses, CI, coverage' },
-      { label: 'Deploy pipeline', sub: 'Build, push, release gates' },
+      { label: 'Testing Setup', sub: 'Harnesses, CI, coverage' },
+      { label: 'Deploy Pipeline', sub: 'Build, push, release gates' },
     ],
   },
   {
@@ -42,7 +42,7 @@ const tracks: Track[] = [
     doneLabel: 'Shipped',
     doneIcon: <FaRocket />,
     steps: [
-      { label: 'Write your logic', sub: 'Focus on what your agent does - not how it runs' },
+      { label: 'Write Your Logic', sub: 'Focus on what your agent does - not how it runs' },
       { label: 'Deploy', sub: 'Agent Kernel handles the rest' },
     ],
   },

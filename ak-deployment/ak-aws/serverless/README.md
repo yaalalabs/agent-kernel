@@ -229,6 +229,76 @@ module "container_api" {
 }
 ```
 
+### Scalable Queue Mode with External S3 and ECR Artifacts
+
+Use pre-built artifacts (S3 ZIPs for handlers, ECR image for agent runner) in queue mode:
+
+```hcl
+module "scalable_agents" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region               = "us-west-2"
+  product_alias        = "myapp"
+  env_alias            = "prod"
+  product_display_name = "Scalable Agent API"
+
+  module_name    = "scalable"
+  queue_mode     = true
+  execution_mode = "rest_sync"
+
+  create_dynamodb_memory_table   = true
+  create_dynamodb_response_store = true
+
+  api_version    = "v1"
+  api_base_path  = "api"
+  agent_endpoint = "chat"
+
+  request_handler = {
+    module_name          = "rqst-hdlr"
+    function_name        = "rqh-func"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_request_handler.zip"
+    }
+    memory_size = 256
+    timeout     = 45
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  agent_runner = {
+    module_name          = "agent-runner"
+    function_name        = "ar-func"
+    handler_path         = "lambda_agent_runner.handler"
+    package_type         = "Image"
+    ecr_image_uri        = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+    memory_size          = 512
+    timeout              = 45
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  response_handler = {
+    module_name          = "rspns-hdlr"
+    function_name        = "rsh-func"
+    handler_path         = "lambda_response_handler.handler"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_response_handler.zip"
+    }
+    package_type = "S3Zip"
+    memory_size  = 256
+    timeout      = 45
+  }
+}
+```
+
+This pattern is recommended for production: build and upload artifacts in CI/CD, then run `terraform apply` without any local build step.
+
 ### S3-Based Deployment with Code Signing
 
 ```hcl
@@ -435,8 +505,10 @@ module "serverless_api_auth" {
 | `memory_size` | Request handler Lambda memory size in MB | `number` | `128` | no |
 | `handler_path` | Request handler Lambda handler path | `string` | `"request_handler.handler"` | no |
 | `module_name` | Request handler module name | `string` | `"request-handler"` | no |
-| `package_path` | Request handler deployment package path | `string` | `null` | no |
+| `package_path` | Request handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Request handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key }`). Used when `package_type = "S3Zip"`. Mutually exclusive with `package_path` | `object` | `null` | no |
+| `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the request handler | `map(string)` | `{}` | no |
@@ -505,8 +577,10 @@ This configuration creates WebSocket routes accessible via:
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
 | `module_name` | Response handler module name | `string` | `"response-handler"` | no |
-| `package_path` | Response handler deployment package path | `string` | `null` | no |
+| `package_path` | Response handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key }`). Used when `package_type = "S3Zip"`. Mutually exclusive with `package_path` | `object` | `null` | no |
+| `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |
@@ -521,8 +595,10 @@ This configuration creates WebSocket routes accessible via:
 | `memory_size` | Agent runner Lambda memory size in MB | `number` | `512` | no |
 | `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
 | `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
-| `package_path` | Agent runner deployment package path | `string` | `null` | no |
+| `package_path` | Agent runner deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key }`). Used when `package_type = "S3Zip"`. Mutually exclusive with `package_path` | `object` | `null` | no |
+| `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
