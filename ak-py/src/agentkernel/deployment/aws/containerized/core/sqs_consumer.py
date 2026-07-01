@@ -64,8 +64,6 @@ class ECSSQSConsumer(ABC):
         """
         resp = cls._get_client().receive_message(
             QueueUrl=cls.get_queue_url(),
-            MaxNumberOfMessages=10,
-            WaitTimeSeconds=20,
             AttributeNames=["All"],
             MessageAttributeNames=["All"],
         )
