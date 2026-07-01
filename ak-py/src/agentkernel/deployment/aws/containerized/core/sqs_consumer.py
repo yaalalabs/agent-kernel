@@ -193,15 +193,14 @@ class ECSSQSConsumer(ABC):
         )
 
         ThreadRunner.run(
-            [
+            tasks = [
                 ThreadRunner.Task(
                     execution_function=cls._process_group,
                     item=msgs,
                     thread_name=f"sqs-group-{gid}",
-                )
-                for gid, msgs in groups.items()
+                ) for gid, msgs in groups.items()
             ],
-            max_workers=max_workers,
+            max_workers = max_workers,
         )
 
     @classmethod
