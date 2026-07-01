@@ -27,6 +27,7 @@ class ThreadRunner:
 
         def _submit(self, executor: ThreadPoolExecutor):
             args = () if self.item is None else (self.item,)
+            _log.info(f"[{self.thread_name}] submitting to executer")
             return executor.submit(self.execution_function, *args)
 
     @staticmethod
