@@ -37,18 +37,106 @@ graph TB
 
 Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
-### Deployment Package Options
+## Scalable Queue Mode
 
-The `yaalalabs/ak-containerized/aws` module supports two artifact sources:
+For high-throughput or long-running agents, use the two-container queue architecture.
+The IO container and the Agent Runner are separate ECS services sharing SQS queues.
 
-| Option | Variable | Description |
-|---|---|---|
-| Local Docker build | `package_path` | Path to the Docker build context (directory containing `Dockerfile`). Terraform builds and pushes the image during `apply`. |
-| Pre-built ECR image | `ecr_image_uri` | Full ECR image URI (`account.dkr.ecr.region.amazonaws.com/repo:tag`). Terraform skips the local build and deploys the specified image directly. |
+```mermaid
+graph TB
+    A[Client] --> B[API Gateway]
+    B --> C[ALB]
+    C --> D["IO Container<br/>(ECSIOHandler)"]
 
-Exactly one of `package_path` or `ecr_image_uri` must be set.
+    D --> |Thread 1 — ECSQueueRequestHandler| E[Input Queue SQS]
+    D --> |Thread 2 — ECSOutputConsumer| F[Output Queue SQS]
 
-The pre-built ECR image pattern is recommended for production: build and push the image in CI/CD, then run `terraform apply` referencing the pushed URI. See [examples/aws-containerized/openai-dynamodb](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb) for a complete example.
+    E --> G["Agent Runner<br/>(ECSAgentRunner)"]
+    G --> F
+    F --> H[DynamoDB Response Store]
+
+    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+### Container 1 — IO container (`ECSIOHandler`)
+
+`ECSIOHandler.run()` starts two threads via `ThreadRunner`:
+
+- **Thread 1** — `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`: FastAPI/uvicorn. Handles `POST /api/v1/chat` (enqueues to Input Queue, then either waits on DynamoDB or returns a `request_id`) and `GET /api/v1/chat/{session_id}` (polls DynamoDB for the result).
+- **Thread 2** — `ECSOutputConsumer.run()`: polls the Output Queue and writes results to DynamoDB (REST modes) or broadcasts via WebSocket.
+
+If either thread crashes, `ThreadRunner` calls `os._exit(1)` so ECS restarts the task cleanly.
+
+**Entrypoint — `app_rest_service.py`** (no agent definitions):
+
+```python
+from agentkernel.aws import ECSIOHandler
+
+runner = ECSIOHandler.run
+
+if __name__ == "__main__":
+    runner()
+```
+
+### Container 2 — Agent Runner (`ECSAgentRunner`)
+
+Extends `ECSSQSConsumer`: polls the Input Queue in a blocking loop, executes the agent, and puts the result on the Output Queue.
+
+**Entrypoint — `app_agent_runner.py`**:
+
+```python
+from agentkernel.aws import ECSAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])  # register agents here only
+
+handler = ECSAgentRunner.run
+
+if __name__ == "__main__":
+    handler()
+```
+
+### Terraform
+
+Enable queue mode in the `yaalalabs/ak-containerized/aws` module:
+
+```hcl
+enable_queue_mode = true
+queue_mode_type   = "sync"   # or "async"
+
+rest_service = {
+  package_path  = "../dist-rest-service"
+  command       = ["python", "app_rest_service.py"]
+  cpu           = 256
+  memory        = 512
+  desired_count = 1
+}
+
+agent_runner = {
+  package_path  = "../dist-agent-runner"
+  command       = ["python", "app_agent_runner.py"]
+  cpu           = 1024
+  memory        = 2048
+  desired_count = 1
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+
+scaling_config = {
+  enabled            = true
+  min_count          = 1
+  max_count          = 10
+  backlog_target     = 5
+  scale_in_cooldown  = 180
+  scale_out_cooldown = 60
+}
+```
+
+For the full example see [examples/aws-containerized/openai-dynamodb-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable).
+
+For queue mode internals see [Queue Mode Guide](/docs/advanced/queue-mode-guide).
 
 ## Advantages
 
@@ -112,14 +200,18 @@ Application Load Balancer performs continuous health monitoring:
 4. Failed tasks replaced automatically
 5. Connection draining ensures graceful shutdown
 
-### Auto-Scaling for Resilience (Available soon)
+### Auto-Scaling for Resilience
 
 ECS Service auto-scaling maintains capacity during failures and load spikes.
 
+In queue mode, the Agent Runner scales automatically based on queue depth using a custom CloudWatch metric (`Custom/ECS/BacklogPerTask`). A Lambda function runs every minute, computes `BacklogPerTask = QueueDepth / max(RunningTasks, 1)`, and a Target Tracking policy adjusts the task count to keep this metric at or below `backlog_target`.
+
+Enable this in the `scaling_config` block — see [Scalable Queue Mode](#scalable-queue-mode) for configuration details.
+
 **Auto-scaling triggers:**
+- Queue backlog per task (queue mode — recommended)
 - CPU utilization
 - Memory utilization
-- Request count per target
 - Custom CloudWatch metrics
 
 **Benefits:**
@@ -181,7 +273,7 @@ docker stop container-id
 - Load balanced across remaining tasks
 - Metrics show recovery
 
-[Learn more about fault tolerance →](../core-concepts/fault-tolerance)
+[Learn more about fault tolerance →](/docs/core-concepts/fault-tolerance)
 
 ## Session Storage
 
@@ -230,22 +322,9 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days
 - Simplicity and low operational overhead preferred
 - Variable workload patterns
 - AWS-native infrastructure
+- Moderate latency is acceptable (single-digit milliseconds)
 
 [See DynamoDB configuration details →](/docs/core-concepts/session#dynamodb-storage)
-```
-
-**Benefits:**
-- Fully managed, serverless
-- Auto-scaling
-- No infrastructure to maintain
-- Pay-per-use pricing
-- No VPC complexity
-
-**Use when:**
-- You want serverless infrastructure
-- Moderate latency is acceptable (single-digit milliseconds)
-- Simplified infrastructure management
-- AWS-native integration preferred
 
 **Requirements:**
 - DynamoDB table with partition key `session_id` (String) and sort key `key` (String)

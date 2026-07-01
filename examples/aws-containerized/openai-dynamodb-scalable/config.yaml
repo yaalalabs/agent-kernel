@@ -1,0 +1,25 @@
+logging:
+  ak:
+    level: DEBUG
+
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: "ak-oai-scl-ecs-dev-scalable-session_store"
+
+execution:
+  mode: rest_sync
+  queues:
+    input:
+      url: ""      # injected by Terraform via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 4
+    output:
+      url: ""      # injected by Terraform via AK_EXECUTION__QUEUES__OUTPUT__URL
+      max_receive_count: 4
+  response_store:
+    type: dynamodb
+    retry_count: 10
+    delay: 3
+    dynamodb:
+      table_name: ""   # injected by Terraform via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
+      ttl: 300

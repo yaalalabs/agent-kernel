@@ -1,0 +1,35 @@
+[project]
+name = "aws-containerized-openai"
+version = "0.1.0"
+description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS ECS using DynamoDB as memory"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[openai,api,aws]>=0.6.0"
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.5.1",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

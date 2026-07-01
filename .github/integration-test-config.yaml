@@ -36,7 +36,7 @@ weekly:
   # For AWS projects, terraform destroy is called first, 
   # then each project is deployed and tested
   tests:
-    #AWS Containerized
+    # AWS Containerized
     - type: aws-containerized
       path: examples/aws-containerized/adk
       deploy_dir: deploy
@@ -48,6 +48,9 @@ weekly:
       deploy_dir: deploy
     - type: aws-containerized
       path: examples/aws-containerized/mcp/multi
+      deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-dynamodb-scalable
       deploy_dir: deploy
     
     # AWS Serverless
@@ -67,7 +70,7 @@ weekly:
       path: examples/aws-serverless/scalable-openai
       deploy_dir: deploy
 
-     # Memory options 
+    # # Memory options 
     - type: aws-serverless
       path: examples/memory/redis
     - type: aws-serverless
@@ -76,12 +79,12 @@ weekly:
       path: examples/memory/cosmos
       deploy_dir: deploy
 
-    # # Azure Serverless
+    # Azure Serverless
     - type: azure-serverless
       path: examples/azure-serverless/openai
       deploy_dir: deploy
     
-    # # Azure Containerized
+    # Azure Containerized
     - type: azure-containerized
       path: examples/azure-containerized/openai-cosmos
       deploy_dir: deploy

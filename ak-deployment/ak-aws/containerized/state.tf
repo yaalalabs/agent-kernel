@@ -49,9 +49,6 @@ locals {
     }
   } : {}
   gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
-
-  # Resolved ECR image URI — uses external if provided, otherwise falls back to the built image
-  ecr_image_uri = var.ecr_image_uri != null ? var.ecr_image_uri : module.docker_image[0].docker_image_uri
 }
 
 module "vpc" {
@@ -79,13 +76,24 @@ module "redis" {
 }
 
 module "docker_image" {
-  count         = var.ecr_image_uri == null ? 1 : 0
+  count         = 1
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.6.0"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
-  source_path   = var.package_path
+  source_path   = var.rest_service.package_path
+}
+
+# Agent Runner Docker Image (optional - only if package_path is provided)
+module "agent_runner_docker_image" {
+  count         = var.enable_queue_mode && var.agent_runner.package_path != null ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.5.1"
+  env_alias     = var.env_alias
+  module_name   = "${var.module_name}-runner"
+  product_alias = var.product_alias
+  source_path   = var.agent_runner.package_path
 }
 
 module dynamodb_memory {
