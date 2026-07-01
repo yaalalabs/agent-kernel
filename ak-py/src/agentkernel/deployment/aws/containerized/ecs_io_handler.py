@@ -2,7 +2,7 @@ import logging
 
 from ....api.http import RESTAPI
 from ....core.config import AKConfig
-from .core import ThreadRunner
+from ...common import ThreadRunner
 from .akoutputconsumer import ECSOutputConsumer
 
 
@@ -35,7 +35,18 @@ class ECSIOHandler:
         cls._log.info(f"ECSIOHandler starting — mode={mode}")
 
         ThreadRunner.run(
-            lambda: RESTAPI.run(handlers=[ECSQueueRequestHandler()]), # lambda needed here to wrap the function so that it turns into a callable, because otherwise the rest api will be run here itself
-            ECSOutputConsumer.run,
-            thread_names=["rest-api", "output-queue-consumer"],
+            [
+                ThreadRunner.Task(
+                    execution_function=lambda: RESTAPI.run(
+                        handlers=[ECSQueueRequestHandler()]
+                    ),  # lambda needed here to wrap the function so that it turns into a callable, because otherwise the rest api will be run here itself
+                    thread_name="rest-api",
+                    stop_all_on_failure=True,
+                ),
+                ThreadRunner.Task(
+                    execution_function=lambda: ECSOutputConsumer.run(),
+                    thread_name="output-queue-consumer",
+                    stop_all_on_failure=True,
+                ),
+            ]
         )

@@ -4,10 +4,11 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
 
 import boto3
+
+from ....common import ThreadRunner
 
 
 class ECSSQSConsumer(ABC):
@@ -171,7 +172,7 @@ class ECSSQSConsumer(ABC):
     def _process_batch(cls, messages: List[Dict[str, Any]]) -> None:
         """
         Group messages by MessageGroupId and dispatch each group to its own
-        thread via ThreadPoolExecutor. Messages within a group execute
+        thread via ThreadRunner.run. Messages within a group execute
         sequentially (preserving FIFO); messages across groups run concurrently.
 
         On exception within a group: logs and leaves the message in the queue
@@ -191,21 +192,17 @@ class ECSSQSConsumer(ABC):
             f"{len(groups)} group(s) with max_workers={max_workers}"
         )
 
-        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sqs-group") as executor:
-            futures = {
-                executor.submit(cls._process_group, msgs): group_id
-                for group_id, msgs in groups.items()
-            }
-            for future in as_completed(futures):
-                group_id = futures[future]
-                exc = future.exception()
-                if exc is not None:
-                    cls._log.exception(
-                        f"[group={group_id}] Group processor raised unexpectedly",
-                        exc_info=exc,
-                    )
-                else:
-                    cls._log.debug(f"[group={group_id}] Completed successfully")
+        ThreadRunner.run(
+            [
+                ThreadRunner.Task(
+                    execution_function=cls._process_group,
+                    item=msgs,
+                    thread_name=f"sqs-group-{gid}",
+                )
+                for gid, msgs in groups.items()
+            ],
+            max_workers=max_workers,
+        )
 
     @classmethod
     def run(cls) -> None:
