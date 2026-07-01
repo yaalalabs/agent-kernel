@@ -62,6 +62,7 @@ class ECSSQSConsumer(ABC):
         MessageAttributeNames. Overriding implementations must return a list of
         raw boto3 receive_message records.
         """
+        cls._log.debug("Polling queue for messages")
         resp = cls._get_client().receive_message(
             QueueUrl=cls.get_queue_url(),
             MaxNumberOfMessages=10,
@@ -69,7 +70,9 @@ class ECSSQSConsumer(ABC):
             AttributeNames=["All"],
             MessageAttributeNames=["All"],
         )
-        return resp.get("Messages", [])
+        messages = resp.get("Messages", [])
+        cls._log.debug(f"Poll received {len(messages)} message(s)")
+        return messages
 
     @classmethod
     @abstractmethod
@@ -123,6 +126,7 @@ class ECSSQSConsumer(ABC):
         group_id = cls._get_group_key(msg)
         message_id = msg.get("MessageId", "<unknown>")
         receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
+        cls._log.debug( f"[group={group_id}] Processing message {message_id} (receive_count={receive_count})")
         try:
             if receive_count > cls.max_receive_count:
                 cls._log.warning(
@@ -139,12 +143,10 @@ class ECSSQSConsumer(ABC):
                 cls.process_message(msg)
 
             cls.delete_message(msg)
+            cls._log.debug(f"[group={group_id}] Processed and deleted message {message_id}")
 
         except Exception:
-            cls._log.exception(
-                f"[group={group_id}] Failed to process message {message_id} "
-                "— leaving in queue for visibility-timeout retry"
-            )
+            cls._log.exception(f"[group={group_id}] Failed to process message {message_id} — leaving in queue for visibility-timeout retry")
             # Do NOT delete — visibility timeout returns it for retry
 
     @classmethod
@@ -153,6 +155,7 @@ class ECSSQSConsumer(ABC):
         # returns False even for async classmethods. Unwrap __func__ first.
         underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
         is_async = inspect.iscoroutinefunction(underlying_fn)
+        cls._log.debug(f"Processing group of {len(messages)} message(s) (is_async={is_async})")
 
         if is_async:
             # Each group thread gets its own event loop — asyncio event loops are
@@ -167,6 +170,8 @@ class ECSSQSConsumer(ABC):
         else:
             for msg in messages:
                 cls._process_single(msg)
+
+        cls._log.debug(f"Finished processing group of {len(messages)} message(s)")
 
     @classmethod
     def _process_batch(cls, messages: List[Dict[str, Any]]) -> None:
