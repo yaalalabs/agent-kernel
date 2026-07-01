@@ -62,7 +62,6 @@ class ECSSQSConsumer(ABC):
         MessageAttributeNames. Overriding implementations must return a list of
         raw boto3 receive_message records.
         """
-        cls._log.debug("Polling queue for messages")
         resp = cls._get_client().receive_message(
             QueueUrl=cls.get_queue_url(),
             MaxNumberOfMessages=10,
@@ -71,7 +70,6 @@ class ECSSQSConsumer(ABC):
             MessageAttributeNames=["All"],
         )
         messages = resp.get("Messages", [])
-        cls._log.debug(f"Poll received {len(messages)} message(s)")
         return messages
 
     @classmethod
@@ -228,5 +226,7 @@ class ECSSQSConsumer(ABC):
                 cls._log.exception("Unexpected error in poll loop — retrying in 5 s")
                 time.sleep(5)
                 continue
-
-            cls._process_batch(messages)
+            if messages:
+                cls._log.debug(f"Processing batch of {len(messages)} message(s)")
+                cls._process_batch(messages)
+                cls._log.debug("Batch processing complete")
