@@ -391,6 +391,8 @@ resource "aws_lambda_function" "backlog_metric" {
   }
 
   tags = var.tags
+
+  depends_on = [aws_cloudwatch_log_group.backlog_metric_lambda]
 }
 
 resource "aws_cloudwatch_log_group" "backlog_metric_lambda" {
