@@ -230,6 +230,7 @@ queue_config = {
   sqs_managed_sse_enabled   = true     # Enable SSE for queues
   max_message_size          = 262144   # 256 KB max message size
   receive_wait_time_seconds = 0        # Long polling wait time
+  batch_size                = 10       # Max messages fetched per SQS receive call (1-10), ECS consumers only
   
   # Input queue (requests → agent runner)
   input_queue_visibility_timeout            = 60     # Should be >= processing time
@@ -259,6 +260,8 @@ scaling_config = {
   scale_out_cooldown = 30      # Seconds before scaling out again
 }
 ```
+
+`queue_config.batch_size` is injected into both the REST service and Agent Runner ECS tasks as `AK_EXECUTION__QUEUES__BATCH_SIZE`. It only applies to ECS containerized deployments (never serverless/Lambda, which controls batch size via the Event Source Mapping) and is intentionally controlled only via Terraform — it must never be set in `config.yaml`.
 
 ## Deployment Modes
 

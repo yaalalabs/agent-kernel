@@ -12,6 +12,7 @@ locals {
       AK_EXECUTION__QUEUES__INPUT__URL                   = var.input_queue_url
       AK_EXECUTION__QUEUES__OUTPUT__URL                  = var.output_queue_url
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
+      AK_EXECUTION__QUEUES__BATCH_SIZE                   = tostring(var.queue_config.batch_size)
     } : {}
   )
 }

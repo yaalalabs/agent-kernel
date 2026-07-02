@@ -7,6 +7,7 @@ locals {
       AK_EXECUTION__QUEUES__INPUT__URL               = var.input_queue_url
       AK_EXECUTION__QUEUES__OUTPUT__URL              = var.output_queue_url
       AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT = tostring(max(1, var.queue_config.input_queue_max_receive_count - 1))
+      AK_EXECUTION__QUEUES__BATCH_SIZE               = tostring(var.queue_config.batch_size)
     },
     var.redis_url != null ? { AK_SESSION__REDIS__URL = var.redis_url } : {},
     var.dynamodb_memory_table_arn != null ? {

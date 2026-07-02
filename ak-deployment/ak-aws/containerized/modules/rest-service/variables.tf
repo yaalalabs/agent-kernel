@@ -115,6 +115,13 @@ variable "response_store_table_name" {
   default     = null
 }
 
+variable "queue_config" {
+  description = "Queue configuration for SQS batch size (for queue mode)"
+  type = object({
+    batch_size = number
+  })
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"

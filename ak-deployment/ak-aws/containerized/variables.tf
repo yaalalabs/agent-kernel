@@ -245,6 +245,7 @@ variable "queue_config" {
     sqs_managed_sse_enabled   = optional(bool, true)
     max_message_size          = optional(number, 262144)  # 256 KB
     receive_wait_time_seconds = optional(number, 0)
+    batch_size                = optional(number, 10) # Max messages fetched per SQS receive call (ECS consumers only, 1-10)
 
     # Input queue settings
     input_queue_visibility_timeout            = optional(number, 60)
@@ -266,6 +267,7 @@ variable "queue_config" {
     sqs_managed_sse_enabled                   = true
     max_message_size                          = 262144
     receive_wait_time_seconds                 = 0
+    batch_size                                = 10
     input_queue_visibility_timeout            = 60
     input_queue_message_retention_seconds     = 1800
     input_queue_max_receive_count             = 5
@@ -276,6 +278,11 @@ variable "queue_config" {
     output_queue_max_receive_count             = 5
     output_queue_create_dlq                    = false
     output_queue_dlq_message_retention_seconds = 1800
+  }
+
+  validation {
+    condition     = var.queue_config.batch_size >= 1 && var.queue_config.batch_size <= 10
+    error_message = "queue_config.batch_size must be between 1 and 10 (SQS ReceiveMessage limit)."
   }
 }
 

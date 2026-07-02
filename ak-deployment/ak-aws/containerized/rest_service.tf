@@ -39,6 +39,7 @@ module "rest_service" {
   input_queue_url           = var.enable_queue_mode ? module.queues[0].input_queue_url : null
   output_queue_url          = var.enable_queue_mode ? module.queues[0].output_queue_url : null
   response_store_table_name = var.enable_queue_mode ? aws_dynamodb_table.response_store[0].name : null
+  queue_config              = var.queue_config
 
   tags = var.tags
 }

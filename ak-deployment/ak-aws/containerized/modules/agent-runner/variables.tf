@@ -100,9 +100,10 @@ variable "agent_runner" {
 }
 
 variable "queue_config" {
-  description = "Queue configuration for input max_receive_count"
+  description = "Queue configuration for input max_receive_count and SQS batch size"
   type = object({
     input_queue_max_receive_count = number
+    batch_size                    = number
   })
 }
 

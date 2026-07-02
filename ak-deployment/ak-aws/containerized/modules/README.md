@@ -139,6 +139,7 @@ rest_service = {
 - `AK_EXECUTION__QUEUES__INPUT__URL` (if queue mode enabled)
 - `AK_EXECUTION__QUEUES__OUTPUT__URL` (if queue mode enabled)
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME` (if queue mode enabled)
+- `AK_EXECUTION__QUEUES__BATCH_SIZE` (if queue mode enabled, from root `queue_config.batch_size`)
 
 ### 3. `agent-runner/`
 
@@ -194,6 +195,7 @@ scaling_config = {
 - `AK_EXECUTION__QUEUES__INPUT__URL`
 - `AK_EXECUTION__QUEUES__OUTPUT__URL`
 - `AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT`
+- `AK_EXECUTION__QUEUES__BATCH_SIZE` (from root `queue_config.batch_size`)
 - `AK_SESSION__REDIS__URL` (if Redis enabled)
 - `AK_SESSION__DYNAMODB__TABLE_NAME` (if DynamoDB memory table enabled)
 
