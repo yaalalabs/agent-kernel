@@ -50,6 +50,7 @@ Wraps a framework-specific agent. Key properties:
 Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
+- **`stream(agent, session, requests) -> AsyncGenerator[str, None]`**: Abstract async generator that yields token deltas for streaming execution (`execution.mode: stream`). Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
 
@@ -77,6 +78,11 @@ Global orchestrator and agent registry:
   4. Runs post-hooks (system hooks + agent hooks)
   5. Stores session via `SessionStore.store()`
   6. Clears volatile cache in `finally` block
+- **`stream(agent, session, requests) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
+  1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
+  2. Iterates `agent.runner.stream(agent, session, requests)`, passing each token delta through `PostHook.on_stream_chunk()` (a hook can drop a token by returning `None`)
+  3. Yields a `StreamChunk(delta=...)` per token, then a final `StreamChunk(done=True, session_id=...)`
+  4. Stores session and clears volatile cache in `finally`, same as `run()`
 - **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
 - **Context manager**: `with Runtime(sessions):` sets an isolated runtime as current
 
@@ -88,6 +94,7 @@ High-level utility encapsulating a conversation:
 - **`select(name, session_id)`**: Selects an agent and loads/creates a session
 - **`run(prompt) -> str`**: Wraps prompt in `AgentRequestText`, calls `runtime.run()`, returns text
 - **`run_multi(requests) -> AgentReply`**: For multi-modal requests
+- **`stream_multi(requests) -> AsyncGenerator[StreamChunk, None]`**: Calls `runtime.stream()`, yielding `StreamChunk` objects for token-level streaming
 - Used by CLI, API handlers, and integration handlers
 
 ### AKConfig (`ak-py/src/agentkernel/core/config.py`)
@@ -103,6 +110,7 @@ Pydantic-based configuration:
 
 - **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`
 - **Reply types**: `AgentReplyText`, `AgentReplyImage`
+- **`StreamChunk`**: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None` — yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
@@ -115,7 +123,8 @@ Pydantic-based configuration:
 
 - **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply` — return modified requests to continue, or an `AgentReply` to halt execution
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply` — return modified or unmodified reply
-- Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing
+- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming token delta before it reaches the client. Default implementation passes the delta through unchanged; return `None` to drop the token
+- Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
 
 ## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
 
@@ -256,6 +265,24 @@ User Input
             → clear volatile cache                   # cleanup
         → AgentReply
     → response text
+```
+
+### Streaming Execution Flow
+
+```
+User Input
+    → AgentService.stream_multi(requests)
+        → Runtime.stream(agent, session, requests)
+            → async with session:                    # acquire lock, set context
+            → PreHooks (agent hooks, then system)    # halt → yield StreamChunk(error, done=True)
+            → agent.runner.stream(agent, session, requests)  # async generator of token deltas
+                → for each delta: PostHook.on_stream_chunk() # can drop or modify token
+                → yield StreamChunk(delta=...)
+            → session_store.store(session)           # persist state
+            → yield StreamChunk(done=True, session_id=...)
+            → clear volatile cache                   # cleanup
+    → REST: SSE (`text/event-stream`) when execution.mode=stream
+    → AWS Lambda serverless: each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
 ```
 
 ### Multimodal Execution Flow
