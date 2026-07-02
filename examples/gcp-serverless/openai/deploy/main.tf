@@ -8,7 +8,7 @@
 # /api/v1/app_info        - Custom POST endpoint
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.5.1"
+  version = "0.6.0"
 
   # Basic Cloud Run configuration
   project_id           = var.project_id

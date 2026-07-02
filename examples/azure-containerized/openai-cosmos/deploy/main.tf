@@ -1,6 +1,6 @@
 module "containerd_agent" {
   source              = "yaalalabs/ak-containerized/azurerm"
-  version             = "0.5.1"
+  version             = "0.6.0"
   product_alias       = var.product_alias
   env_alias           = var.env_alias
   module_name         = var.module_name

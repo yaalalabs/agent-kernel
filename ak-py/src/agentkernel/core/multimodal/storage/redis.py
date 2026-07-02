@@ -97,8 +97,9 @@ class RedisAttachmentDriver:
         return None
 
     def delete(self, session_id: str, attachment_id: str) -> None:
-        """Delete a single attachment."""
+        """Delete a single attachment and remove its ID from the session index."""
         self.client.delete(self.key(session_id, attachment_id))
+        self.client.lrem(self.index_key(session_id), 0, attachment_id)
 
     def append_index(self, session_id: str, attachment_id: str) -> None:
         """Append an attachment ID to the session index."""

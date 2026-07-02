@@ -9,7 +9,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.5.1"
+  version: "0.6.0"
   category: user
 ---
 
@@ -55,7 +55,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.5.1`) unless user requests another.
+Use current module version (`0.6.0`) unless user requests another.
 
 AWS-only features in this skill:
 - `execution_mode`
@@ -77,7 +77,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.5.1"
+  "agentkernel[openai,api,redis]>=0.6.0"
 ]
 ```
 
@@ -100,7 +100,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.5.1"
+  "agentkernel[openai,api,aws]>=0.6.0"
 ]
 ```
 
@@ -121,7 +121,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.5.1"
+  "agentkernel[openai,api,azure]>=0.6.0"
 ]
 ```
 
@@ -143,7 +143,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.5.1"
+  "agentkernel[openai,api,gcp]>=0.6.0"
 ]
 ```
 
@@ -188,7 +188,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -242,7 +242,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -377,7 +377,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.5.1"  # include 'redis' if using Redis session/response store
+  "agentkernel[openai,api,aws]>=0.6.0"  # include 'redis' if using Redis session/response store
 ]
 ```
 
@@ -390,7 +390,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -534,7 +534,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.5.1"
+  "agentkernel[openai,api,aws,redis,auth]>=0.6.0"
 ]
 ```
 
@@ -578,7 +578,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -603,7 +603,7 @@ module "containerized_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -645,7 +645,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -689,7 +689,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -787,8 +787,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.5.1"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.5.1"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.6.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.6.0"  # for Redis sessions
 ]
 ```
 
