@@ -44,10 +44,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         if cls._websocket_handler is None:
             ws_config = cls._config.websocket_api
             if not ws_config.connection_table or not ws_config.connection_table.table_name:
-                raise ValueError(
-                    "websocket_api.connection_table.table_name is required "
-                    "for ECSOutputConsumer in WebSocket mode"
-                )
+                raise ValueError("websocket_api.connection_table.table_name is required " "for ECSOutputConsumer in WebSocket mode")
             cls._websocket_handler = WebSocketHandler(
                 conn_table_name=ws_config.connection_table.table_name,
                 ttl=ws_config.connection_table.ttl,
@@ -78,10 +75,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
                 f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
             )
             cls._get_response_store().add_message(message)
-            cls._log.info(
-                f"[OUTPUT DONE] Stored response — session_id={message['session_id']} "
-                f"request_id={message['request_id']}"
-            )
+            cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
 
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
@@ -96,10 +90,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         :param record: boto3 SQS ``receive_message`` record
         """
         max_retries = cls._config.execution.queues.output.max_receive_count
-        cls._log.error(
-            f"Permanent failure for output message {record.get('MessageId')} "
-            f"after {max_retries} retries"
-        )
+        cls._log.error(f"Permanent failure for output message {record.get('MessageId')} " f"after {max_retries} retries")
 
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
@@ -119,19 +110,12 @@ class ECSOutputConsumer(ECSSQSConsumer):
                         user_id=user_id,
                     )
                 else:
-                    cls._log.warning(
-                        "Cannot broadcast permanent-failure error: "
-                        "endpoint_url or user_id missing"
-                    )
+                    cls._log.warning("Cannot broadcast permanent-failure error: " "endpoint_url or user_id missing")
             else:
                 error_body = json.dumps(error_payload)
                 message = cls._construct_message_for_store(record, body=error_body)
                 cls._get_response_store().add_message(message)
-                cls._log.info(
-                    f"Stored permanent-failure error — "
-                    f"session_id={message['session_id']} "
-                    f"request_id={message['request_id']}"
-                )
+                cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
         except Exception:
             cls._log.exception("Failed to handle permanent-failure output message")
 

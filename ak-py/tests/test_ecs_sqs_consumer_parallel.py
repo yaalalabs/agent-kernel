@@ -104,9 +104,12 @@ class TestConsumerLoop:
                 raise result
             return result
 
-        with patch.object(_SyncConsumer, "poll", side_effect=fake_poll), patch(
-            "agentkernel.deployment.aws.containerized.core.sqs_consumer.time.sleep",
-            side_effect=RuntimeError("stop-loop"),
+        with (
+            patch.object(_SyncConsumer, "poll", side_effect=fake_poll),
+            patch(
+                "agentkernel.deployment.aws.containerized.core.sqs_consumer.time.sleep",
+                side_effect=RuntimeError("stop-loop"),
+            ),
         ):
             with pytest.raises(RuntimeError, match="stop-loop"):
                 _SyncConsumer._consumer_loop()
@@ -123,9 +126,5 @@ class TestECSOutputConsumerRegression:
 
         from agentkernel.deployment.aws.containerized.akoutputconsumer import ECSOutputConsumer
 
-        underlying = getattr(
-            ECSOutputConsumer.process_message, "__func__", ECSOutputConsumer.process_message
-        )
-        assert not inspect.iscoroutinefunction(underlying), (
-            "ECSOutputConsumer.process_message must be sync for this regression check"
-        )
+        underlying = getattr(ECSOutputConsumer.process_message, "__func__", ECSOutputConsumer.process_message)
+        assert not inspect.iscoroutinefunction(underlying), "ECSOutputConsumer.process_message must be sync for this regression check"

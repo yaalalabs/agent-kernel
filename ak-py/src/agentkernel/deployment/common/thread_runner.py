@@ -36,7 +36,7 @@ class ThreadRunner:
             return
 
         semaphore = threading.Semaphore(max_workers or len(tasks))
-        completions: Queue = Queue() # Thread-safe mailbox every worker thread reports its completion to.
+        completions: Queue = Queue()  # Thread-safe mailbox every worker thread reports its completion to.
 
         def _target(task: "ThreadRunner.Task") -> None:
             args = () if task.item is None else (task.item,)
@@ -51,15 +51,14 @@ class ThreadRunner:
 
         # daemon=True: without this, the interpreter would wait for every non-daemon thread before
         # exiting, which would hang forever behind a never-ending task. Daemon threads are abandoned instead.
-        threads = [
-            threading.Thread(target=_target, args=(task,), name=task.thread_name, daemon=True)
-            for task in tasks
-        ]
+        threads = [threading.Thread(target=_target, args=(task,), name=task.thread_name, daemon=True) for task in tasks]
         for thread in threads:
             thread.start()
 
         for _ in tasks:
-            task, exc = completions.get() # Pulling from a shared queue exactly len(tasks) times yields tasks in true completion order (whichever finishes first is handled first)
+            task, exc = (
+                completions.get()
+            )  # Pulling from a shared queue exactly len(tasks) times yields tasks in true completion order (whichever finishes first is handled first)
             if exc is not None:
                 if task.stop_task_on_failure:
                     _log.exception(f"[{task.thread_name}] raised unexpectedly", exc_info=exc)

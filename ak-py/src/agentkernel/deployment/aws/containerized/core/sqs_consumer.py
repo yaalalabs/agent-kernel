@@ -4,6 +4,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict
+
 import boto3
 
 from .....core.config import AKConfig
@@ -110,10 +111,7 @@ class ECSSQSConsumer(ABC):
         cls._log.debug(f"Processing message {message_id} (receive_count={receive_count})")
         try:
             if receive_count > cls.max_receive_count:
-                cls._log.warning(
-                    f"Message {message_id} exceeded max_receive_count "
-                    f"({receive_count} > {cls.max_receive_count})"
-                )
+                cls._log.warning(f"Message {message_id} exceeded max_receive_count " f"({receive_count} > {cls.max_receive_count})")
                 cls.on_permanent_failure(msg)
                 cls.delete_message(msg)
                 return
@@ -128,9 +126,7 @@ class ECSSQSConsumer(ABC):
             cls._log.debug(f"Processed and deleted message {message_id}")
 
         except Exception:
-            cls._log.exception(
-                f"Failed to process message {message_id} — leaving in queue for visibility-timeout retry"
-            )
+            cls._log.exception(f"Failed to process message {message_id} — leaving in queue for visibility-timeout retry")
             # Do NOT delete — visibility timeout returns it for retry
 
     @classmethod

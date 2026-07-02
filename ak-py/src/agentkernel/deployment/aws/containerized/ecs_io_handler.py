@@ -48,5 +48,5 @@ class ECSIOHandler:
                     stop_all_on_failure=True,
                 ),
             ],
-            max_workers=2
+            max_workers=2,
         )

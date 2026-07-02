@@ -34,12 +34,10 @@ class TestRun:
             def fn():
                 with lock:
                     results.append(value)
+
             return fn
 
-        tasks = [
-            ThreadRunner.Task(execution_function=make_fn(i), thread_name=f"t{i}")
-            for i in range(5)
-        ]
+        tasks = [ThreadRunner.Task(execution_function=make_fn(i), thread_name=f"t{i}") for i in range(5)]
         ThreadRunner.run(tasks)
         assert sorted(results) == [0, 1, 2, 3, 4]
 
@@ -113,9 +111,7 @@ class TestRun:
         deadline = time.time() + 5
         fast_still_alive = True
         while time.time() < deadline:
-            fast_still_alive = any(
-                t.name == fast_name and t.is_alive() for t in threading.enumerate()
-            )
+            fast_still_alive = any(t.name == fast_name and t.is_alive() for t in threading.enumerate())
             if not fast_still_alive:
                 break
             time.sleep(0.01)
@@ -127,9 +123,7 @@ class TestRun:
         runner_thread.join(timeout=5)
         assert result_holder.get("done") is True
 
-    def test_stop_all_on_failure_exits_immediately_without_waiting_on_never_ending_task(
-        self, monkeypatch
-    ):
+    def test_stop_all_on_failure_exits_immediately_without_waiting_on_never_ending_task(self, monkeypatch):
         exit_called = threading.Event()
         exit_code = {}
 
