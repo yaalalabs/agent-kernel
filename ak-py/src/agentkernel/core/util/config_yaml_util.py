@@ -73,7 +73,7 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModified") -> Dict[st
         secrets_path = Path(secrets_dir)
         return yaml.safe_load(replace_secrets(secrets_path, path.read_text("utf-8")))
 
-    return yaml.safe_load(path.read_text("utf-8"))
+    return yaml.safe_load(path.read_text("utf-8")) or {}
 
 
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
