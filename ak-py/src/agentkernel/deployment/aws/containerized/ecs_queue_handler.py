@@ -7,6 +7,7 @@ similar to how the Lambda serverless DefaultEndpointsHandler works.
 Used by ECSIOHandler (Thread 1 — REST API) when queue mode is enabled.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -76,8 +77,9 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}"
                 )
 
-                # Send to Input Queue
-                queue_result = SQSHandler.send_message_to_input_queue(
+                # Send to Input Queue (sync boto3 call — offload so it doesn't block the event loop)
+                queue_result = await asyncio.to_thread(
+                    SQSHandler.send_message_to_input_queue,
                     message_body=body.model_dump(),
                     message_group_id=body.session_id,
                     message_deduplication_id=request_id,
@@ -91,7 +93,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                     # Wait for response in DynamoDB
                     self._log.info(f"[WAITING] Polling DynamoDB for request_id={request_id}")
 
-                    response = self._wait_for_response(request_id=request_id, session_id=body.session_id)
+                    response = await self._wait_for_response(request_id=request_id, session_id=body.session_id)
 
                     if not response:
                         raise HTTPException(
@@ -140,7 +142,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
 
                 self._log.info(f"Polling for response: request_id={effective_request_id}, session_id={session_id}")
 
-                response = self._get_response_store().get_message(effective_request_id)
+                response = await asyncio.to_thread(self._get_response_store().get_message, effective_request_id)
 
                 if not response:
                     raise HTTPException(
@@ -181,7 +183,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
 
         return router
 
-    def _wait_for_response(self, request_id: str, session_id: str, max_retries: int = None, delay: int = None) -> Dict[str, Any]:
+    async def _wait_for_response(self, request_id: str, session_id: str, max_retries: int = None, delay: int = None) -> Dict[str, Any]:
         """
         Wait for response to appear in DynamoDB Response Store.
 
@@ -196,12 +198,13 @@ class ECSQueueRequestHandler(RESTRequestHandler):
         if delay is None:
             delay = self._config.execution.response_store.delay
 
-        import time
-
         self._log.info(f"[WAIT START] request_id={request_id}, max_retries={max_retries}, delay={delay}s")
 
         for attempt in range(max_retries):
-            response = self._get_response_store().get_message(request_id)
+            # Offload the sync boto3 DynamoDB call and use asyncio.sleep so this
+            # coroutine yields the event loop — otherwise a long-running wait for
+            # one request would starve every other concurrent request.
+            response = await asyncio.to_thread(self._get_response_store().get_message, request_id)
             if response:
                 self._log.info(f"[WAIT SUCCESS] Found response on attempt {attempt + 1}/{max_retries} for request_id={request_id}")
                 return response
@@ -210,7 +213,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
                 self._log.debug(
                     f"[WAIT RETRY] Response not ready, waiting {delay}s (attempt {attempt + 1}/{max_retries}) for request_id={request_id}"
                 )
-                time.sleep(delay)
+                await asyncio.sleep(delay)
 
         self._log.warning(f"[WAIT TIMEOUT] Response not found after {max_retries} attempts for request_id={request_id}")
         return None
