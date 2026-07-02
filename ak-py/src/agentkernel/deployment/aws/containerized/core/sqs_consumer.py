@@ -64,7 +64,7 @@ class ECSSQSConsumer(ABC):
         """
         resp = cls._get_client().receive_message(
             QueueUrl=cls.get_queue_url(),
-            MaxNumberOfMessages=AKConfig.get().execution.queues.batch_size or 10,
+            MaxNumberOfMessages=AKConfig.get().execution.queues.batch_size,
             AttributeNames=["All"],
             MessageAttributeNames=["All"],
         )

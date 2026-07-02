@@ -257,8 +257,9 @@ class _InputQueueConfig(BaseModel):
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
     no_of_consumers: int = Field(
-        default=10,
+        default=5,
         description=(
+            "Only used in Containerized deployments "
             "Number of independent consumer threads that each poll the input queue "
             "in a continuous loop. Only used by ECS containerized deployments — never set for "
             "serverless (Lambda) mode, which has no consumer threads. "
@@ -273,8 +274,9 @@ class _OutputQueueConfig(BaseModel):
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
     no_of_consumers: int = Field(
-        default=1,
+        default=5,
         description=(
+            "Only used in Containerized deployments "
             "Number of independent consumer threads that each poll the output queue "
             "in a continuous loop. Only used by ECS containerized deployments — never set for "
             "serverless (Lambda) mode, which has no consumer threads. "
@@ -289,6 +291,7 @@ class _QueuesConfig(BaseModel):
     batch_size: Optional[int] = Field(
         default=None,
         description=(
+            "NOT used in serverless deployments"
             "Max number of messages fetched per SQS receive call, common to input and output queues. "
             "Only used by ECS containerized deployments — never set for serverless (Lambda) mode, which "
             "controls batch size via the Event Source Mapping instead. "

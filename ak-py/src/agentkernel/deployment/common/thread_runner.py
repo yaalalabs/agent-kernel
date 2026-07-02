@@ -1,5 +1,5 @@
 import logging
-import sys
+import os
 import threading
 from dataclasses import dataclass
 from queue import Queue
@@ -49,8 +49,8 @@ class ThreadRunner:
                     completions.put((task, None))
             # the thread ends itself once execution_function returns (or raises), and Python/the OS reclaim it.
 
-        # daemon=True: on stop_all_on_failure, sys.exit() below only unwinds the calling thread the interpreter still waits for every non-daemon thread before 
-        # actually exiting, which would hang forever behind a never-ending task. Daemon threads are abandoned instead.
+        # daemon=True: without this, the interpreter would wait for every non-daemon thread before
+        # exiting, which would hang forever behind a never-ending task. Daemon threads are abandoned instead.
         threads = [
             threading.Thread(target=_target, args=(task,), name=task.thread_name, daemon=True)
             for task in tasks
@@ -64,7 +64,9 @@ class ThreadRunner:
                 if task.stop_task_on_failure:
                     _log.exception(f"[{task.thread_name}] raised unexpectedly", exc_info=exc)
                     if task.stop_all_on_failure:
-                        sys.exit(1)
+                        _log.debug(f"[{task.thread_name}] stopping all processes")
+                        logging.shutdown()
+                        os._exit(1)
                 else:
                     _log.debug(f"[{task.thread_name}] raised (stop_task_on_failure=False, ignoring)")
             else:
