@@ -20,9 +20,10 @@ class ECSSQSConsumer(ABC):
 
     Unlike Lambda (push-triggered), ECS actively polls SQS. The poll() template
     method represents one SQS receive cycle — analogous to one Lambda invocation
-    calling handle(). Override poll() to customise MaxNumberOfMessages,
-    WaitTimeSeconds, or MessageAttributeNames; override process_message and
-    on_permanent_failure for business logic.
+    calling handle(). Override poll() to customise WaitTimeSeconds or
+    MessageAttributeNames; override process_message and on_permanent_failure
+    for business logic. MaxNumberOfMessages comes from
+    execution.queues.batch_size (set via Terraform, never config.yaml).
 
     Contract for on_permanent_failure implementations: must be internally
     defensive (catch their own exceptions). If on_permanent_failure raises, the
@@ -31,7 +32,7 @@ class ECSSQSConsumer(ABC):
     """
 
     max_receive_count: int = 3  # overridden by classes that inherit this
-    _DEFAULT_PARALLEL_WORKERS: int = 10
+    num_consumers: int = 10  # overridden by classes that inherit this
     _log = logging.getLogger("ak.ecs.sqsconsumer")
     _client = None
 
@@ -57,12 +58,13 @@ class ECSSQSConsumer(ABC):
         """
         Receive one batch of SQS messages and return them.
 
-        Override to customise MaxNumberOfMessages, WaitTimeSeconds, or
-        MessageAttributeNames. Overriding implementations must return a list of
-        raw boto3 receive_message records.
+        Override to customise WaitTimeSeconds or MessageAttributeNames.
+        Overriding implementations must return a list of raw boto3
+        receive_message records.
         """
         resp = cls._get_client().receive_message(
             QueueUrl=cls.get_queue_url(),
+            MaxNumberOfMessages=AKConfig.get().execution.queues.batch_size or 10,
             AttributeNames=["All"],
             MessageAttributeNames=["All"],
         )
@@ -100,13 +102,6 @@ class ECSSQSConsumer(ABC):
             QueueUrl=cls.get_queue_url(),
             ReceiptHandle=msg["ReceiptHandle"],
         )
-
-    @classmethod
-    def _get_num_consumers(cls) -> int:
-        try:
-            return AKConfig.get().execution.queues.no_of_consumers
-        except Exception:
-            return cls._DEFAULT_PARALLEL_WORKERS
 
     @classmethod
     def _process_single(cls, msg: dict) -> None:
@@ -158,21 +153,21 @@ class ECSSQSConsumer(ABC):
         """
         Block forever, polling the queue. Call as the container entry-point.
 
-        Starts `no_of_consumers` long-lived threads, each independently
+        Starts `num_consumers` long-lived threads, each independently
         polling and processing messages in a loop.
         """
         queue_url = cls.get_queue_url()
         if not queue_url:
             raise ValueError(f"{cls.__name__}: queue URL is required")
 
-        num_consumers = cls._get_num_consumers()
+        num_consumers = cls.num_consumers
         cls._log.info(f"{cls.__name__} starting — queue: {queue_url}, consumers: {num_consumers}")
 
         ThreadRunner.run(
             tasks=[
                 ThreadRunner.Task(
                     execution_function=cls._consumer_loop,
-                    thread_name=f"ar-sqs-consumer-{i}",
+                    thread_name=f"sqs-consumer-{i}",
                     stop_all_on_failure=True,
                 )
                 for i in range(num_consumers)

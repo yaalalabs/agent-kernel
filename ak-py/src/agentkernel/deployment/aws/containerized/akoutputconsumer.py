@@ -24,6 +24,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
     _log = logging.getLogger("ak.ecs.outputconsumer")
     _config = AKConfig.get()
     max_receive_count = _config.execution.queues.output.max_receive_count
+    num_consumers = _config.execution.queues.output.no_of_consumers
 
     _response_store = None
     _websocket_handler = None

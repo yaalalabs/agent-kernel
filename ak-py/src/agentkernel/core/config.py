@@ -256,6 +256,15 @@ class _InputQueueConfig(BaseModel):
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
+    no_of_consumers: int = Field(
+        default=10,
+        description=(
+            "Number of independent consumer threads that each poll the input queue "
+            "in a continuous loop. Only used by ECS containerized deployments — never set for "
+            "serverless (Lambda) mode, which has no consumer threads. "
+            "Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
+        ),
+    )
 
 
 class _OutputQueueConfig(BaseModel):
@@ -263,16 +272,27 @@ class _OutputQueueConfig(BaseModel):
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
+    no_of_consumers: int = Field(
+        default=1,
+        description=(
+            "Number of independent consumer threads that each poll the output queue "
+            "in a continuous loop. Only used by ECS containerized deployments — never set for "
+            "serverless (Lambda) mode, which has no consumer threads. "
+            "Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
+        ),
+    )
 
 
 class _QueuesConfig(BaseModel):
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
-    no_of_consumers: int = Field(
-        default=10,
+    batch_size: Optional[int] = Field(
+        default=None,
         description=(
-            "Number of independent consumer threads that each poll the input queue "
-            "in a continuous loop. Override via env var AK_EXECUTION__QUEUES__NO_OF_CONSUMERS."
+            "Max number of messages fetched per SQS receive call, common to input and output queues. "
+            "Only used by ECS containerized deployments — never set for serverless (Lambda) mode, which "
+            "controls batch size via the Event Source Mapping instead. "
+            "Controlled by the Terraform deployment via env var AK_EXECUTION__QUEUES__BATCH_SIZE — do not set in config.yaml."
         ),
     )
 

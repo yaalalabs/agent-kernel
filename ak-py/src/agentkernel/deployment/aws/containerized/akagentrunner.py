@@ -30,6 +30,7 @@ class ECSAgentRunner(ECSSQSConsumer):
     _chat_service: ChatService | None = None
     _config = AKConfig.get()
     max_receive_count = _config.execution.queues.input.max_receive_count
+    num_consumers = _config.execution.queues.input.no_of_consumers
 
     @classmethod
     def get_queue_url(cls) -> str:

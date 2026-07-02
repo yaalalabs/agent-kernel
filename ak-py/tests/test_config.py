@@ -113,15 +113,15 @@ def test_session_cache_env(monkeypatch):
     assert cfg.session.cache.size == 500
 
 
-def test_no_of_consumers_default():
+def test_batch_size_default():
     cfg = AKConfig()
-    assert cfg.execution.queues.no_of_consumers == 10
+    assert cfg.execution.queues.batch_size is None
 
 
-def test_no_of_consumers_env_override(monkeypatch):
-    monkeypatch.setenv("AK_EXECUTION__QUEUES__NO_OF_CONSUMERS", "20")
+def test_batch_size_env_override(monkeypatch):
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__BATCH_SIZE", "5")
     cfg = AKConfig()
-    assert cfg.execution.queues.no_of_consumers == 20
+    assert cfg.execution.queues.batch_size == 5
 
 
 def test_guardrail_pii_default():
