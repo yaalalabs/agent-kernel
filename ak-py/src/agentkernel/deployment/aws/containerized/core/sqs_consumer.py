@@ -3,11 +3,10 @@ import inspect
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from typing import Any, Dict, List
-
+from typing import Any, Dict
 import boto3
 
+from .....core.config import AKConfig
 from ....common import ThreadRunner
 
 
@@ -103,120 +102,44 @@ class ECSSQSConsumer(ABC):
         )
 
     @classmethod
-    def _get_parallel_workers(cls) -> int:
+    def _get_num_consumers(cls) -> int:
         try:
-            from .....core.config import AKConfig
-            return AKConfig.get().execution.queues.parallel_workers
+            return AKConfig.get().execution.queues.no_of_consumers
         except Exception:
             return cls._DEFAULT_PARALLEL_WORKERS
 
-    @staticmethod
-    def _get_group_key(msg: dict) -> str:
-        group_id = msg.get("Attributes", {}).get("MessageGroupId")
-        if group_id:
-            return group_id
-        return msg.get("MessageId", "<unknown>")
-
     @classmethod
-    def _process_single(cls, msg: dict, event_loop=None) -> None:
-        group_id = cls._get_group_key(msg)
+    def _process_single(cls, msg: dict) -> None:
         message_id = msg.get("MessageId", "<unknown>")
         receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
-        cls._log.debug( f"[group={group_id}] Processing message {message_id} (receive_count={receive_count})")
+        cls._log.debug(f"Processing message {message_id} (receive_count={receive_count})")
         try:
             if receive_count > cls.max_receive_count:
                 cls._log.warning(
-                    f"[group={group_id}] Message {message_id} exceeded "
-                    f"max_receive_count ({receive_count} > {cls.max_receive_count})"
+                    f"Message {message_id} exceeded max_receive_count "
+                    f"({receive_count} > {cls.max_receive_count})"
                 )
                 cls.on_permanent_failure(msg)
                 cls.delete_message(msg)
                 return
 
-            if event_loop is not None:
-                event_loop.run_until_complete(cls.process_message(msg))
+            underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
+            if inspect.iscoroutinefunction(underlying_fn):
+                asyncio.run(cls.process_message(msg))
             else:
                 cls.process_message(msg)
 
             cls.delete_message(msg)
-            cls._log.debug(f"[group={group_id}] Processed and deleted message {message_id}")
+            cls._log.debug(f"Processed and deleted message {message_id}")
 
         except Exception:
-            cls._log.exception(f"[group={group_id}] Failed to process message {message_id} — leaving in queue for visibility-timeout retry")
+            cls._log.exception(
+                f"Failed to process message {message_id} — leaving in queue for visibility-timeout retry"
+            )
             # Do NOT delete — visibility timeout returns it for retry
 
     @classmethod
-    def _process_group(cls, messages: list) -> None:
-        # @classmethod wraps the underlying function, so inspect on cls.process_message
-        # returns False even for async classmethods. Unwrap __func__ first.
-        underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
-        is_async = inspect.iscoroutinefunction(underlying_fn)
-        cls._log.debug(f"Processing group of {len(messages)} message(s) (is_async={is_async})")
-
-        if is_async:
-            # Each group thread gets its own event loop — asyncio event loops are
-            # not thread-safe and must never be shared across threads.
-            new_event_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_event_loop)
-            try:
-                for msg in messages:
-                    cls._process_single(msg, event_loop=new_event_loop)
-            finally:
-                new_event_loop.close()
-        else:
-            for msg in messages:
-                cls._process_single(msg)
-
-        cls._log.debug(f"Finished processing group of {len(messages)} message(s)")
-
-    @classmethod
-    def _process_batch(cls, messages: List[Dict[str, Any]]) -> None:
-        """
-        Group messages by MessageGroupId and dispatch each group to its own
-        thread via ThreadRunner.run. Messages within a group execute
-        sequentially (preserving FIFO); messages across groups run concurrently.
-
-        On exception within a group: logs and leaves the message in the queue
-        so the visibility timeout returns it for retry.
-        """
-        if not messages:
-            return
-
-        groups: dict = defaultdict(list)
-        for msg in messages:
-            key = cls._get_group_key(msg)
-            groups[key].append(msg)
-
-        max_workers = cls._get_parallel_workers()
-        cls._log.info(
-            f"{cls.__name__} dispatching {len(messages)} messages across "
-            f"{len(groups)} group(s) with max_workers={max_workers}"
-        )
-
-        ThreadRunner.run(
-            tasks = [
-                ThreadRunner.Task(
-                    execution_function=cls._process_group,
-                    item=msgs,
-                    thread_name=f"sqs-group-{gid}",
-                ) for gid, msgs in groups.items()
-            ],
-            max_workers = max_workers,
-        )
-
-    @classmethod
-    def run(cls) -> None:
-        """
-        Block forever, polling the queue. Call as the container entry-point.
-
-        Analogous to the Lambda runtime invoking handle(event, context) per
-        batch: the runtime drives Lambda; run() drives the ECS consumer.
-        """
-        queue_url = cls.get_queue_url()
-        if not queue_url:
-            raise ValueError(f"{cls.__name__}: queue URL is required")
-
-        cls._log.info(f"{cls.__name__} starting — queue: {queue_url}")
+    def _consumer_loop(cls) -> None:
         while True:
             try:
                 messages = cls.poll()
@@ -224,7 +147,35 @@ class ECSSQSConsumer(ABC):
                 cls._log.exception("Unexpected error in poll loop — retrying in 5 s")
                 time.sleep(5)
                 continue
+
             if messages:
                 cls._log.debug(f"Processing batch of {len(messages)} message(s)")
-                cls._process_batch(messages)
-                cls._log.debug("Batch processing complete")
+                for msg in messages:
+                    cls._process_single(msg)
+
+    @classmethod
+    def run(cls) -> None:
+        """
+        Block forever, polling the queue. Call as the container entry-point.
+
+        Starts `no_of_consumers` long-lived threads, each independently
+        polling and processing messages in a loop.
+        """
+        queue_url = cls.get_queue_url()
+        if not queue_url:
+            raise ValueError(f"{cls.__name__}: queue URL is required")
+
+        num_consumers = cls._get_num_consumers()
+        cls._log.info(f"{cls.__name__} starting — queue: {queue_url}, consumers: {num_consumers}")
+
+        ThreadRunner.run(
+            tasks=[
+                ThreadRunner.Task(
+                    execution_function=cls._consumer_loop,
+                    thread_name=f"ar-sqs-consumer-{i}",
+                    stop_all_on_failure=True,
+                )
+                for i in range(num_consumers)
+            ],
+            max_workers=num_consumers,
+        )
