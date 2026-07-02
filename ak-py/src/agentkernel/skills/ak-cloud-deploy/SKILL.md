@@ -599,8 +599,8 @@ module "containerized_agents" {
 
 Use this for high-throughput or long-running agents. Two separate ECS services share SQS queues:
 
-- **IO container** (`ECSIOHandler`) — Thread 1: FastAPI REST API; Thread 2: output queue consumer → DynamoDB / WebSocket.
-- **Agent Runner container** (`ECSAgentRunner`) — polls the input queue, executes the agent, puts the result on the output queue.
+- **IO container** (`ECSIOHandler`) — Thread 1: FastAPI REST API; Thread 2: output queue consumer → DynamoDB / WebSocket. Thread 2 is actually `queues.output.no_of_consumers` (default 5) parallel polling threads.
+- **Agent Runner container** (`ECSAgentRunner`) — runs `queues.input.no_of_consumers` (default 5) parallel threads, each polling the input queue, executing the agent, and putting the result on the output queue.
 
 **`app_rest_service.py`** (IO container entrypoint — NO agent definitions here):
 
@@ -627,10 +627,15 @@ if __name__ == "__main__":
     handler()
 ```
 
-**`config.yaml`** (same file included in both images — queue URLs and table names are injected by Terraform):
+**`config.yaml`** (same file included in both images — queue URLs and table names are injected by Terraform; `batch_size` is Terraform-only, never set here):
 
 ```yaml
 execution:
+  queues:
+    input:
+      no_of_consumers: 5   # parallel input-poll threads in the Agent Runner container (default 5)
+    output:
+      no_of_consumers: 5   # parallel output-poll threads in the IO container (default 5)
   response_store:
     type: dynamodb
     retry_count: 30

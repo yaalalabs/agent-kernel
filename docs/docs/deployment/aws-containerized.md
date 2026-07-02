@@ -64,9 +64,9 @@ graph TB
 `ECSIOHandler.run()` starts two threads via `ThreadRunner`:
 
 - **Thread 1** — `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`: FastAPI/uvicorn. Handles `POST /api/v1/chat` (enqueues to Input Queue, then either waits on DynamoDB or returns a `request_id`) and `GET /api/v1/chat/{session_id}` (polls DynamoDB for the result).
-- **Thread 2** — `ECSOutputConsumer.run()`: polls the Output Queue and writes results to DynamoDB (REST modes) or broadcasts via WebSocket.
+- **Thread 2** — `ECSOutputConsumer.run()`: polls the Output Queue and writes results to DynamoDB (REST modes) or broadcasts via WebSocket. Internally this "thread" is actually `execution.queues.output.no_of_consumers` (default 5) independent long-poll threads, so multiple output messages are processed concurrently.
 
-If either thread crashes, `ThreadRunner` calls `os._exit(1)` so ECS restarts the task cleanly.
+If any thread crashes, `ThreadRunner` calls `os._exit(1)` so ECS restarts the task cleanly.
 
 **Entrypoint — `app_rest_service.py`** (no agent definitions):
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
 ### Container 2 — Agent Runner (`ECSAgentRunner`)
 
-Extends `ECSSQSConsumer`: polls the Input Queue in a blocking loop, executes the agent, and puts the result on the Output Queue.
+Extends `ECSSQSConsumer`: runs `execution.queues.input.no_of_consumers` (default 5) independent threads, each polling the Input Queue in a blocking loop, executing the agent, and putting the result on the Output Queue.
 
 **Entrypoint — `app_agent_runner.py`**:
 

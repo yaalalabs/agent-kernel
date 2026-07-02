@@ -708,11 +708,17 @@ curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/
 
 **2. Poll for the response**
 
+`session_id` is required in the poll body and must match the `session_id` the
+response was stored under — the poll endpoint validates this and returns
+`NOT_FOUND` on a mismatch, so clients must send back the same `session_id`
+used in the original submit request.
+
 ```bash
 curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "request_id": "req-123"
+    "request_id": "req-123",
+    "session_id": "user-123"
   }'
 ```
 
@@ -725,7 +731,9 @@ curl -X GET https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/c
 }
 ```
 
-If the response is not available yet, the poll endpoint returns a `NOT_FOUND` body with the same `request_id` so clients can retry.
+If the response is not available yet, or the `session_id` does not match the one the
+response was stored under, the poll endpoint returns a `NOT_FOUND` body with the
+same `request_id` so clients can retry.
 
 #### `async` (WebSocket)
 

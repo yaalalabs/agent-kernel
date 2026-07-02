@@ -95,6 +95,10 @@ Same as REST Sync except:
 1. The `POST` returns immediately (202) with the session/job ID.
 2. The client polls `GET /api/v1/chat/{sessionId}` to retrieve the result.
 3. The Request Handler uses **separate routes** for the POST and GET.
+4. The poll request must include the same `session_id` the original request was
+   submitted with. The Request Handler validates the stored response's `session_id`
+   against it and returns `NOT_FOUND` on a mismatch, so a response can't be read back
+   under the wrong session.
 
 ### WebSocket (Async) Mode
 
@@ -127,16 +131,27 @@ The ECS deployment uses the same pipeline as Lambda, **except Lambda functions a
 replaced by long-running ECS services**. The IO container runs two threads via
 `ThreadRunner`; the Agent Runner is a separate ECS service that extends `ECSSQSConsumer`.
 
+Both `ECSSQSConsumer` subclasses (`ECSAgentRunner` and `ECSOutputConsumer`) are
+themselves internally multi-threaded: `ECSSQSConsumer.run()` starts `num_consumers`
+independent long-lived threads (also via `ThreadRunner`), each running its own
+blocking long-poll loop against the same queue. So "Thread 2" of the IO container
+is really `no_of_consumers` output-queue-polling threads, and the Agent Runner
+container runs `no_of_consumers` input-queue-polling threads — not a single loop.
+`num_consumers` defaults to 5 and is configured per-queue via
+`execution.queues.input.no_of_consumers` / `execution.queues.output.no_of_consumers`
+(ECS only — ignored by Lambda). If any consumer thread crashes, `ThreadRunner` calls
+`os._exit(1)` so ECS restarts the whole task.
+
 ### Python Class Hierarchy
 
 | Class | Container | Role |
 |-------|-----------|------|
 | `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner` |
 | `ECSQueueRequestHandler` | IO container / Thread 1 | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{id}` polls |
-| `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer` — polls Output Queue → DynamoDB / WebSocket |
-| `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer` — polls Input Queue, runs agent, sends to Output Queue |
-| `ECSSQSConsumer` | both | Abstract base: SQS long-poll loop, retry/permanent-failure logic |
-| `ThreadRunner` | IO container | Runs N callables as peer threads; calls `os._exit(1)` if any thread crashes |
+| `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Output Queue → DynamoDB / WebSocket |
+| `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Input Queue, running the agent, sending to Output Queue |
+| `ECSSQSConsumer` | both | Abstract base: spins up `num_consumers` poll-loop threads via `ThreadRunner`; each thread does its own long-poll/retry/permanent-failure handling |
+| `ThreadRunner` | both | Runs N callables as peer threads; calls `os._exit(1)` if any thread crashes |
 
 ### Request Flow — REST Sync
 
@@ -223,6 +238,8 @@ IO container:
 ```
 AK_EXECUTION__QUEUES__INPUT__URL                   = <input-queue-url>
 AK_EXECUTION__QUEUES__OUTPUT__URL                  = <output-queue-url>
+AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS      = <no_of_consumers>       # output-queue consumer threads, default 5
+AK_EXECUTION__QUEUES__BATCH_SIZE                   = <batch_size>           # Terraform-set only, never in config.yaml
 AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = <response-store-table-name>
 ```
 
@@ -232,6 +249,8 @@ Agent Runner container:
 AK_EXECUTION__QUEUES__INPUT__URL               = <input-queue-url>
 AK_EXECUTION__QUEUES__OUTPUT__URL              = <output-queue-url>
 AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT = <max_receive_count>
+AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS   = <no_of_consumers>  # input-queue consumer threads, default 5
+AK_EXECUTION__QUEUES__BATCH_SIZE               = <batch_size>      # Terraform-set only, never in config.yaml
 ```
 
 ### Scaling the Agent Runner ECS Service
@@ -270,5 +289,5 @@ this automatically. See the [AWS Containerized deployment docs](/docs/deployment
 | IO Handler / REST Service | ✅ `modules/request-handler/` | ✅ `ECSIOHandler` (`ecs_io_handler.py`) |
 | Output Queue Consumer | ✅ `modules/response-handler/` (separate Lambda) | ✅ `ECSOutputConsumer` (Thread 2 in IO container) |
 | DynamoDB Response Store | ✅ serverless stack | ✅ containerized stack |
-| Thread management | N/A | ✅ `ThreadRunner` (`core/thread_runner.py`) |
+| Thread management | N/A | ✅ `ThreadRunner` (`deployment/common/thread_runner.py`) |
 | WebSocket Mode | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ⚠️ `ECSOutputConsumer` supports WebSocket broadcast; API Gateway WebSocket wiring not yet in TF module |

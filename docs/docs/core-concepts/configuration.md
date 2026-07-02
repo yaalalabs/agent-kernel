@@ -76,9 +76,11 @@ execution:
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
+      no_of_consumers: 5  # Containerized deployments only — consumer threads polling the input queue (ignored by serverless)
     output:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
+      no_of_consumers: 5  # Containerized deployments only — consumer threads polling the output queue (ignored by serverless)
   response_store:
     type: redis  # Response store type: redis or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
@@ -227,11 +229,13 @@ Alternatively, use `config.json`:
     "queues": {
       "input": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input",
-        "max_receive_count": 3
+        "max_receive_count": 3,
+        "no_of_consumers": 5
       },
       "output": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output",
-        "max_receive_count": 3
+        "max_receive_count": 3,
+        "no_of_consumers": 5
       }
     },
     "response_store": {
@@ -514,6 +518,11 @@ export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
 export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
 export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
 
+# Containerized deployments only — ignored by serverless
+export AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS=5   # Consumer threads polling the input queue (default: 5)
+export AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS=5  # Consumer threads polling the output queue (default: 5)
+export AK_EXECUTION__QUEUES__BATCH_SIZE=10  # Max messages per SQS receive call; set by Terraform, never in config.yaml
+
 # Response store configuration
 export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'dynamodb'
 export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
@@ -670,9 +679,12 @@ execution:
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
+      no_of_consumers: 5        # Containerized only — consumer threads polling the input queue (ignored by serverless)
     output:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
+      no_of_consumers: 5        # Containerized only — consumer threads polling the output queue (ignored by serverless)
+    # batch_size is ECS-only and Terraform-controlled via AK_EXECUTION__QUEUES__BATCH_SIZE — do not set here
   response_store:               # Response storage configuration (required for rest_sync and rest_async modes)
     type: "redis"               # Response store type: 'redis' or 'dynamodb'
     retry_count: 5              # Number of retry attempts for response store reads
