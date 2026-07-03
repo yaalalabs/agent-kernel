@@ -2,12 +2,13 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict
 
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import BaseChatRequest, BaseRunRequest
+from ..core.model import BaseChatRequest, BaseRunRequest, ExecutionMode
 from ..core.runtime import Runtime
 
 
@@ -35,8 +36,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
     - GET /api/v1/agents: List available agents
-    - POST /api/v1/chat: Run an agent with a prompt
-      Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
+    - POST /api/v1/chat: Run an agent (streams SSE when execution.mode=stream, otherwise returns JSON)
+    - POST /api/v1/chat-multipart: Same as /api/v1/chat but accepts multipart form data with file/image uploads
     """
 
     class BaseMultimodalRunRequest(BaseChatRequest):
@@ -64,6 +65,14 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
         @router.post("/api/v1/chat")
         async def run(body: BaseRunRequest):
+            if Config.get().execution.mode == ExecutionMode.STREAM:
+                try:
+                    gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
+                    return StreamingResponse(gen, media_type="text/event-stream")
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
             return await self.chat_service.process_async_chat_request(req=body)
 
         @router.post("/api/v1/chat-multipart")
@@ -74,7 +83,6 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             files: Optional[List[UploadFile]] = File(None),
             images: Optional[List[UploadFile]] = File(None),
         ):
-            # Construct BaseMultimodalRunRequest from form parameters
             req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
                 prompt=prompt,
                 agent=agent,
@@ -82,6 +90,14 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 files=files,
                 images=images,
             )
+            if Config.get().execution.mode == ExecutionMode.STREAM:
+                try:
+                    gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
+                    return StreamingResponse(gen, media_type="text/event-stream")
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
             return await self.chat_service.process_async_chat_request(req=req)
 
         return router

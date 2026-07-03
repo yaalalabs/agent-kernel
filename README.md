@@ -171,6 +171,8 @@ ak skill install
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
 | `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |
 
+See the [`use-cases/`](use-cases/) directory for complete end-to-end examples built using these skills — each starting from a `SPEC.md` and generating a fully deployed agent.
+
 ---
 
 ## 🧪 Testing — pytest-Integrated

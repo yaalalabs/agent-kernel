@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -324,6 +325,44 @@ class LangGraphRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, LangGraphSession())
 
+    @staticmethod
+    def _process_requests(requests: list[AgentRequest]) -> tuple[str, bool]:
+        """
+        Process requests and extract prompt text.
+        :param requests: The requests to process.
+        :return: Tuple of (prompt, is_valid).
+        """
+        prompt = ""
+        for req in requests:
+            if isinstance(req, AgentRequestAny):
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.text if prompt else req.text
+            else:
+                return prompt, False
+        return prompt, True
+
+    def _prepare_session_and_messages(self, agent: Any, session: Session, prompt: str) -> tuple[dict, list]:
+        """
+        Prepare session config and messages for LangGraph agent.
+        :param agent: The LangGraph agent.
+        :param session: The AgentKernel session.
+        :param prompt: The prompt text.
+        :return: Tuple of (session_config, messages).
+        """
+        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+        lg_session = self._session(session)
+        agent.agent.checkpointer = lg_session.checkpointer
+
+        messages = []
+        system_prompt = getattr(agent, "_system_prompt", "")
+        if system_prompt and not lg_session._system_prompt_injected:
+            messages.append(SystemMessage(content=system_prompt))
+            lg_session._system_prompt_injected = True
+        messages.append(HumanMessage(content=prompt))
+
+        return session_config.model_dump(), messages
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the LangGraph agent with provided multi modal inputs.
@@ -332,43 +371,68 @@ class LangGraphRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        prompt = ""
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            for req in requests:
-                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                    continue
-                if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
-                else:
-                    return AgentReplyText(
-                        text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
-                        prompt=prompt,
-                    )
+            prompt, is_valid = self._process_requests(requests)
+
+            if not is_valid:
+                return AgentReplyText(
+                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
 
             if prompt.strip() == "":
                 return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
 
-            session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-            lg_session = self._session(session)
-            agent.agent.checkpointer = lg_session.checkpointer
-
-            messages = []
-            system_prompt = getattr(agent, "_system_prompt", "")
-            if system_prompt and not lg_session._system_prompt_injected:
-                messages.append(SystemMessage(content=system_prompt))
-                lg_session._system_prompt_injected = True
-            messages.append(HumanMessage(content=prompt))
+            config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
             result = await agent.agent.ainvoke(
                 input={"messages": messages},
-                config=session_config.model_dump(),
+                config=config,
             )
             last_message = result["messages"][-1]
             return AgentReplyText(text=self._extract_text_content(last_message.content), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        Streams the LangGraph agent response token by token.
+        :param agent: The LangGraph agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding string token deltas.
+        """
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, is_valid = self._process_requests(requests)
+
+            if not is_valid:
+                return
+
+            if prompt.strip() == "":
+                return
+
+            config, messages = self._prepare_session_and_messages(agent, session, prompt)
+
+            async for event in agent.agent.astream_events(
+                input={"messages": messages},
+                config=config,
+                version="v2",
+            ):
+                if event["event"] == "on_chat_model_stream":
+                    content = event["data"]["chunk"].content
+                    if isinstance(content, str) and content:
+                        yield content
+                    elif isinstance(content, list):
+                        for item in content:
+                            if isinstance(item, dict) and item.get("text"):
+                                yield item["text"]
         finally:
             if context is not None:
                 context.reset()
@@ -445,8 +509,6 @@ class LangGraphToolBuilder(ToolBuilder):
         :return: List of LangChain StructuredTool instances.
         :raises TypeError: If any item in funcs is not callable.
         """
-        from ...core.base import Agent
-
         # Inject system tools (e.g., analyze_attachments)
         all_funcs = list(funcs)
         for sys_tool in SystemToolFactory.get_all():

@@ -150,3 +150,4 @@ Follow conventional commit format:
 - [Main README](README.md) - Project overview and usage
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
+- [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills

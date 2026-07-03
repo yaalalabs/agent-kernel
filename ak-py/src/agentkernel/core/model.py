@@ -119,6 +119,12 @@ class ExecutionMode(str, Enum):
     ASYNC = "async"
 
 
+class StreamChunk(BaseModel):
+    delta: str | None = None
+    done: bool = False
+    error: str | None = None
+
+
 class SystemTool(BaseModel):
     name: str
     description: str

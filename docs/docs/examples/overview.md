@@ -181,11 +181,26 @@ Depending on the example you choose, you may need:
 - **Terraform** (for multi-cloud infrastructure deployment)
 - Valid API keys for the respective AI services (OpenAI, etc.)
 
+## Use Cases — Skills-Driven End-to-End Agents
+
+The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory contains complete agent projects built end-to-end using Agent Kernel skills and a coding assistant. Each use case starts from a `SPEC.md` describing the agent's purpose and requirements, then uses the `ak-init`, `ak-build`, `ak-add-capabilities`, `ak-cloud-deploy`, and `ak-test` skills to generate all project files.
+
+### Available Use Cases
+
+- **`waste-sorting-assistant/`** — A waste sorting advisor agent that recommends disposal categories (recycle, compost, landfill, hazardous waste) based on item material and the user's local recycling rules. Includes OpenAI Agents SDK integration, session memory for region-specific rules, and AWS Lambda deployment with DynamoDB-backed session persistence.
+
+### How to Use the Use Cases
+
+See [`use-cases/README.md`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/README.md) for the full workflow — from installing Agent Kernel skills to asking a coding assistant to generate a complete project from a `SPEC.md`.
+
+Unlike the `examples/` directory (which demonstrates specific deployment patterns and integrations), the `use-cases/` directory shows complete domain-specific agents that were built by a coding agent using the Agent Kernel skills pack.
+
 ## Next Steps
 
 - Browse the specific framework examples that match your use case
 - Start with CLI examples for local development
 - Progress to containerized or serverless deployments for production
 - Explore multi-agent examples for complex orchestration scenarios
+- See [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) for complete agents built with Agent Kernel skills
 
 For detailed implementation guides, refer to the individual README files in each example directory.

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
+from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
@@ -91,6 +93,75 @@ class OpenAIRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, OpenAISession())
 
+    @staticmethod
+    def _process_requests(requests: list[AgentRequest]) -> tuple[str, list[dict]]:
+        """
+        Process requests and extract prompt text and message content.
+        :param requests: The requests to process.
+        :return: Tuple of (prompt, message_content).
+        """
+        prompt = ""
+        message_content = []
+
+        for req in requests:
+            if isinstance(req, AgentRequestAny):
+                continue
+
+            if isinstance(req, AgentRequestText):
+                text = req.text
+                prompt = prompt + "\n" + text if prompt else text
+                message_content.append({"role": "user", "content": text})
+
+            elif isinstance(req, AgentRequestImage):
+                if not req.image_data:
+                    raise ValueError("no image input provided")
+
+                image_url = req.image_data
+                if not image_url.startswith(("http://", "https://", "s3://", "data:")):
+                    if not req.mime_type:
+                        raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
+                    mime_type = req.mime_type
+                    image_url = f"data:{mime_type};base64,{image_url}"
+
+                message_content.append({"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]})
+
+            elif isinstance(req, AgentRequestFile):
+                if not req.file_data:
+                    raise ValueError("no file input provided")
+
+                file_url = req.file_data
+                if file_url.startswith(("http://", "https://", "s3://")):
+                    message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
+                else:
+                    mime_type = req.mime_type
+                    if not file_url.startswith(("data:")):
+                        if not req.mime_type:
+                            raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
+                        file_url = f"data:{mime_type};base64,{file_url}"
+
+                    message_content.append(
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
+                        }
+                    )
+
+        return prompt, message_content
+
+    def _get_run_input(self, agent: Any, session: Session, prompt: str, message_content: list[dict]) -> tuple[Any, Session | None]:
+        """
+        Determine the input format for OpenAI agent (text-only vs multimodal).
+        :param agent: The OpenAI agent.
+        :param session: The AgentKernel session.
+        :param prompt: The prompt text.
+        :param message_content: The message content list.
+        :return: Tuple of (input, session_to_use).
+        """
+        if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
+            return prompt, self._session(session)
+        else:
+            return message_content, None
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the OpenAI agent with provided multi modal inputs.
@@ -99,74 +170,48 @@ class OpenAIRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        prompt = ""
-        message_content = []
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            for req in requests:
-                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                    continue
-
-                if isinstance(req, AgentRequestText):
-                    text = req.text
-                    prompt = prompt + "\n" + text if prompt else text
-                    message_content.append({"role": "user", "content": text})
-
-                elif isinstance(req, AgentRequestImage):
-                    # Handle image requests - OpenAI expects base64 or URL format
-                    if not req.image_data:
-                        raise ValueError("no image input provided")
-
-                    image_url = req.image_data
-                    # If it's base64 and doesn't have the data URI prefix, add it
-                    if not image_url.startswith(("http://", "https://", "s3://", "data:")):
-                        if not req.mime_type:
-                            raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
-                        mime_type = req.mime_type
-                        image_url = f"data:{mime_type};base64,{image_url}"
-
-                    message_content.append({"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]})
-
-                elif isinstance(req, AgentRequestFile):
-                    # Handle file attachments - OpenAI expects base64 or URL format
-                    if not req.file_data:
-                        raise ValueError("no file input provided")
-
-                    file_url = req.file_data
-                    # If it's a remote URL, use it directly
-                    if file_url.startswith(("http://", "https://", "s3://")):
-                        message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
-                    else:
-                        mime_type = req.mime_type
-                        # If it's base64 and doesn't have the data URI prefix, add it
-                        if not file_url.startswith(("data:")):
-                            if not req.mime_type:
-                                raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
-                            file_url = f"data:{mime_type};base64,{file_url}"
-
-                        message_content.append(
-                            {
-                                "role": "user",
-                                "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
-                            }
-                        )
+            prompt, message_content = self._process_requests(requests)
 
             if not message_content:
                 return AgentReplyText(text="Sorry. No valid content found in the requests")
 
-            # Use the structured message format if we have images or files, otherwise use simple prompt
-            if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
-                # Simple text-only case
-                reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
-            else:
-                # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
-                reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
+            input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
+            reply = (await Runner.run(agent.agent, input_data, session=session_to_use)).final_output
 
             reply_text = "" if reply is None else str(reply)
             return AgentReplyText(text=reply_text, prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        Streams the OpenAI agent response token by token.
+        :param agent: The OpenAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding string token deltas.
+        """
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, message_content = self._process_requests(requests)
+
+            if not message_content:
+                return
+
+            input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
+            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use)
+
+            async for event in result.stream_events():
+                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                    if event.data.delta:
+                        yield event.data.delta
         finally:
             if context is not None:
                 context.reset()
