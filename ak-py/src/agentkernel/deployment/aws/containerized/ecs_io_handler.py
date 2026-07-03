@@ -1,6 +1,5 @@
 import logging
 
-from ....api.http import RESTAPI
 from ....core.config import AKConfig
 from ...common import ThreadRunner
 from .akoutputconsumer import ECSOutputConsumer
@@ -29,6 +28,7 @@ class ECSIOHandler:
 
     @classmethod
     def run(cls) -> None:
+        from ....api.http import RESTAPI
         from .ecs_queue_handler import ECSQueueRequestHandler
 
         mode = cls._config.execution.mode
