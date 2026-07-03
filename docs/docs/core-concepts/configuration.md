@@ -16,6 +16,10 @@ For detailed information about session and memory management configuration, see:
 
 Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
 
+:::note
+Test harness configuration (comparison mode, judge models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests — see [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
+:::
+
 ### Basic Configuration File
 
 Create `config.yaml`:
@@ -90,14 +94,6 @@ execution:
     dynamodb:
       table_name: "agent-responses"  # DynamoDB table name for response storage
       ttl: 604800  # DynamoDB item TTL in seconds (0 disables)
-
-# Testing configuration
-test:
-  mode: fallback  # Options: fuzzy, judge, fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
 
 # Messaging platform integrations
 slack:
@@ -247,14 +243,6 @@ Alternatively, use `config.json`:
         "table_name": "agent-responses",
         "ttl": 604800
       }
-    }
-  },
-  "test": {
-    "mode": "fallback",
-    "judge": {
-      "model": "gpt-4o-mini",
-      "provider": "openai",
-      "embedding_model": "text-embedding-3-small"
     }
   },
   "slack": {
@@ -599,14 +587,6 @@ mcp:
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
   stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
-
-# Test configuration
-test:
-  mode: "fallback"              # Test comparison mode: 'fuzzy', 'judge', or 'fallback'
-  judge:                        # Judge mode configuration
-    model: "gpt-4o-mini"        # LLM model for judge evaluation
-    provider: "openai"          # LLM provider
-    embedding_model: "text-embedding-3-small"  # Embedding model for similarity
 
 # Messaging platform integrations
 slack:

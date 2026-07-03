@@ -5,4 +5,5 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
+from .config import AKTestConfig
 from .test import Mode, Test

@@ -50,7 +50,7 @@ class TestFirestoreDatabaseIdBugCondition(unittest.TestCase):
         # Reset AKConfig to pick up new environment variables
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
     def tearDown(self):
         """Restore original environment."""
@@ -60,7 +60,7 @@ class TestFirestoreDatabaseIdBugCondition(unittest.TestCase):
         # Reset AKConfig
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
     @patch("google.cloud.firestore.Client")
     def test_named_database_connection_with_database_id(self, mock_client_class):
@@ -268,7 +268,7 @@ class TestFirestorePreservation(unittest.TestCase):
         # Reset AKConfig
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
     @patch("google.cloud.firestore.Client")
     def test_default_database_when_database_id_not_specified(self, mock_client_class):
@@ -288,7 +288,7 @@ class TestFirestorePreservation(unittest.TestCase):
         # Reset AKConfig to pick up new environment variables
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         # Mock the Firestore client
         mock_client = MagicMock()
@@ -332,7 +332,7 @@ class TestFirestorePreservation(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         # Mock the Firestore client
         mock_client = MagicMock()
@@ -366,7 +366,7 @@ class TestFirestorePreservation(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         # Mock the Firestore client and document
         mock_client = MagicMock()
@@ -408,7 +408,7 @@ class TestFirestorePreservation(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         # Mock the Firestore client and its methods
         mock_client = MagicMock()
@@ -465,7 +465,7 @@ class TestFirestorePreservation(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         cfg = AKConfig.get().session.firestore
 
@@ -512,7 +512,7 @@ class TestFirestorePreservation(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         cfg = AKConfig.get().session.firestore
 
@@ -535,7 +535,7 @@ class TestFirestorePreservation(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         # Mock the Firestore client
         mock_client = MagicMock()
@@ -583,7 +583,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
     @patch("google.cloud.firestore.Client")
     def test_various_collection_names(self, mock_client_class):
@@ -607,7 +607,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
 
                 from agentkernel.core.config import AKConfig
 
-                AKConfig._set()
+                AKConfig._reset()
 
                 # Mock the Firestore client
                 mock_client = MagicMock()
@@ -649,7 +649,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
 
                 from agentkernel.core.config import AKConfig
 
-                AKConfig._set()
+                AKConfig._reset()
 
                 # Mock the Firestore client
                 mock_client = MagicMock()
@@ -701,7 +701,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
 
                 from agentkernel.core.config import AKConfig
 
-                AKConfig._set()
+                AKConfig._reset()
 
                 # Mock the Firestore client
                 mock_client = MagicMock()
@@ -736,7 +736,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
 
         from agentkernel.core.config import AKConfig
 
-        AKConfig._set()
+        AKConfig._reset()
 
         # Mock the Firestore client
         mock_client = MagicMock()
