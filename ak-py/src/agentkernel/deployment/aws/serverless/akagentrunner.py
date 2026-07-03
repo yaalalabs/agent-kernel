@@ -36,7 +36,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
-        endpoint_url = message_attributes.get("endpoint_url") if AKConfig.get().execution.mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) else None
+        endpoint_url = (
+            message_attributes.get("endpoint_url") if AKConfig.get().execution.mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) else None
+        )
 
         if not request_id:
             raise ValueError("request_id is required")
@@ -130,7 +132,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         cls._log.info(f"Permanent failure: {record}: Retried message {cls._get_max_receive_count()} times. Sending error message to Output Queue`")
         try:
             record_attributes = cls._get_record_attributes(raw_queue_message=record)
-            error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls._get_max_receive_count()} times")
+            error_message_body = cls._construct_error_message_body(
+                error_msg=f"Failed to process message. Retried {cls._get_max_receive_count()} times"
+            )
             error_message_body["session_id"] = record_attributes["message_group_id"]
             cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
             cls._log.info(f"Sent Permanent Failure message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
