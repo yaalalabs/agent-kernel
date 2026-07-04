@@ -109,8 +109,10 @@ Pydantic-based configuration:
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
 - **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`
-- **Reply types**: `AgentReplyText`, `AgentReplyImage`
-- **`StreamChunk`**: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None` — yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
+- **Reply types**: 
+  - `AgentReplyText`, 
+  - `AgentReplyImage`
+  - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None` — yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)

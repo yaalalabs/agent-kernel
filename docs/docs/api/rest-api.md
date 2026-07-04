@@ -105,7 +105,7 @@ In the following example,  **user_id (string)** and **additional_context (dict)*
 }
 ```
 
-Please study the [Hooks documentation](../integrations/hooks.md) for the use of hooks to implement various use cases.
+Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 
 ## Passing images and files
 
@@ -356,7 +356,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
 
 **Framework support:** OpenAI Agents SDK, Google ADK, and LangGraph support token streaming. CrewAI and smolagents raise `NotImplementedError` when `execution.mode: stream` is used — use `rest_sync` for those frameworks instead.
 
-For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](../deployment/aws-serverless.md#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
+For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 
 
 ## Authentication
