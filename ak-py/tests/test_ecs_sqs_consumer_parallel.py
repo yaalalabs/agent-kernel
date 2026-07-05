@@ -47,23 +47,9 @@ def reset_mocks():
     yield
 
 
-class TestGetNumConsumers:
-    def test_returns_config_value_when_available(self):
-        mock_cfg = MagicMock()
-        mock_cfg.execution.queues.no_of_consumers = 20
-        with patch("agentkernel.core.config.AKConfig.get", return_value=mock_cfg) as mock_get:
-            result = ECSSQSConsumer._get_num_consumers()
-        mock_get.assert_called_once()
-        assert result == 20
-
-    def test_returns_default_when_config_unavailable(self):
-        with patch(
-            "agentkernel.core.config.AKConfig.get",
-            side_effect=RuntimeError("config unavailable"),
-        ) as mock_get:
-            result = ECSSQSConsumer._get_num_consumers()
-        mock_get.assert_called_once()
-        assert result == ECSSQSConsumer._DEFAULT_PARALLEL_WORKERS
+class TestNumConsumers:
+    def test_base_class_default(self):
+        assert ECSSQSConsumer.num_consumers == 10
 
 
 class TestProcessSingle:

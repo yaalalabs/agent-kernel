@@ -131,7 +131,7 @@ class TestRun:
             exit_code["code"] = code
             exit_called.set()
 
-        monkeypatch.setattr("agentkernel.deployment.common.thread_runner.sys.exit", fake_exit)
+        monkeypatch.setattr("agentkernel.deployment.common.thread_runner.os._exit", fake_exit)
 
         never_finishes = threading.Event()
 
