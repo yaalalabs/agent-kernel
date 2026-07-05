@@ -3,7 +3,7 @@ name: ak-cloud-deploy
 description: >
   Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules.
   Supports serverless and containerized modes for all three clouds. AWS supports
-  execution modes (rest_sync, rest_async, async), queue-based scalable processing,
+  execution modes (rest_sync, rest_async, async, stream), queue-based scalable processing,
   and custom API Gateway authorizers. GCP supports Cloud Run serverless (scale-to-zero)
   and containerized (always-on) with Redis or Firestore session backends.
 license: Apache-2.0
@@ -39,7 +39,8 @@ If missing, suggest `ak-init` first.
 3. Execution pattern (AWS serverless only):
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode)
 - Asynchronous REST (`rest_async`, queue/scalable mode)
-- WebSocket async (`async`, queue/scalable mode)
+- WebSocket full-response (`async`, queue/scalable mode)
+- WebSocket token streaming (`stream`, queue/scalable mode) — also available on containerized deployments via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -538,7 +539,65 @@ dependencies = [
 ]
 ```
 
-### D) API Gateway Custom Authorizer (AWS)
+### D) WebSocket Token Streaming (`stream`)
+
+Use this when the client should receive each generated token as soon as it is produced, instead of waiting for the full response.
+
+Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `response_handler`, `ws_connection_handler`, `ws_routes`) — only `execution_mode` changes:
+
+```hcl
+module "serverless_agents" {
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.6.0"
+
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  region               = var.region
+  product_display_name = "AK Streaming WebSocket Example"
+
+  queue_mode     = true
+  execution_mode = "stream"
+
+  create_redis_cluster           = true
+  # create_redis_response_store and create_dynamodb_response_store must stay false/unset:
+  # WebSocket modes (async/stream) push responses over the connection and Terraform
+  # validation fails if a response store is enabled for them.
+
+  request_handler       = { ... } # same shape as async mode
+  agent_runner          = { ... } # runs ServerlessStreamAgentRunner, streams chunks to output queue
+  response_handler      = { ... } # broadcasts each chunk as a STREAM_CHUNK message
+  ws_connection_handler = { ... }
+  ws_routes             = [ { route = "app" }, { route = "app_info" } ]
+}
+```
+
+**`config.yaml`** — the only required setting beyond WebSocket async mode is the execution mode itself:
+
+```yaml
+execution:
+  mode: stream
+```
+
+This selects `ServerlessStreamAgentRunner` automatically at import time (queue mode) — no code change needed in the agent runner Lambda beyond the standard `Lambda.handler` entrypoint.
+
+**Message format** — clients receive a sequence of `STREAM_CHUNK` messages instead of one `CHAT_RESPONSE`:
+
+```json
+{"type": "STREAM_CHUNK", "delta": "Hello", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": "!", "done": true, "session_id": "user-1"}
+```
+
+On an unrecoverable error, the final chunk carries `error` instead of `delta`, with `done: true`.
+
+- Queue disabled (`queue_mode = false`): the request handler Lambda streams tokens directly to the WebSocket client without SQS.
+- `create_redis_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
+- See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
+
+**Containerized / direct streaming (no Terraform WebSocket setup)**: any REST deployment (AWS containerized, Azure, GCP, or local) can enable SSE token streaming by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode.
+
+### E) API Gateway Custom Authorizer (AWS)
 
 If the user needs token verification, include `authorizer` block:
 

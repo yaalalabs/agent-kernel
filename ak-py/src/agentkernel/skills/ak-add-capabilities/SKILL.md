@@ -510,6 +510,14 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
+**Streaming token hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each token delta while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). Return `None` to drop a token entirely. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+
+```python
+class RedactingPostHook(DisclaimerPostHook):
+    async def on_stream_chunk(self, session, requests, agent, delta: str) -> str | None:
+        return delta.replace("SECRET", "***")
+```
+
 ---
 
 #### Multimodal Support
