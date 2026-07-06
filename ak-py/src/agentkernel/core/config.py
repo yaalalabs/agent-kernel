@@ -261,7 +261,7 @@ class _InputQueueConfig(BaseModel):
         description=(
             "Only used in Containerized deployments "
             "Number of independent consumer threads that each poll the input queue "
-            "in a continuous loop. Only used by ECS containerized deployments — never set for "
+            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
             "serverless (Lambda) mode, which has no consumer threads. "
             "Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
         ),
@@ -278,7 +278,7 @@ class _OutputQueueConfig(BaseModel):
         description=(
             "Only used in Containerized deployments "
             "Number of independent consumer threads that each poll the output queue "
-            "in a continuous loop. Only used by ECS containerized deployments — never set for "
+            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
             "serverless (Lambda) mode, which has no consumer threads. "
             "Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
         ),
