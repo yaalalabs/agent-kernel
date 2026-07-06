@@ -591,7 +591,6 @@ create_agent_runner_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_agent_runner/data
     else
-      uv pip install -r requirements.txt --target=dist_agent_runner/data --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist_agent_runner/data --find-links ../../../ak-py/dist agentkernel[aws,openai,redis] || true
     fi
     cp -r lambda_agent_runner.py config.yaml dist_agent_runner/data

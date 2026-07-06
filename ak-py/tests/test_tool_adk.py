@@ -393,7 +393,8 @@ class TestGoogleADKRunnerToolContext:
     async def test_run_tool_context_is_fetchable_during_execution(self):
         """
         During runner.run(), the AKToolContext should be entered (cached)
-        so that tools can fetch it via AKToolContext.fetch(id).
+        so that tools can fetch it via AKToolContext.fetch(id) while the
+        agent is actually executing (i.e. during get_response()).
         """
         runner = GoogleADKRunner()
         session = Session("fetch-test-session")
@@ -401,13 +402,18 @@ class TestGoogleADKRunnerToolContext:
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
+        context_id = None
         fetched_ctx = None
 
         async def mock_update_session_state(invocation_id, author, state):
+            nonlocal context_id
+            context_id = state.get("ak_tool_context")
+
+        async def mock_get_response(*args, **kwargs):
             nonlocal fetched_ctx
-            if "ak_tool_context" in state:
-                # This should succeed if the context is in the cache
-                fetched_ctx = AKToolContext.fetch(state["ak_tool_context"])
+            # This should succeed if the context is in the cache
+            fetched_ctx = AKToolContext.fetch(context_id)
+            return "done"
 
         mock_adk_session = MagicMock()
         mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
@@ -416,7 +422,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="done"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, side_effect=mock_get_response),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)
@@ -618,7 +624,7 @@ class TestGoogleADKRunnerToolContext:
         mock_runner = MagicMock()
         mock_runner.run_async = mock_run_async
 
-        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner)):
+        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock())):
             chunks = []
             async for delta in runner.stream(mock_agent, session, requests):
                 chunks.append(delta)
@@ -645,7 +651,7 @@ class TestGoogleADKRunnerToolContext:
         mock_runner = MagicMock()
         mock_runner.run_async = mock_run_async
 
-        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner)):
+        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock())):
             chunks = []
             async for delta in runner.stream(mock_agent, session, requests):
                 chunks.append(delta)
