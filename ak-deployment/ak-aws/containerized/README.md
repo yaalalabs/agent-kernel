@@ -88,6 +88,38 @@ output "alb_dns" {
 }
 ```
 
+### With External ECR Image
+
+Use a pre-built ECR image instead of building locally during `terraform apply`:
+
+```hcl
+module "container_app_ecr" {
+  source = "yaalalabs/ak-containerized/aws"
+
+  region               = "us-west-2"
+  product_alias        = "myapp"
+  env_alias            = "prod"
+  product_display_name = "My App (External ECR Image)"
+
+  module_name   = "api"
+  ecr_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-app:v1.2.3"
+
+  vpc_id             = "vpc-0abc123def456789"
+  private_subnet_ids = ["subnet-111", "subnet-222"]
+
+  ecs_container_port = 8000
+
+  environment_variables = {
+    ENVIRONMENT = "production"
+  }
+
+  api_version    = "v1"
+  agent_endpoint = "chat"
+}
+```
+
+This pattern is useful when the Docker image is built in CI/CD and pushed to ECR before running `terraform apply`, keeping image builds decoupled from infrastructure changes.
+
 ### With Existing VPC
 
 ```hcl
@@ -271,7 +303,8 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 | `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
 | `module_name` | Module name for resource identification | `string` | n/a | yes |
-| `package_path` | Path to Docker source directory (with Dockerfile) | `string` | n/a | yes |
+| `package_path` | Path to Docker source directory (with Dockerfile). Required when `ecr_image_uri` is not set | `string` | `null` | conditional |
+| `ecr_image_uri` | Pre-built ECR image URI to use instead of building a local Docker image. When set, `package_path` is not required and the local Docker build step is skipped | `string` | `null` | conditional |
 | `environment_variables` | Environment variables for container | `map(string)` | `{}` | no |
 | `api_version` | API version for endpoint path | `string` | `"v1"` | no |
 | `agent_endpoint` | API endpoint name | `string` | `"chat"` | no |

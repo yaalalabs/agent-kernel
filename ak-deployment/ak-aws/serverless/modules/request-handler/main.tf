@@ -1,7 +1,3 @@
-locals {
-  package_file_name = "source_code.zip"
-}
-
 resource "aws_iam_role" "lambda_role" {
   name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
   assume_role_policy = jsonencode({
@@ -188,34 +184,28 @@ resource "aws_iam_role_policy_attachment" "lambda_sqs_attachment" {
   policy_arn = aws_iam_policy.lambda_sqs_policy[0].arn
 }
 
-data "aws_s3_object" "source_code" {
-  count  = (var.package_type == "S3Zip") ? 1 : 0
-  bucket = var.source_bucket
-  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.module_name}/lambda/${local.package_file_name}"
-}
-
 resource "aws_signer_signing_job" "handler_lambda_signing_job" {
-  count = (var.is_production) && (var.package_type != "S3Zip") ? 1 : 0
+  count = var.is_production && var.package_type == "S3Zip" ? 1 : 0
 
   profile_name = var.lambda_signer_profile_name
   source {
     s3 {
       bucket  = var.source_bucket
-      key     = data.aws_s3_object.source_code[0].key
-      version = data.aws_s3_object.source_code[0].version_id
+      key     = var.source_key
+      version = var.source_version_id
     }
   }
   destination {
     s3 {
       bucket = var.source_bucket
-      prefix = "${data.aws_s3_object.source_code[0].key}/signed/${data.aws_s3_object.source_code[0].version_id}"
+      prefix = "${var.source_key}/signed"
     }
   }
   ignore_signing_job_failure = false
 }
 
 data "aws_s3_object" "signed_component_code" {
-  count = (var.is_production) && (var.package_type != "S3Zip") ? 1 : 0
+  count = var.is_production && var.package_type == "S3Zip" ? 1 : 0
 
   bucket = aws_signer_signing_job.handler_lambda_signing_job[0].signed_object[0].s3[0].bucket
   key    = aws_signer_signing_job.handler_lambda_signing_job[0].signed_object[0].s3[0].key
@@ -254,11 +244,10 @@ module "lambda_deployment" {
   vpc_security_group_ids = var.security_group_id != "" ? [var.security_group_id] : []
   code_signing_config_arn = (var.package_type == "S3Zip" && var.is_production == true) ? var.lambda_signing_config_arn : null
 
-  s3_existing_package = (var.package_type == "S3Zip") ? {
-    bucket     = var.is_production ? data.aws_s3_object.signed_component_code[0].bucket : data.aws_s3_object.source_code[0].bucket
-    key        = var.is_production ? data.aws_s3_object.signed_component_code[0].key : data.aws_s3_object.source_code[0].key
-    version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
-  } : {}
+  s3_existing_package = var.is_production && var.package_type == "S3Zip" ? {
+    bucket = data.aws_s3_object.signed_component_code[0].bucket
+    key    = data.aws_s3_object.signed_component_code[0].key
+  } : var.s3_existing_package
 
   environment_variables = merge(var.environment_variables, {
       API_BASE_PATH = var.api_base_path

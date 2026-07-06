@@ -80,7 +80,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - OpenLLMetry
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
-- **Governance**: Guard rails and human in the middle capabilities are coming soon
+- **Governance**: Guardrails and human in the middle capabilities are coming soon
 
 ## Key Features
 

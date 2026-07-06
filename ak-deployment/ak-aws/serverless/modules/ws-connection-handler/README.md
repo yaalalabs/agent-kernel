@@ -1,6 +1,6 @@
 # WebSocket Connection Handler Module
 
-This module creates a Lambda function to handle WebSocket `$connect` and `$disconnect` routes for Agent Kernel's async execution mode.
+This module creates a Lambda function to handle WebSocket `$connect` and `$disconnect` routes for Agent Kernel's `async` and `stream` execution modes.
 
 ## Overview
 

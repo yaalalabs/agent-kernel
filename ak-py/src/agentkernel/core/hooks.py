@@ -23,7 +23,7 @@ class PreHook(ABC):
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
           - RAG context injection
-          - Prompt validation like input guard rails
+          - Prompt validation like input guardrails
           - Logging or analytics
 
         :param: session (Session): The session instance.
@@ -66,6 +66,20 @@ class PostHook(ABC):
         :return: The modified reply. If not modified, return the current reply.
         """
         raise NotImplementedError
+
+    async def on_stream_chunk(
+        self,
+        session: "Session",
+        requests: list[AgentRequest],
+        agent: "Agent",
+        delta: str,
+    ) -> str | None:
+        """
+        Called for each streaming token delta before it is sent to the client.
+        Return the (optionally modified) delta string, or None to drop the token.
+        Default implementation passes the delta through unchanged.
+        """
+        return delta
 
     @abstractmethod
     def name(self) -> str:

@@ -33,7 +33,7 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 ```hcl
 module "container_app" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -98,7 +98,7 @@ output "service_url" {
 
 ```hcl
 module "container_app_redis" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -130,7 +130,7 @@ module "container_app_redis" {
 
 ```hcl
 module "container_app_firestore" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -162,7 +162,7 @@ module "container_app_firestore" {
 
 ```hcl
 module "container_app_vpc" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
@@ -196,7 +196,7 @@ module "container_app_vpc" {
 
 ```hcl
 module "production_app" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   project_id           = "enterprise-gcp-project"
   region               = "us-central1"
@@ -639,7 +639,7 @@ locals {
 }
 
 module "api" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/google"
 
   # ... other config
   cpu                       = local.env_config.cpu

@@ -1,3 +1,7 @@
+# OPTIONAL: This file is auto-generated for CI/CD purposes
+# You can safely delete this file if you prefer to use local state
+# or configure your own backend
+
 terraform {
   backend "gcs" {
     bucket = "{bucket_name}"

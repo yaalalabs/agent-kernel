@@ -38,3 +38,8 @@ variable "private_subnet_ids" {
   description = "List of private subnet IDs for ECS deployment"
   type        = list(string)
 }
+
+variable "ecr_image_uri" {
+  description = "ECR Image URI for the ECS task"
+  type        = string
+}

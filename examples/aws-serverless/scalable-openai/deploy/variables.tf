@@ -39,3 +39,27 @@ variable "private_subnet_ids" {
   type        = list(string)
   sensitive   = true
 }
+
+variable "request_handler_lambda_package_s3" {
+  description = "External Lambda artifact for request handler"
+  type = object({
+    bucket = string
+    key    = string
+  })
+  default = null
+}
+
+variable "response_handler_lambda_package_s3" {
+  description = "External Lambda artifact for response handler"
+  type = object({
+    bucket = string
+    key    = string
+  })
+  default = null
+}
+
+variable "agent_runner_ecr_image_uri" {
+  description = "External ECR image URI for agent runner"
+  type        = string
+  default     = null
+}

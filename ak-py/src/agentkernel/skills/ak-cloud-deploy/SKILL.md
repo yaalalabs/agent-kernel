@@ -3,13 +3,13 @@ name: ak-cloud-deploy
 description: >
   Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules.
   Supports serverless and containerized modes for all three clouds. AWS supports
-  execution modes (rest_sync, rest_async, async), queue-based scalable processing,
+  execution modes (rest_sync, rest_async, async, stream), queue-based scalable processing,
   and custom API Gateway authorizers. GCP supports Cloud Run serverless (scale-to-zero)
   and containerized (always-on) with Redis or Firestore session backends.
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.4.0"
+  version: "0.6.0"
   category: user
 ---
 
@@ -39,7 +39,8 @@ If missing, suggest `ak-init` first.
 3. Execution pattern (AWS serverless only):
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode)
 - Asynchronous REST (`rest_async`, queue/scalable mode)
-- WebSocket async (`async`, queue/scalable mode)
+- WebSocket full-response (`async`, queue/scalable mode)
+- WebSocket token streaming (`stream`, queue/scalable mode) — also available on containerized deployments via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -52,10 +53,10 @@ Use official modules:
 - AWS containerized: `yaalalabs/ak-containerized/aws`
 - Azure serverless: `yaalalabs/ak-serverless/azurerm`
 - Azure containerized: `yaalalabs/ak-containerized/azurerm`
-- GCP serverless: local module at `ak-deployment/ak-gcp/serverless`
-- GCP containerized: local module at `ak-deployment/ak-gcp/containerized`
+- GCP serverless: `yaalalabs/ak-serverless/google`
+- GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.4.0`) unless user requests another.
+Use current module version (`0.6.0`) unless user requests another.
 
 AWS-only features in this skill:
 - `execution_mode`
@@ -77,7 +78,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.4.0"
+  "agentkernel[openai,api,redis]>=0.6.0"
 ]
 ```
 
@@ -100,7 +101,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.4.0"
+  "agentkernel[openai,api,aws]>=0.6.0"
 ]
 ```
 
@@ -121,7 +122,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.4.0"
+  "agentkernel[openai,api,azure]>=0.6.0"
 ]
 ```
 
@@ -143,7 +144,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.4.0"
+  "agentkernel[openai,api,gcp]>=0.6.0"
 ]
 ```
 
@@ -188,7 +189,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.4.0"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -225,10 +226,24 @@ Use this for high throughput and long-running requests.
 
 This is the multi-artifact pattern used by the scalable example: a request handler zip, an agent-runner image, and a response-handler zip.
 
+Each Lambda can use one of three `package_type` values:
+
+
+| `package_type` | Artifact source                    | Required field(s)                                    | What Terraform does                                                                                                                                                                                       |
+| -------------- | ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LocalZip`     | Local ZIP file or source directory | `package_path`                                       | Uses the Lambda module's local packaging support. No shared source bucket is managed by this module.                                                                                                      |
+| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` is provided, Terraform uses the existing S3 object directly. |
+| `Image`        | Container image in ECR             | **Either** `ecr_image_uri` **or** `package_path`     | If `ecr_image_uri` is provided, Terraform uses the existing image. If `package_path` is provided, Terraform builds and pushes an image to ECR and deploys it.                                             |
+
+
+`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one.
+
+**Development / local build** (build artifacts locally before running `terraform apply`):
+
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.4.0"
+  version = "0.6.0"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -296,6 +311,52 @@ module "serverless_agents" {
 }
 ```
 
+**Production: external artifact sources (S3 / ECR)**
+
+Build and push artifacts in CI/CD, then point Terraform at them so `terraform apply` contains no local build step:
+
+```hcl
+  request_handler = {
+    module_name      = "rqst-hdlr"
+    function_name    = "request-handler"
+    handler_path     = "lambda_request_handler.handler"
+    package_type     = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_request_handler.zip"
+    }
+    timeout     = 45
+    memory_size = 256
+    environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+  }
+
+  agent_runner = {
+    module_name   = "agent-runner"
+    function_name = "agent-runner"
+    handler_path  = "lambda_agent_runner.handler"
+    package_type  = "Image"
+    ecr_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+    timeout       = 45
+    memory_size   = 512
+    environment_variables = { OPENAI_API_KEY = var.openai_api_key }
+  }
+
+  response_handler = {
+    module_name      = "response-handler"
+    function_name    = "response-handler"
+    handler_path     = "lambda_response_handler.handler"
+    package_type     = "S3Zip"
+    lambda_package_s3 = {
+      bucket = "my-lambda-packages-bucket"
+      key    = "dist_response_handler.zip"
+    }
+    timeout     = 45
+    memory_size = 256
+  }
+```
+
+See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example of this pattern.
+
 **Queue mode `config.yaml`** (bundled into every Lambda package — `execution.mode`, queue URLs, table names, and `max_receive_count` are all injected automatically by Terraform as environment variables; only set values that are NOT injected):
 
 ```yaml
@@ -317,7 +378,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.4.0"  # include 'redis' if using Redis session/response store
+  "agentkernel[openai,api,aws]>=0.6.0"  # include 'redis' if using Redis session/response store
 ]
 ```
 
@@ -330,7 +391,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.4.0"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -474,11 +535,69 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.4.0"
+  "agentkernel[openai,api,aws,redis,auth]>=0.6.0"
 ]
 ```
 
-### D) API Gateway Custom Authorizer (AWS)
+### D) WebSocket Token Streaming (`stream`)
+
+Use this when the client should receive each generated token as soon as it is produced, instead of waiting for the full response.
+
+Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `response_handler`, `ws_connection_handler`, `ws_routes`) — only `execution_mode` changes:
+
+```hcl
+module "serverless_agents" {
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.6.0"
+
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  region               = var.region
+  product_display_name = "AK Streaming WebSocket Example"
+
+  queue_mode     = true
+  execution_mode = "stream"
+
+  create_redis_cluster           = true
+  # create_redis_response_store and create_dynamodb_response_store must stay false/unset:
+  # WebSocket modes (async/stream) push responses over the connection and Terraform
+  # validation fails if a response store is enabled for them.
+
+  request_handler       = { ... } # same shape as async mode
+  agent_runner          = { ... } # runs ServerlessStreamAgentRunner, streams chunks to output queue
+  response_handler      = { ... } # broadcasts each chunk as a STREAM_CHUNK message
+  ws_connection_handler = { ... }
+  ws_routes             = [ { route = "app" }, { route = "app_info" } ]
+}
+```
+
+**`config.yaml`** — the only required setting beyond WebSocket async mode is the execution mode itself:
+
+```yaml
+execution:
+  mode: stream
+```
+
+This selects `ServerlessStreamAgentRunner` automatically at import time (queue mode) — no code change needed in the agent runner Lambda beyond the standard `Lambda.handler` entrypoint.
+
+**Message format** — clients receive a sequence of `STREAM_CHUNK` messages instead of one `CHAT_RESPONSE`:
+
+```json
+{"type": "STREAM_CHUNK", "delta": "Hello", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": "!", "done": true, "session_id": "user-1"}
+```
+
+On an unrecoverable error, the final chunk carries `error` instead of `delta`, with `done: true`.
+
+- Queue disabled (`queue_mode = false`): the request handler Lambda streams tokens directly to the WebSocket client without SQS.
+- `create_redis_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
+- See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
+
+**Containerized / direct streaming (no Terraform WebSocket setup)**: any REST deployment (AWS containerized, Azure, GCP, or local) can enable SSE token streaming by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode.
+
+### E) API Gateway Custom Authorizer (AWS)
 
 If the user needs token verification, include `authorizer` block:
 
@@ -513,10 +632,12 @@ if __name__ == "__main__":
 
 ### Terraform Example
 
+**Local build (development)** — `package_path` points to the Docker build context:
+
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.4.0"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -536,6 +657,35 @@ module "containerized_agents" {
 }
 ```
 
+**Production: pre-built ECR image** — set `ecr_image_uri` instead of `package_path`. Terraform skips the local Docker build and deploys the specified image directly:
+
+```hcl
+module "containerized_agents" {
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.6.0"
+
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  ecr_image_uri        = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-app:v1.2.3"
+  region               = var.region
+  product_display_name = "AK ECS Deployment"
+
+  ecs_container_port = 8000
+  ecs_desired_count  = 2
+
+  create_dynamodb_memory_table = true
+
+  environment_variables = {
+    OPENAI_API_KEY = var.openai_api_key
+  }
+}
+```
+
+`package_path` and `ecr_image_uri` are mutually exclusive; exactly one must be set.
+
+See [examples/aws-containerized/openai-dynamodb](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb) for a complete example using an external ECR image.
+
 ## Azure Serverless (Functions + APIM)
 
 ### Agent Code Pattern
@@ -554,7 +704,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.4.0"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -598,7 +748,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.4.0"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -641,7 +791,8 @@ def main() -> None:
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -669,7 +820,8 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source = "../../ak-deployment/ak-gcp/serverless"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region
@@ -694,8 +846,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.4.0"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.4.0"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.6.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.6.0"  # for Redis sessions
 ]
 ```
 
@@ -719,7 +871,8 @@ def main() -> None:
 
 ```hcl
 module "containerized_agent" {
-  source = "../../ak-deployment/ak-gcp/containerized"
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.2.14"
 
   project_id           = var.project_id
   region               = var.region

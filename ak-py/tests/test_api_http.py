@@ -302,7 +302,7 @@ class TestRESTAPIIntegration:
 
         # Test that app was created successfully
         assert isinstance(app, FastAPI)
-        route_paths = [route.path for route in app.routes]
+        route_paths = [route.path for route in app.routes if hasattr(route, "path")]
         assert "/health" in route_paths
         assert len(RESTAPI._auth_token_validators) == 1
         assert RESTAPI._auth_token_validators[0].dependency is not None
@@ -327,6 +327,7 @@ class TestRESTAPIIntegration:
 
         # Add custom router
         RESTAPI._custom_routers.clear()
+        RESTAPI._auth_token_validators.clear()
         RESTAPI.add(custom_router)
 
         # Run the RESTAPI (this won't start server due to mock)
@@ -338,11 +339,26 @@ class TestRESTAPIIntegration:
         # Get the app that was passed to uvicorn.run
         app = mock_uvicorn.call_args[1]["app"]
 
-        # Test the routes
-        route_paths = [route.path for route in app.routes]
+        # Test the routes — Starlette 1.3+ uses _IncludedRouter objects for
+        # routers added after app construction, so collect paths from both
+        # direct routes and included routers.
+        def collect_paths(routes, prefix=""):
+            paths = []
+            for route in routes:
+                if hasattr(route, "path"):
+                    paths.append(prefix + route.path)
+                elif hasattr(route, "include_context") and hasattr(route, "original_router"):
+                    ctx_prefix = getattr(route.include_context, "prefix", "")
+                    paths.extend(collect_paths(route.original_router.routes, prefix + ctx_prefix))
+            return paths
+
+        route_paths = collect_paths(app.routes)
         assert "/health" in route_paths
-        assert "/custom/test" in route_paths
-        assert "/test" not in route_paths
+        client = TestClient(app)
+        response = client.get("/custom/test")
+        assert response.status_code == 200
+        assert response.json() == {"message": "custom test"}
+        assert client.get("/test").status_code == 404
 
     def test_logging_configuration(self):
         """Test that logging is properly configured."""

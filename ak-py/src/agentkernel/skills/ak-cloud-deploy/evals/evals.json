@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
   "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill with sync/async and scalable modes",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -62,6 +62,23 @@
         "ws_routes",
         "queue_mode = true",
         "yaalalabs/ak-serverless/aws"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-websocket-stream",
+      "name": "Deploy to AWS Lambda stream websocket mode",
+      "input": "Deploy to AWS Lambda with WebSocket token streaming",
+      "expected_outputs": [
+        "execution_mode = \"stream\"",
+        "ws_connection_handler",
+        "ws_routes",
+        "queue_mode = true",
+        "yaalalabs/ak-serverless/aws",
+        "STREAM_CHUNK"
+      ],
+      "must_not_contain": [
+        "create_redis_response_store = true",
+        "create_dynamodb_response_store = true"
       ]
     },
     {

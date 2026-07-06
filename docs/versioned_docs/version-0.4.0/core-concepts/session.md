@@ -149,7 +149,7 @@ export AK_SESSION__TYPE=in_memory
 - Non-critical data
 - Single-instance deployments
 
-### Redis Storage (AWS & Azure)
+### Redis Storage (AWS & Azure) {#redis-storage}
 
 Persistent, high-performance storage for production deployments on both AWS and Azure:
 
@@ -219,7 +219,7 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 
 **Note**: Agent Kernel's Terraform modules automatically create the required DynamoDB table with proper configuration.
 
-### Cosmos DB Storage
+### Cosmos DB Storage {#cosmosdb-storage}
 
 Serverless, fully-managed storage for Azure deployments:
 

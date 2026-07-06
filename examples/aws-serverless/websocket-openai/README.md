@@ -47,7 +47,7 @@ Terraform variables are declared in `deploy/variables.tf`:
 - `env_alias`
 - `module_name`
 - `is_production`
-- `openai_api_key` (sensitive)
+- `openai_api_key`
 
 Provide values via `terraform.tfvars` (recommended) or via `-var` flags.
 

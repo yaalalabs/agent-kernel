@@ -1,10 +1,10 @@
 # Terms of Use
 
-**Last Updated: October 22, 2025**
+**Last Updated: June 17, 2026**
 
 ## Acceptance of Terms
 
-By accessing and using the Agent Kernel documentation website ("the Site"), you accept and agree to be bound by the terms and provision of this agreement.
+By accessing and using the Agent Kernel documentation website ("the Site"), you accept and agree to be bound by the terms and provisions of this agreement. **Note:** Acceptance of these Terms does not constitute consent to the use of analytics cookies. Cookie consent is obtained separately via the consent banner displayed on your first visit, in accordance with our [Cookie Policy](/cookie-policy).
 
 ## Use of Documentation
 
@@ -50,6 +50,10 @@ IN NO EVENT SHALL YAALA LABS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CO
 - Any unauthorized access to or use of the Site
 - Any errors or omissions in the documentation
 
+## Analytics and Cookies
+
+This Site uses Google Analytics 4 to collect anonymized usage statistics. Analytics cookies are only placed with your explicit consent via the cookie consent banner displayed on your first visit. You may withdraw consent at any time. For full details, see our [Cookie Policy](/cookie-policy) and [Privacy Policy](/privacy-policy).
+
 ## External Links
 
 The Site may contain links to third-party websites or services (such as GitHub, PyPI, Terraform Registry, etc.) that are not owned or controlled by Yaala Labs. We have no control over, and assume no responsibility for, the content, privacy policies, or practices of any third-party sites or services.
@@ -80,4 +84,4 @@ If any provision of these Terms of Use is found to be unenforceable or invalid, 
 
 ---
 
-*These Terms of Use were last updated on October 22, 2025.*
+*These Terms of Use were last updated on June 17, 2026.*

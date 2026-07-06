@@ -31,7 +31,7 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 
 ```hcl
 module "python_api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -90,7 +90,7 @@ output "function_app_url" {
 
 ```hcl
 module "nodejs_api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -133,7 +133,7 @@ module "nodejs_api" {
 
 ```hcl
 module "serverless_api_redis" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -176,7 +176,7 @@ module "serverless_api_redis" {
 
 ```hcl
 module "serverless_api_cosmosdb" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -225,7 +225,7 @@ module "serverless_api_cosmosdb" {
 
 ```hcl
 module "production_api" {
-  source = "../serverless"
+  source = "yaalalabs/ak-serverless/azurerm"
 
   region               = "centralus"
   resource_group_name  = "enterprise-prod-rg"

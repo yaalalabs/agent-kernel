@@ -157,7 +157,7 @@ OpenAIModule([agent]).pre_hook(agent, [
 
 **Flow:** User Input → RAG → Guard Rails → Agent → Moderation → Disclaimer → Final Response
 
-If any pre-hook returns an `AgentReply` (like guard rails blocking a request), execution **stops immediately** - the agent never sees the prompt.
+If any pre-hook returns an `AgentReply` (like guardrails blocking a request), execution **stops immediately** - the agent never sees the prompt.
 
 ## Smart Memory: The Right Persistence at the Right Time
 
@@ -364,7 +364,7 @@ Your hook enriches the prompt before the agent sees it. Magic! ✨
 ## Learn More
 
 **Examples:**
-- 🎯 [Hooks Example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks) - Guard rails, RAG, and disclaimers
+- 🎯 [Hooks Example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks) - Guardrails, RAG, and disclaimers
 - 💾 [Memory Example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/key-value-cache) - Volatile and non-volatile cache
 - ☁️ [Redis/DynamoDB Examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory) - Production memory backends
 
