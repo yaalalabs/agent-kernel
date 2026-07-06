@@ -58,7 +58,7 @@ The `deploy/deploy.sh` script builds the Docker image, pushes it to ECR, and the
 If you prefer to have Terraform build the image locally instead of using a pre-built ECR image, you can:
 
 1. Set `ecr_image_uri = null` in `terraform.tfvars`
-2. Set `package_path = "../dist"` in `deploy/main.tf`
+2. Remove the `image_uri` line from the `rest_service` block in `deploy/main.tf` (keep `package_path = "../dist"`)
 3. The module will build and push the image from the local source during `terraform apply`
 
 However, the default approach (using an external ECR image) is recommended for production deployments as it provides better control over the build and versioning process.
