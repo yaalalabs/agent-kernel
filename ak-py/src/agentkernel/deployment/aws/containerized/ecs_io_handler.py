@@ -41,12 +41,13 @@ class ECSIOHandler:
                         handlers=[ECSQueueRequestHandler()]
                     ),  # lambda needed here to wrap the function so that it turns into a callable, because otherwise the rest api will be run here itself
                     thread_name="rest-api",
+                    stop_all_on_failure=True,
+                    graceful=True
                 ),
                 ThreadRunner.Task(
                     execution_function=lambda: ECSOutputConsumer.run(),
                     thread_name="output-queue-consumer",
                     stop_all_on_failure=True,
-                    graceful=True,
                 ),
             ],
             max_workers=2,
