@@ -139,8 +139,12 @@ is really `no_of_consumers` output-queue-polling threads, and the Agent Runner
 container runs `no_of_consumers` input-queue-polling threads — not a single loop.
 `num_consumers` defaults to 5 and is configured per-queue via
 `execution.queues.input.no_of_consumers` / `execution.queues.output.no_of_consumers`
-(ECS only — ignored by Lambda). If any consumer thread crashes, `ThreadRunner` calls
-`os._exit(1)` so ECS restarts the whole task.
+(ECS only — ignored by Lambda). If any consumer thread crashes, `ThreadRunner` triggers a
+graceful shutdown: it sets a shared `shutdown_event`, waits for the sibling consumer
+threads in that same pool to finish their current poll/message and return, then calls
+`os._exit(1)` so ECS restarts the whole task. The REST API thread does not check
+`shutdown_event` — it is simply terminated along with everything else the moment
+`os._exit(1)` fires.
 
 ### Python Class Hierarchy
 
@@ -152,7 +156,7 @@ container runs `no_of_consumers` input-queue-polling threads — not a single lo
 | `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Input Queue, running the agent, sending to Output Queue |
 | `ECSSQSConsumer` | both | Extends `QueueConsumer`; spins up `num_consumers` poll-loop threads via `ThreadRunner`; each thread does its own long-poll/retry/permanent-failure handling |
 | `QueueConsumer` | shared (Lambda + ECS) | Abstract base declaring `poll`, `process_message`, `on_permanent_failure`, `delete_message` — also the base of `LambdaSQSConsumer` (the Lambda-side equivalent, which leaves `poll`/`delete_message` unimplemented since the SQS Event Source Mapping handles those for Lambda) |
-| `ThreadRunner` | both | Runs N callables as peer threads; calls `os._exit(1)` if any thread crashes |
+| `ThreadRunner` | both | Runs N callables as peer threads; on a crash it either exits immediately or, if the failing task opts into `graceful=True` (the SQS consumer pools do), sets a shared `shutdown_event` and waits for sibling tasks in that same `run()` call to finish before calling `os._exit(1)` |
 
 ### Request Flow — REST Sync
 
@@ -277,7 +281,7 @@ this automatically. See the [AWS Containerized deployment docs](/docs/deployment
 | Partial failure | `batchItemFailures` return value | Failed messages not deleted — visibility timeout retries |
 | Scaling | Automatic, 1 Lambda per batch | `backlog-per-task` target tracking policy |
 | Response Handler | Separate Lambda triggered by Output Queue ESM | `ECSOutputConsumer` (Thread 2 in IO container) |
-| Crash recovery | Lambda restarts automatically | `ThreadRunner` calls `os._exit(1)` → ECS restarts the task |
+| Crash recovery | Lambda restarts automatically | `ThreadRunner` drains sibling consumer threads gracefully, then calls `os._exit(1)` → ECS restarts the task |
 
 ---
 

@@ -46,6 +46,7 @@ class ECSIOHandler:
                     execution_function=lambda: ECSOutputConsumer.run(),
                     thread_name="output-queue-consumer",
                     stop_all_on_failure=True,
+                    graceful=True,
                 ),
             ],
             max_workers=2,

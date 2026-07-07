@@ -18,22 +18,27 @@ class ThreadRunner:
     idle until every task in the batch — including any that never finish — has completed.
     """
 
-    @dataclass
+    shutdown_event: threading.Event = threading.Event()
+
+    @dataclass(eq=False)
     class Task:
         execution_function: Callable
         thread_name: str
         item: Any = None
         stop_task_on_failure: bool = True
         stop_all_on_failure: bool = False
+        graceful: bool = False
 
         def __post_init__(self) -> None:
             if self.stop_all_on_failure and not self.stop_task_on_failure:
                 raise ValueError("stop_all_on_failure=True requires stop_task_on_failure=True")
+            if self.graceful and not self.stop_all_on_failure:
+                raise ValueError("graceful=True requires stop_all_on_failure=True")
 
     @staticmethod
-    def run(tasks: list[Task], max_workers: int | None = None) -> None:
+    def run(tasks: list[Task], max_workers: int | None = None) -> dict[Task, Any]:
         if not tasks:
-            return
+            return {}
 
         semaphore = threading.Semaphore(max_workers or len(tasks))
         completions: Queue = Queue()  # Thread-safe mailbox every worker thread reports its completion to.
@@ -42,11 +47,11 @@ class ThreadRunner:
             args = () if task.item is None else (task.item,)
             with semaphore:
                 try:
-                    task.execution_function(*args)
+                    result = task.execution_function(*args)
                 except Exception as exc:
-                    completions.put((task, exc))
+                    completions.put((task, None, exc))
                 else:
-                    completions.put((task, None))
+                    completions.put((task, result, None))
             # the thread ends itself once execution_function returns (or raises), and Python/the OS reclaim it.
 
         # daemon=True: without this, the interpreter would wait for every non-daemon thread before
@@ -55,18 +60,30 @@ class ThreadRunner:
         for thread in threads:
             thread.start()
 
+        results: dict[ThreadRunner.Task, Any] = {}
         for _ in tasks:
-            task, exc = (
+            task, result, exc = (
                 completions.get()
             )  # Pulling from a shared queue exactly len(tasks) times yields tasks in true completion order (whichever finishes first is handled first)
             if exc is not None:
                 if task.stop_task_on_failure:
                     _log.exception(f"[{task.thread_name}] raised unexpectedly", exc_info=exc)
                     if task.stop_all_on_failure:
-                        _log.debug(f"[{task.thread_name}] stopping all processes")
-                        logging.shutdown()
-                        os._exit(1)
+                        if task.graceful:
+                            _log.debug(f"[{task.thread_name}] gracefully stopping all")
+                            ThreadRunner.shutdown_event.set()
+                        else:
+                            _log.debug(f"[{task.thread_name}] stopping all processes")
+                            logging.shutdown()
+                            os._exit(1)
                 else:
                     _log.debug(f"[{task.thread_name}] raised (stop_task_on_failure=False, ignoring)")
             else:
+                results[task] = result
                 _log.debug(f"[{task.thread_name}] completed")
+
+        if ThreadRunner.shutdown_event.is_set():
+            logging.shutdown()
+            os._exit(1)
+
+        return results

@@ -6,6 +6,16 @@ import pytest
 from agentkernel.deployment.common.thread_runner import ThreadRunner
 
 
+@pytest.fixture(autouse=True)
+def _reset_shutdown_event():
+    """shutdown_event is a class-level singleton — any test that sets it (e.g. a
+    graceful=True case) would otherwise leave every later test in the session
+    seeing it set, silently triggering their own (real, unmocked) os._exit(1)."""
+    ThreadRunner.shutdown_event.clear()
+    yield
+    ThreadRunner.shutdown_event.clear()
+
+
 class TestTaskValidation:
     def test_stop_all_on_failure_requires_stop_task_on_failure(self):
         with pytest.raises(ValueError):

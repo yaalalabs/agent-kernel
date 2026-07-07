@@ -131,7 +131,7 @@ class ECSSQSConsumer(QueueConsumer):
 
     @classmethod
     def _consumer_loop(cls) -> None:
-        while True:
+        while not ThreadRunner.shutdown_event.is_set():
             try:
                 messages = cls.poll()
             except Exception:
@@ -165,6 +165,7 @@ class ECSSQSConsumer(QueueConsumer):
                     execution_function=cls._consumer_loop,
                     thread_name=f"sqs-consumer-{i}",
                     stop_all_on_failure=True,
+                    graceful=True,
                 )
                 for i in range(num_consumers)
             ],

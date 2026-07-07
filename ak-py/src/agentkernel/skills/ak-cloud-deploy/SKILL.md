@@ -772,8 +772,8 @@ dependencies = [
 
 **Key rules:**
 - Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py` only — never in `app_rest_service.py`.
-- `ECSIOHandler` starts two threads via `ThreadRunner`; if either thread crashes, the container exits (`os._exit(1)`) so ECS can restart it.
-- `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` — extend either class to customise message processing.
+- `ECSIOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
+- `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` (itself a `QueueConsumer` — the same base `LambdaSQSConsumer` extends) — extend either class to customise message processing.
 
 ## Azure Serverless (Functions + APIM)
 

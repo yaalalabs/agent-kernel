@@ -66,7 +66,10 @@ graph TB
 - **Thread 1** — `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`: FastAPI/uvicorn. Handles `POST /api/v1/chat` (enqueues to Input Queue, then either waits on DynamoDB or returns a `request_id`) and `GET /api/v1/chat/{session_id}` (polls DynamoDB for the result).
 - **Thread 2** — `ECSOutputConsumer.run()`: polls the Output Queue and writes results to DynamoDB (REST modes) or broadcasts via WebSocket. Internally this "thread" is actually `execution.queues.output.no_of_consumers` (default 5) independent long-poll threads, so multiple output messages are processed concurrently.
 
-If any thread crashes, `ThreadRunner` calls `os._exit(1)` so ECS restarts the task cleanly.
+If any thread crashes, `ThreadRunner` triggers a graceful shutdown: the output-consumer pool
+finishes in-flight messages first (it cooperates via a shared `shutdown_event`), then
+`os._exit(1)` is called so ECS restarts the task cleanly. The REST API thread doesn't check
+`shutdown_event` and is simply terminated at that point along with everything else.
 
 **Entrypoint — `app_rest_service.py`** (no agent definitions):
 
@@ -81,7 +84,7 @@ if __name__ == "__main__":
 
 ### Container 2 — Agent Runner (`ECSAgentRunner`)
 
-Extends `ECSSQSConsumer`: runs `execution.queues.input.no_of_consumers` (default 5) independent threads, each polling the Input Queue in a blocking loop, executing the agent, and putting the result on the Output Queue.
+Extends `ECSSQSConsumer` (which in turn extends the shared `QueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default 5) independent threads, each polling the Input Queue in a blocking loop, executing the agent, and putting the result on the Output Queue.
 
 **Entrypoint — `app_agent_runner.py`**:
 

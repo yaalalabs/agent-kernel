@@ -69,7 +69,7 @@ websocket_api:
     ttl: 3600  # Connection TTL in seconds for automatic cleanup
   chat_route: "chat"  # Default route for chat messages
 
-# Execution configuration (for AWS serverless deployments)
+# Execution configuration (for AWS serverless and containerized deployments)
 execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
   queues:
@@ -672,7 +672,7 @@ guardrail:
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
-# Execution configuration (for AWS serverless deployments)
+# Execution configuration (for AWS serverless and containerized deployments)
 execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
   queues:                       # Queue URLs for queue-based execution
