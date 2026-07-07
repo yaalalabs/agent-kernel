@@ -71,9 +71,15 @@ def yaml_config_settings_source(settings: "YamlBaseSettingsModified") -> Dict[st
 
     if secrets_dir is not None:
         secrets_path = Path(secrets_dir)
-        return yaml.safe_load(replace_secrets(secrets_path, path.read_text("utf-8")))
+        data = yaml.safe_load(replace_secrets(secrets_path, path.read_text("utf-8")))
+    else:
+        data = yaml.safe_load(path.read_text("utf-8"))
 
-    return yaml.safe_load(path.read_text("utf-8")) or {}
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise TypeError(f"YAML settings file must contain a mapping at the top level: {path}")
+    return data
 
 
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
