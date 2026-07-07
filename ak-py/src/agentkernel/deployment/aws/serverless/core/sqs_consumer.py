@@ -1,14 +1,20 @@
 import logging
 import traceback
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Dict, List
 
+from ....common import QueueConsumer
 
-class LambdaSQSConsumer(ABC):
+
+class LambdaSQSConsumer(QueueConsumer):
     """
     Base class for AWS Lambda consumers triggered by an SQS Event Source Mapping.
 
     Subclasses should override `process_message` to implement business logic.
+
+    Lambda is push-triggered: the Event Source Mapping polls SQS and deletes
+    successfully-processed messages on our behalf, so `poll` and `delete_message`
+    have no role to play here and are intentionally left unimplemented.
     """
 
     max_receive_count: int = 3  # Fallback value, actual configurable values are defined in the subclasses

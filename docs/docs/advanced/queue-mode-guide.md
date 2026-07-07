@@ -150,7 +150,8 @@ container runs `no_of_consumers` input-queue-polling threads — not a single lo
 | `ECSQueueRequestHandler` | IO container / Thread 1 | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{id}` polls |
 | `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Output Queue → DynamoDB / WebSocket |
 | `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Input Queue, running the agent, sending to Output Queue |
-| `ECSSQSConsumer` | both | Abstract base: spins up `num_consumers` poll-loop threads via `ThreadRunner`; each thread does its own long-poll/retry/permanent-failure handling |
+| `ECSSQSConsumer` | both | Extends `QueueConsumer`; spins up `num_consumers` poll-loop threads via `ThreadRunner`; each thread does its own long-poll/retry/permanent-failure handling |
+| `QueueConsumer` | shared (Lambda + ECS) | Abstract base declaring `poll`, `process_message`, `on_permanent_failure`, `delete_message` — also the base of `LambdaSQSConsumer` (the Lambda-side equivalent, which leaves `poll`/`delete_message` unimplemented since the SQS Event Source Mapping handles those for Lambda) |
 | `ThreadRunner` | both | Runs N callables as peer threads; calls `os._exit(1)` if any thread crashes |
 
 ### Request Flow — REST Sync

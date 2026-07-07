@@ -2,16 +2,16 @@ import asyncio
 import inspect
 import logging
 import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, Dict
 
 import boto3
 
 from .....core.config import AKConfig
-from ....common import ThreadRunner
+from ....common import QueueConsumer, ThreadRunner
 
 
-class ECSSQSConsumer(ABC):
+class ECSSQSConsumer(QueueConsumer):
     """
     Base class for ECS services that consume SQS queues via manual long-polling.
 
