@@ -319,6 +319,7 @@ Each `ThreadRunner.Task` has:
 - `stop_task_on_failure` (default `True`) — log and ignore vs. log only, on that task's own exception.
 - `stop_all_on_failure` (default `False`) — also bring down the whole `run()` call on that task's failure. Requires `stop_task_on_failure=True`.
 - `graceful` (default `False`) — only meaningful with `stop_all_on_failure=True`. Requires it, or raises `ValueError`.
+- `awaited_on_shutdown` (default `True`) — whether `run()`'s drain loop waits for this task to report a completion before proceeding. Set `False` for a task that can never observe `shutdown_event` and has no other way to be told to stop (e.g. a blocking call like `uvicorn.run()`) — otherwise a `graceful=True` failure elsewhere in the same `run()` call hangs forever waiting for it. Every thread's completion still lands on the shared queue regardless of this flag; `run()` just doesn't count that task toward "everyone's reported in."
 
 On a task raising with `stop_all_on_failure=True`:
 - `graceful=False` → logs the exception, `logging.shutdown()` + `os._exit(1)` **immediately**, without waiting on other tasks.
@@ -359,15 +360,16 @@ Guidance:
 - A task with a `while` loop that should participate in a graceful shutdown **must** check
   `ThreadRunner.shutdown_event.is_set()` (or `.wait(timeout)` for a sleep/backoff) once per
   iteration before setting `graceful=True` on it — `graceful=True` on a task that never checks the
-  event just makes that `run()` call hang forever waiting for it to return (see "No hard timeout
-  on graceful drain" caveat below).
+  event just makes that `run()` call hang forever waiting for it to return, *unless* that task is
+  also marked `awaited_on_shutdown=False` (see below).
 - `stop_all_on_failure=True` always requires `stop_task_on_failure=True` (the default), and
   `graceful=True` always requires `stop_all_on_failure=True` — both raise `ValueError` in
   `Task.__post_init__` if violated.
 - Only set `graceful=True` on tasks in a `run()` call where every *other* task in that same call is
-  either similarly cooperative or expected to be killed abruptly anyway — e.g. `ECSIOHandler`
-  deliberately leaves its `rest-api` task non-cooperative (it never checks `shutdown_event`),
-  accepting that it's simply cut off whenever `os._exit(1)` eventually fires.
+  either similarly cooperative, or marked `awaited_on_shutdown=False` — e.g. `ECSIOHandler`
+  deliberately marks its `rest-api` task (`uvicorn.run()`, which never checks `shutdown_event` and
+  can only be stopped by an OS signal) as `awaited_on_shutdown=False`, so the drain loop doesn't
+  wait on it and it's simply cut off whenever `os._exit(1)` eventually fires.
 - `ThreadRunner.shutdown_event` is a **process-wide singleton**, not scoped to one `run()` call —
   once any call sets it, every other `run()` call in the process sees it set too, and will
   `os._exit(1)` once its own tasks finish draining. This is deliberate (a fatal failure anywhere
@@ -375,9 +377,10 @@ Guidance:
   (`ThreadRunner.shutdown_event.clear()`), or a graceful-path test will leave every later test in
   the same run silently triggering a real `os._exit(1)`. See the `autouse` fixture in
   `ak-py/tests/test_thread_runner.py`.
-- No hard timeout on graceful drain: if a task in the *same batch* as the failure never checks
-  `shutdown_event` and never naturally returns, that `run()` call's drain loop — and therefore its
-  `os._exit(1)` — never fires.
+- No hard timeout on graceful drain: if a task in the *same batch* as the failure is
+  `awaited_on_shutdown=True` (the default) but never checks `shutdown_event` and never naturally
+  returns, that `run()` call's drain loop — and therefore its `os._exit(1)` — never fires. Mark such
+  a task `awaited_on_shutdown=False` to opt it out of the drain instead.
 
 ### Entry Point Pattern
 
