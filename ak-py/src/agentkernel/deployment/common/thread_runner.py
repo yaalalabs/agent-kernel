@@ -28,6 +28,7 @@ class ThreadRunner:
         stop_task_on_failure: bool = True
         stop_all_on_failure: bool = False
         graceful: bool = False
+        awaited_on_shutdown: bool = True
 
         def __post_init__(self) -> None:
             if self.stop_all_on_failure and not self.stop_task_on_failure:
@@ -61,10 +62,9 @@ class ThreadRunner:
             thread.start()
 
         results: dict[ThreadRunner.Task, Any] = {}
-        for _ in tasks:
-            task, result, exc = (
-                completions.get()
-            )  # Pulling from a shared queue exactly len(tasks) times yields tasks in true completion order (whichever finishes first is handled first)
+        pending = {task for task in tasks if task.awaited_on_shutdown}
+        while pending:
+            task, result, exc = completions.get()  # blocks until the next task (in true completion order) reports in
             if exc is not None:
                 if task.stop_task_on_failure:
                     _log.exception(f"[{task.thread_name}] raised unexpectedly", exc_info=exc)
@@ -81,6 +81,7 @@ class ThreadRunner:
             else:
                 results[task] = result
                 _log.debug(f"[{task.thread_name}] completed")
+            pending.discard(task)
 
         if ThreadRunner.shutdown_event.is_set():
             logging.shutdown()

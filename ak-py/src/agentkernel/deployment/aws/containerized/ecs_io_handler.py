@@ -42,12 +42,16 @@ class ECSIOHandler:
                     ),  # lambda needed here to wrap the function so that it turns into a callable, because otherwise the rest api will be run here itself
                     thread_name="rest-api",
                     stop_all_on_failure=True,
-                    graceful=True
+                    graceful=True,
+                    # uvicorn.run() has no wiring to ThreadRunner.shutdown_event — it can only be
+                    # stopped by an OS signal, so it can never report a completion in response to
+                    # a graceful shutdown triggered by the other task. Don't require one.
+                    awaited_on_shutdown=False,
                 ),
                 ThreadRunner.Task(
                     execution_function=lambda: ECSOutputConsumer.run(),
                     thread_name="output-queue-consumer",
-                    stop_all_on_failure=True,
+                    stop_all_on_failure=True
                 ),
             ],
             max_workers=2,

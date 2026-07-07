@@ -157,6 +157,8 @@ class ECSSQSConsumer(QueueConsumer):
             raise ValueError(f"{cls.__name__}: queue URL is required")
 
         num_consumers = cls.num_consumers
+        if num_consumers < 1:
+            raise ValueError(f"{cls.__name__}: num_consumers must be >= 1, got {num_consumers}")
         cls._log.info(f"{cls.__name__} starting — queue: {queue_url}, consumers: {num_consumers}")
 
         ThreadRunner.run(

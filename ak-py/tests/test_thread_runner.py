@@ -171,6 +171,52 @@ class TestRun:
         never_finishes.set()
         runner_thread.join(timeout=5)
 
+    def test_graceful_failure_does_not_hang_on_unstoppable_sibling(self, monkeypatch):
+        """A graceful=True failure must still reach the final os._exit(1), even when the
+        sibling task can never report a completion (e.g. a blocking call like uvicorn.run()
+        with no wiring to shutdown_event) — that sibling must be awaited_on_shutdown=False."""
+        exit_called = threading.Event()
+        exit_code = {}
+
+        def fake_exit(code):
+            exit_code["code"] = code
+            exit_called.set()
+
+        monkeypatch.setattr("agentkernel.deployment.common.thread_runner.os._exit", fake_exit)
+
+        never_finishes = threading.Event()
+
+        def unstoppable_fn():
+            never_finishes.wait(timeout=10)  # never checks shutdown_event — can't be told to stop
+
+        def crashing_fn():
+            time.sleep(0.05)
+            raise RuntimeError("boom")
+
+        tasks = [
+            ThreadRunner.Task(
+                execution_function=unstoppable_fn,
+                thread_name="unstoppable",
+                awaited_on_shutdown=False,
+            ),
+            ThreadRunner.Task(
+                execution_function=crashing_fn,
+                thread_name="crasher",
+                stop_task_on_failure=True,
+                stop_all_on_failure=True,
+                graceful=True,
+            ),
+        ]
+
+        runner_thread = threading.Thread(target=ThreadRunner.run, args=(tasks,))
+        runner_thread.start()
+
+        assert exit_called.wait(timeout=5), "graceful shutdown never reached os._exit(1) — hung on the unstoppable sibling"
+        assert exit_code["code"] == 1
+
+        never_finishes.set()
+        runner_thread.join(timeout=5)
+
     def test_stop_task_on_failure_false_ignores_exception(self):
         def crashing_fn():
             raise RuntimeError("boom")
