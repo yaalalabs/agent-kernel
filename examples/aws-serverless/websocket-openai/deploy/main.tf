@@ -1,4 +1,3 @@
-# Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.6.0"
@@ -6,40 +5,39 @@ module "serverless_agents" {
   # Basic configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
-  function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
-  function_name        = "request-handler"
   module_name          = var.module_name
-  handler_path         = "lambda_request_handler.handler"
-  package_path         = "../dist_request_handler.zip"
-  package_type         = "LocalZip"
-  memory_size          = 256
-  timeout              = 45
-  product_display_name = "AK OpenAI Scalable Serverless Example"
+  product_display_name = "AK OpenAI WebSocket Serverless Example"
   region               = var.region
   is_production        = var.is_production
 
   # Execution mode - using for WebSocket processing
-  queue_mode = true # recommended for production
+  queue_mode     = true # recommended for production
   execution_mode = "async" # rest_sync, rest_async, or async
 
   # Memory DB Config
   create_redis_cluster = true
 
-  # Response Store Config 
-  # create_redis_response_store = true # if True, it will use the memory Redis cluster for response store or may create.
-  create_dynamodb_response_store = true
-
   # WS Custom Routes Configuration
   ws_routes = [
-    {route = "app"},
-    {route = "app_info"}
+    { route = "app" },
+    { route = "app_info" }
   ]
   # Override the default websocket chat route, default is "chat"
   # ws_chat_route = "chat-new"
 
-  # Environment variables for request handler
-  environment_variables = {
-    "OPENAI_API_KEY" = var.openai_api_key
+  # Request handler configuration
+  request_handler = {
+    module_name           = "rqst-hdlr"
+    function_name         = "rqh-func"
+    function_description  = "Agent Kernel OpenAI WebSocket Sample Lambda"
+    handler_path          = "lambda_request_handler.handler"
+    package_type          = "LocalZip"
+    package_path          = "../dist_request_handler.zip"
+    memory_size           = 256
+    timeout               = 45
+    environment_variables = {
+      "OPENAI_API_KEY" = var.openai_api_key
+    }
   }
 
   # Agent runner configuration

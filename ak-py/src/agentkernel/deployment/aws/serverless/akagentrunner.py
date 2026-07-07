@@ -3,7 +3,7 @@ import logging
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
-from ....core.model import BaseRunRequest, ExecutionMode
+from ....core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
 
@@ -34,7 +34,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
-        endpoint_url = message_attributes.get("endpoint_url") if cls._config.execution.mode == ExecutionMode.ASYNC else None
+        endpoint_url = message_attributes.get("endpoint_url") if cls._config.execution.mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) else None
 
         if not request_id:
             raise ValueError("request_id is required")
@@ -127,11 +127,153 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times. Sending error message to Output Queue`")
         try:
-            error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
             record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            error_message_body = cls._construct_error_message_body(error_msg=f"Failed to process message. Retried {cls.max_receive_count} times")
+            error_message_body["session_id"] = record_attributes["message_group_id"]
             cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
             cls._log.info(f"Sent Permanent Failure message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries
             # Catching the error here so that this message will not be returned as batchItemFailures for another retry.
             cls._log.info(f"Failed sending permanent failure message to Output Queue '{SQSHandler.get_output_queue_url()}' due to error: '{str(e)}'")
+
+
+class ServerlessStreamAgentRunner(LambdaSQSConsumer):
+    """
+    Lambda SQS consumer that processes chat requests in STREAM mode.
+
+    Each streaming chunk from the agent is sent as a separate message to the output SQS queue.
+    The ResponseHandler then broadcasts each chunk via WebSocket to the connected client.
+    """
+
+    _log = logging.getLogger("ak.aws.streamagentrunner")
+    _chat_service = None
+    _config = AKConfig.get()
+    max_receive_count: int = _config.execution.queues.input.max_receive_count
+
+    @classmethod
+    def _get_chat_service(cls) -> ChatService:
+        if cls._chat_service is None:
+            cls._chat_service = ChatService()
+        return cls._chat_service
+
+    @classmethod
+    def _get_record_attributes(cls, raw_queue_message: dict) -> dict:
+        """
+        Extract attributes from the raw SQS message record.
+
+        :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function
+        :return: Dictionary (``dict``) containing extracted attributes
+        :raises ValueError: If request_id or endpoint_url is missing
+        """
+        attributes = SQSHandler.get_message_system_attributes(raw_queue_message)
+        message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
+        request_id = message_attributes.get("request_id")
+        user_id = message_attributes.get("user_id")
+        endpoint_url = message_attributes.get("endpoint_url")
+
+        if not request_id:
+            raise ValueError("request_id is required")
+        if not endpoint_url:
+            raise ValueError("endpoint_url is required for STREAM mode")
+
+        record_attributes = {
+            "message_group_id": attributes["MessageGroupId"],
+            "message_deduplication_id": attributes.get("MessageDeduplicationId"),
+            "request_id": request_id,
+            "user_id": user_id,
+            "endpoint_url": endpoint_url,
+        }
+
+        cls._log.info(f"Extracted record attributes: {record_attributes}")
+        return record_attributes
+
+    @classmethod
+    def _parse_body(cls, record: dict) -> BaseRunRequest:
+        """
+        Parse the JSON body from an SQS record.
+
+        :param record: SQS record (``dict``) passed from the Lambda event.
+        :return: Parsed JSON body as ``BaseRunRequest`` from the record.
+        """
+        return BaseRunRequest.model_validate(json.loads(record["body"]))
+
+    @classmethod
+    def _send_chunk_to_output_queue(cls, chunk_body: dict, record_attributes: dict, chunk_dedup_suffix: str) -> None:
+        """
+        Send a single stream chunk to the output SQS queue.
+
+        :param chunk_body: StreamChunk payload (``dict``) to send
+        :param record_attributes: Extracted attributes (``dict``) from the original record
+        :param chunk_dedup_suffix: Suffix to make deduplication ID unique per chunk
+        :return: None
+        """
+        cls._log.debug(f"Sending stream chunk to output queue: {chunk_body}")
+
+        dedup_id = record_attributes.get("message_deduplication_id")
+        chunk_dedup_id = f"{dedup_id}-{chunk_dedup_suffix}" if dedup_id else None
+
+        custom_attributes = [
+            SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
+        ]
+
+        SQSHandler.send_message_to_output_queue(
+            message_group_id=record_attributes["message_group_id"],
+            message_deduplication_id=chunk_dedup_id,
+            message_body=chunk_body,
+            request_id=record_attributes["request_id"],
+            user_id=record_attributes["user_id"],
+            custom_message_attributes=custom_attributes,
+        )
+
+    @classmethod
+    def process_message(cls, record: dict) -> None:
+        """
+        Process a single SQS record in STREAM mode: invoke the chat service and send
+        each yielded chunk as a separate message to the output queue.
+
+        :param record: SQS record (``dict``) containing the chat request payload
+        :return: None
+        """
+        cls._log.info(f"Processing stream message: {record}")
+        body = cls._parse_body(record)
+        record_attributes = cls._get_record_attributes(raw_queue_message=record)
+
+        chunk_count = 0
+        for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body):
+            chunk_dict = json.loads(raw_chunk)
+            cls._send_chunk_to_output_queue(
+                chunk_body=chunk_dict,
+                record_attributes=record_attributes,
+                chunk_dedup_suffix=str(chunk_count),
+            )
+            chunk_count += 1
+        cls._log.info(f"Streamed {chunk_count} chunks to output queue for request_id: {record_attributes['request_id']}")
+
+    @classmethod
+    def on_permanent_failure(cls, record: dict) -> None:
+        """
+        Handle messages that have reached their maximum retry count by sending an error chunk to the output queue.
+
+        :param record: SQS record (``dict``) that failed processing after all retries
+        :return: None
+        """
+        cls._log.info(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times. Sending error chunk to Output Queue")
+        try:
+            record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            error_chunk = StreamChunk(
+                error=f"Failed to process message. Retried {cls.max_receive_count} times",
+                done=True,
+            )
+            error_chunk_body = error_chunk.model_dump(exclude_none=True)
+            error_chunk_body["session_id"] = record_attributes["message_group_id"]
+            cls._send_chunk_to_output_queue(
+                chunk_body=error_chunk_body,
+                record_attributes=record_attributes,
+                chunk_dedup_suffix="error",
+            )
+            cls._log.info(f"Sent Permanent Failure chunk to Output Queue: '{SQSHandler.get_output_queue_url()}'")
+        except Exception as e:
+            # Message comes to this function only if the message has reached its maximum no of retries
+            # Catching the error here so that this message will not be returned as batchItemFailures for another retry.
+            cls._log.info(f"Failed sending permanent failure chunk to Output Queue '{SQSHandler.get_output_queue_url()}' due to error: '{str(e)}'")

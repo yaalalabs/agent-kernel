@@ -17,7 +17,6 @@ create_request_handler_deployment_package() {
     popd || exit 1
 }
 
-# Create agent runner lambda deployment package
 echo "Creating agent runner deployment package..."
 create_agent_runner_deployment_package() {
     pushd ../
@@ -33,7 +32,6 @@ create_agent_runner_deployment_package() {
     popd || exit 1
     cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
 }
-
 
 echo "Creating response handler deployment package..."
 create_response_handler_deployment_package() {

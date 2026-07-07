@@ -49,6 +49,10 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_tool_adk.py` | Google ADK ToolBuilder |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
+| `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
+| `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |
+| `test_akresponsehandler.py` | Serverless response handler (`CHAT_RESPONSE` / `STREAM_CHUNK` broadcast) |
+| `test_ws_lambda_stream.py` | WebSocket Lambda router in `stream` mode |
 | `test_cli_tester.py` | CLI test framework |
 | `test_auth_handler.py` | Auth handler |
 | `test_akauthorizer.py` | AWS Lambda authorizer |
@@ -69,6 +73,13 @@ class DummyRunner(Runner):
     async def run(self, agent, session, requests):
         prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
         return AgentReplyText(text=f"ok:{prompt}")
+
+    async def stream(self, agent, session, requests):
+        # Runner.stream() is abstract — implement even in test doubles.
+        # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming,
+        # or yield token strings to test Runtime.stream() / AgentService.stream_multi().
+        raise NotImplementedError()
+        yield
 
 
 class DummyAgent(Agent):

@@ -23,20 +23,23 @@ locals {
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
 
-  request_handler_enabled              = var.enable_api_gateway
-  request_handler_lambda_function_name = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
-  request_handler_lambda_invoke_arn    = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
-  request_handler_lambda_role_arn      = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
+  request_handler_enabled               = var.enable_api_gateway
+  request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
+  request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
+  request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
 
-  websocket_api_enabled = var.enable_api_gateway && var.execution_mode == "async"
-  rest_api_enabled      = var.enable_api_gateway && var.execution_mode != "async"
+  is_websocket_mode = contains(["async", "stream"], var.execution_mode) # True for both "async" (full-response WS) and "stream" (chunk-per-message WS)
+  websocket_api_enabled                  = var.enable_api_gateway && local.is_websocket_mode
+  rest_api_enabled                       = var.enable_api_gateway && !local.is_websocket_mode
 
-  create_authorizer             = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  create_authorizer                     = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
   authorizer_status_message     = !var.enable_api_gateway ? "Did NOT create Authorizer Lambda: enable_api_gateway is false." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
 
-  create_dynamodb_response_store_effective = var.create_dynamodb_response_store && var.execution_mode != "async"
-  create_redis_response_store_effective    = var.create_redis_response_store && var.execution_mode != "async"
+  # Effective response store creation flags (disabled for websocket modes — endpoint_url in SQS message is used instead)
+  create_dynamodb_response_store_effective = var.create_dynamodb_response_store && !local.is_websocket_mode
+  create_redis_response_store_effective     = var.create_redis_response_store && !local.is_websocket_mode
 
   response_store_dynamodb_table_name = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_name : null
   response_store_dynamodb_table_arn  = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_arn : null

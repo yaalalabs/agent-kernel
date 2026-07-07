@@ -8,8 +8,8 @@ from pydantic import BaseModel
 
 from ......auth.handler import AuthValidator
 from ......core.chat_service import ChatService
-from ......core.config import AKConfig
-from ......core.model import BaseRequest
+from ......core.config import AKConfig, ExecutionMode
+from ......core.model import BaseRequest, StreamChunk
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import WebSocketHandler
 from .common import BaseLambdaRouter
@@ -24,6 +24,7 @@ class BaseWSHandler:
         CHAT_RESPONSE = "CHAT_RESPONSE"
         CHAT_QUEUED = "CHAT_QUEUED"
         SYSTEM_RESPONSE = "SYSTEM_RESPONSE"
+        STREAM_CHUNK = "STREAM_CHUNK"
 
     class WSMessageInfo(BaseModel):
         """WebSocket message information."""
@@ -43,10 +44,7 @@ class BaseWSHandler:
         self.CONNECT_ROUTE = "$connect"
         self.DISCONNECT_ROUTE = "$disconnect"
         self.DEFAULT_ROUTE = "$default"
-        chat_route = self._config.websocket_api.chat_route
-        if not chat_route:
-            raise ValueError("websocket_api.chat_route must be configured")
-        self.CHAT_ROUTE = chat_route
+        self.CHAT_ROUTE = self._config.websocket_api.chat_route
 
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
         """
@@ -88,6 +86,41 @@ class BaseWSHandler:
             raise ValueError(f"No user_id found for connection_id: {connection_id}")
         return self.WSMessageInfo(user_id=user_id, request=request)
 
+    def broadcast_message(
+        self,
+        endpoint_url: str,
+        user_id: str,
+        message_type: Optional["BaseWSHandler.MessageType"] = None,
+        message: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Build and broadcast a message to a WebSocket user.
+
+        :param endpoint_url: API Gateway WebSocket endpoint URL
+        :param user_id: Target user identifier
+        :param message_type: Optional envelope type; wraps payload when provided
+        :param message: Optional message payload dict; mutually exclusive with kwargs
+        :param kwargs: Message payload fields when not passing a dict via `message`
+        """
+        payload = message if message is not None else kwargs
+        final_message = self._build_broadcasting_message(message_type, **payload) if message_type else payload
+        self.ws_handler.broadcast(endpoint_url=endpoint_url, message=final_message, user_id=user_id)
+
+    def _build_broadcasting_message(self, message_type: "BaseWSHandler.MessageType", **kwargs) -> Dict[str, Any]:
+        """
+        Build a standardized broadcast message format.
+
+        :param message_type: The type of message from MessageType enum
+        :param kwargs: Additional fields to include in the message
+        :return: Standardized message dictionary
+        """
+        message = {
+            "type": message_type.value,
+        }
+        message.update(kwargs)
+        return message
+
     def _handle_msg_and_brdcst(
         self,
         event: Dict[str, Any],
@@ -107,10 +140,8 @@ class BaseWSHandler:
             ws_message_info = self._parse_event_to_wsmessage(event)
             user_id = ws_message_info.user_id
             brdcstin_msg = operation(ws_message_info)
-            if message_type:
-                brdcstin_msg = self._build_broadcasting_message(message_type, **brdcstin_msg)
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
-            self.ws_handler.broadcast(endpoint_url=endpoint_url, message=brdcstin_msg, user_id=user_id)
+            self.broadcast_message(endpoint_url, user_id, message_type=message_type, message=brdcstin_msg)
             return (
                 200,
                 self._build_lambda_response(user_id=user_id, msg="Request processed successfully", success=True),
@@ -257,6 +288,8 @@ class SystemRoutesHandler(BaseWSHandler):
     def __init__(self):
         """Initialize system routes handler."""
         super().__init__()
+        if not self.CHAT_ROUTE:
+            raise ValueError("websocket_api.chat_route must be configured")
         self._chat_service = ChatService()
 
     def _is_queue_mode(self) -> bool:
@@ -268,20 +301,6 @@ class SystemRoutesHandler(BaseWSHandler):
         """
         return self._config.execution.queues.input.url is not None
 
-    def _build_broadcasting_message(self, message_type: BaseWSHandler.MessageType, **kwargs) -> Dict[str, Any]:
-        """
-        Build a standardized broadcast message format.
-
-        :param message_type: The type of message from MessageType enum
-        :param kwargs: Additional fields to include in the message
-        :return: Standardized message dictionary
-        """
-        message = {
-            "type": message_type.value,
-        }
-        message.update(kwargs)
-        return message
-
     def get_routes(self) -> Dict[str, Callable[[Dict[str, Any], Any], Any]]:
         """
         Get registered system route handlers.
@@ -291,8 +310,19 @@ class SystemRoutesHandler(BaseWSHandler):
         """
         return {
             self.DEFAULT_ROUTE: self._handle_default,
-            self.CHAT_ROUTE: self._handle_queue_mode_chat if self._is_queue_mode() else self._handle_direct_chat,
+            self.CHAT_ROUTE: self._get_chat_handler_by_mode(),
         }
+
+    def _get_chat_handler_by_mode(self) -> Callable:
+        """
+        Return the appropriate chat handler based on execution mode and queue configuration.
+
+        :param: None
+        :return: Chat handler callable
+        """
+        if self._config.execution.mode == ExecutionMode.STREAM:
+            return self._handle_queue_mode if self._is_queue_mode() else self._handle_stream_direct
+        return self._handle_queue_mode if self._is_queue_mode() else self._handle_direct_chat
 
     def _handle_default(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         """
@@ -336,9 +366,52 @@ class SystemRoutesHandler(BaseWSHandler):
             message_type=self.MessageType.CHAT_RESPONSE,
         )
 
-    def _handle_queue_mode_chat(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+    def _handle_stream_direct(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
+        """
+        Handle direct streaming chat request without queue (non-queue STREAM mode).
+
+        Streams agent response chunks directly via WebSocket.
+
+        :param event: WebSocket chat event
+        :param context: Lambda context object
+        :return: Tuple of (status_code, response_body)
+        """
+        user_id = None
+        session_id = None
+        try:
+            ws_message_info = self._parse_event_to_wsmessage(event)
+            user_id = ws_message_info.user_id
+            request = ws_message_info.request
+            if request.body is None:
+                raise ValueError("body is required")
+            session_id = request.body.session_id
+
+            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+
+            for raw_chunk in self._chat_service.process_stream_chat_sync(req=request.body):
+                chunk_dict = json.loads(raw_chunk)
+                self.broadcast_message(endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=chunk_dict)
+
+            return 200, self._build_lambda_response(user_id=user_id, msg="Stream completed successfully", success=True)
+        except Exception as e:
+            self._log.error(f"Stream direct request failed: {e}\n{traceback.format_exc()}")
+            try:
+                endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+                error_chunk = StreamChunk(error=str(e), done=True)
+                error_chunk_dict = error_chunk.model_dump(exclude_none=True)
+                if session_id:
+                    error_chunk_dict["session_id"] = session_id
+                self.broadcast_message(endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=error_chunk_dict)
+            except Exception:
+                pass
+            return 500, self._build_lambda_response(user_id=user_id, msg="Stream request processing failed", success=False)
+
+    def _handle_queue_mode(self, event: Dict[str, Any], context: Optional[Any] = None) -> Tuple[int, Dict[str, Any]]:
         """
         Handle chat request in queue mode - send message to SQS input queue.
+
+        Used for both STREAM and non-STREAM execution modes when queues are configured.
+        Response will arrive via output queue -> ResponseHandler -> WebSocket.
 
         :param event: WebSocket event
         :param context: Lambda context object
@@ -359,7 +432,7 @@ class SystemRoutesHandler(BaseWSHandler):
             if not session_id:
                 raise ValueError("session_id is required")
 
-            self._log.info(f"Sending WebSocket chat request to queue: request_id={request.request_id}, session_id={session_id}")
+            self._log.info(f"Sending WebSocket request to queue: request_id={request.request_id}, session_id={session_id}")
 
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
 
@@ -374,14 +447,14 @@ class SystemRoutesHandler(BaseWSHandler):
                 ],
             )
 
-            self._log.info(f"Message sent to input queue successfully: {response}")
+            self._log.info(f"Request sent to input queue successfully: {response}")
 
-            response_body = self._build_lambda_response(user_id=user_id, msg="Request processed successfully", success=True)
+            response_body = self._build_lambda_response(user_id=user_id, msg="Request queued successfully", success=True)
             response_body["request_id"] = request.request_id
 
             return 200, response_body
         except Exception as e:
-            self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
+            self._log.error(f"Queue request failed: {e}\n{traceback.format_exc()}")
             return (
                 500,
                 self._build_lambda_response(user_id=user_id, msg="Request processing failed", success=False),
@@ -436,7 +509,7 @@ class WSLambdaRouter(BaseLambdaRouter):
                 user_id = ws_message_info.user_id
                 res_msg_to_brdcst = handler_logic_func(event, context)
                 endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
-                self._base_route_handler.ws_handler.broadcast(endpoint_url=endpoint_url, message=res_msg_to_brdcst, user_id=user_id)
+                self._base_route_handler.broadcast_message(endpoint_url, user_id, message=res_msg_to_brdcst)
                 return 200, self._base_route_handler._build_lambda_response(user_id=user_id, msg="Message broadcast successfully", success=True)
             except Exception as e:
                 self._log.error(f"WebSocket handler failed: {e}\n{traceback.format_exc()}")
@@ -496,8 +569,12 @@ class WSLambdaRouter(BaseLambdaRouter):
                 return
 
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
-            error_msg = {"type": BaseWSHandler.MessageType.SYSTEM_RESPONSE.value, "status": "FAILED", "message": error_message}
-            self._base_route_handler.ws_handler.broadcast(endpoint_url=endpoint_url, message=error_msg, user_id=user_id)
+            self._base_route_handler.broadcast_message(
+                endpoint_url,
+                user_id,
+                message_type=BaseWSHandler.MessageType.SYSTEM_RESPONSE,
+                message={"status": "FAILED", "message": error_message},
+            )
             self._log.info(f"Error broadcasted to user {user_id}: {error_message}")
         except Exception as e:
             self._log.error(f"Failed to broadcast error: {e}\n{traceback.format_exc()}")

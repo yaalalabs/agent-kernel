@@ -271,16 +271,23 @@ class DefaultEndpointsHandler:
                 "body": json.dumps({"error": "Error processing request", "session_id": None}),
             }
 
-    def _handle_stream(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def _handle_stream(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Handle streaming request.
 
         :param event: API Gateway event
         :param context: Lambda context
-        :return: API Gateway formatted response
-        :raises NotImplementedError: STREAM mode is not yet implemented
+        :return: Tuple of (status_code, error_body) — SSE streaming via REST API Gateway is not supported in Lambda
         """
-        raise NotImplementedError("STREAM mode is not yet implemented")
+        return (
+            400,
+            {
+                "error": (
+                    "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. "
+                    "Use streaming_handler as your Lambda entry point."
+                )
+            },
+        )
 
 
 class RESTLambdaRouter(BaseLambdaRouter):

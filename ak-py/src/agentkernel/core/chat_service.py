@@ -1,6 +1,8 @@
 import asyncio
 import base64
+import json
 import logging
+from collections.abc import AsyncGenerator, Generator
 from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
@@ -13,6 +15,7 @@ from .model import (
     AgentRequestText,
     BaseChatRequest,
     BaseRunRequest,
+    StreamChunk,
 )
 from .service import AgentService
 
@@ -194,21 +197,30 @@ class AgentHandler:
         if not self.service.agent:
             raise ValueError("No agent available")
 
+    @staticmethod
+    def _run_async_sync(coro) -> Any:
+        """Run an async coroutine from sync code, handling event loop state.
+
+        :param coro: Coroutine to execute
+        :return: Result of the coroutine
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                asyncio.set_event_loop(asyncio.new_event_loop())
+                return asyncio.run(coro)
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
     def run_sync(self, requests: List[Any]) -> Any:
         """Run agent requests synchronously.
 
         :param requests: List of AgentRequest objects to process
         :return: Agent execution result
         """
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                return asyncio.run(self.service.run_multi(requests=requests))
-            else:
-                return loop.run_until_complete(self.service.run_multi(requests=requests))
-        except RuntimeError:
-            return asyncio.run(self.service.run_multi(requests=requests))
+        return AgentHandler._run_async_sync(self.service.run_multi(requests=requests))
 
     async def run_async(self, requests: List[Any]) -> Any:
         """Run agent requests asynchronously.
@@ -217,6 +229,32 @@ class AgentHandler:
         :return: Agent execution result
         """
         return await self.service.run_multi(requests=requests)
+
+    def run_stream_sync(self, requests: List[Any]) -> List[Any]:
+        """Run agent streaming requests synchronously.
+
+        Manages event loop lifecycle internally and returns all chunks as a list.
+
+        :param requests: List of AgentRequest objects to process
+        :return: List of StreamChunk objects
+        """
+
+        async def _collect():
+            chunks = []
+            async for chunk in self.service.stream_multi(requests=requests):
+                chunks.append(chunk)
+            return chunks
+
+        return AgentHandler._run_async_sync(_collect())
+
+    async def run_stream_async(self, requests: List[Any]) -> AsyncGenerator[Any, None]:
+        """Run agent streaming requests asynchronously.
+
+        :param requests: List of AgentRequest objects to process
+        :return: AsyncGenerator yielding StreamChunk objects
+        """
+        async for chunk in self.service.stream_multi(requests=requests):
+            yield chunk
 
     def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
         """Get the session ID for the response.
@@ -231,40 +269,44 @@ class ResponseBuilder:
     """Formats agent results and errors into response dicts."""
 
     @staticmethod
-    def success(status_code: int, result: Any, session_id: str, rest_api_mode: bool):
-        """Build success response from agent result.
+    def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
+        """Build response from agent result or error.
 
-        :param status_code: HTTP status code for success
-        :param result: Agent execution result
+        :param status_code: HTTP status code
         :param session_id: Session identifier for the response
-        :param rest_api_mode: If True, return dict only; if False, return tuple
-        :return: Response dict or (status_code, response_dict) tuple
+        :param rest_api_mode: If True, return dict only on success or raise HTTPException on error; if False, return tuple
+        :param result: Agent execution result (mutually exclusive with error)
+        :param error: Exception that occurred (mutually exclusive with result)
+        :return: Response dict or (status_code, response_dict) tuple; raises HTTPException if error in rest_api_mode
         """
-        response_dict = {
-            "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received",
-            "session_id": session_id,
-        }
-        return response_dict if rest_api_mode else (status_code, response_dict)
+        if error:
+            response_dict = {"error": str(error)}
+        else:
+            response_dict = {"result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"}
 
-    @staticmethod
-    def error(status_code: int, error: Exception, session_id: Optional[str], rest_api_mode: bool):
-        """Build error response from exception.
+        if session_id:
+            response_dict["session_id"] = session_id
 
-        :param status_code: HTTP status code for error
-        :param error: Exception that occurred
-        :param session_id: Session identifier for the response
-        :param rest_api_mode: If True, raise HTTPException; if False, return tuple
-        :return: (status_code, response_dict) tuple or raises HTTPException
-        """
-        response_dict = {
-            "error": str(error),
-            "session_id": session_id,
-        }
-        if rest_api_mode:
+        if error and rest_api_mode:
             from fastapi import HTTPException
 
             raise HTTPException(status_code=status_code, detail=response_dict)
-        return (status_code, response_dict)
+
+        return response_dict if rest_api_mode else (status_code, response_dict)
+
+    @staticmethod
+    def stream_chunk(chunk: StreamChunk, session_id: str, sse_format: bool = False) -> str:
+        """Format a StreamChunk as JSON or SSE.
+
+        :param chunk: StreamChunk to format
+        :param session_id: Session identifier to include in the payload
+        :param sse_format: When True, wrap the JSON payload as an SSE frame.
+        :return: JSON string or SSE-formatted string with excluded None values
+        """
+        payload_dict = chunk.model_dump(exclude_none=True)
+        payload_dict["session_id"] = session_id
+        payload = json.dumps(payload_dict)
+        return f"data: {payload}\n\n" if sse_format else payload
 
 
 class ChatService:
@@ -291,13 +333,13 @@ class ChatService:
             requests = RequestBuilder.from_base_request_sync(req)
             handler.initialize(session_id, req.agent)
             result = handler.run_sync(requests)
-            return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.build_response(200, handler.get_response_session_id(session_id), self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.build_response(400, handler.get_response_session_id(session_id), self.rest_api_mode, error=ve)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.error(500, e, handler.get_response_session_id(None), self.rest_api_mode)
+            return ResponseBuilder.build_response(500, handler.get_response_session_id(None), self.rest_api_mode, error=e)
 
     async def process_async_chat_request(self, req: BaseChatRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request asynchronously.
@@ -317,13 +359,83 @@ class ChatService:
             requests = await RequestBuilder.from_base_request_async(req)
             handler.initialize(session_id, req.agent)
             result = await handler.run_async(requests)
-            return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.build_response(200, handler.get_response_session_id(session_id), self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return ResponseBuilder.error(400, ve, handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.build_response(400, handler.get_response_session_id(session_id), self.rest_api_mode, error=ve)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.error(500, e, handler.get_response_session_id(session_id), self.rest_api_mode)
+            return ResponseBuilder.build_response(500, handler.get_response_session_id(session_id), self.rest_api_mode, error=e)
+
+    async def process_stream_chat_async(
+        self,
+        req: BaseChatRequest,
+        sse_format: bool = False,
+    ) -> AsyncGenerator[str, None]:
+        """Process a streaming chat request asynchronously.
+
+        Validate, initialize, and return a streaming chat response generator.
+
+        :param req: Base chat request with prompt, session_id, agent, and optional attachments
+        :param sse_format: When True, yield Server-Sent Events formatted frames.
+                           When False, yield raw StreamChunk JSON payloads.
+        :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
+        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        """
+        session_id = req.session_id
+        if not session_id:
+            raise ValueError("No session_id is provided in the request")
+        if not req.prompt:
+            raise ValueError("No prompt provided in the request")
+        requests = await RequestBuilder.from_base_request_async(req)
+        handler = AgentHandler()
+        handler.initialize(session_id, req.agent)
+
+        async def _stream() -> AsyncGenerator[str, None]:
+            try:
+                async for chunk in handler.run_stream_async(requests):
+                    yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+            except Exception as e:
+                error_chunk = StreamChunk(error=str(e), done=True)
+                yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
+
+        return _stream()
+
+    def process_stream_chat_sync(
+        self,
+        req: BaseRunRequest,
+        sse_format: bool = False,
+    ) -> Generator[str, None, None]:
+        """Process a streaming chat request synchronously.
+
+        Validates and initializes eagerly (before returning the generator), then
+        yields formatted streaming chunks. Mirrors the async version's pattern so
+        ValueError is raised at call time, not deferred until the first iteration.
+
+        :param req: Base run request with prompt, session_id, agent, and attachments
+        :param sse_format: When True, yield Server-Sent Events formatted frames.
+                           When False, yield raw StreamChunk JSON payloads.
+        :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
+        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        """
+        session_id = req.session_id
+        if not session_id:
+            raise ValueError("No session_id is provided in the request")
+        if not req.prompt:
+            raise ValueError("No prompt provided in the request")
+        requests = RequestBuilder.from_base_request_sync(req)
+        handler = AgentHandler()
+        handler.initialize(session_id, req.agent)
+
+        def _stream() -> Generator[str, None, None]:
+            try:
+                for chunk in handler.run_stream_sync(requests):
+                    yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+            except Exception as e:
+                error_chunk = StreamChunk(error=str(e), done=True)
+                yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
+
+        return _stream()
 
     @staticmethod
     def _validate(req: BaseRunRequest):

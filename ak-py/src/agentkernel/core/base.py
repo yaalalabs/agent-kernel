@@ -2,7 +2,7 @@ import asyncio
 import contextvars
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 from enum import Enum
 from typing import Any, ClassVar, Self, cast
 
@@ -228,6 +228,17 @@ class Runner(ABC):
         :param session: The session to use for the agent.
         :param requests: The list of requests to provide to the agent.
         :return: The result of the agent's execution.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        Streams the agent response token by token.
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The list of requests to provide to the agent.
+        :return: An async generator yielding string token deltas.
         """
         raise NotImplementedError()
 
