@@ -10,7 +10,6 @@ create_request_handler_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_request_handler
     else
-      uv pip install -r requirements.txt --target=dist_request_handler --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
     fi
     cp -r lambda_request_handler.py config.yaml dist_request_handler/
@@ -27,7 +26,6 @@ create_agent_runner_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_agent_runner/data
     else
-      uv pip install -r requirements.txt --target=dist_agent_runner/data  --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist_agent_runner/data --find-links ../../../ak-py/dist agentkernel[aws,openai,redis] || true
     fi
     cp -r lambda_agent_runner.py config.yaml dist_agent_runner/data
@@ -44,7 +42,6 @@ create_response_handler_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_response_handler
     else
-      uv pip install -r requirements.txt --target=dist_response_handler --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist_response_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
     fi
     cp -r lambda_response_handler.py config.yaml dist_response_handler/
@@ -61,7 +58,6 @@ create_ws_connection_handler_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_ws_connection_handler
     else
-      uv pip install -r requirements.txt --target=dist_ws_connection_handler --find-links ../../../ak-py/dist
       uv pip install --force-reinstall --target=dist_ws_connection_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
     fi
     uv pip install --group auth --target=dist_ws_connection_handler

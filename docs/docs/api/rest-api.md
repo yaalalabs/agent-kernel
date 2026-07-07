@@ -105,7 +105,7 @@ In the following example,  **user_id (string)** and **additional_context (dict)*
 }
 ```
 
-Please study the [Hooks documentation](../integrations/hooks.md) for the use of hooks to implement various use cases.
+Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 
 ## Passing images and files
 
@@ -322,7 +322,41 @@ if __name__ == "__main__":
 
 ## Streaming
 
-Support for streaming responses will be available soon
+Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable token-level streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON — no other code changes are required.
+
+**Request:** Same JSON/multipart payload as the non-streaming endpoints.
+
+**Response:** A stream of `data:` events, each a JSON-encoded chunk:
+
+```
+data: {"delta": "Hello", "done": false, "session_id": "user-123"}
+
+data: {"delta": " world", "done": false, "session_id": "user-123"}
+
+data: {"delta": "!", "done": true, "session_id": "user-123"}
+
+```
+
+Reassemble the `delta` fields in order to build the full response. The final chunk has `"done": true`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead of `"delta"`.
+
+**Client example (Python):**
+
+```python
+import httpx
+
+with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
+    "agent": "assistant",
+    "prompt": "What is 2 + 2?",
+    "session_id": "user-123",
+}) as response:
+    for line in response.iter_lines():
+        if line.startswith("data:"):
+            print(line.removeprefix("data:").strip())
+```
+
+**Framework support:** OpenAI Agents SDK, Google ADK, and LangGraph support token streaming. CrewAI and smolagents raise `NotImplementedError` when `execution.mode: stream` is used — use `rest_sync` for those frameworks instead.
+
+For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 
 
 ## Authentication

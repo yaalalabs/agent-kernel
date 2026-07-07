@@ -65,6 +65,23 @@
       ]
     },
     {
+      "id": "deploy-aws-serverless-websocket-stream",
+      "name": "Deploy to AWS Lambda stream websocket mode",
+      "input": "Deploy to AWS Lambda with WebSocket token streaming",
+      "expected_outputs": [
+        "execution_mode = \"stream\"",
+        "ws_connection_handler",
+        "ws_routes",
+        "queue_mode = true",
+        "yaalalabs/ak-serverless/aws",
+        "STREAM_CHUNK"
+      ],
+      "must_not_contain": [
+        "create_redis_response_store = true",
+        "create_dynamodb_response_store = true"
+      ]
+    },
+    {
       "id": "deploy-aws-serverless-authorizer",
       "name": "Deploy to AWS Lambda with custom authorizer",
       "input": "Deploy to AWS Lambda with API Gateway custom authorizer",
