@@ -2,15 +2,35 @@
 
 ## Overview
 
-Conversation Thread Support adds named, persistent conversation contexts (threads) to Agent Kernel. A thread holds a user's full message history across multiple chat requests, scoped to a user or group, and exposes that history via REST so any UI or client can integrate with it.
+- **What it is**: named, persistent conversation contexts ("threads") for Agent Kernel.
+  - A thread holds a user's full message history across multiple chat requests.
+  - Scoped to a user or group.
+  - History is exposed via REST so any UI or client can integrate with it.
 
-Agent Kernel currently manages conversation state through `Session`, which is ephemeral and scoped to a single request cycle. There is no built-in way to persist a full conversation across multiple requests under a shared identity, group conversations by user or project, or expose conversation history to a UI. Conversation Thread Support closes this gap, building on the existing `SessionStore` infrastructure and `RESTAPI` patterns.
+- **Why it's needed**: Agent Kernel currently manages conversation state through `Session`, which is ephemeral and scoped to a single request cycle.
+  - No built-in way to persist a full conversation across multiple requests under a shared identity.
+  - No built-in way to group conversations by user or project.
+  - No built-in way to expose conversation history to a UI.
+  - Conversation Thread Support closes this gap, building on the existing `SessionStore` infrastructure and `RESTAPI` patterns.
 
-Conversation Thread Support is **opt-in** — enabled only when a `thread` block is present in `config.yaml`. Agents without this block behave exactly as they do today. A thread is identified by the request's `session_id` — there is no separate `thread_id`. The thread for a given `session_id` is auto-created on that session's first chat request; every subsequent request carrying the same `session_id` appends to that same thread.
+- **Enablement and identification**:
+  - **Opt-in** — enabled only when a `thread` block is present in `config.yaml`; agents without this block behave exactly as they do today.
+  - A thread is identified by the request's `session_id` — there is no separate `thread_id`.
+  - The thread for a given `session_id` is auto-created on that session's first chat request.
+  - Every subsequent request carrying the same `session_id` appends to that same thread.
 
-`user_id` is a **required** field on every chat request once Conversation Thread Support is enabled — a request missing it is rejected. It tags the thread on creation and enables user-scoped listing via `GET /threads?user_id=...` — no `Authoriser` is required to use it. If no `Authoriser` is configured, no identity verification is applied: any caller-supplied `user_id` is accepted, and ownership is not enforced. Once an `Authoriser` is configured (see Authorisation Flow below), `user_id` is instead resolved from the Bearer token and enforced in `ConversationThreadManager`. When thread support is disabled, `user_id` is not required and has no effect.
+- **`user_id` requirement**: required on every chat request once Conversation Thread Support is enabled.
+  - A request missing it is rejected.
+  - It tags the thread on creation and enables user-scoped listing via `GET /threads?user_id=...` — no `Authoriser` is required to use it.
+  - **Without an `Authoriser` configured**: no identity verification is applied — any caller-supplied `user_id` is accepted, and ownership is not enforced.
+  - **With an `Authoriser` configured** (see Authorisation Flow below): `user_id` is instead resolved from the Bearer token and enforced in `ConversationThreadManager`.
+  - When thread support is disabled, `user_id` is not required and has no effect.
 
-Attachment support is still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments. However, `thread` will not support attachments on its own: thread-enabled attachment storage reuses the same byte-encoding approach as the existing `AttachmentStore`, so `multimodal` must also be defined in `config.yaml` whenever `thread` is defined. A `thread` block with no `multimodal` block raises a `ConfigurationError` at startup.
+- **Attachment support**:
+  - Still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments.
+  - However, `thread` will not support attachments on its own: thread-enabled attachment storage reuses the same byte-encoding approach as the existing `AttachmentStore`.
+  - `multimodal` must also be defined in `config.yaml` whenever `thread` is defined.
+  - A `thread` block with no `multimodal` block raises a `ConfigurationError` at startup.
 
 > **Platform scope:** Do not enable Conversation Thread Support for agents deployed on platforms with native thread management (Slack, Microsoft Teams). Those platforms own conversation history; enabling AK threads alongside them creates duplicate, divergent state.
 
@@ -22,7 +42,23 @@ Attachment support is still decided by `multimodal.enabled`, not by the `thread`
 
 ## Architecture Overview
 
-The Conversation Thread Support subsystem sits between the client and the existing Agent Kernel runtime. `ConversationThreadManager` is instantiated whenever `multimodal.enabled = true` OR a `thread` block is present in `config.yaml`, but it only handles attachments when `multimodal.enabled = true` — the `thread` block by itself only turns on text history. Thread lifecycle (create/load/append/history) is driven from `ChatService`, which already has `session_id` and `user_id` available on every request. `MultimodalPreHook` **remains** the sole attachment entry point in `Runtime._system_pre_hooks`, gated by `multimodal.enabled` exactly as today; it is thread-aware simply by passing `session.id` straight through to `ConversationThreadManager.process_attachments`, since `session_id` *is* the thread identifier. Attachments are stored as bytes directly inside `ThreadStore` — the same encoding approach `AttachmentStore` already uses — so no separate blob store is involved. `ThreadRouter` is only mounted when thread config is present, and optionally protected by a pluggable `Authoriser` supplied by the end user.
+- The Conversation Thread Support subsystem sits between the client and the existing Agent Kernel runtime.
+
+- **`ConversationThreadManager`**:
+  - Instantiated whenever `multimodal.enabled = true` OR a `thread` block is present in `config.yaml`.
+  - Only handles attachments when `multimodal.enabled = true` — the `thread` block by itself only turns on text history.
+
+- **Thread lifecycle** (create/load/append/history) is driven from `ChatService`, which already has `session_id` and `user_id` available on every request.
+
+- **`MultimodalPreHook`**:
+  - **Remains** the sole attachment entry point in `Runtime._system_pre_hooks`, gated by `multimodal.enabled` exactly as today.
+  - Is thread-aware simply by passing `session.id` straight through to `ConversationThreadManager.process_attachments`, since `session_id` *is* the thread identifier.
+
+- **Attachment storage**: stored as bytes directly inside `ThreadStore` — the same encoding approach `AttachmentStore` already uses — so no separate blob store is involved.
+
+- **`ThreadRouter`**:
+  - Only mounted when thread config is present.
+  - Optionally protected by a pluggable `Authoriser` supplied by the end user.
 
 ```mermaid
 flowchart TD
@@ -60,11 +96,17 @@ flowchart TD
 
 ## Configuration
 
-Conversation Thread Support is activated by adding a `thread` block to `config.yaml`. If the block is absent, no `ThreadRouter` or `ConversationThreadManager` is initialised, and `user_id` stays optional with no effect. Once the block is present, `user_id` becomes required on every chat request.
+- **Activation**: Conversation Thread Support is activated by adding a `thread` block to `config.yaml`.
+  - **If absent**: no `ThreadRouter` or `ConversationThreadManager` is initialised, and `user_id` stays optional with no effect.
+  - **Once present**: `user_id` becomes required on every chat request.
 
-`thread` has a hard dependency on `multimodal` being defined — AK raises a `ConfigurationError` at startup if a `thread` block is present without a `multimodal` block. This is because thread-enabled attachment storage reuses the same byte-encoding approach as `AttachmentStore`; there is no separate blob store to configure.
+- **Dependency on `multimodal`**: `thread` has a hard dependency on `multimodal` being defined.
+  - AK raises a `ConfigurationError` at startup if a `thread` block is present without a `multimodal` block.
+  - Reason: thread-enabled attachment storage reuses the same byte-encoding approach as `AttachmentStore`; there is no separate blob store to configure.
 
-The `thread.type` key selects the storage backend. Each backend has its own sub-key with provider-specific settings, mirroring the existing `session` configuration convention.
+- **Storage backend selection**:
+  - The `thread.type` key selects the storage backend.
+  - Each backend has its own sub-key with provider-specific settings, mirroring the existing `session` configuration convention.
 
 #### DynamoDB
 
@@ -154,7 +196,12 @@ sequenceDiagram
 
 ### Authorisation Flow
 
-`Authoriser` is a pluggable base class provided by Agent Kernel. It assumes the end user already has an authentication provider — Agent Kernel does not verify identity itself. The end user supplies a subclass that receives only the Bearer token and implements whatever custom logic is needed to validate it against their own provider and resolve a subject (`user_id`). If no `Authoriser` is configured, `ThreadRouter` routes remain open, as described under **Access model** above.
+- **`Authoriser`**: a pluggable base class provided by Agent Kernel.
+  - Assumes the end user already has an authentication provider — Agent Kernel does not verify identity itself.
+  - The end user supplies a subclass that:
+    - Receives only the Bearer token.
+    - Implements whatever custom logic is needed to validate it against their own provider and resolve a subject (`user_id`).
+  - **If no `Authoriser` is configured**: `ThreadRouter` routes remain open, as described under **Access model** above.
 
 ```mermaid
 sequenceDiagram
