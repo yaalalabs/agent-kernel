@@ -83,7 +83,7 @@ async def test_history_agent_with_valid_token(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup_with_valid_token(http_client):
-    response = await http_client.send("Who hosted?")
+    response = await http_client.send("Which country hosted the tournament?")
 
     assert "India" in response
     assert "Pakistan" in response

@@ -53,7 +53,7 @@ async def test_history_agent(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup(http_client):
-    response = await http_client.send("Who hosted?")
+    response = await http_client.send("Which country hosted the tournament?")
     response = response.lower()
 
     assert "sri lanka" in response

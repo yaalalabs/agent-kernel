@@ -85,8 +85,8 @@ async def test_history_agent_with_valid_auth(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup_with_valid_auth(http_client):
-    response = await http_client.send("Who hosted?")
-    Test.compare(response, ["Sri Lanka, India and Pakistan"])
+    response = await http_client.send("Which country hosted the tournament?")
+    Test.compare(response, ["Co-hosted by India, Pakistan and Sri Lanka."])
 
 
 @pytest.mark.asyncio
