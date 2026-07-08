@@ -35,6 +35,8 @@
 - **Attachment support**:
   - Still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments.
   - `thread` will not support attachments on its own: attachment bytes always live in the existing `AttachmentStore` (in-memory / Redis / DynamoDB) — there is no separate thread-specific attachment backend.
+  - **Thread mode on**: `ChatService` calls `ConversationThreadManager` directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore` — pure storage, no description generated yet. The `attachment_id`(s) are stashed in the session's volatile cache for `MultimodalPreHook` to pick up. The hook still generates the LLM description and strips/injects it as usual, but it does not call `AttachmentStore.save()` itself — `ChatService` already did that.
+  - **Thread mode off**: unchanged from today — `ChatService` never calls `ConversationThreadManager`; `MultimodalPreHook` does the full job itself (describe, save to `AttachmentStore`, strip, inject).
   - When `thread` is configured, `ThreadStore` holds only an `attachment_id` reference on each `ThreadMessage`, not the encoded bytes — reading a thread's attachments means one `AttachmentStore` lookup per reference.
   - Thread-enabled attachments are exempt from `AttachmentStore`'s normal `max_attachments` eviction — a thread's history must not silently lose old attachments the way ephemeral session-only storage does.
 
@@ -53,12 +55,14 @@
 - **`ConversationThreadManager`**:
   - Instantiated whenever `multimodal.enabled = true` OR a `thread` block is present in `config.yaml`.
   - Only handles attachments when `multimodal.enabled = true` — the `thread` block by itself only turns on text history.
+  - When both are true, `ChatService` calls it directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore`.
 
 - **Thread lifecycle** (create/load/append/history) is driven from `ChatService`, which already has `session_id` and `user_id` available on every request.
 
 - **`MultimodalPreHook`**:
   - **Remains** the sole attachment entry point in `Runtime._system_pre_hooks`, gated by `multimodal.enabled` exactly as today.
-  - Is thread-aware simply by passing `session.id` straight through to `ConversationThreadManager.process_attachments`, since `session_id` *is* the thread identifier.
+  - **Thread mode on**: does not call `AttachmentStore.save()` itself — `ChatService`/`ConversationThreadManager` already saved the bytes and created the `attachment_id` before `Runtime.run`. The hook reads that `attachment_id` back from the session's volatile cache, and still generates the description via LLM, strips the binary, and injects the description — exactly as today, just without the save step.
+  - **Thread mode off**: unchanged from today — does the full job itself (describe, save, strip, inject); `ConversationThreadManager` is never involved.
 
 - **Attachment storage**: attachment bytes always live in `AttachmentStore` — the same backend used today — regardless of `thread` config. When `thread` is present, `ThreadStore` only holds an `attachment_id` reference per message; no bytes are ever duplicated into `ThreadStore`, and no separate blob store is involved.
 
@@ -88,13 +92,13 @@ flowchart TD
     end
 
     Client -->|"POST chat / chat-multipart"| RESTAPI --> ChatService
-    ChatService --> SessionStore
-    ChatService -->|"get_or_create_thread\nappend_message"| TSM
+    ChatService -->|"stash attachment_id(s)\nin volatile cache"| SessionStore
+    ChatService -->|"get_or_create_thread\nsave attachment bytes\nappend_message"| TSM
     ChatService --> Runtime --> MMHook
     Runtime --> Agent
-    MMHook -->|"process_attachments\n(session.id) — only if multimodal.enabled"| TSM
     TSM -->|"save / get bytes"| AS
     TSM -->|"attachment_id reference"| TS
+    MMHook -->|"thread mode off:\nsave bytes directly"| AS
 
     Client -->|"GET /threads*\nBearer token"| ThreadRouter --> TSM
     ThreadRouter -->|"authorise(token)\nif configured"| AUTH
@@ -108,9 +112,8 @@ flowchart TD
   - **If absent**: no `ThreadRouter` or `ConversationThreadManager` is initialised, and `user_id` stays optional with no effect.
   - **Once present**: `user_id` becomes required on every chat request.
 
-- **Dependency on `multimodal`**: `thread` has a hard dependency on `multimodal` being defined.
-  - AK raises a `ConfigurationError` at startup if a `thread` block is present without a `multimodal` block.
-  - Reason: `AttachmentStore` (configured under `multimodal`) is the only place attachment bytes are ever stored — `thread` never introduces a separate attachment backend, so it needs `multimodal`'s `AttachmentStore` to exist.
+- **No dependency on `multimodal`**: `thread` can be enabled on its own, with no `multimodal` block present at all — this is a valid, supported configuration. No `ConfigurationError` is raised.
+  - In that case, `ConversationThreadManager` only handles thread lifecycle (create/load/append/history) — text-only, exactly as described above. It never touches `AttachmentStore`, since that only happens when `multimodal.enabled = true`.
 
 - **Storage backend selection**:
   - The `thread.type` key selects the storage backend.
@@ -170,30 +173,36 @@ thread:
 
 ### Attachment Flow
 
+This diagram depicts thread-enabled mode. When `thread` is not configured, `ChatService` never calls `ConversationThreadManager`, `Session` is not used to pass an `attachment_id`, and `MultimodalPreHook` does the full job itself (describe, save, strip, inject) exactly as it does today.
+
 ```mermaid
 sequenceDiagram
     participant Client
     participant ChatService
-    participant Runtime
-    participant MultimodalPreHook
+    participant Session
     participant ConversationThreadManager
     participant AttachmentStore
     participant ThreadStore
+    participant Runtime
+    participant MultimodalPreHook
     participant Agent
 
     Client->>ChatService: POST /api/v1/chat-multipart\n(multipart: text + file, session_id)
     ChatService->>ConversationThreadManager: get_or_create_thread(session_id, user_id, group_id, name)
     ConversationThreadManager-->>ChatService: Thread
-    ChatService->>Runtime: run(agent, session, requests)
-    Runtime->>MultimodalPreHook: on_run(session, agent, requests)
-    MultimodalPreHook->>ConversationThreadManager: process_attachments(session_id=session.id, requests)
+    ChatService->>ConversationThreadManager: store_attachments(session_id, requests)
     ConversationThreadManager->>AttachmentStore: save(attachment bytes)\nno max_attachments eviction in thread-enabled mode
     AttachmentStore-->>ConversationThreadManager: attachment_id
-    ConversationThreadManager->>ConversationThreadManager: generate description via LLM
-    ConversationThreadManager->>ThreadStore: append_message(ThreadMessage with attachment_id reference)
+    ConversationThreadManager->>ThreadStore: append_message(ThreadMessage with attachment_id reference)\nno description yet
     ThreadStore-->>ConversationThreadManager: updated Thread
-    ConversationThreadManager-->>MultimodalPreHook: modified requests\n(binary stripped, description injected)
-    MultimodalPreHook-->>Runtime: modified requests
+    ConversationThreadManager-->>ChatService: attachment_id(s)
+    ChatService->>Session: stash attachment_id(s) in volatile cache
+    ChatService->>Runtime: run(agent, session, requests)\nrequests still carry raw attachment bytes
+    Runtime->>MultimodalPreHook: on_run(session, agent, requests)
+    MultimodalPreHook->>Session: read attachment_id(s) from volatile cache
+    MultimodalPreHook->>MultimodalPreHook: generate description via LLM\n(using bytes already in requests)
+    Note over MultimodalPreHook: No AttachmentStore.save() here —\nChatService already saved the bytes
+    MultimodalPreHook-->>Runtime: modified requests\n(binary stripped, description injected)
     Runtime->>Agent: run(text + description)\nno raw binary passed to agent
     Agent-->>Runtime: response
     Runtime-->>ChatService: response
