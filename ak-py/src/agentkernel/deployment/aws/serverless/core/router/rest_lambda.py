@@ -226,12 +226,8 @@ class DefaultEndpointsHandler:
             self._log.info(f"Performing REST_ASYNC poll operation for payload: '{payload}'")
 
             request_id = payload.request_id
-            if not request_id:
-                raise ValueError("request_id is required for polling")
 
             session_id_from_body = payload.body.session_id if payload.body else None
-            if not session_id_from_body:
-                raise ValueError("session_id is required in request body for polling")
 
             message = self._get_message(payload)
             self._log.info(f"Fetched message from database: {message}")

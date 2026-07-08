@@ -16,7 +16,6 @@ import asyncio
 import logging
 import uuid
 from abc import abstractmethod
-from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
@@ -96,7 +95,7 @@ class QueueRequestHandler(RESTRequestHandler):
                     # Wait for response in the Response Store
                     self._log.info(f"[WAITING] Polling response store for request_id={request_id}")
 
-                    response = await self._wait_for_response(request_id=request_id, session_id=body.session_id)
+                    response = await self.get_response_store().get_message_with_retry(request_id, True, async_mode=True)
 
                     if not response:
                         raise HTTPException(
@@ -185,38 +184,3 @@ class QueueRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=500, detail={"error": str(e), "session_id": session_id})
 
         return router
-
-    async def _wait_for_response(self, request_id: str, session_id: str, max_retries: int = None, delay: int = None) -> Dict[str, Any]:
-        """
-        Wait for response to appear in the Response Store.
-
-        :param request_id: Request identifier to wait for
-        :param session_id: Session identifier
-        :param max_retries: Maximum number of retry attempts (from config if None)
-        :param delay: Delay between retries in seconds (from config if None)
-        :return: Response dict from the response store, or None if not found
-        """
-        if max_retries is None:
-            max_retries = self._config.execution.response_store.retry_count
-        if delay is None:
-            delay = self._config.execution.response_store.delay
-
-        self._log.info(f"[WAIT START] request_id={request_id}, max_retries={max_retries}, delay={delay}s")
-
-        for attempt in range(max_retries):
-            # Offload the sync response-store call and use asyncio.sleep so this
-            # coroutine yields the event loop — otherwise a long-running wait for
-            # one request would starve every other concurrent request.
-            response = await asyncio.to_thread(self.get_response_store().get_message, request_id)
-            if response:
-                self._log.info(f"[WAIT SUCCESS] Found response on attempt {attempt + 1}/{max_retries} for request_id={request_id}")
-                return response
-
-            if attempt < max_retries - 1:
-                self._log.debug(
-                    f"[WAIT RETRY] Response not ready, waiting {delay}s (attempt {attempt + 1}/{max_retries}) for request_id={request_id}"
-                )
-                await asyncio.sleep(delay)
-
-        self._log.warning(f"[WAIT TIMEOUT] Response not found after {max_retries} attempts for request_id={request_id}")
-        return None
