@@ -40,6 +40,22 @@ for cmd in git make; do
     fi
 done
 
+if [ "$OS" == "Linux" ]; then
+    print_header "Checking Python build dependencies"
+    if command -v cc &> /dev/null || command -v gcc &> /dev/null; then
+        print_success "C compiler found"
+    elif command -v apt-get &> /dev/null; then
+        print_info "No C compiler found. Installing pyenv's suggested build dependencies via apt-get..."
+        sudo apt-get update
+        sudo apt-get install -y build-essential libssl-dev zlib1g-dev libbz2-dev \
+            libreadline-dev libsqlite3-dev curl git libncursesw5-dev xz-utils \
+            tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+        print_success "Build dependencies installed"
+    else
+        print_warning "No C compiler found and apt-get is unavailable. Python build via pyenv may fail."
+    fi
+fi
+
 print_header "Checking pyenv"
 if command -v pyenv &> /dev/null; then
     print_success "pyenv found"
@@ -53,8 +69,12 @@ else
         print_info "Installing pyenv via Homebrew..."
         brew install pyenv
     elif [ "$OS" == "Linux" ]; then
-        print_info "Installing pyenv via https://pyenv.run..."
-        curl -fsSL https://pyenv.run | bash
+        if [ -d "$HOME/.pyenv" ]; then
+            print_info "Found existing $HOME/.pyenv directory; using it instead of reinstalling."
+        else
+            print_info "Installing pyenv via https://pyenv.run..."
+            curl -fsSL https://pyenv.run | bash
+        fi
         export PATH="$HOME/.pyenv/bin:$PATH"
     else
         print_error "Unsupported OS: $OS. Install pyenv manually: https://github.com/pyenv/pyenv#installation"
@@ -97,15 +117,27 @@ else
             print_info "Run 'brew unlink terraform && brew link tfenv' to use tfenv in new shells."
         fi
     elif [ "$OS" == "Linux" ]; then
-        print_info "Installing tfenv via git clone..."
-        git clone --depth=1 https://github.com/tfenv/tfenv.git "$HOME/.tfenv"
+        if [ -d "$HOME/.tfenv" ]; then
+            print_info "Found existing $HOME/.tfenv directory; using it instead of reinstalling."
+        else
+            print_info "Installing tfenv via git clone..."
+            git clone --depth=1 https://github.com/tfutils/tfenv.git "$HOME/.tfenv"
+        fi
         export PATH="$HOME/.tfenv/bin:$PATH"
         print_warning "Add \$HOME/.tfenv/bin to your PATH in your shell profile, then restart your shell."
     else
-        print_error "Unsupported OS: $OS. Install tfenv manually: https://github.com/tfenv/tfenv#installation"
+        print_error "Unsupported OS: $OS. Install tfenv manually: https://github.com/tfutils/tfenv#installation"
         exit 1
     fi
     print_success "tfenv installed"
+fi
+
+if [ "$OS" == "Linux" ] && ! command -v unzip &> /dev/null; then
+    print_header "Checking unzip"
+    print_info "unzip not found; tfenv needs it to extract Terraform releases. Installing via apt-get..."
+    sudo apt-get update
+    sudo apt-get install -y unzip
+    print_success "unzip installed"
 fi
 
 print_header "Setting Terraform to latest"
