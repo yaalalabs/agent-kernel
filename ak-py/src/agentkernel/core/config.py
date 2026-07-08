@@ -274,7 +274,7 @@ class _OutputQueueConfig(BaseModel):
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
     no_of_consumers: int = Field(
-        default=5,
+        default=2,
         description=(
             "Only used in Containerized deployments "
             "Number of independent consumer threads that each poll the output queue "
