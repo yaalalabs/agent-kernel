@@ -11,11 +11,11 @@
   - No built-in way to persist a full conversation across multiple requests under a shared identity.
   - No built-in way to group conversations by user or project.
   - No built-in way to expose conversation history to a UI.
-  - Conversation Thread Support closes this gap, building on the existing `SessionStore` infrastructure and `RESTAPI` patterns.
+  - Conversation Thread Support closes this gap.
 
 - **Enablement and identification**:
   - **Opt-in** — enabled only when a `thread` block is present in `config.yaml`; agents without this block behave exactly as they do today.
-  - A thread is identified by the request's `session_id` — there is no separate `thread_id`.
+  - A thread is identified by the request's `session_id`.
   - The thread for a given `session_id` is auto-created on that session's first chat request.
   - Every subsequent request carrying the same `session_id` appends to that same thread.
 
@@ -77,6 +77,7 @@ flowchart TD
         Runtime["Runtime"]
         MMHook["MultimodalPreHook\n(_system_pre_hooks)"]
         Agent["Agent"]
+        AS["AttachmentStore\n(in-memory / Redis / DynamoDB)\nstores attachment bytes"]
     end
 
     subgraph New["Conversation Thread Support — new"]
@@ -85,8 +86,6 @@ flowchart TD
         TS["ThreadStore\n(DynamoDB / Firestore / CosmosDB / Redis / InMemory)\nstores attachment_id references only"]
         AUTH["Authoriser\n(pluggable — user-supplied subclass)"]
     end
-
-    AS["AttachmentStore\n(in-memory / Redis / DynamoDB)\nstores attachment bytes"]
 
     Client -->|"POST chat / chat-multipart"| RESTAPI --> ChatService
     ChatService --> SessionStore
