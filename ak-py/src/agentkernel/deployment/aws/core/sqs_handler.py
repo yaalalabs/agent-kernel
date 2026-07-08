@@ -8,9 +8,10 @@ import boto3
 from pydantic import BaseModel, ConfigDict
 
 from ....core.config import AKConfig
+from ...common.queue_handler import QueueHandler
 
 
-class SQSHandler:
+class SQSHandler(QueueHandler):
     """Shared helper for building and sending SQS messages.
 
     When used in a Non-Agent Kernel lambda/environment, the following environment variables

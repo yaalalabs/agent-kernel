@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 from ....api.handler import RESTRequestHandler
 from ....core.config import AKConfig
 from ....core.model import BaseRunRequest, ExecutionMode
+from ...common.queue_handler import QueueHandler
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
 
@@ -37,12 +38,19 @@ class ECSQueueRequestHandler(RESTRequestHandler):
         self._log = logging.getLogger("ak.ecs.queue_handler")
         self._config = AKConfig.get()
         self._response_store = None
+        self._queue_handler = None
 
-    def _get_response_store(self):
+    def get_response_store(self):
         """Lazy initialization of response store."""
         if self._response_store is None:
             self._response_store = ResponseDBHandler().get_store()
         return self._response_store
+
+    def get_queue_handler(self) -> QueueHandler:
+        """Lazy initialization of queue handler."""
+        if self._queue_handler is None:
+            self._queue_handler = SQSHandler
+        return self._queue_handler
 
     def get_router(self) -> APIRouter:
         """
@@ -79,7 +87,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
 
                 # Send to Input Queue (sync boto3 call — offload so it doesn't block the event loop)
                 queue_result = await asyncio.to_thread(
-                    SQSHandler.send_message_to_input_queue,
+                    self.get_queue_handler().send_message_to_input_queue,
                     message_body=body.model_dump(),
                     message_group_id=body.session_id,
                     message_deduplication_id=request_id,
@@ -142,7 +150,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
 
                 self._log.info(f"Polling for response: request_id={effective_request_id}, session_id={session_id}")
 
-                response = await asyncio.to_thread(self._get_response_store().get_message, effective_request_id)
+                response = await asyncio.to_thread(self.get_response_store().get_message, effective_request_id)
 
                 if not response:
                     raise HTTPException(
@@ -204,7 +212,7 @@ class ECSQueueRequestHandler(RESTRequestHandler):
             # Offload the sync boto3 DynamoDB call and use asyncio.sleep so this
             # coroutine yields the event loop — otherwise a long-running wait for
             # one request would starve every other concurrent request.
-            response = await asyncio.to_thread(self._get_response_store().get_message, request_id)
+            response = await asyncio.to_thread(self.get_response_store().get_message, request_id)
             if response:
                 self._log.info(f"[WAIT SUCCESS] Found response on attempt {attempt + 1}/{max_retries} for request_id={request_id}")
                 return response
