@@ -34,9 +34,9 @@
 
 - **Attachment support**:
   - Still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments.
-  - However, `thread` will not support attachments on its own: thread-enabled attachment storage reuses the same byte-encoding approach as the existing `AttachmentStore`.
-  - `multimodal` must also be defined in `config.yaml` whenever `thread` is defined.
-  - A `thread` block with no `multimodal` block raises a `ConfigurationError` at startup.
+  - `thread` will not support attachments on its own: attachment bytes always live in the existing `AttachmentStore` (in-memory / Redis / DynamoDB) — there is no separate thread-specific attachment backend.
+  - When `thread` is configured, `ThreadStore` holds only an `attachment_id` reference on each `ThreadMessage`, not the encoded bytes — reading a thread's attachments means one `AttachmentStore` lookup per reference.
+  - Thread-enabled attachments are exempt from `AttachmentStore`'s normal `max_attachments` eviction — a thread's history must not silently lose old attachments the way ephemeral session-only storage does.
 
 > **Platform scope:** Do not enable Conversation Thread Support for agents deployed on platforms with native thread management (Slack, Microsoft Teams). Those platforms own conversation history; enabling AK threads alongside them creates duplicate, divergent state.
 
@@ -60,7 +60,7 @@
   - **Remains** the sole attachment entry point in `Runtime._system_pre_hooks`, gated by `multimodal.enabled` exactly as today.
   - Is thread-aware simply by passing `session.id` straight through to `ConversationThreadManager.process_attachments`, since `session_id` *is* the thread identifier.
 
-- **Attachment storage**: stored as bytes directly inside `ThreadStore` — the same encoding approach `AttachmentStore` already uses — so no separate blob store is involved.
+- **Attachment storage**: attachment bytes always live in `AttachmentStore` — the same backend used today — regardless of `thread` config. When `thread` is present, `ThreadStore` only holds an `attachment_id` reference per message; no bytes are ever duplicated into `ThreadStore`, and no separate blob store is involved.
 
 - **`ThreadRouter`**:
   - Only mounted when thread config is present.
@@ -82,9 +82,11 @@ flowchart TD
     subgraph New["Conversation Thread Support — new"]
         ThreadRouter["ThreadRouter\nGET /threads*"]
         TSM["ConversationThreadManager"]
-        TS["ThreadStore\n(DynamoDB / Firestore / CosmosDB / Redis / InMemory)\nstores attachments as bytes"]
+        TS["ThreadStore\n(DynamoDB / Firestore / CosmosDB / Redis / InMemory)\nstores attachment_id references only"]
         AUTH["Authoriser\n(pluggable — user-supplied subclass)"]
     end
+
+    AS["AttachmentStore\n(in-memory / Redis / DynamoDB)\nstores attachment bytes"]
 
     Client -->|"POST chat / chat-multipart"| RESTAPI --> ChatService
     ChatService --> SessionStore
@@ -92,7 +94,8 @@ flowchart TD
     ChatService --> Runtime --> MMHook
     Runtime --> Agent
     MMHook -->|"process_attachments\n(session.id) — only if multimodal.enabled"| TSM
-    TSM --> TS
+    TSM -->|"save / get bytes"| AS
+    TSM -->|"attachment_id reference"| TS
 
     Client -->|"GET /threads*\nBearer token"| ThreadRouter --> TSM
     ThreadRouter -->|"authorise(token)\nif configured"| AUTH
@@ -108,7 +111,7 @@ flowchart TD
 
 - **Dependency on `multimodal`**: `thread` has a hard dependency on `multimodal` being defined.
   - AK raises a `ConfigurationError` at startup if a `thread` block is present without a `multimodal` block.
-  - Reason: thread-enabled attachment storage reuses the same byte-encoding approach as `AttachmentStore`; there is no separate blob store to configure.
+  - Reason: `AttachmentStore` (configured under `multimodal`) is the only place attachment bytes are ever stored — `thread` never introduces a separate attachment backend, so it needs `multimodal`'s `AttachmentStore` to exist.
 
 - **Storage backend selection**:
   - The `thread.type` key selects the storage backend.
@@ -175,6 +178,7 @@ sequenceDiagram
     participant Runtime
     participant MultimodalPreHook
     participant ConversationThreadManager
+    participant AttachmentStore
     participant ThreadStore
     participant Agent
 
@@ -184,9 +188,10 @@ sequenceDiagram
     ChatService->>Runtime: run(agent, session, requests)
     Runtime->>MultimodalPreHook: on_run(session, agent, requests)
     MultimodalPreHook->>ConversationThreadManager: process_attachments(session_id=session.id, requests)
-    ConversationThreadManager->>ConversationThreadManager: encode attachment to bytes\n(same approach as AttachmentStorageManager)
+    ConversationThreadManager->>AttachmentStore: save(attachment bytes)\nno max_attachments eviction in thread-enabled mode
+    AttachmentStore-->>ConversationThreadManager: attachment_id
     ConversationThreadManager->>ConversationThreadManager: generate description via LLM
-    ConversationThreadManager->>ThreadStore: append_message(ThreadMessage with attachments=[...])
+    ConversationThreadManager->>ThreadStore: append_message(ThreadMessage with attachment_id reference)
     ThreadStore-->>ConversationThreadManager: updated Thread
     ConversationThreadManager-->>MultimodalPreHook: modified requests\n(binary stripped, description injected)
     MultimodalPreHook-->>Runtime: modified requests
