@@ -8,6 +8,9 @@ import argparse
 import os
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 import json
 
@@ -45,6 +48,37 @@ def run_command(command: list[str], cwd: str = None, description: str = "", env:
         print(f"\n❌ Failed: {description}")
         print(f"Error: {e}")
         return False
+
+
+def wait_for_endpoint(url: str, timeout: int = 300, interval: int = 10) -> bool:
+    """Poll an endpoint until it responds with a non-5xx status.
+
+    Containerized deployments return 5xx from the load balancer until the
+    tasks are running and registered as healthy targets. A non-5xx response
+    (including 4xx, since the invoke endpoint may reject GET) means traffic
+    is reaching the application.
+    """
+    print(f"\n{'='*80}")
+    print(f"Waiting for endpoint to become ready: {url}")
+    print(f"{'='*80}\n")
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                print(f"✅ Endpoint ready (HTTP {resp.status})")
+                return True
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                print(f"✅ Endpoint ready (HTTP {e.code})")
+                return True
+            print(f"⏳ Endpoint returned HTTP {e.code}, retrying in {interval}s...")
+        except Exception as e:
+            print(f"⏳ Endpoint not reachable ({e}), retrying in {interval}s...")
+        time.sleep(interval)
+
+    print(f"❌ Endpoint did not become ready within {timeout}s")
+    return False
 
 
 def run_simple_test(path: str) -> bool:
@@ -531,7 +565,12 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
         return False
-    
+
+    # Containerized deployments need time for tasks to come up and pass
+    # load balancer health checks before the endpoint serves traffic
+    if not wait_for_endpoint(agent_invoke_url):
+        return False
+
     # Test
     return run_command(
         ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
