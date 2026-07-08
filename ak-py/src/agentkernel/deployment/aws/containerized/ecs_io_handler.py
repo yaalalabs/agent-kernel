@@ -43,10 +43,7 @@ class ECSIOHandler:
                     thread_name="rest-api",
                     stop_all_on_failure=True,
                     graceful=True,
-                    # uvicorn.run() has no wiring to ThreadRunner.shutdown_event — it can only be
-                    # stopped by an OS signal, so it can never report a completion in response to
-                    # a graceful shutdown triggered by the other task. Don't require one.
-                    awaited_on_shutdown=False,
+                    awaited_on_shutdown=False,  # uvicorn.run() isn't wired to shutdown_event and only stops via OS signal, so it can't report completion.
                 ),
                 ThreadRunner.Task(
                     execution_function=lambda: ECSOutputConsumer.run(),
