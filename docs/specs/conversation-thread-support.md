@@ -26,6 +26,12 @@
   - **With an `Authoriser` configured** (see Authorisation Flow below): `user_id` is instead resolved from the Bearer token and enforced in `ConversationThreadManager`.
   - When thread support is disabled, `user_id` is not required and has no effect.
 
+- **`group_id`**: optional field on the chat request, applied only when a thread is auto-created (a session's first request).
+  - Scopes a thread to a group or project rather than (or in addition to) a user — "group" here is any caller-defined grouping criterion, not a user group.
+  - Enables group-scoped listing via `GET /threads?group_id=...`, mirroring the `user_id`-scoped listing above.
+  - Not required — a thread with no `group_id` is simply unscoped by group and only listable by `user_id`.
+  - Ignored on subsequent requests to the same `session_id`; a thread's `group_id` is fixed at creation.
+
 - **Attachment support**:
   - Still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments.
   - However, `thread` will not support attachments on its own: thread-enabled attachment storage reuses the same byte-encoding approach as the existing `AttachmentStore`.
