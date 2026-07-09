@@ -3,9 +3,10 @@ name: ak-dev-review-pr
 description: >
   Review a GitHub pull request against Agent Kernel's architecture, design
   principles, code quality standards, and testing conventions, then post the
-  findings back to the PR as review comments. Use this skill when given a PR
-  number or URL to review, e.g. "review PR 342" or "run a review on
-  https://github.com/yaalalabs/agent-kernel/pull/342".
+  findings back to the PR as review comments. When the PR contains a spec.md,
+  the spec is reviewed first and the implementation is checked against it.
+  Use this skill when given a PR number or URL to review, e.g. "review PR 342"
+  or "run a review on https://github.com/yaalalabs/agent-kernel/pull/342".
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -59,6 +60,8 @@ Never run `gh pr checkout` — it would switch the developer's branch.
 
 Read the full content of every changed source file at the PR head, not just the diff hunks. A diff hunk without surrounding context is the main source of false-positive review comments.
 
+While listing the changed files, check whether the PR includes a spec — any added or modified `spec.md` (case-insensitive, any directory). If one exists, Step 3 is mandatory and runs before any code is reviewed.
+
 ## Step 2: Load the Standards to Review Against
 
 Load these skills and use them as the review rubric — do not review from memory:
@@ -76,7 +79,21 @@ Load these skills and use them as the review rubric — do not review from memor
 
    For these PRs, walk the guide's checklist step by step and flag every step the PR skipped (missing factory registration, missing config section, missing optional-dependency extra, missing exports, missing tests, missing example).
 
-## Step 3: Review Dimensions
+## Step 3: Review the Spec First (When the PR Contains One)
+
+If the PR adds or modifies a `spec.md`, review it **before** reading any implementation code, so the spec is judged on its own merits rather than rationalized from the code:
+
+1. **Review the spec itself** and record findings on it like any other file:
+   - Completeness: does it cover behavior, configuration, error handling, and edge cases — or only the happy path?
+   - Consistency with Agent Kernel: does the design it describes respect the principles in `ak-dev-architecture` (framework-agnostic core, adapter pattern, config via `AKConfig`, pluggable interfaces, coupling direction)?
+   - Internal consistency: no contradictory requirements, undefined terms, or references to components that don't exist.
+   - Testability: are the stated behaviors concrete enough to verify?
+2. **Extract a requirements checklist** from the spec — every "must/should/will" statement, config key, interface, and named behavior.
+3. **Then use that checklist as an additional review rubric** for the implementation (dimension 6 below): every requirement is either implemented, explicitly deferred in the PR description, or flagged; every implemented behavior that contradicts or silently extends the spec is flagged.
+
+Spec findings anchor to lines of `spec.md` in the diff like any other inline comment; spec-vs-implementation gaps anchor to the implementation line where the deviation lives (or to the spec line if nothing was implemented at all).
+
+## Step 4: Review Dimensions
 
 Evaluate the delta on each dimension. For each finding, record: file, line (in the PR head), severity, what is wrong, and why — citing the specific principle or convention it violates.
 
@@ -116,7 +133,16 @@ Evaluate the delta on each dimension. For each finding, record: file, line (in t
 - New capabilities that warrant an example include or update one under `examples/`.
 - New config keys are documented where configuration is described.
 
-## Step 4: Verify Findings
+### 6. Spec conformance (when the PR contains a spec.md)
+
+Walk the requirements checklist extracted in Step 3:
+
+- Every requirement in the spec is implemented in this PR, or its deferral is explicitly stated in the PR description — silent omissions are findings.
+- The implementation matches the spec's stated behavior, naming, config keys, and interfaces — deviations are findings even when the deviation looks reasonable, phrased as `[question]` if the code might be right and the spec stale.
+- Behavior implemented beyond the spec is flagged as a `[question]` — either the spec should grow or the code should shrink.
+- Tests exercise the behaviors the spec promises, not just the code that happens to exist.
+
+## Step 5: Verify Findings
 
 Before anything is posted, re-check every finding against the full file at the PR head (`git show pr/<N>:<path>`):
 
@@ -126,11 +152,11 @@ Before anything is posted, re-check every finding against the full file at the P
 
 Drop anything that does not survive verification. A short list of real issues is worth more than a long list of maybes.
 
-## Step 5: Deduplicate Against Existing Feedback
+## Step 6: Deduplicate Against Existing Feedback
 
 Compare surviving findings against the comments fetched in Step 1 (both issue comments and inline review comments, including resolved threads). Skip any finding that a human or previous automated review has already raised on the same code, even if worded differently.
 
-## Step 6: Post the Review to the PR
+## Step 7: Post the Review to the PR
 
 Post **one** review containing all inline comments plus a summary body — never a stream of individual comments.
 
@@ -171,10 +197,11 @@ Rules for the posted review:
 After posting, report back to the requester:
 
 1. The PR reviewed (number, title, link) and its CI status.
-2. A findings summary grouped by severity, each with `file:line` and a one-line description.
-3. Which findings were skipped as duplicates of existing PR feedback.
-4. A link to the posted review.
-5. If there were **no** findings: still post the summary-only review saying the change looks consistent with Agent Kernel conventions, and say so in the report.
+2. If the PR contained a `spec.md`: the spec verdict first — findings on the spec itself, then which requirements are implemented, deferred, missing, or deviated from.
+3. A findings summary grouped by severity, each with `file:line` and a one-line description.
+4. Which findings were skipped as duplicates of existing PR feedback.
+5. A link to the posted review.
+6. If there were **no** findings: still post the summary-only review saying the change looks consistent with Agent Kernel conventions, and say so in the report.
 
 ## Common Pitfalls
 
@@ -186,3 +213,5 @@ After posting, report back to the requester:
 - Restating feedback that is already on the PR.
 - Flagging formatting that `black`/`isort` would fix anyway as individual nits — one summary-level note ("run `make lint`") is enough.
 - Reviewing from memory of the conventions instead of loading the `ak-dev-*` skills.
+- Reading the implementation before the spec when the PR contains a `spec.md` — the code biases how the spec is judged, and spec gaps get rationalized as intended behavior.
+- Reviewing code against the spec but forgetting to review the spec document itself.
