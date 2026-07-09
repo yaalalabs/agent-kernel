@@ -643,6 +643,15 @@ def _in_memory_runtime(monkeypatch):
         class session:
             type = "in_memory"
 
+        # System hooks are built lazily on first run(), so the mocked config
+        # must carry the guardrail flags the hook factories read.
+        class guardrail:
+            class input:
+                enabled = False
+
+            class output:
+                enabled = False
+
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
     return Runtime(SessionStoreBuilder.build())
 
