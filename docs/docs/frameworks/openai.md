@@ -82,11 +82,46 @@ OpenAIModule([agent])
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
 
+## Structured Output
+
+Configure structured output with the OpenAI Agents SDK's `output_type` parameter. Agent Kernel detects the structured result and returns an `AgentReplyAny` whose `content` is the result as a dict — no re-parsing of text needed:
+
+```python
+from agents import Agent as OpenAIAgent
+from pydantic import BaseModel
+from agentkernel.core.model import AgentReplyAny
+from agentkernel.openai import OpenAIModule
+
+class CalendarEvent(BaseModel):
+    name: str
+    date: str
+
+agent = OpenAIAgent(
+    name="extractor",
+    instructions="Extract the calendar event from the text.",
+    output_type=CalendarEvent,
+)
+
+OpenAIModule([agent])
+
+# When running the agent:
+reply = await service.run_multi(requests)
+if isinstance(reply, AgentReplyAny):
+    event = reply.content          # {"name": ..., "date": ...}
+```
+
+Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers (chat integrations, logging) work unchanged. Post-execution hooks receive the `AgentReplyAny` object with the dict content — see [Execution Hooks](../integrations/hooks#structured-replies-in-hooks).
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
+:::
+
 ## Features
 
 - ✅ Function calling
 - ✅ Multi-agent handoff
 - ✅ Streaming responses
+- ✅ Structured output (`output_type` → `AgentReplyAny`)
 - ✅ Session management
 - ✅ Framework-agnostic tool binding
 

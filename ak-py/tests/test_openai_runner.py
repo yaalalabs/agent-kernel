@@ -2,13 +2,20 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from agentkernel.core import Session
 from agentkernel.core.model import (
+    AgentReplyAny,
     AgentReplyText,
     AgentRequestText,
 )
 from agentkernel.framework.openai.openai import OpenAIRunner
+
+
+class CalendarEvent(BaseModel):
+    name: str
+    date: str
 
 
 class TestOpenAIRunnerErrorHandling:
@@ -154,3 +161,46 @@ class TestOpenAIRunnerErrorHandling:
             assert isinstance(reply, AgentReplyText)
             assert reply.text == "42"
             assert isinstance(reply.text, str)
+
+
+class TestOpenAIRunnerStructuredOutput:
+    """Test structured output detection on RunResult.final_output"""
+
+    @pytest.mark.asyncio
+    async def test_pydantic_final_output_returns_agent_reply_any(self):
+        runner = OpenAIRunner()
+        session = Session("test-session")
+        requests = [AgentRequestText(text="extract the event")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            mock_run_result = MagicMock()
+            mock_run_result.final_output = CalendarEvent(name="Launch", date="2026-07-08")
+            MockRunner.run = AsyncMock(return_value=mock_run_result)
+
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            reply = await runner.run(mock_agent, session, requests)
+
+            assert isinstance(reply, AgentReplyAny)
+            assert reply.content == {"name": "Launch", "date": "2026-07-08"}
+            assert reply.prompt == "extract the event"
+
+    @pytest.mark.asyncio
+    async def test_dict_final_output_returns_agent_reply_any(self):
+        runner = OpenAIRunner()
+        session = Session("test-session")
+        requests = [AgentRequestText(text="extract the event")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            mock_run_result = MagicMock()
+            mock_run_result.final_output = {"name": "Launch", "date": "2026-07-08"}
+            MockRunner.run = AsyncMock(return_value=mock_run_result)
+
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            reply = await runner.run(mock_agent, session, requests)
+
+            assert isinstance(reply, AgentReplyAny)
+            assert reply.content == {"name": "Launch", "date": "2026-07-08"}

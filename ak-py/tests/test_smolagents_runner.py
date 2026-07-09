@@ -1,9 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from agentkernel.core import Session
 from agentkernel.core.model import (
+    AgentReplyAny,
     AgentReplyText,
     AgentRequestAny,
     AgentRequestImage,
@@ -132,3 +134,49 @@ class TestSmolagentsRunnerErrorHandling:
 
         assert isinstance(reply, AgentReplyText)
         assert "No valid text prompt found" in reply.text
+
+
+class FinalAnswer(BaseModel):
+    verdict: str
+    confidence: float
+
+
+class TestSmolagentsRunnerStructuredOutput:
+    """Test structured output detection on the final_answer value"""
+
+    @pytest.mark.asyncio
+    async def test_dict_reply_returns_agent_reply_any(self):
+        runner = SmolagentsRunner()
+        session = Session("test-session")
+        requests = [AgentRequestText(text="classify this")]
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = {"verdict": "spam", "confidence": 0.97}
+
+            reply = await runner.run(MagicMock(), session, requests)
+
+            assert isinstance(reply, AgentReplyAny)
+            assert reply.content == {"verdict": "spam", "confidence": 0.97}
+            assert reply.prompt == "classify this"
+
+    @pytest.mark.asyncio
+    async def test_pydantic_reply_returns_agent_reply_any(self):
+        runner = SmolagentsRunner()
+        session = Session("test-session")
+        requests = [AgentRequestText(text="classify this")]
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = FinalAnswer(verdict="ham", confidence=0.5)
+
+            reply = await runner.run(MagicMock(), session, requests)
+
+            assert isinstance(reply, AgentReplyAny)
+            assert reply.content == {"verdict": "ham", "confidence": 0.5}

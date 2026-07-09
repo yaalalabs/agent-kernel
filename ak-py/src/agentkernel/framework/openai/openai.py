@@ -14,6 +14,7 @@ from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -180,6 +181,10 @@ class OpenAIRunner(BaseRunner):
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
             reply = (await Runner.run(agent.agent, input_data, session=session_to_use)).final_output
+
+            structured = AgentReplyAny.from_output(reply, prompt)
+            if structured is not None:
+                return structured
 
             reply_text = "" if reply is None else str(reply)
             return AgentReplyText(text=reply_text, prompt=prompt)

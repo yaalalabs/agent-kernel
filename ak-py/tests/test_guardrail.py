@@ -4,8 +4,9 @@ import pytest
 
 from agentkernel.core.base import Agent, Session
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.guardrail.guardrail import (
+    BaseGuardrailUtil,
     InputGuardrail,
     InputGuardrailFactory,
     OutputGuardrail,
@@ -196,3 +197,19 @@ class TestOpenAIOutputGuardrail:
         """Test that OpenAIOutputGuardrail inherits from OutputGuardrail."""
         guardrail = OpenAIOutputGuardrail()
         assert isinstance(guardrail, OutputGuardrail)
+
+
+class TestBaseGuardrailUtil:
+    """Tests for the shared text extraction utilities."""
+
+    def test_extract_text_from_text_reply(self):
+        reply = AgentReplyText(text="hello", prompt="hi")
+        assert BaseGuardrailUtil._extract_text_from_reply(reply) == "hello"
+
+    def test_extract_text_from_structured_reply_returns_json(self):
+        """Structured replies must be scanned as their JSON serialization, not skipped."""
+        import json
+
+        content = {"city": "Colombo", "temp_c": 31}
+        reply = AgentReplyAny(content=content)
+        assert BaseGuardrailUtil._extract_text_from_reply(reply) == json.dumps(content)

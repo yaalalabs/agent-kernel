@@ -3,7 +3,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 from ..core import Agent, AgentRequest, Runtime, Session
-from ..core.model import AgentReply, AgentReplyText, AgentRequestText, StreamChunk
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequestText, StreamChunk
 
 
 class AgentService:
@@ -129,6 +129,8 @@ class AgentService:
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
             result = result.text
+        elif isinstance(result, AgentReplyAny):
+            result = str(result)
         else:
             result = "Non-text reply given"
 

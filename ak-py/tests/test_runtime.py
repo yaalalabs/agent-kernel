@@ -1,8 +1,11 @@
+import json
+
 import pytest
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.builder import SessionStoreBuilder
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.hooks import PostHook, PreHook
+from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
@@ -547,3 +550,148 @@ async def test_load_empty_session_id_creates_session(monkeypatch):
     loaded_session = runtime.sessions().load("")
     assert loaded_session is not None
     assert loaded_session.id == ""
+
+
+class StructuredDummyRunner(Runner):
+    """Runner stub that returns a fixed AgentReplyAny, recording whether it ran."""
+
+    def __init__(self, reply: AgentReplyAny):
+        super().__init__("StructuredDummyRunner")
+        self.reply = reply
+        self.was_called = False
+
+    async def run(self, agent, session, requests):
+        self.was_called = True
+        return self.reply
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
+
+
+class StructuredDummyAgent(Agent):
+    """DummyAgent variant with an injectable runner."""
+
+    def __init__(self, name, runner):
+        super().__init__(name, runner)
+
+    def get_a2a_card(self):
+        pass
+
+    def get_description(self):
+        pass
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
+class SpyPostHook(PostHook):
+    """Post-hook that records the reply it receives and optionally mutates it."""
+
+    def __init__(self, mutate=False):
+        self.received = None
+        self.mutate = mutate
+
+    async def on_run(self, session, requests, agent, agent_reply):
+        self.received = agent_reply
+        if self.mutate and isinstance(agent_reply, AgentReplyAny):
+            agent_reply.content["moderated"] = True
+        return agent_reply
+
+    def name(self):
+        return "SpyPostHook"
+
+
+class HaltingPreHook(PreHook):
+    """Pre-hook that halts execution by returning an AgentReplyAny."""
+
+    def __init__(self, reply: AgentReplyAny):
+        self.reply = reply
+
+    async def on_run(self, session, agent, requests):
+        return self.reply
+
+    def name(self):
+        return "HaltingPreHook"
+
+
+def _in_memory_runtime(monkeypatch):
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    return Runtime(SessionStoreBuilder.build())
+
+
+@pytest.mark.asyncio
+async def test_post_hook_receives_structured_reply_object(monkeypatch):
+    """Post-hooks must receive the AgentReplyAny instance itself, not a stringified reply."""
+    runtime = _in_memory_runtime(monkeypatch)
+    structured_reply = AgentReplyAny(content={"city": "Colombo"}, prompt="weather?")
+    agent = StructuredDummyAgent("structured", StructuredDummyRunner(structured_reply))
+    spy = SpyPostHook()
+    agent.post_hooks.append(spy)
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-1")
+
+    out = await runtime.run(agent, session, [AgentRequestText(text="weather?")])
+
+    assert spy.received is structured_reply
+    assert spy.received.content == {"city": "Colombo"}
+    assert out is structured_reply
+
+
+@pytest.mark.asyncio
+async def test_post_hook_returning_structured_reply_passes_validation(monkeypatch):
+    """A post-hook returning (and mutating) an AgentReplyAny must not raise TypeError."""
+    runtime = _in_memory_runtime(monkeypatch)
+    structured_reply = AgentReplyAny(content={"city": "Colombo"}, prompt="weather?")
+    agent = StructuredDummyAgent("structured", StructuredDummyRunner(structured_reply))
+    agent.post_hooks.append(SpyPostHook(mutate=True))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-2")
+
+    out = await runtime.run(agent, session, [AgentRequestText(text="weather?")])
+
+    assert isinstance(out, AgentReplyAny)
+    assert out.content == {"city": "Colombo", "moderated": True}
+
+
+@pytest.mark.asyncio
+async def test_pre_hook_halt_with_structured_reply(monkeypatch):
+    """A pre-hook returning AgentReplyAny halts execution; the runner is never called."""
+    runtime = _in_memory_runtime(monkeypatch)
+    halt_reply = AgentReplyAny(content={"cached": True})
+    runner = StructuredDummyRunner(AgentReplyAny(content={"should": "not run"}))
+    agent = StructuredDummyAgent("halted", runner)
+    agent.pre_hooks.append(HaltingPreHook(halt_reply))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-3")
+
+    out = await runtime.run(agent, session, [AgentRequestText(text="anything")])
+
+    assert out is halt_reply
+    assert runner.was_called is False
+
+
+@pytest.mark.asyncio
+async def test_stream_pre_hook_halt_with_structured_reply(monkeypatch):
+    """A structured pre-hook halt during streaming yields the JSON string as an error chunk."""
+    runtime = _in_memory_runtime(monkeypatch)
+    halt_reply = AgentReplyAny(content={"blocked": "yes"})
+    runner = StructuredDummyRunner(AgentReplyAny(content={"should": "not run"}))
+    agent = StructuredDummyAgent("halted-stream", runner)
+    agent.pre_hooks.append(HaltingPreHook(halt_reply))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-4")
+
+    chunks = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(text="anything")])]
+
+    assert len(chunks) == 1
+    assert chunks[0].done is True
+    assert chunks[0].error == json.dumps({"blocked": "yes"})
+    assert runner.was_called is False

@@ -93,12 +93,43 @@ SmolagentsModule([agent])
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
 
+## Structured Output
+
+SmolAgents has no first-class schema parameter — the agent returns whatever value is passed to `final_answer`. Agent Kernel detects the value's type: a dict or Pydantic instance is returned as an `AgentReplyAny` whose `content` is the result as a dict; anything else is stringified into an `AgentReplyText` as before:
+
+```python
+from smolagents import CodeAgent
+from agentkernel.core.model import AgentReplyAny
+from agentkernel.smolagents import SmolagentsModule
+
+agent = CodeAgent(
+    tools=[],
+    model=model,
+    name="classifier",
+    description="Classify the input and return a dict: {\"verdict\": ..., \"confidence\": ...}",
+)
+
+SmolagentsModule([agent])
+
+# When running the agent:
+reply = await service.run_multi(requests)
+if isinstance(reply, AgentReplyAny):
+    result = reply.content         # {"verdict": ..., "confidence": ...}
+```
+
+Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers work unchanged. Post-execution hooks receive the `AgentReplyAny` object with the dict content — see [Execution Hooks](../integrations/hooks#structured-replies-in-hooks).
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. (SmolAgents does not support streaming in Agent Kernel.)
+:::
+
 ## Features
 
 - ✅ ToolCalling and CodeAgent support
 - ✅ Managed agent delegation
 - ✅ Session management via Agent Kernel runtime
 - ✅ Framework-agnostic tool binding
+- ✅ Structured output (dict / Pydantic `final_answer` → `AgentReplyAny`)
 
 ## Example
 

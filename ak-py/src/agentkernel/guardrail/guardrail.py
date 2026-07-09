@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
-from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestText
 
 
 class InputGuardrail(PreHook):
@@ -95,6 +95,8 @@ class BaseGuardrailUtil:
         """
         if isinstance(agent_reply, AgentReplyText):
             return agent_reply.text
+        elif isinstance(agent_reply, AgentReplyAny):
+            return str(agent_reply)
         elif hasattr(agent_reply, "text"):
             return str(agent_reply.text)
         return ""

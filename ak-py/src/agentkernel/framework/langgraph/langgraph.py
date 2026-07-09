@@ -24,7 +24,7 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.tool import SystemToolFactory
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -391,6 +391,9 @@ class LangGraphRunner(BaseRunner):
                 input={"messages": messages},
                 config=config,
             )
+            structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
+            if structured is not None:
+                return structured
             last_message = result["messages"][-1]
             return AgentReplyText(text=self._extract_text_content(last_message.content), prompt=prompt)
         except Exception as e:

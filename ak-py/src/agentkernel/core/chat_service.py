@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
 from .model import (
+    AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
     AgentRequestAny,
@@ -282,7 +283,7 @@ class ResponseBuilder:
         if error:
             response_dict = {"error": str(error)}
         else:
-            response_dict = {"result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"}
+            response_dict = {"result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"}
 
         if session_id:
             response_dict["session_id"] = session_id

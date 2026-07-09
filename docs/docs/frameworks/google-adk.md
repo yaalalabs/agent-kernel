@@ -84,6 +84,41 @@ GoogleADKModule([agent])
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
 
+## Structured Output
+
+Configure structured output with ADK's `output_schema` parameter on `LlmAgent`. ADK returns the final response as a JSON string conforming to the schema; Agent Kernel validates and parses it, returning an `AgentReplyAny` whose `content` is the result as a dict:
+
+```python
+from google.adk.agents import LlmAgent
+from pydantic import BaseModel
+from agentkernel.core.model import AgentReplyAny
+from agentkernel.adk import GoogleADKModule
+
+class CapitalOutput(BaseModel):
+    country: str
+    capital: str
+
+agent = LlmAgent(
+    name="capitals",
+    model="gemini-2.0-flash",
+    instruction="Answer with the country and its capital.",
+    output_schema=CapitalOutput,
+)
+
+GoogleADKModule([agent])
+
+# When running the agent:
+reply = await service.run_multi(requests)
+if isinstance(reply, AgentReplyAny):
+    data = reply.content          # {"country": ..., "capital": ...}
+```
+
+If the model's reply does not validate against the schema, the runner logs a warning and falls back to a plain `AgentReplyText` with the raw text. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. Post-execution hooks receive the `AgentReplyAny` object with the dict content — see [Execution Hooks](../integrations/hooks#structured-replies-in-hooks).
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
+:::
+
 ## Features
 
 - ✅ Gemini models
@@ -91,6 +126,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 - ✅ Function calling
 - ✅ Multi-agent coordination
 - ✅ Framework-agnostic tool binding
+- ✅ Structured output (`output_schema` → `AgentReplyAny`)
 
 ## Example
 

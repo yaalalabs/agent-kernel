@@ -7,12 +7,13 @@ from crewai import Agent, Crew, Memory, Task
 from crewai.memory import MemoryRecord, ScopeInfo
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
+from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -315,6 +316,8 @@ class CrewAIRunner(Runner):
                 description=prompt,
                 expected_output="An answer is plain text",
                 agent=agent.agent,
+                output_pydantic=getattr(agent, "output_pydantic", None),
+                output_json=getattr(agent, "output_json", None),
             )
             crew = Crew(
                 agents=agent.crew,
@@ -323,6 +326,10 @@ class CrewAIRunner(Runner):
                 memory=memory,
             )
             reply = await crew.kickoff_async(inputs={})
+            if isinstance(getattr(reply, "pydantic", None), BaseModel):
+                return AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
+            if isinstance(getattr(reply, "json_dict", None), dict):
+                return AgentReplyAny(content=reply.json_dict, prompt=prompt)
             if hasattr(reply, "raw"):
                 raw_reply = reply.raw
                 reply_text = "" if raw_reply is None else str(raw_reply)
@@ -350,17 +357,31 @@ class CrewAIAgent(BaseAgent):
     CrewAIAgent class provides an agent wrapping for CrewAI based agents.
     """
 
-    def __init__(self, name: str, runner: CrewAIRunner, agent: Agent, crew: list[Agent]):
+    def __init__(
+        self,
+        name: str,
+        runner: CrewAIRunner,
+        agent: Agent,
+        crew: list[Agent],
+        output_pydantic: type[BaseModel] | None = None,
+        output_json: type[BaseModel] | None = None,
+    ):
         """
         Initializes a CrewAIAgent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         :param agent: The CrewAI agent instance.
         :param crew: List of CrewAI agents in the crew.
+        :param output_pydantic: Optional Pydantic model class forwarded to the Task built per run,
+        making the agent produce structured output (returned as an AgentReplyAny).
+        :param output_json: Optional Pydantic model class forwarded to the Task built per run as its
+        JSON output schema (returned as an AgentReplyAny).
         """
         super().__init__(name, runner)
         self._agent = agent
         self._crew = crew
+        self._output_pydantic = output_pydantic
+        self._output_json = output_json
         self._attach_system_tools()
         self._setup_system_prompt()
 
@@ -370,6 +391,36 @@ class CrewAIAgent(BaseAgent):
         Returns the CrewAI agent instance.
         """
         return self._agent
+
+    @property
+    def output_pydantic(self) -> type[BaseModel] | None:
+        """
+        Returns the Pydantic model class used for structured task output, if configured.
+        """
+        return self._output_pydantic
+
+    @output_pydantic.setter
+    def output_pydantic(self, model: type[BaseModel] | None) -> None:
+        """
+        Sets the Pydantic model class forwarded to the Task built per run.
+        :param model: The Pydantic model class, or None to disable structured output.
+        """
+        self._output_pydantic = model
+
+    @property
+    def output_json(self) -> type[BaseModel] | None:
+        """
+        Returns the Pydantic model class used as the JSON output schema, if configured.
+        """
+        return self._output_json
+
+    @output_json.setter
+    def output_json(self, model: type[BaseModel] | None) -> None:
+        """
+        Sets the Pydantic model class forwarded to the Task built per run as its JSON output schema.
+        :param model: The Pydantic model class, or None to disable structured output.
+        """
+        self._output_json = model
 
     @property
     def crew(self) -> list[Agent]:

@@ -13,6 +13,7 @@ from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -157,6 +158,10 @@ class SmolagentsRunner(Runner):
 
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
+
+            structured = AgentReplyAny.from_output(reply, prompt)
+            if structured is not None:
+                return structured
 
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
