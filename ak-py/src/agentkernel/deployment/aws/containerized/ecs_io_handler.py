@@ -13,7 +13,7 @@ class ECSIOHandler:
     Thread 1 (rest-api):              RESTAPI.run — FastAPI/uvicorn,
                                       ECSQueueRequestHandler registered.
     Thread 2 (output-queue-consumer): ECSOutputConsumer.run — polls the
-                                      Output Queue, writes to DB / WebSocket.
+                                      Output Queue, writes to DB.
 
     Usage::
 

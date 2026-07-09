@@ -5,17 +5,15 @@ import logging
 from typing import Any, Dict
 
 from ....core.config import AKConfig
-from ....core.model import ExecutionMode
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
-from ..core.websocket_service import WebSocketHandler
 from .core import ECSSQSConsumer
 
 
 class ECSOutputConsumer(ECSSQSConsumer):
     """
     ECS Output Consumer — polls the Output Queue and writes results to the
-    DynamoDB Response Store or broadcasts via WebSocket.
+    DynamoDB Response Store.
 
     Extends ECSSQSConsumer so it inherits the blocking SQS poll loop via
     run(). Started as Thread 2 by ECSIOHandler.
@@ -27,7 +25,6 @@ class ECSOutputConsumer(ECSSQSConsumer):
     num_consumers = _config.execution.queues.output.no_of_consumers
 
     _response_store = None
-    _websocket_handler = None
 
     @classmethod
     def get_queue_url(cls) -> str:
@@ -40,52 +37,30 @@ class ECSOutputConsumer(ECSSQSConsumer):
         return cls._response_store
 
     @classmethod
-    def _get_websocket_handler(cls) -> WebSocketHandler:
-        if cls._websocket_handler is None:
-            ws_config = cls._config.websocket_api
-            if not ws_config.connection_table or not ws_config.connection_table.table_name:
-                raise ValueError("websocket_api.connection_table.table_name is required " "for ECSOutputConsumer in WebSocket mode")
-            cls._websocket_handler = WebSocketHandler(
-                conn_table_name=ws_config.connection_table.table_name,
-                ttl=ws_config.connection_table.ttl,
-            )
-        return cls._websocket_handler
-
-    @classmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
-        Process one message from the Output Queue.
-
-        Dispatches based on ``execution.mode``:
-
-        - ``async``                  → push via WebSocket (PostToConnection)
-        - ``rest_sync`` / ``rest_async`` → write to DynamoDB Response Store
+        Process one message from the Output Queue by writing it to the
+        DynamoDB Response Store.
 
         :param record: boto3 SQS ``receive_message`` record
         """
         message_id = record.get("MessageId")
         cls._log.info(f"[OUTPUT START] Processing output message {message_id}")
 
-        if cls._config.execution.mode == ExecutionMode.ASYNC:
-            cls._broadcast_via_websocket(record)
-        else:
-            message = cls._construct_message_for_store(record)
-            cls._log.info(
-                f"[OUTPUT STORE] Writing to DynamoDB — request_id={message['request_id']}, "
-                f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
-            )
-            cls._get_response_store().add_message(message)
-            cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
+        message = cls._construct_message_for_store(record)
+        cls._log.info(
+            f"[OUTPUT STORE] Writing to DynamoDB — request_id={message['request_id']}, "
+            f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
+        )
+        cls._get_response_store().add_message(message)
+        cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
 
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
         """
-        Handle an output message that exceeded ``max_receive_count``.
-
-        - ``async`` mode → broadcast error via WebSocket
-        - Other modes    → write error entry to Response Store so the
-                           waiting HTTP caller gets a response instead of
-                           hanging indefinitely
+        Handle an output message that exceeded ``max_receive_count`` by
+        writing an error entry to the Response Store so the waiting HTTP
+        caller gets a response instead of hanging indefinitely.
 
         :param record: boto3 SQS ``receive_message`` record
         """
@@ -100,22 +75,10 @@ class ECSOutputConsumer(ECSSQSConsumer):
                 "request_id": request_id,
             }
 
-            if cls._config.execution.mode == ExecutionMode.ASYNC:
-                endpoint_url = message_attributes.get("endpoint_url")
-                user_id = message_attributes.get("user_id")
-                if endpoint_url and user_id:
-                    cls._get_websocket_handler().broadcast(
-                        endpoint_url=endpoint_url,
-                        message=error_payload,
-                        user_id=user_id,
-                    )
-                else:
-                    cls._log.warning("Cannot broadcast permanent-failure error: " "endpoint_url or user_id missing")
-            else:
-                error_body = json.dumps(error_payload)
-                message = cls._construct_message_for_store(record, body=error_body)
-                cls._get_response_store().add_message(message)
-                cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
+            error_body = json.dumps(error_payload)
+            message = cls._construct_message_for_store(record, body=error_body)
+            cls._get_response_store().add_message(message)
+            cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
         except Exception:
             cls._log.exception("Failed to handle permanent-failure output message")
 
