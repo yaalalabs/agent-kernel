@@ -19,10 +19,10 @@ module "rest_service" {
   service_name   = local.service_name
   container_name = local.container_name
 
-  redis_url                     = local.redis_url
-  create_dynamodb_memory_table  = var.create_dynamodb_memory_table
-  dynamodb_memory_table_arn     = local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name    = local.dynamodb_memory_table_name
+  redis_url                    = local.redis_url
+  create_dynamodb_memory_table = var.create_dynamodb_memory_table
+  dynamodb_memory_table_arn    = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name   = local.dynamodb_memory_table_name
 
   rest_service = {
     cpu                   = var.rest_service.cpu
@@ -35,10 +35,10 @@ module "rest_service" {
     environment_variables = merge(var.environment_variables, var.rest_service.environment_variables)
   }
 
-  enable_queue_mode         = var.enable_queue_mode
-  input_queue_url           = var.enable_queue_mode ? module.queues[0].input_queue_url : null
-  output_queue_url          = var.enable_queue_mode ? module.queues[0].output_queue_url : null
-  response_store_table_name = var.enable_queue_mode ? aws_dynamodb_table.response_store[0].name : null
+  queue_mode                = var.queue_mode
+  input_queue_url           = var.queue_mode ? module.queues[0].input_queue_url : null
+  output_queue_url          = var.queue_mode ? module.queues[0].output_queue_url : null
+  response_store_table_name = var.queue_mode ? aws_dynamodb_table.response_store[0].name : null
   queue_config              = var.queue_config
 
   tags = var.tags

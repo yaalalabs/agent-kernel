@@ -8,7 +8,7 @@ locals {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
     # Queue mode — inject queue URLs and response store table name
-    var.enable_queue_mode ? {
+    var.queue_mode ? {
       AK_EXECUTION__QUEUES__INPUT__URL                   = var.input_queue_url
       AK_EXECUTION__QUEUES__OUTPUT__URL                  = var.output_queue_url
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
@@ -147,14 +147,14 @@ module "ecs_service" {
   source  = "terraform-aws-modules/ecs/aws//modules/service"
   version = "6.10.0"
 
-  name           = var.service_name
-  cluster_arn    = var.ecs_cluster_arn
-  cpu            = var.rest_service.cpu
-  memory         = var.rest_service.memory
-  desired_count  = var.rest_service.desired_count
-  launch_type    = "FARGATE"
-  platform_version = "LATEST"
-  subnet_ids     = var.subnet_ids
+  name               = var.service_name
+  cluster_arn        = var.ecs_cluster_arn
+  cpu                = var.rest_service.cpu
+  memory             = var.rest_service.memory
+  desired_count      = var.rest_service.desired_count
+  launch_type        = "FARGATE"
+  platform_version   = "LATEST"
+  subnet_ids         = var.subnet_ids
   security_group_ids = [aws_security_group.ecs_service.id]
 
   load_balancer = {
@@ -180,7 +180,7 @@ module "ecs_service" {
   }
 
   # Attach DynamoDB access to the task role if a memory table exists
-  create_tasks_iam_role   = true
+  create_tasks_iam_role = true
   tasks_iam_role_policies = var.create_dynamodb_memory_table ? {
     DynamoDB = aws_iam_policy.dynamodb_policy[0].arn
   } : {}

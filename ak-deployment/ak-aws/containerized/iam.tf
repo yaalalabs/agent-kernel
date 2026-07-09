@@ -1,7 +1,7 @@
 # ---------- REST Service IAM Policies ----------
 
 resource "aws_iam_policy" "rest_service_sqs_policy" {
-  count = var.enable_queue_mode ? 1 : 0
+  count = var.queue_mode ? 1 : 0
 
   name        = "${local.prefix}-rest-svc-sqs"
   description = "Allow REST Service ECS task to send to Input Queue and consume from Output Queue"
@@ -38,7 +38,7 @@ resource "aws_iam_policy" "rest_service_sqs_policy" {
 }
 
 resource "aws_iam_policy" "rest_service_response_store_policy" {
-  count = var.enable_queue_mode ? 1 : 0
+  count = var.queue_mode ? 1 : 0
 
   name        = "${local.prefix}-rest-svc-response-store"
   description = "Allow REST Service ECS task to read/write the DynamoDB response store"
@@ -69,13 +69,13 @@ resource "aws_iam_policy" "rest_service_response_store_policy" {
 }
 
 resource "aws_iam_role_policy_attachment" "rest_service_sqs_attachment" {
-  count      = var.enable_queue_mode ? 1 : 0
+  count      = var.queue_mode ? 1 : 0
   role       = module.rest_service.task_role_name
   policy_arn = aws_iam_policy.rest_service_sqs_policy[0].arn
 }
 
 resource "aws_iam_role_policy_attachment" "rest_service_response_store_attachment" {
-  count      = var.enable_queue_mode ? 1 : 0
+  count      = var.queue_mode ? 1 : 0
   role       = module.rest_service.task_role_name
   policy_arn = aws_iam_policy.rest_service_response_store_policy[0].arn
 }

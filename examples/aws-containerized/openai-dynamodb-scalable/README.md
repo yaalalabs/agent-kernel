@@ -27,18 +27,18 @@ This demo deploys the following AWS resources:
 
 ## Execution Mode
 
-This example supports two queue modes configured via `queue_mode_type` in `deploy/main.tf`:
+This example supports two queue modes configured via `execution_mode` in `deploy/main.tf`:
 
 ### REST_SYNC Mode (default)
 ```hcl
-queue_mode_type = "sync"
+execution_mode = "sync"
 ```
 
 Client request blocks until agent completes. Response returned on same HTTP connection.
 
 ### REST_ASYNC Mode (optional)
 ```hcl
-queue_mode_type = "async"
+execution_mode = "async"
 ```
 
 Client request returns immediately with `request_id`. Client polls separate GET endpoint for result.
@@ -222,7 +222,7 @@ The Agent Runner automatically scales based on queue backlog per task.
 
 **Enable autoscaling in `deploy/main.tf`:**
 ```hcl
-enable_queue_mode = true
+queue_mode = true
 
 scaling_config = {
   enabled            = true

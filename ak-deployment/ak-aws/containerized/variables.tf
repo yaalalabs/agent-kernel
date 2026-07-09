@@ -27,7 +27,7 @@ variable "module_name" {
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
-  default = {}
+  default     = {}
 }
 
 variable "api_version" {
@@ -51,8 +51,8 @@ variable "api_base_path" {
 variable "gateway_endpoints" {
   description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
   type = list(object({
-    path = string        # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
-    method = string        # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
+    path           = string # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
+    method         = string # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
     overwrite_path = string # The backend path that the ALB forwards requests to (e.g., "/api/v1/chat", "/internal/webhook"). This allows mapping external paths to different internal service endpoints.
   }))
   default = []
@@ -70,9 +70,9 @@ variable "gateway_endpoints" {
 }
 
 variable "tags" {
-  type = map(string)
+  type        = map(string)
   description = "Resource tags"
-  default = {}
+  default     = {}
 }
 
 variable "vpc_cidr" {
@@ -82,15 +82,15 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the public subnets"
-  default = ["10.0.1.0/24", "10.0.2.0/24"]
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "private_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the private subnets"
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
+  default     = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
 variable "vpc_id" {
@@ -100,7 +100,7 @@ variable "vpc_id" {
 }
 
 variable "private_subnet_ids" {
-  type = list(string)
+  type        = list(string)
   description = "When using an existing VPC to deploy, private subnet IDs need to be provided"
   default     = null
 }
@@ -129,8 +129,8 @@ variable "rest_service" {
     desired_count         = optional(number, 1)
     container_port        = optional(number, 8000)
     health_check_endpoint = optional(string, "/health")
-    package_path          = string  # Docker image source path (required)
-    image_uri             = optional(string, null)  # Or provide pre-built image URI
+    package_path          = string                 # Docker image source path (required)
+    image_uri             = optional(string, null) # Or provide pre-built image URI
     command               = optional(list(string), null)
     environment_variables = optional(map(string), {})
   })
@@ -216,19 +216,19 @@ data "aws_caller_identity" "current" {}
 # Queue Mode Configuration
 # ---------------------------------------------------------------------------
 
-variable "enable_queue_mode" {
+variable "queue_mode" {
   type        = bool
   description = "Enable SQS queue mode. Creates Input/Output queues, DynamoDB response store, and Agent Runner ECS service."
   default     = false
 }
 
-variable "queue_mode_type" {
+variable "execution_mode" {
   type        = string
   description = "Queue mode type: 'sync' (client waits on same connection) or 'async' (client polls a separate GET endpoint)."
   default     = "sync"
   validation {
-    condition     = contains(["sync", "async"], var.queue_mode_type)
-    error_message = "queue_mode_type must be either 'sync' or 'async'."
+    condition     = contains(["sync", "async"], var.execution_mode)
+    error_message = "execution_mode must be either 'sync' or 'async'."
   }
 }
 
@@ -243,13 +243,13 @@ variable "queue_config" {
 
     # Shared settings
     sqs_managed_sse_enabled   = optional(bool, true)
-    max_message_size          = optional(number, 262144)  # 256 KB
+    max_message_size          = optional(number, 262144) # 256 KB
     receive_wait_time_seconds = optional(number, 0)
     batch_size                = optional(number, 10) # Max messages fetched per SQS receive call (ECS consumers only, 1-10)
 
     # Input queue settings
     input_queue_visibility_timeout            = optional(number, 60)
-    input_queue_message_retention_seconds     = optional(number, 1800)  # 30 minutes
+    input_queue_message_retention_seconds     = optional(number, 1800) # 30 minutes
     input_queue_max_receive_count             = optional(number, 5)
     input_queue_create_dlq                    = optional(bool, false)
     input_queue_dlq_message_retention_seconds = optional(number, 1800)
@@ -262,17 +262,17 @@ variable "queue_config" {
     output_queue_dlq_message_retention_seconds = optional(number, 1800)
   })
   default = {
-    input_queue_name                          = "input-queue"
-    output_queue_name                         = "output-queue"
-    sqs_managed_sse_enabled                   = true
-    max_message_size                          = 262144
-    receive_wait_time_seconds                 = 0
-    batch_size                                = 10
-    input_queue_visibility_timeout            = 60
-    input_queue_message_retention_seconds     = 1800
-    input_queue_max_receive_count             = 5
-    input_queue_create_dlq                    = false
-    input_queue_dlq_message_retention_seconds = 1800
+    input_queue_name                           = "input-queue"
+    output_queue_name                          = "output-queue"
+    sqs_managed_sse_enabled                    = true
+    max_message_size                           = 262144
+    receive_wait_time_seconds                  = 0
+    batch_size                                 = 10
+    input_queue_visibility_timeout             = 60
+    input_queue_message_retention_seconds      = 1800
+    input_queue_max_receive_count              = 5
+    input_queue_create_dlq                     = false
+    input_queue_dlq_message_retention_seconds  = 1800
     output_queue_visibility_timeout            = 60
     output_queue_message_retention_seconds     = 1800
     output_queue_max_receive_count             = 5
@@ -294,8 +294,8 @@ variable "agent_runner" {
     cpu                   = optional(number, 512)
     memory                = optional(number, 1024)
     desired_count         = optional(number, 1)
-    package_path          = optional(string, null)  # Path to agent runner Docker source (builds separate image)
-    image_uri             = optional(string, null)  # Or provide pre-built image URI
+    package_path          = optional(string, null) # Path to agent runner Docker source (builds separate image)
+    image_uri             = optional(string, null) # Or provide pre-built image URI
     command               = optional(list(string), null)
     environment_variables = optional(map(string), {})
   })
@@ -334,8 +334,8 @@ variable "scaling_config" {
   validation {
     condition = (
       !var.scaling_config.enabled ||
-      var.enable_queue_mode
+      var.queue_mode
     )
-    error_message = "scaling_config.enabled requires enable_queue_mode = true."
+    error_message = "scaling_config.enabled requires queue_mode = true."
   }
 }

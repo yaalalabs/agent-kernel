@@ -1,39 +1,10 @@
-provider "aws" {
-  region = var.region
-}
-
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 6.11.0"
-    }
-    docker = {
-      source  = "kreuzwerker/docker"
-      version = "3.6.2"
-    }
-  }
-  required_version = ">= 1.9.5"
-}
-
-data "aws_ecr_authorization_token" "token" {}
-data "aws_caller_identity" "current" {}
-
-provider "docker" {
-  registry_auth {
-    address  = format("%v.dkr.ecr.%v.amazonaws.com", data.aws_caller_identity.current.account_id, var.region)
-    username = data.aws_ecr_authorization_token.token.user_name
-    password = data.aws_ecr_authorization_token.token.password
-  }
-}
-
 # ---------------------------------------------------------------------------
 # Containerized Agents Deployment
 # ---------------------------------------------------------------------------
 module "containerized_agents" {
   # When using from registry:
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -67,8 +38,8 @@ module "containerized_agents" {
 
   # ---- Queue Mode ----
   # Enable queue-based execution for scalable, async processing
-  enable_queue_mode = true
-  queue_mode_type   = "sync" # "async" | "sync"
+  queue_mode     = true
+  execution_mode = "sync" # "async" | "sync"
 
   # ---- Queue Configuration ----
   # SQS queues for request/response handling

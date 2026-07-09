@@ -87,9 +87,9 @@ module "docker_image" {
 
 # Agent Runner Docker Image (optional - only if package_path is provided)
 module "agent_runner_docker_image" {
-  count         = var.enable_queue_mode && var.agent_runner.package_path != null ? 1 : 0
+  count         = var.queue_mode && var.agent_runner.package_path != null ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.5.1"
+  version       = "0.6.0"
   env_alias     = var.env_alias
   module_name   = "${var.module_name}-runner"
   product_alias = var.product_alias

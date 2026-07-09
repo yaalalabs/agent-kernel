@@ -30,22 +30,22 @@ output "private_subnet_ids" {
 
 output "input_queue_url" {
   description = "URL of the SQS Input Queue (queue mode only)"
-  value       = var.enable_queue_mode ? module.queues[0].input_queue_url : null
+  value       = var.queue_mode ? module.queues[0].input_queue_url : null
 }
 
 output "output_queue_url" {
   description = "URL of the SQS Output Queue (queue mode only)"
-  value       = var.enable_queue_mode ? module.queues[0].output_queue_url : null
+  value       = var.queue_mode ? module.queues[0].output_queue_url : null
 }
 
 output "response_store_table_name" {
   description = "DynamoDB Response Store table name (queue mode only)"
-  value       = var.enable_queue_mode ? aws_dynamodb_table.response_store[0].name : null
+  value       = var.queue_mode ? aws_dynamodb_table.response_store[0].name : null
 }
 
 output "agent_runner_service_name" {
   description = "ECS Agent Runner service name (queue mode only)"
-  value       = var.enable_queue_mode ? module.agent_runner[0].service_name : null
+  value       = var.queue_mode ? module.agent_runner[0].service_name : null
 }
 
 output "rest_service_image_uri" {
