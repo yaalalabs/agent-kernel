@@ -35,8 +35,8 @@
 - **Attachment support**:
   - Still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments.
   - `thread` will not support attachments on its own: attachment bytes always live in the existing `AttachmentStore` (in-memory / Redis / DynamoDB) — there is no separate thread-specific attachment backend.
-  - **Thread mode on**: `ChatService` calls `ConversationThreadManager` directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore` — pure storage, no description generated yet. The `attachment_id`(s) are stashed in the session's volatile cache for `MultimodalPreHook` to pick up. The hook still generates the LLM description and strips/injects it as usual, but it does not call `AttachmentStore.save()` itself — `ChatService` already did that.
-  - **Thread mode off**: unchanged from today — `ChatService` never calls `ConversationThreadManager`; `MultimodalPreHook` does the full job itself (describe, save to `AttachmentStore`, strip, inject).
+  - **Thread mode on**: `ChatService` calls `ConversationThreadManager` directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore` — pure storage, no description generated yet. It then **replaces** each raw image/file request in the agent request list with an `AgentRequestAttachmentRef(attachment_id=…)`, so the id travels **in-band** in the request list and no raw bytes travel past storage. `MultimodalPreHook` reads the id straight off that request, loads the bytes back from `AttachmentStore` to generate the LLM description, injects it, and strips the ref — it never calls `AttachmentStore.save()` itself (`ChatService` already did). There is no out-of-band handoff (no session-cache side channel) and no positional pairing — each `AgentRequestAttachmentRef` carries its own id.
+  - **Thread mode off**: unchanged from today — `ChatService` never calls `ConversationThreadManager`; the client's raw `AgentRequestImage`/`AgentRequestFile` flows to `MultimodalPreHook`, which does the full job itself (describe, save to `AttachmentStore`, strip, inject).
   - When `thread` is configured, `ThreadStore` holds only an `attachment_id` reference on each `ThreadMessage`, not the encoded bytes — reading a thread's attachments means one `AttachmentStore` lookup per reference.
   - Thread-enabled attachments are exempt from `AttachmentStore`'s normal `max_attachments` eviction — a thread's history must not silently lose old attachments the way ephemeral session-only storage does.
 
@@ -61,8 +61,9 @@
 
 - **`MultimodalPreHook`**:
   - **Remains** the sole attachment entry point in `Runtime._system_pre_hooks`, gated by `multimodal.enabled` exactly as today.
-  - **Thread mode on**: does not call `AttachmentStore.save()` itself — `ChatService`/`ConversationThreadManager` already saved the bytes and created the `attachment_id` before `Runtime.run`. The hook reads that `attachment_id` back from the session's volatile cache, and still generates the description via LLM, strips the binary, and injects the description — exactly as today, just without the save step.
+  - **Thread mode on**: does not call `AttachmentStore.save()` itself — `ChatService`/`ConversationThreadManager` already saved the bytes and created the `attachment_id` before `Runtime.run`, and passed it in-band as an `AgentRequestAttachmentRef` in the request list. The hook reads the id off that request, loads the bytes back from `AttachmentStore` to generate the description, injects it, and strips the ref before the agent runs.
   - **Thread mode off**: unchanged from today — does the full job itself (describe, save, strip, inject); `ConversationThreadManager` is never involved.
+  - **`AgentRequestAttachmentRef`**: a request type (in the `AgentRequest` union, allowed through the pre-hook validation in `Runtime.run`) that carries only an `attachment_id` — a reference to bytes already in `AttachmentStore`. Handled only by pre-hooks, never passed to the agent.
 
 - **Attachment storage**: attachment bytes always live in `AttachmentStore` — the same backend used today — regardless of `thread` config. When `thread` is present, `ThreadStore` only holds an `attachment_id` reference per message; no bytes are ever duplicated into `ThreadStore`, and no separate blob store is involved.
 
@@ -92,13 +93,13 @@ flowchart TD
     end
 
     Client -->|"POST chat / chat-multipart"| RESTAPI --> ChatService
-    ChatService -->|"stash attachment_id(s)\nin volatile cache"| SessionStore
+    ChatService --> SessionStore
     ChatService -->|"get_or_create_thread\nsave attachment bytes\nappend_message"| TSM
-    ChatService --> Runtime --> MMHook
+    ChatService -->|"run(requests with\nAgentRequestAttachmentRef in-band)"| Runtime --> MMHook
     Runtime --> Agent
     TSM -->|"save / get bytes"| AS
     TSM -->|"attachment_id reference"| TS
-    MMHook -->|"thread mode off:\nsave bytes directly"| AS
+    MMHook -->|"thread on: load bytes by id\nthread off: save bytes directly"| AS
 
     Client -->|"GET /threads*\nBearer token"| ThreadRouter --> TSM
     ThreadRouter -->|"authorise(token)\nif configured"| AUTH
@@ -173,13 +174,12 @@ thread:
 
 ### Attachment Flow
 
-This diagram depicts thread-enabled mode. When `thread` is not configured, `ChatService` never calls `ConversationThreadManager`, `Session` is not used to pass an `attachment_id`, and `MultimodalPreHook` does the full job itself (describe, save, strip, inject) exactly as it does today.
+This diagram depicts thread-enabled mode. When `thread` is not configured, `ChatService` never calls `ConversationThreadManager`, no `AgentRequestAttachmentRef` is produced, and `MultimodalPreHook` does the full job itself (describe, save, strip, inject) exactly as it does today.
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant ChatService
-    participant Session
     participant ConversationThreadManager
     participant AttachmentStore
     participant ThreadStore
@@ -195,14 +195,14 @@ sequenceDiagram
     AttachmentStore-->>ConversationThreadManager: attachment_id
     ConversationThreadManager->>ThreadStore: append_message(ThreadMessage with attachment_id reference)\nno description yet
     ThreadStore-->>ConversationThreadManager: updated Thread
-    ConversationThreadManager-->>ChatService: attachment_id(s)
-    ChatService->>Session: stash attachment_id(s) in volatile cache
-    ChatService->>Runtime: run(agent, session, requests)\nrequests still carry raw attachment bytes
+    ConversationThreadManager-->>ChatService: (rebuilt requests: raw image/file replaced\nby AgentRequestAttachmentRef(id)), attachment refs
+    ChatService->>Runtime: run(agent, session, rebuilt requests)\nno raw bytes — only AgentRequestAttachmentRef in-band
     Runtime->>MultimodalPreHook: on_run(session, agent, requests)
-    MultimodalPreHook->>Session: read attachment_id(s) from volatile cache
-    MultimodalPreHook->>MultimodalPreHook: generate description via LLM\n(using bytes already in requests)
+    MultimodalPreHook->>AttachmentStore: get_attachment_data(attachment_id)\nload bytes by id
+    AttachmentStore-->>MultimodalPreHook: attachment bytes + mime_type
+    MultimodalPreHook->>MultimodalPreHook: generate description via LLM
     Note over MultimodalPreHook: No AttachmentStore.save() here —\nChatService already saved the bytes
-    MultimodalPreHook-->>Runtime: modified requests\n(binary stripped, description injected)
+    MultimodalPreHook-->>Runtime: modified requests\n(AgentRequestAttachmentRef stripped, description injected)
     Runtime->>Agent: run(text + description)\nno raw binary passed to agent
     Agent-->>Runtime: response
     Runtime-->>ChatService: response
