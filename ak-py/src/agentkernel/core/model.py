@@ -119,7 +119,7 @@ class AgentReplyAny(BaseModel):
     type: Literal["other"] = "other"
 
     def __str__(self) -> str:
-        return json.dumps(self.content)
+        return json.dumps(self.content, default=str)
 
     @classmethod
     def from_output(cls, value: Any, prompt: str = "") -> "AgentReplyAny | None":
