@@ -166,6 +166,14 @@ The version appears in:
 
 ```bash
 git clone https://github.com/yaalalabs/agent-kernel.git
+cd agent-kernel
+make dev-setup                # Installs pyenv, Python 3.12, uv, then syncs ak-py venv
+# or directly: ./scripts/dev-setup.sh
+```
+
+Alternatively, set things up manually:
+
+```bash
 cd agent-kernel/ak-py
 ./build.sh                    # Creates venv, installs deps
 ```
