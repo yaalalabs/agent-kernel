@@ -22,9 +22,9 @@ This demo deploys the following AWS resources:
   - Agent Runner: Executes agent logic asynchronously (deployed from ECR container image)
   - Response Handler: Processes and stores responses (deployed from S3 ZIP)
 - **SQS Queues**: Input and output queues (DLQs disabled in this example)
-- **DynamoDB**: Session storage and response store tables
+- **Redis Cluster**: Session storage and response store (shared with openai example)
 - **API Gateway**: REST API with custom endpoints
-- **VPC**: Private networking for Lambda functions
+- **VPC**: Private networking for Lambda functions (shared with openai example)
 - **CloudWatch**: Logging and monitoring
 
 ## Deployment Package Types
@@ -57,14 +57,15 @@ Both modes keep the scalable multi-Lambda architecture (`request_handler`, `agen
 - Terraform (`1.9.5` or higher) installed
 - Docker installed (for building the agent runner container image)
 - UV package manager installed
+- The openai example must be deployed first to create the shared Redis cluster and VPC resources
 - An S3 bucket for Lambda deployment packages (update `S3_BUCKET` in `deploy/deploy.sh`)
 - An ECR repository for the agent runner image
 
 ## Deployment Steps
 
-1. Configure environment variables:
+1. Deploy the openai example first to create the shared infrastructure:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    cd ../openai/deploy && ./deploy.sh
     ```
 
 2. Update `deploy/deploy.sh` with your S3 bucket name:
@@ -180,5 +181,5 @@ The architecture automatically scales based on:
 Monitor through CloudWatch:
 - Lambda function metrics and logs
 - SQS queue depth and processing rates
-- DynamoDB read/write metrics
+- Redis cluster metrics
 - API Gateway request metrics

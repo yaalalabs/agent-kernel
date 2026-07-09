@@ -119,6 +119,10 @@ mcp = [
 messenger = [
     { name = "httpx" },
 ]
+multimodal = [
+    { name = "litellm" },
+    { name = "python-multipart" },
+]
 neo4j = [
     { name = "neo4j" },
 ]
@@ -151,6 +155,7 @@ telegram = [
 ]
 test = [
     { name = "datasets" },
+    { name = "langchain-community" },
     { name = "litellm" },
     { name = "pandas" },
     { name = "pytest" },
@@ -208,10 +213,12 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'whatsapp'", specifier = ">=0.27.0" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = "~=1.2.3" },
     { name = "langchain-community", marker = "extra == 'langgraph'", specifier = "==0.4.1" },
+    { name = "langchain-community", marker = "extra == 'test'", specifier = "==0.4.1" },
     { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=4.2.0" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = "~=1.0.5" },
     { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.89.2" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.89.2" },
+    { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.89.2" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.0.0" },
@@ -231,6 +238,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.2.1" },
     { name = "pytest-html", marker = "extra == 'test'", specifier = ">=4.1.1" },
     { name = "pytest-order", marker = "extra == 'test'", specifier = ">=1.3.0" },
+    { name = "python-multipart", marker = "extra == 'multimodal'", specifier = ">=0.0.12" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ragas", marker = "extra == 'test'", specifier = ">=0.4.1" },
     { name = "rapidfuzz", marker = "extra == 'test'", specifier = ">=3.14.1" },
@@ -243,7 +251,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "smolagents", "cli", "aws", "azure", "redis", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "smolagents", "cli", "aws", "azure", "redis", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -334,9 +342,9 @@ name = "aiologic"
 version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sniffio", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
-    { name = "wrapt", marker = "python_full_version < '3.13'" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+    { name = "wrapt" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/53/a7/809482759f40079f4c4328c7318bf569ae25d457f5017aad30a1b9aafedc/aiologic-0.17.0.tar.gz", hash = "sha256:65aa058e858c94cd208badb188e7f00b54dcabb3ba85b34f794db98074d108b9", size = 251625, upload-time = "2026-06-14T12:24:35.367Z" }
 wheels = [
@@ -506,7 +514,7 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "werkzeug", marker = "python_full_version < '3.13'" },
+    { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1d/be/5535830e0658e9668093941b3c33b0ea03eceadbf6bd6b7870aa37ef071a/azure_functions-1.24.0.tar.gz", hash = "sha256:18ea1607c7a7268b7a1e1bd0cc28c5cc57a9db6baaacddb39ba0e9f865728187", size = 134495, upload-time = "2025-10-06T19:08:08.612Z" }
 wheels = [
@@ -523,7 +531,7 @@ resolution-markers = [
     "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "werkzeug", marker = "python_full_version >= '3.13'" },
+    { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a5/49/5af2f12a4ac49c5549a4a943f7b78650c98a41c776f8360ca506db246f91/azure_functions-2.1.0.tar.gz", hash = "sha256:f0d95bf53569ff32a7258a0ea7d727d1a174183c79e8240760d90876b3d32acd", size = 145464, upload-time = "2026-04-13T16:14:49.299Z" }
 wheels = [
@@ -1174,8 +1182,8 @@ name = "culsans"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiologic", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "aiologic" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d9/e3/49afa1bc180e0d28008ec6bcdf82a4072d1c7a41032b5b759b60814ca4b0/culsans-0.11.0.tar.gz", hash = "sha256:0b43d0d05dce6106293d114c86e3fb4bfc63088cfe8ff08ed3fe36891447fe33", size = 107546, upload-time = "2025-12-31T23:15:38.196Z" }
 wheels = [
@@ -5903,8 +5911,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "jeepney", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "cryptography" },
+    { name = "jeepney" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

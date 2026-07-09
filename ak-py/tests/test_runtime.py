@@ -8,6 +8,17 @@ from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
 
 
+@pytest.fixture(autouse=True)
+def reset_system_hook_caches():
+    # Hooks are built lazily from the config active at first use; clear them so
+    # hooks built from one test's mocked config don't leak into other tests.
+    Runtime._system_pre_hooks = None
+    Runtime._system_post_hooks = None
+    yield
+    Runtime._system_pre_hooks = None
+    Runtime._system_post_hooks = None
+
+
 class DummyRunner(Runner):
     @property
     def supports_streaming(self) -> bool:
@@ -90,6 +101,15 @@ async def test_runtime_run_calls_runner(monkeypatch):
     class FakeCfg:
         class session:
             type = "in_memory"
+
+        # System hooks are built lazily on first run(), so the mocked config
+        # must carry the guardrail flags the hook factories read.
+        class guardrail:
+            class input:
+                enabled = False
+
+            class output:
+                enabled = False
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 

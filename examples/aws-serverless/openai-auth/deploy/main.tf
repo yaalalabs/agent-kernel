@@ -1,7 +1,7 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
   # Basic lambda configuration
   product_alias        = var.product_alias
@@ -11,6 +11,9 @@ module "serverless_agents" {
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
+
+  # Memory DB Config - use existing Redis cluster
+  create_redis_cluster = false
 
   # Request handler configuration
   request_handler = {

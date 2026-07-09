@@ -1,5 +1,6 @@
 import importlib.metadata
-from typing import List, Optional
+from threading import RLock
+from typing import ClassVar, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -206,17 +207,6 @@ class _TraceConfig(BaseModel):
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
 
 
-class _JudgeConfig(BaseModel):
-    model: str = Field(default="gpt-4o-mini", description="LLM Model name")
-    provider: str = Field(default="openai", description="LLM Provider name")
-    embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
-
-
-class _TestConfig(BaseModel):
-    mode: str = Field(default="fallback", pattern="^(fallback|judge|fuzzy)$")
-    judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
-
-
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock|walledai)$")
@@ -346,19 +336,44 @@ class AKConfig(YamlBaseSettingsModified):
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
-    test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
+    _instance: ClassVar[Optional["AKConfig"]] = None
+    # Reentrant because configure_from_config() calls AKConfig.get() again
+    _instance_lock: ClassVar[RLock] = RLock()
+
     @classmethod
     def get(cls) -> "AKConfig":
-        return globals()["ak_config"]
+        """Return the AKConfig singleton, creating it on first access.
+
+        Loading lazily keeps `import agentkernel` free of config.yaml reads, so
+        processes that never touch the configuration (e.g. the CLI test harness)
+        never load it. Logging is configured together with the first load since
+        its settings come from this config.
+        """
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    # Set before configuring logging: configure_from_config()
+                    # re-enters get() and must see the instance
+                    cls._instance = AKConfig()
+                    try:
+                        from .logger import AKLogger
+
+                        AKLogger.configure_from_config()
+                    except Exception:
+                        cls._instance = None
+                        raise
+        return cls._instance
 
     @classmethod
-    def _set(cls):
-        globals()["ak_config"] = AKConfig()
+    def _reset(cls):
+        """Clear the cached singleton so the next get() reloads the config.
 
-
-AKConfig._set()
+        Logging is not reconfigured on reload: AKLogger keeps its _initialized
+        guard, matching the previous configure-once-at-import behavior.
+        """
+        cls._instance = None

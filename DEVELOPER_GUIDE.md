@@ -43,13 +43,18 @@ Before you begin development, ensure you have the following installed:
 
 ## Development
 
-1. **Navigate to the Python package**
+1. **Run the dev setup script** from the repo root to install prerequisites (pyenv, Python 3.12, uv) and sync the `ak-py` virtual environment:
    ```bash
-   cd ak-py
+   make dev-setup
+   ```
+   or directly:
+   ```bash
+   ./scripts/dev-setup.sh
    ```
 
-2. **Install development dependencies**
+   Alternatively, set things up manually:
    ```bash
+   cd ak-py
    ./build.sh
    ```
 
