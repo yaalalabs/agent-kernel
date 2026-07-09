@@ -4,7 +4,7 @@
 module "containerized_agents" {
   # When using from registry:
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
