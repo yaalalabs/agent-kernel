@@ -8,9 +8,8 @@ the result in an `AgentReplyAny` whose `content` field carries the structured ou
 The CLI (and any other string-oriented consumer) renders an `AgentReplyAny` as its JSON
 serialization, so the reply printed on the console is a JSON string:
 
-    > John Doe can be reached at john.doe@example.com or on 077-1234567
+    (contact) >> John Doe can be reached at john.doe@example.com or on 077-1234567
     {"name": "John Doe", "email": "john.doe@example.com", "phone": "077-1234567"}
-
 In-process consumers can use `AgentService.run_multi()` to get the reply object and read the dict
 directly — no re-parsing needed:
 
