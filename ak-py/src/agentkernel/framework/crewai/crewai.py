@@ -361,11 +361,7 @@ class CrewAIRunner(Runner):
             output_pydantic = getattr(agent, "output_pydantic", None)
             output_json = getattr(agent, "output_json", None)
             schema = output_pydantic or output_json
-            expected_output = (
-                f"A structured response conforming to the {schema.__name__} schema"
-                if schema is not None
-                else "An answer is plain text"
-            )
+            expected_output = f"A structured response conforming to the {schema.__name__} schema" if schema is not None else "An answer is plain text"
             task = Task(
                 description=self._describe(prompt, transcript),
                 expected_output=expected_output,
