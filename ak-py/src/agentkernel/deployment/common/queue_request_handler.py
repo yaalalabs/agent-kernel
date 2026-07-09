@@ -83,8 +83,7 @@ class QueueRequestHandler(RESTRequestHandler):
                 queue_result = await asyncio.to_thread(
                     self.get_queue_handler().send_message_to_input_queue,
                     message_body=body.model_dump(),
-                    message_group_id=body.session_id,
-                    message_deduplication_id=request_id,
+                    attributes={"message_group_id": body.session_id, "message_deduplication_id": request_id},
                     request_id=request_id,  # This becomes a custom message attribute
                 )
 

@@ -47,21 +47,6 @@ class SQSHandler(QueueHandler):
         value: Any
         datatype: "SQSHandler.AttributeDataType"
 
-    class SendMessageAttributes(BaseModel):
-        """FIFO send attributes for the input/output queue convenience methods."""
-
-        message_group_id: Optional[str] = None
-        message_deduplication_id: Optional[str] = None
-
-    class SQSMessageBody(BaseModel):
-        """Typed message body for the input queue. Extra fields are allowed and preserved."""
-
-        prompt: str
-        agent: str
-        session_id: str
-
-        model_config = ConfigDict(extra="allow")
-
     @classmethod
     def _get_config(cls):
         """Return a cached AKConfig instance.
@@ -324,7 +309,7 @@ class SQSHandler(QueueHandler):
     @classmethod
     def send_message_to_input_queue(
         cls,
-        message_body: "SQSHandler.SQSMessageBody | Dict[str, Any]",
+        message_body: "SQSHandler.QueueMessageBody | Dict[str, Any]",
         attributes: "SQSHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
         request_id: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -352,7 +337,7 @@ class SQSHandler(QueueHandler):
         if not queue_url:
             raise ValueError("Input queue URL is not configured in AKConfig")
 
-        body = cls.SQSMessageBody.model_validate(message_body)
+        body = cls.QueueMessageBody.model_validate(message_body)
         send_attributes = cls.SendMessageAttributes.model_validate(attributes or {})
 
         return cls.send_message(

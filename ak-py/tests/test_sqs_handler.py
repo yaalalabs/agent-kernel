@@ -180,7 +180,7 @@ class TestSQSHandler:
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
     def test_send_message_to_input_queue_with_model_body(self, mock_boto3_client, mock_ak_config):
-        """Test sending an SQSMessageBody instance to the input queue."""
+        """Test sending a QueueMessageBody instance to the input queue."""
         # Setup mocks
         mock_config_instance = MagicMock()
         mock_config_instance.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
@@ -191,7 +191,7 @@ class TestSQSHandler:
         mock_boto3_client.return_value = mock_sqs_client
 
         # Execute with a validated model instance
-        body = SQSHandler.SQSMessageBody(**self.VALID_INPUT_BODY)
+        body = SQSHandler.QueueMessageBody(**self.VALID_INPUT_BODY)
         result = SQSHandler.send_message_to_input_queue(message_body=body)
 
         # Verify
@@ -438,10 +438,10 @@ class TestSQSHandler:
         assert empty_attrs.message_group_id is None
         assert empty_attrs.message_deduplication_id is None
 
-    def test_sqs_message_body_model(self):
-        """Test SQSMessageBody model."""
+    def test_queue_message_body_model(self):
+        """Test QueueMessageBody model."""
         # Required fields plus preserved extras
-        body = SQSHandler.SQSMessageBody(prompt="hello", agent="test-agent", session_id="session-1", files=["a.txt"])
+        body = SQSHandler.QueueMessageBody(prompt="hello", agent="test-agent", session_id="session-1", files=["a.txt"])
         assert body.prompt == "hello"
         assert body.agent == "test-agent"
         assert body.session_id == "session-1"
@@ -449,7 +449,13 @@ class TestSQSHandler:
 
         # Missing required fields are rejected
         with pytest.raises(ValidationError):
-            SQSHandler.SQSMessageBody(prompt="hello")
+            SQSHandler.QueueMessageBody(prompt="hello")
+
+        # Both models are inherited from the QueueHandler contract
+        from agentkernel.deployment.common.queue_handler import QueueHandler
+
+        assert SQSHandler.QueueMessageBody is QueueHandler.QueueMessageBody
+        assert SQSHandler.SendMessageAttributes is QueueHandler.SendMessageAttributes
 
     def test_sqs_queue_input_message_model(self):
         """Test SQSQueueInputMessage model."""
