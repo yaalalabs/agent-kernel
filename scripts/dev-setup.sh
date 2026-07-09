@@ -140,6 +140,14 @@ if [ "$OS" == "Linux" ] && ! command -v unzip &> /dev/null; then
     print_success "unzip installed"
 fi
 
+if [ "$OS" == "Linux" ] && ! command -v zip &> /dev/null; then
+    print_header "Checking zip"
+    print_info "zip not found. Installing via apt-get..."
+    sudo apt-get update
+    sudo apt-get install -y zip
+    print_success "zip installed"
+fi
+
 print_header "Setting Terraform to latest"
 tfenv install latest
 tfenv use latest
