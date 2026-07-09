@@ -174,13 +174,13 @@ Build the request as JSON and submit it:
 cat > /tmp/pr-review.json <<'EOF'
 {
   "event": "COMMENT",
-  "body": "<summary: 2-4 sentences — overall assessment, count of findings by severity, anything positive worth noting>",
+  "body": "<summary in point form: a one-line overall assessment, then a bullet list — findings count by severity, un-anchorable findings as bullets, anything positive worth noting>",
   "comments": [
     {
       "path": "ak-py/src/agentkernel/core/session/redis.py",
       "line": 42,
       "side": "RIGHT",
-      "body": "**[blocker]** <what is wrong and why, citing the convention>. Suggestion: <concrete fix>."
+      "body": "**[blocker]** <one-line statement of the problem>\n\n- <why: the principle, convention, or failure scenario>\n- <suggestion: concrete fix>"
     }
   ]
 }
@@ -198,6 +198,7 @@ Rules for the posted review:
   - `[nit]` — style/polish; only include when the fix is trivial and unambiguous
   - `[question]` — genuine uncertainty about intent; phrase as a question
 - Every comment must cite *why* — the principle, convention, or concrete failure scenario — not just *what*. Include a concrete suggested fix when one exists.
+- **Write comments in point form, not paragraphs.** Each comment is one bold severity-tagged line stating the problem, followed by short bullets (why, suggestion, references). Nest bullets when a point has sub-details. A `[nit]` may be a single line; anything longer than a sentence or two must be bulleted — never a wall of prose.
 - If posting fails on a specific comment (usually a line-anchoring error), move that finding into the summary body and retry rather than dropping it.
 
 ## Output Expectations
@@ -220,6 +221,7 @@ After posting, report back to the requester:
 - Approving or requesting changes — this skill only ever comments.
 - Restating feedback that is already on the PR.
 - Flagging formatting that `black`/`isort` would fix anyway as individual nits — one summary-level note ("run `make lint`") is enough.
+- Writing comments as dense paragraphs — point-form bullets are far easier for the author to scan and act on.
 - Reviewing from memory of the conventions instead of loading the `ak-dev-*` skills.
 - Loading only the three always-on skills and skipping the path-to-skill routing in Step 2 — component PRs then get reviewed without the checklist that defines what "complete" means for that component.
 - Reading the implementation before the spec when the PR contains a `spec.md` — the code biases how the spec is judged, and spec gaps get rationalized as intended behavior.
