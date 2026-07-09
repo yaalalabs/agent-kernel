@@ -67,6 +67,8 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_firestore_database_id.py` | FirestoreDriver named `database_id` configuration |
 | `test_ak_logger.py` | AKLogger level resolution, configuration |
 | `test_error_util.py` | `user_facing_error_message` error mapping |
+| `test_thread_runner.py` | ThreadRunner task validation, failure/shutdown semantics |
+| `test_ecs_sqs_consumer_parallel.py` | ECSSQSConsumer message processing + delete/retry semantics |
 
 ## Test Patterns
 
