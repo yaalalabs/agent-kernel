@@ -1,3 +1,4 @@
+import asyncio
 import time
 from abc import ABC, abstractmethod
 from typing import Dict
@@ -33,16 +34,21 @@ class ResponseStore(ABC):
         """
         pass
 
-    def get_message_with_retry(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
+    def get_message_with_retry(self, request_id: str, get_and_delete: bool = False, async_mode: bool = False):
         """
         Wait until a message exists for a request ID and retrieve it.
+
         :param request_id: Request ID
         :param get_and_delete: Delete the message after retrieval when True
-        :return: message record as dict or None if not found
+        :param async_mode: If True, returns an awaitable that polls using
+            asyncio.sleep/asyncio.to_thread instead of blocking, so an async caller
+            can await it without holding a worker thread for the whole wait.
+        :return: message record as dict or None if not found (or an awaitable of the same, when async_mode=True)
         """
-        response_store_config = AKConfig.get().execution.response_store
-        retry_count = response_store_config.retry_count
-        delay = response_store_config.delay
+        if async_mode:
+            return self._get_message_with_retry_async(request_id, get_and_delete)
+
+        retry_count, delay = self._get_retry_config()
         for attempt in range(retry_count):
             self._log.debug("Attempt %d/%d for request_id=%s", attempt + 1, retry_count, request_id)
             message = self.get_message(request_id, get_and_delete=get_and_delete)
@@ -51,6 +57,27 @@ class ResponseStore(ABC):
             if attempt < retry_count - 1:
                 time.sleep(delay)
         return None
+
+    async def _get_message_with_retry_async(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
+        """
+        Async counterpart of get_message_with_retry — yields the event loop via
+        asyncio.sleep between attempts instead of blocking a thread for the full wait.
+        """
+        retry_count, delay = self._get_retry_config()
+        for attempt in range(retry_count):
+            self._log.debug("Attempt %d/%d for request_id=%s", attempt + 1, retry_count, request_id)
+            message = await asyncio.to_thread(self.get_message, request_id, get_and_delete)
+            if message is not None:
+                return message
+            if attempt < retry_count - 1:
+                await asyncio.sleep(delay)
+        return None
+
+    @staticmethod
+    def _get_retry_config() -> tuple[int, int]:
+        """Read (retry_count, delay) for get_message_with_retry from config."""
+        response_store_config = AKConfig.get().execution.response_store
+        return response_store_config.retry_count, response_store_config.delay
 
     @abstractmethod
     def delete_message(self, request_id: str) -> None:

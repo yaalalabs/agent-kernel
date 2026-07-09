@@ -11,13 +11,11 @@ module "containered_agents" {
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name
-  package_path         = "../dist"
   container_type       = "ecs"
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
   product_display_name = "AK CrewAI Containerized Example"
-  ecs_container_port   = 8000
   gateway_endpoints = [
     {
       path           = "app",
@@ -30,11 +28,16 @@ module "containered_agents" {
       overwrite_path = "/whoami"
     }
   ]
-  # Environment variables passed to container
-  environment_variables = {
-    OPENAI_API_KEY     = var.openai_api_key,
-    CREWAI_STORAGE_DIR = "/tmp/crewai",
-    EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
-    HOME               = "/tmp"
+
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    # Environment variables passed to container
+    environment_variables = {
+      OPENAI_API_KEY     = var.openai_api_key,
+      CREWAI_STORAGE_DIR = "/tmp/crewai",
+      EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
+      HOME               = "/tmp"
+    }
   }
 }

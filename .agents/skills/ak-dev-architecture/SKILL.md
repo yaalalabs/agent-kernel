@@ -4,7 +4,9 @@ description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
   interact, or before making changes to core functionality. Covers Session, Agent,
-  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, and the adapter pattern.
+  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, the adapter pattern,
+  and the AWS ECS containerized deployment classes (ECSIOHandler, ECSOutputConsumer,
+  ECSAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -230,10 +232,22 @@ ak-py/src/agentkernel/
 │   ├── a2a/                 # Agent-to-Agent server
 │   └── mcp/                 # MCP server
 ├── deployment/              # Cloud deployment adapters
-│   ├── aws/                 # Lambda handler + serverless/ async path (SQS router, response store)
-│   ├── azure/               # Azure Functions handler
-│   ├── gcp/                 # Google Cloud Run handler + authorizer
-│   └── common/              # Shared deployment helpers
+│   ├── common/              # Shared across Lambda + ECS
+│   │   ├── thread_runner.py     # ThreadRunner — run N callables as peer threads
+│   │   ├── queue_consumer.py    # QueueConsumer — ABC shared by ECSSQSConsumer + LambdaSQSConsumer
+│   │   ├── response_store.py    # ResponseStore
+│   │   └── websocket_connection_store.py
+│   ├── aws/
+│   │   ├── serverless/      # Lambda handlers: Lambda, ResponseHandler, ServerlessAgentRunner, etc.
+│   │   ├── containerized/   # ECS Fargate handlers
+│   │   │   ├── core/
+│   │   │   │   └── sqs_consumer.py      # ECSSQSConsumer — extends QueueConsumer: SQS poll loop
+│   │   │   ├── akagentrunner.py         # ECSAgentRunner — polls Input Queue, runs agent
+│   │   │   ├── akoutputconsumer.py      # ECSOutputConsumer — polls Output Queue, writes to DB/WS
+│   │   │   ├── ecs_io_handler.py        # ECSIOHandler — entrypoint: wires both threads
+│   │   │   └── ecs_queue_handler.py     # ECSQueueRequestHandler — FastAPI routes
+│   │   └── core/            # Shared: SQSHandler, WebSocketHandler, ResponseStore
+│   └── azure/               # Azure Functions handler
 ├── integration/             # Messaging integrations
 │   ├── slack/
 │   ├── whatsapp/
@@ -274,6 +288,154 @@ ak-py/src/agentkernel/
         ├── redis.py           # RedisAttachmentStore
         ├── dynamodb.py        # DynamoDBAttachmentStore
         └── session_cache.py   # SessionNonVolatileCacheAttachmentStore (legacy)
+```
+
+## AWS ECS Containerized Deployment
+
+The containerized deployment runs on ECS Fargate and uses a two-container architecture for scalable queue-based processing.
+
+### Class Hierarchy
+
+| Class | File | Role |
+|---|---|---|
+| `QueueConsumer` | `deployment/common/queue_consumer.py` | Abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
+| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `QueueConsumer`: SQS long-poll loop, retry/DLQ logic |
+| `ThreadRunner` | `deployment/common/thread_runner.py` | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
+| `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer` — polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
+| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer` — polls Input Queue, runs the agent, sends to Output Queue |
+| `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST API + output consumer as peer threads |
+| `ECSQueueRequestHandler` | `containerized/ecs_queue_handler.py` | FastAPI routes: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{id}` polls |
+
+### Two-Container Layout
+
+```
+Container 1 — ECSIOHandler
+  Thread 1 (ThreadRunner):  RESTAPI.run(handlers=[ECSQueueRequestHandler()])
+                            — FastAPI/uvicorn, handles POST /chat and GET /chat/{id}
+  Thread 2 (ThreadRunner):  ECSOutputConsumer.run()
+                            — polls Output Queue, writes to DynamoDB / broadcasts via WebSocket
+
+Container 2 — ECSAgentRunner
+  N threads (ThreadRunner):  ECSSQSConsumer._consumer_loop, one per
+                             execution.queues.input.no_of_consumers (default 5)
+                             — each polls Input Queue, runs agent, sends result to Output Queue
+```
+
+### ECSSQSConsumer Contract
+
+- **`get_queue_url(cls) → str`** *(abstract)*: return the SQS queue URL to poll.
+- **`process_message(cls, record)`** *(abstract, from `QueueConsumer`)*: handle one message; called on every successful receive.
+- **`on_permanent_failure(cls, record)`** *(abstract, from `QueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions** — if it raises, the message is not deleted and loops back.
+- **`delete_message(cls, msg: dict)`** *(public)*: subclasses may call this directly when manual deletion is needed.
+- **`run(cls)`**: blocking poll loop — the container entry-point.
+
+### ThreadRunner Contract
+
+`ThreadRunner.run(tasks: list[ThreadRunner.Task], max_workers=None) -> dict[Task, Any]` starts one
+`threading.Thread` per `Task` (daemon, so a never-ending task can't block interpreter shutdown),
+gated by a `Semaphore(max_workers or len(tasks))`, and drains completions off a shared queue until
+every task in that call has reported in. It returns a dict keyed by the exact `Task` instance,
+populated only for tasks that completed without raising.
+
+Each `ThreadRunner.Task` has:
+- `stop_task_on_failure` (default `True`) — log and ignore vs. log only, on that task's own exception.
+- `stop_all_on_failure` (default `False`) — also bring down the whole `run()` call on that task's failure. Requires `stop_task_on_failure=True`.
+- `graceful` (default `False`) — only meaningful with `stop_all_on_failure=True`. Requires it, or raises `ValueError`.
+- `awaited_on_shutdown` (default `True`) — whether `run()`'s drain loop waits for this task to report a completion before proceeding. Set `False` for a task that can never observe `shutdown_event` and has no other way to be told to stop (e.g. a blocking call like `uvicorn.run()`) — otherwise a `graceful=True` failure elsewhere in the same `run()` call hangs forever waiting for it. Every thread's completion still lands on the shared queue regardless of this flag; `run()` just doesn't count that task toward "everyone's reported in."
+
+On a task raising with `stop_all_on_failure=True`:
+- `graceful=False` → logs the exception, `logging.shutdown()` + `os._exit(1)` **immediately**, without waiting on other tasks.
+- `graceful=True` → logs the exception, sets a **class-level singleton** `ThreadRunner.shutdown_event` (a `threading.Event`), and keeps draining the *other tasks started by this same `run()` call*. Cooperating tasks (e.g. `ECSSQSConsumer._consumer_loop`) check `ThreadRunner.shutdown_event.is_set()` in their loop condition and return once set. Only after every task from this call has reported completion does it check `shutdown_event` and call `os._exit(1)` — so it never waits on tasks it didn't itself start (e.g. the IO container's `rest-api` thread, which doesn't check the event at all and is simply killed when `os._exit(1)` fires).
+
+#### How to Use ThreadRunner
+
+`ThreadRunner` is internal-only — not part of the public API, never imported by user application
+code. Reach for it when adding a new internal component that needs several peer threads with
+uniform failure handling (as opposed to a raw `threading.Thread`, which gives you none of the
+crash/result/shutdown plumbing below for free).
+
+```python
+from agentkernel.deployment.common import ThreadRunner
+
+def poll_forever():
+    while not ThreadRunner.shutdown_event.is_set():
+        ...  # do one unit of work per iteration, so the shutdown check is actually reached
+
+def compute(item):
+    return item * 2  # a task's return value shows up in the results dict, keyed by its Task
+
+results = ThreadRunner.run(
+    tasks=[
+        ThreadRunner.Task(
+            execution_function=poll_forever,
+            thread_name="poller",
+            stop_all_on_failure=True,
+            graceful=True,  # opt in only if this task's execution_function actually checks
+                             # shutdown_event in its loop — otherwise "graceful" drain never ends
+        ),
+        ThreadRunner.Task(execution_function=compute, thread_name="compute-1", item=5),
+    ],
+)
+```
+
+Guidance:
+- A task with a `while` loop that should participate in a graceful shutdown **must** check
+  `ThreadRunner.shutdown_event.is_set()` (or `.wait(timeout)` for a sleep/backoff) once per
+  iteration before setting `graceful=True` on it — `graceful=True` on a task that never checks the
+  event just makes that `run()` call hang forever waiting for it to return, *unless* that task is
+  also marked `awaited_on_shutdown=False` (see below).
+- `stop_all_on_failure=True` always requires `stop_task_on_failure=True` (the default), and
+  `graceful=True` always requires `stop_all_on_failure=True` — both raise `ValueError` in
+  `Task.__post_init__` if violated.
+- Only set `graceful=True` on tasks in a `run()` call where every *other* task in that same call is
+  either similarly cooperative, or marked `awaited_on_shutdown=False` — e.g. `ECSIOHandler`
+  deliberately marks its `rest-api` task (`uvicorn.run()`, which never checks `shutdown_event` and
+  can only be stopped by an OS signal) as `awaited_on_shutdown=False`, so the drain loop doesn't
+  wait on it and it's simply cut off whenever `os._exit(1)` eventually fires.
+- `ThreadRunner.shutdown_event` is a **process-wide singleton**, not scoped to one `run()` call —
+  once any call sets it, every other `run()` call in the process sees it set too, and will
+  `os._exit(1)` once its own tasks finish draining. This is deliberate (a fatal failure anywhere
+  should bring the whole process down), but it also means **tests must reset it between cases**
+  (`ThreadRunner.shutdown_event.clear()`), or a graceful-path test will leave every later test in
+  the same run silently triggering a real `os._exit(1)`. See the `autouse` fixture in
+  `ak-py/tests/test_thread_runner.py`.
+- No hard timeout on graceful drain: if a task in the *same batch* as the failure is
+  `awaited_on_shutdown=True` (the default) but never checks `shutdown_event` and never naturally
+  returns, that `run()` call's drain loop — and therefore its `os._exit(1)` — never fires. Mark such
+  a task `awaited_on_shutdown=False` to opt it out of the drain instead.
+
+### Entry Point Pattern
+
+```python
+# Container 1 — app_rest_service.py
+from agentkernel.deployment.aws.containerized import ECSIOHandler
+
+runner = ECSIOHandler.run
+
+if __name__ == "__main__":
+    runner()
+
+# Container 2 — app_agent_runner.py
+from agentkernel.deployment.aws import ECSAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+if __name__ == "__main__":
+    ECSAgentRunner.run()
+```
+
+### Public Exports
+
+```python
+# agentkernel.deployment.aws
+from agentkernel.deployment.aws import (
+    ECSAgentRunner,      # Container 2 entry-point
+    ECSIOHandler,        # Container 1 entry-point
+    ECSOutputConsumer,   # Subclass ECSSQSConsumer for custom output processing
+)
+from agentkernel.deployment.aws.containerized.core import ECSSQSConsumer
+from agentkernel.deployment.common import ThreadRunner
 ```
 
 ## Execution Flow

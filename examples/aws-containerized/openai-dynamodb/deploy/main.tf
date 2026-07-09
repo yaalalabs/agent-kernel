@@ -13,11 +13,14 @@ module "containered_agents" {
   create_dynamodb_memory_table = true
   private_subnet_ids           = var.private_subnet_ids
   product_display_name         = "OpenAI Agents"
-  ecs_container_port           = 8000
-  ecr_image_uri                 = var.ecr_image_uri
 
-  # Environment variables passed to container
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    image_uri      = var.ecr_image_uri
+    # Environment variables passed to container
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
   }
 }

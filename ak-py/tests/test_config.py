@@ -125,6 +125,17 @@ def test_session_cache_env(monkeypatch):
     assert cfg.session.cache.size == 500
 
 
+def test_batch_size_default():
+    cfg = AKConfig()
+    assert cfg.execution.queues.batch_size is None
+
+
+def test_batch_size_env_override(monkeypatch):
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__BATCH_SIZE", "5")
+    cfg = AKConfig()
+    assert cfg.execution.queues.batch_size == 5
+
+
 def test_guardrail_pii_default():
     cfg = AKConfig()
     assert cfg.guardrail.input.pii is True

@@ -3,19 +3,16 @@
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight **multi-cloud AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks and cloud providers. Deploy the same agent code to **AWS, Azure, or GCP** without modification. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities.
-
-**Supported Cloud Platforms:** AWS, Azure, GCP
+Agent Kernel is a lightweight **AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. Deploy the same agent code without modification — see the "Multi-Cloud Deployment" section below for supported platforms.
 
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents
-- **Multi-Cloud Deployment**: Deploy to AWS (Lambda, ECS/Fargate), Azure (Functions, Container Apps), or GCP (Cloud Run serverless/containerized) with the same code
-- **Session Management**: Built-in session abstraction with multi-cloud storage (Redis, DynamoDB, Cosmos DB, Firestore)
+- **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
-- **Flexible Deployment**: Interactive CLI, REST API, serverless (AWS Lambda, Azure Functions, GCP Cloud Run), containerized (AWS ECS, Azure Container Apps, GCP Cloud Run)
-- **Pluggable Architecture**: Easy to extend with custom framework adapters and cloud providers
+- **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
+- **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **REST API**: Built-in REST API server for agent interaction
@@ -168,7 +165,9 @@ Then interact with your agents:
 
 ## Multi-Cloud Deployment
 
-Deploy your agents to AWS or Azure using the built-in cloud deployment handlers.
+**Supported Cloud Platforms:** AWS, Azure, GCP
+
+Deploy your agents to AWS, Azure, or GCP using the built-in cloud deployment handlers.
 
 ### AWS Lambda Deployment
 
@@ -365,7 +364,7 @@ Configure queue-backed and serverless execution behavior.
   - **Field**: `execution.mode`
   - **Options**: `rest_sync`, `rest_async`, `stream`, `async`
   - **Default**: `None`
-  - **Description**: Selects the Lambda execution mode
+  - **Description**: Selects the execution mode used for queue-backed and serverless request handling
   - **Environment Variable**: `AK_EXECUTION__MODE`
 
 - **Queues**
@@ -391,6 +390,24 @@ Configure queue-backed and serverless execution behavior.
     - **Field**: `execution.queues.output.max_receive_count`
     - **Default**: `3`
     - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT`
+
+  - **Input Queue Consumer Count**
+    - **Field**: `execution.queues.input.no_of_consumers`
+    - **Default**: `5`
+    - **Description**: Number of independent consumer threads that each poll the input queue in a continuous loop. Only used by containerized deployments — never set for serverless deployments, which have no consumer threads.
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS`
+
+  - **Output Queue Consumer Count**
+    - **Field**: `execution.queues.output.no_of_consumers`
+    - **Default**: `5`
+    - **Description**: Number of independent consumer threads that each poll the output queue in a continuous loop. Only used by containerized deployments — never set for serverless deployments, which have no consumer threads.
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS`
+
+  - **Queue Batch Size**
+    - **Field**: `execution.queues.batch_size`
+    - **Default**: `None`
+    - **Description**: Max number of messages fetched per receive call, shared by the input and output queues. Only used by containerized deployments — never set for serverless deployments, which control batch size differently. Controlled by the deployment tooling via env var `AK_EXECUTION__QUEUES__BATCH_SIZE` — do not set in `config.yaml`.
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__BATCH_SIZE`
 
 - **Response Store**
   - **Field**: `execution.response_store`
@@ -421,7 +438,7 @@ Configure queue-backed and serverless execution behavior.
     - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`, `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL`
     - **Description**: DynamoDB-backed response storage with table name and TTL
 
-Use either Redis or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as SQS message attributes.
+Use either Redis or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
 
 #### API Configuration
 
@@ -925,11 +942,14 @@ execution:
   mode: rest_sync
   queues:
     input:
-      url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
+      url: https://queue.example.com/<accountno>/<queuename>
       max_receive_count: 3
+      no_of_consumers: 5 # Containerized deployments only, ignored by serverless deployments
     output:
-      url: https://sqs.<region>.amazonaws.com/<accountno>/<queuename>
+      url: https://queue.example.com/<accountno>/<queuename>
       max_receive_count: 3
+      no_of_consumers: 5 # Containerized deployments only, ignored by serverless deployments
+    # batch_size is set by the deployment tooling — set via AK_EXECUTION__QUEUES__BATCH_SIZE, never here
   response_store:
     type: redis
     retry_count: 5

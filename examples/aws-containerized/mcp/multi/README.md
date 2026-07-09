@@ -35,13 +35,12 @@ This automatically creates an MCP endpoint at:
 # Containerized module configuration for deploying MCP in ECS
 module "containered_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.2.9"
+  version = "0.6.0"
 
   # Basic ECS configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name
-  package_path         = "../dist"
   container_type       = "ecs"
   region               = var.region
 
@@ -50,18 +49,19 @@ module "containered_agents" {
 
   product_display_name = "MCP Containerized Example"
 
-  # Container & networking
-  ecs_container_port   = 8000
-
   # Optional dependencies
   create_redis_cluster = true
 
   # Enable MCP server
   enable_mcp_server = true  # MCP endpoint => /<api_base_path>/<api_version>/mcp
 
-  # Environment variables passed to the container
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
+  # REST service (container build, networking, and runtime env vars)
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
   }
 }
 ```
