@@ -34,8 +34,26 @@ class Runtime:
 
     _current: Optional[Runtime] = None
     _lock: RLock = RLock()
-    _system_pre_hooks: list = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]
-    _system_post_hooks: list = [OutputGuardrailFactory.get()]
+    # System hooks are built on first use, not at import time, because the
+    # factories read AKConfig and importing agentkernel must not load it.
+    _system_pre_hooks: Optional[list] = None
+    _system_post_hooks: Optional[list] = None
+
+    @classmethod
+    def _get_system_pre_hooks(cls) -> list:
+        if Runtime._system_pre_hooks is None:
+            with Runtime._lock:
+                if Runtime._system_pre_hooks is None:
+                    Runtime._system_pre_hooks = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]
+        return Runtime._system_pre_hooks
+
+    @classmethod
+    def _get_system_post_hooks(cls) -> list:
+        if Runtime._system_post_hooks is None:
+            with Runtime._lock:
+                if Runtime._system_post_hooks is None:
+                    Runtime._system_post_hooks = [OutputGuardrailFactory.get()]
+        return Runtime._system_post_hooks
 
     def __init__(self, sessions: SessionStore):
         """
@@ -142,7 +160,7 @@ class Runtime:
         """
         self._log.debug(f"Executing pre hooks with agent '{agent.name}' and requests: {requests}")
 
-        pre_hooks = agent.pre_hooks + self._system_pre_hooks  # system pre-hooks are always executed last
+        pre_hooks = agent.pre_hooks + self._get_system_pre_hooks()  # system pre-hooks are always executed last
         for hook in pre_hooks:
             reply = await hook.on_run(session, agent, requests)
             if isinstance(reply, (AgentReplyText, AgentReplyImage)):
@@ -187,7 +205,7 @@ class Runtime:
 
                 reply = await agent.runner.run(agent, session, requests)
 
-                post_hooks = self._system_post_hooks + agent.post_hooks  # system post-hooks are always executed first
+                post_hooks = self._get_system_post_hooks() + agent.post_hooks  # system post-hooks are always executed first
                 for hook in post_hooks:
                     reply = await hook.on_run(session, requests, agent, reply)
                     if not isinstance(reply, (AgentReplyText, AgentReplyImage)):
@@ -223,7 +241,7 @@ class Runtime:
 
                 self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
-                post_hooks = self._system_post_hooks + agent.post_hooks
+                post_hooks = self._get_system_post_hooks() + agent.post_hooks
                 async for delta in agent.runner.stream(agent, session, requests):
                     for hook in post_hooks:
                         delta = await hook.on_stream_chunk(session, requests, agent, delta)

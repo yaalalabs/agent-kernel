@@ -364,6 +364,21 @@ class TestConfigureFromConfig:
         AKLogger.configure_from_config()
         assert AKLogger._initialized is True
 
+    def test_first_akconfig_get_triggers_configuration(self):
+        """Test that the first AKConfig.get() call configures logging (lazy load path)."""
+        AKConfig._reset()
+        try:
+            with patch.object(AKLogger, "configure_from_config") as mock_configure:
+                AKConfig.get()
+                mock_configure.assert_called_once()
+
+                # Subsequent get() calls return the cached instance without reconfiguring
+                mock_configure.reset_mock()
+                AKConfig.get()
+                mock_configure.assert_not_called()
+        finally:
+            AKConfig._reset()
+
 
 class TestGlobalLoggingSideEffects:
     """Test that logging operations don't have unexpected global side effects."""

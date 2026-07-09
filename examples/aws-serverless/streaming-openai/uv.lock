@@ -18,7 +18,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.5.1"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -27,9 +27,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/65/f97a7982036dc964850da2fc40a91f4e220cf3bc872588f4217091cb0b31/agentkernel-0.5.1.tar.gz", hash = "sha256:12608b13fd68402da84f36300bc3428bc5ee9423b195711d9cc60c051b76302c", size = 200882, upload-time = "2026-06-09T06:59:47.376Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/0d/044bee9dbc421521752cd3cc2a11b57dc302f20c4ee53b035d06bbbc398b/agentkernel-0.6.1.tar.gz", hash = "sha256:6d7f4605576ea7282e39e0e98b9f849ff0c6d3ad41b861709263256e95f07f97", size = 209316, upload-time = "2026-07-08T14:06:45.327Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/5b/ac6c2c3ce8262687d7682f5cebb525977aa2ddd7601692727ed3110e1aaa/agentkernel-0.5.1-py3-none-any.whl", hash = "sha256:2a6f9fd6aab2ef32155adcd290d4a114758b74847cbe094fa387813323df1c2a", size = 284510, upload-time = "2026-06-09T06:59:45.578Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/53/fff602f484bc2ff688f72ee48d9a1c25d612153ae65747614ddf27ca9a77/agentkernel-0.6.1-py3-none-any.whl", hash = "sha256:10e5ab14b18036e716d33c89268658c3c987a9e0c6ac89c14d34497eb9b02da6", size = 293394, upload-time = "2026-07-08T14:06:43.511Z" },
 ]
 
 [package.optional-dependencies]
@@ -301,11 +301,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["aws", "openai", "redis"], specifier = ">=0.5.1" }]
+requires-dist = [{ name = "agentkernel", extras = ["aws", "openai", "redis"], specifier = ">=0.6.1" }]
 
 [package.metadata.requires-dev]
 auth = [
-    { name = "agentkernel", specifier = ">=0.5.1" },
+    { name = "agentkernel", specifier = ">=0.6.1" },
     { name = "annotated-types", specifier = "==0.7.0" },
     { name = "cffi", specifier = "==2.0.0" },
     { name = "cryptography", specifier = "==46.0.4" },
@@ -321,7 +321,7 @@ auth = [
     { name = "typing-inspection", specifier = "==0.4.2" },
 ]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.5.1" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.6.1" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

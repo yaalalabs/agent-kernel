@@ -302,11 +302,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.6.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "redis", "auth"], specifier = ">=0.6.1" }]
 
 [package.metadata.requires-dev]
 auth = [
-    { name = "agentkernel", specifier = ">=0.6.0" },
+    { name = "agentkernel", specifier = ">=0.6.1" },
     { name = "annotated-types", specifier = "==0.7.0" },
     { name = "cffi", specifier = "==2.0.0" },
     { name = "cryptography", specifier = "==48.0.1" },

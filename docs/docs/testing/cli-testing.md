@@ -136,16 +136,15 @@ Test.compare(
 
 ### Configuration-Based Mode
 
-Set default mode via configuration instead of constructor:
+Set default mode via a `test-config.yaml` file (in the directory the tests run from, or the path in `AK_TEST_CONFIG_PATH_OVERRIDE`) instead of the constructor. Test configuration is separate from the application's `config.yaml` and is only loaded when the test harness runs:
 
 ```yaml
-# config.yaml
-test:
-  mode: judge  # Options: fuzzy, judge, fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
+# test-config.yaml
+mode: judge  # Options: fuzzy, judge, fallback
+judge:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small
 ```
 
 ```python
@@ -251,7 +250,7 @@ finally:
 - Use try-finally blocks for proper cleanup
 
 ### Judge Mode Configuration
-- Configure judge model/provider via `config.yaml` or environment variables
+- Configure judge model/provider via `test-config.yaml` or environment variables
 - Ensure LLM API keys are set (e.g., OPENAI_API_KEY)
 - Note: Judge mode requires LLM calls which may slow down tests
 

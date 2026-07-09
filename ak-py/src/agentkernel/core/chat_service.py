@@ -24,7 +24,11 @@ class RequestBuilder:
     """Constructs AgentRequest object lists from various input sources."""
 
     _log = logging.getLogger("ak.chatservice.requestbuilder")
-    _max_file_size = AKConfig.get().api.max_file_size  # 10 MB
+
+    @staticmethod
+    def _max_file_size() -> int:
+        # Read on demand: importing agentkernel must not load AKConfig
+        return AKConfig.get().api.max_file_size
 
     @staticmethod
     def from_base_request_sync(req: BaseRunRequest) -> List[Any]:
@@ -136,7 +140,7 @@ class RequestBuilder:
         for file in files:
             RequestBuilder._log.debug(f"Processing uploaded file: {file.filename}")
             content = await file.read()
-            if len(content) > RequestBuilder._max_file_size:
+            if len(content) > RequestBuilder._max_file_size():
                 raise ValueError(f"File {file.filename} exceeds maximum size ({len(content) / (1024 * 1024):.2f} MB)")
             requests.append(
                 AgentRequestFile(
@@ -159,7 +163,7 @@ class RequestBuilder:
         for image in images:
             RequestBuilder._log.debug(f"Processing uploaded image: {image.filename}")
             content = await image.read()
-            if len(content) > RequestBuilder._max_file_size:
+            if len(content) > RequestBuilder._max_file_size():
                 raise ValueError(f"Image {image.filename} exceeds maximum size ({len(content) / (1024 * 1024):.2f} MB)")
             if image.content_type and not image.content_type.startswith("image/"):
                 raise ValueError(f"Invalid image type: {image.content_type}")

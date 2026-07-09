@@ -11,8 +11,16 @@ class LambdaSQSConsumer(ABC):
     Subclasses should override `process_message` to implement business logic.
     """
 
-    max_receive_count: int = 3  # Fallback value, actual configurable values are defined in the subclasses
     _log = logging.getLogger("ak.aws.lambdasqsconsumer")
+
+    @classmethod
+    def _get_max_receive_count(cls) -> int:
+        """Retry limit before a message is treated as permanently failed.
+
+        Subclasses read the configured value on demand so importing them does
+        not load AKConfig.
+        """
+        return 3
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -33,7 +41,7 @@ class LambdaSQSConsumer(ABC):
 
             try:
                 # Check if the message has been retired a lot
-                if receive_count > cls.max_receive_count:
+                if receive_count > cls._get_max_receive_count():
                     # Treated as permanently failed, skip business logic, this message could be sent to a DLQ or logged
                     cls.on_permanent_failure(record)
                     continue
