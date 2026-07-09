@@ -226,33 +226,17 @@ class DefaultEndpointsHandler:
             self._log.info(f"Performing REST_ASYNC poll operation for payload: '{payload}'")
 
             request_id = payload.request_id
-
-            session_id_from_body = payload.body.session_id if payload.body else None
-
             message = self._get_message(payload)
             self._log.info(f"Fetched message from database: {message}")
-
-            if not message:
-                response_body = self._build_failure_body(
+            response_body = (
+                message
+                if message
+                else self._build_failure_body(
                     request_id=request_id,
                     status="NOT_FOUND",
                     message=f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.",
                 )
-            else:
-                # SECURITY: Validate that the session_id in the response matches the request
-                response_session_id = message.get("session_id")
-                if response_session_id != session_id_from_body:
-                    self._log.warning(
-                        f"Session ID mismatch: request session_id={session_id_from_body}, "
-                        f"response session_id={response_session_id}, request_id={request_id}"
-                    )
-                    response_body = self._build_failure_body(
-                        request_id=request_id,
-                        status="NOT_FOUND",
-                        message=f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.",
-                    )
-                else:
-                    response_body = message
+            )
 
             self._log.info(f"Returning response for REST_ASYNC poll operation: '{response_body}'")
             return response_body

@@ -45,11 +45,7 @@ class ECSIOHandler:
                     graceful=True,
                     awaited_on_shutdown=False,  # uvicorn.run() isn't wired to shutdown_event and only stops via OS signal, so it can't report completion.
                 ),
-                ThreadRunner.Task(
-                    execution_function=lambda: ECSOutputConsumer.run(),
-                    thread_name="output-queue-consumer",
-                    stop_all_on_failure=True
-                ),
+                ThreadRunner.Task(execution_function=lambda: ECSOutputConsumer.run(), thread_name="output-queue-consumer", stop_all_on_failure=True),
             ],
             max_workers=2,
         )
