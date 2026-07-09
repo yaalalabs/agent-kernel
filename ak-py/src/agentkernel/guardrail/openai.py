@@ -197,9 +197,10 @@ class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardr
             except GuardrailTripwireTriggered as e:
                 # Guardrail was triggered - return safe response
                 log.warning(f"Output guardrail triggered: {e}")
-                if isinstance(agent_reply, AgentReplyText):
-                    agent_reply.text = "I apologize, but I'm unable to provide this response as it may not meet content safety guidelines. Please try rephrasing your question."
-                return agent_reply
+                return AgentReplyText(
+                    text="I apologize, but I'm unable to provide this response as it may not meet content safety guidelines. Please try rephrasing your question.",
+                    prompt=getattr(agent_reply, "prompt", ""),
+                )
 
         except ImportError:
             log.warning("openai-guardrails not available, skipping validation")
