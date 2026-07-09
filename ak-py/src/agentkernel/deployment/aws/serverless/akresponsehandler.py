@@ -18,8 +18,10 @@ class ResponseHandler(LambdaSQSConsumer):
     _log = logging.getLogger("ak.aws.responsehandler")
     _response_store = None
     _base_ws_handler = None
-    _config = AKConfig.get()
-    max_receive_count: int = _config.execution.queues.output.max_receive_count
+
+    @classmethod
+    def _get_max_receive_count(cls) -> int:
+        return AKConfig.get().execution.queues.output.max_receive_count
 
     @classmethod
     def _get_response_store(cls):
@@ -101,9 +103,9 @@ class ResponseHandler(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing message: {record}")
 
-        if cls._config.execution.mode == ExecutionMode.ASYNC:
+        if AKConfig.get().execution.mode == ExecutionMode.ASYNC:
             cls._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.CHAT_RESPONSE)
-        elif cls._config.execution.mode == ExecutionMode.STREAM:
+        elif AKConfig.get().execution.mode == ExecutionMode.STREAM:
             cls._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.STREAM_CHUNK)
         else:
             message = cls._construct_message_for_store(record)
@@ -121,17 +123,17 @@ class ResponseHandler(LambdaSQSConsumer):
         :param record: SQS record that failed processing after all retries
         :return: None
         """
-        cls._log.error(f"Permanent failure: {record}: Retried message {cls.max_receive_count} times")
+        cls._log.error(f"Permanent failure: {record}: Retried message {cls._get_max_receive_count()} times")
 
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
             session_id = message_attributes["message_group_id"]
             error_message = {
-                "error": f"Failed to process message after {cls.max_receive_count} retries",
+                "error": f"Failed to process message after {cls._get_max_receive_count()} retries",
                 "request_id": message_attributes.get("request_id"),
             }
 
-            if cls._config.execution.mode == ExecutionMode.ASYNC:
+            if AKConfig.get().execution.mode == ExecutionMode.ASYNC:
                 # Broadcast error via WebSocket for ASYNC mode
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")
@@ -144,14 +146,14 @@ class ResponseHandler(LambdaSQSConsumer):
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")
-            elif cls._config.execution.mode == ExecutionMode.STREAM:
+            elif AKConfig.get().execution.mode == ExecutionMode.STREAM:
                 # Broadcast error chunk via WebSocket for STREAM mode
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")
 
                 if endpoint_url and user_id:
                     error_chunk = StreamChunk(
-                        error=f"Failed to process message after {cls.max_receive_count} retries",
+                        error=f"Failed to process message after {cls._get_max_receive_count()} retries",
                         done=True,
                     )
                     error_chunk_body = error_chunk.model_dump(exclude_none=True)

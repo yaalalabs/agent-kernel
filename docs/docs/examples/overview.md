@@ -49,6 +49,7 @@ AWS ECS/Fargate deployment examples:
 
 - **`adk/`** - Google ADK agents deployed on AWS container services
 - **`crewai/`** - CrewAI agents deployed on AWS container services
+- **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage
 
 ### 📁 AWS Serverless Examples (`/examples/aws-serverless`)
 

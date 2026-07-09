@@ -4,9 +4,6 @@ session:
   cache:
     size: 256
 
-test:
-  mode: fuzzy
-
 logging:
   ak:
     level: INFO

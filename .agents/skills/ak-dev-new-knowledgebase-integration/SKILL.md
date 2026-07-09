@@ -148,7 +148,13 @@ Include:
 
 ### 9. Add Tests
 
-Add tests in `ak-py/tests/` for:
+The existing convention is example-level demo tests beside each example, not unit tests under `ak-py/tests/`. Follow the reference pattern:
+- `examples/cli/knowledgebase/openai/chromadb/demo_test.py`
+- `examples/cli/knowledgebase/openai/neo4j/demo_test.py`
+- `examples/cli/knowledgebase/openai/starburst/demo_test.py`
+- `examples/cli/knowledgebase/openai/multi/demo_test.py`
+
+A unit test in `ak-py/tests/` is still welcome in addition. Cover:
 - successful connection path
 - input validation for missing config
 - `read()` normalization (`text` + `metadata`)
@@ -161,6 +167,7 @@ Prefer mocked provider clients to avoid flaky external calls.
 
 Validate that your backend works with `KnowledgeBuilder.build()` and tools:
 - `get_schemas()` returns your backend schema
+- `get_all_kb_descriptions()` includes your backend's description
 - `read_kb()` routes correctly to your backend name
 - `write_kb()` behaves as expected (or returns readable errors)
 

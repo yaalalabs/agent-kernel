@@ -112,6 +112,10 @@ test: add unit tests for CosmosDB session store
 
 ## Pull Request Process
 
+### Base Branch
+
+Branch from and target `develop`, not `main` — CI (`.github/workflows/code-quality.yml`) runs on pull requests against `develop`, and `origin/HEAD` points there.
+
 ### Before Submitting
 
 1. **Run tests**: `cd ak-py && uv run pytest`
@@ -166,6 +170,14 @@ The version appears in:
 
 ```bash
 git clone https://github.com/yaalalabs/agent-kernel.git
+cd agent-kernel
+make dev-setup                # Installs pyenv, Python 3.12, uv, then syncs ak-py venv
+# or directly: ./scripts/dev-setup.sh
+```
+
+Alternatively, set things up manually:
+
+```bash
 cd agent-kernel/ak-py
 ./build.sh                    # Creates venv, installs deps
 ```

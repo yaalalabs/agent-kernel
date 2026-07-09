@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
   "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill with sync/async and scalable modes",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -103,6 +103,25 @@
         "deploy/main.tf",
         "ecs_container_port",
         "8000"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-aws-containerized-scalable-queue-mode",
+      "name": "Deploy to AWS ECS Fargate in scalable queue mode",
+      "input": "Deploy my agent to AWS ECS Fargate in scalable queue mode with two containers",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "from agentkernel.aws import ECSIOHandler",
+        "from agentkernel.aws import ECSAgentRunner",
+        "queue_mode = true",
+        "execution_mode",
+        "agent_runner",
+        "queue_config",
+        "create_dynamodb_memory_table"
       ],
       "must_not_contain": [
         "Lambda.handler",

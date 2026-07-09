@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -45,7 +46,17 @@ class APITestClient:
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload, headers=headers)
+            # Retry 5xx and timeouts: serverless cold starts can exceed the gateway timeout
+            for attempt in range(3):
+                try:
+                    resp = await client.post(f"{self.url}{endpoint}", json=payload, headers=headers)
+                except httpx.TimeoutException:
+                    if attempt == 2:
+                        raise
+                    continue
+                if resp.status_code < 500 or attempt == 2:
+                    break
+                await asyncio.sleep(5)
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", "")
@@ -85,8 +96,8 @@ async def test_history_agent_with_valid_auth(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup_with_valid_auth(http_client):
-    response = await http_client.send("Who hosted?")
-    Test.compare(response, ["Sri Lanka, India and Pakistan"])
+    response = await http_client.send("Which country hosted the tournament?")
+    Test.compare(response, ["Co-hosted by India, Pakistan and Sri Lanka."])
 
 
 @pytest.mark.asyncio

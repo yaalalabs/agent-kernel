@@ -16,6 +16,10 @@ For detailed information about session and memory management configuration, see:
 
 Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
 
+:::note
+Test harness configuration (comparison mode, judge models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests — see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
+:::
+
 ### Basic Configuration File
 
 Create `config.yaml`:
@@ -69,16 +73,18 @@ websocket_api:
     ttl: 3600  # Connection TTL in seconds for automatic cleanup
   chat_route: "chat"  # Default route for chat messages
 
-# Execution configuration (for AWS serverless deployments)
+# Execution configuration (for AWS serverless and containerized deployments)
 execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
   queues:
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
+      no_of_consumers: 5  # Containerized deployments only — consumer threads polling the input queue (ignored by serverless)
     output:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
+      no_of_consumers: 5  # Containerized deployments only — consumer threads polling the output queue (ignored by serverless)
   response_store:
     type: redis  # Response store type: redis or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
@@ -90,14 +96,6 @@ execution:
     dynamodb:
       table_name: "agent-responses"  # DynamoDB table name for response storage
       ttl: 604800  # DynamoDB item TTL in seconds (0 disables)
-
-# Testing configuration
-test:
-  mode: fallback  # Options: fuzzy, judge, fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
 
 # Messaging platform integrations
 slack:
@@ -165,7 +163,7 @@ logging:
   system:
     level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
-> Logging is auto-configured on import. Agent Kernel currently initializes logging as part of module import/startup, not only when you explicitly read these configuration values. In practice, that means importing the library may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
+> Logging is auto-configured when the configuration is first loaded — i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, Agent Kernel may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
 > Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
 
 ### JSON Configuration
@@ -227,11 +225,13 @@ Alternatively, use `config.json`:
     "queues": {
       "input": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input",
-        "max_receive_count": 3
+        "max_receive_count": 3,
+        "no_of_consumers": 5
       },
       "output": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output",
-        "max_receive_count": 3
+        "max_receive_count": 3,
+        "no_of_consumers": 5
       }
     },
     "response_store": {
@@ -247,14 +247,6 @@ Alternatively, use `config.json`:
         "table_name": "agent-responses",
         "ttl": 604800
       }
-    }
-  },
-  "test": {
-    "mode": "fallback",
-    "judge": {
-      "model": "gpt-4o-mini",
-      "provider": "openai",
-      "embedding_model": "text-embedding-3-small"
     }
   },
   "slack": {
@@ -389,7 +381,9 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
 
-### Test Configuration
+### Test Configuration {#test-configuration-env-vars}
+
+These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration — see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. The variable names are unchanged from previous releases:
 
 ```bash
 # Test comparison mode
@@ -514,6 +508,11 @@ export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
 export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
 export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
 
+# Containerized deployments only — ignored by serverless
+export AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS=5   # Consumer threads polling the input queue (default: 5)
+export AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS=5  # Consumer threads polling the output queue (default: 5)
+export AK_EXECUTION__QUEUES__BATCH_SIZE=10  # Max messages per SQS receive call; set by Terraform, never in config.yaml
+
 # Response store configuration
 export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'dynamodb'
 export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
@@ -552,7 +551,58 @@ export AK_LOGGING__SYSTEM__LEVEL=WARNING  # Options: 'INFO', 'DEBUG', 'ERROR', '
 
 If the `logging` section is omitted from the configuration, default loggers will not be overridden.
 
+## Test Configuration
 
+Test harness configuration (comparison mode and judge models) is separate from the application configuration described above. It is defined by the `AKTestConfig` class (exported from `agentkernel.test`) and loaded from its own file, `test-config.yaml`, resolved from the current working directory. It is only loaded when the testing utilities are used — importing `agentkernel` or running your application never reads it, and the application's `config.yaml` never carries test settings.
+
+### Test Configuration File
+
+Create `test-config.yaml` in the directory you run your tests from:
+
+```yaml
+mode: fallback  # Test comparison mode: fuzzy, judge, or fallback (default: fallback)
+judge:
+  model: gpt-4o-mini  # LLM model for judge evaluation (default: gpt-4o-mini)
+  provider: openai  # LLM provider for judge evaluation (default: openai)
+  embedding_model: text-embedding-3-small  # Embedding model for similarity evaluation (default: text-embedding-3-small)
+```
+
+Note that the file is un-nested — since it contains only test configuration, there is no top-level `test:` key.
+
+If `test-config.yaml` is missing, defaults apply silently (no warning is printed) — fuzzy and fallback tests need no configuration file at all.
+
+**Test Modes:**
+- `fuzzy` - Uses fuzzy string matching (RapidFuzz)
+- `judge` - Uses LLM-based evaluation (Ragas) for semantic similarity
+- `fallback` - Tries fuzzy first, falls back to judge if fuzzy fails
+
+### Custom Test Configuration File Path
+
+Override the default `test-config.yaml` path:
+
+```bash
+export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
+```
+
+### Test Environment Variables
+
+All test configuration parameters can be set using environment variables with the `AK_TEST__` prefix. These take precedence over `test-config.yaml` values:
+
+```bash
+# Test comparison mode
+export AK_TEST__MODE=fallback  # Options: 'fuzzy', 'judge', 'fallback' (default: 'fallback')
+
+# Judge configuration (for LLM-based evaluation)
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__JUDGE__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
+```
+
+:::warning Migration note
+Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored — move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
+:::
+
+For how the test harness uses these settings, see [Testing](../testing/overview.md).
 
 ## Configuration Schema
 
@@ -599,14 +649,6 @@ mcp:
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
   stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
-
-# Test configuration
-test:
-  mode: "fallback"              # Test comparison mode: 'fuzzy', 'judge', or 'fallback'
-  judge:                        # Judge mode configuration
-    model: "gpt-4o-mini"        # LLM model for judge evaluation
-    provider: "openai"          # LLM provider
-    embedding_model: "text-embedding-3-small"  # Embedding model for similarity
 
 # Messaging platform integrations
 slack:
@@ -663,16 +705,19 @@ guardrail:
     model: "gpt-4o-mini"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
-# Execution configuration (for AWS serverless deployments)
+# Execution configuration (for AWS serverless and containerized deployments)
 execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
   queues:                       # Queue URLs for queue-based execution
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
+      no_of_consumers: 5        # Containerized only — consumer threads polling the input queue (ignored by serverless)
     output:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
+      no_of_consumers: 5        # Containerized only — consumer threads polling the output queue (ignored by serverless)
+    # batch_size is ECS-only and Terraform-controlled via AK_EXECUTION__QUEUES__BATCH_SIZE — do not set here
   response_store:               # Response storage configuration (required for rest_sync and rest_async modes)
     type: "redis"               # Response store type: 'redis' or 'dynamodb'
     retry_count: 5              # Number of retry attempts for response store reads

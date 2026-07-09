@@ -87,7 +87,7 @@ Add messaging platform integrations to an existing project. Covers Slack, WhatsA
 
 ### ak-cloud-deploy
 
-Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurations for six deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds.
+Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurations for six deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
 
 **Example prompts:**
 - *"Deploy my agent to AWS Lambda"*
@@ -113,13 +113,13 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 
 ## Developer Skills — Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains twelve developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users — it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains thirteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards — eliminating the onboarding curve for new contributors.
 
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
-| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow — everything needed to understand the codebase |
+| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow, and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSSQSConsumer`, `QueueConsumer`, `ThreadRunner`) — everything needed to understand the codebase |
 | `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents) — subclass creation, dependency wiring, exports, tests |
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail) — handler class, webhook routes, message parsing, config |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst) — implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
@@ -129,6 +129,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
 | `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
+| `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
 | `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
 

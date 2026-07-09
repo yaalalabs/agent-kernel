@@ -42,11 +42,16 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_session_cache.py` | LRU SessionCache |
 | `test_sessions_in_memory.py` | InMemorySessionStore |
 | `test_config.py` | AKConfig loading, env vars |
+| `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |
 | `test_tool_openai.py` | OpenAI ToolBuilder |
 | `test_tool_crewai.py` | CrewAI ToolBuilder |
 | `test_tool_langgraph.py` | LangGraph ToolBuilder |
 | `test_tool_adk.py` | Google ADK ToolBuilder |
+| `test_tool_smolagents.py` | Smolagents ToolBuilder |
+| `test_openai_runner.py` | OpenAIRunner execution, error handling |
+| `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
+| `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
@@ -57,6 +62,13 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_auth_handler.py` | Auth handler |
 | `test_akauthorizer.py` | AWS Lambda authorizer |
 | `test_lambda_router.py` | Lambda routing |
+| `test_sqs_handler.py` | AWS SQSHandler config, client, message sending |
+| `test_serverless_request_handle.py` | BaseRequest/BaseRunRequest parsing from serverless payloads |
+| `test_firestore_database_id.py` | FirestoreDriver named `database_id` configuration |
+| `test_ak_logger.py` | AKLogger level resolution, configuration |
+| `test_error_util.py` | `user_facing_error_message` error mapping |
+| `test_thread_runner.py` | ThreadRunner task validation, failure/shutdown semantics |
+| `test_ecs_sqs_consumer_parallel.py` | ECSSQSConsumer message processing + delete/retry semantics |
 
 ## Test Patterns
 
@@ -229,7 +241,7 @@ test:
 ```
 
 - **fuzzy**: Uses `rapidfuzz` string similarity matching (default threshold)
-- **judge**: Uses an LLM to evaluate if the response is semantically correct
+- **judge**: Ragas-based LLM evaluation — uses the `answer_similarity` metric against expected answers (ground truth), or `answer_relevancy` against the question when no expected answers are given (see `ak-py/src/agentkernel/test/test.py`)
 - **fallback**: Tries fuzzy first, falls back to judge if fuzzy fails
 
 ### Test.compare() for API Tests
@@ -270,8 +282,12 @@ async def http_client():
 
 ## CI/CD Workflows
 
-- **`test.yaml`**: Runs `uv run pytest` on every PR
-- **`integration-test.yaml`**: Runs integration tests against deployed environments
+- **`test.yaml`**: Triggers on pull requests, pushes to `develop`, and manual dispatch; has an `update-lock-files` job (dispatch-only) and a `run-tests` job that delegates to `test-reusable.yaml`
+- **`test-reusable.yaml`**: Reusable workflow (`workflow_call`) containing the actual test jobs, including the `uv run pytest` invocation
+- **`test-trusted-pr.yaml`**: Runs `test-reusable.yaml` with secrets for fork PRs that have been reviewed and labeled `safe-to-test` (`pull_request_target`)
+- **`test-github-app.yaml`**: Manual dispatch only; verifies the GitHub App secrets (`APP_ID`/`APP_PRIVATE_KEY`) are configured correctly
+- **`integration-test.yaml`**: Nightly integration tests against deployed environments (cron currently commented out; manual dispatch)
+- **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure)
 - **`code-quality.yml`**: Runs linting checks (see `code-quality` skill)
 
 ## Best Practices

@@ -10,3 +10,4 @@ pytest-report.xml
 *.DS_Store
 *.pip-cache
 .kiro
+.claude/settings.local.json

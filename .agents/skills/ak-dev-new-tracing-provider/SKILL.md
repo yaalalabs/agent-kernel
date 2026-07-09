@@ -35,7 +35,8 @@ ak-py/src/agentkernel/trace/<provider>/
 ├── openai.py            # Traced OpenAI runner
 ├── langgraph.py         # Traced LangGraph runner
 ├── crewai.py            # Traced CrewAI runner
-└── adk.py               # Traced Google ADK runner
+├── adk.py               # Traced Google ADK runner
+└── smolagents.py        # Traced Smolagents runner
 ```
 
 ### 2. Implement the Main Trace Class
@@ -94,6 +95,11 @@ class <Provider>(BaseTrace):
             return <Provider>ADKRunner(self._client)
         except ImportError:
             return None
+
+    def smolagents(self) -> Runner:
+        from .smolagents import <Provider>SmolagentsRunner
+
+        return <Provider>SmolagentsRunner(self._client)
 ```
 
 ### 3. Implement Framework-Specific Traced Runners
@@ -155,7 +161,7 @@ class <Provider>LangGraphRunner(LangGraphRunner):
             return await super().run(agent, session, requests)
 ```
 
-Follow the same pattern for CrewAI and Google ADK runners.
+Follow the same pattern for CrewAI, Google ADK, and Smolagents runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
 
 ### 4. Update the `__init__.py`
 
@@ -166,32 +172,37 @@ from .<provider> import <Provider>
 
 ### 5. Update the BaseTrace Interface
 
-Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework.
+Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework. Note that `init()` and all five framework methods (`openai`, `langgraph`, `crewai`, `adk`, `smolagents`) are declared `@abstractmethod` on `BaseTrace`, so every new provider must implement all six — otherwise the class cannot be instantiated.
 
 ### 6. Register with the Trace Factory
 
-Update `ak-py/src/agentkernel/trace/trace.py`:
+Update `ak-py/src/agentkernel/trace/trace.py`. An unknown-but-enabled type raises an exception; when tracing is disabled, `instance` stays `None` and the factory returns `Trace(None)`, whose `init()` and framework methods no-op / return `None`:
 
 ```python
 class Trace(BaseTrace):
     @classmethod
     def get(cls) -> "Trace":
-        config = AKConfig.get().trace
-        if config and config.enabled:
-            if config.type == "langfuse":
-                from .langfuse import LangFuse
+        config = AKConfig.get()
+        enabled = config.trace.enabled
+        trace_type = config.trace.type
+
+        instance = None
+        if enabled:
+            if trace_type == "langfuse":
+                from .langfuse.langfuse import LangFuse
                 instance = LangFuse()
-            elif config.type == "openllmetry":
-                from .openllmetry import OpenLLMetry
+            elif trace_type == "openllmetry":
+                from .openllmetry.openllmetry import OpenLLMetry
                 instance = OpenLLMetry()
-            elif config.type == "<provider>":          # ADD THIS
-                from .<provider> import <Provider>
+            elif trace_type == "<provider>":          # ADD THIS
+                from .<provider>.<provider> import <Provider>
                 instance = <Provider>()
             else:
-                return cls._noop()
-            instance.init()
-            return instance
-        return cls._noop()
+                raise Exception(f"Unknown trace type: {trace_type}")
+
+        trace = cls(instance)
+        trace.init()
+        return trace
 ```
 
 ### 7. Add Configuration
@@ -221,7 +232,7 @@ In `ak-py/pyproject.toml`:
 
 ### 9. Add Tests
 
-Create `ak-py/tests/test_trace_<provider>.py`:
+Create `ak-py/tests/test_trace_<provider>.py`. Note that no trace tests currently exist in `ak-py/tests/`, so there is no existing file to model after — your new test file establishes the convention:
 
 - Test that the factory creates the correct instance for `type: "<provider>"`
 - Test that traced runners properly wrap execution with spans
@@ -254,7 +265,7 @@ This means tracing is **transparent** — users don't change their agent code, t
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/trace/<provider>/` directory with `__init__.py` and main class
-- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK)
+- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents)
 - [ ] Registration in `trace/trace.py` factory
 - [ ] Configuration via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml`
