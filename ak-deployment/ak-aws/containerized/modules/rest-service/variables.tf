@@ -122,6 +122,50 @@ variable "queue_config" {
   })
 }
 
+# WebSocket mode (async / stream)
+
+variable "execution_mode" {
+  type        = string
+  description = "Execution mode (rest_sync, rest_async, async, stream)"
+  default     = "rest_sync"
+}
+
+variable "websocket_mode" {
+  type        = bool
+  description = "Whether a WebSocket execution mode (async/stream) is enabled"
+  default     = false
+}
+
+variable "ws_chat_route" {
+  type        = string
+  description = "WebSocket default chat route name"
+  default     = null
+}
+
+variable "websocket_connections_table_name" {
+  type        = string
+  description = "DynamoDB WebSocket connections table name (for WebSocket mode)"
+  default     = null
+}
+
+variable "websocket_connections_table_arn" {
+  type        = string
+  description = "DynamoDB WebSocket connections table ARN (for WebSocket mode)"
+  default     = null
+}
+
+variable "websocket_api_execution_arn" {
+  type        = string
+  description = "WebSocket API execution ARN (for ManageConnections permission)"
+  default     = null
+}
+
+variable "websocket_endpoint_url" {
+  type        = string
+  description = "WebSocket API management endpoint URL for PostToConnection (https://{api-id}.execute-api.{region}.amazonaws.com/{stage})"
+  default     = null
+}
+
 variable "tags" {
   type        = map(string)
   description = "Resource tags"

@@ -144,8 +144,8 @@ module "containerized_agents" {
   }
 
   # Enable queue mode
-  queue_mode = true
-  execution_mode   = "async"  # or "sync"
+  queue_mode     = true
+  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream
 
   # Queue configuration
   queue_config = {
@@ -282,9 +282,9 @@ Direct synchronous execution. The REST service contains both request handling an
 queue_mode = false  # This is the default
 ```
 
-### Queue Mode - Sync
+### Queue Mode - REST Sync (`rest_sync`)
 
-Requests use queues but client connection stays open until response is ready.
+Requests use queues but the client HTTP connection stays open until the response is ready.
 
 **Use when:**
 
@@ -295,13 +295,13 @@ Requests use queues but client connection stays open until response is ready.
 **Configuration:**
 
 ```hcl
-queue_mode = true
-execution_mode   = "sync"
+queue_mode     = true
+execution_mode = "rest_sync"
 ```
 
-### Queue Mode - Async
+### Queue Mode - REST Async (`rest_async`)
 
-Requests return immediately with a request ID. Client polls for results.
+Requests return immediately with a request ID. Client polls a separate GET endpoint for results.
 
 **Use when:**
 
@@ -312,8 +312,8 @@ Requests return immediately with a request ID. Client polls for results.
 **Configuration:**
 
 ```hcl
-queue_mode = true
-execution_mode   = "async"
+queue_mode     = true
+execution_mode = "rest_async"
 ```
 
 **Client flow:**
@@ -327,6 +327,53 @@ curl -X POST .../chat -d '{"prompt":"..."}'
 curl -X GET .../chat/{session_id}?request_id=...
 # Returns: {"result":"..."}
 ```
+
+### WebSocket Mode - Async (`async`) and Stream (`stream`)
+
+Creates a **WebSocket API Gateway** that proxies frames to the ECS REST service
+via the shared VPC Link + internal ALB. The REST service handles the connection
+lifecycle (`$connect`/`$disconnect`), forwards chat frames to the input queue,
+and its output-queue consumer pushes responses back to the client over the socket
+via `PostToConnection`. Requires `queue_mode = true`.
+
+- `async` — the full response is delivered in one WebSocket message once the agent finishes.
+- `stream` — the response is streamed token-by-token as it is produced.
+
+**What gets created (in addition to queue-mode resources):**
+
+- WebSocket API Gateway (`route_selection_expression = "$request.body.route"`)
+- Predefined routes `$connect`, `$disconnect`, `$default`, a configurable chat route (`ws_chat_route`, default `chat`), and any `ws_routes`
+- A DynamoDB `websocket-connections` table (hash `user_id`, range `connection_id`, GSI `connection_id-index`, TTL `expiry_time`)
+- IAM for the REST service task role: `execute-api:ManageConnections` + connections-table access
+
+**Not used in WebSocket modes:** the DynamoDB response store and `gateway_endpoints`
+(rejected by validation) — responses are pushed over the connection instead of stored.
+Authentication is handled in-app on `$connect` (bearer token with a `userId` claim);
+there is no API Gateway authorizer.
+
+**Configuration:**
+
+```hcl
+queue_mode     = true
+execution_mode = "stream"      # or "async"
+
+# Optional route customization
+ws_chat_route = "conversation"
+ws_routes = [
+  { route = "notifications" },
+  { route = "status_updates" },
+]
+```
+
+**Route selection:** the client includes a `route` field in the JSON frame body
+(e.g. `{"route":"chat","prompt":"..."}`). WebSocket `$context` values
+(`routeKey`, `connectionId`, `eventType`, `domainName`, `stage`) are forwarded to
+the app as `x-ws-*` request headers.
+
+> **App contract**: WebSocket modes assume the container image supports the same
+> `AK_EXECUTION__MODE = async|stream` behavior as the serverless deployment, exposes
+> an HTTP ingress route for forwarded frames, reads the `x-ws-*` headers, and reads
+> `AK_WEBSOCKET_API__ENDPOINT_URL` for `PostToConnection`. Verify these before use.
 
 ## Auto Scaling
 

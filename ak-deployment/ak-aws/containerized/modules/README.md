@@ -284,8 +284,8 @@ module "containerized_agents" {
   }
 
   # Queue mode for async processing
-  queue_mode = true
-  execution_mode   = "async"
+  queue_mode     = true
+  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream
 
   queue_config = {
     input_queue_visibility_timeout  = 120

@@ -1,6 +1,6 @@
 locals {
   agent_runner_image = var.agent_runner.image_uri != null ? var.agent_runner.image_uri : var.default_image_uri
-  
+
   agent_runner_environment = merge(
     var.agent_runner.environment_variables,
     {
@@ -12,6 +12,10 @@ locals {
     var.redis_url != null ? { AK_SESSION__REDIS__URL = var.redis_url } : {},
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
+    } : {},
+    # WebSocket modes: full response (async) vs per-token chunks (stream).
+    contains(["async", "stream"], var.execution_mode) ? {
+      AK_EXECUTION__MODE = var.execution_mode
     } : {}
   )
 }
@@ -225,7 +229,7 @@ resource "aws_ecs_service" "agent_runner" {
   }
 
   tags = var.tags
-  
+
   lifecycle {
     ignore_changes = [desired_count]
   }

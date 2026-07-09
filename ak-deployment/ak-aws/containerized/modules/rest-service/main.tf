@@ -7,12 +7,22 @@ locals {
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
-    # Queue mode — inject queue URLs and response store table name
+    # Queue mode — inject queue URLs and batch size
     var.queue_mode ? {
-      AK_EXECUTION__QUEUES__INPUT__URL                   = var.input_queue_url
-      AK_EXECUTION__QUEUES__OUTPUT__URL                  = var.output_queue_url
+      AK_EXECUTION__QUEUES__INPUT__URL  = var.input_queue_url
+      AK_EXECUTION__QUEUES__OUTPUT__URL = var.output_queue_url
+      AK_EXECUTION__QUEUES__BATCH_SIZE  = tostring(var.queue_config.batch_size)
+    } : {},
+    # Response store is only used in REST queue modes (not WebSocket)
+    (var.queue_mode && !var.websocket_mode) ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
-      AK_EXECUTION__QUEUES__BATCH_SIZE                   = tostring(var.queue_config.batch_size)
+    } : {},
+    # WebSocket modes (async / stream) — push responses over the connection
+    var.websocket_mode ? {
+      AK_EXECUTION__MODE                             = var.execution_mode
+      AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_table_name
+      AK_WEBSOCKET_API__CHAT_ROUTE                   = var.ws_chat_route
+      AK_WEBSOCKET_API__ENDPOINT_URL                 = var.websocket_endpoint_url
     } : {}
   )
 }

@@ -39,15 +39,15 @@ module "agent_runner" {
   output_queue_url = module.queues[0].output_queue_url
   output_queue_arn = module.queues[0].output_queue_arn
 
-  redis_url                     = local.redis_url
-  create_dynamodb_memory_table  = var.create_dynamodb_memory_table
-  dynamodb_memory_table_arn     = local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name    = local.dynamodb_memory_table_name
+  redis_url                    = local.redis_url
+  create_dynamodb_memory_table = var.create_dynamodb_memory_table
+  dynamodb_memory_table_arn    = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name   = local.dynamodb_memory_table_name
 
-  agent_runner   = {
-    cpu                   = var.agent_runner.cpu
-    memory                = var.agent_runner.memory
-    desired_count         = var.agent_runner.desired_count
+  agent_runner = {
+    cpu           = var.agent_runner.cpu
+    memory        = var.agent_runner.memory
+    desired_count = var.agent_runner.desired_count
     # Use agent_runner image if package_path provided, else use image_uri, else fallback to rest_service image
     image_uri             = var.agent_runner.package_path != null ? module.agent_runner_docker_image[0].docker_image_uri : (var.agent_runner.image_uri != null ? var.agent_runner.image_uri : module.docker_image[0].docker_image_uri)
     command               = var.agent_runner.command
@@ -55,6 +55,7 @@ module "agent_runner" {
   }
   queue_config   = var.queue_config
   scaling_config = var.scaling_config
+  execution_mode = var.execution_mode
 
   default_image_uri = module.docker_image[0].docker_image_uri
 

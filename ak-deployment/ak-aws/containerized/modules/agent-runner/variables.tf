@@ -90,11 +90,11 @@ variable "dynamodb_memory_table_name" {
 variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
-    cpu                = optional(number, 512)
-    memory             = optional(number, 1024)
-    desired_count      = optional(number, 1)
-    image_uri          = optional(string, null)
-    command            = optional(list(string), null)
+    cpu                   = optional(number, 512)
+    memory                = optional(number, 1024)
+    desired_count         = optional(number, 1)
+    image_uri             = optional(string, null)
+    command               = optional(list(string), null)
     environment_variables = optional(map(string), {})
   })
 }
@@ -110,12 +110,12 @@ variable "queue_config" {
 variable "scaling_config" {
   description = "Auto scaling configuration object"
   type = object({
-    enabled                = optional(bool, false)
-    min_count              = optional(number, 0)
-    max_count              = optional(number, 10)
-    backlog_target         = optional(number, 10)
-    scale_in_cooldown      = optional(number, 120)
-    scale_out_cooldown     = optional(number, 30)
+    enabled            = optional(bool, false)
+    min_count          = optional(number, 0)
+    max_count          = optional(number, 10)
+    backlog_target     = optional(number, 10)
+    scale_in_cooldown  = optional(number, 120)
+    scale_out_cooldown = optional(number, 30)
   })
   default = {
     enabled = false
@@ -136,4 +136,10 @@ variable "tags" {
 variable "account_id" {
   type        = string
   description = "AWS Account ID"
+}
+
+variable "execution_mode" {
+  type        = string
+  description = "Execution mode (rest_sync, rest_async, async, stream). Injected as AK_EXECUTION__MODE in WebSocket modes so the runner knows whether to emit a full response (async) or per-token chunks (stream)."
+  default     = "rest_sync"
 }
