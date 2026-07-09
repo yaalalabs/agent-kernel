@@ -18,7 +18,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.6.0"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -27,9 +27,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/7c/18a5747d4b73820349455be59a705064fbc6a4e67098cf2ce8c90da24b03/agentkernel-0.6.0.tar.gz", hash = "sha256:6402fdfac32cd58d37b8e2b250c0c1adadbbcf1e8a7a2a1fef6c1cd06742d327", size = 201752, upload-time = "2026-06-24T05:04:51.214Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/0d/044bee9dbc421521752cd3cc2a11b57dc302f20c4ee53b035d06bbbc398b/agentkernel-0.6.1.tar.gz", hash = "sha256:6d7f4605576ea7282e39e0e98b9f849ff0c6d3ad41b861709263256e95f07f97", size = 209316, upload-time = "2026-07-08T14:06:45.327Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/2d/ca32d0bf05dc5e215ee53cd4de96d3215a9377f33b4a54653445acf3f7f1/agentkernel-0.6.0-py3-none-any.whl", hash = "sha256:77271504f2141b4fa06b15bae4047623a2be7ea2c2df49c8b57dc2c7f5217c1e", size = 285399, upload-time = "2026-06-24T05:04:49.276Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/53/fff602f484bc2ff688f72ee48d9a1c25d612153ae65747614ddf27ca9a77/agentkernel-0.6.1-py3-none-any.whl", hash = "sha256:10e5ab14b18036e716d33c89268658c3c987a9e0c6ac89c14d34497eb9b02da6", size = 293394, upload-time = "2026-07-08T14:06:43.511Z" },
 ]
 
 [package.optional-dependencies]
@@ -262,11 +262,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["aws", "openai", "redis"], specifier = ">=0.6.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["aws", "openai", "redis"], specifier = ">=0.6.1" }]
 
 [package.metadata.requires-dev]
 auth = [
-    { name = "agentkernel", specifier = ">=0.6.0" },
+    { name = "agentkernel", specifier = ">=0.6.1" },
     { name = "annotated-types", specifier = "==0.7.0" },
     { name = "cffi", specifier = "==2.0.0" },
     { name = "cryptography", specifier = "==48.0.1" },
@@ -282,7 +282,7 @@ auth = [
     { name = "typing-inspection", specifier = "==0.4.2" },
 ]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.6.0" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.6.1" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -1061,7 +1061,7 @@ name = "griffe"
 version = "1.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "colorama" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/0c/3a471b6e31951dce2360477420d0a8d1e00dea6cf33b70f3e8c3ab6e28e1/griffe-1.15.0.tar.gz", hash = "sha256:7726e3afd6f298fbc3696e67958803e7ac843c1cfe59734b6251a40cdbfb5eea", size = 424112, upload-time = "2025-11-10T15:03:15.52Z" }
 wheels = [
@@ -1194,7 +1194,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "zipp", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "zipp" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cd/12/33e59336dca5be0c398a7482335911a33aa0e20776128f038019f1a95f1b/importlib_metadata-8.5.0.tar.gz", hash = "sha256:71522656f0abace1d072b9e5481a48f07c138e00f079c38c8f883823f9c26bd7", size = 55304, upload-time = "2024-09-11T14:56:08.937Z" }
 wheels = [
@@ -1218,7 +1218,7 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "zipp", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
+    { name = "zipp" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f3/49/3b30cad09e7771a4982d9975a8cbf64f00d4a1ececb53297f1d9a7be1b10/importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb", size = 57107, upload-time = "2025-12-21T10:00:19.278Z" }
 wheels = [
@@ -1385,10 +1385,10 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "attrs", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "jsonschema-specifications", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "referencing", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "rpds-py", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "attrs" },
+    { name = "jsonschema-specifications" },
+    { name = "referencing" },
+    { name = "rpds-py" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/38/2e/03362ee4034a4c917f697890ccd4aec0800ccf9ded7f511971c75451deec/jsonschema-4.23.0.tar.gz", hash = "sha256:d71497fef26351a33265337fa77ffeb82423f3ea21283cd9467bb03999266bc4", size = 325778, upload-time = "2024-07-08T18:40:05.546Z" }
 wheels = [
@@ -1412,10 +1412,10 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "attrs", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "jsonschema-specifications", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "referencing", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "rpds-py", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
+    { name = "attrs" },
+    { name = "jsonschema-specifications" },
+    { name = "referencing" },
+    { name = "rpds-py" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b3/fc/e067678238fa451312d4c62bf6e6cf5ec56375422aee02f9cb5f909b3047/jsonschema-4.26.0.tar.gz", hash = "sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326", size = 366583, upload-time = "2026-01-07T13:41:07.246Z" }
 wheels = [
@@ -2156,13 +2156,13 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "griffe", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "mcp", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "openai", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "pydantic", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "requests", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "types-requests", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "griffe" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "types-requests" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/10/38/f47644c5de02f1853483d1a16d1fb7d12cc2c219c5548ec26a3e9aee1c29/openai_agents-0.10.5.tar.gz", hash = "sha256:73cef5263eeb98437b874b29c800694617af7d9626be19514b4ed6f434874c1e", size = 2511640, upload-time = "2026-03-05T20:43:59.308Z" }
 wheels = [
@@ -2186,14 +2186,14 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "griffelib", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "mcp", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "openai", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "pydantic", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "requests", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "types-requests", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "websockets", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
+    { name = "griffelib" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "types-requests" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1d/52/125891e56b67ec78bef08d91dc0a8d39457088cd0f59bf8e74a37e5e591c/openai_agents-0.15.1.tar.gz", hash = "sha256:78c3f1226e1d6d34dd7566e211c8345e996629d1704335153d1728995a3a7775", size = 5319915, upload-time = "2026-05-02T02:20:53.631Z" }
 wheels = [
@@ -3897,7 +3897,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "huggingface-hub", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "huggingface-hub" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz", hash = "sha256:473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917", size = 372115, upload-time = "2026-01-05T10:45:15.988Z" }
 wheels = [
@@ -3932,7 +3932,7 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "huggingface-hub", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
+    { name = "huggingface-hub" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c1/60/21f715d9faba5f5407ff759472ade058ec4a507ad62bcea47cb847239a73/tokenizers-0.23.1.tar.gz", hash = "sha256:1feeeadf865a7915adc25445dea30e9933e593c31bb96c277cee36de227c8bfa", size = 365748, upload-time = "2026-04-27T14:43:25.606Z" }
 wheels = [
@@ -3975,10 +3975,10 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "annotated-doc", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "rich", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
-    { name = "shellingham", marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "annotated-doc" },
+    { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" } },
+    { name = "rich" },
+    { name = "shellingham" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fd/07/b822e1b307d40e263e8253d2384cf98c51aa2368cc7ba9a07e523a1d964b/typer-0.23.1.tar.gz", hash = "sha256:2070374e4d31c83e7b61362fd859aa683576432fd5b026b060ad6b4cd3b86134", size = 120047, upload-time = "2026-02-13T10:04:30.984Z" }
 wheels = [
@@ -4002,10 +4002,10 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "annotated-doc", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "click", version = "8.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "rich", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
-    { name = "shellingham", marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
+    { name = "annotated-doc" },
+    { name = "click", version = "8.3.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "rich" },
+    { name = "shellingham" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e4/51/9aed62104cea109b820bbd6c14245af756112017d309da813ef107d42e7e/typer-0.25.1.tar.gz", hash = "sha256:9616eb8853a09ffeabab1698952f33c6f29ffdbceb4eaeecf571880e8d7664cc", size = 122276, upload-time = "2026-04-30T19:32:16.964Z" }
 wheels = [
@@ -4103,9 +4103,9 @@ name = "uvicorn"
 version = "0.46.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "click", version = "8.3.3", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
-    { name = "h11", marker = "sys_platform != 'emscripten'" },
+    { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15' and sys_platform != 'win32'" },
+    { name = "click", version = "8.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15' or sys_platform == 'win32'" },
+    { name = "h11" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1f/93/041fca8274050e40e6791f267d82e0e2e27dd165627bd640d3e0e378d877/uvicorn-0.46.0.tar.gz", hash = "sha256:fb9da0926999cc6cb22dc7cd71a94a632f078e6ae47ff683c5c420750fb7413d", size = 88758, upload-time = "2026-04-23T07:16:00.151Z" }
 wheels = [
