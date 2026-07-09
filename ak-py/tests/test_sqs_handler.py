@@ -2,12 +2,15 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
 
 
 class TestSQSHandler:
     """Test cases for SQSHandler class."""
+
+    VALID_INPUT_BODY = {"prompt": "hello", "agent": "test-agent", "session_id": "session-123"}
 
     def setup_method(self):
         """Reset class variables before each test."""
@@ -33,17 +36,16 @@ class TestSQSHandler:
         mock_boto3_client.return_value = mock_sqs_client
 
         # Test data
-        test_message = {"action": "test", "data": "payload"}
+        test_message = {**self.VALID_INPUT_BODY, "data": "payload"}
         test_request_id = "req-123"
         test_user_id = "user-456"
 
         # Execute
         result = SQSHandler.send_message_to_input_queue(
             message_body=test_message,
+            attributes={"message_group_id": "group-1", "message_deduplication_id": "dedup-1"},
             request_id=test_request_id,
             user_id=test_user_id,
-            message_group_id="group-1",
-            message_deduplication_id="dedup-1",
         )
 
         # Verify
@@ -54,7 +56,7 @@ class TestSQSHandler:
         call_args = mock_sqs_client.send_message.call_args
         assert call_args[1]["QueueUrl"] == "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
         assert json.loads(call_args[1]["MessageBody"]) == test_message
-        assert call_args[1]["MessageGroupId"] == "group-1"
+        assert call_args[1]["MessageGroupId"] == "group-1"  # explicit message_group_id overrides the session_id fallback
         assert call_args[1]["MessageDeduplicationId"] == "dedup-1"
 
         # Check message attributes
@@ -81,7 +83,7 @@ class TestSQSHandler:
         mock_boto3_client.return_value = mock_sqs_client
 
         # Execute with only message body
-        result = SQSHandler.send_message_to_input_queue(message_body={"test": "data"})
+        result = SQSHandler.send_message_to_input_queue(message_body=self.VALID_INPUT_BODY)
 
         # Verify
         assert result == {"MessageId": "msg-456"}
@@ -89,8 +91,33 @@ class TestSQSHandler:
 
         call_args = mock_sqs_client.send_message.call_args
         assert call_args[1]["QueueUrl"] == "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
-        assert json.loads(call_args[1]["MessageBody"]) == {"test": "data"}
+        assert json.loads(call_args[1]["MessageBody"]) == self.VALID_INPUT_BODY
+        assert call_args[1]["MessageGroupId"] == "session-123"  # defaults to the body's session_id
+        assert "MessageDeduplicationId" not in call_args[1]
         assert "MessageAttributes" not in call_args[1]  # No attributes when request_id and user_id are None
+
+    @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
+    @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
+    def test_send_message_to_input_queue_group_id_override(self, mock_boto3_client, mock_ak_config):
+        """Test that attributes message_group_id overrides the session_id fallback."""
+        # Setup mocks
+        mock_config_instance = MagicMock()
+        mock_config_instance.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
+        mock_ak_config.get.return_value = mock_config_instance
+
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message.return_value = {"MessageId": "msg-override"}
+        mock_boto3_client.return_value = mock_sqs_client
+
+        # Execute with an explicit message_group_id different from session_id
+        SQSHandler.send_message_to_input_queue(
+            message_body=self.VALID_INPUT_BODY,
+            attributes={"message_group_id": "custom-group"},
+        )
+
+        # Verify
+        call_args = mock_sqs_client.send_message.call_args
+        assert call_args[1]["MessageGroupId"] == "custom-group"
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     def test_send_message_to_input_queue_no_config_url(self, mock_ak_config):
@@ -103,40 +130,34 @@ class TestSQSHandler:
 
         # Execute and verify exception
         with pytest.raises(ValueError, match="Input queue URL is not configured in AKConfig"):
-            SQSHandler.send_message_to_input_queue(message_body={"test": "data"})
+            SQSHandler.send_message_to_input_queue(message_body=self.VALID_INPUT_BODY)
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
-    def test_send_message_to_input_queue_with_string_body(self, mock_boto3_client, mock_ak_config):
-        """Test sending message with string body to input queue."""
-        # Note: @patch decorators stack bottom-to-top but inject parameters top-to-bottom:
-        # - Bottom patch (boto3.client) becomes first parameter (mock_boto3_client)
-        # - Top patch (AKConfig) becomes second parameter (mock_ak_config)
+    def test_send_message_to_input_queue_invalid_body(self, mock_boto3_client, mock_ak_config):
+        """Test that input queue bodies missing required fields are rejected."""
         # Setup mocks
         mock_config_instance = MagicMock()
         mock_config_instance.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
         mock_ak_config.get.return_value = mock_config_instance
 
         mock_sqs_client = MagicMock()
-        mock_sqs_client.send_message.return_value = {"MessageId": "msg-789"}
         mock_boto3_client.return_value = mock_sqs_client
 
-        # Execute with string body
-        test_string_body = "plain string message"
-        result = SQSHandler.send_message_to_input_queue(message_body=test_string_body, request_id="req-789")
+        # Missing agent and session_id
+        with pytest.raises(ValidationError):
+            SQSHandler.send_message_to_input_queue(message_body={"prompt": "hello"})
 
-        # Verify
-        assert result == {"MessageId": "msg-789"}
-        call_args = mock_sqs_client.send_message.call_args
-        assert call_args[1]["MessageBody"] == test_string_body  # String should be passed through unchanged
+        # Plain strings are no longer accepted as input queue bodies
+        with pytest.raises(ValidationError):
+            SQSHandler.send_message_to_input_queue(message_body="plain string message")
+
+        mock_sqs_client.send_message.assert_not_called()
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
-    def test_send_message_to_input_queue_with_pydantic_model(self, mock_boto3_client, mock_ak_config):
-        """Test sending message with Pydantic model body to input queue."""
-        # Note: @patch decorators stack bottom-to-top but inject parameters top-to-bottom:
-        # - Bottom patch (boto3.client) becomes first parameter (mock_boto3_client)
-        # - Top patch (AKConfig) becomes second parameter (mock_ak_config)
+    def test_send_message_to_input_queue_extra_body_fields(self, mock_boto3_client, mock_ak_config):
+        """Test that extra message body fields are preserved in the serialized body."""
         # Setup mocks
         mock_config_instance = MagicMock()
         mock_config_instance.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
@@ -146,25 +167,38 @@ class TestSQSHandler:
         mock_sqs_client.send_message.return_value = {"MessageId": "msg-999"}
         mock_boto3_client.return_value = mock_sqs_client
 
-        # Create a mock Pydantic model that properly implements exclude_none behavior
-        mock_model = MagicMock()  # this MagicMock is not linked to any @patch, its just a mock BaseModel
+        # Execute with a body carrying extra fields, including one that is None
+        test_message = {**self.VALID_INPUT_BODY, "files": [{"name": "a.txt"}], "images": None}
+        result = SQSHandler.send_message_to_input_queue(message_body=test_message)
 
-        def mock_model_dump(exclude_none=False):
-            if exclude_none:
-                return {"field1": "value1", "field3": "value3"}  # None values excluded
-            return {"field1": "value1", "field2": None, "field3": "value3"}  # All values included
-
-        mock_model.model_dump = mock_model_dump
-
-        # Execute
-        result = SQSHandler.send_message_to_input_queue(message_body=mock_model)
-
-        # Verify
+        # Verify: extras preserved, None values excluded (matching model_dump(exclude_none=True))
         assert result == {"MessageId": "msg-999"}
         call_args = mock_sqs_client.send_message.call_args
-        # Should exclude None values from model_dump with exclude_none=True
-        expected_body = {"field1": "value1", "field3": "value3"}
+        expected_body = {**self.VALID_INPUT_BODY, "files": [{"name": "a.txt"}]}
         assert json.loads(call_args[1]["MessageBody"]) == expected_body
+
+    @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
+    @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
+    def test_send_message_to_input_queue_with_model_body(self, mock_boto3_client, mock_ak_config):
+        """Test sending an SQSMessageBody instance to the input queue."""
+        # Setup mocks
+        mock_config_instance = MagicMock()
+        mock_config_instance.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
+        mock_ak_config.get.return_value = mock_config_instance
+
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message.return_value = {"MessageId": "msg-model"}
+        mock_boto3_client.return_value = mock_sqs_client
+
+        # Execute with a validated model instance
+        body = SQSHandler.SQSMessageBody(**self.VALID_INPUT_BODY)
+        result = SQSHandler.send_message_to_input_queue(message_body=body)
+
+        # Verify
+        assert result == {"MessageId": "msg-model"}
+        call_args = mock_sqs_client.send_message.call_args
+        assert json.loads(call_args[1]["MessageBody"]) == self.VALID_INPUT_BODY
+        assert call_args[1]["MessageGroupId"] == "session-123"
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
@@ -190,10 +224,9 @@ class TestSQSHandler:
         # Execute
         result = SQSHandler.send_message_to_output_queue(
             message_body=test_message,
+            attributes={"message_group_id": "output-group", "message_deduplication_id": "output-dedup"},
             request_id=test_request_id,
             user_id=test_user_id,
-            message_group_id="output-group",
-            message_deduplication_id="output-dedup",
         )
 
         # Verify
@@ -230,7 +263,7 @@ class TestSQSHandler:
         mock_sqs_client.send_message.return_value = {"MessageId": "msg-out-456"}
         mock_boto3_client.return_value = mock_sqs_client
 
-        # Execute with only message body
+        # Execute with only message body; output queue bodies stay generic
         result = SQSHandler.send_message_to_output_queue(message_body={"output": "test"})
 
         # Verify
@@ -240,7 +273,28 @@ class TestSQSHandler:
         call_args = mock_sqs_client.send_message.call_args
         assert call_args[1]["QueueUrl"] == "https://sqs.us-east-1.amazonaws.com/123456789/output-queue"
         assert json.loads(call_args[1]["MessageBody"]) == {"output": "test"}
+        assert "MessageGroupId" not in call_args[1]  # No fallback when the body has no session_id
         assert "MessageAttributes" not in call_args[1]  # No attributes when request_id and user_id are None
+
+    @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
+    @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
+    def test_send_message_to_output_queue_group_id_from_session_id(self, mock_boto3_client, mock_ak_config):
+        """Test that the output queue group id falls back to the body's session_id."""
+        # Setup mocks
+        mock_config_instance = MagicMock()
+        mock_config_instance.execution.queues.output.url = "https://sqs.us-east-1.amazonaws.com/123456789/output-queue"
+        mock_ak_config.get.return_value = mock_config_instance
+
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message.return_value = {"MessageId": "msg-out-session"}
+        mock_boto3_client.return_value = mock_sqs_client
+
+        # Execute with a body carrying a session_id and no attributes
+        SQSHandler.send_message_to_output_queue(message_body={"output": "test", "session_id": "session-789"})
+
+        # Verify
+        call_args = mock_sqs_client.send_message.call_args
+        assert call_args[1]["MessageGroupId"] == "session-789"
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     def test_send_message_to_output_queue_no_config_url(self, mock_ak_config):
@@ -297,7 +351,7 @@ class TestSQSHandler:
         mock_boto3_client.return_value = mock_sqs_client
 
         # Execute with extra kwargs
-        result = SQSHandler.send_message_to_input_queue(message_body={"test": "extra"}, DelaySeconds=5, VisibilityTimeout=300)
+        result = SQSHandler.send_message_to_input_queue(message_body=self.VALID_INPUT_BODY, DelaySeconds=5, VisibilityTimeout=300)
 
         # Verify
         assert result == {"MessageId": "msg-in-extra"}
@@ -322,7 +376,7 @@ class TestSQSHandler:
         mock_boto3_client.return_value = mock_sqs_client
 
         # Execute with None attributes
-        result = SQSHandler.send_message_to_input_queue(message_body={"test": "none"}, request_id=None, user_id=None)
+        result = SQSHandler.send_message_to_input_queue(message_body=self.VALID_INPUT_BODY, request_id=None, user_id=None)
 
         # Verify
         assert result == {"MessageId": "msg-none-attrs"}
@@ -371,6 +425,31 @@ class TestSQSHandler:
         assert SQSHandler.AttributeDataType.STRING == "String"
         assert SQSHandler.AttributeDataType.NUMBER == "Number"
         assert SQSHandler.AttributeDataType.BINARY == "Binary"
+
+    def test_send_message_attributes_model(self):
+        """Test SendMessageAttributes model."""
+        # Test with all fields
+        attrs = SQSHandler.SendMessageAttributes(message_group_id="group-1", message_deduplication_id="dedup-1")
+        assert attrs.message_group_id == "group-1"
+        assert attrs.message_deduplication_id == "dedup-1"
+
+        # Both fields are optional
+        empty_attrs = SQSHandler.SendMessageAttributes()
+        assert empty_attrs.message_group_id is None
+        assert empty_attrs.message_deduplication_id is None
+
+    def test_sqs_message_body_model(self):
+        """Test SQSMessageBody model."""
+        # Required fields plus preserved extras
+        body = SQSHandler.SQSMessageBody(prompt="hello", agent="test-agent", session_id="session-1", files=["a.txt"])
+        assert body.prompt == "hello"
+        assert body.agent == "test-agent"
+        assert body.session_id == "session-1"
+        assert body.model_dump()["files"] == ["a.txt"]
+
+        # Missing required fields are rejected
+        with pytest.raises(ValidationError):
+            SQSHandler.SQSMessageBody(prompt="hello")
 
     def test_sqs_queue_input_message_model(self):
         """Test SQSQueueInputMessage model."""

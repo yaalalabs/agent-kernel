@@ -90,8 +90,7 @@ def test_send_chunk_to_output_queue_calls_sqs_with_correct_attributes():
     mock_sqs.send_message_to_output_queue.assert_called_once()
     call_kwargs = mock_sqs.send_message_to_output_queue.call_args.kwargs
     assert call_kwargs["message_body"] == chunk_body
-    assert call_kwargs["message_group_id"] == "session-1"
-    assert call_kwargs["message_deduplication_id"] == "req-1-dedup-0"
+    assert call_kwargs["attributes"] == {"message_group_id": "session-1", "message_deduplication_id": "req-1-dedup-0"}
     assert call_kwargs["request_id"] == "req-1"
     assert call_kwargs["user_id"] == "user-1"
 

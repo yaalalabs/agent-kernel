@@ -46,6 +46,21 @@ class SQSHandler:
         value: Any
         datatype: "SQSHandler.AttributeDataType"
 
+    class SendMessageAttributes(BaseModel):
+        """FIFO send attributes for the input/output queue convenience methods."""
+
+        message_group_id: Optional[str] = None
+        message_deduplication_id: Optional[str] = None
+
+    class SQSMessageBody(BaseModel):
+        """Typed message body for the input queue. Extra fields are allowed and preserved."""
+
+        prompt: str
+        agent: str
+        session_id: str
+
+        model_config = ConfigDict(extra="allow")
+
     @classmethod
     def _get_config(cls):
         """Return a cached AKConfig instance.
@@ -261,74 +276,104 @@ class SQSHandler:
         return cls.get_sqs_client().send_message(QueueUrl=queue_url, **dict(message_kwargs))
 
     @classmethod
-    def send_message_to_input_queue(
+    def _build_standard_message_attributes(
         cls,
-        message_group_id: Optional[str] = None,
-        message_deduplication_id: Optional[str] = None,
-        message_body: Optional[Any] = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        custom_message_attributes: Optional[List[CustomAttribute]] = [],
-        **extra_kwargs: Any,
-    ):
+        request_id: Optional[str],
+        user_id: Optional[str],
+        custom_message_attributes: Optional[List["SQSHandler.CustomAttribute"]],
+    ) -> Optional[List["SQSHandler.CustomAttribute"]]:
         """
-        Send a message to the input queue with standard custom attributes.
+        Combine the standard request_id/user_id attributes with caller-supplied ones.
 
-        This method handles the common pattern of sending messages to the input queue
-        with request_id and user_id as custom message attributes.
-
-        :param message_group_id: The FIFO message group id, if required
-        :param message_deduplication_id: The FIFO deduplication id, if required
-        :param message_body: The payload to send
         :param request_id: Optional request ID custom attribute
         :param user_id: Optional user ID custom attribute
         :param custom_message_attributes: Additional custom message attributes
-        :param extra_kwargs: Additional send_message keyword arguments to include
-        :return: The boto3 send_message response
-        :raises ValueError: If input queue URL is not configured
+        :return: The combined attribute list, or None when there are no attributes
         """
-        queue_url = cls.get_input_queue_url()
-        if not queue_url:
-            raise ValueError("Input queue URL is not configured in AKConfig")
-
-        # Build custom message attributes
         message_attributes = []
         if request_id is not None:
             message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
         if user_id is not None:
             message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
 
-        message_attributes.extend(custom_message_attributes)
+        message_attributes.extend(custom_message_attributes or [])
+        return message_attributes if message_attributes else None
+
+    @staticmethod
+    def _get_session_id(message_body: Any) -> Optional[str]:
+        """
+        Extract session_id from a message body, if present.
+
+        :param message_body: A mapping, Pydantic model, or arbitrary payload
+        :return: The session_id value, or None when the body does not carry one
+        """
+        if isinstance(message_body, Mapping):
+            return message_body.get("session_id")
+        return getattr(message_body, "session_id", None)
+
+    @classmethod
+    def send_message_to_input_queue(
+        cls,
+        message_body: "SQSHandler.SQSMessageBody | Dict[str, Any]",
+        attributes: "SQSHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
+        request_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        custom_message_attributes: Optional[List["SQSHandler.CustomAttribute"]] = None,
+        **extra_kwargs: Any,
+    ):
+        """
+        Send a message to the input queue with standard custom attributes.
+
+        This method handles the common pattern of sending messages to the input queue
+        with request_id and user_id as custom message attributes. The FIFO message
+        group id defaults to the body's session_id unless overridden via attributes.
+
+        :param message_body: The payload to send; must contain prompt, agent, and session_id (extra fields are preserved)
+        :param attributes: Optional FIFO send attributes (message_group_id, message_deduplication_id)
+        :param request_id: Optional request ID custom attribute
+        :param user_id: Optional user ID custom attribute
+        :param custom_message_attributes: Additional custom message attributes
+        :param extra_kwargs: Additional send_message keyword arguments to include
+        :return: The boto3 send_message response
+        :raises ValueError: If input queue URL is not configured
+        :raises pydantic.ValidationError: If message_body is missing prompt, agent, or session_id
+        """
+        queue_url = cls.get_input_queue_url()
+        if not queue_url:
+            raise ValueError("Input queue URL is not configured in AKConfig")
+
+        body = cls.SQSMessageBody.model_validate(message_body)
+        send_attributes = cls.SendMessageAttributes.model_validate(attributes or {})
 
         return cls.send_message(
             queue_url=queue_url,
-            message_body=message_body,
-            message_group_id=message_group_id,
-            message_deduplication_id=message_deduplication_id,
-            message_attributes=message_attributes if message_attributes else None,
+            message_body=body,
+            message_group_id=send_attributes.message_group_id or body.session_id,
+            message_deduplication_id=send_attributes.message_deduplication_id,
+            message_attributes=cls._build_standard_message_attributes(request_id, user_id, custom_message_attributes),
             **extra_kwargs,
         )
 
     @classmethod
     def send_message_to_output_queue(
         cls,
-        message_group_id: Optional[str] = None,
-        message_deduplication_id: Optional[str] = None,
-        message_body: Optional[Any] = None,
+        message_body: Any,
+        attributes: "SQSHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
         request_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        custom_message_attributes: Optional[List[CustomAttribute]] = [],
+        custom_message_attributes: Optional[List["SQSHandler.CustomAttribute"]] = None,
         **extra_kwargs: Any,
     ):
         """
         Send a message to the output queue with standard custom attributes.
 
         This method handles the common pattern of sending messages to the output queue
-        with request_id and user_id as custom message attributes.
+        with request_id and user_id as custom message attributes. The FIFO message
+        group id defaults to the body's session_id (when the body carries one) unless
+        overridden via attributes.
 
-        :param message_group_id: The FIFO message group id, if required
-        :param message_deduplication_id: The FIFO deduplication id, if required
         :param message_body: The payload to send
+        :param attributes: Optional FIFO send attributes (message_group_id, message_deduplication_id)
         :param request_id: Optional request ID custom attribute
         :param user_id: Optional user ID custom attribute
         :param custom_message_attributes: Additional custom message attributes
@@ -340,21 +385,14 @@ class SQSHandler:
         if not queue_url:
             raise ValueError("Output queue URL is not configured in AKConfig")
 
-        # Build custom message attributes
-        message_attributes = []
-        if request_id is not None:
-            message_attributes.append(cls.CustomAttribute(name="request_id", value=request_id, datatype=cls.AttributeDataType.STRING))
-        if user_id is not None:
-            message_attributes.append(cls.CustomAttribute(name="user_id", value=user_id, datatype=cls.AttributeDataType.STRING))
-
-        message_attributes.extend(custom_message_attributes)
+        send_attributes = cls.SendMessageAttributes.model_validate(attributes or {})
 
         return cls.send_message(
             queue_url=queue_url,
             message_body=message_body,
-            message_group_id=message_group_id,
-            message_deduplication_id=message_deduplication_id,
-            message_attributes=message_attributes if message_attributes else None,
+            message_group_id=send_attributes.message_group_id or cls._get_session_id(message_body),
+            message_deduplication_id=send_attributes.message_deduplication_id,
+            message_attributes=cls._build_standard_message_attributes(request_id, user_id, custom_message_attributes),
             **extra_kwargs,
         )
 

@@ -437,9 +437,8 @@ class SystemRoutesHandler(BaseWSHandler):
             endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
 
             response = SQSHandler.send_message_to_input_queue(
-                message_body=request_body,
-                message_group_id=session_id,
-                message_deduplication_id=request.request_id,
+                message_body=request_body.model_dump(exclude_none=True),
+                attributes={"message_deduplication_id": request.request_id},
                 request_id=request.request_id,
                 user_id=user_id,
                 custom_message_attributes=[
