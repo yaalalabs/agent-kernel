@@ -65,6 +65,7 @@ These skills help developers contributing to Agent Kernel itself. They are part 
 | `ak-dev-sync-skills-from-branch` | Syncing skills from branch deltas: inspect new commits plus staged/unstaged changes, map capability impact, then add/update/remove developer and user skills, evals, and catalogs |
 | `ak-dev-sync-docs-from-branch` | Syncing documentation from branch deltas: inspect new commits plus staged/unstaged changes, then update root docs, package docs, docs-site pages, deployment READMEs, example READMEs, and example references |
 | `ak-dev-sync-skills-and-docs-from-commit` | Syncing skills and docs from a commit hash: validate eligible merged PR commit on develop, analyze commit delta, update dev/user skills and docs surfaces, then support automation PR flow with circular-update prevention |
+| `ak-dev-review-pr` | Reviewing a PR against architecture, code quality, and testing skills: fetch PR via `gh`, prioritize spec.md review, verify and dedupe findings, post a single batched review with inline comments |
 | `ak-dev-testing-conventions` | Testing patterns: pytest, async testing, DummyRunner/DummyAgent, monkeypatching config, session context tests, hook testing, Test.compare(), test modes |
 | `ak-dev-code-quality` | Standards: black/isort (150 line length core, 120 examples), conventional commits, PR workflow, version bumping via `scripts/bump_version.py` |
 
@@ -170,6 +171,7 @@ Package user skills for Claude's marketplace. Submit for review.
 ├── ak-dev-sync-docs-from-branch/SKILL.md
 ├── ak-dev-sync-skills-from-branch/SKILL.md
 ├── ak-dev-new-tracing-provider/SKILL.md
+├── ak-dev-review-pr/SKILL.md
 └── ak-dev-testing-conventions/SKILL.md
 
 ak-py/src/agentkernel/
