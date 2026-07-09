@@ -1,7 +1,7 @@
 # ---------- DynamoDB Response Store ----------
 
 resource "aws_dynamodb_table" "response_store" {
-  count = var.enable_queue_mode ? 1 : 0
+  count = var.queue_mode ? 1 : 0
 
   name         = "${local.prefix}-response-store"
   billing_mode = "PAY_PER_REQUEST"

@@ -234,7 +234,7 @@ if __name__ == "__main__":
 - IAM for IO container task role: `sqs:SendMessage` on Input Queue; `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Output Queue; `dynamodb:PutItem / GetItem / Query / DeleteItem` on Response Store
 - IAM for Agent Runner task role: `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Input Queue; `sqs:SendMessage` on Output Queue
 
-All of these are provisioned automatically by the `yaalalabs/ak-containerized/aws` Terraform module when `enable_queue_mode = true`.
+All of these are provisioned automatically by the `yaalalabs/ak-containerized/aws` Terraform module when `queue_mode = true`.
 
 ### Required Environment Variables
 

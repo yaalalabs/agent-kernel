@@ -1,6 +1,6 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.5.1"
+  version = "0.6.0"
 
   # Basic configuration
   product_alias        = var.product_alias
@@ -25,14 +25,14 @@ module "serverless_agents" {
 
   # Request handler configuration
   request_handler = {
-    module_name           = "rqst-hdlr"
-    function_name         = "rqh-func"
-    function_description  = "Agent Kernel OpenAI WebSocket Streaming Sample Lambda"
-    handler_path          = "lambda_request_handler.handler"
-    package_type          = "LocalZip"
-    package_path          = "../dist_request_handler.zip"
-    memory_size           = 256
-    timeout               = 45
+    module_name          = "rqst-hdlr"
+    function_name        = "rqh-func"
+    function_description = "Agent Kernel OpenAI WebSocket Streaming Sample Lambda"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "LocalZip"
+    package_path         = "../dist_request_handler.zip"
+    memory_size          = 256
+    timeout              = 45
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -40,14 +40,14 @@ module "serverless_agents" {
 
   # Agent runner configuration
   agent_runner = {
-    module_name           = "agent-runner"
-    function_name         = "ar-func"
-    function_description  = "Agent runner for processing OpenAI streaming requests"
-    timeout               = 45
-    memory_size           = 512
-    handler_path          = "lambda_agent_runner.handler"
-    package_path          = "../dist_agent_runner"
-    package_type          = "Image"
+    module_name          = "agent-runner"
+    function_name        = "ar-func"
+    function_description = "Agent runner for processing OpenAI streaming requests"
+    timeout              = 45
+    memory_size          = 512
+    handler_path         = "lambda_agent_runner.handler"
+    package_path         = "../dist_agent_runner"
+    package_type         = "Image"
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }

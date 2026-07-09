@@ -103,7 +103,7 @@ module "containerized_agents" {
   env_alias     = "dev"
   module_name   = "chatbot"
   region        = "us-east-1"
-  
+
   # REST Service configuration
   rest_service = {
     package_path = "./dist"
@@ -113,7 +113,7 @@ module "containerized_agents" {
       OPENAI_API_KEY = var.api_key
     }
   }
-  
+
   # Session storage
   create_redis_cluster = true
 }
@@ -130,7 +130,7 @@ module "containerized_agents" {
   env_alias     = "prod"
   module_name   = "assistant"
   region        = "us-east-1"
-  
+
   # REST Service (handles HTTP requests)
   rest_service = {
     package_path  = "./dist-rest-service"
@@ -142,11 +142,11 @@ module "containerized_agents" {
       OPENAI_API_KEY = var.api_key
     }
   }
-  
+
   # Enable queue mode
-  enable_queue_mode = true
-  queue_mode_type   = "async"  # or "sync"
-  
+  queue_mode = true
+  execution_mode   = "async"  # or "sync"
+
   # Queue configuration
   queue_config = {
     input_queue_visibility_timeout  = 120
@@ -154,7 +154,7 @@ module "containerized_agents" {
     input_queue_create_dlq          = true
     output_queue_create_dlq         = true
   }
-  
+
   # Agent Runner (processes from queue)
   agent_runner = {
     cpu           = 1024
@@ -166,7 +166,7 @@ module "containerized_agents" {
       OPENAI_API_KEY = var.api_key
     }
   }
-  
+
   # Auto scaling
   scaling_config = {
     enabled            = true
@@ -176,7 +176,7 @@ module "containerized_agents" {
     scale_in_cooldown  = 180
     scale_out_cooldown = 60
   }
-  
+
   create_dynamodb_memory_table = true
 }
 ```
@@ -214,6 +214,7 @@ agent_runner = {
 ```
 
 **Image Resolution Priority:**
+
 1. If `package_path` is provided → Build Docker image from path
 2. Else if `image_uri` is provided → Use specified image
 3. Else → Use REST service image (from `package_path`)
@@ -231,14 +232,14 @@ queue_config = {
   max_message_size          = 262144   # 256 KB max message size
   receive_wait_time_seconds = 0        # Long polling wait time
   batch_size                = 10       # Max messages fetched per SQS receive call (1-10), ECS consumers only
-  
+
   # Input queue (requests → agent runner)
   input_queue_visibility_timeout            = 60     # Should be >= processing time
   input_queue_message_retention_seconds     = 1800   # 30 minutes
   input_queue_max_receive_count             = 5      # Before DLQ
   input_queue_create_dlq                    = false  # Create dead letter queue
   input_queue_dlq_message_retention_seconds = 1800
-  
+
   # Output queue (agent runner → REST service)
   output_queue_visibility_timeout            = 60
   output_queue_message_retention_seconds     = 1800
@@ -270,13 +271,15 @@ scaling_config = {
 Direct synchronous execution. The REST service contains both request handling and agent logic.
 
 **Use when:**
+
 - Simple, low-volume workloads
 - Quick response times required
 - No need for background processing
 
 **Configuration:**
+
 ```hcl
-enable_queue_mode = false  # This is the default
+queue_mode = false  # This is the default
 ```
 
 ### Queue Mode - Sync
@@ -284,14 +287,16 @@ enable_queue_mode = false  # This is the default
 Requests use queues but client connection stays open until response is ready.
 
 **Use when:**
+
 - Need queue benefits (reliability, retry)
 - Can tolerate slightly longer response times
 - Want to keep simple client code
 
 **Configuration:**
+
 ```hcl
-enable_queue_mode = true
-queue_mode_type   = "sync"
+queue_mode = true
+execution_mode   = "sync"
 ```
 
 ### Queue Mode - Async
@@ -299,17 +304,20 @@ queue_mode_type   = "sync"
 Requests return immediately with a request ID. Client polls for results.
 
 **Use when:**
+
 - Long-running agent tasks
 - High-volume concurrent requests
 - Need maximum scalability
 
 **Configuration:**
+
 ```hcl
-enable_queue_mode = true
-queue_mode_type   = "async"
+queue_mode = true
+execution_mode   = "async"
 ```
 
 **Client flow:**
+
 ```bash
 # 1. Submit request
 curl -X POST .../chat -d '{"prompt":"..."}'
@@ -327,6 +335,7 @@ curl -X GET .../chat/{session_id}?request_id=...
 The agent runner automatically scales based on queue backlog:
 
 1. **Lambda function** runs every minute calculating:
+
    ```
    BacklogPerTask = QueueDepth / max(RunningTasks, 1)
    ```
@@ -357,13 +366,14 @@ scaling_config = {
 
 The `backlog_target` determines how aggressively to scale:
 
-| Target | Behavior | Use Case |
-|--------|----------|----------|
-| 5-10 | Aggressive scaling | Cost-sensitive, can tolerate queue buildup |
-| 2-5 | Balanced | General purpose |
-| 1 | Very aggressive | Low-latency, cost is less important |
+| Target | Behavior           | Use Case                                   |
+| ------ | ------------------ | ------------------------------------------ |
+| 5-10   | Aggressive scaling | Cost-sensitive, can tolerate queue buildup |
+| 2-5    | Balanced           | General purpose                            |
+| 1      | Very aggressive    | Low-latency, cost is less important        |
 
 **Example:**
+
 - Queue has 100 messages
 - Target is 10 messages per task
 - System scales to 10 tasks
@@ -373,6 +383,7 @@ The `backlog_target` determines how aggressively to scale:
 ### Cost Optimization
 
 **Scale to zero:**
+
 ```hcl
 scaling_config = {
   enabled   = true
@@ -381,6 +392,7 @@ scaling_config = {
 ```
 
 **Gradual scale-in:**
+
 ```hcl
 scaling_config = {
   scale_in_cooldown = 300  # Wait 5min before scaling in
@@ -390,12 +402,14 @@ scaling_config = {
 ### Monitoring
 
 **CloudWatch Metrics:**
+
 - `Custom/ECS/BacklogPerTask` - Custom metric
 - `AWS/SQS/ApproximateNumberOfMessagesVisible` - Queue depth
 - `AWS/ECS/CPUUtilization` - Task CPU usage
 - `AWS/ECS/MemoryUtilization` - Task memory usage
 
 **CloudWatch Logs:**
+
 - `/aws/lambda/{prefix}-backlog-metric` - Scaling Lambda logs
 - `/ecs/{prefix}-agent-runner` - Agent runner logs
 

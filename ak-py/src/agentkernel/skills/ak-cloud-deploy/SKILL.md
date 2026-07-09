@@ -726,8 +726,8 @@ module "containerized_agents" {
     }
   }
 
-  enable_queue_mode = true
-  queue_mode_type   = "sync"   # or "async"
+  queue_mode = true
+  execution_mode   = "sync"   # or "async"
 
   queue_config = {
     input_queue_visibility_timeout  = 120

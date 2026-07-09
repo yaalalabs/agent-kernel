@@ -105,8 +105,8 @@ if __name__ == "__main__":
 Enable queue mode in the `yaalalabs/ak-containerized/aws` module:
 
 ```hcl
-enable_queue_mode = true
-queue_mode_type   = "sync"   # or "async"
+queue_mode = true
+execution_mode   = "sync"   # or "async"
 
 rest_service = {
   package_path  = "../dist-rest-service"

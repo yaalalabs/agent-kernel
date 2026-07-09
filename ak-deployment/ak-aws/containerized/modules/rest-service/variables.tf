@@ -91,7 +91,7 @@ variable "rest_service" {
   })
 }
 
-variable "enable_queue_mode" {
+variable "queue_mode" {
   type        = bool
   description = "Whether queue mode is enabled"
   default     = false

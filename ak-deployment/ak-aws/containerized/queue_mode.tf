@@ -4,7 +4,7 @@
 # ---------- SQS Queues Module ----------
 
 module "queues" {
-  count  = var.enable_queue_mode ? 1 : 0
+  count  = var.queue_mode ? 1 : 0
   source = "./modules/queues"
 
   product_alias = var.product_alias
@@ -19,7 +19,7 @@ module "queues" {
 # ---------- Agent Runner Module ----------
 
 module "agent_runner" {
-  count  = var.enable_queue_mode ? 1 : 0
+  count  = var.queue_mode ? 1 : 0
   source = "./modules/agent-runner"
 
   product_alias = var.product_alias
