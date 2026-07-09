@@ -567,29 +567,29 @@ trace:
 
 #### Test Configuration
 
-Configure test comparison modes for automated testing.
+Configure test comparison modes for automated testing. Test configuration is separate from the application configuration: it is **not** part of `config.yaml`. It lives in its own `test-config.yaml` file and is only loaded when the testing utilities (`agentkernel.test`) are used — see the [Test Configuration (test-config.yaml)](#test-configuration-test-configyaml) section for file resolution, environment variables, and migration notes.
 
 - **Mode**
-  - **Field**: `test.mode`
+  - **Field**: `mode`
   - **Options**: `fuzzy`, `judge`, `fallback`
   - **Default**: `fallback`
   - **Description**: Test comparison mode
   - **Environment Variable**: `AK_TEST__MODE`
 
 - **Judge Model**
-  - **Field**: `test.judge.model`
+  - **Field**: `judge.model`
   - **Default**: `gpt-4o-mini`
   - **Description**: LLM model for judge evaluation
   - **Environment Variable**: `AK_TEST__JUDGE__MODEL`
 
 - **Judge Provider**
-  - **Field**: `test.judge.provider`
+  - **Field**: `judge.provider`
   - **Default**: `openai`
   - **Description**: LLM provider for judge evaluation
   - **Environment Variable**: `AK_TEST__JUDGE__PROVIDER`
 
 - **Judge Embedding Model**
-  - **Field**: `test.judge.embedding_model`
+  - **Field**: `judge.embedding_model`
   - **Default**: `text-embedding-3-small`
   - **Description**: Embedding model for similarity evaluation
   - **Environment Variable**: `AK_TEST__JUDGE__EMBEDDING_MODEL`
@@ -600,12 +600,12 @@ Configure test comparison modes for automated testing.
 - `fallback`: Tries fuzzy first, falls back to judge if fuzzy fails
 
 ```yaml
-test:
-  mode: fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
+# test-config.yaml (separate file — not config.yaml)
+mode: fallback
+judge:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small
 ```
 
 #### Guardrails Configuration
@@ -858,6 +858,7 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry
 # export LANGFUSE_HOST=https://cloud.langfuse.com
 # For OpenLLMetry:
 # export TRACELOOP_API_KEY=your-api-key
+# Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
 export AK_TEST__JUDGE__MODEL=gpt-4o-mini
 export AK_TEST__JUDGE__PROVIDER=openai
@@ -958,12 +959,8 @@ mcp:
 trace:
   enabled: true
   type: langfuse
-test:
-  mode: fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
+# Note: test configuration is no longer set here — it lives in a separate
+# test-config.yaml file (see the Test Configuration section)
 guardrail:
   input:
     enabled: false
@@ -1032,14 +1029,6 @@ gmail:
     "enabled": true,
     "type": "langfuse"
   },
-  "test": {
-    "mode": "fallback",
-    "judge": {
-      "model": "gpt-4o-mini",
-      "provider": "openai",
-      "embedding_model": "text-embedding-3-small"
-    }
-  },
   "guardrail": {
     "input": {
       "enabled": false,
@@ -1086,6 +1075,39 @@ gmail:
 - Environment variables override configuration file values
 - Configuration file values override built-in defaults
 - Nested fields use underscore (`_`) delimiter in environment variables
+
+### Test Configuration (test-config.yaml)
+
+Test harness configuration (comparison mode and judge models) is separate from the application configuration. It is not part of `config.yaml` — it lives in its own `test-config.yaml` file, resolved from the current working directory, and is only loaded when the testing utilities (`agentkernel.test`) are used. A legacy `test:` section in `config.yaml` is ignored. See [Test Configuration](#test-configuration) under Configuration Options for the full list of fields and defaults.
+
+**test-config.yaml:**
+
+```yaml
+mode: fallback
+judge:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small
+```
+
+Note that the file is un-nested — there is no top-level `test:` key. If the file is missing, defaults apply silently (fuzzy and fallback tests need no configuration file at all).
+
+**Override the test config file path:**
+
+```bash
+export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
+```
+
+**Environment variables** use the `AK_TEST__` prefix and override `test-config.yaml` values:
+
+```bash
+export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini
+export AK_TEST__JUDGE__PROVIDER=openai
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+```
+
+> **Migration note:** Earlier versions read test configuration from a `test:` section in `config.yaml`. That section is now ignored — move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
 
 ## Extensibility
 

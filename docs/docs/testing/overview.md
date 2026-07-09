@@ -146,16 +146,21 @@ Test.compare(
 
 ### Configuring Test Mode
 
-Set the default test mode via configuration:
+Set the default test mode via a `test-config.yaml` file in the directory you run the tests from. Test configuration is separate from the application's `config.yaml` and is only loaded when the test harness runs (a `test:` section in `config.yaml` is ignored):
 
 ```yaml
-# config.yaml
-test:
-  mode: fallback  # Options: fuzzy, judge, fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
+# test-config.yaml
+mode: fallback  # Options: fuzzy, judge, fallback
+judge:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small
+```
+
+Use `AK_TEST_CONFIG_PATH_OVERRIDE` to load the file from a different path:
+
+```bash
+export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 ```
 
 Or via environment variables:

@@ -10,7 +10,7 @@ from ragas import evaluate
 from ragas.metrics import answer_relevancy, answer_similarity
 from rapidfuzz import fuzz
 
-from agentkernel.core.config import AKConfig
+from .config import AKTestConfig
 
 
 class Mode(StrEnum):
@@ -38,7 +38,7 @@ class Test:
         self.last_agent_response = None
         self.last_user_input = ""
         self.match_threshold = match_threshold
-        self.mode = AKConfig.get().test.mode if mode is None else mode
+        self.mode = AKTestConfig.get().mode if mode is None else mode
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -168,7 +168,7 @@ class Test:
             from ragas.embeddings import LiteLLMEmbeddings
             from ragas.llms import LiteLLMStructuredLLM
 
-            judge_config = AKConfig.get().test.judge
+            judge_config = AKTestConfig.get().judge
             Test._ragas_llm = LiteLLMStructuredLLM(client=completion, model=judge_config.model, provider=judge_config.provider)
             Test._ragas_embeddings = LiteLLMEmbeddings(model=judge_config.embedding_model)
 
@@ -238,7 +238,7 @@ class Test:
         if mode:
             selected_mode = mode
         else:
-            selected_mode = AKConfig.get().test.mode
+            selected_mode = AKTestConfig.get().mode
             if not selected_mode:
                 selected_mode = Mode.FALLBACK
 
