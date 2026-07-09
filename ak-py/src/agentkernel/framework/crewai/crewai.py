@@ -358,12 +358,20 @@ class CrewAIRunner(Runner):
                     memory = None
 
             transcript = self._transcript(session)
+            output_pydantic = getattr(agent, "output_pydantic", None)
+            output_json = getattr(agent, "output_json", None)
+            schema = output_pydantic or output_json
+            expected_output = (
+                f"A structured response conforming to the {schema.__name__} schema"
+                if schema is not None
+                else "An answer is plain text"
+            )
             task = Task(
                 description=self._describe(prompt, transcript),
-                expected_output="An answer is plain text",
+                expected_output=expected_output,
                 agent=agent.agent,
-                output_pydantic=getattr(agent, "output_pydantic", None),
-                output_json=getattr(agent, "output_json", None),
+                output_pydantic=output_pydantic,
+                output_json=output_json,
             )
             crew = Crew(
                 agents=agent.crew,
