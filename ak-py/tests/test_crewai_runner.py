@@ -167,7 +167,7 @@ class TestCrewAIRunnerRun:
     async def test_follow_up_prompt_includes_previous_conversation(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch("agentkernel.framework.crewai.crewai.Crew", _mock_crew("Sri Lanka")) as crew_cls,
@@ -193,7 +193,7 @@ class TestCrewAIRunnerRun:
     async def test_transcript_is_capped(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch("agentkernel.framework.crewai.crewai.Crew", _mock_crew()),
@@ -212,7 +212,7 @@ class TestCrewAIRunnerRun:
     async def test_memory_failure_does_not_fail_run(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         memory = MagicMock()
         memory.remember.side_effect = RuntimeError("Memory requires an embedder")
@@ -232,7 +232,7 @@ class TestCrewAIRunnerRun:
     async def test_error_reply_is_not_added_to_transcript(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         crew_cls = _mock_crew()
         crew_cls.return_value.kickoff_async.side_effect = RuntimeError("boom")
