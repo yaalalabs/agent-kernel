@@ -11,6 +11,8 @@ e2e:
     - type: cli
       path: examples/cli/openai-dynamic
     - type: cli
+      path: examples/cli/openai_structured
+    - type: cli
       path: examples/cli/adk
     - type: cli
       path: examples/cli/crewai
@@ -30,6 +32,8 @@ e2e:
     # API examples
     - type: api
       path: examples/api/openai
+    - type: api
+      path: examples/api/openai_structured
     - type: api
       path: examples/api/adk
     - type: api
