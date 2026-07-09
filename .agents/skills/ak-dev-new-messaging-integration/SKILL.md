@@ -26,6 +26,11 @@ Messaging integrations follow a consistent pattern:
 5. The reply is formatted and sent back via the platform's API
 6. Configuration is added to `AKConfig` for platform-specific settings
 
+> **Exception**: Gmail does not follow the webhook pattern. `AgentGmailRequestHandler`
+> (`integration/gmail/gmail_chat.py`) has no base class and polls email via OAuth instead
+> of exposing webhook routes; its config (`_GmailConfig` in `core/config.py`) has
+> `token_file`, `poll_interval`, and `label_filter` rather than a webhook secret.
+
 ## Step-by-Step
 
 ### 1. Create the Integration Directory
@@ -42,8 +47,7 @@ ak-py/src/agentkernel/integration/<platform>/
 # ak-py/src/agentkernel/integration/<platform>/<platform>_chat.py
 import logging
 from agentkernel.api.handler import RESTRequestHandler
-from agentkernel.core import AgentService
-from agentkernel.core.config import AKConfig
+from agentkernel.core import AgentService, Config
 from agentkernel.core.model import AgentRequestText, AgentRequestImage, AgentRequestFile
 from fastapi import APIRouter, Request
 
@@ -54,7 +58,7 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
     """Handles incoming messages from <Platform> and routes them to Agent Kernel agents."""
 
     def __init__(self):
-        config = AKConfig.get().<platform>
+        config = Config.get().<platform>
         self._agent_name = config.agent if config else None
         # Initialize platform-specific client/SDK here
         # e.g., self._client = PlatformClient(token=config.bot_token)
@@ -135,6 +139,10 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         return {}
 ```
 
+> Handlers conventionally access configuration through the re-exported alias
+> `Config.get().<platform>` (`from agentkernel.core import Config`) rather than
+> importing `AKConfig` directly — see `integration/slack/slack_chat.py`.
+
 ### 3. Create the `__init__.py`
 
 ```python
@@ -144,23 +152,23 @@ from .<platform>_chat import Agent<Platform>RequestHandler
 
 ### 4. Create the Public API Alias
 
-Create `ak-py/src/agentkernel/<platform>.py`:
+Create `ak-py/src/agentkernel/<platform>.py`. Real alias files use a wildcard import (see `ak-py/src/agentkernel/slack.py`):
 
 ```python
-from .integration.<platform> import Agent<Platform>RequestHandler
+from .integration.<platform> import *
 ```
 
 This allows `from agentkernel.<platform> import Agent<Platform>RequestHandler`.
 
 ### 5. Add Configuration
 
-Add a configuration section to `ak-py/src/agentkernel/core/config.py`:
+Add a configuration section to `ak-py/src/agentkernel/core/config.py`. Follow the existing platform config idiom (e.g. `_TelegramConfig`), which uses `Field` with empty-string defaults. Note: Teams currently has no config section in `AKConfig`, so do not use it as a reference for this step — use Telegram or Slack instead.
 
 ```python
 class _<Platform>Config(BaseModel):
-    agent: str | None = None
-    bot_token: str | None = None       # platform-specific fields
-    webhook_secret: str | None = None  # for webhook verification
+    agent: str = Field(default="", description="Agent name to handle <Platform> messages")
+    bot_token: str = Field(default="", description="<Platform> bot token")            # platform-specific fields
+    webhook_secret: str = Field(default="", description="Webhook verification secret")
     # Add other platform-specific config fields
 
 class AKConfig(YamlBaseSettingsModified):

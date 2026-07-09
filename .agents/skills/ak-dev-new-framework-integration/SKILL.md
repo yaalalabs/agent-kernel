@@ -282,12 +282,12 @@ In `ak-py/pyproject.toml`, add an optional dependency group:
 
 ### 11. Add Tracing Support
 
-When adding tracing, create `ak-py/src/agentkernel/trace/langfuse/<name>.py`:
+There are **two** tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **both** `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py`:
 
 ```python
-from .<name>_runner import <Name>Runner as Base<Name>Runner
+from ...framework.<name>.<name> import <Name>Runner
 
-class LangFuse<Name>Runner(Base<Name>Runner):
+class LangFuse<Name>Runner(<Name>Runner):
     def __init__(self, langfuse_client):
         super().__init__()
         self._client = langfuse_client
@@ -297,18 +297,18 @@ class LangFuse<Name>Runner(Base<Name>Runner):
             return await super().run(agent, session, requests)
 ```
 
-Also update `ak-py/src/agentkernel/trace/base.py` and `ak-py/src/agentkernel/trace/trace.py` to add the new framework method.
+Also add a new abstract framework method in `ak-py/src/agentkernel/trace/base.py` and the corresponding `Trace.<name>()` method in `ak-py/src/agentkernel/trace/trace.py`.
 
 ### 12. Add Tests
 
 Create tests in `ak-py/tests/`:
 
 ```python
-# ak-py/tests/test_module_<name>.py
+# ak-py/tests/test_<name>_runner.py
 # ak-py/tests/test_tool_<name>.py
 ```
 
-Follow the existing test patterns — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
+Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
 
 ### 13. Add Examples
 
@@ -318,7 +318,7 @@ Create at minimum:
 
 ### 14. Add Documentation
 
-- Add a page under `docs/docs/frameworks/<name>.md`
+- Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
 
 ## Checklist
@@ -328,7 +328,7 @@ Create at minimum:
 - [ ] `<Name>Runner.stream()` implemented — either real token streaming or a `NotImplementedError` stub
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
-- [ ] Trace runner in `ak-py/src/agentkernel/trace/langfuse/<name>.py` (optional)
+- [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
 - [ ] Unit tests in `ak-py/tests/`
 - [ ] CLI example in `examples/cli/<name>/`

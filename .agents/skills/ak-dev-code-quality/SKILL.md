@@ -112,6 +112,10 @@ test: add unit tests for CosmosDB session store
 
 ## Pull Request Process
 
+### Base Branch
+
+Branch from and target `develop`, not `main` — CI (`.github/workflows/code-quality.yml`) runs on pull requests against `develop`, and `origin/HEAD` points there.
+
 ### Before Submitting
 
 1. **Run tests**: `cd ak-py && uv run pytest`

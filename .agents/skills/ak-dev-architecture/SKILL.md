@@ -18,9 +18,9 @@ metadata:
 1. **Framework-agnostic core**: All core abstractions (`Session`, `Agent`, `Tool`, `Runner`, `Module`, `Runtime`) are framework-independent. Framework-specific logic lives exclusively in adapter modules under `ak-py/src/agentkernel/framework/`.
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents) implements `Agent`, `Tool`, `Runner`, and `Module` subclasses that wrap native framework objects.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
-4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, DynamoDB, Cosmos DB).
-5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, and messaging integrations are all pluggable via well-defined interfaces.
-6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (Lambda, Azure Functions), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them.
+4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, DynamoDB, Cosmos DB, Firestore).
+5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, and messaging integrations are all pluggable via well-defined interfaces.
+6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them.
 
 ## Core Abstractions
 
@@ -51,7 +51,7 @@ Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
 - **`stream(agent, session, requests) -> AsyncGenerator[str, None]`**: Abstract async generator that yields token deltas for streaming execution (`execution.mode: stream`). Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
-- Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`)
+- Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
 
 ### Module (`ak-py/src/agentkernel/core/module.py`)
@@ -104,7 +104,7 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `gmail`, `multimodal`, `trace`, `test`, `guardrail`
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `gmail`, `multimodal`, `trace`, `guardrail`, `execution`, `logging`
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
@@ -185,6 +185,14 @@ multimodal:
     ttl: 604800
 ```
 
+## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
+
+Pluggable storage backends agents can read from and write to as tools:
+
+- **`KnowledgeBase`** (`base.py`): ABC — backends implement `connect()`, `write()`, `read()`, `backend_name`, `get_description()`; `schema()`, `add_schema()`, `format_results()`, `close()` are provided by the base
+- **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
+- **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`) — each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
+
 ## Directory Structure
 
 ```
@@ -199,32 +207,47 @@ ak-py/src/agentkernel/
 │   ├── tool.py              # ToolContext, ToolBuilder
 │   ├── hooks.py             # PreHook, PostHook
 │   ├── builder.py           # SessionStoreBuilder, A2ACardBuilder
+│   ├── chat_service.py      # ChatService, RequestBuilder, AgentHandler, ResponseBuilder
+│   ├── logger.py            # Logging setup
+│   ├── util/                # Shared utilities
 │   └── session/             # Session store implementations
 │       ├── base.py           # SessionStore, SessionCache
+│       ├── serde.py          # Session (de)serialization helpers
 │       ├── in_memory.py
 │       ├── redis.py
 │       ├── dynamodb.py
-│       └── cosmosdb.py
+│       ├── cosmosdb.py
+│       └── firestore.py
 ├── framework/               # Framework adapters
 │   ├── openai/              # OpenAI Agents SDK adapter
 │   ├── crewai/              # CrewAI adapter
 │   ├── langgraph/           # LangGraph adapter
-│   └── adk/                 # Google ADK adapter
+│   ├── adk/                 # Google ADK adapter
+│   └── smolagents/          # Smolagents adapter
 ├── api/                     # API layers
 │   ├── handler.py           # REST API handler
 │   ├── http.py              # RESTAPI class
 │   ├── a2a/                 # Agent-to-Agent server
 │   └── mcp/                 # MCP server
 ├── deployment/              # Cloud deployment adapters
-│   ├── aws/                 # Lambda handler
-│   └── azure/               # Azure Functions handler
+│   ├── aws/                 # Lambda handler + serverless/ async path (SQS router, response store)
+│   ├── azure/               # Azure Functions handler
+│   ├── gcp/                 # Google Cloud Run handler + authorizer
+│   └── common/              # Shared deployment helpers
 ├── integration/             # Messaging integrations
 │   ├── slack/
 │   ├── whatsapp/
 │   ├── messenger/
 │   ├── instagram/
 │   ├── telegram/
+│   ├── teams/
 │   └── gmail/
+├── knowledgebase/           # Knowledge base backends
+│   ├── base.py              # KnowledgeBase ABC
+│   ├── knowledgebuilder.py  # KnowledgeBuilder (exposes KB tools to agents)
+│   ├── chroma.py            # ChromaDB (vector)
+│   ├── neo4j.py             # Neo4j (graph)
+│   └── starburst.py         # Starburst/Trino (read-only SQL)
 ├── guardrail/               # Guardrail providers
 │   ├── guardrail.py         # Factory + base
 │   ├── openai.py            # OpenAI guardrails
@@ -238,6 +261,7 @@ ak-py/src/agentkernel/
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
 ├── auth/                    # Authentication
+├── skills/                  # Bundled end-user skills (ak-init, ak-build, ak-test, ...)
 ├── test/                    # Test automation
 └── core/multimodal/         # Multimodal support
     ├── factory.py            # MultimodalPreHookFactory (NoOp when disabled)
