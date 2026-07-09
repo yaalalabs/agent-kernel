@@ -283,7 +283,9 @@ class ResponseBuilder:
         if error:
             response_dict = {"error": str(error)}
         else:
-            response_dict = {"result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"}
+            response_dict = {
+                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
+            }
 
         if session_id:
             response_dict["session_id"] = session_id
