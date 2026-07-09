@@ -373,21 +373,23 @@ class CrewAIRunner(Runner):
             )
             reply = await crew.kickoff_async(inputs={})
             if isinstance(getattr(reply, "pydantic", None), BaseModel):
-                return AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
-            if isinstance(getattr(reply, "json_dict", None), dict):
-                return AgentReplyAny(content=reply.json_dict, prompt=prompt)
-            if hasattr(reply, "raw"):
-                raw_reply = reply.raw
-                reply_text = "" if raw_reply is None else str(raw_reply)
+                agent_reply: AgentReply = AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
+            elif isinstance(getattr(reply, "json_dict", None), dict):
+                agent_reply = AgentReplyAny(content=reply.json_dict, prompt=prompt)
             else:
-                reply_text = "" if reply is None else str(reply)
+                if hasattr(reply, "raw"):
+                    raw_reply = reply.raw
+                    reply_text = "" if raw_reply is None else str(raw_reply)
+                else:
+                    reply_text = "" if reply is None else str(reply)
+                agent_reply = AgentReplyText(text=reply_text, prompt=prompt)
 
             if transcript is not None:
                 transcript.append(f"User: {prompt}")
-                transcript.append(f"Assistant: {reply_text}")
+                transcript.append(f"Assistant: {str(agent_reply)}")
                 del transcript[: -self.TRANSCRIPT_MAX_LINES]
 
-            return AgentReplyText(text=reply_text, prompt=prompt)
+            return agent_reply
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:

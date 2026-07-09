@@ -86,6 +86,22 @@ class TestCrewAIRunnerStructuredOutput:
         assert reply.content == {"topic": "AI", "score": 7}
 
     @pytest.mark.asyncio
+    async def test_structured_output_is_added_to_transcript(self):
+        runner = CrewAIRunner()
+        session = Session("test-session")
+        requests = [AgentRequestText(text="research AI")]
+        agent = _mock_agent(output_pydantic=ResearchReport)
+        output = _crew_output(pydantic=ResearchReport(topic="AI", score=9), raw='{"topic": "AI", "score": 9}')
+
+        memory_patch, task_patch, crew_patch = _patches(runner, output)
+        with memory_patch, task_patch, crew_patch:
+            reply = await runner.run(agent, session, requests)
+
+        # The structured exchange must survive into the next turn's context
+        transcript = session.get(CrewAIRunner.TRANSCRIPT_KEY)
+        assert transcript == ["User: research AI", f"Assistant: {str(reply)}"]
+
+    @pytest.mark.asyncio
     async def test_raw_only_output_returns_text(self):
         runner = CrewAIRunner()
         session = Session("test-session")
