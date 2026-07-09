@@ -2,7 +2,7 @@
 #
 # Sets up a local development environment for Agent Kernel.
 #
-# Installs pyenv, tfenv, nvm, uv, git and make if they're missing, sets
+# Installs pyenv, tfenv, nvm, uv, docker, git and make if they're missing, sets
 # Python to 3.12 and Terraform/Node to their latest versions, then syncs
 # the ak-py project so `make lint*` and `pytest` work out of the box.
 #
@@ -173,6 +173,35 @@ else
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
     print_success "uv installed"
+fi
+
+print_header "Checking docker"
+if command -v docker &> /dev/null; then
+    print_success "docker found ($(docker --version))"
+else
+    print_warning "docker not found."
+    if [ "$OS" == "Darwin" ]; then
+        if ! command -v brew &> /dev/null; then
+            print_error "Homebrew not found. Install it from https://brew.sh, then re-run this script."
+            exit 1
+        fi
+        print_info "Installing Docker Desktop via Homebrew..."
+        brew install --cask docker
+        print_success "Docker Desktop installed"
+        print_warning "Open Docker.app once to finish setup and start the Docker daemon."
+    elif [ "$OS" == "Linux" ]; then
+        print_info "Installing Docker via https://get.docker.com..."
+        curl -fsSL https://get.docker.com | sudo sh
+        if getent group docker &> /dev/null && ! id -nG "$USER" | grep -qw docker; then
+            print_info "Adding $USER to the docker group..."
+            sudo usermod -aG docker "$USER"
+            print_warning "Log out and back in (or run 'newgrp docker') to use docker without sudo."
+        fi
+        print_success "Docker installed"
+    else
+        print_error "Unsupported OS: $OS. Install Docker manually: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
 fi
 
 print_header "Setting up ak-py"
