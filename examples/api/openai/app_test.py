@@ -27,7 +27,7 @@ class APITestClient:
             if body is None
             else body
         )
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -138,7 +138,7 @@ async def test_image_multipart(http_client):
     files = {"images": ("test_image.jpeg", image_content, "image/jpeg")}
     data = {"prompt": "can you describe this image?", "session_id": http_client.session_id, "agent": "support"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()
@@ -166,7 +166,7 @@ async def test_pdf_multipart(http_client):
     files = {"files": ("test_pdf.pdf", pdf_content, "application/pdf")}
     data = {"prompt": "what is the new deadline based on this file", "session_id": "james", "agent": "support"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()

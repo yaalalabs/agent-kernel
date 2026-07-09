@@ -50,6 +50,14 @@ module "ecs" {
       subnet_ids         = local.subnet_ids
       security_group_ids = [aws_security_group.ecs_service.id]
 
+      # Block terraform apply until tasks are running and healthy behind the ALB,
+      # so downstream steps (e.g. integration tests) hit a ready service
+      wait_for_steady_state = true
+      timeouts = {
+        create = "15m"
+        update = "15m"
+      }
+
       load_balancer = {
         service = {
           target_group_arn = aws_lb_target_group.app.arn

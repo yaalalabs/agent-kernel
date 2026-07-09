@@ -1,4 +1,4 @@
-.PHONY: lint lint-check lint-examples lint-examples-check lint-all lint-check-all help
+.PHONY: dev-setup lint lint-check lint-examples lint-examples-check lint-all lint-check-all help
 
 EXAMPLE_DIRS := examples
 
@@ -13,6 +13,7 @@ endef
 
 help:
 	@echo "Available targets:"
+	@echo "  dev-setup           - Installs prerequisites (pyenv, Python, uv) and syncs ak-py"
 	@echo "  lint                - Formats python code in ak-py"
 	@echo "  lint-check          - Dry run to check code formatting in ak-py"
 	@echo "  lint-examples       - Formats python code in examples directory"
@@ -20,6 +21,9 @@ help:
 	@echo "  lint-all            - Formats python code in both ak-py and examples"
 	@echo "  lint-check-all      - Dry run to check code formatting in both ak-py and examples"
 	@echo "  help                - Show this help message"
+
+dev-setup:
+	@./scripts/dev-setup.sh
 
 lint: lint-fix
 

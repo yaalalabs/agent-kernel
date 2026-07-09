@@ -402,6 +402,7 @@ curl -X POST http://localhost:8000/run \
 | **LangGraph `name=`** | Always pass `name=` to `create_react_agent()`. Without it, the supervisor cannot route to the agent. |
 | **CrewAI `role=`** | Use `role=` as the agent identifier, not `name=`. Agent Kernel reads `agent.role` as the agent name. |
 | **CrewAI `verbose=`** | Set `verbose=False` on agents to prevent noisy console output. |
+| **CrewAI conversation history** | CrewAI runner keeps its own per-session transcript (last 20 lines) prepended to each task description, independent of the Memory feature. If `Memory.remember()` fails (e.g. no embedder configured), the runner logs a warning and continues instead of failing the run. |
 | **Google ADK `LiteLlm`** | Wrap the model string: `LiteLlm(model="openai/gpt-4o-mini")`. A bare string won't work. |
 | **Env var nesting** | Use `__` (double underscore) as the nested delimiter: `AK_REDIS__URL`, `AK_WHATSAPP__ACCESS_TOKEN`. |
 | **Single Module** | Only one Module instance per framework. Add new agents to the existing Module's agent list. |

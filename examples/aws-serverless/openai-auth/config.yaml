@@ -2,6 +2,7 @@ logging:
   ak:
     level: DEBUG
 session:
-  type: dynamodb
-  dynamodb:
-    table_name: "ak-openai-srvls-qmde-dev-examples-session_store"
+  type: redis
+  redis:
+    prefix: "ak:openai-auth:example:"
+    url: "redis://ak-openai-serverless-dev-examples-redis.zinik6.0001.apse2.cache.amazonaws.com:6379"

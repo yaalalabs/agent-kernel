@@ -258,12 +258,51 @@ class CrewAIRunner(Runner):
     CrewAIRunner class provides a runner for CrewAI based agents.
     """
 
+    TRANSCRIPT_KEY = f"{FRAMEWORK}_transcript"
+    """
+    Session data key holding the conversation transcript.
+    """
+    TRANSCRIPT_MAX_LINES = 20
+    """
+    Maximum number of transcript lines (user and assistant entries) kept in the session.
+    """
+
     def __init__(self):
         """
         Initializes a CrewAIRunner instance.
         """
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
+
+    def _transcript(self, session: Session) -> list[str] | None:
+        """
+        Returns the conversation transcript associated with the session.
+        The transcript keeps the recent user prompts and agent replies as plain text so
+        follow-up prompts can be answered with deterministic conversational context,
+        independent of memory embedding or recall behaviour.
+        :param session: The session to retrieve the transcript for.
+        :return: The transcript for the session, or None if no session is provided.
+        """
+        if session is None:
+            return None
+        transcript = session.get(self.TRANSCRIPT_KEY)
+        if transcript is None:
+            transcript = session.set(self.TRANSCRIPT_KEY, [])
+        return transcript
+
+    @staticmethod
+    def _describe(prompt: str, transcript: list[str] | None) -> str:
+        """
+        Builds the task description for the prompt, prepending the recent conversation
+        so the agent can resolve references to earlier turns.
+        :param prompt: The current user prompt.
+        :param transcript: The conversation transcript, if any.
+        :return: The task description.
+        """
+        if not transcript:
+            return prompt
+        history = "\n".join(transcript)
+        return f"Previous conversation:\n{history}\n\nCurrent request:\n{prompt}"
 
     def _memory(self, session: Session) -> Memory | None:
         """
@@ -310,10 +349,17 @@ class CrewAIRunner(Runner):
 
             memory = self._memory(session)
             if memory:
-                memory.remember(content=prompt)
+                try:
+                    memory.remember(content=prompt)
+                except Exception as e:
+                    # Memory is an enrichment on top of the transcript; a failure (e.g. no
+                    # embedder configured) must not fail the run.
+                    self._log.warning(f"Unable to persist prompt to CrewAI memory, continuing without memory: {e}")
+                    memory = None
 
+            transcript = self._transcript(session)
             task = Task(
-                description=prompt,
+                description=self._describe(prompt, transcript),
                 expected_output="An answer is plain text",
                 agent=agent.agent,
                 output_pydantic=getattr(agent, "output_pydantic", None),
@@ -335,6 +381,11 @@ class CrewAIRunner(Runner):
                 reply_text = "" if raw_reply is None else str(raw_reply)
             else:
                 reply_text = "" if reply is None else str(reply)
+
+            if transcript is not None:
+                transcript.append(f"User: {prompt}")
+                transcript.append(f"Assistant: {reply_text}")
+                del transcript[: -self.TRANSCRIPT_MAX_LINES]
 
             return AgentReplyText(text=reply_text, prompt=prompt)
         except Exception as e:

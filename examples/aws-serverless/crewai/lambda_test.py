@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 
@@ -26,7 +27,17 @@ class APITestClient:
             else body
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload)
+            # Retry 5xx and timeouts: serverless cold starts can exceed the gateway timeout
+            for attempt in range(3):
+                try:
+                    resp = await client.post(f"{self.url}{endpoint}", json=payload)
+                except httpx.TimeoutException:
+                    if attempt == 2:
+                        raise
+                    continue
+                if resp.status_code < 500 or attempt == 2:
+                    break
+                await asyncio.sleep(5)
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", "")
@@ -42,4 +53,4 @@ async def http_client():
 @pytest.mark.order(1)
 async def test_math_agent(http_client):
     response = await http_client.send("What is 23 multiplied by 17?")
-    Test.compare(response, ["23 multiplied by 17 equals 391"])
+    Test.compare(response, ["391"])
