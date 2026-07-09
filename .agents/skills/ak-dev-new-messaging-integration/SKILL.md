@@ -24,7 +24,7 @@ Messaging integrations follow a consistent pattern:
 3. Incoming messages are parsed into `AgentRequest` models
 4. `AgentService` is used to select an agent, run the request, and get a reply
 5. The reply is formatted and sent back via the platform's API
-6. Configuration is added to `AKConfig` for platform-specific settings
+6. Configuration is added to `AKConfig` (accessed via the `Config.get()` alias) for platform-specific settings
 
 > **Exception**: Gmail does not follow the webhook pattern. `AgentGmailRequestHandler`
 > (`integration/gmail/gmail_chat.py`) has no base class and polls email via OAuth instead

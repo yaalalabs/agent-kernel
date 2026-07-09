@@ -81,7 +81,7 @@ Then route from the PR's changed file paths to the specialized skills. Take the 
 | `core/multimodal/` — attachment stores or multimodal handling | `ak-dev-new-multimodal-storage` |
 | `trace/` — tracing providers or traced runners | `ak-dev-new-tracing-provider` |
 | `docs/`, `README.md`, `ak-py/README.md`, deployment/example READMEs (repo root) | `ak-dev-sync-docs-from-branch` — use its docs-surface map to check the right surfaces were updated |
-| `.agents/skills/` or `skills/` (user skills) | `ak-dev-sync-skills-from-branch` — use its conventions to judge skill content and placement |
+| `.agents/skills/` or `ak-py/src/agentkernel/skills/` (user skills) | `ak-dev-sync-skills-from-branch` — use its conventions to judge skill content and placement |
 
 A PR can match several rows — load every matching skill. If the PR touches one of these areas only incidentally (e.g. a mechanical rename brushing `trace/`), a skim of the skill's checklist is enough; when the PR *adds or substantially modifies* that kind of component, walk the guide's checklist step by step and flag every step the PR skipped (missing factory registration, missing config section, missing optional-dependency extra, missing exports, missing tests, missing example).
 
