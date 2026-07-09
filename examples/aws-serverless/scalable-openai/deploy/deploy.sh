@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail # exit if any command in this script fails
+set -eo pipefail # exit if any command in this script fails
 
 S3_BUCKET=lambda-s3-packages-329597159169-ap-southeast-2-an
 
