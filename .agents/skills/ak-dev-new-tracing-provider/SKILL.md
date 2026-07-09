@@ -96,12 +96,10 @@ class <Provider>(BaseTrace):
         except ImportError:
             return None
 
-    def smolagents(self) -> Runner | None:
-        try:
-            from .smolagents import <Provider>SmolagentsRunner
-            return <Provider>SmolagentsRunner(self._client)
-        except ImportError:
-            return None
+    def smolagents(self) -> Runner:
+        from .smolagents import <Provider>SmolagentsRunner
+
+        return <Provider>SmolagentsRunner(self._client)
 ```
 
 ### 3. Implement Framework-Specific Traced Runners
