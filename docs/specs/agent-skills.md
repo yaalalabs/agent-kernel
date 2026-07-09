@@ -55,7 +55,7 @@ These skills help developers contributing to Agent Kernel itself. They are part 
 
 | Skill | Purpose |
 |---|---|
-| `ak-dev-architecture` | Core abstractions (Session, Agent, Runner, Module, Runtime, AgentService, AKConfig), design principles (framework-agnostic core, adapter pattern, config-driven, session lifecycle, plugin architecture), directory structure, execution flow |
+| `ak-dev-architecture` | Core abstractions (Session, Agent, Runner, Module, Runtime, AgentService, AKConfig), design principles (framework-agnostic core, adapter pattern, config-driven, session lifecycle, plugin architecture), directory structure, execution flow, and the AWS ECS containerized deployment classes (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner) |
 | `ak-dev-new-framework-integration` | 14-step guide to add a new agent framework adapter: session state class, Runner subclass, Agent wrapper, ToolBuilder, Module, public API, optional deps, tracing, tests, examples |
 | `ak-dev-new-messaging-integration` | 12-step guide to add a new messaging platform: RESTRequestHandler subclass, webhook routes, message parsing, config, webhook verification, message chunking |
 | `ak-dev-new-knowledgebase-integration` | Guide to add a new knowledge backend: `KnowledgeBase` subclass, normalized read/write contract, optional deps, tests, docs, and examples |

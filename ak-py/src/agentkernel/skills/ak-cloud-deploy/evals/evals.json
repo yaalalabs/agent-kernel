@@ -110,6 +110,25 @@
       ]
     },
     {
+      "id": "deploy-aws-containerized-scalable-queue-mode",
+      "name": "Deploy to AWS ECS Fargate in scalable queue mode",
+      "input": "Deploy my agent to AWS ECS Fargate in scalable queue mode with two containers",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "from agentkernel.aws import ECSIOHandler",
+        "from agentkernel.aws import ECSAgentRunner",
+        "queue_mode = true",
+        "execution_mode",
+        "agent_runner",
+        "queue_config",
+        "create_dynamodb_memory_table"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm"
+      ]
+    },
+    {
       "id": "deploy-azure-serverless",
       "name": "Deploy to Azure Functions",
       "input": "Deploy my agent to Azure Functions",

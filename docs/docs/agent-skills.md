@@ -87,7 +87,7 @@ Add messaging platform integrations to an existing project. Covers Slack, WhatsA
 
 ### ak-cloud-deploy
 
-Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurations for six deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds.
+Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurations for six deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
 
 **Example prompts:**
 - *"Deploy my agent to AWS Lambda"*
@@ -119,7 +119,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
-| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow — everything needed to understand the codebase |
+| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`), design principles, adapter pattern, execution flow, and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSSQSConsumer`, `QueueConsumer`, `ThreadRunner`) — everything needed to understand the codebase |
 | `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents) — subclass creation, dependency wiring, exports, tests |
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail) — handler class, webhook routes, message parsing, config |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst) — implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
