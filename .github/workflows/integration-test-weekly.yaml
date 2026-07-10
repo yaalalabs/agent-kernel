@@ -27,10 +27,10 @@ jobs:
       deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       
@@ -50,10 +50,10 @@ jobs:
     environment: ci-tests
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -65,7 +65,7 @@ jobs:
         run: ./build.sh
 
       - name: Cache ak-py build
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
@@ -79,10 +79,10 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -90,19 +90,19 @@ jobs:
         run: pip install uv pyyaml
 
       - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
 
@@ -150,10 +150,10 @@ jobs:
       private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -161,13 +161,13 @@ jobs:
         run: pip install pyyaml
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
 
@@ -191,10 +191,10 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -202,14 +202,14 @@ jobs:
         run: pip install uv pyyaml
 
       - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
 
       - name: Configure AWS credentials
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -225,7 +225,7 @@ jobs:
       - name: GCP login
         id: auth          # <-- add this
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
-        uses: google-github-actions/auth@v1
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
@@ -239,11 +239,11 @@ jobs:
       
       - name: Setup gcloud
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
      
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
       - name: Inject dependencies
@@ -390,7 +390,7 @@ jobs:
           fi
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.id }}
           path: |

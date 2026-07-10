@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Determine whether commit should be processed
         id: detect
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const sha = context.sha;
@@ -134,7 +134,7 @@ jobs:
     steps:
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -143,7 +143,7 @@ jobs:
             agent-kernel
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
@@ -233,7 +233,7 @@ jobs:
           EOF
 
       - name: Set up Node.js environment
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
 
       - name: Install Copilot CLI
         run: npm install -g @github/copilot
@@ -283,7 +283,7 @@ jobs:
         run: git push origin ${{ steps.branch.outputs.name }}
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: ${{ steps.branch.outputs.name }}
