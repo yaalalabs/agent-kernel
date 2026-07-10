@@ -77,7 +77,7 @@ Output guardrails run **after** the agent generates a response:
 3. Replace placeholders with original values
 4. Return the unmasked response
 
-Unmasking preserves the reply type: structured replies (agents with a structured output type) stay structured, with placeholders replaced inside the content.
+Unmasking preserves the reply type: text replies stay text, image replies stay image (with only the text field unmasked and image data preserved), and structured replies (agents with a structured output type) stay structured with placeholders replaced inside the content.
 
 ## Examples
 
