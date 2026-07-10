@@ -109,7 +109,6 @@ Build the agent with LangGraph's `response_format` parameter (e.g., `create_reac
 ```python
 from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel
-from agentkernel.core.model import AgentReplyAny
 from agentkernel.langgraph import LangGraphModule
 
 class WeatherResponse(BaseModel):
@@ -124,14 +123,9 @@ graph = create_react_agent(
 graph.name = "weather"
 
 LangGraphModule([graph])
-
-# When running the agent:
-reply = await service.run_multi(requests)
-if isinstance(reply, AgentReplyAny):
-    weather = reply.content        # {"city": ..., "conditions": ...}
 ```
 
-Pydantic results are converted via `model_dump()`; graphs without `response_format` continue to return `AgentReplyText` from the last message. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. Post-execution hooks receive the `AgentReplyAny` object with the dict content — see [Execution Hooks](../integrations/hooks#structured-replies-in-hooks).
+Pydantic results are converted via `model_dump()`; graphs without `response_format` continue to return `AgentReplyText` from the last message. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.

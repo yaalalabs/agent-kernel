@@ -91,7 +91,6 @@ Configure structured output with ADK's `output_schema` parameter on `LlmAgent`. 
 ```python
 from google.adk.agents import LlmAgent
 from pydantic import BaseModel
-from agentkernel.core.model import AgentReplyAny
 from agentkernel.adk import GoogleADKModule
 
 class CapitalOutput(BaseModel):
@@ -106,14 +105,9 @@ agent = LlmAgent(
 )
 
 GoogleADKModule([agent])
-
-# When running the agent:
-reply = await service.run_multi(requests)
-if isinstance(reply, AgentReplyAny):
-    data = reply.content          # {"country": ..., "capital": ...}
 ```
 
-If the model's reply does not validate against the schema, the runner logs a warning and falls back to a plain `AgentReplyText` with the raw text. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. Post-execution hooks receive the `AgentReplyAny` object with the dict content — see [Execution Hooks](../integrations/hooks#structured-replies-in-hooks).
+If the model's reply does not validate against the schema, the runner logs a warning and falls back to a plain `AgentReplyText` with the raw text. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.

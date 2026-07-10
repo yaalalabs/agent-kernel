@@ -1,11 +1,14 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from crewai import Agent as CrewAgent
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
-from agentkernel.framework.crewai.crewai import CrewAIRunner
+from agentkernel.core.runtime import Runtime
+from agentkernel.framework.crewai.crewai import CrewAIModule, CrewAIRunner
 
 
 class ResearchReport(BaseModel):
@@ -131,6 +134,50 @@ class TestCrewAIRunnerStructuredOutput:
         _, kwargs = mock_task.call_args
         assert kwargs["output_pydantic"] is ResearchReport
         assert kwargs["output_json"] is None
+
+
+class TestCrewAIModuleStructuredOutputConfig:
+    """Test structured output schemas passed via the CrewAIModule constructor"""
+
+    def _crew_agent(self, role="Researcher"):
+        return CrewAgent(role=role, goal="Research topics", backstory="A researcher", verbose=False)
+
+    def test_output_pydantic_forwarded_to_wrapped_agent(self):
+        with Runtime(SessionStoreBuilder.build()):
+            module = CrewAIModule([self._crew_agent()], output_pydantic={"Researcher": ResearchReport})
+            wrapped = module.get_agent("Researcher")
+            assert wrapped.output_pydantic is ResearchReport
+            assert wrapped.output_json is None
+
+    def test_output_json_forwarded_to_wrapped_agent(self):
+        with Runtime(SessionStoreBuilder.build()):
+            module = CrewAIModule([self._crew_agent()], output_json={"Researcher": ResearchReport})
+            wrapped = module.get_agent("Researcher")
+            assert wrapped.output_json is ResearchReport
+            assert wrapped.output_pydantic is None
+
+    def test_unmapped_agent_has_no_structured_output(self):
+        with Runtime(SessionStoreBuilder.build()):
+            agents = [self._crew_agent("Researcher"), self._crew_agent("Writer")]
+            module = CrewAIModule(agents, output_pydantic={"Researcher": ResearchReport})
+            assert module.get_agent("Researcher").output_pydantic is ResearchReport
+            assert module.get_agent("Writer").output_pydantic is None
+            assert module.get_agent("Writer").output_json is None
+
+    def test_schemas_survive_reload(self):
+        with Runtime(SessionStoreBuilder.build()):
+            agent = self._crew_agent()
+            module = CrewAIModule([agent], output_pydantic={"Researcher": ResearchReport})
+            module.load([agent])
+            assert module.get_agent("Researcher").output_pydantic is ResearchReport
+
+    def test_property_setter_still_works(self):
+        with Runtime(SessionStoreBuilder.build()):
+            module = CrewAIModule([self._crew_agent()])
+            wrapped = module.get_agent("Researcher")
+            assert wrapped.output_pydantic is None
+            wrapped.output_pydantic = ResearchReport
+            assert wrapped.output_pydantic is ResearchReport
 
 
 class TestDescribe:

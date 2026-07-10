@@ -104,7 +104,7 @@ Every runner returns an `AgentReply` from `run()`. The union covers three reply 
 
 All reply types carry the `prompt` that was sent to the agent.
 
-### Structured replies — `AgentReplyAny`
+### Structured replies — `AgentReplyAny` {#structured-replies}
 
 When an agent is configured to produce structured output (see the per-framework
 "Structured Output" sections under [Frameworks](../frameworks/overview)), the runner

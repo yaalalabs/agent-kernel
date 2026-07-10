@@ -112,6 +112,7 @@ Pydantic-based configuration:
 - **Reply types**: 
   - `AgentReplyText`, 
   - `AgentReplyImage`
+  - `AgentReplyAny`: `content: dict` — returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
   - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None` — yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 

@@ -216,21 +216,17 @@ if __name__ == "__main__":
 ```python
 from agentkernel.cli import CLI  # or RESTAPI, Lambda
 from agentkernel.crewai import CrewAIModule
-from crewai import Agent, Crew, Task
+from crewai import Agent
 
 <agent_name> = Agent(
-    role="<role>",
+    role="<role>",     # role= is the agent identifier in Agent Kernel
     goal="<goal>",
     backstory="<backstory>",
+    verbose=False,
 )
 
-# CrewAI requires a Crew wrapping agents
-crew = Crew(
-    agents=[<agent_name>],
-    tasks=[Task(description="<task>", agent=<agent_name>)],
-)
-
-CrewAIModule([crew])
+# Pass agents directly — Agent Kernel builds the Crew and Task internally per run
+CrewAIModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()

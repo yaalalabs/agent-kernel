@@ -531,11 +531,22 @@ class CrewAIModule(Module):
     CrewAIModule class provides a module for CrewAI based agents.
     """
 
-    def __init__(self, agents: list[Agent], runner: CrewAIRunner = None):
+    def __init__(
+        self,
+        agents: list[Agent],
+        runner: CrewAIRunner = None,
+        output_pydantic: dict[str, type[BaseModel]] | None = None,
+        output_json: dict[str, type[BaseModel]] | None = None,
+    ):
         """
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
+        :param output_pydantic: Optional mapping of agent role to the Pydantic model class forwarded
+        to the Task built per run, making the agent produce structured output (returned as an
+        AgentReplyAny).
+        :param output_json: Optional mapping of agent role to the Pydantic model class forwarded to
+        the Task built per run as its JSON output schema (returned as an AgentReplyAny).
         """
         super().__init__()
         if runner is not None:
@@ -544,6 +555,8 @@ class CrewAIModule(Module):
             self.runner = Trace.get().crewai()
         else:
             self.runner = CrewAIRunner()
+        self._output_pydantic = output_pydantic or {}
+        self._output_json = output_json or {}
         self.load(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
@@ -553,7 +566,14 @@ class CrewAIModule(Module):
         :param agents: List of agents in the module.
         :return: CrewAIAgent instance.
         """
-        return CrewAIAgent(agent.role, self.runner, agent, agents)
+        return CrewAIAgent(
+            agent.role,
+            self.runner,
+            agent,
+            agents,
+            output_pydantic=self._output_pydantic.get(agent.role),
+            output_json=self._output_json.get(agent.role),
+        )
 
     def load(self, agents: list[Agent]) -> "CrewAIModule":
         """

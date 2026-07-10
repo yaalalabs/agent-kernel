@@ -89,7 +89,6 @@ Configure structured output with the OpenAI Agents SDK's `output_type` parameter
 ```python
 from agents import Agent as OpenAIAgent
 from pydantic import BaseModel
-from agentkernel.core.model import AgentReplyAny
 from agentkernel.openai import OpenAIModule
 
 class CalendarEvent(BaseModel):
@@ -103,14 +102,9 @@ agent = OpenAIAgent(
 )
 
 OpenAIModule([agent])
-
-# When running the agent:
-reply = await service.run_multi(requests)
-if isinstance(reply, AgentReplyAny):
-    event = reply.content          # {"name": ..., "date": ...}
 ```
 
-Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers (chat integrations, logging) work unchanged. Post-execution hooks receive the `AgentReplyAny` object with the dict content — see [Execution Hooks](../integrations/hooks#structured-replies-in-hooks).
+Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers (chat integrations, logging) work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
