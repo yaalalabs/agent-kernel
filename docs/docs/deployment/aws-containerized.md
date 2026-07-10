@@ -139,7 +139,7 @@ scaling_config = {
 
 For the full example see [examples/aws-containerized/openai-dynamodb-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable).
 
-For queue mode internals see [Queue Mode Guide](/docs/advanced/queue-mode-guide).
+For queue mode internals see [Queue Mode Guide](../advanced/queue-mode-guide).
 
 ## Advantages
 
