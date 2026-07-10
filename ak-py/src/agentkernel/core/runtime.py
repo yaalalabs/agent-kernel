@@ -17,6 +17,7 @@ from .model import (
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
+    AgentRequestAttachmentRef,
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
@@ -152,7 +153,7 @@ class Runtime:
                     # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
                     if isinstance(reply, list):
                         for item in reply:
-                            if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny)):
+                            if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef)):
                                 raise TypeError(
                                     f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
                                 )

@@ -15,6 +15,7 @@ from .model import (
     BaseRunRequest,
 )
 from .service import AgentService
+from .thread import ConversationThreadManager
 
 
 class RequestBuilder:
@@ -113,7 +114,7 @@ class RequestBuilder:
         :param requests: List to append context requests to
         :return: None
         """
-        known_fields = {"request_id", "user_id", "prompt", "agent", "session_id", "images", "files"}
+        known_fields = {"request_id", "user_id", "group_id", "thread_name", "prompt", "agent", "session_id", "images", "files"}
         for key, value in req.model_dump().items():
             if key in known_fields:
                 continue
@@ -288,9 +289,12 @@ class ChatService:
         handler = AgentHandler()
         try:
             self._validate(req)
+            thread_manager = self._validate_thread(req)
             requests = RequestBuilder.from_base_request_sync(req)
             handler.initialize(session_id, req.agent)
+            requests = self._thread_pre_run(thread_manager, req, requests)
             result = handler.run_sync(requests)
+            self._thread_post_run(thread_manager, req, result)
             return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
@@ -314,9 +318,12 @@ class ChatService:
                 raise ValueError("No session_id is provided in the request")
             if not req.prompt:
                 raise ValueError("No prompt provided in the request")
+            thread_manager = self._validate_thread(req)
             requests = await RequestBuilder.from_base_request_async(req)
             handler.initialize(session_id, req.agent)
+            requests = self._thread_pre_run(thread_manager, req, requests)
             result = await handler.run_async(requests)
+            self._thread_post_run(thread_manager, req, result)
             return ResponseBuilder.success(200, result, handler.get_response_session_id(session_id), self.rest_api_mode)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
@@ -337,3 +344,63 @@ class ChatService:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
             raise ValueError("No prompt provided in the request")
+
+    @staticmethod
+    def _validate_thread(req: BaseChatRequest) -> Optional["ConversationThreadManager"]:
+        """Return the shared ConversationThreadManager when thread support is
+        enabled, enforcing the user_id requirement. Returns None when disabled.
+
+        :param req: Chat request to validate
+        :return: The shared manager, or None when thread support is disabled
+        :raises ValueError: If thread support is enabled and user_id is missing
+        """
+        manager = ConversationThreadManager.get()
+        if manager is not None and not req.user_id:
+            raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
+        return manager
+
+    def _thread_pre_run(
+        self,
+        manager: Optional["ConversationThreadManager"],
+        req: BaseChatRequest,
+        requests: List[Any],
+    ) -> List[Any]:
+        """Thread-mode work done before the agent runs: create/load the thread,
+        store attachment bytes, append the user message, and return the rebuilt
+        request list in which stored attachments are replaced by in-band
+        AgentRequestAttachmentRef entries for MultimodalPreHook to resolve.
+
+        No-op when thread support is disabled (manager is None) — returns the
+        requests unchanged.
+
+        :param manager: The shared ConversationThreadManager, or None
+        :param req: The originating chat request
+        :param requests: The built AgentRequest list (may carry attachments)
+        :return: The (possibly rebuilt) request list to run the agent with.
+        """
+        if manager is None:
+            return requests
+        manager.get_or_create_thread(
+            session_id=req.session_id,
+            user_id=req.user_id,
+            group_id=req.group_id,
+            name=req.thread_name,
+            first_prompt=req.prompt,
+        )
+        requests, attachments = manager.store_attachments(session_id=req.session_id, requests=requests)
+        manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
+        return requests
+
+    @staticmethod
+    def _thread_post_run(manager: Optional["ConversationThreadManager"], req: BaseChatRequest, result: Any) -> None:
+        """Thread-mode work done after a successful agent run: append the
+        assistant message. No-op when thread support is disabled.
+
+        :param manager: The shared ConversationThreadManager, or None
+        :param req: The originating chat request
+        :param result: The agent's reply
+        :return: None
+        """
+        if manager is None:
+            return
+        manager.append_message(req.session_id, "assistant", str(result))
