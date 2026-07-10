@@ -1,0 +1,6 @@
+multimodal:
+  enabled: true
+  storage_type: session_cache
+
+thread:
+  type: memory # other supported backends: redis | dynamodb | firestore | cosmosdb

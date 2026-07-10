@@ -31,9 +31,13 @@ e2e:
     - type: api
       path: examples/api/openai
     - type: api
+      path: examples/api/thread-openai
+    - type: api
       path: examples/api/adk
     - type: api
       path: examples/api/multimodal/openai
+    - type: api
+      path: examples/api/multimodal/thread-openai
     - type: api
       path: examples/api/multimodal/adk
     - type: api
