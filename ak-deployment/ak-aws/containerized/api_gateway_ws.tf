@@ -8,6 +8,20 @@ locals {
     ["$connect", "$disconnect", "$default", var.ws_chat_route],
     [for r in var.ws_routes : r.route]
   )) : toset([])
+
+  # Backend path per WebSocket route. The ECS service exposes ONE endpoint per route
+  # (see ECSWebSocketRequestHandler) instead of dispatching internally, so each route
+  # rewrites the request path to its dedicated container endpoint. Predefined routes use
+  # fixed paths; the chat route and any custom routes map to /ws/<route-name>.
+  ws_route_backend_paths = local.is_websocket_mode ? merge(
+    {
+      "$connect"          = "/ws/connect"
+      "$disconnect"       = "/ws/disconnect"
+      "$default"          = "/ws/default"
+      (var.ws_chat_route) = "/ws/chat"
+    },
+    { for r in var.ws_routes : r.route => "/ws/${r.route}" }
+  ) : {}
 }
 
 resource "aws_apigatewayv2_api" "ws_api" {
@@ -30,14 +44,21 @@ resource "aws_apigatewayv2_integration" "ws" {
   connection_id        = aws_apigatewayv2_vpc_link.ecs_alb.id
   passthrough_behavior = "WHEN_NO_MATCH"
 
-  # Map WebSocket $context into headers so the app can dispatch and push replies.
-  request_parameters = {
-    "integration.request.header.x-ws-route"         = "context.routeKey"
-    "integration.request.header.x-ws-connection-id" = "context.connectionId"
-    "integration.request.header.x-ws-event-type"    = "context.eventType"
-    "integration.request.header.x-ws-domain-name"   = "context.domainName"
-    "integration.request.header.x-ws-stage"         = "context.stage"
-  }
+  # Route each WS route to its dedicated container endpoint (overwrite:path) and pass the
+  # $context the app needs to identify the connection and push replies back over it.
+  # NOTE: overwrite:* is parameter-mapping syntax; validate it is accepted for this WebSocket
+  # API in your account/region. If not, the fallback is classic header mapping
+  # ("integration.request.header.x-ws-route" = "context.routeKey") plus in-app dispatch.
+  request_parameters = merge(
+    {
+      "overwrite:header.x-ws-connection-id" = "$context.connectionId"
+      "overwrite:header.x-ws-domain-name"   = "$context.domainName"
+      "overwrite:header.x-ws-stage"         = "$context.stage"
+    },
+    {
+      "overwrite:path" = local.ws_route_backend_paths[each.value]
+    }
+  )
 }
 
 resource "aws_apigatewayv2_route" "ws" {

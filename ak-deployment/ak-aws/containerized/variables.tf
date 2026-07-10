@@ -228,7 +228,7 @@ variable "queue_mode" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode: 'rest_sync' (client waits on same HTTP connection), 'rest_async' (client polls a separate GET endpoint), 'async' (WebSocket, full response in one message), or 'stream' (WebSocket, token-by-token). 'rest_async', 'async' and 'stream' all require queue_mode = true."
+  description = "Execution mode: 'rest_sync' (client waits on same HTTP connection), 'rest_async' (client polls a separate GET endpoint), 'async' (WebSocket, full response in one message), or 'stream' (WebSocket, token-by-token). All four modes run with queue_mode = true; without queues, 'rest_async' is not supported (it requires the response store) — 'rest_sync', 'async', and 'stream' run the agent inline in the ingress service."
   default     = "rest_sync"
   validation {
     condition     = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
@@ -237,10 +237,6 @@ variable "execution_mode" {
   validation {
     condition     = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
     error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false. (rest_async requires queue_mode = true.)"
-  }
-  validation {
-    condition     = !contains(["async", "stream"], var.execution_mode) || var.queue_mode
-    error_message = "WebSocket modes ('async', 'stream') require queue_mode = true."
   }
 }
 
