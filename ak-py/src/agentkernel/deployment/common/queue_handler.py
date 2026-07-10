@@ -10,10 +10,16 @@ class QueueHandler(ABC):
     """
 
     class SendMessageAttributes(BaseModel):
-        """FIFO send attributes for the input/output queue convenience methods."""
+        """FIFO send attributes for the input/output queue convenience methods.
+
+        Unknown keys are rejected so that attribute typos fail fast instead of
+        silently sending the message without the intended FIFO ids.
+        """
 
         message_group_id: Optional[str] = None
         message_deduplication_id: Optional[str] = None
+
+        model_config = ConfigDict(extra="forbid")
 
     class QueueMessageBody(BaseModel):
         """Typed message body for the input queue. Extra fields are allowed and preserved.

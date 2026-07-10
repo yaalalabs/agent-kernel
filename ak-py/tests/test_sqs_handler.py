@@ -156,6 +156,10 @@ class TestSQSHandler:
         with pytest.raises(ValidationError):
             SQSHandler.send_message_to_input_queue(message_body="plain string message")
 
+        # Typo'd attribute keys are rejected instead of silently dropping the FIFO ids
+        with pytest.raises(ValidationError):
+            SQSHandler.send_message_to_input_queue(message_body=self.VALID_INPUT_BODY, attributes={"message_groupid": "group-1"})
+
         mock_sqs_client.send_message.assert_not_called()
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
@@ -463,6 +467,10 @@ class TestSQSHandler:
         empty_attrs = SQSHandler.SendMessageAttributes()
         assert empty_attrs.message_group_id is None
         assert empty_attrs.message_deduplication_id is None
+
+        # Unknown keys (typos) are rejected instead of being silently ignored
+        with pytest.raises(ValidationError):
+            SQSHandler.SendMessageAttributes(message_groupid="group-1")
 
     def test_queue_message_body_model(self):
         """Test QueueMessageBody model."""
