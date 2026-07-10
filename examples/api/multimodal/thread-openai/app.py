@@ -1,6 +1,6 @@
 from typing import Optional
 
-from agentkernel.api import AgentRESTRequestHandler, RESTAPI, ThreadRESTRequestHandler
+from agentkernel.api import RESTAPI, AgentRESTRequestHandler, ThreadRESTRequestHandler
 from agentkernel.core.thread import Authoriser
 from agentkernel.openai import OpenAIModule
 from agents import Agent

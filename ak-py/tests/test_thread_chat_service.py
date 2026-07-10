@@ -82,9 +82,7 @@ class TestChatServiceThreadIntegration:
         service = ChatService()
         handler = _mock_handler(Session("s1"))
         with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
-            service.process_chat_request(
-                BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", group_id="g1", thread_name="Support chat")
-            )
+            service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", group_id="g1", thread_name="Support chat"))
 
         thread = thread_enabled.get_thread("s1")
         assert thread.group_id == "g1"

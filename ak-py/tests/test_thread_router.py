@@ -132,9 +132,7 @@ class TestThreadRouterAuthorised:
         thread_enabled.get_or_create_thread("s2", "u2", first_prompt="b")
 
         # Caller asks for u2's threads but the token resolves to u1 — listing is forced to u1
-        response = _client(StaticAuthoriser()).get(
-            "/threads", params={"user_id": "u2"}, headers={"Authorization": "Bearer good-token"}
-        )
+        response = _client(StaticAuthoriser()).get("/threads", params={"user_id": "u2"}, headers={"Authorization": "Bearer good-token"})
         assert response.status_code == 200
         assert [t["session_id"] for t in response.json()["threads"]] == ["s1"]
 
