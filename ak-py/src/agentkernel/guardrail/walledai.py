@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from asyncio import to_thread
@@ -7,7 +8,7 @@ from walledai import WalledProtect, WalledRedact
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
-from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestText
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 log = logging.getLogger("ak.guardrail.walledai")
@@ -200,6 +201,19 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
 
         if not mapping:
             return agent_reply
+
+        if isinstance(agent_reply, AgentReplyAny):
+            unmasked_text = masked_output
+            for placeholder, original_value in mapping.items():
+                # Placeholders live inside JSON string values, so the original value
+                # must be JSON-escaped (quotes, backslashes) to keep the dump parseable.
+                escaped_value = json.dumps(str(original_value))[1:-1]
+                unmasked_text = unmasked_text.replace(placeholder, escaped_value)
+            try:
+                return AgentReplyAny(content=json.loads(unmasked_text), prompt=agent_reply.prompt)
+            except (json.JSONDecodeError, TypeError) as e:
+                log.error(f"Failed to rebuild structured reply after unmasking: {e}")
+                return agent_reply
 
         unmasked_text = masked_output
         for placeholder, original_value in mapping.items():
