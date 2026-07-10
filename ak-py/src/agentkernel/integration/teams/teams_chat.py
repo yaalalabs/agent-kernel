@@ -14,6 +14,7 @@ from ...api import RESTRequestHandler
 from ...core import AgentService, Config
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
     AgentRequestFile,
@@ -290,7 +291,7 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
         """Send agent reply to Teams."""
         try:
             # Standardize reply handling similar to Slack/WhatsApp
-            reply_text = str(reply) if isinstance(reply, (AgentReplyText, AgentReplyImage)) else str(reply)
+            reply_text = str(reply) if isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
 
             # Send the text response
             await turn_context.send_activity(reply_text)

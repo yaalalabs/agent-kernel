@@ -122,16 +122,15 @@ async def test_fallback_mode(test_client):
 
 ### Configuring Test Mode
 
-Set the default mode via configuration:
+Set the default mode via a `test-config.yaml` file in the directory the tests run from (a `test:` section in the application's `config.yaml` is ignored):
 
 ```yaml
-# config.yaml
-test:
-  mode: fallback  # Options: fuzzy, judge, fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
+# test-config.yaml
+mode: fallback  # Options: fuzzy, judge, fallback
+judge:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small
 ```
 
 Or environment variables:
@@ -151,7 +150,7 @@ The `expect()` method uses the configured mode:
 @pytest.mark.order(1)
 async def test_with_expect(test_client):
     await test_client.send("Who won the 1996 cricket world cup?")
-    # Uses mode from AKConfig.get().test.mode
+    # Uses mode from AKTestConfig (test-config.yaml / AK_TEST__MODE)
     await test_client.expect(["Sri Lanka won the 1996 cricket world cup."])
 ```
 
@@ -341,16 +340,15 @@ jobs:
 
 ### Test Mode Configuration
 
-Configure the default test comparison mode:
+Configure the default test comparison mode in `test-config.yaml`. The file is resolved from the current working directory, or from the path in the `AK_TEST_CONFIG_PATH_OVERRIDE` environment variable. It is only loaded when the test harness runs — the application's `config.yaml` no longer carries a `test:` section (a leftover one is ignored):
 
 ```yaml
-# config.yaml
-test:
-  mode: fallback  # Options: fuzzy, judge, fallback (default: fallback)
-  judge:
-    model: gpt-4o-mini  # LLM model for judge mode
-    provider: openai  # LLM provider
-    embedding_model: text-embedding-3-small  # Embedding model
+# test-config.yaml
+mode: fallback  # Options: fuzzy, judge, fallback (default: fallback)
+judge:
+  model: gpt-4o-mini  # LLM model for judge mode
+  provider: openai  # LLM provider
+  embedding_model: text-embedding-3-small  # Embedding model
 ```
 
 Or via environment variables:
@@ -451,7 +449,7 @@ def setup_test_env():
 
 Enable debug output for troubleshooting:
 
-Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
+Agent Kernel configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test — set them in its environment or `config.yaml`:
 
 **Using environment variables:**
 ```bash

@@ -1,0 +1,17 @@
+logging:
+  ak:
+    level: DEBUG
+session:
+  type: redis
+  redis:
+    prefix: "ak:openai:streaming:example:"
+    url: "redis://ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
+execution:
+  mode: stream
+  queues:
+    input:
+      # url: "https://sqs.<region>.amazonaws.com/<account-id>/<input-queue-name>"
+      max_receive_count: 3
+    output:
+      # url: "https://sqs.<region>.amazonaws.com/<account-id>/<output-queue-name>"
+      max_receive_count: 3

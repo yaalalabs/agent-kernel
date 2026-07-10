@@ -128,6 +128,10 @@ class <Backend>AttachmentStore(AttachmentStore):
         """
         key = f"{self._session_id}:{attachment_id}"
         # e.g., self._client.delete(key)
+
+        # IMPORTANT: also remove the ID from the session index so the count
+        # stays accurate and pruning logic works correctly on future saves.
+        # e.g., fetch the index, remove attachment_id, and write it back
         logger.debug(f"Deleted attachment {attachment_id} from <backend>")
 ```
 
@@ -135,6 +139,7 @@ class <Backend>AttachmentStore(AttachmentStore):
 
 - **Key format**: Use `{session_id}:{attachment_id}` for isolation between sessions
 - **Max attachments pruning**: When `save()` is called and the session exceeds `max_attachments`, delete the oldest entry. Track order via timestamps or a per-session index
+- **Index consistency on delete**: When `delete()` is called, remove the attachment ID from the per-session index in addition to deleting the data entry. Skipping this step causes the index count to drift — the backend will think more attachments exist than actually do, breaking `max_attachments` enforcement on subsequent saves
 - **TTL**: If the backend supports time-based expiry (like Redis TTL or DynamoDB `expiry_time`), use it for automatic cleanup. Read the TTL value from the backend-specific config
 - **Connection management**: Use lazy initialization and connection pooling where possible. The store may be instantiated per-request (inside `AttachmentStorageManager.__init__`)
 - **Serialization**: Attachment dicts must be JSON-serializable. The `data` field contains base64-encoded binary, so all values are strings, floats, or ints
@@ -321,7 +326,7 @@ Add or update `docs/docs/advanced/multimodal.md` with:
 - JSON serialization per attachment
 - Key format: `{prefix}{session_id}:{attachment_id}`
 - Connection pooling with lazy `_ensure_connection()`
-- TTL support via `redis.setex()`
+- TTL support via `client.set(key, json, ex=ttl)`
 - Per-session index for max attachment enforcement
 - Connection retry: up to 3 attempts
 
@@ -331,13 +336,13 @@ Add or update `docs/docs/advanced/multimodal.md` with:
 - TTL attribute: `expiry_time` (Unix epoch)
 - Boto3 client with lazy initialization
 - JSON serialization of attachment data
-- Per-session query for max attachment enforcement
+- Per-session index item (`attachment_id = "_index"`) tracking ordered IDs for max attachment enforcement — same index-list pattern as Redis, read via `get_item` (no queries)
 
 ### In-Memory (`storage/in_memory.py`)
 
 - `ClassVar` dict shared across all instances
 - Key format: `{session_id}:{attachment_id}`
-- Order tracked via insertion order + timestamps
+- Order tracked via a per-session `_index` list in insertion order (stored timestamps are not consulted)
 - No persistence — lost on process restart
 
 ## Checklist

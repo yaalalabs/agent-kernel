@@ -91,6 +91,37 @@ Post-execution hooks run **after** an agent generates a response. They can:
 - Sentiment analysis
 - Response logging and analytics
 
+### Structured Replies in Hooks
+
+When an agent is configured for structured output (e.g., `output_type` in the OpenAI
+Agents SDK or `output_schema` in Google ADK), post-execution hooks receive the
+`AgentReplyAny` object itself — **not a stringified version**. The structured result
+is available on `reply.content` as a dict, and hooks can inspect or modify it in
+place, exactly as they do with the other reply types:
+
+```python
+from agentkernel import PostHook
+from agentkernel.core.model import AgentReplyAny
+
+class StructuredModerationHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        if isinstance(agent_reply, AgentReplyAny):
+            # Inspect and modify the structured dict content directly
+            agent_reply.content["moderated"] = True
+        return agent_reply
+
+    def name(self):
+        return "StructuredModerationHook"
+```
+
+Pre-execution hooks may likewise halt execution by returning an `AgentReplyAny`
+(for example, serving a cached structured answer without running the agent).
+`str()` on an `AgentReplyAny` returns the JSON-serialized content, so hooks that
+log or render replies as text keep working unchanged. See the per-framework
+configuration in the [framework docs](../frameworks/overview).
+
+See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) for a complete example with a post-execution hook that modifies a structured reply.
+
 ## Implementing Hooks
 
 ### Pre-Execution Hook

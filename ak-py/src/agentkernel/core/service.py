@@ -1,8 +1,9 @@
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 
 from ..core import Agent, AgentRequest, Runtime, Session
-from ..core.model import AgentReply, AgentReplyText, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequestText, StreamChunk
 
 
 class AgentService:
@@ -128,6 +129,8 @@ class AgentService:
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
             result = result.text
+        elif isinstance(result, AgentReplyAny):
+            result = str(result)
         else:
             result = "Non-text reply given"
 
@@ -148,6 +151,21 @@ class AgentService:
 
         result = await self._runtime.run(self._agent, self._session, requests)
         return result
+
+    async def stream_multi(self, requests: list[AgentRequest]) -> AsyncGenerator[StreamChunk, None]:
+        """
+        Async generator that streams the agent response token by token.
+
+        :param requests: List of requests to send to the agent.
+        :return: An async generator yielding StreamChunk objects.
+        """
+        if not self._agent:
+            raise ValueError("No agent selected. Please select an agent before running.")
+        if not self._session:
+            raise ValueError("No session available. Please create or load a session before running.")
+
+        async for chunk in self._runtime.stream(self._agent, self._session, requests):  # using async due to aync iterator
+            yield chunk
 
     def get_response_session_id(self, session_id: str | None = None) -> str | None:
         """

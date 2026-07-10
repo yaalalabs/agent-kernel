@@ -30,7 +30,8 @@ class PreHook(ABC):
         :param: agent (Agent): The agent that will execute the prompt.
         :param: requests (list[AgentRequest]): The list of requests provided to the agent.
         :return:
-                - AgentReply: If the hook decides to halt execution, it can return an AgentReply which will be sent
+                - AgentReply: If the hook decides to halt execution, it can return an AgentReply which will be sent.
+                              This may be an AgentReplyAny carrying structured (dict) content.
                 - list[AgentRequest]: The modified requests or the input list. You can modify the requests in place without taking copies
                                       You can also add additional content to the requests list. e.g. files, images, etc.
 
@@ -62,10 +63,26 @@ class PostHook(ABC):
         :param:  agent (Agent): The agent that executed the prompt.
         :param:  agent_reply (AgentReply): The reply to process. For the first posthook, this is the unmodified
                               agent reply. For subsequent posthooks, this is the reply modified by previous posthooks in the chain.
+                              When the agent produces structured output, this is an AgentReplyAny whose `content` holds the
+                              structured result as a dict — hooks can inspect and modify the dict directly (not a stringified reply).
 
         :return: The modified reply. If not modified, return the current reply.
         """
         raise NotImplementedError
+
+    async def on_stream_chunk(
+        self,
+        session: "Session",
+        requests: list[AgentRequest],
+        agent: "Agent",
+        delta: str,
+    ) -> str | None:
+        """
+        Called for each streaming token delta before it is sent to the client.
+        Return the (optionally modified) delta string, or None to drop the token.
+        Default implementation passes the delta through unchanged.
+        """
+        return delta
 
     @abstractmethod
     def name(self) -> str:

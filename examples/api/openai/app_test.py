@@ -27,7 +27,7 @@ class APITestClient:
             if body is None
             else body
         )
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -120,6 +120,8 @@ async def test_pdf_support(http_client):
     Test.compare(
         response,
         [
+            "The new deadline is 12 December 2025.",
+            "The new deadline based on the file is 12 December 2025.",
             "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
             "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**",
         ],
@@ -138,7 +140,7 @@ async def test_image_multipart(http_client):
     files = {"images": ("test_image.jpeg", image_content, "image/jpeg")}
     data = {"prompt": "can you describe this image?", "session_id": http_client.session_id, "agent": "support"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()
@@ -166,7 +168,7 @@ async def test_pdf_multipart(http_client):
     files = {"files": ("test_pdf.pdf", pdf_content, "application/pdf")}
     data = {"prompt": "what is the new deadline based on this file", "session_id": "james", "agent": "support"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()

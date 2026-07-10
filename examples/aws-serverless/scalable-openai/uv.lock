@@ -15,7 +15,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.6.0"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -24,9 +24,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/7c/18a5747d4b73820349455be59a705064fbc6a4e67098cf2ce8c90da24b03/agentkernel-0.6.0.tar.gz", hash = "sha256:6402fdfac32cd58d37b8e2b250c0c1adadbbcf1e8a7a2a1fef6c1cd06742d327", size = 201752, upload-time = "2026-06-24T05:04:51.214Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/0d/044bee9dbc421521752cd3cc2a11b57dc302f20c4ee53b035d06bbbc398b/agentkernel-0.6.1.tar.gz", hash = "sha256:6d7f4605576ea7282e39e0e98b9f849ff0c6d3ad41b861709263256e95f07f97", size = 209316, upload-time = "2026-07-08T14:06:45.327Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/2d/ca32d0bf05dc5e215ee53cd4de96d3215a9377f33b4a54653445acf3f7f1/agentkernel-0.6.0-py3-none-any.whl", hash = "sha256:77271504f2141b4fa06b15bae4047623a2be7ea2c2df49c8b57dc2c7f5217c1e", size = 285399, upload-time = "2026-06-24T05:04:49.276Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/53/fff602f484bc2ff688f72ee48d9a1c25d612153ae65747614ddf27ca9a77/agentkernel-0.6.1-py3-none-any.whl", hash = "sha256:10e5ab14b18036e716d33c89268658c3c987a9e0c6ac89c14d34497eb9b02da6", size = 293394, upload-time = "2026-07-08T14:06:43.511Z" },
 ]
 
 [package.optional-dependencies]
@@ -37,6 +37,9 @@ openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
     { name = "openinference-instrumentation-openai-agents" },
+]
+redis = [
+    { name = "redis" },
 ]
 test = [
     { name = "datasets" },
@@ -227,7 +230,7 @@ name = "aws-serverless-scalable-openai"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["aws", "openai"] },
+    { name = "agentkernel", extra = ["aws", "openai", "redis"] },
 ]
 
 [package.dev-dependencies]
@@ -239,11 +242,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["aws", "openai"], specifier = ">=0.6.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["aws", "openai", "redis"], specifier = ">=0.6.1" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.6.0" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.6.1" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -2987,6 +2990,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/ce/ff942d19fce5385054650bb71a58495ddda299d94661ccc4e6e7fa44868b/rapidfuzz-3.14.5-cp314-cp314t-win32.whl", hash = "sha256:0f23e37019ec07712d58976b1ab2b889f8649a7f7c2f626a2f34ea9139e79279", size = 1803950, upload-time = "2026-04-07T11:16:10.873Z" },
     { url = "https://files.pythonhosted.org/packages/5c/0f/9aafc63f9661222b819b391c187eed29fc90ad5935f9690e5ecc2d2047a4/rapidfuzz-3.14.5-cp314-cp314t-win_amd64.whl", hash = "sha256:7d5ca9c7832e6879a707296d1463685f7c243a27846227044504741640caec66", size = 1632357, upload-time = "2026-04-07T11:16:13.1Z" },
     { url = "https://files.pythonhosted.org/packages/70/a6/51fc1b0e61e3326e1c68a61cfd0c6b3c34c843681c4b1eefbf0596f59162/rapidfuzz-3.14.5-cp314-cp314t-win_arm64.whl", hash = "sha256:3e91dcd2549b8f8d843f98ba03a17e01f3d8b72ce942adbbb6761bc58ffce813", size = 855409, upload-time = "2026-04-07T11:16:15.787Z" },
+]
+
+[[package]]
+name = "redis"
+version = "8.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/c3/928b290c2c0ca99ab96eea5b4ff8f30be8112b075301a7d3ba214a3c8c12/redis-8.0.1.tar.gz", hash = "sha256:afc5a7a2f5a084f5b1880dec548dd45be17db7e43c82a30d84f952aefb05cfb0", size = 5114170, upload-time = "2026-06-23T14:52:37.728Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/0a/c2345ebf1ebe70840ce3f6c6ee612f8fa749cfbd1b03069c53bf0c62aaad/redis-8.0.1-py3-none-any.whl", hash = "sha256:47daa35a058c23468d6437f17a8c76882cb316b838ef763036af99b96cedd743", size = 502406, upload-time = "2026-06-23T14:52:36.137Z" },
 ]
 
 [[package]]

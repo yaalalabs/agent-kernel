@@ -23,20 +23,23 @@ locals {
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
 
-  request_handler_enabled              = var.enable_api_gateway
-  request_handler_lambda_function_name = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
-  request_handler_lambda_invoke_arn    = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
-  request_handler_lambda_role_arn      = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
+  request_handler_enabled               = var.enable_api_gateway
+  request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
+  request_handler_lambda_invoke_arn     = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
+  request_handler_lambda_role_arn       = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
 
-  websocket_api_enabled = var.enable_api_gateway && var.execution_mode == "async"
-  rest_api_enabled      = var.enable_api_gateway && var.execution_mode != "async"
+  is_websocket_mode = contains(["async", "stream"], var.execution_mode) # True for both "async" (full-response WS) and "stream" (chunk-per-message WS)
+  websocket_api_enabled                  = var.enable_api_gateway && local.is_websocket_mode
+  rest_api_enabled                       = var.enable_api_gateway && !local.is_websocket_mode
 
-  create_authorizer             = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  create_authorizer                     = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
   authorizer_status_message     = !var.enable_api_gateway ? "Did NOT create Authorizer Lambda: enable_api_gateway is false." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
 
-  create_dynamodb_response_store_effective = var.create_dynamodb_response_store && var.execution_mode != "async"
-  create_redis_response_store_effective    = var.create_redis_response_store && var.execution_mode != "async"
+  # Effective response store creation flags (disabled for websocket modes — endpoint_url in SQS message is used instead)
+  create_dynamodb_response_store_effective = var.create_dynamodb_response_store && !local.is_websocket_mode
+  create_redis_response_store_effective     = var.create_redis_response_store && !local.is_websocket_mode
 
   response_store_dynamodb_table_name = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_name : null
   response_store_dynamodb_table_arn  = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_arn : null
@@ -96,7 +99,7 @@ resource "aws_security_group" "lambda" {
 module "lambda_source_storage" {
   count                = local.any_s3zip ? 1 : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
-  version              = "0.6.0"
+  version              = "0.6.1"
   region               = var.region
   env_alias            = var.env_alias
   is_production        = var.is_production
@@ -108,7 +111,7 @@ module "lambda_source_storage" {
 module "request_handler_source_package" {
   count            = local.request_handler_enabled ? ((var.request_handler.package_type == "S3Zip" && try(var.request_handler.lambda_package_s3, null) == null) ? 1 : 0) : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.6.0"
+  version          = "0.6.1"
   env_alias        = var.env_alias
   region           = var.region
   module_name      = var.request_handler.module_name
@@ -121,7 +124,7 @@ module "request_handler_source_package" {
 module "agent_runner_source_package" {
   count            = (var.agent_runner.package_type == "S3Zip" && try(var.agent_runner.lambda_package_s3, null) == null) ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.6.0"
+  version          = "0.6.1"
   env_alias        = var.env_alias
   region           = var.region
   module_name      = var.agent_runner.module_name
@@ -134,7 +137,7 @@ module "agent_runner_source_package" {
 module "response_handler_source_package" {
   count            = (var.queue_mode && var.response_handler.package_type == "S3Zip" && try(var.response_handler.lambda_package_s3, null) == null) ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.6.0"
+  version          = "0.6.1"
   env_alias        = var.env_alias
   region           = var.region
   module_name      = var.response_handler.module_name
@@ -146,7 +149,7 @@ module "response_handler_source_package" {
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.6.0"
+  version              = "0.6.1"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -159,7 +162,7 @@ module "vpc" {
 module "authorizer" {
   count                      = local.create_authorizer ? 1 : 0
   source                     = "yaalalabs/ak-common/aws//modules/authorizer"
-  version                    = "0.6.0"
+  version                    = "0.6.1"
   region                     = var.region
   product_alias              = var.product_alias
   env_alias                  = var.env_alias
@@ -234,7 +237,7 @@ module "websocket_api_gateway" {
 module "docker_image" {
   count         = local.request_handler_enabled ? ((var.request_handler.package_type == "Image" && try(var.request_handler.ecr_image_uri, null) == null) ? 1 : 0) : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.6.0"
+  version       = "0.6.1"
   env_alias     = var.env_alias
   module_name   = var.request_handler.module_name
   product_alias = var.product_alias
@@ -244,7 +247,7 @@ module "docker_image" {
 module "agent_runner_docker_image" {
   count         = (var.agent_runner.package_type == "Image" && try(var.agent_runner.ecr_image_uri, null) == null) ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.6.0"
+  version       = "0.6.1"
   env_alias     = var.env_alias
   module_name   = var.agent_runner.module_name
   product_alias = var.product_alias
@@ -254,7 +257,7 @@ module "agent_runner_docker_image" {
 module "response_handler_docker_image" {
   count         = var.queue_mode && var.response_handler.package_type == "Image" && try(var.response_handler.ecr_image_uri, null) == null ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.6.0"
+  version       = "0.6.1"
   env_alias     = var.env_alias
   module_name   = var.response_handler.module_name
   product_alias = var.product_alias
@@ -263,7 +266,7 @@ module "response_handler_docker_image" {
 
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.6.0"
+  version       = "0.6.1"
   count         = (var.create_redis_cluster == true || local.create_redis_response_store_effective) ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -275,7 +278,7 @@ module "redis" {
 
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.6.0"
+  version = "0.6.1"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -293,7 +296,7 @@ module "dynamodb_memory" {
 
 module "dynamodb_multimodal_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.6.0"
+  version = "0.6.1"
   count   = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -339,7 +342,7 @@ check "queue_visibility_timeouts" {
 module "websocket_connections" {
   count  = local.websocket_api_enabled ? 1 : 0
   source = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.6.0"
+  version = "0.6.1"
   attributes = [
     { name = "user_id", type = "S" },
     { name = "connection_id", type = "S" }
@@ -364,7 +367,7 @@ module "websocket_connections" {
 
 module "dynamodb_response_store" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.6.0"
+  version = "0.6.1"
   count   = local.create_dynamodb_response_store_effective ? 1 : 0
   attributes = [
     { name = "request_id", type = "S" },

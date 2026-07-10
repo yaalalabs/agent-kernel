@@ -12,7 +12,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,redis,auth] || true
+      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../../ak-py/dist agentkernel[openai,redis,auth] || true
     fi
     cp -r lambda.py config.yaml dist/data
     popd || exit 1
@@ -30,7 +30,7 @@ create_auth_deployment_package() {
     if [[ ${1-} != "local" ]]; then
         uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth
     else
-        uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
+        uv pip install --force-reinstall --no-deps --no-index agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
     fi
     uv pip install --group auth --target=dist_auth
     cp -r lambda_auth.py dist_auth/

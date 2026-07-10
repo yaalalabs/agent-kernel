@@ -82,14 +82,45 @@ OpenAIModule([agent])
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
 
+## Structured Output
+
+Configure structured output with the OpenAI Agents SDK's `output_type` parameter. Agent Kernel detects the structured result and returns an `AgentReplyAny` whose `content` is the result as a dict — no re-parsing of text needed:
+
+```python
+from agents import Agent as OpenAIAgent
+from pydantic import BaseModel
+from agentkernel.openai import OpenAIModule
+
+class CalendarEvent(BaseModel):
+    name: str
+    date: str
+
+agent = OpenAIAgent(
+    name="extractor",
+    instructions="Extract the calendar event from the text.",
+    output_type=CalendarEvent,
+)
+
+OpenAIModule([agent])
+```
+
+Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers (chat integrations, logging) work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
+:::
+
 ## Features
 
 - ✅ Function calling
 - ✅ Multi-agent handoff
 - ✅ Streaming responses
+- ✅ Structured output (`output_type` → `AgentReplyAny`)
 - ✅ Session management
 - ✅ Framework-agnostic tool binding
 
 ## Example
 
 See [examples/cli/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai) for complete examples.
+
+For structured output, see [examples/cli/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_structured) and [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) (REST API + post-execution hook).

@@ -89,12 +89,12 @@ description = "<description>"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[<extras>]>=0.6.0",
+    "agentkernel[<extras>]>=0.6.1",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.6.0",
+    "agentkernel[test]>=0.6.1",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -216,21 +216,17 @@ if __name__ == "__main__":
 ```python
 from agentkernel.cli import CLI  # or RESTAPI, Lambda
 from agentkernel.crewai import CrewAIModule
-from crewai import Agent, Crew, Task
+from crewai import Agent
 
 <agent_name> = Agent(
-    role="<role>",
+    role="<role>",     # role= is the agent identifier in Agent Kernel
     goal="<goal>",
     backstory="<backstory>",
+    verbose=False,
 )
 
-# CrewAI requires a Crew wrapping agents
-crew = Crew(
-    agents=[<agent_name>],
-    tasks=[Task(description="<task>", agent=<agent_name>)],
-)
-
-CrewAIModule([crew])
+# Pass agents directly — Agent Kernel builds the Crew and Task internally per run
+CrewAIModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()

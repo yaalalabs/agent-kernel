@@ -4,10 +4,10 @@
 
 terraform {
   backend "s3" {
-    bucket         = "agent-kernel-terraform-state-bucket-dev"
-    key            = "ak-agent/public/terraform.tfstate"
-    region         = "ap-southeast-2"
-    use_lockfile   = true
-    encrypt        = true
+    bucket       = "agent-kernel-terraform-state-bucket-dev"
+    key          = "ak-agent/public/terraform.tfstate"
+    region       = "ap-southeast-2"
+    use_lockfile = true
+    encrypt      = true
   }
 }

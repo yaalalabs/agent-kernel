@@ -1,5 +1,6 @@
 import importlib.metadata
-from typing import List, Optional
+from threading import RLock
+from typing import ClassVar, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -246,17 +247,6 @@ class _TraceConfig(BaseModel):
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
 
 
-class _JudgeConfig(BaseModel):
-    model: str = Field(default="gpt-4o-mini", description="LLM Model name")
-    provider: str = Field(default="openai", description="LLM Provider name")
-    embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
-
-
-class _TestConfig(BaseModel):
-    mode: str = Field(default="fallback", pattern="^(fallback|judge|fuzzy)$")
-    judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
-
-
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
     type: str = Field(default="openai", pattern="^(openai|bedrock|walledai)$")
@@ -296,6 +286,16 @@ class _InputQueueConfig(BaseModel):
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
+    no_of_consumers: int = Field(
+        default=5,
+        description=(
+            "Only used in Containerized deployments "
+            "Number of independent consumer threads that each poll the input queue "
+            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
+            "serverless (Lambda) mode, which has no consumer threads. "
+            "Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
+        ),
+    )
 
 
 class _OutputQueueConfig(BaseModel):
@@ -303,11 +303,31 @@ class _OutputQueueConfig(BaseModel):
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
+    no_of_consumers: int = Field(
+        default=2,
+        description=(
+            "Only used in Containerized deployments "
+            "Number of independent consumer threads that each poll the output queue "
+            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
+            "serverless (Lambda) mode, which has no consumer threads. "
+            "Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
+        ),
+    )
 
 
 class _QueuesConfig(BaseModel):
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
+    batch_size: Optional[int] = Field(
+        default=None,
+        description=(
+            "NOT used in serverless deployments"
+            "Max number of messages fetched per SQS receive call, common to input and output queues. "
+            "Only used by ECS containerized deployments — never set for serverless (Lambda) mode, which "
+            "controls batch size via the Event Source Mapping instead. "
+            "Controlled by the Terraform deployment via env var AK_EXECUTION__QUEUES__BATCH_SIZE — do not set in config.yaml."
+        ),
+    )
 
 
 class _LogLevelConfig(BaseModel):
@@ -326,7 +346,7 @@ class _LoggingConfig(BaseModel):
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST",
+        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
     )
     queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
     response_store: Optional[_ResponseStoreConfig] = Field(
@@ -360,19 +380,44 @@ class AKConfig(YamlBaseSettingsModified):
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
-    test: _TestConfig = Field(description="Test related configurations", default_factory=_TestConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")
 
+    _instance: ClassVar[Optional["AKConfig"]] = None
+    # Reentrant because configure_from_config() calls AKConfig.get() again
+    _instance_lock: ClassVar[RLock] = RLock()
+
     @classmethod
     def get(cls) -> "AKConfig":
-        return globals()["ak_config"]
+        """Return the AKConfig singleton, creating it on first access.
+
+        Loading lazily keeps `import agentkernel` free of config.yaml reads, so
+        processes that never touch the configuration (e.g. the CLI test harness)
+        never load it. Logging is configured together with the first load since
+        its settings come from this config.
+        """
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    # Set before configuring logging: configure_from_config()
+                    # re-enters get() and must see the instance
+                    cls._instance = AKConfig()
+                    try:
+                        from .logger import AKLogger
+
+                        AKLogger.configure_from_config()
+                    except Exception:
+                        cls._instance = None
+                        raise
+        return cls._instance
 
     @classmethod
-    def _set(cls):
-        globals()["ak_config"] = AKConfig()
+    def _reset(cls):
+        """Clear the cached singleton so the next get() reloads the config.
 
-
-AKConfig._set()
+        Logging is not reconfigured on reload: AKLogger keeps its _initialized
+        guard, matching the previous configure-once-at-import behavior.
+        """
+        cls._instance = None

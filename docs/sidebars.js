@@ -129,6 +129,7 @@ const sidebars = {
         'advanced/traceability',
         'advanced/multi-agent',
         'advanced/multimodal',
+        'advanced/queue-mode-guide',
         {
           type: 'category',
           label: 'Guardrails',

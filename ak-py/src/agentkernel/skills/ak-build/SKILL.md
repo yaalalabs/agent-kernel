@@ -244,6 +244,28 @@ OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 
 This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule` work the same way.
 
+#### 4c. Structured Output (Optional)
+
+To make an agent return a typed dict instead of plain text, define a Pydantic model and configure it on the agent (or, for CrewAI, on the module). The runner returns an `AgentReplyAny` whose `content` is the result as a dict; `str(reply)` is the JSON serialization, so text-based consumers (CLI, chat integrations) work unchanged. Applies to non-streaming execution only.
+
+```python
+from pydantic import BaseModel
+
+class OrderStatus(BaseModel):
+    order_id: str
+    status: str
+```
+
+| Framework | How to configure |
+|-----------|------------------|
+| OpenAI Agents SDK | `Agent(..., output_type=OrderStatus)` |
+| LangGraph | `create_react_agent(..., response_format=OrderStatus)` |
+| CrewAI | `CrewAIModule([agent], output_pydantic={"support": OrderStatus})` — or `output_json={...}`; keyed by agent `role` |
+| Google ADK | `LlmAgent(..., output_schema=OrderStatus)` |
+| Smolagents | No schema parameter — have the agent pass a dict or Pydantic instance to `final_answer` |
+
+> **Gotcha (CrewAI):** CrewAI puts the output schema on the `Task`, not the `Agent` — and Agent Kernel builds the task internally per run, so the schema is passed to the `CrewAIModule` constructor keyed by agent role.
+
 ---
 
 ### Step 5: Add Handoffs
@@ -354,7 +376,7 @@ If the new tool or agent requires additional packages, update `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.6.0",
+    "agentkernel[openai,api,redis]>=0.6.1",
     "httpx>=0.27.0",        # Add any new deps for your tool
 ]
 ```
@@ -402,6 +424,8 @@ curl -X POST http://localhost:8000/run \
 | **LangGraph `name=`** | Always pass `name=` to `create_react_agent()`. Without it, the supervisor cannot route to the agent. |
 | **CrewAI `role=`** | Use `role=` as the agent identifier, not `name=`. Agent Kernel reads `agent.role` as the agent name. |
 | **CrewAI `verbose=`** | Set `verbose=False` on agents to prevent noisy console output. |
+| **CrewAI conversation history** | CrewAI runner keeps its own per-session transcript (last 20 lines) prepended to each task description, independent of the Memory feature. If `Memory.remember()` fails (e.g. no embedder configured), the runner logs a warning and continues instead of failing the run. |
+| **CrewAI structured output** | Configured on the module, not the agent: `CrewAIModule([agent], output_pydantic={"<role>": Model})`. The native `crewai.Agent` rejects an `output_pydantic` attribute (it belongs to the `Task`, which Agent Kernel builds per run). |
 | **Google ADK `LiteLlm`** | Wrap the model string: `LiteLlm(model="openai/gpt-4o-mini")`. A bare string won't work. |
 | **Env var nesting** | Use `__` (double underscore) as the nested delimiter: `AK_REDIS__URL`, `AK_WHATSAPP__ACCESS_TOKEN`. |
 | **Single Module** | Only one Module instance per framework. Add new agents to the existing Module's agent list. |

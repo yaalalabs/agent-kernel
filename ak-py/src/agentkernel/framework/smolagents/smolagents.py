@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import inspect
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
@@ -12,6 +13,7 @@ from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -157,12 +159,24 @@ class SmolagentsRunner(Runner):
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
 
+            structured = AgentReplyAny.from_output(reply, prompt)
+            if structured is not None:
+                return structured
+
             return AgentReplyText(text=str(reply), prompt=prompt)
         except Exception as e:
             return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """
+        smolagents does not support SSE streaming.
+        :raises NotImplementedError: Always raised — use rest_sync mode instead.
+        """
+        raise NotImplementedError("smolagents does not support SSE streaming. Use rest_sync mode.")
+        yield  # make this an async generator to satisfy the type contract
 
 
 class SmolagentsAgent(BaseAgent):

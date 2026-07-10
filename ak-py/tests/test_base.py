@@ -9,8 +9,16 @@ class MockRunner(Runner):
     def __init__(self, name: str):
         super().__init__(name)
 
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         return AgentReply(content="mock-reply")
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
 
 
 def test_runner_init():

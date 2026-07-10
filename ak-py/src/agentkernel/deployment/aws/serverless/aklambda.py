@@ -33,7 +33,8 @@ class Lambda:
 
     @staticmethod
     def _is_websocket_mode() -> bool:
-        return Lambda._get_config().execution.mode == ExecutionMode.ASYNC
+        mode = Lambda._get_config().execution.mode
+        return mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
 
     @classmethod
     def register(cls, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:

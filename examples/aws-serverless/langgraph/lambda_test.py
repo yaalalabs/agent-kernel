@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 
@@ -26,7 +27,17 @@ class APITestClient:
             else body
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload)
+            # Retry 5xx and timeouts: serverless cold starts can exceed the gateway timeout
+            for attempt in range(3):
+                try:
+                    resp = await client.post(f"{self.url}{endpoint}", json=payload)
+                except httpx.TimeoutException:
+                    if attempt == 2:
+                        raise
+                    continue
+                if resp.status_code < 500 or attempt == 2:
+                    break
+                await asyncio.sleep(5)
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", "")
@@ -41,20 +52,12 @@ async def http_client():
 @pytest.mark.asyncio
 @pytest.mark.order(1)
 async def test_history_agent(http_client):
-    response = await http_client.send("when did the battle of Waterloo happen?")
-    Test.compare(
-        response,
-        ["The Battle of Waterloo happened on June 18, 1815."],
-        threshold=10,
-    )
+    response = await http_client.send("Who won the 1996 cricket world cup?")
+    Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup(http_client):
-    response = await http_client.send("who won?")
-    Test.compare(
-        response,
-        ["The Duke of Wellington and the Prussian forces led by Gebhard Leberecht von Blücher won"],
-        threshold=10,
-    )
+    response = await http_client.send("Which country hosted the tournament?")
+    Test.compare(response, ["Co-hosted by India, Pakistan and Sri Lanka."])

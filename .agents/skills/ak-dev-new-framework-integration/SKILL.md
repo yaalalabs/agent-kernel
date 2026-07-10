@@ -118,6 +118,45 @@ class <Name>Runner(Runner):
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
 
+### 3b. Implement `stream()` for Token Streaming
+
+`Runner` declares `stream()` as `@abstractmethod`, so every framework adapter **must** implement it — even if the framework doesn't support token streaming.
+
+**If the framework's SDK exposes a token-delta stream** (e.g. an async event stream with text-delta events), implement it directly:
+
+```python
+from collections.abc import AsyncGenerator
+
+async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    tool_context = ToolContext(Runtime.current(), agent, session, requests)
+    try:
+        tool_context.set()
+        fw_session = self._session(session)
+        prompt = "".join(req.text for req in requests if isinstance(req, AgentRequestText))
+
+        result = await self._execute_streamed(agent, fw_session, prompt)  # framework-specific
+        async for event in result:
+            delta = self._extract_text_delta(event)  # framework-specific
+            if delta:
+                yield delta
+    finally:
+        tool_context.reset()
+```
+
+**If the framework has no native token streaming** (e.g. CrewAI, smolagents), implement `stream()` as a generator that always raises, so it satisfies the abstract method contract but fails fast with a clear message:
+
+```python
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    """
+    <Name> does not support SSE streaming.
+    :raises NotImplementedError: Always raised — use rest_sync mode instead.
+    """
+    raise NotImplementedError("<Name> does not support SSE streaming. Use rest_sync mode.")
+    yield  # make this an async generator to satisfy the type contract
+```
+
+`Runtime.stream()` wraps each yielded token in a `StreamChunk`, runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's streaming — just implement `Runner.stream()`.
+
 ### 4. Implement the Agent Wrapper
 
 Subclass `Agent` from `agentkernel.core.base`:
@@ -243,12 +282,12 @@ In `ak-py/pyproject.toml`, add an optional dependency group:
 
 ### 11. Add Tracing Support
 
-When adding tracing, create `ak-py/src/agentkernel/trace/langfuse/<name>.py`:
+There are **two** tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **both** `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py`:
 
 ```python
-from .<name>_runner import <Name>Runner as Base<Name>Runner
+from ...framework.<name>.<name> import <Name>Runner
 
-class LangFuse<Name>Runner(Base<Name>Runner):
+class LangFuse<Name>Runner(<Name>Runner):
     def __init__(self, langfuse_client):
         super().__init__()
         self._client = langfuse_client
@@ -258,18 +297,18 @@ class LangFuse<Name>Runner(Base<Name>Runner):
             return await super().run(agent, session, requests)
 ```
 
-Also update `ak-py/src/agentkernel/trace/base.py` and `ak-py/src/agentkernel/trace/trace.py` to add the new framework method.
+Also add a new abstract framework method in `ak-py/src/agentkernel/trace/base.py` and the corresponding `Trace.<name>()` method in `ak-py/src/agentkernel/trace/trace.py`.
 
 ### 12. Add Tests
 
 Create tests in `ak-py/tests/`:
 
 ```python
-# ak-py/tests/test_module_<name>.py
+# ak-py/tests/test_<name>_runner.py
 # ak-py/tests/test_tool_<name>.py
 ```
 
-Follow the existing test patterns — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
+Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
 
 ### 13. Add Examples
 
@@ -279,16 +318,17 @@ Create at minimum:
 
 ### 14. Add Documentation
 
-- Add a page under `docs/docs/frameworks/<name>.md`
+- Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
 
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/framework/<name>/` directory with `__init__.py` and `<name>.py`
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
+- [ ] `<Name>Runner.stream()` implemented — either real token streaming or a `NotImplementedError` stub
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
-- [ ] Trace runner in `ak-py/src/agentkernel/trace/langfuse/<name>.py` (optional)
+- [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
 - [ ] Unit tests in `ak-py/tests/`
 - [ ] CLI example in `examples/cli/<name>/`

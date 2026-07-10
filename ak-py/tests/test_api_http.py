@@ -339,8 +339,20 @@ class TestRESTAPIIntegration:
         # Get the app that was passed to uvicorn.run
         app = mock_uvicorn.call_args[1]["app"]
 
-        # Test the routes
-        route_paths = [route.path for route in app.routes if hasattr(route, "path")]
+        # Test the routes — Starlette 1.3+ uses _IncludedRouter objects for
+        # routers added after app construction, so collect paths from both
+        # direct routes and included routers.
+        def collect_paths(routes, prefix=""):
+            paths = []
+            for route in routes:
+                if hasattr(route, "path"):
+                    paths.append(prefix + route.path)
+                elif hasattr(route, "include_context") and hasattr(route, "original_router"):
+                    ctx_prefix = getattr(route.include_context, "prefix", "")
+                    paths.extend(collect_paths(route.original_router.routes, prefix + ctx_prefix))
+            return paths
+
+        route_paths = collect_paths(app.routes)
         assert "/health" in route_paths
         client = TestClient(app)
         response = client.get("/custom/test")
@@ -372,3 +384,27 @@ class TestRESTAPIIntegration:
         with patch("uvicorn.run") as mock_uvicorn:
             RESTAPI.run([None])
             mock_uvicorn.assert_called_once()
+
+
+class TestResponseBuilderStructuredResult:
+    """Tests for ResponseBuilder handling of structured (AgentReplyAny) results."""
+
+    def test_structured_result_serialized_as_json_string(self):
+        import json
+
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = {"city": "Colombo", "temp_c": 31}
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyAny(content=content))
+
+        assert response["result"] == json.dumps(content)
+        assert response["session_id"] == "session-1"
+
+    def test_text_result_unchanged(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyText
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(text="hello"))
+
+        assert response["result"] == "hello"

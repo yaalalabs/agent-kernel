@@ -3,13 +3,13 @@ name: ak-cloud-deploy
 description: >
   Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules.
   Supports serverless and containerized modes for all three clouds. AWS supports
-  execution modes (rest_sync, rest_async, async), queue-based scalable processing,
+  execution modes (rest_sync, rest_async, async, stream), queue-based scalable processing,
   and custom API Gateway authorizers. GCP supports Cloud Run serverless (scale-to-zero)
   and containerized (always-on) with Redis or Firestore session backends.
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.6.0"
+  version: "0.6.1"
   category: user
 ---
 
@@ -39,7 +39,8 @@ If missing, suggest `ak-init` first.
 3. Execution pattern (AWS serverless only):
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode)
 - Asynchronous REST (`rest_async`, queue/scalable mode)
-- WebSocket async (`async`, queue/scalable mode)
+- WebSocket full-response (`async`, queue/scalable mode)
+- WebSocket token streaming (`stream`, queue/scalable mode) — also available on containerized deployments via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -55,7 +56,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.6.0`) unless user requests another.
+Use current module version (`0.6.1`) unless user requests another.
 
 AWS-only features in this skill:
 - `execution_mode`
@@ -77,7 +78,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.6.0"
+  "agentkernel[openai,api,redis]>=0.6.1"
 ]
 ```
 
@@ -100,7 +101,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.6.0"
+  "agentkernel[openai,api,aws]>=0.6.1"
 ]
 ```
 
@@ -121,7 +122,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.6.0"
+  "agentkernel[openai,api,azure]>=0.6.1"
 ]
 ```
 
@@ -143,7 +144,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.6.0"
+  "agentkernel[openai,api,gcp]>=0.6.1"
 ]
 ```
 
@@ -188,7 +189,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -242,7 +243,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -377,7 +378,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.6.0"  # include 'redis' if using Redis session/response store
+  "agentkernel[openai,api,aws]>=0.6.1"  # include 'redis' if using Redis session/response store
 ]
 ```
 
@@ -390,7 +391,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -534,11 +535,69 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.6.0"
+  "agentkernel[openai,api,aws,redis,auth]>=0.6.1"
 ]
 ```
 
-### D) API Gateway Custom Authorizer (AWS)
+### D) WebSocket Token Streaming (`stream`)
+
+Use this when the client should receive each generated token as soon as it is produced, instead of waiting for the full response.
+
+Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `response_handler`, `ws_connection_handler`, `ws_routes`) — only `execution_mode` changes:
+
+```hcl
+module "serverless_agents" {
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.6.1"
+
+  product_alias        = var.product_alias
+  env_alias            = var.env_alias
+  module_name          = var.module_name
+  region               = var.region
+  product_display_name = "AK Streaming WebSocket Example"
+
+  queue_mode     = true
+  execution_mode = "stream"
+
+  create_redis_cluster           = true
+  # create_redis_response_store and create_dynamodb_response_store must stay false/unset:
+  # WebSocket modes (async/stream) push responses over the connection and Terraform
+  # validation fails if a response store is enabled for them.
+
+  request_handler       = { ... } # same shape as async mode
+  agent_runner          = { ... } # runs ServerlessStreamAgentRunner, streams chunks to output queue
+  response_handler      = { ... } # broadcasts each chunk as a STREAM_CHUNK message
+  ws_connection_handler = { ... }
+  ws_routes             = [ { route = "app" }, { route = "app_info" } ]
+}
+```
+
+**`config.yaml`** — the only required setting beyond WebSocket async mode is the execution mode itself:
+
+```yaml
+execution:
+  mode: stream
+```
+
+This selects `ServerlessStreamAgentRunner` automatically at import time (queue mode) — no code change needed in the agent runner Lambda beyond the standard `Lambda.handler` entrypoint.
+
+**Message format** — clients receive a sequence of `STREAM_CHUNK` messages instead of one `CHAT_RESPONSE`:
+
+```json
+{"type": "STREAM_CHUNK", "delta": "Hello", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": "!", "done": true, "session_id": "user-1"}
+```
+
+On an unrecoverable error, the final chunk carries `error` instead of `delta`, with `done: true`.
+
+- Queue disabled (`queue_mode = false`): the request handler Lambda streams tokens directly to the WebSocket client without SQS.
+- `create_redis_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
+- See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
+
+**Containerized / direct streaming (no Terraform WebSocket setup)**: any REST deployment (AWS containerized, Azure, GCP, or local) can enable SSE token streaming by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode.
+
+### E) API Gateway Custom Authorizer (AWS)
 
 If the user needs token verification, include `authorizer` block:
 
@@ -559,7 +618,7 @@ authorizer = {
 
 ## AWS Containerized (ECS/Fargate)
 
-### Agent Code Pattern
+### A) Basic Mode (single container, direct execution)
 
 ```python
 from agentkernel.api import RESTAPI
@@ -571,61 +630,150 @@ if __name__ == "__main__":
     RESTAPI.run()
 ```
 
-### Terraform Example
-
-**Local build (development)** — `package_path` points to the Docker build context:
-
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name
-  package_path         = "../dist"
   region               = var.region
   product_display_name = "AK ECS Deployment"
 
-  ecs_container_port = 8000
-  ecs_desired_count  = 2
+  rest_service = {
+    package_path  = "../dist"
+    container_port = 8000
+    desired_count  = 2
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
 
   create_dynamodb_memory_table = true
-
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
-  }
 }
 ```
 
-**Production: pre-built ECR image** — set `ecr_image_uri` instead of `package_path`. Terraform skips the local Docker build and deploys the specified image directly:
+### B) Scalable Queue Mode (two containers)
+
+Use this for high-throughput or long-running agents. Two separate ECS services share SQS queues:
+
+- **IO container** (`ECSIOHandler`) — Thread 1: FastAPI REST API; Thread 2: output queue consumer → DynamoDB / WebSocket. Thread 2 is actually `queues.output.no_of_consumers` (default 5) parallel polling threads.
+- **Agent Runner container** (`ECSAgentRunner`) — runs `queues.input.no_of_consumers` (default 5) parallel threads, each polling the input queue, executing the agent, and putting the result on the output queue.
+
+**`app_rest_service.py`** (IO container entrypoint — NO agent definitions here):
+
+```python
+from agentkernel.aws import ECSIOHandler
+
+runner = ECSIOHandler.run
+
+if __name__ == "__main__":
+    runner()
+```
+
+**`app_agent_runner.py`** (Agent Runner container entrypoint):
+
+```python
+from agentkernel.aws import ECSAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])  # register agents here only
+
+handler = ECSAgentRunner.run
+
+if __name__ == "__main__":
+    handler()
+```
+
+**`config.yaml`** (same file included in both images — queue URLs and table names are injected by Terraform; `batch_size` is Terraform-only, never set here):
+
+```yaml
+execution:
+  queues:
+    input:
+      no_of_consumers: 5   # parallel input-poll threads in the Agent Runner container (default 5)
+    output:
+      no_of_consumers: 5   # parallel output-poll threads in the IO container (default 5)
+  response_store:
+    type: dynamodb
+    retry_count: 30
+    delay: 2
+session:
+  type: dynamodb
+```
+
+**Terraform:**
 
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.6.0"
+  version = "0.6.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
-  ecr_image_uri        = "123456789012.dkr.ecr.us-west-2.amazonaws.com/my-app:v1.2.3"
-  region               = var.region
-  product_display_name = "AK ECS Deployment"
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  region        = var.region
 
-  ecs_container_port = 8000
-  ecs_desired_count  = 2
+  rest_service = {
+    package_path  = "../dist-rest-service"
+    cpu           = 512
+    memory        = 1024
+    desired_count = 2
+    command       = ["python", "app_rest_service.py"]
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  queue_mode = true
+  execution_mode   = "sync"   # or "async"
+
+  queue_config = {
+    input_queue_visibility_timeout  = 120
+    output_queue_visibility_timeout = 60
+    input_queue_create_dlq          = true
+    output_queue_create_dlq         = true
+  }
+
+  # Agent Runner container — separate image with agent definitions
+  agent_runner = {
+    cpu           = 1024
+    memory        = 2048
+    desired_count = 1
+    package_path  = "../dist-agent-runner"
+    command       = ["python", "app_agent_runner.py"]
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  # Optional: auto-scale Agent Runner based on Input Queue depth
+  scaling_config = {
+    enabled            = true
+    min_count          = 1
+    max_count          = 10
+    backlog_target     = 5
+    scale_in_cooldown  = 180
+    scale_out_cooldown = 60
+  }
 
   create_dynamodb_memory_table = true
-
-  environment_variables = {
-    OPENAI_API_KEY = var.openai_api_key
-  }
 }
 ```
 
-`package_path` and `ecr_image_uri` are mutually exclusive; exactly one must be set.
+**Required `pyproject.toml` extras:**
 
-See [examples/aws-containerized/openai-dynamodb](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb) for a complete example using an external ECR image.
+```toml
+dependencies = [
+  "agentkernel[openai,api,aws]>=0.5.1"
+]
+```
+
+**Key rules:**
+- Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py` only — never in `app_rest_service.py`.
+- `ECSIOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
+- `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` (itself a `QueueConsumer` — the same base `LambdaSQSConsumer` extends) — extend either class to customise message processing.
 
 ## Azure Serverless (Functions + APIM)
 
@@ -645,7 +793,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -689,7 +837,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.6.0"
+  version = "0.6.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -787,8 +935,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.6.0"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.6.0"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.6.1"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.6.1"  # for Redis sessions
 ]
 ```
 

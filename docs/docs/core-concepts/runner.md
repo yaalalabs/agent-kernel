@@ -92,6 +92,43 @@ class LangGraphRunner(Runner):
         # Return result
 ```
 
+## Reply Types
+
+Every runner returns an `AgentReply` from `run()`. The union covers three reply models:
+
+| Type | Produced when | Payload |
+|------|---------------|---------|
+| `AgentReplyText` | The agent produces plain text (default) | `text: str` |
+| `AgentReplyImage` | The agent produces text plus an image | `text: str`, `image_data: str` |
+| `AgentReplyAny` | The agent is configured for structured output | `content: dict` |
+
+All reply types carry the `prompt` that was sent to the agent.
+
+### Structured replies — `AgentReplyAny` {#structured-replies}
+
+When an agent is configured to produce structured output (see the per-framework
+"Structured Output" sections under [Frameworks](../frameworks/overview)), the runner
+detects it and returns an `AgentReplyAny` instead of coercing the result to a string:
+
+```python
+from agentkernel.core.model import AgentReplyAny
+
+reply = await runner.run(agent, session, requests)
+if isinstance(reply, AgentReplyAny):
+    data = reply.content          # dict — no re-parsing needed
+```
+
+- `content` holds the structured result as a JSON-compatible dict. Pydantic model
+  results are converted with `model_dump(mode="json")`.
+- `str(reply)` returns the JSON-serialized content, so any consumer that renders
+  replies as text (chat integrations, logging, tracing) works unchanged.
+- Plain-text agents are unaffected and continue to return `AgentReplyText`.
+
+:::info Streaming limitation
+Structured output applies to **non-streaming** execution only. Streamed runs emit
+token-by-token text deltas and are not parsed into structured replies.
+:::
+
 ## Execution Flow
 
 ```mermaid

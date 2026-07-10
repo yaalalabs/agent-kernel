@@ -6,7 +6,7 @@ from langfuse import Langfuse, propagate_attributes
 from langfuse.langchain import CallbackHandler
 
 from ...core import Session
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.util.error_util import user_facing_error_message
 from ...framework.langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
 
@@ -58,6 +58,10 @@ class LangFuseLangGraph(LangGraphRunner):
                         input={"messages": [HumanMessage(content=prompt)]},
                         config=config,
                     )
+                    structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
+                    if structured is not None:
+                        span.update(input=prompt, output=str(structured))
+                        return structured
                     last_message = result["messages"][-1]
 
                     span.update(input=prompt, output=last_message.content)

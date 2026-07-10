@@ -9,7 +9,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.6.0"
+  version: "0.6.1"
   category: user
 ---
 
@@ -51,7 +51,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.6.0",
+    "agentkernel[openai,api]>=0.6.1",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -105,7 +105,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.6.0",
+    "agentkernel[openai,api,aws]>=0.6.1",
 ]
 ```
 
@@ -131,7 +131,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.6.0",
+    "agentkernel[openai,api,walledai]>=0.6.1",
 ]
 ```
 
@@ -168,7 +168,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.6.0",
+    "agentkernel[openai,api,langfuse]>=0.6.1",
 ]
 ```
 
@@ -193,7 +193,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.6.0",
+    "agentkernel[openai,api,openllmetry]>=0.6.1",
 ]
 ```
 
@@ -217,7 +217,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.6.0",
+    "agentkernel[openai,api,redis]>=0.6.1",
 ]
 ```
 
@@ -237,7 +237,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.6.0",
+    "agentkernel[openai,api,aws]>=0.6.1",
 ]
 ```
 
@@ -259,7 +259,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.6.0",
+    "agentkernel[openai,api,azure]>=0.6.1",
 ]
 ```
 
@@ -281,7 +281,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.6.0",
+    "agentkernel[openai,api,gcp]>=0.6.1",
 ]
 ```
 
@@ -314,9 +314,9 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.6.0",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.6.0"
-  # or "agentkernel[openai,api,trino]>=0.6.0"
+  "agentkernel[openai,api,chromadb]>=0.6.1",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.6.1"
+  # or "agentkernel[openai,api,trino]>=0.6.1"
 ]
 ```
 
@@ -397,7 +397,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.6.0",
+    "agentkernel[openai,api,mcp]>=0.6.1",
 ]
 ```
 
@@ -423,7 +423,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.6.0",
+    "agentkernel[openai,api,a2a]>=0.6.1",
 ]
 ```
 
@@ -510,6 +510,14 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
+**Streaming token hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each token delta while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). Return `None` to drop a token entirely. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+
+```python
+class RedactingPostHook(DisclaimerPostHook):
+    async def on_stream_chunk(self, session, requests, agent, delta: str) -> str | None:
+        return delta.replace("SECRET", "***")
+```
+
 ---
 
 #### Multimodal Support
@@ -523,7 +531,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.6.0",
+    "agentkernel[openai,api,multimodal]>=0.6.1",
 ]
 ```
 
@@ -548,7 +556,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.6.0",
+    "agentkernel[openai,api,redis,multimodal]>=0.6.1",
 ]
 ```
 
@@ -571,7 +579,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.6.0",
+    "agentkernel[openai,api,aws,multimodal]>=0.6.1",
 ]
 ```
 

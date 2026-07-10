@@ -1,3 +1,4 @@
+import json
 import uuid
 from enum import Enum
 from typing import Any, Callable, List, Literal, Optional, Union
@@ -124,7 +125,42 @@ class AgentReplyImage(BaseModel):
 
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef]
-type AgentReply = Union[AgentReplyText, AgentReplyImage]
+type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
+
+
+class AgentReplyAny(BaseModel):
+    """
+    AgentReplyAny encapsulates a structured (JSON) reply from an agent.
+
+    content: dict : The structured agent output as a JSON-compatible dict
+    prompt: str   : The text prompt sent to the agent
+    type: Literal["other"]
+    """
+
+    content: dict
+    prompt: str = ""
+    type: Literal["other"] = "other"
+
+    def __str__(self) -> str:
+        return json.dumps(self.content, default=str)
+
+    @classmethod
+    def from_output(cls, value: Any, prompt: str = "") -> "AgentReplyAny | None":
+        """
+        Builds an AgentReplyAny from a framework output value if it is structured.
+        Pydantic instances are converted with model_dump(mode="json") so the content
+        dict is JSON-compatible; plain dicts are used as content directly.
+
+        :param value: The framework output value to inspect.
+        :param prompt: The text prompt sent to the agent.
+        :return: An AgentReplyAny, or None when the value is not structured
+        (the caller falls back to a text reply).
+        """
+        if isinstance(value, BaseModel):
+            return cls(content=value.model_dump(mode="json"), prompt=prompt)
+        if isinstance(value, dict):
+            return cls(content=value, prompt=prompt)
+        return None
 
 
 class ExecutionMode(str, Enum):
@@ -136,6 +172,12 @@ class ExecutionMode(str, Enum):
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
+
+
+class StreamChunk(BaseModel):
+    delta: str | None = None
+    done: bool = False
+    error: str | None = None
 
 
 class SystemTool(BaseModel):

@@ -1,14 +1,25 @@
+import subprocess
+import sys
+
 import pytest
 
 from agentkernel.core.config import AKConfig
 
 
+@pytest.fixture(autouse=True)
+def reset_config_singleton():
+    AKConfig._reset()
+    yield
+    AKConfig._reset()
+
+
 def test_config_defaults_no_file(monkeypatch):
     # Ensure no env interference
     monkeypatch.delenv("AK_SESSION_TYPE", raising=False)
+    # Point at a nonexistent file so a config.yaml in the CWD can't interfere
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
 
     cfg = AKConfig.get()
-    cfg.__init__()  # Reload
     assert cfg.session.type == "in_memory"
 
     # Defaults for nested redis should be None
@@ -22,6 +33,11 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml_text)
 
+    # Instance created before the yaml file and env overrides are in place gets defaults
+    cfg_1 = AKConfig.get()
+    assert cfg_1.session.type == "in_memory"
+    assert cfg_1.session.redis is None
+
     # Environment should override nested value, and env_prefix AK_ with nested delimiter _
 
     monkeypatch.setenv("AK_SESSION__TYPE", "in_memory")
@@ -29,12 +45,7 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
 
     # Lets point to the file we created and reload
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
-    cfg_1 = AKConfig.get()  # instance object which has no yaml file loaded or env settings
     cfg_2 = AKConfig()  # object which loads yaml file and env settings
-
-    # defaults from cfg_1
-    assert cfg_1.session.type == "in_memory"
-    assert cfg_1.session.redis is None
 
     # file values overridden by env
     assert cfg_2.session.type == "in_memory"
@@ -45,17 +56,18 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     assert cfg_2.session.redis.url == "redis://example:6379"
     assert cfg_2.session.redis.prefix == "ak:test:"
 
-    # Reload and check default object again
-    cfg_1.__init__()
+    # Reset the singleton and check the reloaded instance picks up yaml + env
+    AKConfig._reset()
+    cfg_3 = AKConfig.get()
 
     # File values overridden by env
-    assert cfg_1.session.type == "in_memory"
-    assert cfg_1.session.redis is not None
-    assert cfg_1.session.redis.ttl == 999
+    assert cfg_3.session.type == "in_memory"
+    assert cfg_3.session.redis is not None
+    assert cfg_3.session.redis.ttl == 999
 
     # File-provided values preserved where env not set
-    assert cfg_1.session.redis.url == "redis://example:6379"
-    assert cfg_1.session.redis.prefix == "ak:test:"
+    assert cfg_3.session.redis.url == "redis://example:6379"
+    assert cfg_3.session.redis.prefix == "ak:test:"
 
 
 def test_nested_env_cases(monkeypatch):
@@ -113,6 +125,17 @@ def test_session_cache_env(monkeypatch):
     assert cfg.session.cache.size == 500
 
 
+def test_batch_size_default():
+    cfg = AKConfig()
+    assert cfg.execution.queues.batch_size is None
+
+
+def test_batch_size_env_override(monkeypatch):
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__BATCH_SIZE", "5")
+    cfg = AKConfig()
+    assert cfg.execution.queues.batch_size == 5
+
+
 def test_guardrail_pii_default():
     cfg = AKConfig()
     assert cfg.guardrail.input.pii is True
@@ -125,3 +148,42 @@ def test_guardrail_pii_env_override(monkeypatch):
     cfg = AKConfig()
     assert cfg.guardrail.input.pii is False
     assert cfg.guardrail.output.pii is False
+
+
+def test_config_has_no_test_section(tmp_path, monkeypatch):
+    # The test harness configuration moved to AKTestConfig / test-config.yaml
+    assert "test" not in AKConfig.model_fields
+
+    # A legacy config.yaml still carrying a test: section loads without error
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("test:\n  mode: fuzzy\nsession:\n  type: in_memory\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    cfg = AKConfig()
+    assert cfg.session.type == "in_memory"
+    assert not hasattr(cfg, "test")
+
+
+def test_lazy_singleton_identity():
+    cfg_1 = AKConfig.get()
+    cfg_2 = AKConfig.get()
+    assert cfg_1 is cfg_2
+
+    AKConfig._reset()
+    cfg_3 = AKConfig.get()
+    assert cfg_3 is not cfg_1
+
+
+def test_import_does_not_load_config(tmp_path):
+    # Fresh interpreter so imports are clean; cwd without a config.yaml so the
+    # missing-file warning would show up if AKConfig were loaded at import.
+    code = (
+        "import agentkernel\n"
+        "from agentkernel.core.config import AKConfig\n"
+        "assert AKConfig._instance is None, 'AKConfig loaded by import agentkernel'\n"
+        "from agentkernel.test import Test, AKTestConfig\n"
+        "assert AKConfig._instance is None, 'AKConfig loaded by agentkernel.test import'\n"
+        "assert AKTestConfig._instance is None, 'AKTestConfig loaded at import'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "Could not open yaml settings file" not in result.stdout

@@ -139,9 +139,8 @@ class DefaultEndpointsHandler:
             raise ValueError("session_id is required")
 
         response = SQSHandler.send_message_to_input_queue(
-            message_body=request_body,
-            message_group_id=session_id,
-            message_deduplication_id=payload.request_id,
+            message_body=request_body.model_dump(exclude_none=True),
+            attributes={"message_deduplication_id": payload.request_id},
             request_id=payload.request_id,
             user_id=payload.user_id,
         )
@@ -271,16 +270,23 @@ class DefaultEndpointsHandler:
                 "body": json.dumps({"error": "Error processing request", "session_id": None}),
             }
 
-    def _handle_stream(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def _handle_stream(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
         """
         Handle streaming request.
 
         :param event: API Gateway event
         :param context: Lambda context
-        :return: API Gateway formatted response
-        :raises NotImplementedError: STREAM mode is not yet implemented
+        :return: Tuple of (status_code, error_body) — SSE streaming via REST API Gateway is not supported in Lambda
         """
-        raise NotImplementedError("STREAM mode is not yet implemented")
+        return (
+            400,
+            {
+                "error": (
+                    "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. "
+                    "Use streaming_handler as your Lambda entry point."
+                )
+            },
+        )
 
 
 class RESTLambdaRouter(BaseLambdaRouter):

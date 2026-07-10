@@ -273,10 +273,7 @@ class BedrockOutputGuardrail(BaseGuardrailUtil, BaseBedrockGuardrail, OutputGuar
                     "Please try rephrasing your question."
                 )
 
-                if isinstance(agent_reply, AgentReplyText):
-                    agent_reply.text = message
-
-                return agent_reply
+                return AgentReplyText(text=message, prompt=getattr(agent_reply, "prompt", ""))
 
             # Validation passed
             log.debug("Output passed Bedrock guardrail validation")
