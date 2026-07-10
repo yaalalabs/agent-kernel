@@ -144,15 +144,41 @@ class TestSQSHandler:
         mock_sqs_client = MagicMock()
         mock_boto3_client.return_value = mock_sqs_client
 
-        # Missing agent and session_id
+        # Missing session_id
         with pytest.raises(ValidationError):
             SQSHandler.send_message_to_input_queue(message_body={"prompt": "hello"})
+
+        # Missing prompt
+        with pytest.raises(ValidationError):
+            SQSHandler.send_message_to_input_queue(message_body={"session_id": "session-123"})
 
         # Plain strings are no longer accepted as input queue bodies
         with pytest.raises(ValidationError):
             SQSHandler.send_message_to_input_queue(message_body="plain string message")
 
         mock_sqs_client.send_message.assert_not_called()
+
+    @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
+    @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
+    def test_send_message_to_input_queue_without_agent(self, mock_boto3_client, mock_ak_config):
+        """Test that agent is optional; the runtime falls back to the first registered agent downstream."""
+        # Setup mocks
+        mock_config_instance = MagicMock()
+        mock_config_instance.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123456789/input-queue"
+        mock_ak_config.get.return_value = mock_config_instance
+
+        mock_sqs_client = MagicMock()
+        mock_sqs_client.send_message.return_value = {"MessageId": "msg-no-agent"}
+        mock_boto3_client.return_value = mock_sqs_client
+
+        # Execute with a body that has no agent field
+        result = SQSHandler.send_message_to_input_queue(message_body={"prompt": "hello", "session_id": "session-123"})
+
+        # Verify: message sent, agent omitted from the serialized body (exclude_none), group id from session_id
+        assert result == {"MessageId": "msg-no-agent"}
+        call_args = mock_sqs_client.send_message.call_args
+        assert json.loads(call_args[1]["MessageBody"]) == {"prompt": "hello", "session_id": "session-123"}
+        assert call_args[1]["MessageGroupId"] == "session-123"
 
     @patch("agentkernel.deployment.aws.core.sqs_handler.AKConfig")
     @patch("agentkernel.deployment.aws.core.sqs_handler.boto3.client")
@@ -447,7 +473,11 @@ class TestSQSHandler:
         assert body.session_id == "session-1"
         assert body.model_dump()["files"] == ["a.txt"]
 
-        # Missing required fields are rejected
+        # agent is optional and defaults to None
+        agentless_body = SQSHandler.QueueMessageBody(prompt="hello", session_id="session-1")
+        assert agentless_body.agent is None
+
+        # Missing required fields (session_id here) are rejected
         with pytest.raises(ValidationError):
             SQSHandler.QueueMessageBody(prompt="hello")
 

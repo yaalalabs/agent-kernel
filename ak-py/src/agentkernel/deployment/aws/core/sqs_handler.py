@@ -323,7 +323,7 @@ class SQSHandler(QueueHandler):
         with request_id and user_id as custom message attributes. The FIFO message
         group id defaults to the body's session_id unless overridden via attributes.
 
-        :param message_body: The payload to send; must contain prompt, agent, and session_id (extra fields are preserved)
+        :param message_body: The payload to send; must contain prompt and session_id, and may contain agent (extra fields are preserved)
         :param attributes: Optional FIFO send attributes (message_group_id, message_deduplication_id)
         :param request_id: Optional request ID custom attribute
         :param user_id: Optional user ID custom attribute
@@ -331,7 +331,7 @@ class SQSHandler(QueueHandler):
         :param extra_kwargs: Additional send_message keyword arguments to include
         :return: The boto3 send_message response
         :raises ValueError: If input queue URL is not configured
-        :raises pydantic.ValidationError: If message_body is missing prompt, agent, or session_id
+        :raises pydantic.ValidationError: If message_body is missing prompt or session_id
         """
         queue_url = cls.get_input_queue_url()
         if not queue_url:

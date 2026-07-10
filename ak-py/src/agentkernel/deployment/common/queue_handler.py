@@ -16,10 +16,13 @@ class QueueHandler(ABC):
         message_deduplication_id: Optional[str] = None
 
     class QueueMessageBody(BaseModel):
-        """Typed message body for the input queue. Extra fields are allowed and preserved."""
+        """Typed message body for the input queue. Extra fields are allowed and preserved.
+
+        agent is optional; when omitted, the runtime selects the first registered agent.
+        """
 
         prompt: str
-        agent: str
+        agent: Optional[str] = None
         session_id: str
 
         model_config = ConfigDict(extra="allow")
@@ -38,7 +41,7 @@ class QueueHandler(ABC):
         """
         Send a message to the input queue.
 
-        :param message_body: The payload to send; must contain prompt, agent, and session_id (extra fields are preserved)
+        :param message_body: The payload to send; must contain prompt and session_id, and may contain agent (extra fields are preserved)
         :param attributes: Optional FIFO send attributes (message_group_id, message_deduplication_id);
             message_group_id defaults to the body's session_id when not provided
         :param request_id: Optional request ID custom attribute
