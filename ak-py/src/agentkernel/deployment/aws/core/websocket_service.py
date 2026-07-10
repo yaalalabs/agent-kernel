@@ -1,7 +1,8 @@
 import json
 import logging
 import time
-from typing import Dict, List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -120,6 +121,14 @@ class WebSocketHandler:
     Main public WebSocket interface.
     Users interact ONLY with this class.
     """
+
+    class MessageType(str, Enum):
+        """Typed WebSocket broadcast envelope kinds (shared by serverless and containerized)."""
+
+        CHAT_RESPONSE = "CHAT_RESPONSE"
+        CHAT_QUEUED = "CHAT_QUEUED"
+        SYSTEM_RESPONSE = "SYSTEM_RESPONSE"
+        STREAM_CHUNK = "STREAM_CHUNK"
 
     def __init__(self, conn_table_name: str, ttl: int):
         """
@@ -296,3 +305,39 @@ class WebSocketHandler:
 
         for connection_id in connection_ids:
             self.send(endpoint_url=endpoint_url, connection_id=connection_id, message=message)
+
+    def broadcast_message(
+        self,
+        endpoint_url: str,
+        user_id: str,
+        message_type: Optional["WebSocketHandler.MessageType"] = None,
+        message: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Build and broadcast a message to a WebSocket user, optionally wrapped in a typed envelope.
+
+        When message_type is provided the payload is wrapped as {"type": <type>, ...payload};
+        otherwise the payload is sent as-is.
+
+        :param endpoint_url: API Gateway endpoint URL
+        :param user_id: Target user identifier
+        :param message_type: Optional envelope type; wraps payload when provided
+        :param message: Optional message payload dict; mutually exclusive with kwargs
+        :param kwargs: Message payload fields when not passing a dict via `message`
+        :return: None
+        """
+        payload = message if message is not None else kwargs
+        final_message = self._build_broadcasting_message(message_type, payload) if message_type else payload
+        self.broadcast(endpoint_url=endpoint_url, message=final_message, user_id=user_id)
+
+    @staticmethod
+    def _build_broadcasting_message(message_type: "WebSocketHandler.MessageType", payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Build a standardized broadcast envelope of the form {"type": <type>, ...payload}.
+
+        :param message_type: The type of message from MessageType enum
+        :param payload: Fields to include alongside the type
+        :return: Standardized message dictionary
+        """
+        return {"type": message_type.value, **payload}

@@ -7,7 +7,7 @@ from ....core.model import ExecutionMode, StreamChunk
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
-from .core.router.ws_lambda import BaseWSHandler
+from .core.router.ws_lambda import LambdaWSHandler
 
 
 class ResponseHandler(LambdaSQSConsumer):
@@ -32,7 +32,7 @@ class ResponseHandler(LambdaSQSConsumer):
     @classmethod
     def _get_base_ws_handler(cls):
         if cls._base_ws_handler is None:
-            cls._base_ws_handler = BaseWSHandler()
+            cls._base_ws_handler = LambdaWSHandler()
         return cls._base_ws_handler
 
     @classmethod
@@ -58,7 +58,7 @@ class ResponseHandler(LambdaSQSConsumer):
         return message
 
     @classmethod
-    def _broadcast_via_websocket(cls, record: Dict[str, Any], message_type: Optional[BaseWSHandler.MessageType] = None) -> None:
+    def _broadcast_via_websocket(cls, record: Dict[str, Any], message_type: Optional[LambdaWSHandler.MessageType] = None) -> None:
         """
         Broadcast a message via WebSocket.
 
@@ -104,9 +104,9 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._log.info(f"Processing message: {record}")
 
         if AKConfig.get().execution.mode == ExecutionMode.ASYNC:
-            cls._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.CHAT_RESPONSE)
+            cls._broadcast_via_websocket(record, message_type=LambdaWSHandler.MessageType.CHAT_RESPONSE)
         elif AKConfig.get().execution.mode == ExecutionMode.STREAM:
-            cls._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.STREAM_CHUNK)
+            cls._broadcast_via_websocket(record, message_type=LambdaWSHandler.MessageType.STREAM_CHUNK)
         else:
             message = cls._construct_message_for_store(record)
             cls._get_response_store().add_message(message)
@@ -142,7 +142,7 @@ class ResponseHandler(LambdaSQSConsumer):
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
                     error_message["session_id"] = session_id
-                    base_ws.broadcast_message(endpoint_url, user_id, message_type=BaseWSHandler.MessageType.SYSTEM_RESPONSE, message=error_message)
+                    base_ws.broadcast_message(endpoint_url, user_id, message_type=LambdaWSHandler.MessageType.SYSTEM_RESPONSE, message=error_message)
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")
@@ -160,7 +160,7 @@ class ResponseHandler(LambdaSQSConsumer):
                     error_chunk_body["session_id"] = session_id
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure stream chunk via WebSocket for user_id: {user_id}")
-                    base_ws.broadcast_message(endpoint_url, user_id, message_type=BaseWSHandler.MessageType.STREAM_CHUNK, message=error_chunk_body)
+                    base_ws.broadcast_message(endpoint_url, user_id, message_type=LambdaWSHandler.MessageType.STREAM_CHUNK, message=error_chunk_body)
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")

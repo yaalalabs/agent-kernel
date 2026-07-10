@@ -1,0 +1,250 @@
+"""
+ECS WebSocket ingress handler.
+
+API Gateway WebSocket proxies each frame (HTTP_PROXY -> VPC Link -> ALB) to this
+container. Unlike the serverless Lambda (one function, dispatch on routeKey), the ECS
+service exposes a **separate HTTP endpoint per WebSocket route** — the gateway maps each
+route to its own backend path via overwrite:path, so no in-app dispatch is needed.
+
+  $connect     -> POST /ws/connect     (auth + store connection)
+  $disconnect  -> POST /ws/disconnect  (remove connection)
+  <chat route> -> POST /ws/chat        (queue mode: enqueue; direct mode: run agent inline)
+  $default     -> POST /ws/default     (notify client of unknown route)
+
+The WS $context (connection id, domain, stage) still arrives as x-ws-* headers.
+Responses are pushed back over the connection by ECSOutputConsumer (ASYNC mode).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+
+from ....api.handler import RESTRequestHandler
+from ....auth.handler import AuthValidator
+from ....core.chat_service import ChatService
+from ....core.config import AKConfig
+from ....core.model import BaseRequest, BaseRunRequest
+from ..core.sqs_handler import SQSHandler
+from ..core.websocket_service import WebSocketHandler
+
+
+class ECSWebSocketRequestHandler(RESTRequestHandler):
+    """
+    ECS + API Gateway WebSocket ingress handler for ASYNC mode.
+
+    Two chat paths, chosen by whether an input queue is configured:
+    - Queue mode: enqueue to SQS; ECSAgentRunner runs the agent and ECSOutputConsumer
+      pushes the reply. This handler never touches ChatService.
+    - Direct (non-queue) mode: run ChatService inline and broadcast the reply over the
+      connection right away (mirrors serverless SystemRoutesHandler._handle_direct_chat).
+    """
+
+    # Backend paths — the WS API Gateway integration rewrites each route to one of these.
+    CONNECT_PATH = "/ws/connect"
+    DISCONNECT_PATH = "/ws/disconnect"
+    CHAT_PATH = "/ws/chat"
+    DEFAULT_PATH = "/ws/default"
+
+    # WS $context headers injected by api_gateway_ws.tf (context.* -> integration.request.header.*)
+    CONNECTION_ID_HEADER = "x-ws-connection-id"
+    DOMAIN_NAME_HEADER = "x-ws-domain-name"
+    STAGE_HEADER = "x-ws-stage"
+
+    def __init__(self, auth_validator: Optional[AuthValidator] = None):
+        self._log = logging.getLogger("ak.ecs.ws_handler")
+        self._config = AKConfig.get()
+
+        ws_cfg = self._config.websocket_api
+        if not ws_cfg.connection_table or not ws_cfg.connection_table.table_name:
+            raise ValueError("websocket_api.connection_table.table_name is required for WebSocket mode")
+        if not ws_cfg.chat_route:
+            raise ValueError("websocket_api.chat_route is required for WebSocket mode")
+
+        self._auth_validator = auth_validator
+        self._chat_service: Optional[ChatService] = None
+        self._ws_handler = WebSocketHandler(
+            conn_table_name=ws_cfg.connection_table.table_name,
+            ttl=ws_cfg.connection_table.ttl,
+        )
+
+    def _is_queue_mode(self) -> bool:
+        """True when an input queue is configured (enqueue mode); False for direct mode."""
+        return self._config.execution.queues.input.url is not None
+
+    def _get_chat_service(self) -> ChatService:
+        if self._chat_service is None:
+            self._chat_service = ChatService()
+        return self._chat_service
+
+    def set_auth_validator(self, auth_validator: AuthValidator) -> "ECSWebSocketRequestHandler":
+        """Set the auth validator used to authenticate WebSocket $connect requests.
+
+        :param auth_validator: AuthValidator for token validation on $connect
+        :return: self for chaining
+        """
+        self._auth_validator = auth_validator
+        return self
+
+    def get_router(self) -> APIRouter:
+        """Return an APIRouter with one POST endpoint per WebSocket route."""
+        router = APIRouter()
+        router.add_api_route(self.CONNECT_PATH, self._handle_connect, methods=["POST"])
+        router.add_api_route(self.DISCONNECT_PATH, self._handle_disconnect, methods=["POST"])
+        router.add_api_route(self.CHAT_PATH, self._handle_chat, methods=["POST"])
+        router.add_api_route(self.DEFAULT_PATH, self._handle_default, methods=["POST"])
+        return router
+
+    async def _handle_connect(self, request: Request) -> JSONResponse:
+        """Authenticate ($connect) and store the connection. Non-2xx rejects the connection."""
+        try:
+            connection_id = self._connection_id(request)
+            if not connection_id:
+                return self._response(500, "Missing connection id", success=False)
+            if not self._auth_validator:
+                self._log.error("No auth validator configured for WebSocket $connect")
+                return self._response(401, "Authentication is not configured", success=False)
+
+            token = request.query_params.get("token")
+            if not token:
+                return self._response(401, "Authentication token is required", success=False)
+
+            result = self._auth_validator.validate(token)
+            if not result.is_valid:
+                return self._response(401, result.error_msg or "Authentication failed", success=False)
+
+            user_id = (result.claims or {}).get("userId")
+            if not user_id:
+                return self._response(401, "'userId' claim is required in token", success=False)
+
+            self._ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
+            return self._response(200, "WebSocket connection established", success=True, user_id=user_id)
+        except Exception as e:
+            self._log.exception(f"WebSocket $connect failed: {e}")
+            return self._response(500, "Failed to establish WebSocket connection", success=False)
+
+    async def _handle_disconnect(self, request: Request) -> JSONResponse:
+        """Remove the connection ($disconnect)."""
+        try:
+            connection_id = self._connection_id(request)
+            if connection_id:
+                self._ws_handler.on_disconnect(connection_id=connection_id)
+            return self._response(200, "WebSocket connection closed", success=True)
+        except Exception as e:
+            self._log.exception(f"WebSocket $disconnect failed: {e}")
+            return self._response(500, "Failed to close WebSocket connection", success=False)
+
+    async def _handle_chat(self, request: Request) -> JSONResponse:
+        """Handle a chat frame: enqueue it (queue mode) or run the agent inline (direct mode)."""
+        try:
+            connection_id = self._connection_id(request)
+            if not connection_id:
+                return self._response(500, "Missing connection id", success=False)
+
+            raw_body = await request.body()
+            payload = json.loads(raw_body) if raw_body else {}
+            ws_request = BaseRequest.from_payload(payload)
+
+            if ws_request.body is None:
+                return self._response(400, "body is required", success=False)
+
+            user_id = self._ws_handler.get_user_id(connection_id)
+            if not user_id:
+                return self._response(401, f"No user found for connection_id: {connection_id}", success=False)
+
+            session_id = ws_request.body.session_id
+            if not session_id:
+                return self._response(400, "session_id is required", success=False)
+
+            body = ws_request.body
+            request_id = ws_request.request_id  # from_payload guarantees a value
+            endpoint_url = self._construct_endpoint_url(request)
+            if not endpoint_url:
+                return self._response(500, "Unable to resolve WebSocket endpoint URL", success=False)
+
+            if self._is_queue_mode():
+                return self._enqueue_chat(body, user_id, request_id, session_id, endpoint_url)
+            return await self._process_chat_direct(body, user_id, endpoint_url)
+        except Exception as e:
+            self._log.exception(f"WebSocket chat request failed: {e}")
+            return self._response(500, "Request processing failed", success=False)
+
+    def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
+        """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
+        self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
+
+        SQSHandler.send_message_to_input_queue(
+            message_body=body.model_dump(),
+            message_group_id=session_id,
+            message_deduplication_id=request_id,
+            request_id=request_id,
+            user_id=user_id,
+            custom_message_attributes=[
+                SQSHandler.CustomAttribute(name="endpoint_url", value=endpoint_url, datatype=SQSHandler.AttributeDataType.STRING)
+            ],
+        )
+
+        response = self._body("Request queued successfully", success=True, user_id=user_id)
+        response["request_id"] = request_id
+        return JSONResponse(status_code=200, content=response)
+
+    async def _process_chat_direct(self, body: BaseRunRequest, user_id: str, endpoint_url: str) -> JSONResponse:
+        """Direct (non-queue) mode: run the agent inline and broadcast the reply over the connection."""
+        self._log.info(f"Processing WS chat request inline (direct mode) for user_id={user_id}")
+
+        # process_chat_request is blocking; offload so it doesn't stall the event loop.
+        result = await asyncio.to_thread(self._get_chat_service().process_chat_request, body)
+        _, res_body = result  # ChatService(rest_api_mode=False) returns (status_code, response_dict)
+        message = res_body if isinstance(res_body, dict) else {"response": res_body}
+
+        self._ws_handler.broadcast_message(
+            endpoint_url=endpoint_url,
+            user_id=user_id,
+            message_type=WebSocketHandler.MessageType.CHAT_RESPONSE,
+            message=message,
+        )
+        return self._response(200, "Request processed successfully", success=True, user_id=user_id)
+
+    async def _handle_default(self, request: Request) -> JSONResponse:
+        """Handle unknown routes ($default) by notifying the client over WebSocket."""
+        try:
+            connection_id = self._connection_id(request)
+            if connection_id:
+                user_id = self._ws_handler.get_user_id(connection_id)
+                endpoint_url = self._construct_endpoint_url(request)
+                if user_id and endpoint_url:
+                    self._ws_handler.broadcast_message(
+                        endpoint_url=endpoint_url,
+                        user_id=user_id,
+                        message_type=WebSocketHandler.MessageType.SYSTEM_RESPONSE,
+                        message={"status": "FAILED", "message": "Route not found"},
+                    )
+        except Exception as e:
+            self._log.warning(f"Failed to notify client on $default: {e}")
+        return self._response(200, "Default route handled", success=True)
+
+    def _connection_id(self, request: Request) -> Optional[str]:
+        return request.headers.get(self.CONNECTION_ID_HEADER)
+
+    def _construct_endpoint_url(self, request: Request) -> Optional[str]:
+        """Build the API Gateway management endpoint from headers, falling back to config."""
+        domain_name = request.headers.get(self.DOMAIN_NAME_HEADER)
+        stage = request.headers.get(self.STAGE_HEADER)
+        if domain_name and stage:
+            return f"https://{domain_name}/{stage}"
+        return self._config.websocket_api.endpoint_url
+
+    @staticmethod
+    def _body(msg: str, success: bool, user_id: Optional[str] = None) -> dict:
+        body = {"status": "SUCCESS" if success else "FAILED", "message": msg}
+        if user_id:
+            body["user_id"] = user_id
+        return body
+
+    def _response(self, status_code: int, msg: str, success: bool, user_id: Optional[str] = None) -> JSONResponse:
+        return JSONResponse(status_code=status_code, content=self._body(msg, success, user_id))

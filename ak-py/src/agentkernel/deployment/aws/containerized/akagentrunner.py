@@ -67,16 +67,26 @@ class ECSAgentRunner(ECSSQSConsumer):
             "message_deduplication_id": attributes.get("MessageDeduplicationId"),
             "request_id": request_id,
             "user_id": message_attributes.get("user_id"),
+            # Present in WebSocket (ASYNC) mode — the API Gateway endpoint to push the reply back to.
+            "endpoint_url": message_attributes.get("endpoint_url"),
         }
 
     @classmethod
     def _send_to_output_queue(cls, message_body: dict, record_attributes: dict) -> None:
+        # Forward endpoint_url (ASYNC mode) so the output consumer can push the reply over WebSocket.
+        custom_attributes = []
+        if record_attributes.get("endpoint_url"):
+            custom_attributes.append(
+                SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
+            )
+
         SQSHandler.send_message_to_output_queue(
             message_group_id=record_attributes["message_group_id"],
             message_deduplication_id=record_attributes["message_deduplication_id"],
             message_body=message_body,
             request_id=record_attributes["request_id"],
             user_id=record_attributes["user_id"],
+            custom_message_attributes=custom_attributes,
         )
 
     @classmethod

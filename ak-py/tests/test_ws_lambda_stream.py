@@ -1,7 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from agentkernel.deployment.aws.serverless.core.router.ws_lambda import BaseWSHandler, SystemRoutesHandler
+from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWSHandler, SystemRoutesHandler
 
 
 def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
@@ -27,7 +27,7 @@ def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
 def _make_system_routes_handler():
     with (
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AKConfig") as mock_config_cls,
-        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler"),
+        patch("agentkernel.deployment.aws.core.websocket_service.WebSocketConnectionStore"),
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.ChatService"),
     ):
         mock_config = MagicMock()
@@ -42,8 +42,8 @@ def _make_system_routes_handler():
 
 
 def test_message_type_includes_stream_chunk():
-    assert hasattr(BaseWSHandler.MessageType, "STREAM_CHUNK")
-    assert BaseWSHandler.MessageType.STREAM_CHUNK.value == "STREAM_CHUNK"
+    assert hasattr(LambdaWSHandler.MessageType, "STREAM_CHUNK")
+    assert LambdaWSHandler.MessageType.STREAM_CHUNK.value == "STREAM_CHUNK"
 
 
 def test_get_chat_handler_by_mode_returns_stream_direct_for_stream_no_queue():
@@ -88,8 +88,7 @@ def test_handle_queue_mode_sends_to_sqs_and_returns_200():
 
     event = _make_ws_event()
 
-    handler.ws_handler = MagicMock()
-    handler.ws_handler.get_user_id.return_value = "user-1"
+    handler.get_user_id = MagicMock(return_value="user-1")
 
     with (
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls,
@@ -111,8 +110,7 @@ def test_handle_queue_mode_returns_500_on_error():
     handler = _make_system_routes_handler()
 
     event = _make_ws_event()
-    handler.ws_handler = MagicMock()
-    handler.ws_handler.get_user_id.side_effect = RuntimeError("connection error")
+    handler.get_user_id = MagicMock(side_effect=RuntimeError("connection error"))
 
     status, body = handler._handle_queue_mode(event)
 
@@ -127,8 +125,8 @@ def test_handle_stream_direct_streams_chunks_and_returns_200():
     handler._config.execution.mode = ExecutionMode.STREAM
 
     event = _make_ws_event()
-    handler.ws_handler = MagicMock()
-    handler.ws_handler.get_user_id.return_value = "user-1"
+    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.broadcast = MagicMock()
 
     def _mock_process_stream_sync(req, sse_format=False):
         yield json.dumps({"delta": "Hello", "done": False, "session_id": "s1"})
@@ -144,9 +142,9 @@ def test_handle_stream_direct_streams_chunks_and_returns_200():
         status, body = handler._handle_stream_direct(event)
 
     assert status == 200
-    assert handler.ws_handler.broadcast.call_count == 3
+    assert handler.broadcast.call_count == 3
 
-    first_call = handler.ws_handler.broadcast.call_args_list[0]
+    first_call = handler.broadcast.call_args_list[0]
     msg = first_call.kwargs["message"]
     assert msg["type"] == "STREAM_CHUNK"
     assert msg["delta"] == "Hello"
@@ -159,8 +157,8 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
     handler._config.execution.mode = ExecutionMode.STREAM
 
     event = _make_ws_event()
-    handler.ws_handler = MagicMock()
-    handler.ws_handler.get_user_id.return_value = "user-1"
+    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.broadcast = MagicMock()
 
     def _mock_process_stream_sync_error(req, sse_format=False):
         raise ValueError("Agent error")
@@ -174,8 +172,8 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
         status, body = handler._handle_stream_direct(event)
 
     assert status == 500
-    assert handler.ws_handler.broadcast.call_count >= 1
-    last_call = handler.ws_handler.broadcast.call_args_list[-1]
+    assert handler.broadcast.call_count >= 1
+    last_call = handler.broadcast.call_args_list[-1]
     msg = last_call.kwargs["message"]
     assert msg["type"] == "STREAM_CHUNK"
     assert msg.get("error") is not None
@@ -189,8 +187,8 @@ def test_handle_stream_direct_broadcasts_error_chunk_with_session_id_on_failure(
     handler._config.execution.mode = ExecutionMode.STREAM
 
     event = _make_ws_event(session_id="session-123")
-    handler.ws_handler = MagicMock()
-    handler.ws_handler.get_user_id.return_value = "user-1"
+    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.broadcast = MagicMock()
 
     def _mock_process_stream_sync_error(req, sse_format=False):
         raise ValueError("Agent error")
@@ -204,7 +202,7 @@ def test_handle_stream_direct_broadcasts_error_chunk_with_session_id_on_failure(
         status, body = handler._handle_stream_direct(event)
 
     assert status == 500
-    last_call = handler.ws_handler.broadcast.call_args_list[-1]
+    last_call = handler.broadcast.call_args_list[-1]
     msg = last_call.kwargs["message"]
     assert msg["type"] == "STREAM_CHUNK"
     assert msg["session_id"] == "session-123"

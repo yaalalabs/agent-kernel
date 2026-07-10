@@ -1,7 +1,6 @@
 import json
 import logging
 import traceback
-from enum import Enum
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from pydantic import BaseModel
@@ -15,16 +14,12 @@ from ....core.websocket_service import WebSocketHandler
 from .common import BaseLambdaRouter
 
 
-class BaseWSHandler:
-    """Base class for WebSocket route handlers with shared functionality."""
+class LambdaWSHandler(WebSocketHandler):
+    """Base class for Lambda WebSocket route handlers.
 
-    class MessageType(Enum):
-        """WebSocket message types."""
-
-        CHAT_RESPONSE = "CHAT_RESPONSE"
-        CHAT_QUEUED = "CHAT_QUEUED"
-        SYSTEM_RESPONSE = "SYSTEM_RESPONSE"
-        STREAM_CHUNK = "STREAM_CHUNK"
+    Extends the shared WebSocketHandler with Lambda API Gateway event parsing and
+    response helpers. Broadcasting and the MessageType envelope live on WebSocketHandler.
+    """
 
     class WSMessageInfo(BaseModel):
         """WebSocket message information."""
@@ -33,18 +28,19 @@ class BaseWSHandler:
         request: BaseRequest
 
     def __init__(self):
-        """Initialize base WebSocket handler."""
-        self._config = AKConfig.get()
-        if not self._config.websocket_api.connection_table or not self._config.websocket_api.connection_table.table_name:
+        """Initialize the Lambda WebSocket handler from configuration."""
+        config = AKConfig.get()
+        if not config.websocket_api.connection_table or not config.websocket_api.connection_table.table_name:
             raise ValueError("websocket_api.connection_table.table_name is required for WebSocket handler")
-        self.ws_handler = WebSocketHandler(
-            conn_table_name=self._config.websocket_api.connection_table.table_name,
-            ttl=self._config.websocket_api.connection_table.ttl,
+        super().__init__(
+            conn_table_name=config.websocket_api.connection_table.table_name,
+            ttl=config.websocket_api.connection_table.ttl,
         )
+        self._config = config
         self.CONNECT_ROUTE = "$connect"
         self.DISCONNECT_ROUTE = "$disconnect"
         self.DEFAULT_ROUTE = "$default"
-        self.CHAT_ROUTE = self._config.websocket_api.chat_route
+        self.CHAT_ROUTE = config.websocket_api.chat_route
 
     def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
         """
@@ -71,7 +67,7 @@ class BaseWSHandler:
             raise ValueError("WebSocket event missing requestContext.connectionId")
         return connection_id
 
-    def _parse_event_to_wsmessage(self, event: Dict[str, Any]) -> "BaseWSHandler.WSMessageInfo":
+    def _parse_event_to_wsmessage(self, event: Dict[str, Any]) -> "LambdaWSHandler.WSMessageInfo":
         """
         Parse WebSocket event to WSMessageInfo object.
 
@@ -81,51 +77,16 @@ class BaseWSHandler:
         """
         request = self._parse_body(event)
         connection_id = self._extract_connection_id(event)
-        user_id = self.ws_handler.get_user_id(connection_id)
+        user_id = self.get_user_id(connection_id)
         if not user_id:
             raise ValueError(f"No user_id found for connection_id: {connection_id}")
         return self.WSMessageInfo(user_id=user_id, request=request)
-
-    def broadcast_message(
-        self,
-        endpoint_url: str,
-        user_id: str,
-        message_type: Optional["BaseWSHandler.MessageType"] = None,
-        message: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> None:
-        """
-        Build and broadcast a message to a WebSocket user.
-
-        :param endpoint_url: API Gateway WebSocket endpoint URL
-        :param user_id: Target user identifier
-        :param message_type: Optional envelope type; wraps payload when provided
-        :param message: Optional message payload dict; mutually exclusive with kwargs
-        :param kwargs: Message payload fields when not passing a dict via `message`
-        """
-        payload = message if message is not None else kwargs
-        final_message = self._build_broadcasting_message(message_type, **payload) if message_type else payload
-        self.ws_handler.broadcast(endpoint_url=endpoint_url, message=final_message, user_id=user_id)
-
-    def _build_broadcasting_message(self, message_type: "BaseWSHandler.MessageType", **kwargs) -> Dict[str, Any]:
-        """
-        Build a standardized broadcast message format.
-
-        :param message_type: The type of message from MessageType enum
-        :param kwargs: Additional fields to include in the message
-        :return: Standardized message dictionary
-        """
-        message = {
-            "type": message_type.value,
-        }
-        message.update(kwargs)
-        return message
 
     def _handle_msg_and_brdcst(
         self,
         event: Dict[str, Any],
         operation: Callable[[WSMessageInfo], Dict[str, Any]],
-        message_type: Optional[MessageType] = None,
+        message_type: Optional["LambdaWSHandler.MessageType"] = None,
     ) -> Tuple[int, Dict[str, Any]]:
         """
         Handle message and broadcast result to user.
@@ -140,7 +101,7 @@ class BaseWSHandler:
             ws_message_info = self._parse_event_to_wsmessage(event)
             user_id = ws_message_info.user_id
             brdcstin_msg = operation(ws_message_info)
-            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
             self.broadcast_message(endpoint_url, user_id, message_type=message_type, message=brdcstin_msg)
             return (
                 200,
@@ -174,7 +135,7 @@ class BaseWSHandler:
         return body
 
 
-class ConnectionRoutesHandler(BaseWSHandler):
+class ConnectionRoutesHandler(LambdaWSHandler):
     """Handles WebSocket connection lifecycle routes ($connect, $disconnect).
 
     This handler is responsible for managing WebSocket connections and requires
@@ -249,7 +210,7 @@ class ConnectionRoutesHandler(BaseWSHandler):
             if not user_id:
                 return 401, self._build_lambda_response(msg="'userId' claim is required in JWT token", success=False)
 
-            self.ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
+            self.on_connect(connection_id=connection_id, user_id=user_id)
 
             return 200, self._build_lambda_response(user_id=user_id, msg="WebSocket connection established", success=True)
 
@@ -268,14 +229,14 @@ class ConnectionRoutesHandler(BaseWSHandler):
         try:
             connection_id = self._extract_connection_id(event)
 
-            self.ws_handler.on_disconnect(connection_id=connection_id)
+            self.on_disconnect(connection_id=connection_id)
             return 200, self._build_lambda_response(msg="WebSocket connection closed", success=True)
         except Exception as e:
             self._log.error(f"WebSocket $disconnect failed: {e}\n{traceback.format_exc()}")
             return 500, self._build_lambda_response(msg="Failed to close WebSocket connection", success=False)
 
 
-class SystemRoutesHandler(BaseWSHandler):
+class SystemRoutesHandler(LambdaWSHandler):
     """Handles WebSocket application routes ($default, /chat).
 
     This handler is responsible for application-level WebSocket operations
@@ -333,8 +294,8 @@ class SystemRoutesHandler(BaseWSHandler):
         :return: Tuple of (status_code, response_body)
         """
 
-        def _process_default(ws_message_info: "BaseWSHandler.WSMessageInfo") -> Dict[str, Any]:
-            self.ws_handler.on_default()
+        def _process_default(ws_message_info: "LambdaWSHandler.WSMessageInfo") -> Dict[str, Any]:
+            self.on_default()
             requested_route = ws_message_info.request.route
             return {"status": "FAILED", "message": f"Route '{requested_route}' not found"}
 
@@ -353,7 +314,7 @@ class SystemRoutesHandler(BaseWSHandler):
         :return: Tuple of (status_code, response_body)
         """
 
-        def _process_chat(ws_message_info: "BaseWSHandler.WSMessageInfo") -> Dict[str, Any]:
+        def _process_chat(ws_message_info: "LambdaWSHandler.WSMessageInfo") -> Dict[str, Any]:
             request = ws_message_info.request
             if request.body is None:
                 raise ValueError("body is required")
@@ -386,7 +347,7 @@ class SystemRoutesHandler(BaseWSHandler):
                 raise ValueError("body is required")
             session_id = request.body.session_id
 
-            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
 
             for raw_chunk in self._chat_service.process_stream_chat_sync(req=request.body):
                 chunk_dict = json.loads(raw_chunk)
@@ -396,7 +357,7 @@ class SystemRoutesHandler(BaseWSHandler):
         except Exception as e:
             self._log.error(f"Stream direct request failed: {e}\n{traceback.format_exc()}")
             try:
-                endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+                endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
                 error_chunk = StreamChunk(error=str(e), done=True)
                 error_chunk_dict = error_chunk.model_dump(exclude_none=True)
                 if session_id:
@@ -434,7 +395,7 @@ class SystemRoutesHandler(BaseWSHandler):
 
             self._log.info(f"Sending WebSocket request to queue: request_id={request.request_id}, session_id={session_id}")
 
-            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
 
             response = SQSHandler.send_message_to_input_queue(
                 message_body=request_body,
@@ -480,7 +441,7 @@ class WSLambdaRouter(BaseLambdaRouter):
         super().__init__()
         self._log.info("Initializing WebSocket routes")
 
-        self._base_route_handler = BaseWSHandler()
+        self._base_route_handler = LambdaWSHandler()
 
         self._websocket_routes: Dict[str, Callable[[Dict[str, Any], Any], Any]] = {}
 
@@ -508,7 +469,7 @@ class WSLambdaRouter(BaseLambdaRouter):
                 ws_message_info = self._base_route_handler._parse_event_to_wsmessage(event)
                 user_id = ws_message_info.user_id
                 res_msg_to_brdcst = handler_logic_func(event, context)
-                endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+                endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
                 self._base_route_handler.broadcast_message(endpoint_url, user_id, message=res_msg_to_brdcst)
                 return 200, self._base_route_handler._build_lambda_response(user_id=user_id, msg="Message broadcast successfully", success=True)
             except Exception as e:
@@ -563,16 +524,16 @@ class WSLambdaRouter(BaseLambdaRouter):
                 self._log.warning("Cannot broadcast error: missing connectionId")
                 return
 
-            user_id = self._base_route_handler.ws_handler.get_user_id(connection_id)
+            user_id = self._base_route_handler.get_user_id(connection_id)
             if not user_id:
                 self._log.warning(f"Cannot broadcast error: no user_id found for connection_id: {connection_id}")
                 return
 
-            endpoint_url = WebSocketHandler.construct_endpoint_url_from_event(event)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
             self._base_route_handler.broadcast_message(
                 endpoint_url,
                 user_id,
-                message_type=BaseWSHandler.MessageType.SYSTEM_RESPONSE,
+                message_type=LambdaWSHandler.MessageType.SYSTEM_RESPONSE,
                 message={"status": "FAILED", "message": error_message},
             )
             self._log.info(f"Error broadcasted to user {user_id}: {error_message}")
