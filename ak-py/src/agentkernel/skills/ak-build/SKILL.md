@@ -264,7 +264,7 @@ class OrderStatus(BaseModel):
 | Google ADK | `LlmAgent(..., output_schema=OrderStatus)` |
 | Smolagents | No schema parameter — have the agent pass a dict or Pydantic instance to `final_answer` |
 
-> **Gotcha (CrewAI):** CrewAI puts the output schema on the `Task`, not the `Agent` — and Agent Kernel builds the task internally per run, so the schema is passed to the `CrewAIModule` constructor keyed by agent role. To change it after loading, set it on the wrapped agent: `module.get_agent("support").output_pydantic = OrderStatus`.
+> **Gotcha (CrewAI):** CrewAI puts the output schema on the `Task`, not the `Agent` — and Agent Kernel builds the task internally per run, so the schema is passed to the `CrewAIModule` constructor keyed by agent role.
 
 ---
 
