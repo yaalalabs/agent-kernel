@@ -20,12 +20,14 @@ class RESTRequestHandler(ABC):
         E.g.:
         - GET /api/v1/agents: List available agents
 
-        router = APIRouter()
-
-        @router.get("/api/v1/agents")
-        def list_agents():
+        def list_agents(self):
             from ..core.runtime import Runtime
             return {"agents": list(Runtime.current().agents().keys())}
+
+        def get_router(self) -> APIRouter:
+            router = APIRouter()
+            router.add_api_route("/api/v1/agents", self.list_agents, methods=["GET"])
+            return router
 
         """
         pass
@@ -52,52 +54,51 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         self._max_file_size = Config.get().api.max_file_size
         self.chat_service = ChatService(rest_api_mode=True)
 
+    def list_agents(self):
+        return {"agents": list(Runtime.current().agents().keys())}
+
+    async def run(self, body: BaseRunRequest):
+        if Config.get().execution.mode == ExecutionMode.STREAM:
+            try:
+                gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
+                return StreamingResponse(gen, media_type="text/event-stream")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
+        return await self.chat_service.process_async_chat_request(req=body)
+
+    async def run_multipart(
+        self,
+        prompt: str = Form(...),
+        agent: Optional[str] = Form(None),
+        session_id: Optional[str] = Form(None),
+        files: Optional[List[UploadFile]] = File(None),
+        images: Optional[List[UploadFile]] = File(None),
+    ):
+        req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
+            prompt=prompt,
+            agent=agent,
+            session_id=session_id,
+            files=files,
+            images=images,
+        )
+        if Config.get().execution.mode == ExecutionMode.STREAM:
+            try:
+                gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
+                return StreamingResponse(gen, media_type="text/event-stream")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
+        return await self.chat_service.process_async_chat_request(req=req)
+
     def get_router(self) -> APIRouter:
         """
         Returns the APIRouter instance.
         """
-
         router = APIRouter()
-
-        @router.get("/api/v1/agents")
-        def list_agents():
-            return {"agents": list(Runtime.current().agents().keys())}
-
-        @router.post("/api/v1/chat")
-        async def run(body: BaseRunRequest):
-            if Config.get().execution.mode == ExecutionMode.STREAM:
-                try:
-                    gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
-                    return StreamingResponse(gen, media_type="text/event-stream")
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
-            return await self.chat_service.process_async_chat_request(req=body)
-
-        @router.post("/api/v1/chat-multipart")
-        async def run_multipart(
-            prompt: str = Form(...),
-            agent: Optional[str] = Form(None),
-            session_id: Optional[str] = Form(None),
-            files: Optional[List[UploadFile]] = File(None),
-            images: Optional[List[UploadFile]] = File(None),
-        ):
-            req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
-                prompt=prompt,
-                agent=agent,
-                session_id=session_id,
-                files=files,
-                images=images,
-            )
-            if Config.get().execution.mode == ExecutionMode.STREAM:
-                try:
-                    gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
-                    return StreamingResponse(gen, media_type="text/event-stream")
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
-            return await self.chat_service.process_async_chat_request(req=req)
-
+        router.add_api_route("/api/v1/agents", self.list_agents, methods=["GET"])
+        router.add_api_route("/api/v1/chat", self.run, methods=["POST"])
+        router.add_api_route("/api/v1/chat-multipart", self.run_multipart, methods=["POST"])
         return router
