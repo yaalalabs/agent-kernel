@@ -27,7 +27,7 @@ def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
 def _make_system_routes_handler():
     with (
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AKConfig") as mock_config_cls,
-        patch("agentkernel.deployment.aws.core.websocket_service.WebSocketConnectionStore"),
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketConnectionStore"),
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.ChatService"),
     ):
         mock_config = MagicMock()
@@ -91,10 +91,10 @@ def test_handle_queue_mode_sends_to_sqs_and_returns_200():
     handler.get_user_id = MagicMock(return_value="user-1")
 
     with (
-        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls,
+        patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AWSWebSocketHandler") as mock_ws_cls,
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.SQSHandler") as mock_sqs,
     ):
-        mock_ws_cls.construct_endpoint_url_from_event.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
+        mock_ws_cls.construct_endpoint_url.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
         mock_sqs.send_message_to_input_queue.return_value = {"MessageId": "msg-1"}
         mock_sqs.CustomAttribute = MagicMock(side_effect=lambda **kwargs: kwargs)
         mock_sqs.AttributeDataType.STRING = "String"
@@ -136,8 +136,8 @@ def test_handle_stream_direct_streams_chunks_and_returns_200():
     handler._chat_service = MagicMock()
     handler._chat_service.process_stream_chat_sync = _mock_process_stream_sync
 
-    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls:
-        mock_ws_cls.construct_endpoint_url_from_event.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
+    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AWSWebSocketHandler") as mock_ws_cls:
+        mock_ws_cls.construct_endpoint_url.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
 
         status, body = handler._handle_stream_direct(event)
 
@@ -146,7 +146,7 @@ def test_handle_stream_direct_streams_chunks_and_returns_200():
 
     first_call = handler.broadcast.call_args_list[0]
     msg = first_call.kwargs["message"]
-    assert msg["type"] == "STREAM_CHUNK"
+    assert first_call.kwargs["message_type"] == handler.MessageType.STREAM_CHUNK
     assert msg["delta"] == "Hello"
 
 
@@ -166,8 +166,8 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
     handler._chat_service = MagicMock()
     handler._chat_service.process_stream_chat_sync = _mock_process_stream_sync_error
 
-    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls:
-        mock_ws_cls.construct_endpoint_url_from_event.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
+    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AWSWebSocketHandler") as mock_ws_cls:
+        mock_ws_cls.construct_endpoint_url.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
 
         status, body = handler._handle_stream_direct(event)
 
@@ -175,7 +175,7 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
     assert handler.broadcast.call_count >= 1
     last_call = handler.broadcast.call_args_list[-1]
     msg = last_call.kwargs["message"]
-    assert msg["type"] == "STREAM_CHUNK"
+    assert last_call.kwargs["message_type"] == handler.MessageType.STREAM_CHUNK
     assert msg.get("error") is not None
     assert msg.get("done") is True
 
@@ -196,13 +196,13 @@ def test_handle_stream_direct_broadcasts_error_chunk_with_session_id_on_failure(
     handler._chat_service = MagicMock()
     handler._chat_service.process_stream_chat_sync = _mock_process_stream_sync_error
 
-    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.WebSocketHandler") as mock_ws_cls:
-        mock_ws_cls.construct_endpoint_url_from_event.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
+    with patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AWSWebSocketHandler") as mock_ws_cls:
+        mock_ws_cls.construct_endpoint_url.return_value = "https://example.execute-api.us-east-1.amazonaws.com/prod"
 
         status, body = handler._handle_stream_direct(event)
 
     assert status == 500
     last_call = handler.broadcast.call_args_list[-1]
     msg = last_call.kwargs["message"]
-    assert msg["type"] == "STREAM_CHUNK"
+    assert last_call.kwargs["message_type"] == handler.MessageType.STREAM_CHUNK
     assert msg["session_id"] == "session-123"

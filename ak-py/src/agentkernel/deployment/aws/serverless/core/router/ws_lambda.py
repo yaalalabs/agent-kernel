@@ -10,15 +10,15 @@ from ......core.chat_service import ChatService
 from ......core.config import AKConfig, ExecutionMode
 from ......core.model import BaseRequest, StreamChunk
 from ....core.sqs_handler import SQSHandler
-from ....core.websocket_service import WebSocketHandler
+from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 from .common import BaseLambdaRouter
 
 
-class LambdaWSHandler(WebSocketHandler):
+class LambdaWSHandler(AWSWebSocketHandler):
     """Base class for Lambda WebSocket route handlers.
 
-    Extends the shared WebSocketHandler with Lambda API Gateway event parsing and
-    response helpers. Broadcasting and the MessageType envelope live on WebSocketHandler.
+    Extends the shared AWSWebSocketHandler with Lambda API Gateway event parsing and
+    response helpers. Broadcasting and the MessageType envelope live on AWSWebSocketHandler.
     """
 
     class WSMessageInfo(BaseModel):
@@ -32,10 +32,11 @@ class LambdaWSHandler(WebSocketHandler):
         config = AKConfig.get()
         if not config.websocket_api.connection_table or not config.websocket_api.connection_table.table_name:
             raise ValueError("websocket_api.connection_table.table_name is required for WebSocket handler")
-        super().__init__(
-            conn_table_name=config.websocket_api.connection_table.table_name,
+        connection_store = WebSocketConnectionStore(
+            table_name=config.websocket_api.connection_table.table_name,
             ttl=config.websocket_api.connection_table.ttl,
         )
+        super().__init__(connection_store=connection_store)
         self._config = config
         self.CONNECT_ROUTE = "$connect"
         self.DISCONNECT_ROUTE = "$disconnect"
@@ -101,8 +102,8 @@ class LambdaWSHandler(WebSocketHandler):
             ws_message_info = self._parse_event_to_wsmessage(event)
             user_id = ws_message_info.user_id
             brdcstin_msg = operation(ws_message_info)
-            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
-            self.broadcast_message(endpoint_url, user_id, message_type=message_type, message=brdcstin_msg)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
+            self.broadcast(endpoint_url=endpoint_url, message=brdcstin_msg, user_id=user_id, message_type=message_type)
             return (
                 200,
                 self._build_lambda_response(user_id=user_id, msg="Request processed successfully", success=True),
@@ -347,22 +348,22 @@ class SystemRoutesHandler(LambdaWSHandler):
                 raise ValueError("body is required")
             session_id = request.body.session_id
 
-            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
 
             for raw_chunk in self._chat_service.process_stream_chat_sync(req=request.body):
                 chunk_dict = json.loads(raw_chunk)
-                self.broadcast_message(endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=chunk_dict)
+                self.broadcast(endpoint_url=endpoint_url, message=chunk_dict, user_id=user_id, message_type=self.MessageType.STREAM_CHUNK)
 
             return 200, self._build_lambda_response(user_id=user_id, msg="Stream completed successfully", success=True)
         except Exception as e:
             self._log.error(f"Stream direct request failed: {e}\n{traceback.format_exc()}")
             try:
-                endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
+                endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
                 error_chunk = StreamChunk(error=str(e), done=True)
                 error_chunk_dict = error_chunk.model_dump(exclude_none=True)
                 if session_id:
                     error_chunk_dict["session_id"] = session_id
-                self.broadcast_message(endpoint_url, user_id, message_type=self.MessageType.STREAM_CHUNK, message=error_chunk_dict)
+                self.broadcast(endpoint_url=endpoint_url, message=error_chunk_dict, user_id=user_id, message_type=self.MessageType.STREAM_CHUNK)
             except Exception:
                 pass
             return 500, self._build_lambda_response(user_id=user_id, msg="Stream request processing failed", success=False)
@@ -395,7 +396,7 @@ class SystemRoutesHandler(LambdaWSHandler):
 
             self._log.info(f"Sending WebSocket request to queue: request_id={request.request_id}, session_id={session_id}")
 
-            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
+            endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
 
             response = SQSHandler.send_message_to_input_queue(
                 message_body=request_body,
@@ -469,8 +470,8 @@ class WSLambdaRouter(BaseLambdaRouter):
                 ws_message_info = self._base_route_handler._parse_event_to_wsmessage(event)
                 user_id = ws_message_info.user_id
                 res_msg_to_brdcst = handler_logic_func(event, context)
-                endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
-                self._base_route_handler.broadcast_message(endpoint_url, user_id, message=res_msg_to_brdcst)
+                endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
+                self._base_route_handler.broadcast(endpoint_url=endpoint_url, message=res_msg_to_brdcst, user_id=user_id)
                 return 200, self._base_route_handler._build_lambda_response(user_id=user_id, msg="Message broadcast successfully", success=True)
             except Exception as e:
                 self._log.error(f"WebSocket handler failed: {e}\n{traceback.format_exc()}")
@@ -529,12 +530,12 @@ class WSLambdaRouter(BaseLambdaRouter):
                 self._log.warning(f"Cannot broadcast error: no user_id found for connection_id: {connection_id}")
                 return
 
-            endpoint_url = LambdaWSHandler.construct_endpoint_url_from_event(event)
-            self._base_route_handler.broadcast_message(
-                endpoint_url,
-                user_id,
-                message_type=LambdaWSHandler.MessageType.SYSTEM_RESPONSE,
+            endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
+            self._base_route_handler.broadcast(
+                endpoint_url=endpoint_url,
                 message={"status": "FAILED", "message": error_message},
+                user_id=user_id,
+                message_type=LambdaWSHandler.MessageType.SYSTEM_RESPONSE,
             )
             self._log.info(f"Error broadcasted to user {user_id}: {error_message}")
         except Exception as e:

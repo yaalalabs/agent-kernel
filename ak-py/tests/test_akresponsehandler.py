@@ -68,10 +68,10 @@ def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
     with patch.object(ResponseHandler, "_get_base_ws_handler", return_value=mock_ws_handler):
         ResponseHandler._broadcast_via_websocket(record, message_type=LambdaWSHandler.MessageType.STREAM_CHUNK)
 
-    mock_ws_handler.broadcast_message.assert_called_once()
-    call_kwargs = mock_ws_handler.broadcast_message.call_args
-    endpoint_url = call_kwargs.args[0]
-    user_id = call_kwargs.args[1]
+    mock_ws_handler.broadcast.assert_called_once()
+    call_kwargs = mock_ws_handler.broadcast.call_args
+    endpoint_url = call_kwargs.kwargs["endpoint_url"]
+    user_id = call_kwargs.kwargs["user_id"]
     message_type = call_kwargs.kwargs["message_type"]
     broadcasted_message = call_kwargs.kwargs["message"]
     assert endpoint_url == "https://example.execute-api.us-east-1.amazonaws.com/prod"
@@ -105,8 +105,8 @@ def test_process_message_stream_mode_calls_broadcast_stream_chunk(mock_config_cl
     with patch.object(ResponseHandler, "_get_base_ws_handler", return_value=mock_ws_handler):
         ResponseHandler.process_message(record)
 
-    mock_ws_handler.broadcast_message.assert_called_once()
-    call_kwargs = mock_ws_handler.broadcast_message.call_args
+    mock_ws_handler.broadcast.assert_called_once()
+    call_kwargs = mock_ws_handler.broadcast.call_args
     message_type = call_kwargs.kwargs["message_type"]
     broadcasted = call_kwargs.kwargs["message"]
     assert message_type == LambdaWSHandler.MessageType.STREAM_CHUNK

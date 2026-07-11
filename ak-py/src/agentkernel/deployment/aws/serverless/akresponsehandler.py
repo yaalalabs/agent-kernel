@@ -62,8 +62,8 @@ class ResponseHandler(LambdaSQSConsumer):
         """
         Broadcast a message via WebSocket.
 
-        When message_type is provided the body is wrapped in a typed envelope via
-        _build_broadcasting_message before sending (e.g. STREAM_CHUNK for STREAM mode).
+        When message_type is provided the body is wrapped in a typed envelope
+        before sending (e.g. STREAM_CHUNK for STREAM mode).
         When omitted the raw message body is sent as-is (ASYNC mode).
 
         :param record: SQS record containing the response payload
@@ -87,7 +87,7 @@ class ResponseHandler(LambdaSQSConsumer):
 
         base_ws = cls._get_base_ws_handler()
         cls._log.info(f"Broadcasting message via WebSocket for user_id: {user_id}, endpoint_url: {endpoint_url}")
-        base_ws.broadcast_message(endpoint_url, user_id, message_type=message_type, message=message_body)
+        base_ws.broadcast(endpoint_url=endpoint_url, message=message_body, user_id=user_id, message_type=message_type)
         cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
 
     @classmethod
@@ -142,7 +142,12 @@ class ResponseHandler(LambdaSQSConsumer):
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
                     error_message["session_id"] = session_id
-                    base_ws.broadcast_message(endpoint_url, user_id, message_type=LambdaWSHandler.MessageType.SYSTEM_RESPONSE, message=error_message)
+                    base_ws.broadcast(
+                        endpoint_url=endpoint_url,
+                        message=error_message,
+                        user_id=user_id,
+                        message_type=LambdaWSHandler.MessageType.SYSTEM_RESPONSE,
+                    )
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")
@@ -160,7 +165,12 @@ class ResponseHandler(LambdaSQSConsumer):
                     error_chunk_body["session_id"] = session_id
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure stream chunk via WebSocket for user_id: {user_id}")
-                    base_ws.broadcast_message(endpoint_url, user_id, message_type=LambdaWSHandler.MessageType.STREAM_CHUNK, message=error_chunk_body)
+                    base_ws.broadcast(
+                        endpoint_url=endpoint_url,
+                        message=error_chunk_body,
+                        user_id=user_id,
+                        message_type=LambdaWSHandler.MessageType.STREAM_CHUNK,
+                    )
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")

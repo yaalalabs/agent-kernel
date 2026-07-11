@@ -1,14 +1,13 @@
 import json
 import logging
 import time
-from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-from ...common.websocket_connection_store import WebSocketConnectionStoreABC
+from ...common.websocket_service import WebSocketConnectionStoreABC, WebSocketHandlerABC
 
 
 class WebSocketConnectionStore(WebSocketConnectionStoreABC):
@@ -116,34 +115,14 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
             self.delete_connection(item["user_id"], connection_id)
 
 
-class WebSocketHandler:
+class AWSWebSocketHandler(WebSocketHandlerABC):
     """
-    Main public WebSocket interface.
+    Main public WebSocket interface for AWS (API Gateway Management API + DynamoDB).
     Users interact ONLY with this class.
     """
 
-    class MessageType(str, Enum):
-        """Typed WebSocket broadcast envelope kinds (shared by serverless and containerized)."""
-
-        CHAT_RESPONSE = "CHAT_RESPONSE"
-        CHAT_QUEUED = "CHAT_QUEUED"
-        SYSTEM_RESPONSE = "SYSTEM_RESPONSE"
-        STREAM_CHUNK = "STREAM_CHUNK"
-
-    def __init__(self, conn_table_name: str, ttl: int):
-        """
-        Initialize the WebSocket handler.
-
-        :param conn_table_name: DynamoDB table name for storing connections
-        :param ttl: Time-to-live in seconds for automatic cleanup of stale connections
-        :return: None
-        """
-        self._connection_store = WebSocketConnectionStore(conn_table_name, ttl)
-        self._clients: Dict[str, any] = {}
-        self._log = logging.getLogger("ak.websocket.manager")
-
     # internal client resolver (cached per endpoint)
-    def _get_api_gateway(self, endpoint_url: str):
+    def get_client(self, endpoint_url: str):
         """
         Get or create a cached boto3 API Gateway Management API client for the given endpoint.
 
@@ -158,7 +137,7 @@ class WebSocketHandler:
         return self._clients[endpoint_url]
 
     @staticmethod
-    def construct_endpoint_url_from_event(event: dict) -> str:
+    def construct_endpoint_url(event: dict) -> str:
         """
         Construct the API Gateway endpoint URL from a WebSocket event.
 
@@ -169,87 +148,6 @@ class WebSocketHandler:
         domain_name = request_context["domainName"]
         stage = request_context["stage"]
         return f"https://{domain_name}/{stage}"
-
-    # Connection Store Public API
-    def add_connection(self, user_id: str, connection_id: str) -> None:
-        """
-        Store a WebSocket connection for a user.
-
-        :param user_id: User identifier
-        :param connection_id: WebSocket connection identifier
-        :return: None
-        """
-        self._connection_store.add_connection(user_id, connection_id)
-
-    def get_connections(self, user_id: str) -> List[str]:
-        """
-        Retrieve all connection IDs for a given user.
-
-        :param user_id: User identifier
-        :return: List of connection IDs
-        """
-        return self._connection_store.get_connections(user_id)
-
-    def get_user_id(self, connection_id: str) -> Optional[str]:
-        """
-        Retrieve the user ID for a given connection ID.
-
-        :param connection_id: WebSocket connection identifier
-        :return: User ID if found, None otherwise
-        """
-        return self._connection_store.get_user_id(connection_id)
-
-    def delete_connection(self, user_id: str, connection_id: str) -> None:
-        """
-        Delete a specific connection for a user.
-
-        :param user_id: User identifier
-        :param connection_id: WebSocket connection identifier
-        :return: None
-        """
-        self._connection_store.delete_connection(user_id, connection_id)
-
-    def delete_by_connection_id(self, connection_id: str) -> None:
-        """
-        Delete a connection by its connection ID.
-
-        :param connection_id: WebSocket connection identifier
-        :return: None
-        """
-        self._connection_store.delete_by_connection_id(connection_id)
-
-    # WebSocket Lifecycle Methods
-    def on_connect(self, connection_id: str, user_id: str) -> None:
-        """
-        Handle WebSocket connection establishment.
-
-        :param connection_id: WebSocket connection identifier
-        :param user_id: User identifier
-        :return: None
-        :raises ValueError: If user_id is not provided
-        """
-        if not user_id:
-            raise ValueError("user_id is required")
-        self.add_connection(user_id, connection_id)
-        self._log.info(f"Connected: user_id={user_id}, connection_id={connection_id}")
-
-    def on_disconnect(self, connection_id: str) -> None:
-        """
-        Handle WebSocket connection termination.
-
-        :param connection_id: WebSocket connection identifier
-        :return: None
-        """
-        self.delete_by_connection_id(connection_id)
-        self._log.info(f"Disconnected: connection_id={connection_id}")
-
-    def on_default(self) -> None:
-        """
-        Handle unknown WebSocket routes.
-
-        :return: None
-        """
-        self._log.warning("Unknown websocket route")
 
     # Message sending operations
     def send(self, endpoint_url: str, connection_id: str, message: dict) -> None:
@@ -262,7 +160,7 @@ class WebSocketHandler:
         :return: None
         """
         try:
-            api_gateway = self._get_api_gateway(endpoint_url)
+            api_gateway = self.get_client(endpoint_url)
 
             api_gateway.post_to_connection(
                 ConnectionId=connection_id,
@@ -278,66 +176,3 @@ class WebSocketHandler:
 
             else:
                 self._log.exception(f"Failed to send message to connection_id={connection_id}")
-
-    def broadcast(
-        self,
-        endpoint_url: str,
-        message: dict,
-        user_id: Optional[str] = None,
-        connection_ids: Optional[List[str]] = None,
-    ) -> None:
-        """
-        Broadcast a message to multiple WebSocket connections.
-
-        :param endpoint_url: API Gateway endpoint URL
-        :param message: Message dictionary to broadcast
-        :param user_id: User identifier to broadcast to (retrieves all connections for user)
-        :param connection_ids: Specific connection IDs to broadcast to
-        :return: None
-        :raises ValueError: If neither user_id nor connection_ids is provided
-        """
-
-        if not user_id and not connection_ids:
-            raise ValueError("Provide either user_id or connection_ids")
-
-        if user_id:
-            connection_ids = self.get_connections(user_id)
-
-        for connection_id in connection_ids:
-            self.send(endpoint_url=endpoint_url, connection_id=connection_id, message=message)
-
-    def broadcast_message(
-        self,
-        endpoint_url: str,
-        user_id: str,
-        message_type: Optional["WebSocketHandler.MessageType"] = None,
-        message: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> None:
-        """
-        Build and broadcast a message to a WebSocket user, optionally wrapped in a typed envelope.
-
-        When message_type is provided the payload is wrapped as {"type": <type>, ...payload};
-        otherwise the payload is sent as-is.
-
-        :param endpoint_url: API Gateway endpoint URL
-        :param user_id: Target user identifier
-        :param message_type: Optional envelope type; wraps payload when provided
-        :param message: Optional message payload dict; mutually exclusive with kwargs
-        :param kwargs: Message payload fields when not passing a dict via `message`
-        :return: None
-        """
-        payload = message if message is not None else kwargs
-        final_message = self._build_broadcasting_message(message_type, payload) if message_type else payload
-        self.broadcast(endpoint_url=endpoint_url, message=final_message, user_id=user_id)
-
-    @staticmethod
-    def _build_broadcasting_message(message_type: "WebSocketHandler.MessageType", payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build a standardized broadcast envelope of the form {"type": <type>, ...payload}.
-
-        :param message_type: The type of message from MessageType enum
-        :param payload: Fields to include alongside the type
-        :return: Standardized message dictionary
-        """
-        return {"type": message_type.value, **payload}

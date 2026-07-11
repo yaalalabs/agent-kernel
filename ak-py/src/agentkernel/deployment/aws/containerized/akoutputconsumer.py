@@ -8,7 +8,7 @@ from ....core.config import AKConfig
 from ....core.model import ExecutionMode
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
-from ..core.websocket_service import WebSocketHandler
+from ..core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 from .core import ECSSQSConsumer
 
 
@@ -42,15 +42,16 @@ class ECSOutputConsumer(ECSSQSConsumer):
         return cls._response_store
 
     @classmethod
-    def _get_websocket_handler(cls) -> WebSocketHandler:
+    def _get_websocket_handler(cls) -> AWSWebSocketHandler:
         if cls._websocket_handler is None:
             ws_cfg = cls._config.websocket_api
             if not ws_cfg.connection_table or not ws_cfg.connection_table.table_name:
                 raise ValueError("websocket_api.connection_table.table_name is required for WebSocket mode")
-            cls._websocket_handler = WebSocketHandler(
-                conn_table_name=ws_cfg.connection_table.table_name,
+            connection_store = WebSocketConnectionStore(
+                table_name=ws_cfg.connection_table.table_name,
                 ttl=ws_cfg.connection_table.ttl,
             )
+            cls._websocket_handler = AWSWebSocketHandler(connection_store=connection_store)
         return cls._websocket_handler
 
     @classmethod
@@ -106,11 +107,11 @@ class ECSOutputConsumer(ECSSQSConsumer):
                 user_id = message_attributes.get("user_id")
                 if endpoint_url and user_id:
                     error_payload["session_id"] = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
-                    cls._get_websocket_handler().broadcast_message(
+                    cls._get_websocket_handler().broadcast(
                         endpoint_url=endpoint_url,
-                        user_id=user_id,
-                        message_type=WebSocketHandler.MessageType.SYSTEM_RESPONSE,
                         message=error_payload,
+                        user_id=user_id,
+                        message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
                     )
                     cls._log.info(f"Broadcasted permanent-failure error via WebSocket — user_id={user_id}")
                 else:
@@ -170,9 +171,9 @@ class ECSOutputConsumer(ECSSQSConsumer):
             message_body = json.loads(message_body)
 
         cls._log.info(f"Broadcasting via WebSocket — user_id={user_id} endpoint={endpoint_url}")
-        cls._get_websocket_handler().broadcast_message(
+        cls._get_websocket_handler().broadcast(
             endpoint_url=endpoint_url,
-            user_id=user_id,
-            message_type=WebSocketHandler.MessageType.CHAT_RESPONSE,
             message=message_body,
+            user_id=user_id,
+            message_type=AWSWebSocketHandler.MessageType.CHAT_RESPONSE,
         )

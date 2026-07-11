@@ -30,7 +30,7 @@ from ....core.chat_service import ChatService
 from ....core.config import AKConfig
 from ....core.model import BaseRequest, BaseRunRequest
 from ..core.sqs_handler import SQSHandler
-from ..core.websocket_service import WebSocketHandler
+from ..core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 
 
 class ECSWebSocketRequestHandler(RESTRequestHandler):
@@ -67,10 +67,11 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
 
         self._auth_validator = auth_validator
         self._chat_service: Optional[ChatService] = None
-        self._ws_handler = WebSocketHandler(
-            conn_table_name=ws_cfg.connection_table.table_name,
+        connection_store = WebSocketConnectionStore(
+            table_name=ws_cfg.connection_table.table_name,
             ttl=ws_cfg.connection_table.ttl,
         )
+        self._ws_handler = AWSWebSocketHandler(connection_store=connection_store)
 
     def _is_queue_mode(self) -> bool:
         """True when an input queue is configured (enqueue mode); False for direct mode."""
@@ -200,11 +201,11 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
         status_code, res_body = await self._get_chat_service().process_async_chat_request(body)
         message = res_body if isinstance(res_body, dict) else {"response": res_body}
 
-        self._ws_handler.broadcast_message(
+        self._ws_handler.broadcast(
             endpoint_url=endpoint_url,
-            user_id=user_id,
-            message_type=WebSocketHandler.MessageType.CHAT_RESPONSE,
             message=message,
+            user_id=user_id,
+            message_type=AWSWebSocketHandler.MessageType.CHAT_RESPONSE,
         )
         return self._response(status_code, "Request processed successfully", success=True, user_id=user_id)
 
@@ -216,11 +217,11 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
                 user_id = self._ws_handler.get_user_id(connection_id)
                 endpoint_url = self._construct_endpoint_url(request)
                 if user_id and endpoint_url:
-                    self._ws_handler.broadcast_message(
+                    self._ws_handler.broadcast(
                         endpoint_url=endpoint_url,
-                        user_id=user_id,
-                        message_type=WebSocketHandler.MessageType.SYSTEM_RESPONSE,
                         message={"status": "FAILED", "message": "Route not found"},
+                        user_id=user_id,
+                        message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
                     )
         except Exception as e:
             self._log.warning(f"Failed to notify client on $default: {e}")
