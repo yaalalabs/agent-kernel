@@ -17,7 +17,6 @@ Responses are pushed back over the connection by ECSOutputConsumer (ASYNC mode).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Optional
@@ -197,9 +196,8 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
         """Direct (non-queue) mode: run the agent inline and broadcast the reply over the connection."""
         self._log.info(f"Processing WS chat request inline (direct mode) for user_id={user_id}")
 
-        # process_chat_request is blocking; offload so it doesn't stall the event loop.
-        result = await asyncio.to_thread(self._get_chat_service().process_chat_request, body)
-        _, res_body = result  # ChatService(rest_api_mode=False) returns (status_code, response_dict)
+        # ChatService(rest_api_mode=False) returns (status_code, response_dict)
+        status_code, res_body = await self._get_chat_service().process_async_chat_request(body)
         message = res_body if isinstance(res_body, dict) else {"response": res_body}
 
         self._ws_handler.broadcast_message(
@@ -208,7 +206,7 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
             message_type=WebSocketHandler.MessageType.CHAT_RESPONSE,
             message=message,
         )
-        return self._response(200, "Request processed successfully", success=True, user_id=user_id)
+        return self._response(status_code, "Request processed successfully", success=True, user_id=user_id)
 
     async def _handle_default(self, request: Request) -> JSONResponse:
         """Handle unknown routes ($default) by notifying the client over WebSocket."""
