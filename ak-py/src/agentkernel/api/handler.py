@@ -42,6 +42,11 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     - POST /api/v1/chat-multipart: Same as /api/v1/chat but accepts multipart form data with file/image uploads
     """
 
+    # Endpoint paths — shared with subclasses so route paths stay consistent.
+    AGENTS_PATH = "/api/v1/agents"
+    CHAT_PATH = "/api/v1/chat"
+    CHAT_MULTIPART_PATH = "/api/v1/chat-multipart"
+
     class BaseMultimodalRunRequest(BaseChatRequest):
         """Chat request with multipart file and image uploads (UploadFile format)."""
 
@@ -98,7 +103,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         Returns the APIRouter instance.
         """
         router = APIRouter()
-        router.add_api_route("/api/v1/agents", self.list_agents, methods=["GET"])
-        router.add_api_route("/api/v1/chat", self.run, methods=["POST"])
-        router.add_api_route("/api/v1/chat-multipart", self.run_multipart, methods=["POST"])
+        router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
+        router.add_api_route(self.CHAT_PATH, self.run, methods=["POST"])
+        router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart, methods=["POST"])
         return router

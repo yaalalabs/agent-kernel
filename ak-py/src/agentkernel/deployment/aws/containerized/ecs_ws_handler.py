@@ -6,10 +6,17 @@ container. Unlike the serverless Lambda (one function, dispatch on routeKey), th
 service exposes a **separate HTTP endpoint per WebSocket route** — the gateway maps each
 route to its own backend path via overwrite:path, so no in-app dispatch is needed.
 
-  $connect     -> POST /ws/connect     (auth + store connection)
-  $disconnect  -> POST /ws/disconnect  (remove connection)
-  <chat route> -> POST /ws/chat        (queue mode: enqueue; direct mode: run agent inline)
-  $default     -> POST /ws/default     (notify client of unknown route)
+  $connect       -> POST /ws/connect     (auth + store connection)
+  $disconnect    -> POST /ws/disconnect  (remove connection)
+  <chat route>   -> POST /ws/chat        (queue mode: enqueue; direct mode: run agent inline)
+  <custom route> -> POST /ws/<route>     (added by subclassing — see below)
+  $default       -> POST /ws/default     (notify client of unknown route)
+
+Custom routes follow the same extension model as the containerized REST handlers: subclass
+ECSWebSocketRequestHandler, call ``super().get_router()``, and add your own ``/ws/<route>`` POST
+endpoints onto the returned router (see the class docstring for an example). Each custom route must
+be declared in Terraform via ``ws_routes`` (which maps the route to POST /ws/<route>); both sides
+must agree on the route name, exactly like the configurable chat route.
 
 The WS $context (connection id, domain, stage) still arrives as x-ws-* headers.
 Responses are pushed back over the connection by ECSOutputConsumer (ASYNC mode).
@@ -19,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -42,7 +50,66 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
       pushes the reply. This handler never touches ChatService.
     - Direct (non-queue) mode: run ChatService inline and broadcast the reply over the
       connection right away (mirrors serverless SystemRoutesHandler._handle_direct_chat).
+
+    Custom routes are added the same way as the containerized REST handlers (see the crewai
+    example, "Option 2"): subclass, call ``super().get_router()``, and add your own ``/ws/<route>``
+    POST endpoints. ``build_route_context`` gives you the parsed frame, the authenticated user, and
+    the push endpoint in one call; ``handle_route_error`` renders the standard error response. The
+    route must also be declared in Terraform via ``ws_routes``. Example::
+
+        class MyWSHandler(ECSWebSocketRequestHandler):
+            def get_router(self) -> APIRouter:
+                router = super().get_router()
+
+                @router.post("/ws/status")            # Terraform: ws_routes = [{ route = "status" }]
+                async def status(request: Request) -> JSONResponse:
+                    try:
+                        ctx = await self.build_route_context(request)
+                    except self.WSRouteError as e:
+                        return self.handle_route_error(e)
+                    self.get_websocket_handler().broadcast(
+                        endpoint_url=ctx.endpoint_url,
+                        message={"status": "OK", "user_id": ctx.user_id},
+                        user_id=ctx.user_id,
+                        message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
+                    )
+                    return self.build_success_response("status processed", user_id=ctx.user_id)
+
+                return router
+
+        RESTAPI.run(handlers=[MyWSHandler(auth_validator=MyValidator())])
     """
+
+    @dataclass
+    class WSRouteContext:
+        """Everything a WebSocket route endpoint needs, resolved from one inbound frame.
+
+        Returned by ``build_route_context`` and used both by the built-in chat route and by custom
+        routes added in subclasses.
+
+        :param request: Parsed inbound frame (route, request_id, body).
+        :param user_id: Authenticated user id resolved from the connection.
+        :param connection_id: API Gateway WebSocket connection id.
+        :param endpoint_url: Management API endpoint used to push replies back to the client.
+        """
+
+        request: BaseRequest
+        user_id: str
+        connection_id: str
+        endpoint_url: str
+
+    class WSRouteError(Exception):
+        """Raised by ``build_route_context`` to short-circuit a route with an HTTP status.
+
+        Custom route endpoints can let this propagate to ``handle_route_error`` (or catch it) to
+        turn a failed context resolution (missing connection id, unauthenticated connection, etc.)
+        into the right HTTP status instead of a generic 500.
+        """
+
+        def __init__(self, status_code: int, message: str):
+            super().__init__(message)
+            self.status_code = status_code
+            self.message = message
 
     # Backend paths — the WS API Gateway integration rewrites each route to one of these.
     CONNECT_PATH = "/ws/connect"
@@ -67,20 +134,34 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
 
         self._auth_validator = auth_validator
         self._chat_service: Optional[ChatService] = None
-        connection_store = WebSocketConnectionStore(
-            table_name=ws_cfg.connection_table.table_name,
-            ttl=ws_cfg.connection_table.ttl,
-        )
-        self._ws_handler = AWSWebSocketHandler(connection_store=connection_store)
+        self._connection_store: Optional[WebSocketConnectionStore] = None
+        self._ws_handler: Optional[AWSWebSocketHandler] = None
 
     def _is_queue_mode(self) -> bool:
         """True when an input queue is configured (enqueue mode); False for direct mode."""
         return self._config.execution.queues.input.url is not None
 
-    def _get_chat_service(self) -> ChatService:
+    def get_chat_service(self) -> ChatService:
+        """Lazily create the ChatService used for direct (non-queue) mode."""
         if self._chat_service is None:
             self._chat_service = ChatService()
         return self._chat_service
+
+    def get_connection_store(self) -> WebSocketConnectionStore:
+        """Lazily create the DynamoDB-backed WebSocket connection store."""
+        if self._connection_store is None:
+            ws_cfg = self._config.websocket_api
+            self._connection_store = WebSocketConnectionStore(
+                table_name=ws_cfg.connection_table.table_name,
+                ttl=ws_cfg.connection_table.ttl,
+            )
+        return self._connection_store
+
+    def get_websocket_handler(self) -> AWSWebSocketHandler:
+        """Lazily create the AWS WebSocket handler (API Gateway Management API + DynamoDB store)."""
+        if self._ws_handler is None:
+            self._ws_handler = AWSWebSocketHandler(connection_store=self.get_connection_store())
+        return self._ws_handler
 
     def set_auth_validator(self, auth_validator: AuthValidator) -> "ECSWebSocketRequestHandler":
         """Set the auth validator used to authenticate WebSocket $connect requests.
@@ -92,7 +173,12 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
         return self
 
     def get_router(self) -> APIRouter:
-        """Return an APIRouter with one POST endpoint per WebSocket route."""
+        """Return an APIRouter with one POST endpoint per predefined WebSocket route.
+
+        Subclasses add custom ``/ws/<route>`` routes by overriding this method, calling
+        ``super().get_router()``, and registering their endpoints onto the returned router — the
+        same extension model as the containerized REST handlers (see the class docstring).
+        """
         router = APIRouter()
         router.add_api_route(self.CONNECT_PATH, self._handle_connect, methods=["POST"])
         router.add_api_route(self.DISCONNECT_PATH, self._handle_disconnect, methods=["POST"])
@@ -122,7 +208,7 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
             if not user_id:
                 return self._response(401, "'userId' claim is required in token", success=False)
 
-            self._ws_handler.on_connect(connection_id=connection_id, user_id=user_id)
+            self.get_websocket_handler().on_connect(connection_id=connection_id, user_id=user_id)
             return self._response(200, "WebSocket connection established", success=True, user_id=user_id)
         except Exception as e:
             self._log.exception(f"WebSocket $connect failed: {e}")
@@ -133,46 +219,11 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
         try:
             connection_id = self._connection_id(request)
             if connection_id:
-                self._ws_handler.on_disconnect(connection_id=connection_id)
+                self.get_websocket_handler().on_disconnect(connection_id=connection_id)
             return self._response(200, "WebSocket connection closed", success=True)
         except Exception as e:
             self._log.exception(f"WebSocket $disconnect failed: {e}")
             return self._response(500, "Failed to close WebSocket connection", success=False)
-
-    async def _handle_chat(self, request: Request) -> JSONResponse:
-        """Handle a chat frame: enqueue it (queue mode) or run the agent inline (direct mode)."""
-        try:
-            connection_id = self._connection_id(request)
-            if not connection_id:
-                return self._response(500, "Missing connection id", success=False)
-
-            raw_body = await request.body()
-            payload = json.loads(raw_body) if raw_body else {}
-            ws_request = BaseRequest.from_payload(payload)
-
-            if ws_request.body is None:
-                return self._response(400, "body is required", success=False)
-
-            user_id = self._ws_handler.get_user_id(connection_id)
-            if not user_id:
-                return self._response(401, f"No user found for connection_id: {connection_id}", success=False)
-
-            session_id = ws_request.body.session_id
-            if not session_id:
-                return self._response(400, "session_id is required", success=False)
-
-            body = ws_request.body
-            request_id = ws_request.request_id  # from_payload guarantees a value
-            endpoint_url = self._construct_endpoint_url(request)
-            if not endpoint_url:
-                return self._response(500, "Unable to resolve WebSocket endpoint URL", success=False)
-
-            if self._is_queue_mode():
-                return self._enqueue_chat(body, user_id, request_id, session_id, endpoint_url)
-            return await self._process_chat_direct(body, user_id, endpoint_url)
-        except Exception as e:
-            self._log.exception(f"WebSocket chat request failed: {e}")
-            return self._response(500, "Request processing failed", success=False)
 
     def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
@@ -198,10 +249,10 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
         self._log.info(f"Processing WS chat request inline (direct mode) for user_id={user_id}")
 
         # ChatService(rest_api_mode=False) returns (status_code, response_dict)
-        status_code, res_body = await self._get_chat_service().process_async_chat_request(body)
+        status_code, res_body = await self.get_chat_service().process_async_chat_request(body)
         message = res_body if isinstance(res_body, dict) else {"response": res_body}
 
-        self._ws_handler.broadcast(
+        self.get_websocket_handler().broadcast(
             endpoint_url=endpoint_url,
             message=message,
             user_id=user_id,
@@ -214,10 +265,10 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
         try:
             connection_id = self._connection_id(request)
             if connection_id:
-                user_id = self._ws_handler.get_user_id(connection_id)
+                user_id = self.get_websocket_handler().get_user_id(connection_id)
                 endpoint_url = self._construct_endpoint_url(request)
                 if user_id and endpoint_url:
-                    self._ws_handler.broadcast(
+                    self.get_websocket_handler().broadcast(
                         endpoint_url=endpoint_url,
                         message={"status": "FAILED", "message": "Route not found"},
                         user_id=user_id,
@@ -227,15 +278,83 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
             self._log.warning(f"Failed to notify client on $default: {e}")
         return self._response(200, "Default route handled", success=True)
 
+    async def build_route_context(self, request: Request) -> "ECSWebSocketRequestHandler.WSRouteContext":
+        """Parse the inbound frame and resolve the connection's user and push endpoint.
+
+        Shared by the built-in chat route and available to custom routes added in subclasses — it
+        turns the proxied HTTP request (x-ws-* headers + JSON body) into everything a route needs:
+        the parsed frame, the authenticated user, and the push endpoint.
+
+        :param request: The proxied WebSocket frame (FastAPI Request).
+        :return: A fully-resolved WSRouteContext.
+        :raises WSRouteError: If the connection id, user, or push endpoint cannot be resolved.
+        """
+        connection_id = self._connection_id(request)
+        if not connection_id:
+            raise self.WSRouteError(500, "Missing connection id")
+
+        raw_body = await request.body()
+        payload = json.loads(raw_body) if raw_body else {}
+        ws_request = BaseRequest.from_payload(payload)
+
+        user_id = self.get_websocket_handler().get_user_id(connection_id)
+        if not user_id:
+            raise self.WSRouteError(401, f"No user found for connection_id: {connection_id}")
+
+        endpoint_url = self._construct_endpoint_url(request)
+        if not endpoint_url:
+            raise self.WSRouteError(500, "Unable to resolve WebSocket endpoint URL")
+
+        return self.WSRouteContext(
+            request=ws_request,
+            user_id=user_id,
+            connection_id=connection_id,
+            endpoint_url=endpoint_url,
+        )
+
+    def handle_route_error(self, error: "ECSWebSocketRequestHandler.WSRouteError") -> JSONResponse:
+        """Render a WSRouteError (raised by build_route_context) as the standard error response."""
+        return self._response(error.status_code, error.message, success=False)
+
+    def build_success_response(self, msg: str, user_id: Optional[str] = None) -> JSONResponse:
+        """Build the standard 200 success response used by WebSocket routes."""
+        return self._response(200, msg, success=True, user_id=user_id)
+
+    async def _handle_chat(self, request: Request) -> JSONResponse:
+        """Handle a chat frame: enqueue it (queue mode) or run the agent inline (direct mode)."""
+        try:
+            ctx = await self.build_route_context(request)
+
+            if ctx.request.body is None:
+                return self._response(400, "body is required", success=False)
+
+            session_id = ctx.request.body.session_id
+            if not session_id:
+                return self._response(400, "session_id is required", success=False)
+
+            if self._is_queue_mode():
+                return self._enqueue_chat(ctx.request.body, ctx.user_id, ctx.request.request_id, session_id, ctx.endpoint_url)
+            return await self._process_chat_direct(ctx.request.body, ctx.user_id, ctx.endpoint_url)
+        except self.WSRouteError as e:
+            return self.handle_route_error(e)
+        except Exception as e:
+            self._log.exception(f"WebSocket chat request failed: {e}")
+            return self._response(500, "Request processing failed", success=False)
+
     def _connection_id(self, request: Request) -> Optional[str]:
         return request.headers.get(self.CONNECTION_ID_HEADER)
 
     def _construct_endpoint_url(self, request: Request) -> Optional[str]:
-        """Build the API Gateway management endpoint from headers, falling back to config."""
+        """Build the API Gateway management endpoint from headers, falling back to config.
+
+        Reuses AWSWebSocketHandler.construct_endpoint_url for the actual URL formatting by
+        adapting the ECS x-ws-* headers into the requestContext shape it expects.
+        """
         domain_name = request.headers.get(self.DOMAIN_NAME_HEADER)
         stage = request.headers.get(self.STAGE_HEADER)
         if domain_name and stage:
-            return f"https://{domain_name}/{stage}"
+            event = {"requestContext": {"domainName": domain_name, "stage": stage}}
+            return self.get_websocket_handler().construct_endpoint_url(event)
         return self._config.websocket_api.endpoint_url
 
     @staticmethod

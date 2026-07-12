@@ -8,14 +8,14 @@ Used by ECSIOHandler (Thread 1 — REST API) when queue mode is enabled.
 """
 
 from ...common.queue_handler import QueueHandler
-from ...common.queue_request_handler import QueueRequestHandler
+from ...common.rest_handler import AWSRestHandler
 from ..core.response_store import ResponseDBHandler
 from ..core.sqs_handler import SQSHandler
 
 
-class ECSQueueRequestHandler(QueueRequestHandler):
+class ECSQueueRequestHandler(AWSRestHandler):
     """
-    ECS + SQS + DynamoDB/Redis implementation of QueueRequestHandler.
+    ECS + SQS + DynamoDB/Redis implementation of AWSRestHandler.
 
     This bypasses ChatService entirely - NO agent validation happens here.
     Agent validation and execution occurs in the Agent Runner service.
