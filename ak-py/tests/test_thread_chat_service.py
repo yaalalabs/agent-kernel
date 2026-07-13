@@ -99,6 +99,26 @@ class TestChatServiceThreadIntegration:
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role,) for m in messages] == [("user",)]
 
+    def test_thread_on_multimodal_off_attachment_rejected(self, thread_enabled):
+        original = AKConfig.get().multimodal.enabled
+        AKConfig.get().multimodal.enabled = False
+        try:
+            service = ChatService()
+            handler = _mock_handler(Session("s1"))
+            request = BaseRunRequest(
+                prompt="what animal is this?",
+                session_id="s1",
+                user_id="u1",
+                images=[{"image_data": "Zm9v", "name": "a.png", "mime_type": "image/png"}],
+            )
+            with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+                status, body = service.process_chat_request(request)
+            assert status == 400
+            assert "multimodal" in body["error"]
+            handler.run_sync.assert_not_called()
+        finally:
+            AKConfig.get().multimodal.enabled = original
+
     def test_stream_thread_on_missing_user_id_rejected(self, thread_enabled):
         service = ChatService()
         handler = _mock_handler(Session("s1"))

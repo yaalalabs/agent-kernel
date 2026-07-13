@@ -110,11 +110,21 @@ class TestConversationThreadManager:
         assert {t.session_id for t in thread_enabled.list_threads(user_id="u1").threads} == {"s1", "s2"}
         assert [t.session_id for t in thread_enabled.list_threads(group_id="g1").threads] == ["s2"]
 
-    def test_store_attachments_disabled_multimodal_returns_unchanged(self, thread_enabled):
+    def test_store_attachments_disabled_multimodal_rejects_attachments(self, thread_enabled):
         original = AKConfig.get().multimodal.enabled
         AKConfig.get().multimodal.enabled = False
         try:
             requests = [AgentRequestImage(image_data="Zm9v", name="a.png", mime_type="image/png")]
+            with pytest.raises(ValueError, match="multimodal"):
+                thread_enabled.store_attachments("s1", requests)
+        finally:
+            AKConfig.get().multimodal.enabled = original
+
+    def test_store_attachments_disabled_multimodal_text_passes_through(self, thread_enabled):
+        original = AKConfig.get().multimodal.enabled
+        AKConfig.get().multimodal.enabled = False
+        try:
+            requests = [AgentRequestText(text="just text")]
             rebuilt, refs = thread_enabled.store_attachments("s1", requests)
             assert refs == []
             assert rebuilt is requests  # unchanged, same list

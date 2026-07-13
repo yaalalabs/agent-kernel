@@ -171,16 +171,25 @@ class ConversationThreadManager:
 
         Passing the id in-band on the rebuilt request list is how MultimodalPreHook
         later learns which attachment to reference — no raw bytes travel past
-        storage. Only meaningful when multimodal.enabled is true; otherwise the
-        requests are returned unchanged with no references. No description is
+        storage. Requires multimodal.enabled: requests carrying attachments while
+        multimodal is disabled are rejected (thread mode is text-only without it),
+        and text-only requests pass through unchanged. No description is
         generated here (that stays in MultimodalPreHook). Thread attachments are
         exempt from the store's max_attachments eviction.
 
         :param session_id: Session identifier used for attachment isolation.
         :param requests: The incoming agent requests to scan for attachments.
         :return: A tuple of (rebuilt requests, ThreadAttachment references).
+        :raises ValueError: If the requests carry attachments while multimodal is disabled.
         """
         if not AKConfig.get().multimodal.enabled:
+            if any(
+                (isinstance(req, AgentRequestImage) and req.image_data) or (isinstance(req, AgentRequestFile) and req.file_data) for req in requests
+            ):
+                raise ValueError(
+                    "Attachments are not supported when thread support is enabled without multimodal support — "
+                    "set multimodal.enabled: true in config.yaml to accept images and files"
+                )
             return requests, []
         if AKConfig.get().multimodal.storage_type == "session_cache":
             # This runs outside the session context, so session_cache writes land in a
