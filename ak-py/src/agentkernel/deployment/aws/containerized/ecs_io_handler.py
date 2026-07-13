@@ -35,26 +35,33 @@ class ECSIOHandler:
 
     @classmethod
     def run(cls, auth_validator: Optional[AuthValidator] = None) -> None:
-        from ....api.http import RESTAPI
-
         mode = cls._config.execution.mode
         cls._log.info(f"ECSIOHandler starting — mode={mode}")
 
         if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
-            from .ecs_ws_handler import ECSWebSocketRequestHandler
+            from .core.api.websocket_api import AWSWebsocketAPI
 
-            request_handler = ECSWebSocketRequestHandler(auth_validator=auth_validator)
+            # Authentication is mandatory for WebSocket mode — fail fast with a clear message
+            # instead of letting the handler constructor raise deep inside the thread.
+            if auth_validator is None:
+                raise ValueError(
+                    "auth_validator is required for WebSocket (ASYNC/STREAM) mode. "
+                    "Call ECSIOHandler.run(auth_validator=MyValidator())."
+                )
+
+            # Register the validator on AWSWebsocketAPI so its default handler picks it up.
+            def run_api() -> None:
+                AWSWebsocketAPI.set_auth_handler(auth_validator=auth_validator).run()
         else:
-            from .ecs_queue_handler import ECSQueueRequestHandler
+            from .core.api.rest_api import AWSRestAPI
 
-            request_handler = ECSQueueRequestHandler()
+            def run_api() -> None:
+                AWSRestAPI.run()
 
         ThreadRunner.run(
             tasks=[
                 ThreadRunner.Task(
-                    execution_function=lambda: RESTAPI.run(
-                        handlers=[request_handler]
-                    ),  # lambda needed here to wrap the function so that it turns into a callable, because otherwise the rest api will be run here itself
+                    execution_function=run_api,  # passed as a callable so ThreadRunner invokes it in the thread, rather than running the API here
                     thread_name="rest-api",
                     stop_all_on_failure=True,
                     graceful=True,

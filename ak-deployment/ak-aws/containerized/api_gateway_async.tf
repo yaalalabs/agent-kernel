@@ -2,7 +2,7 @@
 # Only needed for rest_async mode — adds GET /api/{version}/{endpoint} for polling.
 #
 # The client polls by request_id, passed as a query string (e.g. ?request_id=<uuid>). The
-# backend AWSRestHandler.poll_response reads request_id (and optional session_id) from the
+# backend RestHandler.poll_response reads request_id (and optional session_id) from the
 # query string on GET /api/v1/chat — the SAME path as the enqueue POST, just a different
 # method (see deployment/common/rest_handler.py). API Gateway forwards the query string
 # unchanged, so only the path is rewritten here.

@@ -34,7 +34,7 @@ from .queue_handler import QueueHandler
 from .response_store import ResponseStore
 
 
-class AWSRestHandler(AgentRESTRequestHandler):
+class RestHandler(AgentRESTRequestHandler):
     """
     Queue-aware REST request handler shared by all queue-based deployments.
 

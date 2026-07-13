@@ -1,5 +1,5 @@
 """
-ECS WebSocket ingress handler.
+ECS WebSocket ingress handler and WebSocket API.
 
 API Gateway WebSocket proxies each frame (HTTP_PROXY -> VPC Link -> ALB) to this
 container. Unlike the serverless Lambda (one function, dispatch on routeKey), the ECS
@@ -32,13 +32,14 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from ....api.handler import RESTRequestHandler
-from ....auth.handler import AuthValidator
-from ....core.chat_service import ChatService
-from ....core.config import AKConfig
-from ....core.model import BaseRequest, BaseRunRequest
-from ..core.sqs_handler import SQSHandler
-from ..core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
+from ......api.handler import RESTRequestHandler
+from ......api.http import RESTAPI
+from ......auth.handler import AuthValidator
+from ......core.chat_service import ChatService
+from ......core.config import AKConfig
+from ......core.model import BaseRequest, BaseRunRequest
+from ....core.sqs_handler import SQSHandler
+from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 
 
 class ECSWebSocketRequestHandler(RESTRequestHandler):
@@ -77,7 +78,7 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
 
                 return router
 
-        RESTAPI.run(handlers=[MyWSHandler(auth_validator=MyValidator())])
+        AWSWebsocketAPI.run(handlers=[MyWSHandler(auth_validator=MyValidator())])
     """
 
     @dataclass
@@ -122,7 +123,13 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
     DOMAIN_NAME_HEADER = "x-ws-domain-name"
     STAGE_HEADER = "x-ws-stage"
 
-    def __init__(self, auth_validator: Optional[AuthValidator] = None):
+    def __init__(self, auth_validator: AuthValidator):
+        """
+        :param auth_validator: AuthValidator used to authenticate the WebSocket $connect handshake.
+            Authentication is **mandatory** for WebSocket mode — the validator's ValidationResult
+            must include a ``userId`` claim, which keys the connection so replies can be pushed back
+            to the right client. Passing ``None`` raises ValueError.
+        """
         self._log = logging.getLogger("ak.ecs.ws_handler")
         self._config = AKConfig.get()
 
@@ -131,6 +138,11 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
             raise ValueError("websocket_api.connection_table.table_name is required for WebSocket mode")
         if not ws_cfg.chat_route:
             raise ValueError("websocket_api.chat_route is required for WebSocket mode")
+        if auth_validator is None:
+            raise ValueError(
+                "auth_validator is required for WebSocket mode — authentication is mandatory. "
+                "Pass an AuthValidator whose claims include a 'userId'."
+            )
 
         self._auth_validator = auth_validator
         self._chat_service: Optional[ChatService] = None
@@ -163,15 +175,6 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
             self._ws_handler = AWSWebSocketHandler(connection_store=self.get_connection_store())
         return self._ws_handler
 
-    def set_auth_validator(self, auth_validator: AuthValidator) -> "ECSWebSocketRequestHandler":
-        """Set the auth validator used to authenticate WebSocket $connect requests.
-
-        :param auth_validator: AuthValidator for token validation on $connect
-        :return: self for chaining
-        """
-        self._auth_validator = auth_validator
-        return self
-
     def get_router(self) -> APIRouter:
         """Return an APIRouter with one POST endpoint per predefined WebSocket route.
 
@@ -192,9 +195,6 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
             connection_id = self._connection_id(request)
             if not connection_id:
                 return self._response(500, "Missing connection id", success=False)
-            if not self._auth_validator:
-                self._log.error("No auth validator configured for WebSocket $connect")
-                return self._response(401, "Authentication is not configured", success=False)
 
             token = request.query_params.get("token")
             if not token:
@@ -366,3 +366,56 @@ class ECSWebSocketRequestHandler(RESTRequestHandler):
 
     def _response(self, status_code: int, msg: str, success: bool, user_id: Optional[str] = None) -> JSONResponse:
         return JSONResponse(status_code=status_code, content=self._body(msg, success, user_id))
+
+
+class AWSWebsocketAPI(RESTAPI):
+    """
+    REST API for ECS containerized WebSocket deployments.
+
+    Defaults to ECSWebSocketRequestHandler instead of RESTAPI's plain AgentRESTRequestHandler.
+    get_default_handlers() constructs it lazily — its constructor validates ``websocket_api``
+    config (connection_table, chat_route) and requires an AuthValidator, so building it eagerly
+    (e.g. as a class attribute evaluated at import time) would break every import of this class
+    in apps that haven't configured WebSocket mode. Deferring construction to get_default_handlers()
+    means it's only built when run() is actually called.
+
+    Authentication is **mandatory** for WebSocket mode. Register the validator once with
+    ``set_auth_handler`` before calling ``run()`` (the validator's claims must include a ``userId``,
+    which keys the connection so replies reach the right client)::
+
+        from agentkernel.aws import AWSWebsocketAPI
+
+        AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
+
+    To add custom WebSocket routes, subclass ECSWebSocketRequestHandler and pass an instance to
+    run() directly (the instance carries its own validator, so set_auth_handler isn't needed)::
+
+        AWSWebsocketAPI.run(handlers=[MyWSHandler(auth_validator=CustomAuthValidator())])
+    """
+
+    # Set via set_auth_handler(); consumed by get_default_handlers() to build the default handler.
+    _ws_auth_validator: Optional[AuthValidator] = None
+
+    @classmethod
+    def set_auth_handler(cls, auth_validator: AuthValidator) -> "type[AWSWebsocketAPI]":
+        """Register the AuthValidator used to authenticate the WebSocket $connect handshake.
+
+        Authentication is mandatory for WebSocket mode. Call this before ``run()`` — unless you
+        pass a pre-built handler (with its own validator) via ``run(handlers=[...])``. Returns the
+        class so it can be chained: ``AWSWebsocketAPI.set_auth_handler(validator).run()``.
+
+        :param auth_validator: AuthValidator whose ValidationResult claims include a ``userId``.
+        :return: The class itself, to allow chaining with ``run()``.
+        """
+        cls._ws_auth_validator = auth_validator
+        return cls
+
+    @classmethod
+    def get_default_handlers(cls) -> list[RESTRequestHandler]:
+        if cls._ws_auth_validator is None:
+            raise ValueError(
+                "WebSocket authentication is mandatory. Register a validator with "
+                "AWSWebsocketAPI.set_auth_handler(auth_validator=...) before calling run(), "
+                "or pass a handler that carries one via run(handlers=[MyWSHandler(auth_validator=...)])."
+            )
+        return [ECSWebSocketRequestHandler(auth_validator=cls._ws_auth_validator)]
