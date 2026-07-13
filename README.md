@@ -212,6 +212,7 @@ Agent Kernel is proud to be:
 - 📦 **PyPI:** [`pip install agentkernel`](https://pypi.org/project/agentkernel/)
 - ☁️ **Terraform Registry:** [Official modules](https://registry.terraform.io/modules/yaalalabs)
 - 🛠 **Developer Guide:** [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
+- 🤖 **Contributing with AI agents:** [AGENTS.md](AGENTS.md)
 
 ---
 

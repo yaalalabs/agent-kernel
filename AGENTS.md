@@ -82,17 +82,15 @@ into code every adapter has to live with.
 
 ## Setup, build, lint, test
 
-```bash
-make dev-setup              # installs prerequisites (pyenv, tfenv, nvm/Node, Python 3.12, uv, docker) and syncs ak-py's venv (or: cd ak-py && ./build.sh)
-make lint-check-all         # isort + black, dry-run, ak-py + examples — CI gate on every PR
-make lint-all               # same, but writes fixes
-cd ak-py && uv run pytest   # full test suite (coverage + html report auto-generated)
-```
+Setup steps and the full Makefile command list are canonical in
+[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) — don't re-derive or restate them here; if a command
+changes, update DEVELOPER_GUIDE.md and this file's pointer stays valid automatically. Two things
+worth knowing that aren't spelled out there:
 
-Run `make lint-check-all` before considering any change to `ak-py/` or `examples/` done — it's
-what `code-quality.yml` runs in CI and PRs are blocked on it. Formatting is black + isort, line
-length 150 (`ak-py/pyproject.toml`), not the black default of 88 — don't fight the configured
-line length.
+- Formatting is black + isort at **line length 150** (`ak-py/pyproject.toml`), not black's
+  default of 88 — don't "fix" long lines that are within the configured limit.
+- `make lint-check-all` is the exact command `code-quality.yml` runs in CI — run it before
+  considering a change to `ak-py/` or `examples/` done.
 
 For anything test-related beyond the basic `pytest` invocation (async fixtures, mocking
 frameworks/session stores, the built-in fuzzy/semantic Test framework), load
@@ -117,10 +115,9 @@ repo-wide search).
 
 ## Conventions
 
-- **Commits**: Conventional Commits — `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`,
-  `style:`. See recent `git log` for real examples.
-- **PRs**: one feature/fix per PR, tests included, docs updated when public API/config/user-facing
-  behavior changes. Full checklist in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Commits & PRs**: [CONTRIBUTING.md](CONTRIBUTING.md) is canonical for commit message format
+  (Conventional Commits) and the PR checklist — don't restate it here; follow that file, and check
+  recent `git log` for real examples of it in practice.
 - **New integrations** (framework adapter, guardrail provider, knowledge base, messaging
   platform, multimodal storage, tracing provider) each have a dedicated step-by-step dev skill
   under `.agents/skills/ak-dev-new-*` — use the matching one instead of improvising the wiring,
