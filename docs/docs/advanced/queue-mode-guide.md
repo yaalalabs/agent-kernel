@@ -271,7 +271,7 @@ policy. The recommended approach is **backlog-per-task target tracking**:
    `BacklogPerTask` at or below `backlog_target`.
 
 The `scaling_config` block in the `yaalalabs/ak-containerized/aws` module provisions
-this automatically. See the [AWS Containerized deployment docs](/docs/deployment/aws-containerized#auto-scaling-for-resilience) for details.
+this automatically. See the [AWS Containerized deployment docs](../deployment/aws-containerized.md#auto-scaling-for-resilience) for details.
 
 ### Key Differences vs Lambda
 

@@ -122,3 +122,5 @@ Structured output applies to non-streaming execution only. Streamed runs emit to
 ## Example
 
 See [examples/cli/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai) for complete examples.
+
+For structured output, see [examples/cli/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_structured) and [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) (REST API + post-execution hook).

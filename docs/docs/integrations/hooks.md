@@ -120,6 +120,8 @@ Pre-execution hooks may likewise halt execution by returning an `AgentReplyAny`
 log or render replies as text keep working unchanged. See the per-framework
 configuration in the [framework docs](../frameworks/overview).
 
+See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) for a complete example with a post-execution hook that modifies a structured reply.
+
 ## Implementing Hooks
 
 ### Pre-Execution Hook

@@ -79,6 +79,8 @@ If safety validation fails, Agent Kernel returns a safe refusal response.
 3. Replace placeholders with original values
 4. Return unmasked response
 
+Unmasking preserves the reply type. Text replies are returned as text, image replies are returned as image replies with only the text field unmasked (image data preserved), and structured replies (agents configured with a structured output type) are returned as structured replies with placeholders replaced inside the content — including PII values containing JSON-special characters such as quotes or backslashes.
+
 ## Session Mapping Behavior
 
 Walled AI redaction placeholders are persisted in session cache to support follow-up turns and restart-tolerant flows when durable session storage is enabled.
