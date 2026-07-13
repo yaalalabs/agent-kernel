@@ -5,10 +5,10 @@ permissions:
   id-token: write  # Required for OIDC authentication with AWS
 
 on:
-  # Nightly build - runs daily at 2 AM UTC
-  # schedule:
-    # - cron: '0 2 * * *'  # Daily at 2 AM UTC
-  
+  # Weekly build - runs Saturdays at 8:30 PM UTC
+  schedule:
+    - cron: '30 20 * * 6'  # Saturday 8:30 PM UTC
+
   # Allow manual triggering
   workflow_dispatch:
 
