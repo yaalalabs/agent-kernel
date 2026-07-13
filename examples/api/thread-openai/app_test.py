@@ -69,7 +69,7 @@ async def test_thread_lifecycle(http_client):
     resp = await http_client.chat("And of Italy?", session_id=session_id, user_id="alice")
     assert resp.status_code == 200
 
-    resp = await http_client.get(f"/threads/{session_id}", token=ALICE_TOKEN)
+    resp = await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)
     assert resp.status_code == 200
     thread = resp.json()
     assert thread["session_id"] == session_id
@@ -89,7 +89,7 @@ async def test_thread_listing_scoped_to_authorised_user(http_client):
     assert (await http_client.chat("Hello from Alice", session_id=alice_session, user_id="alice")).status_code == 200
     assert (await http_client.chat("Hello from Bob", session_id=bob_session, user_id="bob")).status_code == 200
 
-    resp = await http_client.get("/threads", token=ALICE_TOKEN)
+    resp = await http_client.get("/api/v1/threads", token=ALICE_TOKEN)
     assert resp.status_code == 200
     threads = resp.json()["threads"]
     session_ids = [t["session_id"] for t in threads]
@@ -105,13 +105,13 @@ async def test_thread_route_authorisation(http_client):
     session_id = str(uuid.uuid4())
     assert (await http_client.chat("Hello", session_id=session_id, user_id="alice")).status_code == 200
 
-    resp = await http_client.get(f"/threads/{session_id}")
+    resp = await http_client.get(f"/api/v1/threads/{session_id}")
     assert resp.status_code == 401  # missing Authorization header
 
-    resp = await http_client.get(f"/threads/{session_id}", token="wrong-token")
+    resp = await http_client.get(f"/api/v1/threads/{session_id}", token="wrong-token")
     assert resp.status_code == 401  # token rejected by the Authoriser
 
-    resp = await http_client.get(f"/threads/{session_id}", token=BOB_TOKEN)
+    resp = await http_client.get(f"/api/v1/threads/{session_id}", token=BOB_TOKEN)
     assert resp.status_code == 403  # valid token, but bob does not own alice's thread
 
 
@@ -122,6 +122,6 @@ async def test_thread_auto_naming(http_client):
     prompt = "Suggest a name for my cat"
     assert (await http_client.chat(prompt, session_id=session_id, user_id="alice")).status_code == 200
 
-    resp = await http_client.get(f"/threads/{session_id}", token=ALICE_TOKEN)
+    resp = await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)
     assert resp.status_code == 200
     assert resp.json()["name"] == prompt  # no thread_name given — derived from the first prompt

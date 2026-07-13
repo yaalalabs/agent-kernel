@@ -99,7 +99,7 @@ async def test_image_description(app_client):
 
 @pytest.mark.order(2)
 async def test_thread_stores_attachment_reference(app_client):
-    resp = await app_client.get(f"/threads/{app_client.session_id}", token=ALICE_TOKEN)
+    resp = await app_client.get(f"/api/v1/threads/{app_client.session_id}", token=ALICE_TOKEN)
     assert resp.status_code == 200
     thread = resp.json()
     assert thread["user_id"] == "alice"
@@ -133,7 +133,7 @@ async def test_followup_retrieval_and_thread_history(app_client):
         threshold=80,
     )
 
-    resp = await app_client.get(f"/threads/{app_client.session_id}", token=ALICE_TOKEN)
+    resp = await app_client.get(f"/api/v1/threads/{app_client.session_id}", token=ALICE_TOKEN)
     assert resp.status_code == 200
     messages = resp.json()["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant"]
@@ -141,5 +141,5 @@ async def test_followup_retrieval_and_thread_history(app_client):
 
 @pytest.mark.order(4)
 async def test_thread_routes_require_token(app_client):
-    resp = await app_client.get(f"/threads/{app_client.session_id}")
+    resp = await app_client.get(f"/api/v1/threads/{app_client.session_id}")
     assert resp.status_code == 401  # missing Authorization header

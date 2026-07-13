@@ -100,9 +100,11 @@ class RedisThreadStore(ThreadStore):
         metadata = thread.model_copy(update={"messages": []})
         self.client.set(self._meta_key(thread.session_id), metadata.model_dump_json())
         self.client.sadd(self._user_index_key(thread.user_id), thread.session_id)
+        expire_keys = [self._meta_key(thread.session_id), self._user_index_key(thread.user_id)]
         if thread.group_id:
             self.client.sadd(self._group_index_key(thread.group_id), thread.session_id)
-        self._expire(self._meta_key(thread.session_id))
+            expire_keys.append(self._group_index_key(thread.group_id))
+        self._expire(*expire_keys)
         return metadata
 
     def load_metadata(self, session_id: str) -> Optional[Thread]:
@@ -127,11 +129,24 @@ class RedisThreadStore(ThreadStore):
         :param message: The message to append.
         :raises KeyError: If the thread does not exist.
         """
-        if not self.client.exists(self._meta_key(session_id)):
+        payload = self.client.get(self._meta_key(session_id))
+        if payload is None:
             raise KeyError(f"Thread {session_id} not found")
         self.client.rpush(self._messages_key(session_id), message.model_dump_json())
         self.client.set(self._updated_key(session_id), _utc_now().isoformat())
-        self._expire(self._messages_key(session_id), self._updated_key(session_id), self._meta_key(session_id))
+        if self._ttl > 0:
+            # The user/group index sets are shared across a user's threads, so their TTL
+            # must be refreshed on every append or active threads would drop out of listings.
+            thread = Thread.model_validate_json(payload)
+            expire_keys = [
+                self._messages_key(session_id),
+                self._updated_key(session_id),
+                self._meta_key(session_id),
+                self._user_index_key(thread.user_id),
+            ]
+            if thread.group_id:
+                expire_keys.append(self._group_index_key(thread.group_id))
+            self._expire(*expire_keys)
 
     def get_messages(self, session_id: str, limit: int, offset: int = 0) -> Tuple[List[ThreadMessage], Optional[int]]:
         """

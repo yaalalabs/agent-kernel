@@ -34,7 +34,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
 Read the thread — the user message carries an attachment reference (`attachment_id`), not the image bytes:
 
 ```bash
-curl http://localhost:8000/threads/ses-1 -H "Authorization: Bearer alice-token"
+curl http://localhost:8000/api/v1/threads/ses-1 -H "Authorization: Bearer alice-token"
 ```
 
 ## Running the Integration Test

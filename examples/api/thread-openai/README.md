@@ -36,11 +36,11 @@ thread):
 
 List threads (scoped to the authorised user):
 
-    curl http://localhost:8000/threads -H "Authorization: Bearer alice-token"
+    curl http://localhost:8000/api/v1/threads -H "Authorization: Bearer alice-token"
 
 Get a thread with its message history:
 
-    curl http://localhost:8000/threads/ses-1 -H "Authorization: Bearer alice-token"
+    curl http://localhost:8000/api/v1/threads/ses-1 -H "Authorization: Bearer alice-token"
 
 To run tests:
 

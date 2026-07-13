@@ -211,7 +211,7 @@ class _ThreadRedisConfig(BaseModel):
 class _ThreadDynamoDBConfig(BaseModel):
     table_name: str = Field(
         default="ak-agent-threads",
-        description="DynamoDB table name for thread storage. Table should have a partition key named 'session_id'",
+        description="DynamoDB table name for thread storage. Table should have a partition key named 'session_id' (S) and a sort key named 'sk' (S)",
     )
     ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables)")
 

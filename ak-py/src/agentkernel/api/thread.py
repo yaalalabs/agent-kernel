@@ -15,8 +15,8 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
     """
     API router that exposes endpoints to read conversation threads.
     Endpoints:
-    - GET /threads: List threads filtered by user_id and/or group_id
-    - GET /threads/{session_id}: Get a thread with full message history
+    - GET /api/v1/threads: List threads filtered by user_id and/or group_id
+    - GET /api/v1/threads/{session_id}: Get a thread with full message history
 
     When an Authoriser is supplied, every request must carry a Bearer token that
     the Authoriser resolves to a user_id; listings are scoped to that user and
@@ -43,7 +43,10 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
         auth_header = request.headers.get("authorization")
         if auth_header is None:
             raise HTTPException(status_code=401, detail="Missing authorization header")
-        token = auth_header.replace("Bearer ", "").strip()
+        scheme, _, token = auth_header.partition(" ")
+        token = token.strip()
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
         user_id = self._authoriser.authorise(token)
         if user_id is None:
             raise HTTPException(status_code=401, detail="Unauthorized")
@@ -55,7 +58,7 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
         """
         router = APIRouter()
 
-        @router.get("/threads")
+        @router.get("/api/v1/threads")
         def list_threads(
             request: Request,
             user_id: Optional[str] = None,
@@ -78,7 +81,7 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
                 "next_cursor": page.next_cursor,
             }
 
-        @router.get("/threads/{session_id}")
+        @router.get("/api/v1/threads/{session_id}")
         def get_thread(session_id: str, request: Request, limit: Optional[int] = None, cursor: Optional[str] = None):
             manager = ConversationThreadManager.get()
             if manager is None:

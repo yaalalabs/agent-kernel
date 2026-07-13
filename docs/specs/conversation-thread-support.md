@@ -21,14 +21,14 @@
 
 - **`user_id` requirement**: required on every chat request once Conversation Thread Support is enabled.
   - A request missing it is rejected.
-  - It tags the thread on creation and enables user-scoped listing via `GET /threads?user_id=...` — no `Authoriser` is required to use it.
+  - It tags the thread on creation and enables user-scoped listing via `GET /api/v1/threads?user_id=...` — no `Authoriser` is required to use it.
   - **Without an `Authoriser` configured**: no identity verification is applied — any caller-supplied `user_id` is accepted, and ownership is not enforced.
   - **With an `Authoriser` configured** (see Authorisation Flow below): `user_id` is instead resolved from the Bearer token and enforced in `ConversationThreadManager`.
   - When thread support is disabled, `user_id` is not required and has no effect.
 
 - **`group_id`**: optional field on the chat request, applied only when a thread is auto-created (a session's first request).
   - Scopes a thread to a group or project rather than (or in addition to) a user — "group" here is any caller-defined grouping criterion, not a user group.
-  - Enables group-scoped listing via `GET /threads?group_id=...`, mirroring the `user_id`-scoped listing above.
+  - Enables group-scoped listing via `GET /api/v1/threads?group_id=...`, mirroring the `user_id`-scoped listing above.
   - Not required — a thread with no `group_id` is simply unscoped by group and only listable by `user_id`.
   - Ignored on subsequent requests to the same `session_id`; a thread's `group_id` is fixed at creation.
 
@@ -44,7 +44,7 @@
 
 > **Access model:** AK has a single set of routes (`/api/v1/*`). Authorization is optional and pluggable — an end user can supply their own `Authoriser` (a base class provided by Agent Kernel) to protect thread routes; see the Authorisation Flow diagram below. Until an `Authoriser` is configured, any caller who knows a `session_id` can read or write its thread; deploy behind network-level access controls (VPC, API gateway) in the interim.
 
-> **Deferred in v1:** No explicit `POST /threads` create endpoint (threads are created implicitly via `/chat`). No `DELETE /threads/{session_id}`.
+> **Deferred in v1:** No explicit `POST /api/v1/threads` create endpoint (threads are created implicitly via `/chat`). No `DELETE /api/v1/threads/{session_id}`.
 
 ---
 
@@ -53,7 +53,7 @@
 - The Conversation Thread Support subsystem sits between the client and the existing Agent Kernel runtime.
 
 - **`ConversationThreadManager`**:
-  - Instantiated whenever `multimodal.enabled = true` OR a `thread` block is present in `config.yaml`.
+  - Instantiated only when a `thread` block is present in `config.yaml`.
   - Only handles attachments when `multimodal.enabled = true` — the `thread` block by itself only turns on text history.
   - When both are true, `ChatService` calls it directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore`.
 
@@ -86,7 +86,7 @@ flowchart TD
     end
 
     subgraph New["Conversation Thread Support — new"]
-        ThreadRouter["ThreadRouter\nGET /threads*"]
+        ThreadRouter["ThreadRouter\nGET /api/v1/threads*"]
         TSM["ConversationThreadManager"]
         TS["ThreadStore\n(DynamoDB / Firestore / CosmosDB / Redis / InMemory)\nstores attachment_id references only"]
         AUTH["Authoriser\n(pluggable — user-supplied subclass)"]
@@ -101,7 +101,7 @@ flowchart TD
     TSM -->|"attachment_id reference"| TS
     MMHook -->|"thread on: load bytes by id\nthread off: save bytes directly"| AS
 
-    Client -->|"GET /threads*\nBearer token"| ThreadRouter --> TSM
+    Client -->|"GET /api/v1/threads*\nBearer token"| ThreadRouter --> TSM
     ThreadRouter -->|"authorise(token)\nif configured"| AUTH
 ```
 
@@ -127,8 +127,11 @@ thread:
   type: dynamodb
   dynamodb:
     table_name: "ak-agent-threads"
-    region: "us-east-1"        # optional — falls back to AWS_DEFAULT_REGION
+    ttl: 2592000               # item TTL in seconds (0 disables, the default)
 ```
+
+The table must have a partition key named `session_id` (S) and a sort key named `sk` (S). The AWS region is
+resolved through the standard AWS SDK mechanisms (`AWS_DEFAULT_REGION`, profile, instance metadata).
 
 #### Firestore
 
@@ -230,7 +233,7 @@ sequenceDiagram
     participant ConversationThreadManager
     participant ThreadStore
 
-    Client->>ThreadRouter: GET /threads/{session_id}\nAuthorization: Bearer <token>
+    Client->>ThreadRouter: GET /api/v1/threads/{session_id}\nAuthorization: Bearer <token>
     ThreadRouter->>Authoriser: authorise(token)
     Note over Authoriser: User-defined logic against\nthe caller's own auth provider
     Authoriser-->>ThreadRouter: subject (user_id) or rejected

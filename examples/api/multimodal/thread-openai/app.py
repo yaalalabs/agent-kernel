@@ -13,7 +13,7 @@ general_agent = Agent(
 
 class DemoAuthoriser(Authoriser):
     """
-    Demo Authoriser protecting the thread read endpoints (GET /threads*).
+    Demo Authoriser protecting the thread read endpoints (GET /api/v1/threads*).
 
     A real subclass would validate the Bearer token against your own authentication
     provider (e.g. verify a JWT signature) and return the subject's user_id, or None
