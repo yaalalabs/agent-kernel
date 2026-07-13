@@ -17,7 +17,7 @@ import time
 import uuid
 from typing import List, Optional, Tuple
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.data.tables import TableServiceClient
 
 from ...config import AKConfig
@@ -58,7 +58,6 @@ class CosmosDBThreadStore(ThreadStore):
             raise ValueError("AKConfig.thread.cosmosdb.table_name must be set to use CosmosDBThreadStore")
         self._connection_string = cfg.connection_string
         self._table_name = cfg.table_name
-        self._ttl = cfg.ttl
 
     @property
     def table_client(self):
@@ -97,9 +96,11 @@ class CosmosDBThreadStore(ThreadStore):
 
     def create(self, thread: Thread) -> Thread:
         """
-        Persist a new thread's metadata entity.
+        Persist a new thread's metadata entity. Creation is conditional: if a
+        concurrent request already created the thread, the existing metadata is
+        returned untouched.
         :param thread: The thread to persist.
-        :return: The persisted thread.
+        :return: The persisted (or already existing) thread.
         """
         self._log.debug(f"Creating thread for session {thread.session_id}")
         metadata = thread.model_copy(update={"messages": []})
@@ -111,7 +112,10 @@ class CosmosDBThreadStore(ThreadStore):
             "group_id": thread.group_id or "",
             "updated_at": metadata.updated_at.isoformat(),
         }
-        self.table_client.upsert_entity(entity=entity)
+        try:
+            self.table_client.create_entity(entity=entity)
+        except ResourceExistsError:
+            return self.load_metadata(thread.session_id)
         return metadata
 
     def load_metadata(self, session_id: str) -> Optional[Thread]:

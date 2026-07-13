@@ -121,6 +121,18 @@ class TestConversationThreadManager:
         finally:
             AKConfig.get().multimodal.enabled = original
 
+    def test_store_attachments_session_cache_storage_rejected(self, thread_enabled):
+        original_enabled = AKConfig.get().multimodal.enabled
+        original_storage = AKConfig.get().multimodal.storage_type
+        AKConfig.get().multimodal.enabled = True
+        AKConfig.get().multimodal.storage_type = "session_cache"
+        try:
+            with pytest.raises(ValueError, match="session_cache"):
+                thread_enabled.store_attachments("s1", [AgentRequestText(text="hi")])
+        finally:
+            AKConfig.get().multimodal.enabled = original_enabled
+            AKConfig.get().multimodal.storage_type = original_storage
+
     def test_store_attachments_replaces_raw_with_ref_and_saves_bytes(self, thread_enabled):
         original_enabled = AKConfig.get().multimodal.enabled
         original_storage = AKConfig.get().multimodal.storage_type

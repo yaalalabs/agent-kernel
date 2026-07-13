@@ -93,12 +93,15 @@ class RedisThreadStore(ThreadStore):
     def create(self, thread: Thread) -> Thread:
         """
         Persist a new thread's metadata and register it in the user/group indexes.
+        Creation is conditional (SET NX): if a concurrent request already created
+        the thread, the existing metadata is returned untouched.
         :param thread: The thread to persist.
-        :return: The persisted thread.
+        :return: The persisted (or already existing) thread.
         """
         self._log.debug(f"Creating thread for session {thread.session_id}")
         metadata = thread.model_copy(update={"messages": []})
-        self.client.set(self._meta_key(thread.session_id), metadata.model_dump_json())
+        if not self.client.set(self._meta_key(thread.session_id), metadata.model_dump_json(), nx=True):
+            return self.load_metadata(thread.session_id)
         self.client.sadd(self._user_index_key(thread.user_id), thread.session_id)
         expire_keys = [self._meta_key(thread.session_id), self._user_index_key(thread.user_id)]
         if thread.group_id:

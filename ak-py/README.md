@@ -356,6 +356,101 @@ Required when `session.type=redis`:
   - **Description**: Key prefix for session storage
   - **Environment Variable**: `AK_SESSION__REDIS__PREFIX`
 
+#### Conversation Thread Support
+
+Adding a `thread` block to the configuration turns on persistent, named conversation threads keyed by
+`session_id`. Once enabled, `user_id` becomes required on every chat request, a thread is auto-created on a
+session's first request, and history becomes readable over REST (`GET /api/v1/threads` and
+`GET /api/v1/threads/{session_id}`, optionally protected by a pluggable `Authoriser`). Attachments in thread
+mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or
+`dynamodb` — `session_cache` is rejected). See `examples/api/thread-openai` and
+`examples/api/multimodal/thread-openai`.
+
+- **Field**: `thread.type`
+- **Type**: string
+- **Options**: `memory`, `redis`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
+- **Default**: `memory`
+- **Environment Variable**: `AK_THREAD__TYPE`
+
+##### Redis Thread Store
+
+Required when `thread.type=redis`:
+
+- **URL**
+  - **Field**: `thread.redis.url`
+  - **Default**: `redis://localhost:6379`
+  - **Description**: Redis connection URL. Use `rediss://` for SSL
+  - **Environment Variable**: `AK_THREAD__REDIS__URL`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.redis.ttl`
+  - **Default**: `2592000` (30 days)
+  - **Description**: Thread TTL in seconds (0 disables)
+  - **Environment Variable**: `AK_THREAD__REDIS__TTL`
+
+- **Key Prefix**
+  - **Field**: `thread.redis.prefix`
+  - **Default**: `ak:thread:`
+  - **Description**: Key prefix for Redis thread storage
+  - **Environment Variable**: `AK_THREAD__REDIS__PREFIX`
+
+##### DynamoDB Thread Store
+
+Used when `thread.type=dynamodb`:
+
+- **Table Name**
+  - **Field**: `thread.dynamodb.table_name`
+  - **Default**: `ak-agent-threads`
+  - **Description**: DynamoDB table name. The table must have a partition key named `session_id` (S) and a sort key named `sk` (S)
+  - **Environment Variable**: `AK_THREAD__DYNAMODB__TABLE_NAME`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.dynamodb.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: DynamoDB item TTL in seconds
+  - **Environment Variable**: `AK_THREAD__DYNAMODB__TTL`
+
+##### Firestore Thread Store
+
+Used when `thread.type=firestore`:
+
+- **Collection Name**
+  - **Field**: `thread.firestore.collection_name`
+  - **Default**: `ak-agent-threads`
+  - **Description**: Firestore collection name; each document ID is a `session_id`
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__COLLECTION_NAME`
+
+- **Project ID**
+  - **Field**: `thread.firestore.project_id`
+  - **Default**: `null` (inferred from Application Default Credentials)
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__PROJECT_ID`
+
+- **Database ID**
+  - **Field**: `thread.firestore.database_id`
+  - **Default**: `null` (the `(default)` database)
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__DATABASE_ID`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.firestore.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: Thread TTL in seconds
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__TTL`
+
+##### Cosmos DB Thread Store
+
+Required when `thread.type=cosmosdb`:
+
+- **Connection String**
+  - **Field**: `thread.cosmosdb.connection_string`
+  - **Description**: Cosmos DB connection string (Azure Portal → Keys). Uses the Table API; entities are partitioned by `session_id`. No TTL support
+  - **Environment Variable**: `AK_THREAD__COSMOSDB__CONNECTION_STRING`
+
+- **Table Name**
+  - **Field**: `thread.cosmosdb.table_name`
+  - **Default**: `akagentthreads`
+  - **Description**: Cosmos DB table name for thread storage
+  - **Environment Variable**: `AK_THREAD__COSMOSDB__TABLE_NAME`
+
 #### Execution Configuration
 
 Configure queue-backed and serverless execution behavior.
@@ -938,6 +1033,12 @@ session:
     url: redis://localhost:6379
     ttl: 604800
     prefix: "ak:sessions:"
+thread: # optional — enables Conversation Thread Support (user_id becomes required on chat requests)
+  type: redis
+  redis:
+    url: redis://localhost:6379
+    ttl: 2592000
+    prefix: "ak:thread:"
 execution:
   mode: rest_sync
   queues:

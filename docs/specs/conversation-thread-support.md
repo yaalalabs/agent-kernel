@@ -32,9 +32,20 @@
   - Not required — a thread with no `group_id` is simply unscoped by group and only listable by `user_id`.
   - Ignored on subsequent requests to the same `session_id`; a thread's `group_id` is fixed at creation.
 
+- **`thread_name`**: optional field on the chat request, applied only when a thread is auto-created (a session's first request).
+  - Sets the thread's display name; ignored on subsequent requests — a thread's name is fixed at creation.
+  - **When absent**, the name is auto-derived from the first prompt: the first 80 characters, trimmed to the last word boundary and suffixed with an ellipsis when cut.
+
+- **Read endpoints and pagination**:
+  - `GET /api/v1/threads` lists thread metadata only (no messages), filtered by `user_id` and/or `group_id`.
+  - `GET /api/v1/threads/{session_id}` returns a thread's metadata plus its message history.
+  - Both endpoints accept `limit` and `cursor` query parameters and return a `next_cursor` in the response (`null` on the last page).
+  - `limit` defaults to 50 and is clamped to a maximum of 200; `cursor` is an opaque string taken from the previous page's `next_cursor`.
+
 - **Attachment support**:
   - Still decided by `multimodal.enabled`, not by the `thread` block itself — enabling `thread` does not automatically turn on attachments.
   - `thread` will not support attachments on its own: attachment bytes always live in the existing `AttachmentStore` (in-memory / Redis / DynamoDB) — there is no separate thread-specific attachment backend.
+  - `multimodal.storage_type: session_cache` is rejected (400) in thread mode: the thread attachment flow runs outside the session context, where session-cache writes are not persisted by distributed session stores.
   - **Thread mode on**: `ChatService` calls `ConversationThreadManager` directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore` — pure storage, no description generated yet. It then **replaces** each raw image/file request in the agent request list with an `AgentRequestAttachmentRef(attachment_id=…)`, so the id travels **in-band** in the request list and no raw bytes travel past storage. `MultimodalPreHook` reads the id straight off that request, loads the bytes back from `AttachmentStore` to generate the LLM description, injects it, and strips the ref — it never calls `AttachmentStore.save()` itself (`ChatService` already did). There is no out-of-band handoff (no session-cache side channel) and no positional pairing — each `AgentRequestAttachmentRef` carries its own id.
   - **Thread mode off**: unchanged from today — `ChatService` never calls `ConversationThreadManager`; the client's raw `AgentRequestImage`/`AgentRequestFile` flows to `MultimodalPreHook`, which does the full job itself (describe, save to `AttachmentStore`, strip, inject).
   - When `thread` is configured, `ThreadStore` holds only an `attachment_id` reference on each `ThreadMessage`, not the encoded bytes — reading a thread's attachments means one `AttachmentStore` lookup per reference.
@@ -58,6 +69,7 @@
   - When both are true, `ChatService` calls it directly, *before* `Runtime.run`, to save each attachment's bytes to `AttachmentStore` and append the resulting `attachment_id` as a reference on `ThreadStore`.
 
 - **Thread lifecycle** (create/load/append/history) is driven from `ChatService`, which already has `session_id` and `user_id` available on every request.
+  - Applies to streaming (`execution.mode: stream`) identically: the user message is appended before the stream starts, and the assistant message is appended from the accumulated stream deltas when the stream completes successfully.
 
 - **`MultimodalPreHook`**:
   - **Remains** the sole attachment entry point in `Runtime._system_pre_hooks`, gated by `multimodal.enabled` exactly as today.
@@ -140,7 +152,9 @@ thread:
   type: firestore
   firestore:
     collection_name: "ak-agent-threads"
-    ttl: 2592000               # optional — seconds; omit for no TTL
+    project_id: "my-gcp-project"   # optional — inferred from Application Default Credentials when omitted
+    database_id: "(default)"       # optional — defaults to the "(default)" database
+    ttl: 2592000                   # optional — seconds; omit for no TTL
 ```
 
 #### CosmosDB
@@ -149,9 +163,12 @@ thread:
 thread:
   type: cosmosdb
   cosmosdb:
-    container: "ak-agent-threads"
-    partition_key: "user_id"   # optional — defaults to user_id
+    connection_string: "..."       # Azure Portal → Keys
+    table_name: "akagentthreads"
 ```
+
+Uses the Cosmos DB Table API; entities are partitioned by `session_id`. Cosmos DB Table API has no per-item
+TTL, so no `ttl` option is available for this backend.
 
 #### Redis
 

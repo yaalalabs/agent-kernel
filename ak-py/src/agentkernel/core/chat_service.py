@@ -394,21 +394,28 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        :raises ValueError: If session_id or prompt is missing, no agent is available,
+                            or user_id is missing while thread support is enabled
         """
         session_id = req.session_id
         if not session_id:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
             raise ValueError("No prompt provided in the request")
+        thread_manager = self._validate_thread(req)
         requests = await RequestBuilder.from_base_request_async(req)
+        requests = self._thread_pre_run(thread_manager, req, requests)
         handler = AgentHandler()
         handler.initialize(session_id, req.agent)
 
         async def _stream() -> AsyncGenerator[str, None]:
+            deltas: List[str] = []
             try:
                 async for chunk in handler.run_stream_async(requests):
+                    if chunk.delta:
+                        deltas.append(chunk.delta)
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+                self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -430,21 +437,28 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        :raises ValueError: If session_id or prompt is missing, no agent is available,
+                            or user_id is missing while thread support is enabled
         """
         session_id = req.session_id
         if not session_id:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
             raise ValueError("No prompt provided in the request")
+        thread_manager = self._validate_thread(req)
         requests = RequestBuilder.from_base_request_sync(req)
+        requests = self._thread_pre_run(thread_manager, req, requests)
         handler = AgentHandler()
         handler.initialize(session_id, req.agent)
 
         def _stream() -> Generator[str, None, None]:
+            deltas: List[str] = []
             try:
                 for chunk in handler.run_stream_sync(requests):
+                    if chunk.delta:
+                        deltas.append(chunk.delta)
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+                self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)

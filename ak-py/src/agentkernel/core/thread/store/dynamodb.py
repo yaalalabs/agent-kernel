@@ -24,6 +24,7 @@ from typing import List, Optional, Tuple
 
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import ClientError
 
 from ...config import AKConfig
 from ..model import Thread, ThreadMessage, _utc_now
@@ -91,9 +92,11 @@ class DynamoDBThreadStore(ThreadStore):
 
     def create(self, thread: Thread) -> Thread:
         """
-        Persist a new thread's metadata item.
+        Persist a new thread's metadata item. Creation is conditional: if a
+        concurrent request already created the thread, the existing metadata
+        is returned untouched.
         :param thread: The thread to persist.
-        :return: The persisted thread.
+        :return: The persisted (or already existing) thread.
         """
         self._log.debug(f"Creating thread for session {thread.session_id}")
         metadata = thread.model_copy(update={"messages": []})
@@ -109,7 +112,12 @@ class DynamoDBThreadStore(ThreadStore):
         expiry = self._expiry()
         if expiry is not None:
             item["expiry_time"] = expiry
-        self.table.put_item(Item=item)
+        try:
+            self.table.put_item(Item=item, ConditionExpression="attribute_not_exists(session_id)")
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            return self.load_metadata(thread.session_id)
         return metadata
 
     def load_metadata(self, session_id: str) -> Optional[Thread]:

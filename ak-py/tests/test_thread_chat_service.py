@@ -5,7 +5,7 @@ import pytest
 from agentkernel.core.base import Session
 from agentkernel.core.chat_service import ChatService
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import AgentReplyText, AgentRequestAttachmentRef, BaseRunRequest
+from agentkernel.core.model import AgentReplyText, AgentRequestAttachmentRef, BaseRunRequest, StreamChunk
 from agentkernel.core.thread import ConversationThreadManager
 from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
 
@@ -98,6 +98,68 @@ class TestChatServiceThreadIntegration:
 
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role,) for m in messages] == [("user",)]
+
+    def test_stream_thread_on_missing_user_id_rejected(self, thread_enabled):
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="user_id"):
+                service.process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1"))
+        handler.run_stream_sync.assert_not_called()
+
+    def test_stream_thread_on_appends_user_and_accumulated_assistant(self, thread_enabled):
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_sync.return_value = iter([StreamChunk(delta="Hel"), StreamChunk(delta="lo!"), StreamChunk(done=True)])
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = service.process_stream_chat_sync(BaseRunRequest(prompt="hi there", session_id="s1", user_id="u1"))
+            list(gen)  # drain the stream
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [(m.role, m.content) for m in messages] == [("user", "hi there"), ("assistant", "Hello!")]
+
+    def test_stream_thread_on_failed_stream_appends_no_assistant_message(self, thread_enabled):
+        def _failing_stream(requests):
+            yield StreamChunk(delta="par")
+            raise RuntimeError("stream blew up")
+
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_sync.side_effect = _failing_stream
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = service.process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1"))
+            list(gen)  # drain — the error is yielded as an error chunk
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [(m.role,) for m in messages] == [("user",)]
+
+    @pytest.mark.asyncio
+    async def test_stream_async_thread_on_appends_user_and_accumulated_assistant(self, thread_enabled):
+        async def _achunks(requests):
+            for chunk in [StreamChunk(delta="Hi "), StreamChunk(delta="Bob"), StreamChunk(done=True)]:
+                yield chunk
+
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_async.side_effect = _achunks
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = await service.process_stream_chat_async(BaseRunRequest(prompt="hey", session_id="s1", user_id="u1"))
+            async for _ in gen:
+                pass
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [(m.role, m.content) for m in messages] == [("user", "hey"), ("assistant", "Hi Bob")]
+
+    def test_stream_thread_off_no_thread_calls(self):
+        AKConfig.get().thread = None
+        ConversationThreadManager.reset()
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_sync.return_value = iter([StreamChunk(delta="ok", done=True)])
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = service.process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1"))
+            chunks = list(gen)
+        assert chunks  # streamed fine without user_id when thread support is off
 
     def test_thread_on_attachment_passed_in_band_as_ref(self, thread_enabled):
         original_enabled = AKConfig.get().multimodal.enabled

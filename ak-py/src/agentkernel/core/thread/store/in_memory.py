@@ -24,15 +24,17 @@ class InMemoryThreadStore(ThreadStore):
 
     def create(self, thread: Thread) -> Thread:
         """
-        Persist a new thread's metadata.
+        Persist a new thread's metadata. If a thread already exists for the
+        session id (e.g. a concurrent first request won the race), the existing
+        thread is returned untouched.
         :param thread: The thread to persist.
-        :return: The persisted thread.
+        :return: The persisted (or already existing) thread.
         """
         self._log.debug(f"Creating thread for session {thread.session_id}")
         metadata = thread.model_copy(update={"messages": []})
-        self._threads[thread.session_id] = metadata
+        stored = self._threads.setdefault(thread.session_id, metadata)
         self._messages.setdefault(thread.session_id, [])
-        return metadata
+        return stored.model_copy(update={"messages": []})
 
     def load_metadata(self, session_id: str) -> Optional[Thread]:
         """

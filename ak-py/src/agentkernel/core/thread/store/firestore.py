@@ -85,10 +85,14 @@ class FirestoreThreadStore(ThreadStore):
 
     def create(self, thread: Thread) -> Thread:
         """
-        Persist a new thread's metadata document.
+        Persist a new thread's metadata document. Creation is conditional: if a
+        concurrent request already created the thread, the existing metadata is
+        returned untouched.
         :param thread: The thread to persist.
-        :return: The persisted thread.
+        :return: The persisted (or already existing) thread.
         """
+        from google.api_core.exceptions import AlreadyExists
+
         self._log.debug(f"Creating thread for session {thread.session_id}")
         metadata = thread.model_copy(update={"messages": []})
         doc: dict = {
@@ -99,7 +103,10 @@ class FirestoreThreadStore(ThreadStore):
         }
         if self._ttl and self._ttl > 0:
             doc["expiry_time"] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=self._ttl)
-        self.collection.document(thread.session_id).set(doc)
+        try:
+            self.collection.document(thread.session_id).create(doc)
+        except AlreadyExists:
+            return self.load_metadata(thread.session_id)
         return metadata
 
     def load_metadata(self, session_id: str) -> Optional[Thread]:

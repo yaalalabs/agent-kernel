@@ -1,7 +1,10 @@
 import datetime
+from unittest.mock import MagicMock
 
 import pytest
+from botocore.exceptions import ClientError
 
+from agentkernel.core.config import AKConfig, _ThreadDynamoDBConfig, _ThreadStoreConfig
 from agentkernel.core.thread.model import Thread, ThreadAttachment, ThreadMessage
 from agentkernel.core.thread.store.dynamodb import DynamoDBThreadStore
 from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
@@ -30,6 +33,37 @@ class TestDynamoDBToThread:
         assert rebuilt.updated_at == created
 
 
+class TestDynamoDBConditionalCreate:
+    """create() must use a conditional put so a lost race never overwrites metadata (mocked table)."""
+
+    @pytest.fixture
+    def store(self):
+        original = AKConfig.get().thread
+        AKConfig.get().thread = _ThreadStoreConfig(type="dynamodb", dynamodb=_ThreadDynamoDBConfig())
+        store = DynamoDBThreadStore()
+        store._ddb_table = MagicMock()
+        yield store
+        AKConfig.get().thread = original
+        DynamoDBThreadStore._ddb_table = None
+
+    def test_create_uses_condition_expression(self, store):
+        store.create(Thread(session_id="s1", user_id="u1"))
+        assert store.table.put_item.call_args.kwargs["ConditionExpression"] == "attribute_not_exists(session_id)"
+
+    def test_create_conflict_returns_existing(self, store):
+        existing = Thread(session_id="s1", user_id="winner")
+        store.table.put_item.side_effect = ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        store.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
+
+        result = store.create(Thread(session_id="s1", user_id="loser"))
+        assert result.user_id == "winner"
+
+    def test_create_other_client_error_propagates(self, store):
+        store.table.put_item.side_effect = ClientError({"Error": {"Code": "ThrottlingException"}}, "PutItem")
+        with pytest.raises(ClientError):
+            store.create(Thread(session_id="s1", user_id="u1"))
+
+
 class TestInMemoryThreadStore:
     """Tests for InMemoryThreadStore (metadata/message split + pagination)."""
 
@@ -51,6 +85,14 @@ class TestInMemoryThreadStore:
 
     def test_load_metadata_missing_returns_none(self):
         assert self.store.load_metadata("missing") is None
+
+    def test_create_is_conditional_second_create_keeps_first_metadata(self):
+        first = self.store.create(Thread(session_id="s1", user_id="u1", name="winner"))
+        second = self.store.create(Thread(session_id="s1", user_id="u2", name="loser"))
+
+        assert second.user_id == first.user_id == "u1"
+        assert second.name == "winner"
+        assert self.store.load_metadata("s1").user_id == "u1"
 
     def test_append_and_get_messages(self):
         self.store.create(Thread(session_id="s1", user_id="u1"))

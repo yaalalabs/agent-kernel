@@ -42,9 +42,12 @@ class ThreadStore(ABC):
     @abstractmethod
     def create(self, thread: Thread) -> Thread:
         """
-        Persist a new thread's metadata (no messages).
+        Persist a new thread's metadata (no messages). Creation must be
+        conditional: when a thread already exists for the session id (a
+        concurrent first request won the race), implementations must leave the
+        stored metadata untouched and return the existing thread instead.
         :param thread: The thread to persist.
-        :return: The persisted thread.
+        :return: The persisted (or already existing) thread.
         """
         pass
 

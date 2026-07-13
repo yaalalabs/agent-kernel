@@ -182,6 +182,13 @@ class ConversationThreadManager:
         """
         if not AKConfig.get().multimodal.enabled:
             return requests, []
+        if AKConfig.get().multimodal.storage_type == "session_cache":
+            # This runs outside the session context, so session_cache writes land in a
+            # session copy that distributed session stores never persist — silent loss.
+            raise ValueError(
+                "multimodal.storage_type 'session_cache' is not supported when thread support is enabled — "
+                "use a shared attachment store (in_memory, redis, or dynamodb) in config.yaml"
+            )
 
         from ..multimodal.storage import AttachmentStorageManager
 

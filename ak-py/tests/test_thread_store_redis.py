@@ -83,3 +83,28 @@ class TestRedisThreadStoreTTL:
         with pytest.raises(KeyError):
             store.append_message("missing", ThreadMessage(role="user", content="hi"))
         store.client.rpush.assert_not_called()
+
+
+class TestRedisThreadStoreConditionalCreate:
+    """create() must be conditional (SET NX) so a lost race never overwrites metadata."""
+
+    def test_create_sets_meta_with_nx(self, make_store):
+        store = make_store(ttl=0)
+        store.client.set.return_value = True
+        store.create(Thread(session_id="s1", user_id="u1"))
+
+        assert store.client.set.call_args.kwargs.get("nx") is True
+        store.client.sadd.assert_called_once_with(f"{PREFIX}index:user:u1", "s1")
+
+    def test_create_conflict_returns_existing_without_touching_indexes(self, make_store):
+        store = make_store(ttl=60)
+        existing = Thread(session_id="s1", user_id="winner")
+        store.client.set.return_value = None  # SET NX lost the race
+        payloads = {f"{PREFIX}s1:meta": existing.model_dump_json().encode()}
+        store.client.get.side_effect = lambda key: payloads.get(key)
+
+        result = store.create(Thread(session_id="s1", user_id="loser", group_id="g1"))
+
+        assert result.user_id == "winner"
+        store.client.sadd.assert_not_called()
+        store.client.expire.assert_not_called()

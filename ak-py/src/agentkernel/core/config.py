@@ -229,7 +229,6 @@ class _ThreadFirestoreConfig(BaseModel):
 class _ThreadCosmosDBConfig(BaseModel):
     connection_string: str = Field(description="Cosmos DB connection string. Can be found in Azure Portal under Keys section")
     table_name: str = Field(default="akagentthreads", description="Cosmos DB table name for thread storage")
-    ttl: int = Field(default=0, description="Thread TTL in seconds (0 disables)")
 
 
 class _ThreadStoreConfig(BaseModel):
