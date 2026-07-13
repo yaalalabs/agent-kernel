@@ -137,7 +137,7 @@ We love feature suggestions! When proposing a new feature:
 ## Development Resources
 
 - **[Developer Guide](DEVELOPER_GUIDE.md)**: Technical setup, tools, and development workflow
-- **[AGENTS.md](AGENTS.md)**: Guidance for AI coding agents (Claude Code, Cursor, Copilot, Codex, Windsurf, etc.) contributing to this repo — read this before using an AI assistant to work on Agent Kernel itself
+- **[AGENTS.md](AGENTS.md)**: Guidance for AI coding agents contributing to this repo
 - **[README](README.md)**: Project overview and getting started
 - **[Documentation](docs/)**: Full documentation and examples
 
