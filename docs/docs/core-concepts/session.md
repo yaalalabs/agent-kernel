@@ -46,6 +46,7 @@ A Session:
 - **Supports** multiple storage backends with **multi-cloud support**:
   - In-memory (development)
   - Redis (AWS & Azure production)
+  - Valkey (AWS production; open-source Redis fork)
   - DynamoDB (AWS serverless)
   - Cosmos DB (Azure serverless)
 - **Stores** framework-specific state separately per agent
@@ -125,7 +126,7 @@ result = await runner.run(agent, session, prompt)
 
 ## Storage Backends
 
-Agent Kernel supports three storage backends for session persistence, each optimized for different deployment scenarios.
+Agent Kernel supports multiple storage backends for session persistence, each optimized for different deployment scenarios.
 
 ### In-Memory Storage (Default)
 
@@ -184,6 +185,48 @@ export AK_SESSION__REDIS__URL=redis://cluster-endpoint:6379
 # Enable SSL/TLS
 export AK_SESSION__REDIS__URL=rediss://secure-endpoint:6380
 ```
+
+### Valkey Storage (AWS) {#valkey-storage}
+
+[Valkey](https://valkey.io/) is the open-source, Linux Foundation-governed fork of Redis. It is
+wire-compatible with Redis and available on AWS ElastiCache as a native engine at a lower price
+point than the Redis OSS engine. Agent Kernel treats it as a first-class backend with its own
+client library (`valkey-py`) and configuration block:
+
+```bash
+export AK_SESSION__TYPE=valkey
+export AK_SESSION__VALKEY__URL=valkey://localhost:6379
+export AK_SESSION__VALKEY__TTL=604800  # 7 days in seconds
+export AK_SESSION__VALKEY__PREFIX=ak:sessions:
+```
+
+Install the optional dependency with `agentkernel[valkey]`.
+
+**Characteristics:**
+- ✅ Persistent across restarts
+- ✅ High performance (sub-millisecond latency)
+- ✅ Supports distributed/multi-process deployments
+- ✅ Configurable TTL for automatic cleanup
+- ✅ Open-source license (avoids Redis licensing concerns)
+- ✅ AWS ElastiCache for Valkey (lower cost than the Redis OSS engine)
+- ✅ Ideal for containerized (ECS/Fargate) and serverless (Lambda) deployments
+
+**Use When:**
+- You are standardizing on Valkey rather than Redis
+- Production AWS deployments (containerized or serverless)
+- Multi-instance applications needing sub-millisecond session access
+
+**High Availability / SSL Configuration:**
+```bash
+# ElastiCache for Valkey endpoint
+export AK_SESSION__VALKEY__URL=valkey://cluster-endpoint:6379
+
+# Enable SSL/TLS
+export AK_SESSION__VALKEY__URL=valkeys://secure-endpoint:6380
+```
+
+`valkey-py` also accepts the `redis://` / `rediss://` URL schemes, so an ElastiCache endpoint
+works with either form; Agent Kernel standardizes on `valkey://` / `valkeys://`.
 
 ### DynamoDB Storage
 
@@ -254,9 +297,9 @@ export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 
 **Note**: Agent Kernel's Terraform modules automatically create the required Cosmos DB resources with proper configuration.
 
-### Session Caching (Redis, DynamoDB & Cosmos DB)
+### Session Caching (Redis, Valkey, DynamoDB & Cosmos DB)
 
-Redis, DynamoDB, and Cosmos DB backends all support optional in-memory session caching for improved performance:
+Redis, Valkey, DynamoDB, and Cosmos DB backends all support optional in-memory session caching for improved performance:
 
 ```bash
 # Enable in-memory session caching with LRU eviction

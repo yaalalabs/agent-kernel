@@ -457,8 +457,10 @@ module "serverless_api_auth" {
 | `ws_routes` | List of custom WebSocket routes beyond the default chat route. Only allowed in `async`/`stream` modes. | `list(object)` | `[]` | no |
 | `gateway_endpoints` | List of REST API endpoints to expose. Not allowed in WebSocket modes. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. | `list(object)` | `[]` | no |
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
+| `create_valkey_cluster` | Create a Valkey (ElastiCache) cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | `create_redis_response_store` | Create or reuse Redis for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
+| `create_valkey_response_store` | Create or reuse Valkey for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object (see table below). **Cannot be set** in WebSocket modes (`async`/`stream`) — authentication is handled by the connection handler Lambda. | `object` | `null` | no |
@@ -796,6 +798,8 @@ The module supports the current Agent Kernel storage wiring for both session sta
 - Redis session memory via `create_redis_cluster`
 - Redis response storage via `create_redis_response_store`
 - Redis multimodal memory via `create_redis_cluster` and environmental variables *(more details in Agent Kernel Docs in Multimodal section)*
+- Valkey session memory via `create_valkey_cluster` (also requires `session.type: valkey` in `config.yaml`)
+- Valkey response storage via `create_valkey_response_store` (also requires `execution.response_store.type: valkey` in `config.yaml`)
 - DynamoDB session memory via `create_dynamodb_memory_table`
 - DynamoDB multimodal memory via `create_dynamodb_multimodal_memory_table`
 - DynamoDB response storage via `create_dynamodb_response_store`
@@ -1036,7 +1040,7 @@ module "async_api" {
 }
 ```
 
-Swap `create_redis_response_store = true` for `create_dynamodb_response_store = true` if you want DynamoDB-backed response storage instead of Redis.
+Swap `create_redis_response_store = true` for `create_dynamodb_response_store = true` (DynamoDB) or `create_valkey_response_store = true` (Valkey) if you want a different response store backend. At most one of the three may be `true`. For Valkey, also set `execution.response_store.type: valkey` in `config.yaml`.
 
 ## 🔐 Custom Authorizer Configuration
 

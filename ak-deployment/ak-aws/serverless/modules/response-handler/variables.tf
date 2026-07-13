@@ -95,6 +95,14 @@ variable "response_store_redis" {
   default = null
 }
 
+variable "response_store_valkey" {
+  description = "Valkey configuration for response storage"
+  type = object({
+    url = string
+  })
+  default = null
+}
+
 variable "response_store_dynamodb" {
   description = "DynamoDB configuration for response storage"
   type = object({

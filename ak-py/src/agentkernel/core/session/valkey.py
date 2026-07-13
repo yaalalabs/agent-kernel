@@ -3,7 +3,7 @@ import time
 import traceback
 from typing import Any, Optional
 
-import redis
+import valkey
 
 from ..base import Session
 from ..config import AKConfig
@@ -11,57 +11,57 @@ from .base import SessionCache, SessionStore
 from .serde import BinarySerde
 
 
-class RedisDriver:
+class ValkeyDriver:
     """
-    RedisUtil provides Redis connection and helper methods for namespaced key/value operations.
+    ValkeyDriver provides Valkey connection and helper methods for namespaced key/value operations.
     """
 
     def __init__(self):
-        self._redis_client = None
-        self._log = logging.getLogger("ak.core.session.redis.util")
-        self._url = AKConfig.get().session.redis.url
-        self._prefix = AKConfig.get().session.redis.prefix
-        self._ttl = int(AKConfig.get().session.redis.ttl)
+        self._valkey_client = None
+        self._log = logging.getLogger("ak.core.session.valkey.util")
+        self._url = AKConfig.get().session.valkey.url
+        self._prefix = AKConfig.get().session.valkey.prefix
+        self._ttl = int(AKConfig.get().session.valkey.ttl)
 
     @property
     def client(self):
         """
-        Returns the Redis client instance.
+        Returns the Valkey client instance.
         """
-        if self._redis_client is None:
+        if self._valkey_client is None:
             self._connect()
         else:
             try:
-                self._redis_client.ping()
-                self._log.debug("Redis client is alive")
-            except redis.RedisError:
-                self._log.warning("Redis client is not alive, reconnecting")
+                self._valkey_client.ping()
+                self._log.debug("Valkey client is alive")
+            except valkey.ValkeyError:
+                self._log.warning("Valkey client is not alive, reconnecting")
                 self._connect()
             except Exception as e:
-                self._log.error(f"Unexpected error while pinging Redis client: {e}")
+                self._log.error(f"Unexpected error while pinging Valkey client: {e}")
                 self._log.error(traceback.format_exc())
-        return self._redis_client
+        return self._valkey_client
 
     @property
     def ttl(self):
         """
-        Returns the configured TTL for Redis keys.
+        Returns the configured TTL for Valkey keys.
         """
         return self._ttl
 
     def _connect(self):
         """
-        Connects to Redis using the configured URL or host/port.
+        Connects to Valkey using the configured URL or host/port.
         """
         retries = 3
         for attempt in range(retries):
             try:
-                self._log.debug(f"Connecting to Redis using URL {self._url}")
-                client = redis.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
+                self._log.debug(f"Connecting to Valkey using URL {self._url}")
+                client = valkey.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
                 client.ping()
-                self._redis_client = client
+                self._valkey_client = client
                 return
-            except redis.RedisError as e:
+            except valkey.ValkeyError as e:
                 self._log.warning(f"Attempt {attempt + 1} failed: {e}")
                 if attempt == retries - 1:
                     raise
@@ -69,7 +69,7 @@ class RedisDriver:
 
     def key(self, session_id: str) -> str:
         """
-        Generates a Redis key for the given session ID using a configured prefix.
+        Generates a Valkey key for the given session ID using a configured prefix.
         :param session_id: The session ID to generate a key for.
         :return: The generated key.
         """
@@ -77,7 +77,7 @@ class RedisDriver:
 
     def hset(self, key: str, field: str, value: Any) -> None:
         """
-        Sets a field in the Redis hash associated with the given key.
+        Sets a field in the Valkey hash associated with the given key.
         :param key: The key to set the field for.
         :param field: The field to set.
         :param value: The value to set for the field.
@@ -87,7 +87,7 @@ class RedisDriver:
 
     def hget(self, key: str, field: str) -> Optional[bytes]:
         """
-        Retrieves a field from the Redis hash associated with the given key.
+        Retrieves a field from the Valkey hash associated with the given key.
         :param key: The key to retrieve the field for.
         :param field: The field to retrieve.
         :return: The value of the field, or None if the field does not exist.
@@ -97,7 +97,7 @@ class RedisDriver:
 
     def expire(self, key: str) -> None:
         """
-        Sets the TTL for the Redis hash associated with the given key.
+        Sets the TTL for the Valkey hash associated with the given key.
         :param key: The key to set the TTL for.
         """
         self._log.debug(f"EXPIRE {key} {self._ttl}")
@@ -105,7 +105,7 @@ class RedisDriver:
 
     def hkeys(self, key: str) -> list[str]:
         """
-        Retrieves all keys in the Redis hash associated with the given key.
+        Retrieves all keys in the Valkey hash associated with the given key.
         :param key: The key to retrieve the keys for.
         :return: A list of keys in the hash.
         """
@@ -115,13 +115,13 @@ class RedisDriver:
 
     def exists(self, key: str) -> bool:
         """
-        Checks if a Redis key exists.
+        Checks if a Valkey key exists.
         :param key: The key to check.
         :return: True if the key exists, False otherwise.
         """
         try:
             return bool(self.client.exists(key))
-        except redis.RedisError:
+        except valkey.ValkeyError:
             return False
 
     def clear_prefix(self) -> None:
@@ -134,20 +134,20 @@ class RedisDriver:
             self.client.delete(*keys)
 
 
-class RedisSessionStore(SessionStore):
+class ValkeySessionStore(SessionStore):
     """
-    RedisSessionStore class provides a redis-based implementation of the SessionStore interface.
+    ValkeySessionStore class provides a valkey-based implementation of the SessionStore interface.
     """
 
     def __init__(self, cache: SessionCache = None):
         """
-        Initializes a RedisSessionStore instance.
+        Initializes a ValkeySessionStore instance.
 
         :param cache: An optional SessionCache instance for in-memory caching of sessions.
         """
-        self._log = logging.getLogger("ak.core.session.redis")
+        self._log = logging.getLogger("ak.core.session.valkey")
         self._serde = BinarySerde()
-        self._driver = RedisDriver()
+        self._driver = ValkeyDriver()
         self._cache = cache
 
     def load(self, session_id: str, strict: bool = False) -> Session:
@@ -158,7 +158,7 @@ class RedisSessionStore(SessionStore):
         :return: The session associated with the identifier, or a new session if it does not exist
         in storage.
         """
-        self._log.debug(f"Loading redis session with ID {session_id}")
+        self._log.debug(f"Loading valkey session with ID {session_id}")
         if self._cache:
             session = self._cache.get(session_id)
             if session:

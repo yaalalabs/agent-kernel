@@ -213,9 +213,21 @@ variable "redis_url" {
   default     = null
 }
 
+variable "valkey_url" {
+  type        = string
+  description = "URL of the Valkey cluster"
+  default     = null
+}
+
 variable "response_store_redis" {
   type        = any
   description = "Redis response store configuration"
+  default     = null
+}
+
+variable "response_store_valkey" {
+  type        = any
+  description = "Valkey response store configuration"
   default     = null
 }
 

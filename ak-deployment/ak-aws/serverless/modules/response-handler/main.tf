@@ -25,6 +25,7 @@ locals {
   
   # Response store configuration
   redis_response_store    = var.response_store_redis
+  valkey_response_store   = var.response_store_valkey
   dynamodb_response_store = var.response_store_dynamodb
   
   # WebSocket API configuration
@@ -242,6 +243,9 @@ module "response_handler_lambda" {
     local.response_handler_env_vars,
     local.redis_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__REDIS__URL = local.redis_response_store.url
+    } : {},
+    local.valkey_response_store != null ? {
+      AK_EXECUTION__RESPONSE_STORE__VALKEY__URL = local.valkey_response_store.url
     } : {},
     local.dynamodb_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name

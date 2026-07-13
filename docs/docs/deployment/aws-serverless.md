@@ -938,16 +938,19 @@ When you use queue-backed execution, configure the `execution` block:
 - `execution.queues.output.max_receive_count` - output queue receive retry threshold (default: 3)
 - `execution.response_store.retry_count` - number of response-store lookup attempts (default: 5)
 - `execution.response_store.delay` - delay in seconds between lookup attempts (default: 5)
-- `execution.response_store.type` - response-store backend selector configured in `config.yaml` only (required for rest_sync and rest_async)
+- `execution.response_store.type` - response-store backend selector (`redis`, `valkey`, or `dynamodb`) configured in `config.yaml` only (required for rest_sync and rest_async)
 - `execution.response_store.redis.url` - Redis URL for response storage
 - `execution.response_store.redis.prefix` - Redis key prefix for response storage, default `ak:responses:`
 - `execution.response_store.redis.ttl` - Redis TTL in seconds
+- `execution.response_store.valkey.url` - Valkey URL for response storage
+- `execution.response_store.valkey.prefix` - Valkey key prefix for response storage, default `ak:responses:`
+- `execution.response_store.valkey.ttl` - Valkey TTL in seconds
 - `execution.response_store.dynamodb.table_name` - DynamoDB table name for response storage
 - `execution.response_store.dynamodb.ttl` - DynamoDB TTL in seconds
 
 The response store is configured as a single object with one selected backend:
 
-**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used — responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true` or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
+**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used — responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true`, `create_valkey_response_store = true`, or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
 
 ```json
 {
@@ -1144,7 +1147,7 @@ module "serverless_agents" {
 **Key constraints enforced by Terraform**:
 - `input_queue_visibility_timeout` must be ≥ `agent_runner.timeout`
 - `output_queue_visibility_timeout` must be ≥ `response_handler.timeout`
-- `create_redis_response_store` and `create_dynamodb_response_store` cannot both be `true`
+- At most one of `create_redis_response_store`, `create_valkey_response_store`, and `create_dynamodb_response_store` may be `true`
 
 ## Cost Optimization
 
@@ -1341,6 +1344,18 @@ export AK_SESSION__REDIS__URL=redis://elasticache-endpoint:6379
 - Shared cache across functions
 
 **Note:** Redis requires VPC configuration for Lambda, which can impact cold start times.
+
+### ElastiCache for Valkey
+
+```bash
+export AK_SESSION__TYPE=valkey
+export AK_SESSION__VALKEY__URL=valkey://elasticache-endpoint:6379  # valkeys:// for SSL
+```
+
+Provision the cluster with `create_valkey_cluster = true` (the module injects
+`AK_SESSION__VALKEY__URL` automatically). Valkey is the open-source Redis fork; it is offered on
+ElastiCache at a lower price point than the Redis OSS engine and is wire-compatible with Redis.
+Requires the `agentkernel[valkey]` extra and, like Redis, VPC configuration for the Lambda.
 
 ## Monitoring
 

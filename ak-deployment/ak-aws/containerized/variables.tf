@@ -111,6 +111,12 @@ variable "create_redis_cluster" {
   default     = false
 }
 
+variable "create_valkey_cluster" {
+  type        = bool
+  description = "Create a Valkey (ElastiCache) cluster for Agent session storage"
+  default     = false
+}
+
 variable "create_dynamodb_memory_table" {
   type        = bool
   description = "Create a dynamodb table to store the Agent memory"

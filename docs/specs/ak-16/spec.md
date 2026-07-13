@@ -220,13 +220,19 @@ engine:
 
 - `aws_security_group.valkey` — ingress on `var.port` (default 6379) from `var.vpc_cidr`.
 - `aws_elasticache_subnet_group.valkey` over `var.subnet_ids`.
-- `aws_elasticache_cluster.valkey`:
+- `aws_elasticache_replication_group.valkey` — ElastiCache exposes the Valkey engine only through
+  the replication group resource (`aws_elasticache_cluster` supports just the `memcached` and
+  `redis` engines), so the module provisions a cluster-mode-disabled replication group; with the
+  default `node_count = 1` this yields the same single-primary topology as the redis module's
+  `aws_elasticache_cluster`. Note `node_count` maps to `num_cache_clusters` (primary plus
+  replicas), and `replication_group_id` has a 40-character limit (vs 50 for the redis
+  `cluster_id`):
 
 ```hcl
 engine               = "valkey"
 engine_version       = var.engine_version        # default "8.0"
 node_type            = var.node_type             # default "cache.t4g.micro"
-num_cache_nodes      = var.node_count            # default 1
+num_cache_clusters   = var.node_count            # default 1
 parameter_group_name = var.parameter_group_name  # default "default.valkey8"
 port                 = var.port
 ```
@@ -234,7 +240,8 @@ port                 = var.port
 - Variables mirror the redis module (`product_alias`, `env_alias`, `module_name`, `tags`,
   `vpc_cidr`, `vpc_id`, `subnet_ids`, `node_type`, `node_count`, `port`) plus `engine_version` and
   `parameter_group_name` so future Valkey majors don't require a module change.
-- Output `url = "valkey://<node address>:<port>"` (same single-output shape as the redis module).
+- Output `url = "valkey://<primary endpoint address>:<port>"` (same single-output shape as the
+  redis module, using the replication group's `primary_endpoint_address`).
 - Like Redis, Valkey needs no IAM — access is network-level via the security group.
 - The README documents that `engine_version` and `parameter_group_name` must move together — the
   parameter group family must match the engine major version (e.g. overriding `engine_version` to
@@ -453,8 +460,9 @@ A copy of `examples/memory/redis/` adapted to Valkey:
 
 1. Clone the redis module; set `engine = "valkey"`, add `engine_version` (default `"8.0"`) and
    `parameter_group_name` (default `"default.valkey8"`) variables, default `node_type` to
-   `cache.t4g.micro`.
-2. Output `url` in `valkey://host:port` form.
+   `cache.t4g.micro`. Use a cluster-mode-disabled `aws_elasticache_replication_group` (the
+   `aws_elasticache_cluster` resource does not support the `valkey` engine).
+2. Output `url` in `valkey://host:port` form (from `primary_endpoint_address`).
 3. Write the README modeled on `common/modules/redis/README.md`, documenting only outputs that
    actually exist, and stating that `engine_version` and `parameter_group_name` must move
    together (parameter group family must match the engine major version).
