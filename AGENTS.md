@@ -82,7 +82,7 @@ into code every adapter has to live with.
 
 ## Setup, build, lint, test
 
-Setup steps and the full Makefile command list are canonical in
+Setup steps and how to discover the full Makefile command list are canonical in
 [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) — don't re-derive or restate them here; if a command
 changes, update DEVELOPER_GUIDE.md and this file's pointer stays valid automatically. Two things
 worth knowing that aren't spelled out there:
