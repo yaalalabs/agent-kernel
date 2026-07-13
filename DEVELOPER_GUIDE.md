@@ -153,6 +153,7 @@ Follow conventional commit format:
 ## Additional Resources
 
 - [Main README](README.md) - Project overview and usage
+- [AGENTS.md](AGENTS.md) - Guidance for AI coding agents (Claude Code, Cursor, Copilot, Codex, Windsurf, etc.) working on this repo's own codebase
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
 - [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills
