@@ -83,7 +83,7 @@ into code every adapter has to live with.
 ## Setup, build, lint, test
 
 ```bash
-make dev-setup              # installs pyenv/Python 3.12/uv, syncs ak-py's venv (or: cd ak-py && ./build.sh)
+make dev-setup              # installs prerequisites (pyenv, tfenv, nvm/Node, Python 3.12, uv, docker) and syncs ak-py's venv (or: cd ak-py && ./build.sh)
 make lint-check-all         # isort + black, dry-run, ak-py + examples — CI gate on every PR
 make lint-all               # same, but writes fixes
 cd ak-py && uv run pytest   # full test suite (coverage + html report auto-generated)
