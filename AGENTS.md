@@ -107,7 +107,7 @@ whether a failing test needs a credential you don't have before assuming you bro
 
 ## Searching this repo
 
-`examples/*/.venv/` directories are gitignored but present on disk — each is 500MB–900MB of
+`examples/*/.venv/` directories are gitignored, but may be present on disk (e.g. after running examples) — each can be 500MB–900MB of
 vendored framework packages (openai-agents, google-adk, langgraph, ...). A broad `grep`/`find`/`rg`
 without excluding `.venv` will return matches from inside vendored dependencies, not this repo's
 code, and can burn a large chunk of context doing it. Scope searches to `ak-py/src`, `ak-py/tests`,
