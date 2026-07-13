@@ -1,2 +1,2 @@
 from .rest_api import AWSRestAPI, ECSQueueRequestHandler
-from .websocket_api import AWSWebsocketAPI, ECSWebSocketRequestHandler
+from .websocket_api import AWSWebsocketAPI, ECSWebSocketRequestHandler, ECSWebSocketSystemRequestHandler
