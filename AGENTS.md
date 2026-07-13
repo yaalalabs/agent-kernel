@@ -98,6 +98,23 @@ For anything test-related beyond the basic `pytest` invocation (async fixtures, 
 frameworks/session stores, the built-in fuzzy/semantic Test framework), load
 `.agents/skills/ak-dev-testing-conventions` rather than guessing pytest patterns from scratch.
 
+**Local `pytest` runs will show failures that aren't your fault.** Some tests are e2e and call
+real services — `test.yaml` injects `OPENAI_API_KEY`, `WALLED_API_KEY`, `SLACK_BOT_TOKEN`, and
+similar secrets in CI, and those tests are skipped entirely for fork PRs that lack them. There's
+no `.env.example` or pytest marker separating these from pure unit tests yet, so if you run the
+suite locally without those keys set, expect some failures unrelated to your change — check
+whether a failing test needs a credential you don't have before assuming you broke something.
+
+## Searching this repo
+
+`examples/*/.venv/` directories are gitignored but present on disk — each is 500MB–900MB of
+vendored framework packages (openai-agents, google-adk, langgraph, ...). A broad `grep`/`find`/`rg`
+without excluding `.venv` will return matches from inside vendored dependencies, not this repo's
+code, and can burn a large chunk of context doing it. Scope searches to `ak-py/src`, `ak-py/tests`,
+or a specific `examples/<dir>` subpath rather than `examples/` wholesale, or explicitly exclude
+`.venv` (most search tools respect `.gitignore` by default — confirm yours does before trusting a
+repo-wide search).
+
 ## Conventions
 
 - **Commits**: Conventional Commits — `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`,
@@ -114,9 +131,19 @@ frameworks/session stores, the built-in fuzzy/semantic Test framework), load
   skills get kept in sync with code — this repo has automation (`auto-sync-skills-docs.yaml`) that
   expects docs/skills to track implementation, not drift.
 
+## Terraform (`ak-deployment/`)
+
+These modules provision real cloud infrastructure (AWS/Azure/GCP). Editing `.tf` files is fine;
+**never run `terraform apply`, `terraform destroy`, or anything that touches real state/backends**
+without explicit, in-the-moment user approval — this is the one part of the repo where an agent
+action can have an irreversible effect outside the repo itself. `terraform plan` (read-only) is
+safe to run to sanity-check a change.
+
 ## Working with git in this repo
 
 - Never commit without telling the user first and getting confirmation — this repo's owner has
   asked to always be told before a commit runs.
 - Don't push, force-push, or open PRs unless explicitly asked.
 - Never edit files under `docs/versioned_docs/` — those are frozen snapshots of past releases.
+- [CODEOWNERS](CODEOWNERS) exists — check it before assuming no one needs to review a change to a
+  given path.
