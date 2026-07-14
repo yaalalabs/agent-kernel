@@ -152,7 +152,9 @@ async def test_thread_rename_via_chat(http_client):
     assert (await http_client.chat("Hello", session_id=session_id, user_id="alice")).status_code == 200
 
     # A later chat request carrying thread_name renames the existing thread
-    resp = await http_client.chat("Hello again", session_id=session_id, user_id="alice", thread_name="My renamed thread")
+    resp = await http_client.chat(
+        "Hello again", session_id=session_id, user_id="alice", thread_name="My renamed thread"
+    )
     assert resp.status_code == 200
 
     resp = await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)
