@@ -1,4 +1,4 @@
-# WebSocket API Gateway (async / stream) — proxies frames to the REST service via VPC Link + ALB.
+# WebSocket API Gateway (async / stream) — proxies frames to the REST service via VPC Link V1 + NLB.
 
 locals {
   ws_stage_name = "agents"
@@ -9,10 +9,7 @@ locals {
     [for r in var.ws_routes : r.route]
   )) : toset([])
 
-  # Backend path per WebSocket route. The ECS service exposes ONE endpoint per route
-  # (see ECSWebSocketRequestHandler) instead of dispatching internally, so each route
-  # rewrites the request path to its dedicated container endpoint. Predefined routes use
-  # fixed paths; the chat route and any custom routes map to /ws/<route-name>.
+  # Backend path per route — each rewrites to its dedicated container endpoint (/ws/<route>).
   ws_route_backend_paths = local.is_websocket_mode ? merge(
     {
       "$connect"          = "/ws/connect"
@@ -52,11 +49,7 @@ resource "aws_apigatewayv2_integration" "ws" {
   connection_id        = aws_api_gateway_vpc_link.ws[0].id
   passthrough_behavior = "WHEN_NO_MATCH"
 
-  # Route each WS route to its dedicated container endpoint (overwrite:path) and pass the
-  # $context the app needs to identify the connection and push replies back over it.
-  # NOTE: overwrite:* is parameter-mapping syntax; validate it is accepted for this WebSocket
-  # API in your account/region. If not, the fallback is classic header mapping
-  # ("integration.request.header.x-ws-route" = "context.routeKey") plus in-app dispatch.
+  # Rewrite path per route and pass connection $context (id/domain/stage) so the app can push replies back.
   request_parameters = merge(
     {
       "overwrite:header.x-ws-connection-id" = "$context.connectionId"

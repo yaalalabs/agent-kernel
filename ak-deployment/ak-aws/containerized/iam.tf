@@ -1,4 +1,4 @@
-# ---------- REST Service IAM Policies ----------
+# REST Service IAM Policies
 
 resource "aws_iam_policy" "rest_service_sqs_policy" {
   count = var.queue_mode ? 1 : 0

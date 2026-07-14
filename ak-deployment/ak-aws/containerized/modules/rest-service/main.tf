@@ -27,7 +27,7 @@ locals {
   )
 }
 
-# ---------- Service Discovery ----------
+# Service Discovery
 
 resource "aws_service_discovery_http_namespace" "this" {
   name        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
@@ -35,7 +35,7 @@ resource "aws_service_discovery_http_namespace" "this" {
   tags        = var.tags
 }
 
-# ---------- IAM Policies ----------
+# IAM Policies
 
 resource "aws_iam_policy" "dynamodb_policy" {
   count       = var.create_dynamodb_memory_table ? 1 : 0
@@ -67,7 +67,7 @@ resource "aws_iam_policy" "dynamodb_policy" {
   tags = var.tags
 }
 
-# ---------- Security Groups ----------
+# Security Groups
 
 resource "aws_security_group" "ecs_alb" {
   name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
@@ -109,7 +109,7 @@ resource "aws_security_group" "ecs_service" {
   tags = var.tags
 }
 
-# ---------- Load Balancer ----------
+# Load Balancer
 
 resource "aws_lb" "app" {
   name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-alb"
@@ -151,7 +151,7 @@ resource "aws_lb_listener" "http" {
   tags = var.tags
 }
 
-# ---------- Network Load Balancer (WebSocket private integration) ----------
+# Network Load Balancer (WebSocket private integration)
 # WebSocket needs VPC Link V1 (NLB-only); NLB fronts the existing ALB. WebSocket mode only.
 resource "aws_lb" "nlb" {
   count              = var.websocket_mode ? 1 : 0
@@ -206,7 +206,7 @@ resource "aws_lb_listener" "nlb" {
   tags = var.tags
 }
 
-# ---------- ECS Service ----------
+# ECS Service
 
 module "ecs_service" {
   source  = "terraform-aws-modules/ecs/aws//modules/service"
