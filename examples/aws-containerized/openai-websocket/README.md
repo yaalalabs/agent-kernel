@@ -132,27 +132,27 @@ Use `async` here until containerized stream support lands.
 - Terraform (`1.9.5` or higher) installed
 - Docker installed (for building the container image)
 - UV package manager installed
-- An ECR repository for the application image
 
 ## Deployment Steps
 
 1. Configure environment variables:
     ```bash
     export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    export TF_VAR_vpc_id=<VPC_ID>
+    export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
     ```
 
-2. Update `deploy/terraform.tfvars` with your VPC, subnets, and ECR repository details.
+2. Update `deploy/terraform.tfvars` if you want different naming (`product_alias`, `env_alias`,
+   `module_name`, `region`).
 
 3. Run the deployment script from the `deploy/` directory:
     ```bash
     cd deploy && ./deploy.sh  # ./deploy.sh local for local agentkernel build
     ```
 
-    The script will:
-    - Build the application deployment package with dependencies
-    - Build the Docker image with the deployment package
-    - Push the image to the specified ECR repository
-    - Run `terraform apply`
+    The script builds the application deployment package with dependencies, then runs
+    `terraform apply`. The module builds the Docker image from `../dist` and pushes it to a
+    Terraform-managed ECR repository automatically — no manual ECR setup or push is needed.
 
 4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then try it:
     ```bash

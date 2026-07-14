@@ -19,7 +19,6 @@ module "containerized_agents" {
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
-    image_uri      = var.ecr_image_uri
     environment_variables = {
       OPENAI_API_KEY = var.openai_api_key
     }
