@@ -95,9 +95,7 @@ class ResponseDBHandler:
             )
 
         else:
-            raise ValueError(
-    "No valid response store configured. Please configure either Redis, Valkey or DynamoDB in execution.response_store"
-)
+            raise ValueError("No valid response store configured. Please configure either Redis, Valkey or DynamoDB in execution.response_store")
 
     def get_store(self) -> ResponseStore:
         """
