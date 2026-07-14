@@ -137,8 +137,27 @@ class TestChatServiceThreadIntegration:
             assert status == 400
             assert "multimodal" in body["error"]
             handler.run_sync.assert_not_called()
+            # The rejection fires before any thread state exists — no phantom thread
+            assert thread_enabled.get_thread("s1") is None
         finally:
             AKConfig.get().multimodal.enabled = original
+
+    def test_thread_on_session_cache_rejected_creates_no_thread(self, thread_enabled):
+        original_enabled = AKConfig.get().multimodal.enabled
+        original_storage = AKConfig.get().multimodal.storage_type
+        AKConfig.get().multimodal.enabled = True
+        AKConfig.get().multimodal.storage_type = "session_cache"
+        try:
+            service = ChatService()
+            handler = _mock_handler(Session("s1"))
+            with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+                status, body = service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1"))
+            assert status == 400
+            assert "session_cache" in body["error"]
+            assert thread_enabled.get_thread("s1") is None
+        finally:
+            AKConfig.get().multimodal.enabled = original_enabled
+            AKConfig.get().multimodal.storage_type = original_storage
 
     def test_stream_thread_on_missing_user_id_rejected(self, thread_enabled):
         service = ChatService()
@@ -170,6 +189,46 @@ class TestChatServiceThreadIntegration:
         with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
             gen = service.process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1"))
             list(gen)  # drain — the error is yielded as an error chunk
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [(m.role,) for m in messages] == [("user",)]
+
+    def test_stream_thread_on_halted_stream_appends_no_assistant_message(self, thread_enabled):
+        # A pre-hook halt (e.g. input guardrail) yields an error chunk without raising —
+        # the thread must not record a blank assistant message.
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_sync.return_value = iter([StreamChunk(error="blocked by guardrail", done=True)])
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = service.process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1"))
+            list(gen)  # drain the stream
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [(m.role,) for m in messages] == [("user",)]
+
+    def test_stream_thread_on_empty_stream_appends_no_assistant_message(self, thread_enabled):
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_sync.return_value = iter([StreamChunk(done=True)])
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = service.process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1"))
+            list(gen)  # drain the stream
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [(m.role,) for m in messages] == [("user",)]
+
+    @pytest.mark.asyncio
+    async def test_stream_async_thread_on_halted_stream_appends_no_assistant_message(self, thread_enabled):
+        async def _achunks(requests):
+            yield StreamChunk(error="blocked by guardrail", done=True)
+
+        service = ChatService()
+        handler = _mock_handler(Session("s1"))
+        handler.run_stream_async.side_effect = _achunks
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            gen = await service.process_stream_chat_async(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1"))
+            async for _ in gen:
+                pass
 
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role,) for m in messages] == [("user",)]

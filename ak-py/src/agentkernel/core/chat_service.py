@@ -410,12 +410,18 @@ class ChatService:
 
         async def _stream() -> AsyncGenerator[str, None]:
             deltas: List[str] = []
+            error_seen = False
             try:
                 async for chunk in handler.run_stream_async(requests):
+                    if chunk.error:
+                        error_seen = True
                     if chunk.delta:
                         deltas.append(chunk.delta)
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-                self._thread_post_run(thread_manager, req, "".join(deltas))
+                # A halted/errored stream (error chunk, no raise) or an empty one must
+                # not record a blank assistant message in the thread.
+                if not error_seen and deltas:
+                    self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -453,12 +459,18 @@ class ChatService:
 
         def _stream() -> Generator[str, None, None]:
             deltas: List[str] = []
+            error_seen = False
             try:
                 for chunk in handler.run_stream_sync(requests):
+                    if chunk.error:
+                        error_seen = True
                     if chunk.delta:
                         deltas.append(chunk.delta)
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-                self._thread_post_run(thread_manager, req, "".join(deltas))
+                # A halted/errored stream (error chunk, no raise) or an empty one must
+                # not record a blank assistant message in the thread.
+                if not error_seen and deltas:
+                    self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -498,10 +510,14 @@ class ChatService:
         req: BaseChatRequest,
         requests: List[Any],
     ) -> List[Any]:
-        """Thread-mode work done before the agent runs: create/load the thread,
-        store attachment bytes, append the user message, and return the rebuilt
+        """Thread-mode work done before the agent runs: store attachment bytes,
+        create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
         AgentRequestAttachmentRef entries for MultimodalPreHook to resolve.
+
+        store_attachments runs first — its config-validation rejections (raised
+        as ValueError) must fire before any thread state exists, so a rejected
+        request leaves no phantom thread behind.
 
         No-op when thread support is disabled (manager is None) — returns the
         requests unchanged.
@@ -513,6 +529,7 @@ class ChatService:
         """
         if manager is None:
             return requests
+        requests, attachments = manager.store_attachments(session_id=req.session_id, requests=requests)
         manager.get_or_create_thread(
             session_id=req.session_id,
             user_id=req.user_id,
@@ -520,7 +537,6 @@ class ChatService:
             name=req.thread_name,
             first_prompt=req.prompt,
         )
-        requests, attachments = manager.store_attachments(session_id=req.session_id, requests=requests)
         manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
         return requests
 
