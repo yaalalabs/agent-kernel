@@ -124,10 +124,7 @@ class ValkeyDriver:
         :param key: The key to check.
         :return: True if the key exists, False otherwise.
         """
-        try:
-            return bool(self.client.exists(key))
-        except valkey.ValkeyError:
-            return False
+        return bool(self.client.exists(key))
 
     def clear_prefix(self) -> None:
         """
