@@ -1,6 +1,14 @@
-# OpenAI Agents in ECS over a WebSocket API with queue-based (scalable) processing — see ../README.md.
+# Containerized module configuration for deploying OpenAI Agents in ECS, exposed over a
+# WebSocket API with queue-based (scalable) processing:
+#   Client -> WS API Gateway -> REST/IO service ($connect / enqueue chat) -> Input Queue
+#         -> Agent Runner (scales on backlog) -> Output Queue
+#         -> REST/IO service's output-queue consumer -> pushed back over the WS connection
+# See ../README.md for the wire protocol and architecture.
 module "containerized_agents" {
-  # WebSocket mode not yet in the yaalalabs/ak-containerized/aws registry — pin to local source until released.
+  # Containerized WebSocket mode is not yet published to the `yaalalabs/ak-containerized/aws`
+  # registry module — pin to the local source until a release picks it up, then switch to:
+  #   source  = "yaalalabs/ak-containerized/aws"
+  #   version = "<next release>"
   source = "../../../../ak-deployment/ak-aws/containerized"
 
   product_alias        = var.product_alias
@@ -14,7 +22,9 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
-  # REST/IO service: authenticates $connect, enqueues chat, and pushes replies back over the connection (ECSIOHandler).
+  # ---- REST/IO Service ----
+  # Authenticates $connect, enqueues chat frames, and pushes agent replies back over the
+  # WebSocket connection (Thread 2 polls the Output Queue — see ECSIOHandler).
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
@@ -23,12 +33,13 @@ module "containerized_agents" {
     }
   }
 
-  # Queue mode + WebSocket
+  # ---- Queue mode + WebSocket ----
   queue_mode     = true
   execution_mode = "async" # only "async" is wired up end-to-end today; "stream" isn't yet implemented for ECS
   ws_chat_route  = "chat"
 
-  # Custom route beyond chat — registered via @AWSWebsocketAPI.register("status"), answered directly (no queue).
+  # Custom WebSocket route beyond the default chat route — registered via
+  # @AWSWebsocketAPI.register("status") in app_rest_service.py, answered directly (no queue involved).
   ws_routes = [
     { route = "status" }
   ]
@@ -45,7 +56,9 @@ module "containerized_agents" {
     output_queue_create_dlq                = true
   }
 
-  # Agent Runner: separate ECS service that polls the Input Queue, runs the agent, sends results to the Output Queue.
+  # ---- Agent Runner ----
+  # Separate ECS service that polls the Input Queue, runs the agent, and sends the result
+  # (with the endpoint_url forwarded) to the Output Queue.
   agent_runner = {
     cpu           = 1024
     memory        = 2048
@@ -57,7 +70,8 @@ module "containerized_agents" {
     }
   }
 
-  # Agent Runner auto scaling: scale on SQS backlog per task (BacklogPerTask metric).
+  # ---- Agent Runner Auto Scaling ----
+  # Scale based on SQS backlog per task (BacklogPerTask custom metric).
   scaling_config = {
     enabled            = true
     min_count          = 1

@@ -121,9 +121,9 @@ variable "create_dynamodb_memory_table" {
   default     = false
 }
 
-# -
+# ---------------------------------------------------------------------------
 # REST Service Configuration
-# -
+# ---------------------------------------------------------------------------
 
 variable "rest_service" {
   description = "REST service configuration object"
@@ -216,9 +216,9 @@ variable "enable_mcp_server" {
 data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
 
-# -
+# ---------------------------------------------------------------------------
 # Queue Mode Configuration
-# -
+# ---------------------------------------------------------------------------
 
 variable "queue_mode" {
   type        = bool
@@ -276,7 +276,7 @@ variable "ws_routes" {
   }
 }
 
-# Queue Configuration Object
+# --- Queue Configuration Object ---
 
 variable "queue_config" {
   description = "Queue configuration object"
@@ -330,7 +330,7 @@ variable "queue_config" {
   }
 }
 
-# Agent Runner Configuration Object
+# --- Agent Runner Configuration Object ---
 
 variable "agent_runner" {
   description = "Agent runner configuration object"
@@ -354,7 +354,7 @@ variable "agent_runner" {
   }
 }
 
-# Scaling Configuration Object
+# --- Scaling Configuration Object ---
 
 variable "scaling_config" {
   description = "Auto scaling configuration object for agent runner"

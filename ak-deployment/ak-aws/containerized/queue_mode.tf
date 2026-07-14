@@ -1,7 +1,7 @@
-# Queue Mode Resources
+# ---------- Queue Mode Resources ----------
 # This file orchestrates SQS queues, agent runner, and related resources for queue-based execution
 
-# SQS Queues Module
+# ---------- SQS Queues Module ----------
 
 module "queues" {
   count  = var.queue_mode ? 1 : 0
@@ -16,7 +16,7 @@ module "queues" {
   tags = var.tags
 }
 
-# Agent Runner Module
+# ---------- Agent Runner Module ----------
 
 module "agent_runner" {
   count  = var.queue_mode ? 1 : 0

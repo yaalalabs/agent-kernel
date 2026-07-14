@@ -1,5 +1,11 @@
-# API Gateway Async Mode Integration
-# rest_async only: adds GET /api/v1/chat (poll by ?request_id=); only the path is rewritten.
+# ---------- API Gateway Async Mode Integration ----------
+# Only needed for rest_async mode — adds GET /api/{version}/{endpoint} for polling.
+#
+# The client polls by request_id, passed as a query string (e.g. ?request_id=<uuid>). The
+# backend RestHandler.poll_response reads request_id (and optional session_id) from the
+# query string on GET /api/v1/chat — the SAME path as the enqueue POST, just a different
+# method (see deployment/common/rest_handler.py). API Gateway forwards the query string
+# unchanged, so only the path is rewritten here.
 
 resource "aws_apigatewayv2_integration" "async_get" {
   count                = var.queue_mode && var.execution_mode == "rest_async" ? 1 : 0

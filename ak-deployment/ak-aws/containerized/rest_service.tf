@@ -1,4 +1,4 @@
-# REST Service Module
+# ---------- REST Service Module ----------
 # Manages the main ECS service that handles HTTP requests
 
 module "rest_service" {
@@ -53,7 +53,7 @@ module "rest_service" {
   tags = var.tags
 }
 
-# ECS Cluster
+# ---------- ECS Cluster ----------
 
 module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"

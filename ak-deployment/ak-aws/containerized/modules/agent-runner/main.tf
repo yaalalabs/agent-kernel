@@ -20,7 +20,7 @@ locals {
   )
 }
 
-# IAM Roles
+# ---------- IAM Roles ----------
 
 resource "aws_iam_role" "agent_runner_execution_role" {
   name = "${var.prefix}-agent-runner-exec-role"
@@ -57,7 +57,7 @@ resource "aws_iam_role" "agent_runner_task_role" {
   tags = var.tags
 }
 
-# IAM Policies
+# ---------- IAM Policies ----------
 
 resource "aws_iam_policy" "agent_runner_logs_policy" {
   name = "${var.prefix}-agent-runner-logs"
@@ -156,7 +156,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachme
   policy_arn = aws_iam_policy.agent_runner_dynamodb_memory_policy[0].arn
 }
 
-# ECS Resources
+# ---------- ECS Resources ----------
 
 resource "aws_security_group" "agent_runner" {
   name        = "${var.prefix}-agent-runner-sg"
@@ -235,7 +235,7 @@ resource "aws_ecs_service" "agent_runner" {
   }
 }
 
-# Auto Scaling
+# ---------- Auto Scaling ----------
 
 resource "aws_iam_role" "backlog_metric_lambda_role" {
   count = var.scaling_config.enabled ? 1 : 0

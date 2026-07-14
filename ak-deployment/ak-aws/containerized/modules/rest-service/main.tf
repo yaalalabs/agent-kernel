@@ -27,7 +27,7 @@ locals {
   )
 }
 
-# Service Discovery
+# ---------- Service Discovery ----------
 
 resource "aws_service_discovery_http_namespace" "this" {
   name        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
@@ -35,7 +35,7 @@ resource "aws_service_discovery_http_namespace" "this" {
   tags        = var.tags
 }
 
-# IAM Policies
+# ---------- IAM Policies ----------
 
 resource "aws_iam_policy" "dynamodb_policy" {
   count       = var.create_dynamodb_memory_table ? 1 : 0
@@ -67,7 +67,7 @@ resource "aws_iam_policy" "dynamodb_policy" {
   tags = var.tags
 }
 
-# Security Groups
+# ---------- Security Groups ----------
 
 resource "aws_security_group" "ecs_alb" {
   name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
@@ -109,7 +109,7 @@ resource "aws_security_group" "ecs_service" {
   tags = var.tags
 }
 
-# Load Balancer
+# ---------- Load Balancer ----------
 
 resource "aws_lb" "app" {
   name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-alb"
@@ -151,62 +151,7 @@ resource "aws_lb_listener" "http" {
   tags = var.tags
 }
 
-# Network Load Balancer (WebSocket private integration)
-# WebSocket needs VPC Link V1 (NLB-only); NLB fronts the existing ALB. WebSocket mode only.
-resource "aws_lb" "nlb" {
-  count              = var.websocket_mode ? 1 : 0
-  name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-nlb"
-  internal           = true
-  load_balancer_type = "network"
-  subnets            = var.subnet_ids
-
-  tags = var.tags
-}
-
-resource "aws_lb_target_group" "nlb_to_alb" {
-  count       = var.websocket_mode ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-nlb-tg"
-  port        = 80
-  protocol    = "TCP"
-  vpc_id      = var.vpc_id
-  target_type = "alb"
-
-  health_check {
-    protocol            = "HTTP"
-    path                = var.rest_service.health_check_endpoint
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    interval            = 30
-    matcher             = "200-399"
-  }
-
-  tags = var.tags
-}
-
-resource "aws_lb_target_group_attachment" "nlb_to_alb" {
-  count            = var.websocket_mode ? 1 : 0
-  target_group_arn = aws_lb_target_group.nlb_to_alb[0].arn
-  target_id        = aws_lb.app.arn
-  port             = 80
-
-  # The ALB must have its listener up before it can be registered as an NLB target.
-  depends_on = [aws_lb_listener.http]
-}
-
-resource "aws_lb_listener" "nlb" {
-  count             = var.websocket_mode ? 1 : 0
-  load_balancer_arn = aws_lb.nlb[0].arn
-  port              = 80
-  protocol          = "TCP"
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.nlb_to_alb[0].arn
-  }
-
-  tags = var.tags
-}
-
-# ECS Service
+# ---------- ECS Service ----------
 
 module "ecs_service" {
   source  = "terraform-aws-modules/ecs/aws//modules/service"
