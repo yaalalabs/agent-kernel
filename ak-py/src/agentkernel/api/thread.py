@@ -18,9 +18,11 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
     - GET /api/v1/threads: List threads filtered by user_id and/or group_id
     - GET /api/v1/threads/{session_id}: Get a thread with full message history
 
-    When an Authoriser is supplied, every request must carry a Bearer token that
-    the Authoriser resolves to a user_id; listings are scoped to that user and
-    thread reads enforce ownership. Without an Authoriser, routes are open.
+    Threads are renamed via the chat request's thread_name field, not through
+    this router. When an Authoriser is supplied, every request must carry a
+    Bearer token that the Authoriser resolves to a user_id; listings are scoped
+    to that user and thread reads enforce ownership. Without an Authoriser,
+    routes are open.
     """
 
     def __init__(self, authoriser: Optional[Authoriser] = None):

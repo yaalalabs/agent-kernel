@@ -1,16 +1,31 @@
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pytest
 
-from agentkernel.core.config import AKConfig, _ThreadStoreConfig
+from agentkernel.core.config import AKConfig, _ThreadNamingConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage, AgentRequestText
-from agentkernel.core.thread import ConversationThreadManager
+from agentkernel.core.thread import ConversationThreadManager, ThreadNamingStrategy
 from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
+
+
+class EchoNaming(ThreadNamingStrategy):
+    """Offline test strategy: the first prompt becomes the name, no LLM call."""
+
+    def generate_name(self, prompt: str) -> str:
+        return (prompt or "").strip()
 
 
 @pytest.fixture
 def thread_enabled():
-    """Enable thread support with the in-memory store for the duration of a test."""
+    """Enable thread support with the in-memory store for the duration of a test.
+
+    An offline naming stub is registered so no test ever reaches LiteLLM; the
+    LLM naming tests drop the stub and mock the LiteLLM call instead.
+    """
     AKConfig.get().thread = _ThreadStoreConfig(type="memory")
     ConversationThreadManager.reset()
+    ConversationThreadManager.set_naming_strategy(EchoNaming())
     InMemoryThreadStore._threads.clear()
     InMemoryThreadStore._messages.clear()
     yield ConversationThreadManager.get()
@@ -18,6 +33,18 @@ def thread_enabled():
     ConversationThreadManager.reset()
     InMemoryThreadStore._threads.clear()
     InMemoryThreadStore._messages.clear()
+
+
+@pytest.fixture
+def thread_enabled_llm(thread_enabled):
+    """Rebuild the manager with the real default (LLM) naming strategy."""
+    ConversationThreadManager.reset()  # drops the offline stub
+    yield ConversationThreadManager.get()
+
+
+def _llm_response(content):
+    """Build a minimal litellm.completion response carrying the given content."""
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
 class TestConversationThreadManager:
@@ -37,25 +64,78 @@ class TestConversationThreadManager:
         assert created.user_id == "u1"
         assert created.group_id == "g1"
 
-        # Second call with different metadata returns the existing thread untouched
+        # Second call: user_id/group_id are fixed at creation; only an explicit name applies
         loaded = thread_enabled.get_or_create_thread("s1", "u2", group_id="g2", name="other")
         assert loaded.user_id == "u1"
         assert loaded.group_id == "g1"
+        assert loaded.name == "other"
+        assert loaded.name_locked is True
 
     def test_explicit_name_wins_over_prompt(self, thread_enabled):
         thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello world")
         assert thread.name == "My thread"
 
-    def test_name_falls_back_to_prompt_prefix(self, thread_enabled):
+    def test_name_falls_back_to_prompt_when_absent(self, thread_enabled):
         thread = thread_enabled.get_or_create_thread("s1", "u1", first_prompt="What is the refund policy?")
-        assert thread.name == "What is the refund policy?"
+        assert thread.name == "What is the refund policy?"  # from the naming strategy
 
-    def test_long_prompt_name_is_trimmed_at_word_boundary(self, thread_enabled):
-        prompt = "word " * 40  # far beyond 80 chars
-        thread = thread_enabled.get_or_create_thread("s1", "u1", first_prompt=prompt)
-        assert len(thread.name) <= 81  # 80 chars + ellipsis
-        assert thread.name.endswith("…")
-        assert not thread.name[:-1].endswith(" ")
+    def test_provided_name_locks_thread_name(self, thread_enabled):
+        thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello")
+        assert thread.name_locked is True
+
+    def test_auto_generated_name_is_not_locked(self, thread_enabled):
+        thread = thread_enabled.get_or_create_thread("s1", "u1", first_prompt="Hello")
+        assert thread.name_locked is False
+
+    def test_custom_naming_strategy_overrides_default(self, thread_enabled):
+        class UpperNaming(ThreadNamingStrategy):
+            def generate_name(self, prompt: str) -> str:
+                return prompt.upper()
+
+        ConversationThreadManager.set_naming_strategy(UpperNaming())
+        thread = thread_enabled.get_or_create_thread("s1", "u1", first_prompt="hello")
+        assert thread.name == "HELLO"
+
+    def test_custom_naming_strategy_not_used_for_explicit_name(self, thread_enabled):
+        class UpperNaming(ThreadNamingStrategy):
+            def generate_name(self, prompt: str) -> str:
+                return prompt.upper()
+
+        ConversationThreadManager.set_naming_strategy(UpperNaming())
+        thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="hello")
+        assert thread.name == "My thread"
+
+    def test_name_on_existing_thread_renames_and_locks(self, thread_enabled):
+        created = thread_enabled.get_or_create_thread("s1", "u1", first_prompt="Hello world")
+        assert created.name_locked is False
+        renamed = thread_enabled.get_or_create_thread("s1", "u1", name="Better name")
+        assert renamed.name == "Better name"
+        assert renamed.name_locked is True
+        assert thread_enabled.get_thread("s1").name == "Better name"
+
+    def test_name_on_existing_thread_renames_even_when_locked(self, thread_enabled):
+        thread_enabled.get_or_create_thread("s1", "u1", name="First name", first_prompt="Hello")
+        renamed = thread_enabled.get_or_create_thread("s1", "u1", name="Second name")
+        assert renamed.name == "Second name"
+        assert renamed.name_locked is True
+
+    def test_same_name_resent_skips_store_write(self, thread_enabled):
+        thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello")
+        with patch.object(thread_enabled._store, "update_name") as update_name:
+            thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread")
+        assert thread.name == "My thread"
+        update_name.assert_not_called()
+
+    def test_blank_name_is_ignored(self, thread_enabled):
+        thread_enabled.get_or_create_thread("s1", "u1", first_prompt="Hello")
+        thread = thread_enabled.get_or_create_thread("s1", "u1", name="   ")
+        assert thread.name == "Hello"
+        assert thread.name_locked is False
+
+    def test_blank_name_at_creation_does_not_lock(self, thread_enabled):
+        thread = thread_enabled.get_or_create_thread("s1", "u1", name="  ", first_prompt="Hello")
+        assert thread.name == "Hello"  # naming strategy applies
+        assert thread.name_locked is False
 
     def test_append_message_ordering(self, thread_enabled):
         thread_enabled.get_or_create_thread("s1", "u1", first_prompt="hi")
@@ -177,3 +257,90 @@ class TestConversationThreadManager:
         finally:
             AKConfig.get().multimodal.enabled = original_enabled
             AKConfig.get().multimodal.storage_type = original_storage
+
+
+class TestLLMThreadNaming:
+    """Tests for the default LLM-based ThreadNamingStrategy with a mocked LiteLLM call."""
+
+    def test_llm_name_used_and_unlocked(self, thread_enabled_llm):
+        with patch("litellm.completion", return_value=_llm_response("Paris Trip Planning")) as completion:
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Help me plan a trip to Paris")
+        assert thread.name == "Paris Trip Planning"
+        assert thread.name_locked is False
+        completion.assert_called_once()
+        assert completion.call_args.kwargs["model"] == "gpt-4o-mini"
+
+    def test_llm_naming_model_config_honored(self, thread_enabled_llm):
+        AKConfig.get().thread.naming.model = "gpt-4o"
+        with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
+            thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
+        assert completion.call_args.kwargs["model"] == "gpt-4o"
+
+    def test_llm_name_surrounding_quotes_stripped(self, thread_enabled_llm):
+        with patch("litellm.completion", return_value=_llm_response('  "Paris Trip"  ')):
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Trip to Paris")
+        assert thread.name == "Paris Trip"
+
+    def test_llm_name_capped_at_max_length(self, thread_enabled_llm):
+        with patch("litellm.completion", return_value=_llm_response("title " * 30)):
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
+        assert len(thread.name) <= 81  # 80 chars + ellipsis
+        assert thread.name.endswith("…")
+
+    def test_llm_failure_falls_back_to_truncation(self, thread_enabled_llm):
+        with patch("litellm.completion", side_effect=Exception("no API key")):
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="What is the refund policy?")
+        assert thread.name == "What is the refund policy?"
+        assert thread.name_locked is False
+
+    def test_llm_failure_fallback_trims_long_prompt_at_word_boundary(self, thread_enabled_llm):
+        prompt = "word " * 40  # far beyond 80 chars
+        with patch("litellm.completion", side_effect=Exception("no API key")):
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt=prompt)
+        assert len(thread.name) <= 81  # 80 chars + ellipsis
+        assert thread.name.endswith("…")
+        assert not thread.name[:-1].endswith(" ")
+
+    def test_naming_max_length_config_honored(self, thread_enabled_llm):
+        AKConfig.get().thread.naming.max_length = 10
+        with patch("litellm.completion", return_value=_llm_response("hello wonderful world")):
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Tell me something nice")
+        assert thread.name == "hello…"
+
+    def test_llm_empty_reply_falls_back_to_truncation(self, thread_enabled_llm):
+        with patch("litellm.completion", return_value=_llm_response("")):
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="What is the refund policy?")
+        assert thread.name == "What is the refund policy?"
+
+    def test_llm_blank_prompt_skips_call(self, thread_enabled_llm):
+        with patch("litellm.completion") as completion:
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="   ")
+        assert thread.name == ""
+        completion.assert_not_called()
+
+    def test_llm_explicit_name_skips_call(self, thread_enabled_llm):
+        with patch("litellm.completion") as completion:
+            thread = thread_enabled_llm.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello")
+        assert thread.name == "My thread"
+        assert thread.name_locked is True
+        completion.assert_not_called()
+
+    def test_build_instruction_includes_prompt_and_gibberish_rule(self):
+        instruction = ThreadNamingStrategy().build_instruction("Plan my Paris trip")
+        assert "Plan my Paris trip" in instruction
+        assert "New conversation" in instruction
+
+    def test_custom_instruction_subclass_honored(self, thread_enabled_llm):
+        class MyNaming(ThreadNamingStrategy):
+            def build_instruction(self, prompt: str) -> str:
+                return f"CUSTOM: {prompt}"
+
+        ConversationThreadManager.set_naming_strategy(MyNaming())
+        with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
+            thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello")
+        assert completion.call_args.kwargs["messages"] == [{"role": "user", "content": "CUSTOM: Hello"}]
+
+    def test_naming_config_defaults(self):
+        config = _ThreadNamingConfig()
+        assert config.model == "gpt-4o-mini"
+        assert config.max_length == 80

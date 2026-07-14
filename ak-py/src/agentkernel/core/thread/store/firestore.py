@@ -109,6 +109,28 @@ class FirestoreThreadStore(ThreadStore):
             return self.load_metadata(thread.session_id)
         return metadata
 
+    def update_name(self, session_id: str, name: str) -> Thread:
+        """
+        Set a thread's display name and mark it name_locked by rewriting the
+        metadata data blob; the top-level updated_at field is untouched.
+        :param session_id: Unique identifier for the thread.
+        :param name: The new display name.
+        :return: The updated thread metadata.
+        :raises KeyError: If the thread does not exist.
+        """
+        from google.api_core.exceptions import NotFound
+
+        thread = self.load_metadata(session_id)
+        if thread is None:
+            raise KeyError(f"Thread {session_id} not found")
+        thread.name = name
+        thread.name_locked = True
+        try:
+            self.collection.document(session_id).update({"data": thread.model_copy(update={"messages": []}).model_dump_json()})
+        except NotFound:
+            raise KeyError(f"Thread {session_id} not found")
+        return thread.model_copy(update={"messages": []})
+
     def load_metadata(self, session_id: str) -> Optional[Thread]:
         """
         Load a thread's metadata document by its session id.

@@ -64,6 +64,48 @@ class TestDynamoDBConditionalCreate:
             store.create(Thread(session_id="s1", user_id="u1"))
 
 
+class TestDynamoDBUpdateName:
+    """update_name must rewrite the data blob conditionally and leave updated_at alone (mocked table)."""
+
+    @pytest.fixture
+    def store(self):
+        original = AKConfig.get().thread
+        AKConfig.get().thread = _ThreadStoreConfig(type="dynamodb", dynamodb=_ThreadDynamoDBConfig())
+        store = DynamoDBThreadStore()
+        store._ddb_table = MagicMock()
+        yield store
+        AKConfig.get().thread = original
+        DynamoDBThreadStore._ddb_table = None
+
+    def test_update_name_rewrites_data_blob(self, store):
+        existing = Thread(session_id="s1", user_id="u1", name="old")
+        store.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
+
+        result = store.update_name("s1", "new name")
+
+        assert result.name == "new name"
+        assert result.name_locked is True
+        kwargs = store.table.update_item.call_args.kwargs
+        assert kwargs["ConditionExpression"] == "attribute_exists(session_id)"
+        written = Thread.model_validate_json(kwargs["ExpressionAttributeValues"][":data"])
+        assert written.name == "new name"
+        assert written.name_locked is True
+        assert "updated_at" not in kwargs["UpdateExpression"]
+
+    def test_update_name_missing_thread_raises(self, store):
+        store.table.get_item.return_value = {}
+        with pytest.raises(KeyError):
+            store.update_name("missing", "new name")
+        store.table.update_item.assert_not_called()
+
+    def test_update_name_condition_failure_raises_key_error(self, store):
+        existing = Thread(session_id="s1", user_id="u1", name="old")
+        store.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
+        store.table.update_item.side_effect = ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+        with pytest.raises(KeyError):
+            store.update_name("s1", "new name")
+
+
 class TestInMemoryThreadStore:
     """Tests for InMemoryThreadStore (metadata/message split + pagination)."""
 
@@ -106,6 +148,23 @@ class TestInMemoryThreadStore:
     def test_append_message_missing_thread_raises(self):
         with pytest.raises(KeyError):
             self.store.append_message("missing", ThreadMessage(role="user", content="hi"))
+
+    def test_update_name_sets_name_and_lock_without_touching_updated_at(self):
+        self.store.create(Thread(session_id="s1", user_id="u1", name="old"))
+        before = self.store.load_metadata("s1").updated_at
+
+        updated = self.store.update_name("s1", "new name")
+        assert updated.name == "new name"
+        assert updated.name_locked is True
+        assert updated.updated_at == before
+
+        loaded = self.store.load_metadata("s1")
+        assert loaded.name == "new name"
+        assert loaded.name_locked is True
+
+    def test_update_name_missing_thread_raises(self):
+        with pytest.raises(KeyError):
+            self.store.update_name("missing", "new name")
 
     def test_append_message_updates_updated_at(self):
         self.store.create(Thread(session_id="s1", user_id="u1"))

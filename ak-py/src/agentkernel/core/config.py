@@ -231,10 +231,16 @@ class _ThreadCosmosDBConfig(BaseModel):
     table_name: str = Field(default="akagentthreads", description="Cosmos DB table name for thread storage")
 
 
+class _ThreadNamingConfig(BaseModel):
+    model: str = Field(default="gpt-4o-mini", description="LiteLLM model used to generate thread names")
+    max_length: int = Field(default=80, description="Maximum length of an auto-generated thread name")
+
+
 class _ThreadStoreConfig(BaseModel):
     """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
 
     type: str = Field(default="memory", pattern="^(memory|redis|dynamodb|cosmosdb|firestore)$")
+    naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
     redis: Optional[_ThreadRedisConfig] = None
     dynamodb: Optional[_ThreadDynamoDBConfig] = None
     firestore: Optional[_ThreadFirestoreConfig] = None

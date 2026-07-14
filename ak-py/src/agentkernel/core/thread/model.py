@@ -47,6 +47,9 @@ class Thread(BaseModel):
     user_id: str
     group_id: Optional[str] = None
     name: str = ""
+    # True once the name was explicitly supplied (thread_name at creation or a
+    # rename) — automatic naming strategies must never overwrite it.
+    name_locked: bool = False
     created_at: datetime.datetime = Field(default_factory=_utc_now)
     updated_at: datetime.datetime = Field(default_factory=_utc_now)
     messages: List[ThreadMessage] = Field(default_factory=list)

@@ -124,4 +124,38 @@ async def test_thread_auto_naming(http_client):
 
     resp = await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)
     assert resp.status_code == 200
-    assert resp.json()["name"] == prompt  # no thread_name given — derived from the first prompt
+    thread = resp.json()
+    # No thread_name given — the default LLM strategy derives a concise title from the first prompt
+    assert thread["name"]
+    assert len(thread["name"]) <= 81  # max_length (80) + ellipsis
+    assert thread["name_locked"] is False
+
+
+@pytest.mark.asyncio
+async def test_thread_auto_naming_gibberish_prompt(http_client):
+    print("test_thread_auto_naming_gibberish_prompt")
+    session_id = str(uuid.uuid4())
+    gibberish = "asdkjfh qwelrkj zxcmvn 12093"
+    assert (await http_client.chat(gibberish, session_id=session_id, user_id="alice")).status_code == 200
+
+    resp = await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)
+    assert resp.status_code == 200
+    thread = resp.json()
+    assert thread["name"]
+    assert thread["name"] != gibberish  # the raw gibberish never becomes the thread name
+
+
+@pytest.mark.asyncio
+async def test_thread_rename_via_chat(http_client):
+    print("test_thread_rename_via_chat")
+    session_id = str(uuid.uuid4())
+    assert (await http_client.chat("Hello", session_id=session_id, user_id="alice")).status_code == 200
+
+    # A later chat request carrying thread_name renames the existing thread
+    resp = await http_client.chat("Hello again", session_id=session_id, user_id="alice", thread_name="My renamed thread")
+    assert resp.status_code == 200
+
+    resp = await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)
+    thread = resp.json()
+    assert thread["name"] == "My renamed thread"
+    assert thread["name_locked"] is True  # renamed threads opt out of automatic naming

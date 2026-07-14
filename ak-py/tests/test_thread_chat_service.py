@@ -6,8 +6,15 @@ from agentkernel.core.base import Session
 from agentkernel.core.chat_service import ChatService
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestAttachmentRef, BaseRunRequest, StreamChunk
-from agentkernel.core.thread import ConversationThreadManager
+from agentkernel.core.thread import ConversationThreadManager, ThreadNamingStrategy
 from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
+
+
+class EchoNaming(ThreadNamingStrategy):
+    """Offline test strategy: the first prompt becomes the name, no LLM call."""
+
+    def generate_name(self, prompt: str) -> str:
+        return (prompt or "").strip()
 
 
 @pytest.fixture
@@ -15,6 +22,7 @@ def thread_enabled():
     """Enable thread support with the in-memory store for the duration of a test."""
     AKConfig.get().thread = _ThreadStoreConfig(type="memory")
     ConversationThreadManager.reset()
+    ConversationThreadManager.set_naming_strategy(EchoNaming())
     InMemoryThreadStore._threads.clear()
     InMemoryThreadStore._messages.clear()
     yield ConversationThreadManager.get()
@@ -87,6 +95,19 @@ class TestChatServiceThreadIntegration:
         thread = thread_enabled.get_thread("s1")
         assert thread.group_id == "g1"
         assert thread.name == "Support chat"
+
+    def test_thread_on_thread_name_renames_existing_thread(self, thread_enabled):
+        service = ChatService()
+        with patch("agentkernel.core.chat_service.AgentHandler", side_effect=lambda: _mock_handler(Session("s1"))):
+            service.process_chat_request(BaseRunRequest(prompt="first prompt", session_id="s1", user_id="u1"))
+            assert thread_enabled.get_thread("s1").name == "first prompt"  # auto-named, unlocked
+            assert thread_enabled.get_thread("s1").name_locked is False
+
+            service.process_chat_request(BaseRunRequest(prompt="second", session_id="s1", user_id="u1", thread_name="Renamed via chat"))
+
+        thread = thread_enabled.get_thread("s1")
+        assert thread.name == "Renamed via chat"
+        assert thread.name_locked is True
 
     def test_thread_on_failed_run_appends_no_assistant_message(self, thread_enabled):
         service = ChatService()

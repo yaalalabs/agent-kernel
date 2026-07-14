@@ -52,6 +52,19 @@ class ThreadStore(ABC):
         pass
 
     @abstractmethod
+    def update_name(self, session_id: str, name: str) -> Thread:
+        """
+        Set a thread's display name and mark it name_locked. Only the name and
+        the lock flag change — updated_at is left untouched so listing recency
+        keeps reflecting conversation activity, not renames.
+        :param session_id: Unique identifier for the thread.
+        :param name: The new display name.
+        :return: The updated thread metadata (empty messages list).
+        :raises KeyError: If the thread does not exist.
+        """
+        pass
+
+    @abstractmethod
     def load_metadata(self, session_id: str) -> Optional[Thread]:
         """
         Load a thread's metadata by its session id, with an empty messages list.

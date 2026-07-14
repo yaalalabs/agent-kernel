@@ -215,6 +215,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["api", "openai"] },
+    { name = "litellm" },
 ]
 
 [package.dev-dependencies]
@@ -226,7 +227,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.6.0" }]
+requires-dist = [
+    { name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.6.0" },
+    { name = "litellm", specifier = ">=1.74.9" },
+]
 
 [package.metadata.requires-dev]
 dev = [

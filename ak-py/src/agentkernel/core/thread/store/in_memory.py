@@ -36,6 +36,21 @@ class InMemoryThreadStore(ThreadStore):
         self._messages.setdefault(thread.session_id, [])
         return stored.model_copy(update={"messages": []})
 
+    def update_name(self, session_id: str, name: str) -> Thread:
+        """
+        Set a thread's display name and mark it name_locked; updated_at is untouched.
+        :param session_id: Unique identifier for the thread.
+        :param name: The new display name.
+        :return: The updated thread metadata.
+        :raises KeyError: If the thread does not exist.
+        """
+        thread = self._threads.get(session_id)
+        if thread is None:
+            raise KeyError(f"Thread {session_id} not found")
+        thread.name = name
+        thread.name_locked = True
+        return thread.model_copy(update={"messages": []})
+
     def load_metadata(self, session_id: str) -> Optional[Thread]:
         """
         Load a thread's metadata by its session id.

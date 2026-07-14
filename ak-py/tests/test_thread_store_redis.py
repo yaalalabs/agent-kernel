@@ -85,6 +85,39 @@ class TestRedisThreadStoreTTL:
         store.client.rpush.assert_not_called()
 
 
+class TestRedisThreadStoreUpdateName:
+    """update_name must rewrite only the meta key, leaving updated_at alone."""
+
+    def _wire_storage(self, store, payloads: dict):
+        """Make the mocked client behave like real key/value storage for GET/SET."""
+        store.client.get.side_effect = lambda key: payloads.get(key)
+        store.client.set.side_effect = lambda key, value, **kwargs: payloads.__setitem__(key, value.encode()) or True
+
+    def test_update_name_rewrites_meta_and_refreshes_ttl(self, make_store):
+        store = make_store(ttl=60)
+        existing = Thread(session_id="s1", user_id="u1", name="old")
+        payloads = {f"{PREFIX}s1:meta": existing.model_dump_json().encode()}
+        self._wire_storage(store, payloads)
+
+        result = store.update_name("s1", "new name")
+
+        assert result.name == "new name"
+        assert result.name_locked is True
+        stored = Thread.model_validate_json(payloads[f"{PREFIX}s1:meta"])
+        assert stored.name == "new name"
+        assert stored.name_locked is True
+        assert _expired_keys(store) == {f"{PREFIX}s1:meta"}
+        # updated_at lives in its own key and must not be written by a rename
+        assert f"{PREFIX}s1:updated_at" not in payloads
+
+    def test_update_name_missing_thread_raises(self, make_store):
+        store = make_store(ttl=60)
+        self._wire_storage(store, {})
+        with pytest.raises(KeyError):
+            store.update_name("missing", "new name")
+        store.client.set.assert_not_called()
+
+
 class TestRedisThreadStoreConditionalCreate:
     """create() must be conditional (SET NX) so a lost race never overwrites metadata."""
 

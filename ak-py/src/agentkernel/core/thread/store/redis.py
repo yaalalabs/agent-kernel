@@ -110,6 +110,27 @@ class RedisThreadStore(ThreadStore):
         self._expire(*expire_keys)
         return metadata
 
+    def update_name(self, session_id: str, name: str) -> Thread:
+        """
+        Set a thread's display name and mark it name_locked by rewriting the
+        meta key; updated_at (a separate key) is untouched. Concurrent renames
+        are last-write-wins, and appends are unaffected since messages live in
+        their own key.
+        :param session_id: Unique identifier for the thread.
+        :param name: The new display name.
+        :return: The updated thread metadata.
+        :raises KeyError: If the thread does not exist.
+        """
+        payload = self.client.get(self._meta_key(session_id))
+        if payload is None:
+            raise KeyError(f"Thread {session_id} not found")
+        thread = Thread.model_validate_json(payload)
+        thread.name = name
+        thread.name_locked = True
+        self.client.set(self._meta_key(session_id), thread.model_dump_json())
+        self._expire(self._meta_key(session_id))
+        return self.load_metadata(session_id)
+
     def load_metadata(self, session_id: str) -> Optional[Thread]:
         """
         Load a thread's metadata by its session id.

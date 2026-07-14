@@ -6,8 +6,15 @@ from fastapi.testclient import TestClient
 
 from agentkernel.api.thread import ThreadRESTRequestHandler
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.thread import Authoriser, ConversationThreadManager
+from agentkernel.core.thread import Authoriser, ConversationThreadManager, ThreadNamingStrategy
 from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
+
+
+class EchoNaming(ThreadNamingStrategy):
+    """Offline test strategy: the first prompt becomes the name, no LLM call."""
+
+    def generate_name(self, prompt: str) -> str:
+        return (prompt or "").strip()
 
 
 @pytest.fixture
@@ -15,6 +22,7 @@ def thread_enabled():
     """Enable thread support with the in-memory store for the duration of a test."""
     AKConfig.get().thread = _ThreadStoreConfig(type="memory")
     ConversationThreadManager.reset()
+    ConversationThreadManager.set_naming_strategy(EchoNaming())
     InMemoryThreadStore._threads.clear()
     InMemoryThreadStore._messages.clear()
     yield ConversationThreadManager.get()

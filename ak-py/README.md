@@ -361,7 +361,11 @@ Required when `session.type=redis`:
 Adding a `thread` block to the configuration turns on persistent, named conversation threads keyed by
 `session_id`. Once enabled, `user_id` becomes required on every chat request, a thread is auto-created on a
 session's first request, and history becomes readable over REST (`GET /api/v1/threads` and
-`GET /api/v1/threads/{session_id}`, optionally protected by a pluggable `Authoriser`). Attachments in thread
+`GET /api/v1/threads/{session_id}` — optionally protected by a pluggable `Authoriser`). Sending
+`thread_name` on any chat request sets or renames the thread's display name and locks it against automatic
+naming. Threads created without an explicit `thread_name` are
+named by a pluggable naming strategy — by default an LLM call derives a concise title from the first prompt
+(falling back to a prefix of the prompt when `litellm` or an API key is unavailable). Attachments in thread
 mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or
 `dynamodb` — `session_cache` is rejected). See `examples/api/thread-openai` and
 `examples/api/multimodal/thread-openai`.
@@ -371,6 +375,20 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 - **Options**: `memory`, `redis`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
 - **Default**: `memory`
 - **Environment Variable**: `AK_THREAD__TYPE`
+
+- **Naming Model**
+  - **Field**: `thread.naming.model`
+  - **Type**: string
+  - **Default**: `gpt-4o-mini`
+  - **Description**: LiteLLM model used to generate thread names (requires the optional `litellm` dependency and an API key in the environment; falls back to a truncated prompt prefix otherwise)
+  - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
+
+- **Auto-name Max Length**
+  - **Field**: `thread.naming.max_length`
+  - **Type**: integer
+  - **Default**: `80`
+  - **Description**: Maximum length of an auto-generated thread name
+  - **Environment Variable**: `AK_THREAD__NAMING__MAX_LENGTH`
 
 ##### Redis Thread Store
 

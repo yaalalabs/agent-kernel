@@ -15,10 +15,8 @@ from typing import List, Optional
 from ..config import AKConfig
 from ..model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
+from .naming import ThreadNamingStrategy
 from .store import ThreadStore, ThreadStoreBuilder
-
-# Maximum length of an auto-generated thread name derived from the first prompt.
-_MAX_AUTO_NAME_LENGTH = 80
 
 # Pagination defaults and cap for message/thread listings.
 DEFAULT_MESSAGE_PAGE_SIZE = 50
@@ -62,15 +60,19 @@ class ConversationThreadManager:
     """
 
     _instance: Optional["ConversationThreadManager"] = None
+    _naming_strategy: Optional[ThreadNamingStrategy] = None
     _lock: RLock = RLock()
     _log = logging.getLogger("ak.thread.manager")
 
-    def __init__(self, store: ThreadStore):
+    def __init__(self, store: ThreadStore, naming_strategy: Optional[ThreadNamingStrategy] = None):
         """
         Initializes a ConversationThreadManager instance.
         :param store: The ThreadStore backend to persist threads in.
+        :param naming_strategy: Strategy that names auto-created threads; the
+                                built-in LLM-based default when omitted.
         """
         self._store = store
+        self._naming = naming_strategy or ThreadNamingStrategy()
 
     @classmethod
     def get(cls) -> Optional["ConversationThreadManager"]:
@@ -84,33 +86,31 @@ class ConversationThreadManager:
             return None
         with cls._lock:
             if cls._instance is None:
-                cls._instance = cls(store=ThreadStoreBuilder.build())
+                cls._instance = cls(store=ThreadStoreBuilder.build(), naming_strategy=cls._naming_strategy)
             return cls._instance
+
+    @classmethod
+    def set_naming_strategy(cls, strategy: ThreadNamingStrategy) -> None:
+        """
+        Register a user-supplied ThreadNamingStrategy that names auto-created
+        threads instead of the built-in default. Call once at startup; also
+        applied to an already-built shared instance.
+        :param strategy: The strategy to use for auto-generated thread names.
+        """
+        with cls._lock:
+            cls._naming_strategy = strategy
+            if cls._instance is not None:
+                cls._instance._naming = strategy
 
     @classmethod
     def reset(cls) -> None:
         """
-        Drop the shared instance so the next get() rebuilds it from config.
-        Intended for testing.
+        Drop the shared instance and any registered naming strategy so the next
+        get() rebuilds from config. Intended for testing.
         """
         with cls._lock:
             cls._instance = None
-
-    @staticmethod
-    def _auto_name(prompt: str) -> str:
-        """
-        Derive a thread name from the first prompt: first 80 characters,
-        trimmed to the last word boundary, suffixed with an ellipsis when cut.
-        :param prompt: The first prompt of the session.
-        :return: The derived thread name.
-        """
-        prompt = (prompt or "").strip()
-        if len(prompt) <= _MAX_AUTO_NAME_LENGTH:
-            return prompt
-        cut = prompt[:_MAX_AUTO_NAME_LENGTH]
-        if " " in cut:
-            cut = cut.rsplit(" ", 1)[0]
-        return f"{cut}…"
+            cls._naming_strategy = None
 
     def get_or_create_thread(
         self,
@@ -122,22 +122,33 @@ class ConversationThreadManager:
     ) -> Thread:
         """
         Load the thread for a session_id, creating it on the session's first request.
-        group_id and name are applied only at creation and ignored for existing threads.
+        group_id is applied only at creation and ignored for existing threads. name
+        applies on any request: at creation it is used verbatim, and on an existing
+        thread it renames it; either way an explicitly supplied name locks the name
+        against automatic naming. A blank name is ignored.
         :param session_id: Unique identifier for the thread (same as the session id).
         :param user_id: Owning user id, stored at creation.
         :param group_id: Optional group/project scope, fixed at creation.
-        :param name: Optional display name; falls back to a prefix of first_prompt.
-        :param first_prompt: The prompt of the creating request, used for name fallback.
-        :return: The existing or newly created thread.
+        :param name: Optional display name; when given it sets/renames the thread
+                     name and locks it, otherwise the naming strategy derives one
+                     from first_prompt at creation.
+        :param first_prompt: The prompt of the creating request, used by the naming strategy.
+        :return: The existing (possibly renamed) or newly created thread.
         """
+        name = (name or "").strip() or None
         thread = self._store.load_metadata(session_id)
         if thread is not None:
+            # Skip the store write when the resent name is already in place and locked.
+            if name is not None and (name != thread.name or not thread.name_locked):
+                self._log.info(f"Renaming thread for session {session_id}")
+                return self._store.update_name(session_id, name)
             return thread
         thread = Thread(
             session_id=session_id,
             user_id=user_id,
             group_id=group_id,
-            name=name or self._auto_name(first_prompt or ""),
+            name=name or self._naming.generate_name(first_prompt or ""),
+            name_locked=name is not None,
         )
         self._log.info(f"Creating thread for session {session_id} (user {user_id})")
         return self._store.create(thread)

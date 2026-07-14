@@ -120,6 +120,34 @@ class DynamoDBThreadStore(ThreadStore):
             return self.load_metadata(thread.session_id)
         return metadata
 
+    def update_name(self, session_id: str, name: str) -> Thread:
+        """
+        Set a thread's display name and mark it name_locked by rewriting the
+        metadata data blob; the top-level updated_at attribute is untouched.
+        :param session_id: Unique identifier for the thread.
+        :param name: The new display name.
+        :return: The updated thread metadata.
+        :raises KeyError: If the thread does not exist.
+        """
+        thread = self.load_metadata(session_id)
+        if thread is None:
+            raise KeyError(f"Thread {session_id} not found")
+        thread.name = name
+        thread.name_locked = True
+        try:
+            self.table.update_item(
+                Key={"session_id": session_id, "sk": _META_SK},
+                UpdateExpression="SET #d = :data",
+                ConditionExpression="attribute_exists(session_id)",
+                ExpressionAttributeNames={"#d": "data"},
+                ExpressionAttributeValues={":data": thread.model_copy(update={"messages": []}).model_dump_json()},
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            raise KeyError(f"Thread {session_id} not found")
+        return thread.model_copy(update={"messages": []})
+
     def load_metadata(self, session_id: str) -> Optional[Thread]:
         """
         Load a thread's metadata item by its session id.
