@@ -19,9 +19,14 @@ class ValkeyDriver:
     def __init__(self):
         self._valkey_client = None
         self._log = logging.getLogger("ak.core.session.valkey.util")
-        self._url = AKConfig.get().session.valkey.url
-        self._prefix = AKConfig.get().session.valkey.prefix
-        self._ttl = int(AKConfig.get().session.valkey.ttl)
+
+        session_cfg = AKConfig.get().session
+        if session_cfg.valkey is None:
+            raise ValueError("session.valkey config block is required when session.type is 'valkey'")
+
+        self._url = session_cfg.valkey.url
+        self._prefix = session_cfg.valkey.prefix
+        self._ttl = int(session_cfg.valkey.ttl)
 
     @property
     def client(self):
