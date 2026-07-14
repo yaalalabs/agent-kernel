@@ -18,7 +18,9 @@ class ECSIOHandler:
     Thread 1 (rest-api):              RESTAPI.run — FastAPI/uvicorn. In REST queue
                                       modes ECSQueueRequestHandler is registered; in
                                       WebSocket (ASYNC/STREAM) mode the proxied WS
-                                      frames are handled by ECSWebSocketRequestHandler.
+                                      frames are handled by ECSWebSocketRequestHandler
+                                      (chat + any routes registered via
+                                      AWSWebsocketAPI.register — not by subclassing).
     Thread 2 (output-queue-consumer): ECSOutputConsumer.run — polls the Output Queue;
                                       writes to DB (REST) or pushes over WebSocket (ASYNC).
 

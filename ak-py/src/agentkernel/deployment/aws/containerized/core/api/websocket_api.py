@@ -1,46 +1,11 @@
-"""
-ECS WebSocket ingress handlers and WebSocket API.
-
-API Gateway WebSocket proxies each frame (HTTP_PROXY -> VPC Link -> ALB) to this
-container. Unlike the serverless Lambda (one function, dispatch on routeKey), the ECS
-service exposes a **separate HTTP endpoint per WebSocket route** — the gateway maps each
-route to its own backend path via overwrite:path, so no in-app dispatch is needed.
-
-  $connect       -> POST /ws/connect     (auth + store connection)
-  $disconnect    -> POST /ws/disconnect  (remove connection)
-  $default       -> POST /ws/default     (notify client of unknown route)
-  <chat route>   -> POST /ws/chat        (queue mode: enqueue; direct mode: run agent inline)
-  <custom route> -> POST /ws/<route>     (added by subclassing — see below)
-
-Routes are split across two handlers, mirroring the serverless side (ConnectionRoutesHandler /
-SystemRoutesHandler over a shared base):
-
-- ``ECSWebSocketSystemRequestHandler`` owns the framework-managed protocol routes
-  ($connect/$disconnect/$default). $connect authenticates the handshake, so this handler owns the
-  ``AuthValidator``. Applications never touch it — ``AWSWebsocketAPI`` wires it in automatically.
-- ``ECSWebSocketRequestHandler`` owns the application routes: the built-in chat route plus any
-  custom routes. This is the extension point — it needs no ``AuthValidator`` (the connection's user
-  is resolved from the store, not re-authenticated per frame).
-
-Both share ``ECSWebSocketHandlerBase``: the connection store, the push-endpoint construction, and
-the response envelope.
-
-Custom routes follow the same extension model as the containerized REST handlers: subclass
-``ECSWebSocketRequestHandler``, call ``super().get_router()``, and add your own ``/ws/<route>`` POST
-endpoints onto the returned router (see the class docstring for an example). Each custom route must
-be declared in Terraform via ``ws_routes`` (which maps the route to POST /ws/<route>); both sides
-must agree on the route name, exactly like the configurable chat route.
-
-The WS $context (connection id, domain, stage) still arrives as x-ws-* headers.
-Responses are pushed back over the connection by ECSOutputConsumer (ASYNC mode).
-"""
-
 from __future__ import annotations
 
+import inspect
 import json
 import logging
+import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, ClassVar, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -56,22 +21,13 @@ from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionS
 
 
 class ECSWebSocketHandlerBase(RESTRequestHandler):
-    """Shared plumbing for the ECS WebSocket handlers.
+    """Shared plumbing for the ECS WebSocket handlers: connection store, push endpoint construction, and response envelope.
 
-    Both the system handler ($connect/$disconnect/$default) and the application handler (chat +
-    custom routes) proxy through the same container and share the same connection store, push
-    endpoint construction, and response envelope. That common machinery lives here; each subclass
-    adds only its own routes and route-specific state.
-
-    The connection store and WebSocket handler are created lazily per instance — the two handlers
-    end up with their own clients pointing at the same DynamoDB table (same as the serverless
-    LambdaWSHandler pattern), which is stateless and safe.
-
-    Abstract: ``get_router`` is left unimplemented (inherited from RESTRequestHandler) so this
-    class cannot be instantiated on its own.
+    Store and handler are created lazily per instance (both point at the same DynamoDB table, which is
+    stateless/safe). Abstract — ``get_router`` is left unimplemented, so it cannot be instantiated alone.
     """
 
-    # WS $context headers injected by api_gateway_ws.tf (context.* -> integration.request.header.*)
+    # WS $context headers injected by api_gateway_ws.tf.
     CONNECTION_ID_HEADER = "x-ws-connection-id"
     DOMAIN_NAME_HEADER = "x-ws-domain-name"
     STAGE_HEADER = "x-ws-stage"
@@ -98,7 +54,7 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
         return self._connection_store
 
     def get_websocket_handler(self) -> AWSWebSocketHandler:
-        """Lazily create the AWS WebSocket handler (API Gateway Management API + DynamoDB store)."""
+        """Lazily create the AWS WebSocket handler."""
         if self._ws_handler is None:
             self._ws_handler = AWSWebSocketHandler(connection_store=self.get_connection_store())
         return self._ws_handler
@@ -107,11 +63,7 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
         return request.headers.get(self.CONNECTION_ID_HEADER)
 
     def _construct_endpoint_url(self, request: Request) -> Optional[str]:
-        """Build the API Gateway management endpoint from headers, falling back to config.
-
-        Reuses AWSWebSocketHandler.construct_endpoint_url for the actual URL formatting by
-        adapting the ECS x-ws-* headers into the requestContext shape it expects.
-        """
+        """Build the API Gateway management endpoint from x-ws-* headers, falling back to config."""
         domain_name = request.headers.get(self.DOMAIN_NAME_HEADER)
         stage = request.headers.get(self.STAGE_HEADER)
         if domain_name and stage:
@@ -131,26 +83,18 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
 
 
 class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
-    """Framework-managed WebSocket protocol routes: $connect, $disconnect, $default.
+    """Framework-managed WebSocket protocol routes ($connect/$disconnect/$default); owns the ``AuthValidator`` used at $connect.
 
-    These are owned by the framework and are not an extension point — applications don't subclass
-    this. $connect authenticates the handshake, so this handler owns the ``AuthValidator``.
-    ``AWSWebsocketAPI`` builds it automatically from the validator registered via
-    ``set_auth_handler``, so you normally never construct it directly.
+    Not an extension point — ``AWSWebsocketAPI`` builds it automatically from the validator set via ``set_auth_handler``.
     """
 
-    # Backend paths — the WS API Gateway integration rewrites each route to one of these.
+    # Backend paths the WS API Gateway integration rewrites each route to.
     CONNECT_PATH = "/ws/connect"
     DISCONNECT_PATH = "/ws/disconnect"
     DEFAULT_PATH = "/ws/default"
 
     def __init__(self, auth_validator: AuthValidator):
-        """
-        :param auth_validator: AuthValidator used to authenticate the WebSocket $connect handshake.
-            Authentication is **mandatory** for WebSocket mode — the validator's ValidationResult
-            must include a ``userId`` claim, which keys the connection so replies can be pushed back
-            to the right client. Passing ``None`` raises ValueError.
-        """
+        """:param auth_validator: authenticates the $connect handshake; mandatory, and its claims must include a ``userId`` (keys the connection). ``None`` raises ValueError."""
         super().__init__()
         self._log = logging.getLogger("ak.ecs.ws_system_handler")
 
@@ -162,7 +106,7 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         self._auth_validator = auth_validator
 
     def get_router(self) -> APIRouter:
-        """Return an APIRouter with one POST endpoint per framework protocol route."""
+        """Return an APIRouter with one POST endpoint per protocol route."""
         router = APIRouter()
         router.add_api_route(self.CONNECT_PATH, self._handle_connect, methods=["POST"])
         router.add_api_route(self.DISCONNECT_PATH, self._handle_disconnect, methods=["POST"])
@@ -225,62 +169,22 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
 
 
 class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
-    """
-    ECS + API Gateway WebSocket application handler for ASYNC mode — the built-in chat route plus
-    any custom routes.
+    """ECS + API Gateway WebSocket application handler (async mode): the built-in chat route plus custom routes.
 
-    This is the WebSocket extension point. The framework-managed protocol routes
-    ($connect/$disconnect/$default) live on ``ECSWebSocketSystemRequestHandler``, which
-    ``AWSWebsocketAPI`` wires in automatically — so this handler needs no ``AuthValidator``: the
-    connection's user is resolved from the connection store (populated at $connect), not
-    re-authenticated per frame.
-
-    Two chat paths, chosen by whether an input queue is configured:
-    - Queue mode: enqueue to SQS; ECSAgentRunner runs the agent and ECSOutputConsumer
-      pushes the reply. This handler never touches ChatService.
-    - Direct (non-queue) mode: run ChatService inline and broadcast the reply over the
-      connection right away (mirrors serverless SystemRoutesHandler._handle_direct_chat).
-
-    Custom routes are added the same way as the containerized REST handlers (see the crewai
-    example, "Option 2"): subclass, call ``super().get_router()``, and add your own ``/ws/<route>``
-    POST endpoints. ``build_route_context`` gives you the parsed frame, the authenticated user, and
-    the push endpoint in one call; ``handle_route_error`` renders the standard error response. The
-    route must also be declared in Terraform via ``ws_routes``. Example::
-
-        class MyWSHandler(ECSWebSocketRequestHandler):
-            def get_router(self) -> APIRouter:
-                router = super().get_router()
-
-                @router.post("/ws/status")            # Terraform: ws_routes = [{ route = "status" }]
-                async def status(request: Request) -> JSONResponse:
-                    try:
-                        ctx = await self.build_route_context(request)
-                    except self.WSRouteError as e:
-                        return self.handle_route_error(e)
-                    self.get_websocket_handler().broadcast(
-                        endpoint_url=ctx.endpoint_url,
-                        message={"status": "OK", "user_id": ctx.user_id},
-                        user_id=ctx.user_id,
-                        message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
-                    )
-                    return self.build_success_response("status processed", user_id=ctx.user_id)
-
-                return router
-
-        AWSWebsocketAPI.set_auth_handler(auth_validator=MyValidator()).run(handlers=[MyWSHandler()])
+    Framework-managed (not a subclassing extension point); the user is resolved from the connection store, not
+    re-authenticated per frame. Chat has two paths by config: queue mode enqueues to SQS (never touches ChatService),
+    direct mode runs ChatService inline and broadcasts the reply. Custom routes are registered via
+    ``@AWSWebsocketAPI.register`` and must also be declared in Terraform ``ws_routes``.
     """
 
     @dataclass
     class WSRouteContext:
         """Everything a WebSocket route endpoint needs, resolved from one inbound frame.
 
-        Returned by ``build_route_context`` and used both by the built-in chat route and by custom
-        routes added in subclasses.
-
         :param request: Parsed inbound frame (route, request_id, body).
         :param user_id: Authenticated user id resolved from the connection.
         :param connection_id: API Gateway WebSocket connection id.
-        :param endpoint_url: Management API endpoint used to push replies back to the client.
+        :param endpoint_url: Management API endpoint used to push replies to the client.
         """
 
         request: BaseRequest
@@ -289,29 +193,28 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         endpoint_url: str
 
     class WSRouteError(Exception):
-        """Raised by ``build_route_context`` to short-circuit a route with an HTTP status.
-
-        Custom route endpoints can let this propagate to ``handle_route_error`` (or catch it) to
-        turn a failed context resolution (missing connection id, unauthenticated connection, etc.)
-        into the right HTTP status instead of a generic 500.
-        """
+        """Raised by ``build_route_context`` to short-circuit a route with a specific HTTP status."""
 
         def __init__(self, status_code: int, message: str):
             super().__init__(message)
             self.status_code = status_code
             self.message = message
 
-    # Backend path — the WS API Gateway integration rewrites the chat route to this.
+    # Backend path the WS API Gateway integration rewrites the chat route to.
     CHAT_PATH = "/ws/chat"
 
-    def __init__(self):
-        """Validate the chat-route config; the connection store is set up by the base class."""
+    def __init__(self, custom_routes: Optional[dict[str, Callable]] = None):
+        """Validate the chat-route config; the connection store is set up by the base class.
+
+        :param custom_routes: Mapping of ``route name -> user function`` (from ``AWSWebsocketAPI.register``); each becomes a ``POST /ws/<route>`` endpoint.
+        """
         super().__init__()
         self._log = logging.getLogger("ak.ecs.ws_handler")
 
         if not self._config.websocket_api.chat_route:
             raise ValueError("websocket_api.chat_route is required for WebSocket mode")
 
+        self._custom_routes: dict[str, Callable] = dict(custom_routes or {})
         self._chat_service: Optional[ChatService] = None
 
     def _is_queue_mode(self) -> bool:
@@ -325,22 +228,59 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         return self._chat_service
 
     def get_router(self) -> APIRouter:
-        """Return an APIRouter with the built-in chat POST endpoint.
-
-        Subclasses add custom ``/ws/<route>`` routes by overriding this method, calling
-        ``super().get_router()``, and registering their endpoints onto the returned router — the
-        same extension model as the containerized REST handlers (see the class docstring).
-        """
+        """Return an APIRouter: chat at ``POST /ws/chat`` plus each registered custom route at ``POST /ws/<route>``."""
         router = APIRouter()
         router.add_api_route(self.CHAT_PATH, self._handle_chat, methods=["POST"])
+        for route_name, func in self._custom_routes.items():
+            router.add_api_route(f"/ws/{route_name}", self._wrap_custom_route(func), methods=["POST"])
         return router
+
+    def _wrap_custom_route(self, func: Callable) -> Callable:
+        """Wrap a user route function into a FastAPI endpoint.
+
+        Resolves the ``WSRouteContext``, invokes ``func(ctx)`` (awaiting if awaitable), broadcasts a ``dict``
+        return as ``SYSTEM_RESPONSE`` (``None`` broadcasts nothing), and returns the 200 envelope; a
+        ``WSRouteError`` maps to its status, any other exception logs, broadcasts an error, and returns 500.
+        """
+
+        async def _endpoint(request: Request) -> JSONResponse:
+            ctx: Optional[ECSWebSocketRequestHandler.WSRouteContext] = None
+            try:
+                ctx = await self.build_route_context(request)
+                result = func(ctx)
+                if inspect.isawaitable(result):
+                    result = await result
+                if result is not None:
+                    self.broadcast(ctx, result)
+                return self.build_success_response("Message processed successfully", user_id=ctx.user_id)
+            except self.WSRouteError as e:
+                return self.handle_route_error(e)
+            except Exception as e:
+                self._log.exception(f"WebSocket custom route failed: {e}")
+                if ctx is not None:
+                    self._broadcast_error(ctx, "Route handler encountered an error")
+                return self._response(500, "Route processing failed", success=False)
+
+        return _endpoint
+
+    def broadcast(self, ctx: "ECSWebSocketRequestHandler.WSRouteContext", message: dict) -> None:
+        """Push a message to the connected client (from ``ctx``), always wrapped as a ``SYSTEM_RESPONSE`` envelope."""
+        self.get_websocket_handler().broadcast(
+            endpoint_url=ctx.endpoint_url,
+            message=message,
+            user_id=ctx.user_id,
+            message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
+        )
+
+    def _broadcast_error(self, ctx: "ECSWebSocketRequestHandler.WSRouteContext", error_message: str) -> None:
+        """Broadcast an error to the client (mirrors serverless ``_broadcast_error``); best-effort."""
+        try:
+            self.broadcast(ctx, {"status": "FAILED", "message": error_message})
+        except Exception as e:
+            self._log.warning(f"Failed to broadcast error to client: {e}")
 
     async def build_route_context(self, request: Request) -> "ECSWebSocketRequestHandler.WSRouteContext":
         """Parse the inbound frame and resolve the connection's user and push endpoint.
-
-        Shared by the built-in chat route and available to custom routes added in subclasses — it
-        turns the proxied HTTP request (x-ws-* headers + JSON body) into everything a route needs:
-        the parsed frame, the authenticated user, and the push endpoint.
 
         :param request: The proxied WebSocket frame (FastAPI Request).
         :return: A fully-resolved WSRouteContext.
@@ -440,9 +380,9 @@ class AWSWebsocketAPI(RESTAPI):
 
     Assembles two handlers: the framework-managed protocol handler
     (``ECSWebSocketSystemRequestHandler`` — $connect/$disconnect/$default) and the application
-    handler (``ECSWebSocketRequestHandler`` — chat + custom routes). The system handler is **always
-    injected automatically** from the registered ``AuthValidator``; callers only ever supply
-    application handlers.
+    handler (``ECSWebSocketRequestHandler`` — chat + custom routes). Both are built automatically:
+    the system handler from the registered ``AuthValidator``, and the single application handler
+    carrying every route registered via ``register``.
 
     The system handler is built lazily (never as a class attribute at import time): its constructor
     validates ``websocket_api`` config and requires an AuthValidator, so building it eagerly would
@@ -456,14 +396,74 @@ class AWSWebsocketAPI(RESTAPI):
 
         AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
 
-    To add custom WebSocket routes, subclass ``ECSWebSocketRequestHandler`` and pass an instance to
-    run(). The system handler (with its validator) is added for you::
+    To add custom WebSocket routes, decorate a function with ``register`` (route name only). The
+    function receives the resolved ``WSRouteContext`` and returns a ``dict`` (broadcast to the
+    client) or ``None`` (no broadcast)::
 
-        AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run(handlers=[MyWSHandler()])
+        from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
+
+        @AWSWebsocketAPI.register("status")
+        async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
+            return {"status": "OK", "user_id": ctx.user_id}
+
+        AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
     """
-
-    # Set via set_auth_handler(); consumed to build the framework-managed system handler.
     _ws_auth_validator: Optional[AuthValidator] = None
+    _ws_custom_routes: ClassVar[dict[str, Callable]] = {}
+
+    @classmethod
+    def register(cls, route: str) -> Callable[[Callable], Callable]:
+        """Decorator that registers a custom WebSocket route (route name only — no method/options).
+
+        The wrapped function receives the resolved ``ECSWebSocketRequestHandler.WSRouteContext`` and
+        may be sync or async. Returning a ``dict`` broadcasts it to the client (as a
+        ``SYSTEM_RESPONSE`` envelope); returning ``None`` broadcasts nothing. The framework builds
+        the HTTP response envelope and handles errors — the function never calls ``broadcast`` or
+        builds a response itself.
+
+        The route name is validated immediately (at decoration time): it must match
+        ``^[a-zA-Z0-9_-]+$``, must not be a reserved protocol route ($connect/$disconnect/$default),
+        must not collide with the configured ``chat_route``, and must not be pre-prefixed with
+        ``/ws/``. Registering the same route twice logs a warning and keeps the first registration.
+
+        The route must also be declared in Terraform via ``ws_routes`` so API Gateway creates a
+        matching POST /ws/<route> integration — Python cannot create AWS infra, so this stays a
+        documented convention.
+
+        :param route: Bare route name (e.g. ``"status"``), mapped to ``POST /ws/<route>``.
+        :return: The decorator; it returns the wrapped function unchanged.
+        """
+        cls._validate_route_name(route)
+
+        def _decorator(func: Callable) -> Callable:
+            if route in cls._ws_custom_routes:
+                logging.getLogger("ak.ecs.ws_api").warning(f"WebSocket route '{route}' is already registered. Keeping the first registration.")
+                return func
+            cls._ws_custom_routes[route] = func
+            return func
+
+        return _decorator
+
+    # Reserved API Gateway protocol routes; owned by the system handler, never registerable.
+    _RESERVED_ROUTES = frozenset({"$connect", "$disconnect", "$default"})
+
+    @classmethod
+    def _validate_route_name(cls, route: str) -> None:
+        """Validate a custom route name, raising ValueError on any violation (see ``register``)."""
+        if not isinstance(route, str) or not route:
+            raise ValueError("WebSocket route name must be a non-empty string.")
+        if route.startswith("/"):
+            raise ValueError(
+                f"WebSocket route '{route}' must be a bare route name, not a path — do not prefix "
+                "it with '/ws/' (the framework maps it to POST /ws/<route> automatically)."
+            )
+        if route in cls._RESERVED_ROUTES:
+            raise ValueError(f"WebSocket route name '{route}' is reserved and cannot be registered.")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", route):
+            raise ValueError(f"Invalid WebSocket route name '{route}': only letters, digits, '_' and '-' are allowed.")
+        chat_route = AKConfig.get().websocket_api.chat_route
+        if chat_route and route == chat_route:
+            raise ValueError(f"WebSocket route name '{route}' collides with the configured chat_route '{chat_route}'.")
 
     @classmethod
     def set_auth_handler(cls, auth_validator: AuthValidator) -> "type[AWSWebsocketAPI]":
@@ -491,22 +491,16 @@ class AWSWebsocketAPI(RESTAPI):
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:
-        """The system handler plus the built-in application (chat) handler."""
-        return [cls._build_system_handler(), ECSWebSocketRequestHandler()]
+        """The system handler plus the single application handler carrying every registered route."""
+        return [cls._build_system_handler(), ECSWebSocketRequestHandler(custom_routes=cls._ws_custom_routes)]
 
     @classmethod
-    def run(cls, handlers: list[RESTRequestHandler] = None) -> None:
+    def run(cls) -> None:
         """Start the WebSocket API server.
 
-        The framework-managed system handler ($connect/$disconnect/$default) is always injected;
-        any ``handlers`` passed here are treated as application handlers (chat + custom routes) and
-        registered alongside it. With no ``handlers``, the built-in chat handler is used.
-
-        :param handlers: Optional application handlers (e.g. subclasses of
-            ``ECSWebSocketRequestHandler`` that add custom routes).
+        Always builds exactly two handlers: the framework-managed system handler
+        ($connect/$disconnect/$default) and one ``ECSWebSocketRequestHandler`` carrying the chat
+        route plus every route registered via ``register``. There is no handler-injection hook —
+        custom routes go through ``register`` before ``run`` is called.
         """
-        if handlers is None:
-            handlers = cls.get_default_handlers()
-        else:
-            handlers = [cls._build_system_handler(), *handlers]
-        super().run(handlers=handlers)
+        super().run(handlers=cls.get_default_handlers())
