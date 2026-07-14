@@ -35,10 +35,7 @@ locals {
     {
       "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
     },
-    # Multipart chat (/api/v1/chat-multipart) is only served by AgentRESTRequestHandler, which
-    # the container runs in DIRECT (non-queue) REST mode. In queue mode RestHandler swaps in a
-    # queue-only router (no multipart), and WebSocket modes use ECSWebSocketRequestHandler — so
-    # exposing the route in those modes would 404 at the container. Only create it when served.
+    # Multipart chat is only served in DIRECT (non-queue) REST mode; skip in queue/WebSocket modes (would 404).
     (!var.queue_mode && !local.is_websocket_mode) ? {
       "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
     } : {}

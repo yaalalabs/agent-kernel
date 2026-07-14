@@ -1,4 +1,4 @@
-# ---------- DynamoDB Response Store ----------
+# DynamoDB Response Store
 # Not used in WebSocket modes (responses are pushed over the connection).
 
 resource "aws_dynamodb_table" "response_store" {
