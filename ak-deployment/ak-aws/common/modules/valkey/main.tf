@@ -41,4 +41,11 @@ resource "aws_elasticache_replication_group" "valkey" {
   subnet_group_name    = aws_elasticache_subnet_group.valkey.name
   security_group_ids   = [aws_security_group.valkey.id]
   tags                 = var.tags
+
+  lifecycle {
+    precondition {
+      condition     = length("${var.product_alias}-${var.env_alias}-${var.module_name}-valkey") <= 40
+      error_message = "The ElastiCache replication group ID '${var.product_alias}-${var.env_alias}-${var.module_name}-valkey' exceeds the 40-character limit. Shorten product_alias, env_alias, or module_name."
+    }
+  }
 }
