@@ -47,3 +47,13 @@ output "alb_security_group_id" {
   description = "ALB security group ID"
   value       = aws_security_group.ecs_alb.id
 }
+
+output "nlb_arn" {
+  description = "Network Load Balancer ARN (WebSocket VPC Link V1 target); null unless websocket_mode"
+  value       = var.websocket_mode ? aws_lb.nlb[0].arn : null
+}
+
+output "nlb_listener_arn" {
+  description = "NLB TCP listener ARN (WebSocket integration URI); null unless websocket_mode"
+  value       = var.websocket_mode ? aws_lb_listener.nlb[0].arn : null
+}
