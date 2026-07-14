@@ -1,0 +1,24 @@
+logging:
+  ak:
+    level: DEBUG
+
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: "ak-oai-ws-scl-ecs-dev-scalable-session_store"
+
+execution:
+  # "async": the full agent reply is pushed back as one CHAT_RESPONSE message over the
+  # WebSocket connection. There is no REST response store in WebSocket modes.
+  mode: async
+  queues:
+    input:
+      url: "" # injected by Terraform via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 4
+    output:
+      url: "" # injected by Terraform via AK_EXECUTION__QUEUES__OUTPUT__URL
+      max_receive_count: 4
+# websocket_api.connection_table.table_name, websocket_api.chat_route, and
+# websocket_api.endpoint_url are injected as AK_WEBSOCKET_API__* environment variables
+# by the Terraform module at deploy time (see deploy/main.tf: ws_chat_route). Only the
+# REST/IO service (app_rest_service.py) reads these; the Agent Runner never touches them.
