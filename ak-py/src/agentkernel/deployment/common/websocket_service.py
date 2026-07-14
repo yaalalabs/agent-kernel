@@ -5,10 +5,7 @@ from typing import Any, Dict, List, Optional
 
 
 class WebSocketConnectionStoreABC(ABC):
-    """
-    Abstract base class for WebSocket connection storage systems.
-    Supports different cloud providers (AWS, GCP, Azure, etc.)
-    """
+    """Abstract base for WebSocket connection storage across cloud providers."""
 
     _log = logging.getLogger("ak.deployment.websocket_connection_store")
 
@@ -66,12 +63,7 @@ class WebSocketConnectionStoreABC(ABC):
 
 
 class WebSocketHandlerABC(ABC):
-    """
-    Abstract base class for WebSocket handlers, common to all cloud frameworks.
-    The connection store is injected by the caller at construction time; cloud-specific
-    subclasses (AWS, GCP, Azure, etc.) implement the abstract methods below to provide
-    the underlying transport client used to push messages to connected clients.
-    """
+    """Abstract base for WebSocket handlers; subclasses provide the cloud-specific transport client."""
 
     class MessageType(str, Enum):
         """Typed WebSocket broadcast envelope kinds (shared by serverless and containerized)."""
@@ -85,9 +77,7 @@ class WebSocketHandlerABC(ABC):
         """
         Initialize the WebSocket handler.
 
-        :param connection_store: Cloud-specific connection store implementation, constructed
-            by the caller and injected here (e.g. a DynamoDB-backed store for AWS)
-        :return: None
+        :param connection_store: Cloud-specific connection store implementation
         """
         self._connection_store = connection_store
         self._clients: Dict[str, Any] = {}
@@ -108,9 +98,7 @@ class WebSocketHandlerABC(ABC):
         """
         Construct the WebSocket management endpoint URL from platform-specific context.
 
-        The inputs needed to build this URL vary per cloud framework (e.g. an AWS Lambda
-        API Gateway event dict vs. request headers in a containerized deployment), so each
-        subclass defines its own concrete signature.
+        Inputs vary per cloud framework, so each subclass defines its own signature.
 
         :return: Constructed endpoint URL string
         """
@@ -219,17 +207,13 @@ class WebSocketHandlerABC(ABC):
         message_type: Optional["WebSocketHandlerABC.MessageType"] = None,
     ) -> None:
         """
-        Broadcast a message to multiple WebSocket connections, optionally wrapped in a typed envelope.
-
-        When message_type is provided the message is wrapped as {"type": <type>, ...message};
-        otherwise the message is sent as-is.
+        Broadcast a message to multiple connections; when message_type is set it wraps as {"type": ..., ...message}.
 
         :param endpoint_url: WebSocket management endpoint URL
         :param message: Message dictionary to broadcast
-        :param user_id: User identifier to broadcast to (retrieves all connections for user)
+        :param user_id: User to broadcast to (resolves to all their connections)
         :param connection_ids: Specific connection IDs to broadcast to
         :param message_type: Optional envelope type; wraps message when provided
-        :return: None
         :raises ValueError: If neither user_id nor connection_ids is provided
         """
 

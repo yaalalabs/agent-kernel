@@ -9,27 +9,13 @@ from .akoutputconsumer import ECSOutputConsumer
 
 class ECSIOHandler:
     """
-    ECS IO Handler — the QUEUE-MODE entrypoint. Starts the REST API and the
-    output-queue consumer as peer threads via ThreadRunner.
+    ECS IO Handler — the queue-mode entrypoint. Starts two peer threads via ThreadRunner:
+    the REST API and the output-queue consumer.
 
-    Only used in queue mode. Non-queue deployments run RESTAPI.run directly (see the
-    aws-containerized examples), so both threads here always apply.
-
-    Thread 1 (rest-api):              RESTAPI.run — FastAPI/uvicorn. In REST queue
-                                      modes ECSQueueRequestHandler is registered; in
-                                      WebSocket (ASYNC/STREAM) mode the proxied WS
-                                      frames are handled by ECSWebSocketRequestHandler
-                                      (chat + any routes registered via
-                                      AWSWebsocketAPI.register — not by subclassing).
-    Thread 2 (output-queue-consumer): ECSOutputConsumer.run — polls the Output Queue;
-                                      writes to DB (REST) or pushes over WebSocket (ASYNC).
-
-    Usage::
-
-        from agentkernel.deployment.aws.containerized import ECSIOHandler
-
-        if __name__ == "__main__":
-            ECSIOHandler.run()  # WebSocket mode: ECSIOHandler.run(auth_validator=MyValidator())
+    Thread 1 (rest-api) runs the FastAPI/uvicorn app: ECSQueueRequestHandler in REST queue
+    modes, or WebSocket (ASYNC/STREAM) frames via ECSWebSocketRequestHandler. Thread 2
+    (output-queue-consumer) runs ECSOutputConsumer.run, writing to DB (REST) or pushing
+    over WebSocket (ASYNC). WebSocket mode requires ``run(auth_validator=MyValidator())``.
     """
 
     _log = logging.getLogger("ak.ecs.iohandler")
@@ -43,8 +29,7 @@ class ECSIOHandler:
         if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
             from .core.api.websocket_api import AWSWebsocketAPI
 
-            # Authentication is mandatory for WebSocket mode — fail fast with a clear message
-            # instead of letting the handler constructor raise deep inside the thread.
+            # Auth is mandatory in WebSocket mode — fail fast rather than raise deep inside the thread.
             if auth_validator is None:
                 raise ValueError(
                     "auth_validator is required for WebSocket (ASYNC/STREAM) mode. "
@@ -63,7 +48,7 @@ class ECSIOHandler:
         ThreadRunner.run(
             tasks=[
                 ThreadRunner.Task(
-                    execution_function=run_api,  # passed as a callable so ThreadRunner invokes it in the thread, rather than running the API here
+                    execution_function=run_api,  # a callable so ThreadRunner runs it in the thread, not here
                     thread_name="rest-api",
                     stop_all_on_failure=True,
                     graceful=True,

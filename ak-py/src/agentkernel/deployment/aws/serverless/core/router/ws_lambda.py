@@ -15,11 +15,7 @@ from .common import BaseLambdaRouter
 
 
 class LambdaWSHandler(AWSWebSocketHandler):
-    """Base class for Lambda WebSocket route handlers.
-
-    Extends the shared AWSWebSocketHandler with Lambda API Gateway event parsing and
-    response helpers. Broadcasting and the MessageType envelope live on AWSWebSocketHandler.
-    """
+    """Base class for Lambda WebSocket route handlers; adds Lambda API Gateway event parsing to AWSWebSocketHandler."""
 
     class WSMessageInfo(BaseModel):
         """WebSocket message information."""

@@ -60,11 +60,7 @@ class ResponseHandler(LambdaSQSConsumer):
     @classmethod
     def _broadcast_via_websocket(cls, record: Dict[str, Any], message_type: Optional[LambdaWSHandler.MessageType] = None) -> None:
         """
-        Broadcast a message via WebSocket.
-
-        When message_type is provided the body is wrapped in a typed envelope
-        before sending (e.g. STREAM_CHUNK for STREAM mode).
-        When omitted the raw message body is sent as-is (ASYNC mode).
+        Broadcast a message via WebSocket; wraps the body in a typed envelope when message_type is given, else sends it raw.
 
         :param record: SQS record containing the response payload
         :param message_type: Optional envelope type; if None the body is broadcast directly

@@ -14,10 +14,8 @@ from .core import ECSSQSConsumer
 
 class ECSOutputConsumer(ECSSQSConsumer):
     """
-    ECS Output Consumer — polls the Output Queue and delivers results.
-
-    In ASYNC (WebSocket) mode results are pushed back to the client over the
-    connection; in REST queue modes they are written to the Response Store.
+    ECS Output Consumer — polls the Output Queue and delivers results: pushed over
+    WebSocket in ASYNC mode, else written to the Response Store.
 
     Extends ECSSQSConsumer so it inherits the blocking SQS poll loop via
     run(). Started as Thread 2 by ECSIOHandler.
@@ -57,10 +55,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
     @classmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
-        Process one message from the Output Queue.
-
-        - ASYNC mode: push the result to the client over WebSocket.
-        - Other modes: write the result to the Response Store.
+        Process one Output Queue message: push over WebSocket (ASYNC) or write to the Response Store.
 
         :param record: boto3 SQS ``receive_message`` record
         """
@@ -83,11 +78,9 @@ class ECSOutputConsumer(ECSSQSConsumer):
     @classmethod
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
         """
-        Handle an output message that exceeded ``max_receive_count``.
-
-        - ASYNC mode: push an error to the client over WebSocket.
-        - Other modes: write an error entry to the Response Store so the waiting
-          HTTP caller gets a response instead of hanging indefinitely.
+        Handle an output message that exceeded ``max_receive_count``: push an error over
+        WebSocket (ASYNC), or write an error entry to the Response Store so the waiting
+        HTTP caller gets a response instead of hanging.
 
         :param record: boto3 SQS ``receive_message`` record
         """

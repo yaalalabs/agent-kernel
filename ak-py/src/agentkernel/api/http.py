@@ -22,11 +22,7 @@ class RESTAPI:
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:
-        """Return the handlers used by run() when none are explicitly provided.
-
-        Subclasses override this to change the default handler(s) — e.g. one whose
-        constructor validates config can build it here instead of in a class attribute,
-        so construction happens lazily when run() is actually called instead of at import time.
+        """Return the default handler(s) used by run() when none are provided; override to customize (e.g. lazy construction).
 
         :return: List of REST request handlers
         """

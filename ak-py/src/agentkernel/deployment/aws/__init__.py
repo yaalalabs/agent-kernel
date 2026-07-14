@@ -1,9 +1,3 @@
-"""
-Agent Kernel.
-
-This package contains the Agent Kernel AWS lambda implementation.
-"""
-
 import importlib.metadata
 
 try:

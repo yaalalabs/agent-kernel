@@ -1,14 +1,3 @@
-"""Tests for containerized WebSocket custom-route support.
-
-Covers the ``@AWSWebsocketAPI.register`` decorator (route-name validation and duplicate handling),
-``ECSWebSocketRequestHandler._wrap_custom_route`` behavior (dict/None returns, WSRouteError, generic
-exceptions, sync + async functions), ``get_router`` emitting ``POST /ws/<route>`` per route, and
-``run``/``get_default_handlers`` assembling exactly two handlers.
-
-``AWSWebsocketAPI._ws_custom_routes`` is process-wide class state, so an autouse fixture resets it
-between cases (and monkeypatches ``AKConfig.get`` — the register/handler code reads config).
-"""
-
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -68,8 +57,10 @@ def _ctx(handler):
 
 
 async def _invoke(handler, func):
-    """Wire ``func`` through ``_wrap_custom_route`` with a stubbed context + WS handler, returning
-    (JSONResponse, broadcast mock)."""
+    """Run ``func`` through ``_wrap_custom_route`` with a stubbed context and WS handler.
+
+    :return: (JSONResponse, broadcast mock)
+    """
     ctx = _ctx(handler)
 
     async def _fake_build(request):
