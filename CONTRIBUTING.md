@@ -137,6 +137,7 @@ We love feature suggestions! When proposing a new feature:
 ## Development Resources
 
 - **[Developer Guide](DEVELOPER_GUIDE.md)**: Technical setup, tools, and development workflow
+- **[AGENTS.md](AGENTS.md)**: Guidance for AI coding agents contributing to this repo
 - **[README](README.md)**: Project overview and getting started
 - **[Documentation](docs/)**: Full documentation and examples
 

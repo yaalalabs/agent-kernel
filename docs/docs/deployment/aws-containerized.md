@@ -280,7 +280,7 @@ docker stop container-id
 
 ## Session Storage
 
-For containerized deployments, use Redis or DynamoDB for session persistence.
+For containerized deployments, use Redis, Valkey, or DynamoDB for session persistence.
 
 :::tip
 For detailed session storage configuration and best practices, see the [Session Management](/docs/core-concepts/session#storage-backends) documentation.
@@ -306,6 +306,22 @@ export AK_SESSION__CACHE__SIZE=256  # Enable in-memory caching
 - Already using Redis infrastructure
 
 [See Redis configuration details →](/docs/core-concepts/session#redis-storage)
+
+### ElastiCache for Valkey
+
+```bash
+export AK_SESSION__TYPE=valkey
+export AK_SESSION__VALKEY__URL=valkey://elasticache-endpoint:6379  # valkeys:// for SSL
+export AK_SESSION__CACHE__SIZE=256  # Enable in-memory caching
+```
+
+Provision the cluster with `create_valkey_cluster = true`; the module injects
+`AK_SESSION__VALKEY__URL` into the task definition. Note that the env var alone does not switch the
+backend — the `config.yaml` baked into the image must set `session.type: valkey`. Valkey is the
+open-source Redis fork, offered on ElastiCache at a lower price point and wire-compatible with
+Redis. Requires the `agentkernel[valkey]` extra.
+
+[See Valkey configuration details →](/docs/core-concepts/session#valkey-storage)
 
 ### DynamoDB (Serverless Option)
 

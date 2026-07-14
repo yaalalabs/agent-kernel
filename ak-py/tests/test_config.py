@@ -111,6 +111,44 @@ def test_nested_env_cases(monkeypatch):
     assert cfg.api.enabled_routes.agents is False
 
 
+def test_valkey_config_default_none():
+    cfg = AKConfig()
+    assert cfg.session.valkey is None
+
+
+def test_valkey_config_yaml_and_env_override(tmp_path, monkeypatch):
+    yaml_text = "session:\n" "  type: valkey\n" "  valkey:\n" "    url: valkey://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:test:'\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+
+    monkeypatch.setenv("AK_SESSION__TYPE", "valkey")
+    monkeypatch.setenv("AK_SESSION__VALKEY__TTL", "999")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig()
+    assert cfg.session.type == "valkey"
+    assert cfg.session.valkey is not None
+    # env overrides file
+    assert cfg.session.valkey.ttl == 999
+    # file value preserved where env not set
+    assert cfg.session.valkey.url == "valkey://example:6379"
+    assert cfg.session.valkey.prefix == "ak:test:"
+
+
+def test_response_store_valkey_config(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  mode: rest_async\n" "  response_store:\n" "    type: valkey\n" "    valkey:\n" "      url: valkey://example:6379\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig()
+    assert cfg.execution.response_store.type == "valkey"
+    assert cfg.execution.response_store.valkey is not None
+    assert cfg.execution.response_store.valkey.url == "valkey://example:6379"
+    # prefix default is overridden to the response-store default
+    assert cfg.execution.response_store.valkey.prefix == "ak:responses:"
+
+
 def test_session_cache_default():
     cfg = AKConfig()
     assert cfg.session is not None

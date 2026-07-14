@@ -18,7 +18,7 @@ Defines which tests run in nightly vs weekly tiers and their execution order. Th
 #### Nightly Tests
 **Location:** [`.github/workflows/integration-test.yaml`](.github/workflows/integration-test.yaml)
 
-- **Schedule:** Daily at 2 AM UTC (`0 2 * * *`)
+- **Schedule:** Weekly, Sundays at 5:30 PM UTC (`30 17 * * 0`)
 - **Behavior:** Runs all tests, but for AWS projects only executes deploy and test (no resource destruction)
 - **Manual Trigger:** Available via GitHub Actions UI
 

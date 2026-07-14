@@ -107,6 +107,12 @@ variable "create_redis_cluster" {
   default     = false
 }
 
+variable "create_valkey_cluster" {
+  type        = bool
+  description = "Create a Valkey (ElastiCache) cluster to store Agent memory"
+  default     = false
+}
+
 variable "create_dynamodb_memory_table" {
   type        = bool
   description = "Create a dynamodb table to store the Agent memory"
@@ -136,6 +142,25 @@ variable "create_dynamodb_response_store" {
   validation {
     condition     = !(var.create_dynamodb_response_store && contains(["async", "stream"], var.execution_mode))
     error_message = "create_dynamodb_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
+  }
+}
+
+variable "create_valkey_response_store" {
+  type        = bool
+  description = "Create or reuse Valkey for response storage. Must be false in WebSocket modes (async/stream) — responses are pushed over the WebSocket connection and a response store is not used."
+  default     = false
+  nullable    = false
+  validation {
+    condition     = !(var.create_valkey_response_store && contains(["async", "stream"], var.execution_mode))
+    error_message = "create_valkey_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
+  }
+  validation {
+    condition     = !(var.create_valkey_response_store && var.create_redis_response_store)
+    error_message = "create_valkey_response_store and create_redis_response_store cannot both be true."
+  }
+  validation {
+    condition     = !(var.create_valkey_response_store && var.create_dynamodb_response_store)
+    error_message = "create_valkey_response_store and create_dynamodb_response_store cannot both be true."
   }
 }
 

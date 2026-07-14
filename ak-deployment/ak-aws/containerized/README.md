@@ -116,6 +116,8 @@ module "containerized_agents" {
 
   # Session storage
   create_redis_cluster = true
+  # Or provision a Valkey (ElastiCache) cluster instead — set session.type: valkey in config.yaml.
+  # create_valkey_cluster = true
 }
 ```
 

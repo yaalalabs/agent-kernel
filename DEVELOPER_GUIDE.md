@@ -153,6 +153,7 @@ Follow conventional commit format:
 ## Additional Resources
 
 - [Main README](README.md) - Project overview and usage
+- [AGENTS.md](AGENTS.md) - Guidance for AI coding agents contributing to this repo (architecture pointers, agent-specific gotchas)
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
 - [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills

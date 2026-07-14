@@ -39,7 +39,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
-| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
+| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
 | 🔍 **Production Observability** | LangFuse and OpenLLMetry tracing wired in. Every agent, tool, and LLM call — visible. |
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol) and **A2A** (Agent-to-Agent) support. |
@@ -116,7 +116,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 | Layer | Backends |
 |---|---|
-| **Session / Memory** | In-memory, Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
+| **Session / Memory** | In-memory, Redis, Valkey (AWS), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |
@@ -212,6 +212,7 @@ Agent Kernel is proud to be:
 - 📦 **PyPI:** [`pip install agentkernel`](https://pypi.org/project/agentkernel/)
 - ☁️ **Terraform Registry:** [Official modules](https://registry.terraform.io/modules/yaalalabs)
 - 🛠 **Developer Guide:** [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
+- 🤖 **Contributing with AI agents:** [AGENTS.md](AGENTS.md)
 
 ---
 

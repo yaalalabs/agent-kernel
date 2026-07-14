@@ -30,9 +30,13 @@ library_version: "0.1.0"
 
 # Session management
 session:
-  type: redis  # or 'in_memory' or 'dynamodb'
+  type: redis  # 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
   redis:
     url: redis://localhost:6379
+    ttl: 604800  # 7 days in seconds
+    prefix: "ak:sessions:"
+  valkey:  # Used when type is 'valkey' (requires the agentkernel[valkey] extra)
+    url: valkey://localhost:6379  # use valkeys:// for SSL
     ttl: 604800  # 7 days in seconds
     prefix: "ak:sessions:"
   dynamodb:
@@ -86,13 +90,17 @@ execution:
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
       no_of_consumers: 5  # Containerized deployments only — consumer threads polling the output queue (ignored by serverless)
   response_store:
-    type: redis  # Response store type: redis or dynamodb (required for rest_sync and rest_async modes)
+    type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
     delay: 5  # Delay in seconds between response store reads retry attempts
     redis:
       url: "redis://localhost:6379"  # Redis connection URL for response storage
       prefix: "ak:responses:"  # Key prefix for Redis response storage
       ttl: 604800  # Redis saved value TTL in seconds
+    valkey:  # Used when type is 'valkey' (requires the agentkernel[valkey] extra)
+      url: "valkey://localhost:6379"  # Valkey connection URL for response storage
+      prefix: "ak:responses:"  # Key prefix for Valkey response storage
+      ttl: 604800  # Valkey saved value TTL in seconds
     dynamodb:
       table_name: "agent-responses"  # DynamoDB table name for response storage
       ttl: 604800  # DynamoDB item TTL in seconds (0 disables)
@@ -187,6 +195,11 @@ Alternatively, use `config.json`:
       "ttl": 604800,
       "prefix": "ak:sessions:"
     },
+    "valkey": {
+      "url": "valkey://localhost:6379",
+      "ttl": 604800,
+      "prefix": "ak:sessions:"
+    },
     "dynamodb": {
       "table_name": "agent-kernel-sessions",
       "ttl": 604800
@@ -240,6 +253,11 @@ Alternatively, use `config.json`:
       "delay": 5,
       "redis": {
         "url": "redis://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 604800
+      },
+      "valkey": {
+        "url": "valkey://localhost:6379",
         "prefix": "ak:responses:",
         "ttl": 604800
       },
@@ -334,7 +352,7 @@ export AK_LIBRARY_VERSION=0.1.0
 
 ```bash
 # Session storage type
-export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (default: 'in_memory')
+export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', 'firestore' (default: 'in_memory')
 
 # Redis configuration
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
@@ -342,11 +360,25 @@ export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
 export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 
+# Valkey configuration (requires the agentkernel[valkey] extra)
+export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # default: valkey://localhost:6379 (use valkeys:// for SSL)
+export AK_SESSION__VALKEY__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
+export AK_SESSION__VALKEY__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
+
 # DynamoDB configuration
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
 export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 ```
+
+:::note Valkey and the Redis-only surfaces
+The session store (`session.type`) and the async response store
+(`execution.response_store.type`) both support `valkey` as a first-class backend. The multimodal
+attachment store (`multimodal.storage_type`) and the A2A task store (`a2a.task_store_type`) remain
+Redis-only for now. Because Valkey is wire-compatible with the Redis protocol, you can still use a
+Valkey server for those surfaces by pointing their existing `redis` config blocks at it with the
+`redis://` scheme. First-class `valkey` support for those surfaces is tracked as a follow-up.
+:::
 
 ### API Server
 
@@ -514,7 +546,7 @@ export AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS=5  # Consumer threads polli
 export AK_EXECUTION__QUEUES__BATCH_SIZE=10  # Max messages per SQS receive call; set by Terraform, never in config.yaml
 
 # Response store configuration
-export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'dynamodb'
+export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'valkey', 'dynamodb'
 export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
 export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 
@@ -522,6 +554,11 @@ export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
 export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
 export AK_EXECUTION__RESPONSE_STORE__REDIS__TTL=604800
+
+# Valkey response store (requires the agentkernel[valkey] extra)
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__URL=valkey://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__TTL=604800
 
 # DynamoDB response store
 export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME=agent-responses
@@ -614,11 +651,15 @@ library_version: "0.1.0"       # Library version (auto-detected)
 
 # Session storage configuration
 session:
-  type: "in_memory"             # Storage type: 'in_memory', 'redis', or 'dynamodb'
+  type: "in_memory"             # Storage type: 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
   redis:                        # Redis-specific settings
     url: "redis://localhost:6379"  # Redis connection URL (supports rediss:// for SSL)
     ttl: 604800                 # Session TTL in seconds (7 days)
     prefix: "ak:sessions:"      # Redis key prefix
+  valkey:                       # Valkey-specific settings (requires the agentkernel[valkey] extra)
+    url: "valkey://localhost:6379"  # Valkey connection URL (supports valkeys:// for SSL)
+    ttl: 604800                 # Session TTL in seconds (7 days)
+    prefix: "ak:sessions:"      # Valkey key prefix
   dynamodb:                     # DynamoDB-specific settings
     table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
     ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)

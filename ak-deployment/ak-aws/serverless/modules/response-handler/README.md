@@ -57,6 +57,7 @@ module "response_handler" {
 | `lambda_signing_config_arn` | Optional Lambda code signing config ARN |
 | `response_handler` | Nested Lambda configuration object |
 | `response_store_redis` | Redis response store configuration |
+| `response_store_valkey` | Valkey response store configuration |
 | `response_store_dynamodb` | DynamoDB response store configuration |
 | `queue_config` | Output queue ARN and batch settings |
 | `subnet_ids` | VPC subnet IDs |
@@ -85,6 +86,7 @@ module "response_handler" {
 ## Injected Environment Variables
 
 - `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`
+- `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT`
 

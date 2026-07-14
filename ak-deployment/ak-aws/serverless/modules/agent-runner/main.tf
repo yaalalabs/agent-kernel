@@ -209,6 +209,9 @@ module "agent_runner_lambda" {
     var.redis_url != null ? {
       AK_SESSION__REDIS__URL = var.redis_url
     } : {},
+    var.valkey_url != null ? {
+      AK_SESSION__VALKEY__URL = var.valkey_url
+    } : {},
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
