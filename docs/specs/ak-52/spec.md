@@ -87,6 +87,13 @@ All drivers get the uniform connection behaviour that the session drivers have t
 on first use, 3 connection attempts with a 2-second delay, re-raise of the last error, and (for
 Redis/Valkey) a ping health-check with automatic reconnect on every `client` access.
 
+All driver state (client handle, connection lock, parameters) is instance state initialized in
+`__init__`. The current drivers hold their client handles as *class* attributes
+(`RedisAttachmentDriver._redis_client` at `storage/redis.py:23`, `DynamoDBDriver._ddb_resource` /
+`_ddb_table` at `core/session/dynamodb.py:21`, and likewise Cosmos/Firestore) and only work because
+`_connect()` shadows them with instance attributes; that pattern must not be carried over — it is
+incompatible with the per-instance `threading.Lock` anyway.
+
 The retry helper in `base.py` takes the exception type(s) to retry on as a parameter, preserving
 each family's current scope: `_RedisLikeDriver` passes its `_error_class`
 (`redis.RedisError`/`valkey.ValkeyError`), so non-connection errors — e.g. a malformed-URL
@@ -111,9 +118,15 @@ class _RedisLikeDriver:
     def _from_url(self, url: str, **kwargs): ...   # abstract: redis.from_url / valkey.from_url
 
     @property
-    def client(self): ...        # lazy connect; else ping, reconnect on _error_class
-                                 # _connect() is guarded by a threading.Lock (double-checked) so
-                                 # concurrent first use / reconnect cannot leak a client
+    def client(self): ...        # lazy connect; else ping, reconnect on _error_class;
+                                 # a ping failure outside _error_class propagates to the caller
+                                 # (see Behavioural changes 7)
+                                 # _connect() is guarded by a threading.Lock; the lock holder
+                                 # re-verifies before connecting — first use: _client is still
+                                 # None; reconnect: _client is still the exact object whose ping
+                                 # failed (identity compare; skip if another thread already
+                                 # replaced it) — so concurrent first use or concurrent failed
+                                 # pings produce exactly one connect and cannot leak a client
     @property
     def ttl(self) -> int: ...
     def key(self, suffix: str) -> str: ...          # f"{prefix}{suffix}"
@@ -133,7 +146,9 @@ class _RedisLikeDriver:
     def llen(self, key) -> int: ...
     def lrem(self, key, count, value) -> None: ...
     # maintenance
-    def expire(self, key) -> None: ...              # applies the configured ttl
+    def expire(self, key) -> None: ...              # applies the configured ttl; no-op when
+                                                    # ttl <= 0 (a raw EXPIRE key 0 would delete
+                                                    # the key)
     def clear_prefix(self) -> None: ...             # scan_iter(match=f"{prefix}*") + delete
 ```
 
@@ -215,7 +230,12 @@ store classes, not the drivers.
 `RedisAttachmentDriver` and `DynamoDBAttachmentDriver` are deleted. `RedisAttachmentStore` holds a
 shared `RedisDriver(url, prefix, ttl)` and keeps its key schema in the store: attachment keys are
 `driver.key(f"{session_id}:{attachment_id}")`, the index key is `driver.key(f"{session_id}:_index")`,
-and JSON encoding plus the prune-oldest loop stay where they are. `DynamoDBAttachmentStore` holds a
+and JSON encoding plus the prune-oldest loop stay where they are. The index-key TTL refresh moves
+into the store too: today `append_index` re-applies the TTL to the `_index` list key after every
+`rpush` (`storage/redis.py:104`), and since `append_index` is deleted, the store must call
+`driver.expire(index_key)` after `driver.rpush(...)` (the driver's `expire` already no-ops the
+right way when `ttl == 0` — see the command surface) — otherwise `_index` keys would be written
+without a TTL and outlive their attachments indefinitely. `DynamoDBAttachmentStore` holds a
 shared `DynamoDBDriver(table_name, "session_id", "attachment_id", ttl=ttl)` and keeps the
 `_index`-item bookkeeping. `AttachmentStorageManager._build_driver()`
 (`storage_manager.py:32`) is unchanged apart from the import targets.
@@ -242,10 +262,12 @@ configs, the same way the response-store configs already are:
 Field names, types, and defaults are preserved exactly (verified: `_RedisConfig.url` and
 `_MultimodalStorageRedisConfig.url` share the `redis://localhost:6379` default, and both `ttl`s
 default to `604800`), so YAML files and `AK_MULTIMODAL__*` environment variables are unaffected.
-Field *descriptions* that are not overridden change to the inherited session-oriented wording
-(e.g. the multimodal `ttl` description becomes "Redis saved value TTL in seconds" instead of
-"Attachment TTL in seconds"); also override the `ttl` descriptions to keep the attachment-specific
-wording, since these descriptions surface in generated config documentation.
+Field *descriptions* that are not overridden change to the inherited session-oriented wording:
+the multimodal `ttl` description would become "Redis saved value TTL in seconds" instead of
+"Attachment TTL in seconds" — override the `ttl` descriptions to keep the attachment-specific
+wording, since these descriptions surface in generated config documentation. The multimodal `url`
+description also changes, from "Redis connection URL" to the inherited "Redis connection URL. Use
+rediss:// for SSL" — keep that one inherited; the SSL hint is an improvement, not a loss.
 
 ### Behavioural changes
 
@@ -278,8 +300,21 @@ Intentional, all in the direction of unifying on the session-driver behaviour:
    request) — accepted in exchange for reconnect-on-failure, which the response stores currently
    lack entirely. Since response stores are shared across `ECSOutputConsumer` consumer threads
    (`no_of_consumers`, default 2) and the REST `GET /chat/{id}` path, `_connect()` is guarded by
-   a `threading.Lock` so concurrent first use or reconnect cannot leak a client — an exposure the
-   session drivers (one per event loop) never had.
+   a `threading.Lock`, and the lock holder re-verifies before connecting (first use: `_client` is
+   still `None`; reconnect: `_client` is still the identical object whose ping failed — if another
+   thread already replaced it, skip), so concurrent first use or concurrent failed pings produce
+   exactly one connect and cannot leak a client — an exposure the session drivers (one per event
+   loop) never had.
+7. **A ping failure outside `_error_class` propagates.** The two families disagree today: the
+   session Redis/Valkey drivers catch a non-`RedisError`/`ValkeyError` ping exception, log it, and
+   return the possibly-stale client anyway (`core/session/redis.py:40`) — a latent bug, since the
+   caller then issues commands on a client whose health check just failed — while the multimodal
+   Redis driver reconnects on *any* `Exception` (`storage/redis.py:46`). The shared driver
+   reconnects only on `_error_class` and lets anything else raise: an unexpected error during a
+   health check is a programming or environment fault the caller should see, not something to
+   paper over with a stale client or an unnecessary reconnect. This changes both families (session:
+   swallow → raise; multimodal: reconnect → raise); in practice a healthy client's `ping()` raises
+   only `_error_class` subtypes, so the path is unreachable outside genuine faults.
 
 Non-changes: stored data layouts, key schemas, serialization, and TTL semantics are untouched —
 data written before this refactor is read back identically after it. No public exports change:
@@ -303,8 +338,11 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
   error — now uniformly, including the response stores. Retries cover only the driver's configured
   exception scope (`_error_class` for Redis/Valkey, `Exception` for DynamoDB/Cosmos/Firestore);
   anything outside it propagates immediately.
-- Redis/Valkey ping failure on an established client: warn + reconnect (existing session-driver
-  behaviour, now everywhere). Connect/reconnect is serialized by a `threading.Lock`.
+- Redis/Valkey ping failure on an established client: warn + reconnect when the failure is an
+  `_error_class` instance (existing session-driver behaviour, now everywhere); any other exception
+  propagates to the caller (Behavioural changes 7). Connect/reconnect is serialized by a `threading.Lock`; the lock
+  holder skips the reconnect if `_client` is no longer the object whose ping failed (another
+  thread already replaced it), so concurrent failed pings produce exactly one reconnect.
 - Missing/invalid config sections: validated in the stores (unchanged messages), never in the
   drivers. Drivers treat their constructor arguments as trusted.
 - Missing optional dependencies: unchanged — the factories keep their lazy store imports (with
@@ -322,7 +360,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    scope propagate immediately without retries.
 2. Implement `_RedisLikeDriver` in `redis_like.py` with the full command surface above, the lazy
    `client` property with ping/reconnect (retrying on `_error_class`, with `_connect()` guarded by
-   a double-checked `threading.Lock`), `socket_connect_timeout=5`, and the `decode_responses`
+   a `threading.Lock` whose holder re-verifies before connecting: `_client` is still `None` on
+   first use, or on reconnect still the identical object whose ping failed — skip if another
+   thread already replaced it), `socket_connect_timeout=5`, and the `decode_responses`
    parameter. `redis_like.py` must not import `redis` or `valkey` itself.
 3. Implement `RedisDriver` and `ValkeyDriver` as thin subclasses supplying `_from_url`,
    `_error_class`, and `_backend_name`.
@@ -340,7 +380,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 2. Move `CosmosDBDriver` and `FirestoreDriver` from `core/session/` with constructors converted to
    explicit parameters; method bodies (manual TTL handling, batch deletion) unchanged. Rename the
    Cosmos methods to the shared names (`query_sort_keys`, `delete`, `clear_all`); Firestore's
-   surface moves as-is.
+   surface moves as-is. Do **not** carry over the class-attribute client state
+   (`_table_service_client`/`_table_client`, `_client`, `_ddb_resource`/`_ddb_table`) — all state
+   becomes instance attributes initialized in `__init__` (see Design).
 
 ### Task 3: Migrate the session stores
 
@@ -361,7 +403,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 
 1. Delete `RedisAttachmentDriver` and `DynamoDBAttachmentDriver`.
 2. `RedisAttachmentStore`: hold a shared `RedisDriver`; keep key composition
-   (`{session_id}:{attachment_id}`, `{session_id}:_index`), JSON encoding, and pruning in the store.
+   (`{session_id}:{attachment_id}`, `{session_id}:_index`), JSON encoding, and pruning in the
+   store. After each `driver.rpush(index_key, ...)`, call `driver.expire(index_key)` to preserve
+   the index-key TTL refresh that `append_index` performs today (see Consumer changes).
 3. `DynamoDBAttachmentStore`: hold a shared `DynamoDBDriver`; keep `_index` bookkeeping in the
    store.
 4. `AttachmentStorageManager._build_driver()` remains behaviourally identical.
@@ -393,7 +437,12 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    (e.g. a `ValueError` from `from_url` in a `_RedisLikeDriver`) raises immediately with no
    retries.
 2. Ping failure on an established Redis/Valkey client triggers reconnect; healthy ping does not.
-3. `set` applies `ex=ttl` only when `ttl > 0`; `expire` uses the configured TTL; `key()` applies
+   A ping failure outside `_error_class` (e.g. a `TypeError`) propagates to the caller without
+   reconnecting (behavioural change 7). Concurrent failed pings on the same client produce exactly
+   one reconnect: the second lock holder sees `_client` already replaced (identity compare against
+   the object whose ping failed) and skips connecting.
+3. `set` applies `ex=ttl` only when `ttl > 0`; `expire` uses the configured TTL and is a no-op
+   when `ttl <= 0` (never issues `EXPIRE key 0`, which would delete the key); `key()` applies
    the prefix; `clear_prefix` scans and deletes.
 4. `DynamoDBDriver.put` attaches `expiry_time` only when `ttl > 0`; `get` returns the raw item;
    `query_sort_keys` follows `LastEvaluatedKey` pagination; sort-key-less mode works
@@ -408,21 +457,27 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    for which `driver.get()` returns `None` (the `payload is None: continue` guard) instead of
    raising.
 
+**File:** `ak-py/tests/test_multimodal_redis_store.py` (new)
+
+6. `RedisAttachmentStore` with a mocked driver: `save()` calls `driver.expire(index_key)` after
+   `driver.rpush(index_key, ...)` — the index-key TTL refresh that moves from the deleted
+   `append_index` into the store (Task 4.2) and has no other test coverage.
+
 **Files:** existing tests
 
-6. `test_sessions_redis.py`, `test_sessions_valkey.py`: update driver import paths
+7. `test_sessions_redis.py`, `test_sessions_valkey.py`: update driver import paths
    (`agentkernel.core.util.drivers.*`) and monkeypatch targets (`from_url` now lives in the shared
    driver modules); behaviour assertions stay the same. Add a case asserting the new
    `session.redis config block is required...` `ValueError` (behavioural change 4).
-7. `test_response_store_valkey.py`: update the `from_url` patch point; adjust for lazy connection
+8. `test_response_store_valkey.py`: update the `from_url` patch point; adjust for lazy connection
    (the client is created on first operation, not in `__init__`). With TTL now applied atomically
    via `SET ... EX` (behavioural change 3), `FakeValkeyClient.set` must accept the `ex=` keyword
    and the `expirations`-dict assertions must be reworked to check the `ex` value passed to `set`,
    since `expire()` is no longer called.
-8. `test_firestore_database_id.py`: `FirestoreDriver` now takes constructor parameters — build it
+9. `test_firestore_database_id.py`: `FirestoreDriver` now takes constructor parameters — build it
    directly with `project_id`/`database_id` instead of mocking `AKConfig`, or mock `AKConfig` at
    the store level.
-9. Run the full suite: `cd ak-py && uv run pytest`.
+10. Run the full suite: `cd ak-py && uv run pytest`.
 
 ### Task 8: Sync docs and skills
 
@@ -432,8 +487,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    it does not reference the deleted attachment driver classes by name).
 2. Update `.agents/skills/ak-dev-testing-conventions`: the test-file table (`SKILL.md:67`)
    references `FirestoreDriver` for `test_firestore_database_id.py` — reflect the driver's move to
-   `core/util/drivers/` and its new constructor-parameter interface, and add the new
-   `test_shared_drivers.py` to the table.
+   `core/util/drivers/` and its new constructor-parameter interface, and add the new test files
+   (`test_shared_drivers.py`, `test_sessions_dynamodb.py`, `test_multimodal_redis_store.py`) to
+   the table.
 3. Docs website (`docs/docs/`): verified no page documents the per-subsystem driver classes,
    connection retry/reconnect behaviour, or the response stores' eager-connect timing, and the
    config field descriptions are unchanged (Task 6 overrides them) — no docs-site changes needed.
