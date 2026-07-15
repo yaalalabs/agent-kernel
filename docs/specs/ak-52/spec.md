@@ -26,7 +26,7 @@ The same connection logic is copy-pasted across four subsystems today:
 4. **Thread stores** (`ak-py/src/agentkernel/core/thread/store/`, added by the conversational
    threads feature, #348) — `RedisThreadStore` (`redis.py:27`), `DynamoDBThreadStore`
    (`dynamodb.py:42`), `CosmosDBThreadStore` (`cosmosdb.py:44`), and `FirestoreThreadStore`
-   (`firestore.py:32`) inline the connection logic directly in the store classes (no separate
+   (`firestore.py:33`) inline the connection logic directly in the store classes (no separate
    driver classes). Each has the same lazy client and 3-retry/2-second `_connect()` clone —
    including Cosmos's `__health_check__` probe verbatim — and each reads its own
    `AKConfig.get().thread.*` section in `__init__` with a missing-config `ValueError`. The Redis
@@ -50,7 +50,7 @@ Concrete duplication:
   `expiry_time = now + ttl` TTL-attribute logic in four places.
 - Config classes for the same connection parameters are defined repeatedly: the response-store
   configs already subclass the session ones (`_ResponseStoreRedisConfig(_RedisConfig)` at
-  `core/config.py:235`), but the multimodal configs (`_MultimodalStorageRedisConfig` at
+  `core/config.py:280`), but the multimodal configs (`_MultimodalStorageRedisConfig` at
   `core/config.py:178`, `_MultimodalStorageDynamoDBConfig` at `core/config.py:184`) and the
   thread configs (`_ThreadRedisConfig` at `core/config.py:215`, `_ThreadDynamoDBConfig` at
   `core/config.py:221`, `_ThreadFirestoreConfig` at `core/config.py:229`) redefine
