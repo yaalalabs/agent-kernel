@@ -2,7 +2,7 @@
 
 This change extracts the duplicated database connection drivers (Redis, Valkey, DynamoDB, Cosmos DB,
 Firestore) out of the Session, Multimodal attachment, Response Store, and Thread subsystems into a
-single shared package, `ak-py/src/agentkernel/core/util/drivers/`. The stores keep their
+single shared package, `ak-py/src/agentkernel/core/util/driver/`. The stores keep their
 subsystem-specific data layouts, key schemas, and factories; only the connection layer (client
 creation, lazy connect, retry, health-check/reconnect, TTL plumbing) becomes shared.
 
@@ -63,10 +63,10 @@ the ping/reconnect and connect timeout the session drivers already had.
 
 ## Design
 
-### New package: `core/util/drivers/`
+### New package: `core/util/driver/`
 
 ```
-ak-py/src/agentkernel/core/util/drivers/
+ak-py/src/agentkernel/core/util/driver/
 ├── __init__.py        # no eager imports of optional client libraries
 ├── base.py            # shared retry helper, parameterized by exception scope
 ├── redis_like.py      # _RedisLikeDriver — all Redis/Valkey logic, client-library-agnostic
@@ -99,13 +99,13 @@ Three rules govern the package:
    store's commands, by contrast, are generic Redis commands, so they extend the shared command
    surface instead (see `_RedisLikeDriver`).
 
-`drivers/__init__.py` must not import the driver modules eagerly: `redis`, `valkey`,
+`driver/__init__.py` must not import the driver modules eagerly: `redis`, `valkey`,
 `azure-data-tables`, and `google-cloud-firestore` are all optional dependencies (via the `redis`,
 `valkey`, `azure`, and `gcp` extras respectively), and the existing factories import backend
 modules lazily (the Valkey selection paths in `SessionStoreBuilder.build()` and
 `ResponseDBHandler.__init__` additionally wrap the import in `try/except ImportError`; the other
 paths let a missing extra surface as a raw `ImportError`). Consumers import the concrete module
-(`from agentkernel.core.util.drivers.redis import RedisDriver`) exactly as they import store
+(`from agentkernel.core.util.driver.redis import RedisDriver`) exactly as they import store
 modules today.
 
 All drivers get the uniform connection behaviour that the session drivers have today: lazy connect
@@ -193,7 +193,7 @@ attachment drivers but not the response stores or the thread store). `decode_res
 parameter because the session/attachment/thread stores need raw bytes (`BinarySerde`,
 `model_validate_json` over bytes) while the response stores use decoded strings.
 
-`drivers/valkey.py` imports `valkey` at module top, mirroring `core/session/valkey.py`; the
+`driver/valkey.py` imports `valkey` at module top, mirroring `core/session/valkey.py`; the
 factories that select it keep their existing `try/except ImportError` guidance to install
 `agentkernel[valkey]`.
 
@@ -445,7 +445,7 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 
 ### Task 1: Create the shared driver package (Redis/Valkey)
 
-**Files:** `core/util/drivers/__init__.py`, `base.py`, `redis_like.py`, `redis.py`, `valkey.py` (all new)
+**Files:** `core/util/driver/__init__.py`, `base.py`, `redis_like.py`, `redis.py`, `valkey.py` (all new)
 
 1. Add `base.py` with the shared retry helper (`retries=3`, `delay=2`, re-raise last error) used by
    all drivers. It takes the exception type(s) to retry on as a parameter; exceptions outside that
@@ -458,13 +458,13 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    parameter. `redis_like.py` must not import `redis` or `valkey` itself.
 3. Implement `RedisDriver` and `ValkeyDriver` as thin subclasses supplying `_from_url`,
    `_error_class`, and `_backend_name`.
-4. Keep `drivers/__init__.py` free of eager driver imports. (Note: `core/util/` itself has no
+4. Keep `driver/__init__.py` free of eager driver imports. (Note: `core/util/` itself has no
    `__init__.py` today — it works as an implicit namespace package — and that stays as-is; only
-   the new `drivers/` subpackage gets an `__init__.py`.)
+   the new `driver/` subpackage gets an `__init__.py`.)
 
 ### Task 2: Add DynamoDB, Cosmos DB, and Firestore drivers
 
-**Files:** `core/util/drivers/dynamodb.py`, `cosmosdb.py`, `firestore.py` (all new)
+**Files:** `core/util/driver/dynamodb.py`, `cosmosdb.py`, `firestore.py` (all new)
 
 1. Implement `DynamoDBDriver` with the parameterized key schema
    (`partition_key`/`sort_key`/`region`/`ttl`), lazy `table` with `.load()` verification, and the
@@ -581,7 +581,7 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 **Files:** existing tests
 
 7. `test_sessions_redis.py`, `test_sessions_valkey.py`: update driver import paths
-   (`agentkernel.core.util.drivers.*`) and monkeypatch targets (`from_url` now lives in the shared
+   (`agentkernel.core.util.driver.*`) and monkeypatch targets (`from_url` now lives in the shared
    driver modules); behaviour assertions stay the same. Add a case asserting the new
    `session.redis config block is required...` `ValueError` (behavioural change 4).
 8. `test_response_store_valkey.py`: update the `from_url` patch point; adjust for lazy connection
@@ -606,14 +606,14 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 
 ### Task 9: Sync docs and skills
 
-1. Update `.agents/skills/ak-dev-architecture` (directory map: `core/util/drivers/`; the
+1. Update `.agents/skills/ak-dev-architecture` (directory map: `core/util/driver/`; the
    multimodal storage-backend table's "connection pooling" traits at `SKILL.md:152`; any thread
    store coverage the #348 skill sync adds in the meantime) and `ak-dev-new-multimodal-storage`
    (its backend-traits table mentions "connection pooling"; it does not reference the deleted
    attachment driver classes by name).
 2. Update `.agents/skills/ak-dev-testing-conventions`: the test-file table (`SKILL.md:67`)
    references `FirestoreDriver` for `test_firestore_database_id.py` — reflect the driver's move to
-   `core/util/drivers/` and its new constructor-parameter interface, and add the new test files
+   `core/util/driver/` and its new constructor-parameter interface, and add the new test files
    (`test_shared_drivers.py`, `test_sessions_dynamodb.py`, `test_multimodal_redis_store.py`) to
    the table.
 3. Docs website (`docs/docs/`): verified no page documents the per-subsystem driver classes,
