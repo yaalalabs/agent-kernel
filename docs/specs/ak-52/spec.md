@@ -54,7 +54,7 @@ without retry or reconnect at all.
 ```
 ak-py/src/agentkernel/core/util/drivers/
 ├── __init__.py        # no eager imports of optional client libraries
-├── base.py            # shared retry helper
+├── base.py            # shared retry helper, parameterized by exception scope
 ├── redis_like.py      # _RedisLikeDriver — all Redis/Valkey logic, client-library-agnostic
 ├── redis.py           # RedisDriver(_RedisLikeDriver)
 ├── valkey.py          # ValkeyDriver(_RedisLikeDriver)   (requires the `valkey` extra)
@@ -77,13 +77,23 @@ Two rules govern the package:
 `drivers/__init__.py` must not import the driver modules eagerly: `redis`, `valkey`,
 `azure-data-tables`, and `google-cloud-firestore` are all optional dependencies (via the `redis`,
 `valkey`, `azure`, and `gcp` extras respectively), and the existing factories import backend
-modules lazily behind `try/except ImportError`. Consumers import the concrete module
+modules lazily (the Valkey selection paths in `SessionStoreBuilder.build()` and
+`ResponseDBHandler.__init__` additionally wrap the import in `try/except ImportError`; the other
+paths let a missing extra surface as a raw `ImportError`). Consumers import the concrete module
 (`from agentkernel.core.util.drivers.redis import RedisDriver`) exactly as they import store
 modules today.
 
 All drivers get the uniform connection behaviour that the session drivers have today: lazy connect
 on first use, 3 connection attempts with a 2-second delay, re-raise of the last error, and (for
 Redis/Valkey) a ping health-check with automatic reconnect on every `client` access.
+
+The retry helper in `base.py` takes the exception type(s) to retry on as a parameter, preserving
+each family's current scope: `_RedisLikeDriver` passes its `_error_class`
+(`redis.RedisError`/`valkey.ValkeyError`), so non-connection errors — e.g. a malformed-URL
+`ValueError` from `from_url` — fail fast instead of burning 3 × 2 s of retries; the
+DynamoDB/Cosmos/Firestore drivers pass `Exception`, keeping their current broad scope (boto3,
+azure, and gcp clients raise varied exception hierarchies, and narrowing them is out of scope).
+See Behavioural changes 5 for the one consumer this changes.
 
 ### `_RedisLikeDriver`, `RedisDriver`, `ValkeyDriver`
 
@@ -102,6 +112,8 @@ class _RedisLikeDriver:
 
     @property
     def client(self): ...        # lazy connect; else ping, reconnect on _error_class
+                                 # _connect() is guarded by a threading.Lock (double-checked) so
+                                 # concurrent first use / reconnect cannot leak a client
     @property
     def ttl(self) -> int: ...
     def key(self, suffix: str) -> str: ...          # f"{prefix}{suffix}"
@@ -172,13 +184,16 @@ adding the TTL attribute, and callers may reuse the message object after the wri
 ### `CosmosDBDriver` and `FirestoreDriver`
 
 These have a single consumer (session stores) today, but they move to `core/util/drivers/` so the
-pattern is uniform and future consumers (e.g. attachment stores) get them for free. Their method
-surfaces (`put`/`get`/`query_keys`/`delete_entity`/`scan_and_clear_all` for Cosmos;
-`put`/`get`/`get_all_keys`/`delete_all` for Firestore) move as-is, including Cosmos's manual TTL
-checks and Firestore's `expiry_time` TTL field. The only change is the constructor: explicit
-parameters (`connection_string`/`table_name`/`ttl`; `collection_name`/`project_id`/`database_id`/`ttl`)
-instead of reading `AKConfig.get().session.*`. Firestore keeps its function-level
-`from google.cloud import firestore` import inside `_connect()`.
+pattern is uniform and future consumers (e.g. attachment stores) get them for free. Method bodies
+(Cosmos's manual TTL checks, Firestore's `expiry_time` TTL field, batch deletion) move unchanged,
+but Cosmos adopts the same method names as `DynamoDBDriver` so the shared package has one name per
+operation: `query_keys` → `query_sort_keys`, `delete_entity` → `delete`, `scan_and_clear_all` →
+`clear_all` (its single consumer, `CosmosDBSessionStore`, is already being edited in Task 3).
+Firestore's surface (`put`/`get`/`get_all_keys`/`delete_all`) moves as-is — it has no
+partition/sort-key model, so the DynamoDB/Cosmos names don't map onto it. The other change is the
+constructor: explicit parameters (`connection_string`/`table_name`/`ttl`;
+`collection_name`/`project_id`/`database_id`/`ttl`) instead of reading `AKConfig.get().session.*`.
+Firestore keeps its function-level `from google.cloud import firestore` import inside `_connect()`.
 
 ### Consumer changes
 
@@ -190,8 +205,10 @@ store has no such check today — a missing `session.redis` block raises `Attrib
 gains a matching `ValueError` for parity) and constructs
 the shared driver with explicit parameters. `load`/`new`/`store`/`clear` bodies are unchanged for
 Redis/Valkey (same method names); the DynamoDB store adapts to the generic item-dict interface
-(`driver.put({...})`, `driver.get(sid, k)["value"]`, `driver.query_sort_keys(sid)`,
-`driver.clear_all()`). `SessionStoreBuilder` (`core/builder.py:116`) is untouched — it imports the
+(`driver.put({...})`, `driver.get(sid, k)` — which returns `None` for a missing item, so the store
+keeps its existing `payload is None: continue` guard before extracting `["value"]` —
+`driver.query_sort_keys(sid)`, `driver.clear_all()`). `SessionStoreBuilder`
+(`core/builder.py:116`) is untouched — it imports the
 store classes, not the drivers.
 
 **Multimodal attachment stores** (`core/multimodal/storage/redis.py`, `dynamodb.py`):
@@ -249,6 +266,20 @@ Intentional, all in the direction of unifying on the session-driver behaviour:
 4. **Session Redis gains a missing-config check.** A missing `session.redis` block currently
    raises `AttributeError` from the driver's config reads; the store now raises a `ValueError`
    with a `session.redis config block is required...` message, matching the Valkey store.
+5. **Multimodal Redis attachment retry scope narrows from `Exception` to `redis.RedisError`.**
+   The retry helper takes its exception scope as a parameter (see Design); the session
+   Redis/Valkey drivers already retry only on `RedisError`/`ValkeyError`, and the shared
+   `_RedisLikeDriver` unifies on that. The only consumer whose scope changes is
+   `RedisAttachmentStore`: non-connection errors (e.g. a malformed URL) now fail fast instead of
+   being retried. The DynamoDB/Cosmos/Firestore drivers keep their current bare-`Exception` scope.
+6. **Response-store operations gain one health-check round trip and become safe under concurrent
+   use.** Every `client` access pings (a sub-millisecond `PING` on an established connection),
+   including the polling read path (`execution.response_store.retry_count`, default 5 reads per
+   request) — accepted in exchange for reconnect-on-failure, which the response stores currently
+   lack entirely. Since response stores are shared across `ECSOutputConsumer` consumer threads
+   (`no_of_consumers`, default 2) and the REST `GET /chat/{id}` path, `_connect()` is guarded by
+   a `threading.Lock` so concurrent first use or reconnect cannot leak a client — an exposure the
+   session drivers (one per event loop) never had.
 
 Non-changes: stored data layouts, key schemas, serialization, and TTL semantics are untouched —
 data written before this refactor is read back identically after it. No public exports change:
@@ -269,14 +300,16 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 ## Error handling
 
 - Connection failures: every driver retries 3 times with a 2-second delay and re-raises the last
-  error — now uniformly, including the response stores.
+  error — now uniformly, including the response stores. Retries cover only the driver's configured
+  exception scope (`_error_class` for Redis/Valkey, `Exception` for DynamoDB/Cosmos/Firestore);
+  anything outside it propagates immediately.
 - Redis/Valkey ping failure on an established client: warn + reconnect (existing session-driver
-  behaviour, now everywhere).
+  behaviour, now everywhere). Connect/reconnect is serialized by a `threading.Lock`.
 - Missing/invalid config sections: validated in the stores (unchanged messages), never in the
   drivers. Drivers treat their constructor arguments as trusted.
-- Missing optional dependencies: unchanged — the factories' `try/except ImportError` around the
-  store imports also covers the driver modules, since each store module imports only its own
-  backend's driver module.
+- Missing optional dependencies: unchanged — the factories keep their lazy store imports (with
+  `try/except ImportError` guidance on the Valkey paths only), and since each store module imports
+  only its own backend's driver module, a missing extra surfaces exactly as it does today.
 
 ## Implementation plan
 
@@ -285,9 +318,11 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 **Files:** `core/util/drivers/__init__.py`, `base.py`, `redis_like.py`, `redis.py`, `valkey.py` (all new)
 
 1. Add `base.py` with the shared retry helper (`retries=3`, `delay=2`, re-raise last error) used by
-   all drivers.
+   all drivers. It takes the exception type(s) to retry on as a parameter; exceptions outside that
+   scope propagate immediately without retries.
 2. Implement `_RedisLikeDriver` in `redis_like.py` with the full command surface above, the lazy
-   `client` property with ping/reconnect, `socket_connect_timeout=5`, and the `decode_responses`
+   `client` property with ping/reconnect (retrying on `_error_class`, with `_connect()` guarded by
+   a double-checked `threading.Lock`), `socket_connect_timeout=5`, and the `decode_responses`
    parameter. `redis_like.py` must not import `redis` or `valkey` itself.
 3. Implement `RedisDriver` and `ValkeyDriver` as thin subclasses supplying `_from_url`,
    `_error_class`, and `_backend_name`.
@@ -303,7 +338,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    (`partition_key`/`sort_key`/`region`/`ttl`), lazy `table` with `.load()` verification, and the
    generic `put`/`get`/`delete`/`query_sort_keys`/`clear_all` surface (pagination preserved).
 2. Move `CosmosDBDriver` and `FirestoreDriver` from `core/session/` with constructors converted to
-   explicit parameters; method bodies (manual TTL handling, batch deletion) unchanged.
+   explicit parameters; method bodies (manual TTL handling, batch deletion) unchanged. Rename the
+   Cosmos methods to the shared names (`query_sort_keys`, `delete`, `clear_all`); Firestore's
+   surface moves as-is.
 
 ### Task 3: Migrate the session stores
 
@@ -312,7 +349,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 1. Delete the five local driver classes; import the shared drivers.
 2. Move config reading and missing-config validation into each store's `__init__`; construct
    drivers with explicit parameters.
-3. Adapt `DynamoDBSessionStore` to the item-dict interface (Binary wrap/unwrap in the store).
+3. Adapt `DynamoDBSessionStore` to the item-dict interface (Binary wrap/unwrap in the store;
+   keep the existing missing-item `None` guard in `load()`). Adapt `CosmosDBSessionStore` to the
+   renamed driver methods (`query_sort_keys`, `delete`, `clear_all`).
 4. Verify `SessionStoreBuilder` and `core/session/__init__.py` exports need no changes; update the
    stale `RedisDriver()` mention in the `build()` docstring (`core/builder.py:130`).
 
@@ -350,7 +389,9 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 **File:** `ak-py/tests/test_shared_drivers.py` (new)
 
 1. Retry exhaustion re-raises the last error after 3 attempts (with `time.sleep` patched out) —
-   for `_RedisLikeDriver` and `DynamoDBDriver`.
+   for `_RedisLikeDriver` and `DynamoDBDriver`. An exception outside the configured retry scope
+   (e.g. a `ValueError` from `from_url` in a `_RedisLikeDriver`) raises immediately with no
+   retries.
 2. Ping failure on an established Redis/Valkey client triggers reconnect; healthy ping does not.
 3. `set` applies `ex=ttl` only when `ttl > 0`; `expire` uses the configured TTL; `key()` applies
    the prefix; `clear_prefix` scans and deletes.
@@ -358,18 +399,30 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    `query_sort_keys` follows `LastEvaluatedKey` pagination; sort-key-less mode works
    (`request_id`-style tables).
 
+**File:** `ak-py/tests/test_sessions_dynamodb.py` (new)
+
+5. `DynamoDBSessionStore` is the consumer whose store body changes the most (item-dict interface,
+   Binary wrap/unwrap moving into the store) and has no existing test file. Add store-level tests
+   with a mocked driver: a round trip asserting payloads are wrapped in `boto3 Binary` on `store()`
+   and unwrapped via `.value` on `load()`, and a missing-item case asserting `load()` skips keys
+   for which `driver.get()` returns `None` (the `payload is None: continue` guard) instead of
+   raising.
+
 **Files:** existing tests
 
-5. `test_sessions_redis.py`, `test_sessions_valkey.py`: update driver import paths
+6. `test_sessions_redis.py`, `test_sessions_valkey.py`: update driver import paths
    (`agentkernel.core.util.drivers.*`) and monkeypatch targets (`from_url` now lives in the shared
    driver modules); behaviour assertions stay the same. Add a case asserting the new
    `session.redis config block is required...` `ValueError` (behavioural change 4).
-6. `test_response_store_valkey.py`: update the `from_url` patch point; adjust for lazy connection
-   (the client is created on first operation, not in `__init__`).
-7. `test_firestore_database_id.py`: `FirestoreDriver` now takes constructor parameters — build it
+7. `test_response_store_valkey.py`: update the `from_url` patch point; adjust for lazy connection
+   (the client is created on first operation, not in `__init__`). With TTL now applied atomically
+   via `SET ... EX` (behavioural change 3), `FakeValkeyClient.set` must accept the `ex=` keyword
+   and the `expirations`-dict assertions must be reworked to check the `ex` value passed to `set`,
+   since `expire()` is no longer called.
+8. `test_firestore_database_id.py`: `FirestoreDriver` now takes constructor parameters — build it
    directly with `project_id`/`database_id` instead of mocking `AKConfig`, or mock `AKConfig` at
    the store level.
-8. Run the full suite: `cd ak-py && uv run pytest`.
+9. Run the full suite: `cd ak-py && uv run pytest`.
 
 ### Task 8: Sync docs and skills
 
