@@ -23,12 +23,18 @@ The strategy runs only at thread creation, and never for threads whose name was
 explicitly supplied (name_locked) — see docs/specs/conversation-thread-support.md.
 """
 
+import importlib.util
 import logging
 
 from ..config import AKConfig
 
 # Fallback when thread support is not configured (naming config unavailable).
 _DEFAULT_MAX_NAME_LENGTH = 80
+
+_LITELLM_MISSING_WARNING = (
+    "litellm is not installed — LLM-based thread naming is unavailable and thread names "
+    'will fall back to a truncated prompt prefix. Install it with: pip install "agentkernel[thread]"'
+)
 
 
 def _max_name_length() -> int:
@@ -52,6 +58,17 @@ class ThreadNamingStrategy:
 
     _log = logging.getLogger("ak.thread.naming")
 
+    def __init__(self):
+        """
+        Initializes the strategy. When this instance will run the default
+        LLM-based generate_name and litellm is not installed, warn loudly at
+        construction (i.e. at startup, once) instead of only at call time —
+        silently degrading to the truncation fallback is not obvious otherwise.
+        """
+        uses_default_llm_naming = type(self).generate_name is ThreadNamingStrategy.generate_name
+        if uses_default_llm_naming and importlib.util.find_spec("litellm") is None:
+            self._log.warning(_LITELLM_MISSING_WARNING)
+
     def generate_name(self, prompt: str) -> str:
         """
         Generate a thread name from the first prompt via an LLM call, falling
@@ -64,6 +81,9 @@ class ThreadNamingStrategy:
             return ""
         try:
             name = self._complete(self.build_instruction(prompt))
+        except ImportError:
+            self._log.warning(_LITELLM_MISSING_WARNING)
+            return self._truncate(prompt)
         except Exception as e:
             self._log.warning(f"LLM thread naming failed ({e}); falling back to a truncated prompt prefix")
             return self._truncate(prompt)

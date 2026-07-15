@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Conversation thread support with multimodal attachments for Agent Kernel, using the OpenAI Agents SDK"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,multimodal]>=0.6.0",
+    "agentkernel[api,openai,multimodal,thread]>=0.6.0",
 ]
 
 [dependency-groups]

@@ -344,3 +344,22 @@ class TestLLMThreadNaming:
         config = _ThreadNamingConfig()
         assert config.model == "gpt-4o-mini"
         assert config.max_length == 80
+
+    def test_missing_litellm_warns_at_construction(self, caplog):
+        with patch("importlib.util.find_spec", return_value=None):
+            with caplog.at_level("WARNING", logger="ak.thread.naming"):
+                ThreadNamingStrategy()
+        assert "agentkernel[thread]" in caplog.text
+
+    def test_custom_generate_name_subclass_does_not_warn_at_construction(self, caplog):
+        with patch("importlib.util.find_spec", return_value=None):
+            with caplog.at_level("WARNING", logger="ak.thread.naming"):
+                EchoNaming()  # overrides generate_name — never makes the LLM call
+        assert caplog.text == ""
+
+    def test_litellm_import_error_falls_back_with_install_hint(self, thread_enabled_llm, caplog):
+        with patch.object(ThreadNamingStrategy, "_complete", side_effect=ImportError("No module named 'litellm'")):
+            with caplog.at_level("WARNING", logger="ak.thread.naming"):
+                thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="What is the refund policy?")
+        assert thread.name == "What is the refund policy?"  # truncation fallback
+        assert "agentkernel[thread]" in caplog.text

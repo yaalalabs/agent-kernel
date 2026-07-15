@@ -78,10 +78,11 @@ concise title of at most `thread.naming.max_length` characters. Gibberish or mea
 get a generic title ("New conversation") instead of becoming the name. The call happens once per thread,
 inline on the session's first chat request (~0.5–2s), never on later messages.
 
-Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency, shipped
-in the `multimodal` extra), no API key is present, or the model call errors, a warning is logged and the
-name falls back to a truncated prompt prefix — the first `max_length` characters, trimmed at a word
-boundary and suffixed with an ellipsis.
+Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency — install
+it with the `thread` extra, `pip install "agentkernel[thread]"`), no API key is present, or the model call
+errors, the name falls back to a truncated prompt prefix — the first `max_length` characters, trimmed at a
+word boundary and suffixed with an ellipsis. The fallback is never silent: a missing `litellm` is warned
+about once at startup with the install hint, and every failed naming call logs a warning.
 
 ```yaml
 thread:

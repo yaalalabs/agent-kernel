@@ -225,7 +225,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "multimodal"], specifier = ">=0.6.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["api", "openai", "multimodal", "thread"], specifier = ">=0.6.0" }]
 
 [package.metadata.requires-dev]
 dev = [

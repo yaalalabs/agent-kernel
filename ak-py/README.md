@@ -32,6 +32,12 @@ pip install "agentkernel[neo4j]"
 pip install "agentkernel[trino]"
 ```
 
+For LLM-based thread naming with Conversation Thread Support:
+
+```bash
+pip install "agentkernel[thread]"
+```
+
 **Requirements:**
 - Python 3.12+
 
@@ -404,7 +410,7 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
   - **Field**: `thread.naming.model`
   - **Type**: string
   - **Default**: `gpt-4o-mini`
-  - **Description**: LiteLLM model used to generate thread names (requires the optional `litellm` dependency and an API key in the environment; falls back to a truncated prompt prefix otherwise)
+  - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `pip install "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
   - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
 
 - **Auto-name Max Length**
