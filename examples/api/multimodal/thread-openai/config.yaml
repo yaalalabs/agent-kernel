@@ -1,0 +1,6 @@
+multimodal:
+  enabled: true
+  storage_type: in_memory # thread mode needs a shared attachment store (in_memory, redis, or dynamodb)
+
+thread:
+  type: memory # other supported backends: redis | dynamodb | firestore | cosmosdb

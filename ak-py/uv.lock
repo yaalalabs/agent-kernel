@@ -166,6 +166,9 @@ test = [
     { name = "ragas" },
     { name = "rapidfuzz" },
 ]
+thread = [
+    { name = "litellm" },
+]
 trino = [
     { name = "trino" },
 ]
@@ -223,6 +226,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.89.2" },
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.89.2" },
+    { name = "litellm", marker = "extra == 'thread'", specifier = ">=1.74.9" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.0.0" },
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
@@ -255,7 +259,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "smolagents", "cli", "aws", "azure", "redis", "valkey", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal"]
+provides-extras = ["auth", "langfuse", "openllmetry", "crewai", "langgraph", "smolagents", "cli", "aws", "azure", "redis", "valkey", "thread", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal"]
 
 [package.metadata.requires-dev]
 dev = [
