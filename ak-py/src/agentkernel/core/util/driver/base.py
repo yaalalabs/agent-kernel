@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Any, Callable, Tuple, Type, Union
+from typing import Any, Callable, Optional, Tuple, Type, Union
 
 ExceptionScope = Union[Type[BaseException], Tuple[Type[BaseException], ...]]
 
@@ -29,7 +29,7 @@ def connect_with_retries(
     :param delay: Seconds to sleep between attempts.
     :return: The value returned by ``connect()``.
     """
-    last_err: BaseException = None
+    last_err: Optional[BaseException] = None
     for attempt in range(retries):
         try:
             return connect()
@@ -38,4 +38,6 @@ def connect_with_retries(
             log.warning("Connection attempt %s failed: %s", attempt + 1, e)
             if attempt < retries - 1:
                 time.sleep(delay)
+    if last_err is None:
+        raise ValueError("retries must be >= 1")
     raise last_err
