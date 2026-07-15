@@ -1,14 +1,14 @@
-# AK-52: Shared database drivers for Session, Multimodal, and Response Store backends
+# AK-52: Shared database drivers for Session, Multimodal, Response Store, and Thread backends
 
 This change extracts the duplicated database connection drivers (Redis, Valkey, DynamoDB, Cosmos DB,
-Firestore) out of the Session, Multimodal attachment, and Response Store subsystems into a single
-shared package, `ak-py/src/agentkernel/core/util/drivers/`. The stores keep their subsystem-specific
-data layouts, key schemas, and factories; only the connection layer (client creation, lazy connect,
-retry, health-check/reconnect, TTL plumbing) becomes shared.
+Firestore) out of the Session, Multimodal attachment, Response Store, and Thread subsystems into a
+single shared package, `ak-py/src/agentkernel/core/util/drivers/`. The stores keep their
+subsystem-specific data layouts, key schemas, and factories; only the connection layer (client
+creation, lazy connect, retry, health-check/reconnect, TTL plumbing) becomes shared.
 
 ## Motivation
 
-The same connection logic is copy-pasted across three subsystems today:
+The same connection logic is copy-pasted across four subsystems today:
 
 1. **Session stores** (`ak-py/src/agentkernel/core/session/`) — `RedisDriver` (`redis.py:14`),
    `ValkeyDriver` (`valkey.py:14`), `DynamoDBDriver` (`dynamodb.py:15`), `CosmosDBDriver`
@@ -23,6 +23,15 @@ The same connection logic is copy-pasted across three subsystems today:
    `RedisResponseStore` (`redis.py:8`), `ValkeyResponseStore` (`valkey.py:8`), and
    `DynamoDBResponseStore` (`dynamodb.py:8`) create their clients eagerly in `__init__` with **no
    retry and no health-check/reconnect** — an existing inconsistency versus the other two families.
+4. **Thread stores** (`ak-py/src/agentkernel/core/thread/store/`, added by the conversational
+   threads feature, #348) — `RedisThreadStore` (`redis.py:27`), `DynamoDBThreadStore`
+   (`dynamodb.py:42`), `CosmosDBThreadStore` (`cosmosdb.py:44`), and `FirestoreThreadStore`
+   (`firestore.py:32`) inline the connection logic directly in the store classes (no separate
+   driver classes). Each has the same lazy client and 3-retry/2-second `_connect()` clone —
+   including Cosmos's `__health_check__` probe verbatim — and each reads its own
+   `AKConfig.get().thread.*` section in `__init__` with a missing-config `ValueError`. The Redis
+   one has **no ping health-check/reconnect and no `socket_connect_timeout`**, and all four hold
+   their client handles as class attributes.
 
 Concrete duplication:
 
@@ -31,21 +40,26 @@ Concrete duplication:
   the missing-config `ValueError` check (Valkey has one, Redis does not) and in `exists()` error
   handling (see Behavioural changes). The twin relationship between `response_store/redis.py` and
   `response_store/valkey.py` is exact.
-- The `_connect()` retry loop (3 attempts, 2 s delay, re-raise last error) appears in seven places.
+- The `_connect()` retry loop (3 attempts, 2 s delay, re-raise last error) appears in eleven
+  places.
 - The lazy-client-plus-ping health check appears in three places (session Redis, session Valkey,
-  multimodal Redis) and is *missing* from the three response stores.
-- The DynamoDB "boto3 resource → `Table(...)`" sequence appears in three places (with the
-  `.load()` existence check in two of them — the response store skips it), and the
-  `expiry_time = now + ttl` TTL-attribute logic in three places.
-- Config classes for the same connection parameters are defined twice: the response-store configs
-  already subclass the session ones (`_ResponseStoreRedisConfig(_RedisConfig)` at
+  multimodal Redis) and is *missing* from the three response stores and from the Redis thread
+  store (which has lazy connect and retry but never pings an established client).
+- The DynamoDB "boto3 resource → `Table(...)`" sequence appears in four places (with the
+  `.load()` existence check in three of them — the response store skips it), and the
+  `expiry_time = now + ttl` TTL-attribute logic in four places.
+- Config classes for the same connection parameters are defined repeatedly: the response-store
+  configs already subclass the session ones (`_ResponseStoreRedisConfig(_RedisConfig)` at
   `core/config.py:235`), but the multimodal configs (`_MultimodalStorageRedisConfig` at
-  `core/config.py:178`, `_MultimodalStorageDynamoDBConfig` at `core/config.py:184`) redefine
-  `url`/`ttl`/`prefix`/`table_name` from scratch.
+  `core/config.py:178`, `_MultimodalStorageDynamoDBConfig` at `core/config.py:184`) and the
+  thread configs (`_ThreadRedisConfig` at `core/config.py:215`, `_ThreadDynamoDBConfig` at
+  `core/config.py:221`, `_ThreadFirestoreConfig` at `core/config.py:229`) redefine
+  `url`/`ttl`/`prefix`/`table_name`/`collection_name` from scratch.
 
 Any fix to connection handling (timeouts, retry policy, reconnect behaviour) currently has to be
-made in up to seven files, and in practice hasn't been — which is how the response stores ended up
-without retry or reconnect at all.
+made in up to eleven files, and in practice hasn't been — which is how the response stores ended
+up without retry or reconnect at all, and how the brand-new Redis thread store shipped without
+the ping/reconnect and connect timeout the session drivers already had.
 
 ## Design
 
@@ -63,7 +77,7 @@ ak-py/src/agentkernel/core/util/drivers/
 └── firestore.py       # FirestoreDriver                  (requires the `gcp` extra)
 ```
 
-Two rules govern the package:
+Three rules govern the package:
 
 1. **Drivers never read `AKConfig`.** All connection parameters are explicit constructor arguments
    (the pattern the multimodal drivers already use). Config reading, config-section validation, and
@@ -71,8 +85,19 @@ Two rules govern the package:
    reusable from both `core/` and `deployment/` without coupling `core/util` to specific config
    sections.
 2. **Drivers own the connection lifecycle and a generic command surface; data layout stays in the
-   stores.** Key schemas (session hash layout, attachment index lists, response-message items),
-   serialization (`BinarySerde`, JSON), and pruning logic remain in the store classes.
+   stores.** Key schemas (session hash layout, attachment index lists, response-message items,
+   thread meta/message items), serialization (`BinarySerde`, JSON, Pydantic), and pruning logic
+   remain in the store classes.
+3. **Drivers expose their lazy, retry-guarded native handle for consumers whose data operations
+   exceed the generic surface.** `_RedisLikeDriver.client`, `DynamoDBDriver.table`,
+   `CosmosDBDriver.table_client`, and `FirestoreDriver.collection` are public parts of the driver
+   contract, not implementation details. The thread stores are the consumer that needs this: their
+   DynamoDB/Cosmos/Firestore data operations (conditional puts, update expressions,
+   `begins_with` range queries, filtered scans, subcollections) are data-layout-specific and would
+   bloat the generic surface, so those stores use the native handle directly and share only the
+   connection lifecycle (lazy connect, retry, `.load()`/health-check probe). The Redis thread
+   store's commands, by contrast, are generic Redis commands, so they extend the shared command
+   surface instead (see `_RedisLikeDriver`).
 
 `drivers/__init__.py` must not import the driver modules eagerly: `redis`, `valkey`,
 `azure-data-tables`, and `google-cloud-firestore` are all optional dependencies (via the `redis`,
@@ -100,7 +125,7 @@ each family's current scope: `_RedisLikeDriver` passes its `_error_class`
 `ValueError` from `from_url` — fail fast instead of burning 3 × 2 s of retries; the
 DynamoDB/Cosmos/Firestore drivers pass `Exception`, keeping their current broad scope (boto3,
 azure, and gcp clients raise varied exception hierarchies, and narrowing them is out of scope).
-See Behavioural changes 5 for the one consumer this changes.
+See Behavioural changes 5 for the two consumers this changes.
 
 ### `_RedisLikeDriver`, `RedisDriver`, `ValkeyDriver`
 
@@ -132,7 +157,10 @@ class _RedisLikeDriver:
     def key(self, suffix: str) -> str: ...          # f"{prefix}{suffix}"
 
     # string ops
-    def set(self, key, value) -> None: ...          # applies ex=ttl when ttl > 0
+    def set(self, key, value, nx: bool = False) -> bool: ...  # applies ex=ttl when ttl > 0;
+                                                    # nx=True is a conditional SET NX (used by
+                                                    # thread create); returns whether the SET
+                                                    # was applied
     def get(self, key) -> Any: ...
     def delete(self, *keys) -> None: ...
     def exists(self, key) -> bool: ...
@@ -140,11 +168,18 @@ class _RedisLikeDriver:
     def hset(self, key, field, value) -> None: ...
     def hget(self, key, field) -> Optional[bytes]: ...
     def hkeys(self, key) -> list[str]: ...          # decodes bytes field names
-    # list ops (used by the attachment index)
+    # list ops (used by the attachment index and thread messages)
     def rpush(self, key, value) -> None: ...
     def lpop(self, key) -> Optional[str]: ...       # decodes bytes
     def llen(self, key) -> int: ...
     def lrem(self, key, count, value) -> None: ...
+    def lrange(self, key, start, end) -> list: ...  # raw elements (thread store JSON-decodes)
+    # set ops (used by the thread user/group indexes)
+    def sadd(self, key, member) -> None: ...
+    def smembers(self, key) -> set[str]: ...        # decodes bytes members
+    # key iteration (used by thread list_threads)
+    def scan_keys(self, match_suffix: str) -> list[str]: ...  # scan_iter(match=f"{prefix}{match_suffix}"),
+                                                    # decodes bytes key names
     # maintenance
     def expire(self, key) -> None: ...              # applies the configured ttl; no-op when
                                                     # ttl <= 0 (a raw EXPIRE key 0 would delete
@@ -152,11 +187,11 @@ class _RedisLikeDriver:
     def clear_prefix(self) -> None: ...             # scan_iter(match=f"{prefix}*") + delete
 ```
 
-The command surface is the union of what the three subsystems use today — nothing speculative.
+The command surface is the union of what the four subsystems use today — nothing speculative.
 Connections always use `socket_connect_timeout=5` (currently applied by the session and
-attachment drivers but not the response stores). `decode_responses` is a parameter because the
-session/attachment stores need raw bytes (`BinarySerde`) while the response stores use decoded
-strings.
+attachment drivers but not the response stores or the thread store). `decode_responses` is a
+parameter because the session/attachment/thread stores need raw bytes (`BinarySerde`,
+`model_validate_json` over bytes) while the response stores use decoded strings.
 
 `drivers/valkey.py` imports `valkey` at module top, mirroring `core/session/valkey.py`; the
 factories that select it keep their existing `try/except ImportError` guidance to install
@@ -188,9 +223,12 @@ Subsystem mapping:
 | `DynamoDBSessionStore` | `session_id` | `key` | wraps payloads in `boto3 Binary`, unwraps `.value` on read |
 | `DynamoDBAttachmentStore` | `session_id` | `attachment_id` | JSON-encodes/decodes the `data` attribute; `_index` item |
 | `DynamoDBResponseStore` | `request_id` | — | stores the message dict as the item; reads `item["body"]` |
+| `DynamoDBThreadStore` | `session_id` | `sk` | uses `driver.table` natively (rule 3): conditional puts, update expressions, `begins_with` queries, filtered scans; TTL attribute logic stays in the store (constructs the driver with `ttl=0`) |
 
 `get()` returns the whole item so the driver stays agnostic of value attribute names; the stores
-extract `value` / `data` / `body` themselves.
+extract `value` / `data` / `body` themselves. The thread store shares only the connection layer —
+its generic-surface usage is nil, but it gains the lazy retry-guarded `table` (and keeps its
+existing `.load()` verification).
 
 `put()` must not mutate the caller's dict when attaching `expiry_time` (copy first) —
 `DynamoDBResponseStore.add_message` copies the message today (`message = dict(message)`) before
@@ -198,12 +236,15 @@ adding the TTL attribute, and callers may reuse the message object after the wri
 
 ### `CosmosDBDriver` and `FirestoreDriver`
 
-These have a single consumer (session stores) today, but they move to `core/util/drivers/` so the
-pattern is uniform and future consumers (e.g. attachment stores) get them for free. Method bodies
+These now have two consumers each: the session stores (generic surface) and the thread stores
+(native handle per rule 3 — `CosmosDBThreadStore._connect` is a verbatim clone of the session
+driver's, including the `__health_check__` probe, and `FirestoreThreadStore` needs subcollection
+access the per-field session surface can't express). Method bodies
 (Cosmos's manual TTL checks, Firestore's `expiry_time` TTL field, batch deletion) move unchanged,
 but Cosmos adopts the same method names as `DynamoDBDriver` so the shared package has one name per
 operation: `query_keys` → `query_sort_keys`, `delete_entity` → `delete`, `scan_and_clear_all` →
-`clear_all` (its single consumer, `CosmosDBSessionStore`, is already being edited in Task 3).
+`clear_all` (the renamed methods' single consumer, `CosmosDBSessionStore`, is already being
+edited in Task 3; the thread store uses `table_client` directly and is unaffected by the renames).
 Firestore's surface (`put`/`get`/`get_all_keys`/`delete_all`) moves as-is — it has no
 partition/sort-key model, so the DynamoDB/Cosmos names don't map onto it. The other change is the
 constructor: explicit parameters (`connection_string`/`table_name`/`ttl`;
@@ -238,7 +279,8 @@ right way when `ttl == 0` — see the command surface) — otherwise `_index` ke
 without a TTL and outlive their attachments indefinitely. `DynamoDBAttachmentStore` holds a
 shared `DynamoDBDriver(table_name, "session_id", "attachment_id", ttl=ttl)` and keeps the
 `_index`-item bookkeeping. `AttachmentStorageManager._build_driver()`
-(`storage_manager.py:32`) is unchanged apart from the import targets.
+(`storage_manager.py:32`) is unchanged — it imports the store classes, which keep their names and
+modules.
 
 **Response stores** (`deployment/aws/core/response_store/redis.py`, `valkey.py`, `dynamodb.py`):
 the classes and their public constructor signatures are kept (they subclass the `ResponseStore`
@@ -249,19 +291,57 @@ separate `expire` call disappears); `DynamoDBResponseStore` builds
 `DynamoDBDriver(table_name, "request_id", region=region, ttl=ttl)` and drops its hand-rolled
 `expiry_time` logic. `ResponseDBHandler` (`handler.py`) is unchanged.
 
+**Thread stores** (`core/thread/store/redis.py`, `dynamodb.py`, `cosmosdb.py`, `firestore.py`):
+the inline `_connect()` clones, class-attribute client handles, and `client`/`table`/
+`table_client`/`collection` properties are deleted; each store's `__init__` keeps its existing
+config reading and missing-config `ValueError`s and constructs a shared driver with explicit
+parameters.
+
+- `RedisThreadStore` holds a `RedisDriver(url, prefix, ttl)` and uses the generic surface
+  (`set` with `nx=True` for atomic thread creation, `get`, `rpush`, `lrange`, `llen`, `sadd`,
+  `smembers`, `expire`, `scan_keys`, `clear_prefix`). Its key schema (`:meta`, `:updated_at`,
+  `:messages`, `index:user:`, `index:group:`) and the multi-key `_expire` TTL-refresh logic stay
+  in the store. The driver's `set` applying `ex=ttl` atomically is redundant-but-harmless with the
+  store's explicit `_expire` refreshes — the refresh loop must stay, because the shared user/group
+  index sets need their TTL renewed on every append.
+- `DynamoDBThreadStore` holds a `DynamoDBDriver(table_name, "session_id", "sk")` and replaces its
+  `table` property with `driver.table`; every data operation and the `expiry_time` logic stay
+  in the store (rule 3).
+- `CosmosDBThreadStore` holds a `CosmosDBDriver(connection_string, table_name)` and replaces its
+  `table_client` property with `driver.table_client`; entities, OData filters, and pagination
+  stay in the store.
+- `FirestoreThreadStore` holds a `FirestoreDriver(collection_name, project_id, database_id)` and
+  replaces its `collection` property with `driver.collection`; the `messages` subcollection
+  layout and `expiry_time` fields stay in the store.
+
+`ThreadStoreBuilder.build()` (`core/thread/store/base.py:160`) is untouched — it imports the store
+classes, not the drivers.
+
 ### Config consolidation
 
-In `core/config.py`, the multimodal storage configs become subclasses of the base connection
-configs, the same way the response-store configs already are:
+In `core/config.py`, the multimodal storage and thread configs become subclasses of the base
+connection configs, the same way the response-store configs already are:
 
 - `_MultimodalStorageRedisConfig(_RedisConfig)` — overrides only
   `prefix: str = "ak:attachments:"`.
 - `_MultimodalStorageDynamoDBConfig(_DynamoDBConfig)` — overrides only the `table_name` default
   (`"ak-attachments"`) and its description.
+- `_ThreadRedisConfig(_RedisConfig)` — overrides `prefix` (`"ak:thread:"`) and `ttl`
+  (`2592000`, with its thread-oriented description).
+- `_ThreadDynamoDBConfig(_DynamoDBConfig)` — overrides the `table_name` default
+  (`"ak-agent-threads"`) and `ttl` (`0`), with their descriptions.
+- `_ThreadFirestoreConfig(_FirestoreConfig)` — overrides the `collection_name` default
+  (`"ak-agent-threads"`) and `ttl` (`0`), with their descriptions.
+- `_ThreadCosmosDBConfig` stays independent: it has no `ttl` field (the Cosmos thread store does
+  no TTL management), so subclassing `_CosmosDBConfig` would *add* an unused inherited `ttl`
+  field to the schema — a silently-accepted config knob that does nothing. Its `table_name`
+  default also differs (`"akagentthreads"`); duplicating two fields is cheaper than the false
+  affordance.
 
 Field names, types, and defaults are preserved exactly (verified: `_RedisConfig.url` and
 `_MultimodalStorageRedisConfig.url` share the `redis://localhost:6379` default, and both `ttl`s
-default to `604800`), so YAML files and `AK_MULTIMODAL__*` environment variables are unaffected.
+default to `604800`; the thread overrides above preserve every current thread default), so YAML
+files and `AK_MULTIMODAL__*` / `AK_THREAD__*` environment variables are unaffected.
 Field *descriptions* that are not overridden change to the inherited session-oriented wording:
 the multimodal `ttl` description would become "Redis saved value TTL in seconds" instead of
 "Attachment TTL in seconds" — override the `ttl` descriptions to keep the attachment-specific
@@ -288,12 +368,13 @@ Intentional, all in the direction of unifying on the session-driver behaviour:
 4. **Session Redis gains a missing-config check.** A missing `session.redis` block currently
    raises `AttributeError` from the driver's config reads; the store now raises a `ValueError`
    with a `session.redis config block is required...` message, matching the Valkey store.
-5. **Multimodal Redis attachment retry scope narrows from `Exception` to `redis.RedisError`.**
+5. **Multimodal and thread Redis retry scope narrows from `Exception` to `redis.RedisError`.**
    The retry helper takes its exception scope as a parameter (see Design); the session
    Redis/Valkey drivers already retry only on `RedisError`/`ValkeyError`, and the shared
-   `_RedisLikeDriver` unifies on that. The only consumer whose scope changes is
-   `RedisAttachmentStore`: non-connection errors (e.g. a malformed URL) now fail fast instead of
-   being retried. The DynamoDB/Cosmos/Firestore drivers keep their current bare-`Exception` scope.
+   `_RedisLikeDriver` unifies on that. The consumers whose scope changes are
+   `RedisAttachmentStore` and `RedisThreadStore`: non-connection errors (e.g. a malformed URL)
+   now fail fast instead of being retried. The DynamoDB/Cosmos/Firestore drivers keep their
+   current bare-`Exception` scope.
 6. **Response-store operations gain one health-check round trip and become safe under concurrent
    use.** Every `client` access pings (a sub-millisecond `PING` on an established connection),
    including the polling read path (`execution.response_store.retry_count`, default 5 reads per
@@ -315,6 +396,15 @@ Intentional, all in the direction of unifying on the session-driver behaviour:
    paper over with a stale client or an unnecessary reconnect. This changes both families (session:
    swallow → raise; multimodal: reconnect → raise); in practice a healthy client's `ping()` raises
    only `_error_class` subtypes, so the path is unreachable outside genuine faults.
+8. **The Redis thread store gains the health-check/reconnect, `socket_connect_timeout=5`, and
+   atomic `SET ... EX`.** Today `RedisThreadStore` never pings an established client (a dropped
+   connection surfaces as a raw command error with no reconnect), passes no connect timeout, and
+   sets TTLs via separate `EXPIRE` calls. It picks up the shared driver's ping-and-reconnect on
+   every `client` access and the connect timeout; its plain `set` calls now also apply `ex=ttl`
+   atomically, which is redundant with (but not a replacement for) the store's multi-key
+   `_expire` refresh of the shared user/group index sets. The DynamoDB/Cosmos/Firestore thread
+   stores are behaviourally unchanged — they already had lazy connect and retry, and keep their
+   data operations verbatim via the native handle.
 
 Non-changes: stored data layouts, key schemas, serialization, and TTL semantics are untouched —
 data written before this refactor is read back identically after it. No public exports change:
@@ -323,13 +413,15 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 
 ### Non-goals
 
-- **Unifying the three factories** (`SessionStoreBuilder.build()`,
-  `AttachmentStorageManager._build_driver()`, `ResponseDBHandler.__init__`) into a generic
-  "type → import → instantiate" registry. Their type enums, fallback behaviour (session falls back
-  to in-memory; the others raise), and error messages differ deliberately. Only their lazy-import
-  targets change.
+- **Unifying the four factories** (`SessionStoreBuilder.build()`,
+  `AttachmentStorageManager._build_driver()`, `ResponseDBHandler.__init__`,
+  `ThreadStoreBuilder.build()`) into a generic "type → import → instantiate" registry. Their type
+  enums, fallback behaviour (session and thread fall back to in-memory; the others raise), and
+  error messages differ deliberately. All four lazily import store classes, whose names and
+  modules are unchanged, so the factories are untouched.
 - **Adding new backend/subsystem combinations** (e.g. Valkey attachment storage, Cosmos DB response
-  storage). The shared layer makes these near-trivial follow-ups, but none are added here.
+  storage, Valkey thread storage). The shared layer makes these near-trivial follow-ups, but none
+  are added here.
 - **Async drivers.** All current consumers are synchronous; the shared drivers stay synchronous.
 
 ## Error handling
@@ -419,16 +511,38 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 2. Remove the hand-rolled `_key`, `expire`, and `expiry_time` logic in favour of the drivers'.
 3. `ResponseDBHandler` is unchanged; confirm both selection paths still work.
 
-### Task 6: Consolidate config classes
+### Task 6: Migrate the thread stores
+
+**Files:** `core/thread/store/redis.py`, `dynamodb.py`, `cosmosdb.py`, `firestore.py`
+
+1. Delete the four inline `_connect()` methods, the class-attribute client handles, and the
+   `client`/`table`/`table_client`/`collection` properties; keep config reading and the
+   missing-config `ValueError`s in each store's `__init__`.
+2. `RedisThreadStore`: hold a shared `RedisDriver(url, prefix, ttl)`; replace raw client calls
+   with the generic surface (`set(..., nx=True)` for `create`, `get`, `rpush`, `lrange`, `llen`,
+   `sadd`, `smembers`, `expire`, `scan_keys` for `list_threads`, `clear_prefix` for `clear`).
+   Key composition and the multi-key `_expire` refresh (user/group index sets) stay in the store.
+3. `DynamoDBThreadStore` / `CosmosDBThreadStore` / `FirestoreThreadStore`: hold shared drivers
+   constructed with explicit parameters and access `driver.table` / `driver.table_client` /
+   `driver.collection` (rule 3); all data operations, TTL attribute logic, and pagination move
+   nowhere.
+4. `ThreadStoreBuilder.build()` and `core/thread/store/__init__.py` exports need no changes;
+   verify.
+
+### Task 7: Consolidate config classes
 
 **File:** `core/config.py`
 
 1. `_MultimodalStorageRedisConfig` extends `_RedisConfig`, overriding only the `prefix` default.
 2. `_MultimodalStorageDynamoDBConfig` extends `_DynamoDBConfig`, overriding only the `table_name`
    default/description.
-3. Assert the effective schema (field names, types, defaults) is unchanged.
+3. `_ThreadRedisConfig` extends `_RedisConfig` (overrides `prefix`, `ttl`);
+   `_ThreadDynamoDBConfig` extends `_DynamoDBConfig` (overrides `table_name`, `ttl`);
+   `_ThreadFirestoreConfig` extends `_FirestoreConfig` (overrides `collection_name`, `ttl`).
+   `_ThreadCosmosDBConfig` stays independent (no `ttl` field — see Config consolidation).
+4. Assert the effective schema (field names, types, defaults) is unchanged.
 
-### Task 7: Tests
+### Task 8: Tests
 
 **File:** `ak-py/tests/test_shared_drivers.py` (new)
 
@@ -441,9 +555,10 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
    reconnecting (behavioural change 7). Concurrent failed pings on the same client produce exactly
    one reconnect: the second lock holder sees `_client` already replaced (identity compare against
    the object whose ping failed) and skips connecting.
-3. `set` applies `ex=ttl` only when `ttl > 0`; `expire` uses the configured TTL and is a no-op
-   when `ttl <= 0` (never issues `EXPIRE key 0`, which would delete the key); `key()` applies
-   the prefix; `clear_prefix` scans and deletes.
+3. `set` applies `ex=ttl` only when `ttl > 0`, and with `nx=True` returns whether the SET was
+   applied; `expire` uses the configured TTL and is a no-op when `ttl <= 0` (never issues
+   `EXPIRE key 0`, which would delete the key); `key()` applies the prefix; `clear_prefix` scans
+   and deletes; `smembers` and `scan_keys` decode bytes.
 4. `DynamoDBDriver.put` attaches `expiry_time` only when `ttl > 0`; `get` returns the raw item;
    `query_sort_keys` follows `LastEvaluatedKey` pagination; sort-key-less mode works
    (`request_id`-style tables).
@@ -477,20 +592,33 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 9. `test_firestore_database_id.py`: `FirestoreDriver` now takes constructor parameters — build it
    directly with `project_id`/`database_id` instead of mocking `AKConfig`, or mock `AKConfig` at
    the store level.
-10. Run the full suite: `cd ak-py && uv run pytest`.
+10. `test_thread_store_redis.py`: the fixture injects the mocked client via the class attribute
+   (`store._redis_client = MagicMock()`, reset with `RedisThreadStore._redis_client = None`) —
+   both disappear with the migration; inject a mocked `RedisDriver` on the store instead, and
+   rework the `store.client.expire` call assertions to `driver.expire`. Note the driver's `set`
+   now applies `ex=ttl` itself, so TTL assertions must accept `ex` on `set` in addition to the
+   explicit `_expire` refreshes.
+11. `test_thread_store.py`: the DynamoDB cases inject `store._ddb_table = MagicMock()` and reset
+   the `DynamoDBThreadStore._ddb_table` class attribute — inject the mock on the store's driver
+   (`store._driver`) instead; the data-operation assertions are unchanged since the store keeps
+   its native `table` calls.
+12. Run the full suite: `cd ak-py && uv run pytest`.
 
-### Task 8: Sync docs and skills
+### Task 9: Sync docs and skills
 
 1. Update `.agents/skills/ak-dev-architecture` (directory map: `core/util/drivers/`; the
-   multimodal storage-backend table's "connection pooling" traits at `SKILL.md:152`) and
-   `ak-dev-new-multimodal-storage` (its backend-traits table mentions "connection pooling";
-   it does not reference the deleted attachment driver classes by name).
+   multimodal storage-backend table's "connection pooling" traits at `SKILL.md:152`; any thread
+   store coverage the #348 skill sync adds in the meantime) and `ak-dev-new-multimodal-storage`
+   (its backend-traits table mentions "connection pooling"; it does not reference the deleted
+   attachment driver classes by name).
 2. Update `.agents/skills/ak-dev-testing-conventions`: the test-file table (`SKILL.md:67`)
    references `FirestoreDriver` for `test_firestore_database_id.py` — reflect the driver's move to
    `core/util/drivers/` and its new constructor-parameter interface, and add the new test files
    (`test_shared_drivers.py`, `test_sessions_dynamodb.py`, `test_multimodal_redis_store.py`) to
    the table.
 3. Docs website (`docs/docs/`): verified no page documents the per-subsystem driver classes,
-   connection retry/reconnect behaviour, or the response stores' eager-connect timing, and the
-   config field descriptions are unchanged (Task 6 overrides them) — no docs-site changes needed.
-   Confirm with the `ak-dev-sync-docs-from-branch` flow before merge.
+   connection retry/reconnect behaviour, or the response stores' eager-connect timing;
+   `docs/docs/advanced/threads.md` mentions connection parameters only in its config sample (no
+   connection-behaviour claims); and the config field descriptions are unchanged (Task 7
+   overrides them) — no docs-site changes needed. Confirm with the `ak-dev-sync-docs-from-branch`
+   flow before merge.
