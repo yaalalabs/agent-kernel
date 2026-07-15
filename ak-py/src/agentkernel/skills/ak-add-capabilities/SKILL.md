@@ -3,9 +3,10 @@ name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
-  A2A server, pre/post hooks, and multimodal support. Session persistence supports Redis,
-  DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP). Generates configuration and code
-  changes needed.
+  A2A server, pre/post hooks, multimodal support, and conversation thread support. Session
+  persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
+  Conversation threads support in-memory, Redis, DynamoDB (AWS), Firestore (GCP), and
+  Cosmos DB (Azure) backends. Generates configuration and code changes needed.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -37,6 +38,7 @@ Which capability would you like to add?
 6. **A2A Server** — Agent-to-Agent communication protocol
 7. **Hooks** — Custom pre/post processing (RAG, logging, prompt modification)
 8. **Multimodal** — Image and file attachment support
+9. **Conversation Threads** — Persistent, named conversation history keyed by `session_id`
 
 ### Step 3: Generate Changes
 
@@ -649,6 +651,133 @@ export AK_MULTIMODAL__REDIS__URL="redis://localhost:6379"
 export AK_MULTIMODAL__STORAGE_TYPE=dynamodb
 export AK_MULTIMODAL__DYNAMODB__TABLE_NAME="ak-attachments"
 ```
+
+---
+
+#### Conversation Thread Support
+
+Enable persistent, named conversation threads keyed by `session_id`.
+
+**Ask:** Which thread store backend — in-memory (default, dev), Redis, DynamoDB (AWS), Firestore (GCP), or Cosmos DB (Azure)?
+
+**Basic setup (in-memory store, good for development):**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api]>=0.6.1",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+thread:
+  type: memory  # other supported backends: redis | dynamodb | firestore | cosmosdb
+```
+
+3. No further code changes needed. When enabled:
+   - `user_id` becomes required on every chat request
+   - A thread is auto-created on a session's first request
+   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` become available for reading thread history (open by default, or protected by a pluggable `Authoriser`)
+   - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
+   - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
+
+**For LLM-based thread naming**, add the `thread` extra:
+```toml
+dependencies = [
+    "agentkernel[openai,api,thread]>=0.6.1",
+]
+```
+```yaml
+thread:
+  type: memory
+  naming:
+    model: "gpt-4o-mini"   # LiteLLM model used to name threads
+    max_length: 80
+```
+
+**For Redis storage (production, persistent, distributed):**
+
+```toml
+dependencies = [
+    "agentkernel[openai,api,redis,thread]>=0.6.1",
+]
+```
+```yaml
+thread:
+  type: redis
+  redis:
+    url: "redis://localhost:6379"
+    prefix: "ak:thread:"
+    ttl: 2592000            # Thread TTL in seconds (30 days, 0 disables)
+```
+
+**For DynamoDB storage (serverless/AWS):**
+
+```toml
+dependencies = [
+    "agentkernel[openai,api,aws,thread]>=0.6.1",
+]
+```
+```yaml
+thread:
+  type: dynamodb
+  dynamodb:
+    table_name: "ak-agent-threads"   # partition key session_id (S), sort key sk (S)
+    ttl: 0
+```
+
+**For Firestore storage (serverless/GCP):**
+
+```yaml
+thread:
+  type: firestore
+  firestore:
+    collection_name: "ak-agent-threads"
+    ttl: 0
+```
+
+**For Cosmos DB storage (Azure, Table API):**
+
+```yaml
+thread:
+  type: cosmosdb
+  cosmosdb:
+    connection_string: "${AZURE_COSMOS_CONNECTION_STRING}"
+    table_name: "akagentthreads"
+```
+
+**Protecting the read endpoints with an Authoriser:**
+
+```python
+from typing import Optional
+from agentkernel.api import RESTAPI, AgentRESTRequestHandler, ThreadRESTRequestHandler
+from agentkernel.core.thread import Authoriser
+
+class DemoAuthoriser(Authoriser):
+    def authorise(self, token: str) -> Optional[str]:
+        # Validate the ****** against your own auth provider, return the user_id or None.
+        return {"alice-token": "alice", "bob-token": "bob"}.get(token)
+
+RESTAPI.run(handlers=[AgentRESTRequestHandler(), ThreadRESTRequestHandler(authoriser=DemoAuthoriser())])
+```
+
+Passing an explicit `ThreadRESTRequestHandler` replaces the default open thread routes that are mounted
+automatically when a `thread` block is present in `config.yaml`. With an Authoriser configured, thread listings
+are scoped to the resolved `user_id` and reading another user's thread is rejected (403).
+
+**Attachments in thread mode:** require `multimodal.enabled: true` with a shared attachment store —
+`in_memory`, `redis`, or `dynamodb` (`session_cache` is rejected).
+
+**Send a chat request with a thread:**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "user_id": "alice", "thread_name": "Capitals quiz"}'
+```
+
+See `examples/api/thread-openai` and `examples/api/multimodal/thread-openai`.
 
 ---
 

@@ -81,7 +81,7 @@ These skills help end users building agent projects with Agent Kernel. They are 
 | `ak-build` | Add tools, agents, and handoffs to an existing project. Reads the project's framework, agents, tools, and config first, then generates context-aware code. Covers all supported frameworks with gotcha guards. |
 | `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
 | `ak-cloud-deploy` | Deploy to AWS, Azure, or GCP: 6 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps, GCP Cloud Run serverless, GCP Cloud Run containerized) plus AWS execution modes (`rest_sync`, `rest_async`, `async`), queue/scalable mode, API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images on both serverless and containerized). |
-| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB/Firestore), knowledge bases (ChromaDB/Neo4j/Starburst/custom), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
+| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB/Firestore), knowledge bases (ChromaDB/Neo4j/Starburst/custom), MCP, A2A, custom hooks (PreHook/PostHook), multimodal, conversation thread support (in-memory/Redis/DynamoDB/Firestore/CosmosDB). |
 | `ak-test` | Test setup (fuzzy/judge/fallback modes, CLI/API patterns) + 8 debugging scenarios: no agents available, session not persisting, ToolContext errors, guardrail blocking, import errors, Redis connection, Terraform failures, webhook issues. |
 
 ## CLI Design
@@ -293,7 +293,7 @@ User skills don't have a prefix — they're the primary audience and should have
 
 - **`ak-cloud-deploy`**: Complete Terraform configurations for all 4 deployment targets. Users shouldn't have to write Terraform from scratch — the skill generates all files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh) using AK's published Terraform modules.
 
-- **`ak-add-capabilities`**: A "shopping list" skill — pick what you need (guardrails, tracing, session persistence, MCP, A2A, hooks, multimodal) and get the exact config + code. Each capability is independent.
+- **`ak-add-capabilities`**: A "shopping list" skill — pick what you need (guardrails, tracing, session persistence, MCP, A2A, hooks, multimodal, conversation threads) and get the exact config + code. Each capability is independent.
 
 - **`ak-test`**: Combines test setup (often overlooked) with a debugging FAQ. The 8 debugging scenarios were chosen based on the most common issues: misconfigured agents, session problems, import errors, infrastructure failures.
 

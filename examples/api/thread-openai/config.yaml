@@ -1,0 +1,2 @@
+thread:
+  type: memory # other supported backends: redis | dynamodb | firestore | cosmosdb

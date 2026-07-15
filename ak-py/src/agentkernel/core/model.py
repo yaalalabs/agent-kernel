@@ -67,6 +67,25 @@ class AgentRequestAny(BaseModel):
     type: Literal["other"] = "other"
 
 
+class AgentRequestAttachmentRef(BaseModel):
+    """
+    AgentRequestAttachmentRef references an attachment whose bytes are already
+    persisted in the AttachmentStore, carrying only its identifier — no raw data.
+
+    Used on the thread-enabled path: ChatService stores an uploaded attachment's
+    bytes up front and replaces the raw image/file request with this reference,
+    so no raw bytes travel past storage. MultimodalPreHook reads the id, loads the
+    bytes from the AttachmentStore to generate a description, then strips it before
+    the agent runs. Handled only by pre-hooks, never passed to the agent itself.
+
+    attachment_id: str : Identifier of the stored attachment.
+    type: Literal["attachment_ref"]
+    """
+
+    attachment_id: str
+    type: Literal["attachment_ref"] = "attachment_ref"
+
+
 class AgentReplyText(AgentRequestText):
     """
     AgentReplyText encapsulates a text reply from an agent.
@@ -105,6 +124,10 @@ class AgentReplyImage(BaseModel):
         return f"{self.text}. Image {self.name} is attached."
 
 
+type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef]
+type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
+
+
 class AgentReplyAny(BaseModel):
     """
     AgentReplyAny encapsulates a structured (JSON) reply from an agent.
@@ -138,10 +161,6 @@ class AgentReplyAny(BaseModel):
         if isinstance(value, dict):
             return cls(content=value, prompt=prompt)
         return None
-
-
-type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny]
-type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
 
 
 class ExecutionMode(str, Enum):
@@ -184,11 +203,19 @@ class ImageData(BaseModel):
 
 
 class BaseChatRequest(BaseModel):
-    """Base model for chat requests with common fields."""
+    """Base model for chat requests with common fields.
+
+    user_id is required when Conversation Thread Support is enabled (a 'thread'
+    block is present in config.yaml); group_id and thread_name are optional and
+    applied only when the thread is auto-created on the session's first request.
+    """
 
     prompt: str
     agent: Optional[str] = None
     session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    group_id: Optional[str] = None
+    thread_name: Optional[str] = None
 
 
 class BaseRunRequest(BaseChatRequest):
@@ -230,6 +257,11 @@ class BaseRequest(BaseModel):
 
             if not isinstance(body, BaseRunRequest):
                 body = BaseRunRequest.model_validate(body)
+
+            # The envelope user_id is authoritative — propagate it into the body so
+            # body-level consumers (e.g. Conversation Thread Support) can read it.
+            if user_id is not None:
+                body.user_id = user_id
 
             return cls(request_id=request_id, user_id=user_id, route=route, body=body)
 

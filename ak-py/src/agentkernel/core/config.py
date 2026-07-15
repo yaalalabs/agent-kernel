@@ -212,6 +212,51 @@ class _MultimodalConfig(BaseModel):
     dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
 
 
+class _ThreadRedisConfig(BaseModel):
+    url: str = Field(default="redis://localhost:6379", description="Redis connection URL. Use rediss:// for SSL")
+    ttl: int = Field(default=2592000, description="Thread TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:thread:", description="Key prefix for Redis thread storage")
+
+
+class _ThreadDynamoDBConfig(BaseModel):
+    table_name: str = Field(
+        default="ak-agent-threads",
+        description="DynamoDB table name for thread storage. Table should have a partition key named 'session_id' (S) and a sort key named 'sk' (S)",
+    )
+    ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables)")
+
+
+class _ThreadFirestoreConfig(BaseModel):
+    collection_name: str = Field(
+        default="ak-agent-threads",
+        description="Firestore collection name for thread storage. Each document ID is a session_id.",
+    )
+    project_id: Optional[str] = Field(default=None, description="GCP project ID. If null, inferred from Application Default Credentials.")
+    database_id: Optional[str] = Field(default=None, description="Firestore database ID. If null, defaults to '(default)' database.")
+    ttl: int = Field(default=0, description="Thread TTL in seconds (0 disables)")
+
+
+class _ThreadCosmosDBConfig(BaseModel):
+    connection_string: str = Field(description="Cosmos DB connection string. Can be found in Azure Portal under Keys section")
+    table_name: str = Field(default="akagentthreads", description="Cosmos DB table name for thread storage")
+
+
+class _ThreadNamingConfig(BaseModel):
+    model: str = Field(default="gpt-4o-mini", description="LiteLLM model used to generate thread names")
+    max_length: int = Field(default=80, description="Maximum length of an auto-generated thread name")
+
+
+class _ThreadStoreConfig(BaseModel):
+    """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
+
+    type: str = Field(default="memory", pattern="^(memory|redis|dynamodb|cosmosdb|firestore)$")
+    naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
+    redis: Optional[_ThreadRedisConfig] = None
+    dynamodb: Optional[_ThreadDynamoDBConfig] = None
+    firestore: Optional[_ThreadFirestoreConfig] = None
+    cosmosdb: Optional[_ThreadCosmosDBConfig] = None
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -349,6 +394,10 @@ class AKConfig(YamlBaseSettingsModified):
     telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
+    thread: Optional[_ThreadStoreConfig] = Field(
+        default=None,
+        description="Conversation Thread Support configurations. Feature is enabled only when this block is present.",
+    )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)

@@ -1,6 +1,6 @@
 {
   "skill": "ak-add-capabilities",
-  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal) skill",
+  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal, conversation threads) skill",
   "version": "0.6.1",
   "evals": [
     {
@@ -227,6 +227,52 @@
       ],
       "must_not_contain": [
         "storage_type: redis"
+      ]
+    },
+    {
+      "id": "cap-thread-memory",
+      "name": "Enable conversation thread support",
+      "input": "Add conversation thread support to my project",
+      "expected_outputs": [
+        "thread:",
+        "type: memory",
+        "user_id",
+        "session_id",
+        "GET /api/v1/threads"
+      ]
+    },
+    {
+      "id": "cap-thread-redis",
+      "name": "Enable conversation threads with Redis storage",
+      "input": "Add conversation thread support with Redis storage backend",
+      "expected_outputs": [
+        "thread:",
+        "type: redis",
+        "redis:",
+        "url:",
+        "ttl:",
+        "agentkernel[",
+        "redis",
+        "thread"
+      ],
+      "must_not_contain": [
+        "type: dynamodb"
+      ]
+    },
+    {
+      "id": "cap-thread-dynamodb",
+      "name": "Enable conversation threads with DynamoDB storage",
+      "input": "Add conversation thread support with DynamoDB storage for my serverless deployment",
+      "expected_outputs": [
+        "thread:",
+        "type: dynamodb",
+        "dynamodb:",
+        "table_name:",
+        "agentkernel[",
+        "aws"
+      ],
+      "must_not_contain": [
+        "type: redis"
       ]
     }
   ]
