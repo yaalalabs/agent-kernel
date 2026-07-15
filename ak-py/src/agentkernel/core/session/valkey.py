@@ -1,139 +1,10 @@
 import logging
-import time
-import traceback
-from typing import Any, Optional
-
-import valkey
 
 from ..base import Session
 from ..config import AKConfig
+from ..util.driver.valkey import ValkeyDriver
 from .base import SessionCache, SessionStore
 from .serde import BinarySerde
-
-
-class ValkeyDriver:
-    """
-    ValkeyDriver provides Valkey connection and helper methods for namespaced key/value operations.
-    """
-
-    def __init__(self):
-        self._valkey_client = None
-        self._log = logging.getLogger("ak.core.session.valkey.util")
-
-        session_cfg = AKConfig.get().session
-        if session_cfg.valkey is None:
-            raise ValueError("session.valkey config block is required when session.type is 'valkey'")
-
-        self._url = session_cfg.valkey.url
-        self._prefix = session_cfg.valkey.prefix
-        self._ttl = int(session_cfg.valkey.ttl)
-
-    @property
-    def client(self):
-        """
-        Returns the Valkey client instance.
-        """
-        if self._valkey_client is None:
-            self._connect()
-        else:
-            try:
-                self._valkey_client.ping()
-                self._log.debug("Valkey client is alive")
-            except valkey.ValkeyError:
-                self._log.warning("Valkey client is not alive, reconnecting")
-                self._connect()
-            except Exception as e:
-                self._log.error(f"Unexpected error while pinging Valkey client: {e}")
-                self._log.error(traceback.format_exc())
-        return self._valkey_client
-
-    @property
-    def ttl(self):
-        """
-        Returns the configured TTL for Valkey keys.
-        """
-        return self._ttl
-
-    def _connect(self):
-        """
-        Connects to Valkey using the configured URL or host/port.
-        """
-        retries = 3
-        for attempt in range(retries):
-            try:
-                self._log.debug(f"Connecting to Valkey using URL {self._url}")
-                client = valkey.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
-                client.ping()
-                self._valkey_client = client
-                return
-            except valkey.ValkeyError as e:
-                self._log.warning(f"Attempt {attempt + 1} failed: {e}")
-                if attempt == retries - 1:
-                    raise
-                time.sleep(2)
-
-    def key(self, session_id: str) -> str:
-        """
-        Generates a Valkey key for the given session ID using a configured prefix.
-        :param session_id: The session ID to generate a key for.
-        :return: The generated key.
-        """
-        return f"{self._prefix}{session_id}"
-
-    def hset(self, key: str, field: str, value: Any) -> None:
-        """
-        Sets a field in the Valkey hash associated with the given key.
-        :param key: The key to set the field for.
-        :param field: The field to set.
-        :param value: The value to set for the field.
-        """
-        self._log.debug(f"HSET {key} field={field}")
-        self.client.hset(name=key, key=field, value=value)
-
-    def hget(self, key: str, field: str) -> Optional[bytes]:
-        """
-        Retrieves a field from the Valkey hash associated with the given key.
-        :param key: The key to retrieve the field for.
-        :param field: The field to retrieve.
-        :return: The value of the field, or None if the field does not exist.
-        """
-        self._log.debug(f"HGET {key} field={field}")
-        return self.client.hget(name=key, key=field)
-
-    def expire(self, key: str) -> None:
-        """
-        Sets the TTL for the Valkey hash associated with the given key.
-        :param key: The key to set the TTL for.
-        """
-        self._log.debug(f"EXPIRE {key} {self._ttl}")
-        self.client.expire(name=key, time=self._ttl)
-
-    def hkeys(self, key: str) -> list[str]:
-        """
-        Retrieves all keys in the Valkey hash associated with the given key.
-        :param key: The key to retrieve the keys for.
-        :return: A list of keys in the hash.
-        """
-        self._log.debug(f"HKEYS {key}")
-        raw = self.client.hkeys(name=key)
-        return [k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw]
-
-    def exists(self, key: str) -> bool:
-        """
-        Checks if a Valkey key exists.
-        :param key: The key to check.
-        :return: True if the key exists, False otherwise.
-        """
-        return bool(self.client.exists(key))
-
-    def clear_prefix(self) -> None:
-        """
-        Clears all keys matching the configured prefix pattern.
-        """
-        pattern = f"{self._prefix}*"
-        keys = list(self.client.scan_iter(match=pattern, count=1000))
-        if keys:
-            self.client.delete(*keys)
 
 
 class ValkeySessionStore(SessionStore):
@@ -149,7 +20,10 @@ class ValkeySessionStore(SessionStore):
         """
         self._log = logging.getLogger("ak.core.session.valkey")
         self._serde = BinarySerde()
-        self._driver = ValkeyDriver()
+        cfg = AKConfig.get().session.valkey
+        if cfg is None:
+            raise ValueError("session.valkey config block is required when session.type is 'valkey'")
+        self._driver = ValkeyDriver(url=cfg.url, prefix=cfg.prefix, ttl=int(cfg.ttl))
         self._cache = cache
 
     def load(self, session_id: str, strict: bool = False) -> Session:

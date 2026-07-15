@@ -41,6 +41,11 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
 | `test_sessions_in_memory.py` | InMemorySessionStore |
+| `test_sessions_redis.py` | RedisSessionStore missing-config error, shared RedisDriver retry exhaustion |
+| `test_sessions_valkey.py` | ValkeySessionStore round trips (fake client), shared ValkeyDriver retry exhaustion |
+| `test_sessions_dynamodb.py` | DynamoDBSessionStore Binary wrap/unwrap, missing-item skip (mocked driver) |
+| `test_shared_drivers.py` | Shared DB drivers (`core/util/driver/`): retry scope, ping/reconnect, command surface, DynamoDB item-dict semantics |
+| `test_multimodal_redis_store.py` | RedisAttachmentStore index TTL refresh, JSON round trip, pruning (mocked driver) |
 | `test_config.py` | AKConfig loading, env vars |
 | `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |
@@ -64,7 +69,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_lambda_router.py` | Lambda routing |
 | `test_sqs_handler.py` | AWS SQSHandler config, client, message sending |
 | `test_serverless_request_handle.py` | BaseRequest/BaseRunRequest parsing from serverless payloads |
-| `test_firestore_database_id.py` | FirestoreDriver named `database_id` configuration |
+| `test_firestore_database_id.py` | Shared `FirestoreDriver` (`core/util/driver/firestore.py`, explicit constructor params) named `database_id` configuration |
 | `test_ak_logger.py` | AKLogger level resolution, configuration |
 | `test_error_util.py` | `user_facing_error_message` error mapping |
 | `test_thread_runner.py` | ThreadRunner task validation, failure/shutdown semantics |

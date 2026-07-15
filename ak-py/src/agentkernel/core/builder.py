@@ -127,7 +127,7 @@ class SessionStoreBuilder(Builder):
             or InMemorySessionStore (for all other types).
 
         :raises: Any exceptions raised by SessionStoreBuilder.Types.from_str(), AKConfig.get(),
-            RedisDriver(), RedisSessionStore(), or InMemorySessionStore() initialization.
+            RedisSessionStore(), or InMemorySessionStore() initialization.
         """
         session_store_type: SessionStoreBuilder.Types = SessionStoreBuilder.Types.from_str(AKConfig.get().session.type)
         Builder._log.info(f"Building {session_store_type} session store")

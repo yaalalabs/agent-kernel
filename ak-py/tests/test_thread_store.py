@@ -41,25 +41,24 @@ class TestDynamoDBConditionalCreate:
         original = AKConfig.get().thread
         AKConfig.get().thread = _ThreadStoreConfig(type="dynamodb", dynamodb=_ThreadDynamoDBConfig())
         store = DynamoDBThreadStore()
-        store._ddb_table = MagicMock()
+        store._driver = MagicMock()
         yield store
         AKConfig.get().thread = original
-        DynamoDBThreadStore._ddb_table = None
 
     def test_create_uses_condition_expression(self, store):
         store.create(Thread(session_id="s1", user_id="u1"))
-        assert store.table.put_item.call_args.kwargs["ConditionExpression"] == "attribute_not_exists(session_id)"
+        assert store._driver.table.put_item.call_args.kwargs["ConditionExpression"] == "attribute_not_exists(session_id)"
 
     def test_create_conflict_returns_existing(self, store):
         existing = Thread(session_id="s1", user_id="winner")
-        store.table.put_item.side_effect = ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
-        store.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
+        store._driver.table.put_item.side_effect = ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        store._driver.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
 
         result = store.create(Thread(session_id="s1", user_id="loser"))
         assert result.user_id == "winner"
 
     def test_create_other_client_error_propagates(self, store):
-        store.table.put_item.side_effect = ClientError({"Error": {"Code": "ThrottlingException"}}, "PutItem")
+        store._driver.table.put_item.side_effect = ClientError({"Error": {"Code": "ThrottlingException"}}, "PutItem")
         with pytest.raises(ClientError):
             store.create(Thread(session_id="s1", user_id="u1"))
 
@@ -72,20 +71,19 @@ class TestDynamoDBUpdateName:
         original = AKConfig.get().thread
         AKConfig.get().thread = _ThreadStoreConfig(type="dynamodb", dynamodb=_ThreadDynamoDBConfig())
         store = DynamoDBThreadStore()
-        store._ddb_table = MagicMock()
+        store._driver = MagicMock()
         yield store
         AKConfig.get().thread = original
-        DynamoDBThreadStore._ddb_table = None
 
     def test_update_name_rewrites_data_blob(self, store):
         existing = Thread(session_id="s1", user_id="u1", name="old")
-        store.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
+        store._driver.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
 
         result = store.update_name("s1", "new name")
 
         assert result.name == "new name"
         assert result.name_locked is True
-        kwargs = store.table.update_item.call_args.kwargs
+        kwargs = store._driver.table.update_item.call_args.kwargs
         assert kwargs["ConditionExpression"] == "attribute_exists(session_id)"
         written = Thread.model_validate_json(kwargs["ExpressionAttributeValues"][":data"])
         assert written.name == "new name"
@@ -93,15 +91,15 @@ class TestDynamoDBUpdateName:
         assert "updated_at" not in kwargs["UpdateExpression"]
 
     def test_update_name_missing_thread_raises(self, store):
-        store.table.get_item.return_value = {}
+        store._driver.table.get_item.return_value = {}
         with pytest.raises(KeyError):
             store.update_name("missing", "new name")
-        store.table.update_item.assert_not_called()
+        store._driver.table.update_item.assert_not_called()
 
     def test_update_name_condition_failure_raises_key_error(self, store):
         existing = Thread(session_id="s1", user_id="u1", name="old")
-        store.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
-        store.table.update_item.side_effect = ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+        store._driver.table.get_item.return_value = {"Item": {"data": existing.model_dump_json()}}
+        store._driver.table.update_item.side_effect = ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         with pytest.raises(KeyError):
             store.update_name("s1", "new name")
 

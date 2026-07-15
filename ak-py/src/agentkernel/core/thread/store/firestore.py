@@ -19,6 +19,7 @@ import uuid
 from typing import List, Optional, Tuple
 
 from ...config import AKConfig
+from ...util.driver.firestore import FirestoreDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore, paginate
 
@@ -35,53 +36,15 @@ class FirestoreThreadStore(ThreadStore):
     Firestore-backed implementation of the ThreadStore interface.
     """
 
-    _client = None
-
     def __init__(self):
         self._log = logging.getLogger("ak.thread.store.firestore")
         cfg = AKConfig.get().thread.firestore
         if cfg is None or not cfg.collection_name:
             raise ValueError("AKConfig.thread.firestore.collection_name must be set to use FirestoreThreadStore")
-        self._collection_name = cfg.collection_name
-        self._project_id = cfg.project_id
-        self._database_id = cfg.database_id
+        # The store owns the expiry_time TTL logic, so the driver is constructed
+        # without a TTL and shares only the connection layer.
+        self._driver = FirestoreDriver(collection_name=cfg.collection_name, project_id=cfg.project_id, database_id=cfg.database_id)
         self._ttl = cfg.ttl
-
-    @property
-    def collection(self):
-        """
-        Returns the Firestore CollectionReference, connecting lazily if needed.
-        """
-        if self._client is None:
-            self._connect()
-        return self._client.collection(self._collection_name)
-
-    def _connect(self) -> None:
-        """
-        Establish a connection to Firestore, with retries.
-        """
-        retries = 3
-        delay = 2
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                from google.cloud import firestore
-
-                kwargs: dict = {}
-                if self._project_id:
-                    kwargs["project"] = self._project_id
-                if self._database_id is not None:
-                    kwargs["database"] = self._database_id
-                self._client = firestore.Client(**kwargs)
-                self._log.debug("Connected to Firestore collection %s", self._collection_name)
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("Firestore connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    time.sleep(delay)
-        if last_err:
-            raise last_err
 
     def create(self, thread: Thread) -> Thread:
         """
@@ -104,7 +67,7 @@ class FirestoreThreadStore(ThreadStore):
         if self._ttl and self._ttl > 0:
             doc["expiry_time"] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=self._ttl)
         try:
-            self.collection.document(thread.session_id).create(doc)
+            self._driver.collection.document(thread.session_id).create(doc)
         except AlreadyExists:
             return self.load_metadata(thread.session_id)
         return metadata
@@ -126,7 +89,7 @@ class FirestoreThreadStore(ThreadStore):
         thread.name = name
         thread.name_locked = True
         try:
-            self.collection.document(session_id).update({"data": thread.model_copy(update={"messages": []}).model_dump_json()})
+            self._driver.collection.document(session_id).update({"data": thread.model_copy(update={"messages": []}).model_dump_json()})
         except NotFound:
             raise KeyError(f"Thread {session_id} not found")
         return thread.model_copy(update={"messages": []})
@@ -137,7 +100,7 @@ class FirestoreThreadStore(ThreadStore):
         :param session_id: Unique identifier for the thread.
         :return: The thread metadata, or None if it does not exist.
         """
-        doc = self.collection.document(session_id).get()
+        doc = self._driver.collection.document(session_id).get()
         if not doc.exists:
             return None
         record = doc.to_dict()
@@ -156,7 +119,7 @@ class FirestoreThreadStore(ThreadStore):
         :param message: The message to append.
         :raises KeyError: If the thread does not exist.
         """
-        doc_ref = self.collection.document(session_id)
+        doc_ref = self._driver.collection.document(session_id)
         if not doc_ref.get().exists:
             raise KeyError(f"Thread {session_id} not found")
         seq = _new_seq()
@@ -179,7 +142,7 @@ class FirestoreThreadStore(ThreadStore):
         if offset < 0:
             offset = 0
         query = (
-            self.collection.document(session_id)
+            self._driver.collection.document(session_id)
             .collection(_MESSAGES_SUBCOLLECTION)
             .order_by("seq")
             .offset(offset)
@@ -207,7 +170,7 @@ class FirestoreThreadStore(ThreadStore):
         """
         from google.cloud.firestore_v1.base_query import FieldFilter
 
-        query = self.collection
+        query = self._driver.collection
         if user_id is not None:
             query = query.where(filter=FieldFilter("user_id", "==", user_id))
         if group_id is not None:
@@ -232,7 +195,7 @@ class FirestoreThreadStore(ThreadStore):
 
         This is a destructive operation intended for development/testing only.
         """
-        for doc in self.collection.stream():
+        for doc in self._driver.collection.stream():
             for msg in doc.reference.collection(_MESSAGES_SUBCOLLECTION).stream():
                 msg.reference.delete()
             doc.reference.delete()

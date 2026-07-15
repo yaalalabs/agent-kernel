@@ -22,11 +22,11 @@ import time
 import uuid
 from typing import List, Optional, Tuple
 
-import boto3
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from ...config import AKConfig
+from ...util.driver.dynamodb import DynamoDBDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore
 
@@ -44,48 +44,15 @@ class DynamoDBThreadStore(ThreadStore):
     DynamoDB-backed implementation of the ThreadStore interface.
     """
 
-    _ddb_resource = None
-    _ddb_table = None
-
     def __init__(self):
         self._log = logging.getLogger("ak.thread.store.dynamodb")
         cfg = AKConfig.get().thread.dynamodb
         if cfg is None or not cfg.table_name:
             raise ValueError("AKConfig.thread.dynamodb.table_name must be set to use DynamoDBThreadStore")
-        self._table_name = cfg.table_name
+        # The store owns the expiry_time TTL logic (per-operation, conditional),
+        # so the driver is constructed with ttl=0 and shares only the connection layer.
+        self._driver = DynamoDBDriver(table_name=cfg.table_name, partition_key="session_id", sort_key="sk")
         self._ttl = cfg.ttl
-
-    @property
-    def table(self):
-        """
-        Returns the boto3 DynamoDB Table resource, connecting lazily if needed.
-        """
-        if self._ddb_table is None:
-            self._connect()
-        return self._ddb_table
-
-    def _connect(self):
-        """
-        Establish a connection to DynamoDB and resolve the configured table, with retries.
-        """
-        retries = 3
-        delay = 2
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                self._log.debug("Connecting to DynamoDB resource")
-                self._ddb_resource = boto3.resource("dynamodb")
-                self._ddb_table = self._ddb_resource.Table(self._table_name)
-                self._ddb_table.load()
-                self._log.debug("Connected to DynamoDB table %s", self._table_name)
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("DynamoDB connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    time.sleep(delay)
-        if last_err:
-            raise last_err
 
     def _expiry(self) -> Optional[int]:
         return int(time.time()) + int(self._ttl) if self._ttl and self._ttl > 0 else None
@@ -113,7 +80,7 @@ class DynamoDBThreadStore(ThreadStore):
         if expiry is not None:
             item["expiry_time"] = expiry
         try:
-            self.table.put_item(Item=item, ConditionExpression="attribute_not_exists(session_id)")
+            self._driver.table.put_item(Item=item, ConditionExpression="attribute_not_exists(session_id)")
         except ClientError as e:
             if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
                 raise
@@ -135,7 +102,7 @@ class DynamoDBThreadStore(ThreadStore):
         thread.name = name
         thread.name_locked = True
         try:
-            self.table.update_item(
+            self._driver.table.update_item(
                 Key={"session_id": session_id, "sk": _META_SK},
                 UpdateExpression="SET #d = :data",
                 ConditionExpression="attribute_exists(session_id)",
@@ -154,7 +121,7 @@ class DynamoDBThreadStore(ThreadStore):
         :param session_id: Unique identifier for the thread.
         :return: The thread metadata, or None if it does not exist.
         """
-        resp = self.table.get_item(Key={"session_id": session_id, "sk": _META_SK})
+        resp = self._driver.table.get_item(Key={"session_id": session_id, "sk": _META_SK})
         item = resp.get("Item")
         if not item:
             return None
@@ -177,7 +144,7 @@ class DynamoDBThreadStore(ThreadStore):
         :param message: The message to append.
         :raises KeyError: If the thread does not exist.
         """
-        meta = self.table.get_item(Key={"session_id": session_id, "sk": _META_SK}).get("Item")
+        meta = self._driver.table.get_item(Key={"session_id": session_id, "sk": _META_SK}).get("Item")
         if not meta:
             raise KeyError(f"Thread {session_id} not found")
 
@@ -189,7 +156,7 @@ class DynamoDBThreadStore(ThreadStore):
         }
         if expiry is not None:
             item["expiry_time"] = expiry
-        self.table.put_item(Item=item)
+        self._driver.table.put_item(Item=item)
 
         # Blind-update the metadata item's updated_at (and refresh its TTL so an
         # actively-used thread's metadata does not expire mid-conversation).
@@ -201,7 +168,7 @@ class DynamoDBThreadStore(ThreadStore):
             set_clauses.append("#expiry = :e")
             names["#expiry"] = "expiry_time"
             values[":e"] = expiry
-        self.table.update_item(
+        self._driver.table.update_item(
             Key={"session_id": session_id, "sk": _META_SK},
             UpdateExpression="SET " + ", ".join(set_clauses),
             ExpressionAttributeNames=names,
@@ -222,10 +189,10 @@ class DynamoDBThreadStore(ThreadStore):
         condition = Key("session_id").eq(session_id) & Key("sk").begins_with(_MSG_PREFIX)
 
         items: list = []
-        resp = self.table.query(KeyConditionExpression=condition, ScanIndexForward=True, Limit=needed)
+        resp = self._driver.table.query(KeyConditionExpression=condition, ScanIndexForward=True, Limit=needed)
         items.extend(resp.get("Items", []))
         while "LastEvaluatedKey" in resp and len(items) < needed:
-            resp = self.table.query(
+            resp = self._driver.table.query(
                 KeyConditionExpression=condition,
                 ScanIndexForward=True,
                 Limit=needed - len(items),
@@ -262,13 +229,13 @@ class DynamoDBThreadStore(ThreadStore):
             filter_expression = filter_expression & Attr("group_id").eq(group_id)
 
         threads: List[Thread] = []
-        resp = self.table.scan(FilterExpression=filter_expression)
+        resp = self._driver.table.scan(FilterExpression=filter_expression)
         while True:
             for item in resp.get("Items", []):
                 threads.append(self._to_thread(item))
             if "LastEvaluatedKey" not in resp:
                 break
-            resp = self.table.scan(FilterExpression=filter_expression, ExclusiveStartKey=resp["LastEvaluatedKey"])
+            resp = self._driver.table.scan(FilterExpression=filter_expression, ExclusiveStartKey=resp["LastEvaluatedKey"])
 
         threads.sort(key=lambda t: t.updated_at, reverse=True)
         return paginate(threads, limit, offset)
@@ -279,11 +246,11 @@ class DynamoDBThreadStore(ThreadStore):
 
         This is a destructive operation intended for development/testing only.
         """
-        with self.table.batch_writer() as batch:
-            resp = self.table.scan(ProjectionExpression="session_id, sk")
+        with self._driver.table.batch_writer() as batch:
+            resp = self._driver.table.scan(ProjectionExpression="session_id, sk")
             while True:
                 for item in resp.get("Items", []):
                     batch.delete_item(Key={"session_id": item["session_id"], "sk": item["sk"]})
                 if "LastEvaluatedKey" not in resp:
                     break
-                resp = self.table.scan(ProjectionExpression="session_id, sk", ExclusiveStartKey=resp["LastEvaluatedKey"])
+                resp = self._driver.table.scan(ProjectionExpression="session_id, sk", ExclusiveStartKey=resp["LastEvaluatedKey"])
