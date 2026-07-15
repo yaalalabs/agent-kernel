@@ -20,7 +20,7 @@ metadata:
 1. **Framework-agnostic core**: All core abstractions (`Session`, `Agent`, `Tool`, `Runner`, `Module`, `Runtime`) are framework-independent. Framework-specific logic lives exclusively in adapter modules under `ak-py/src/agentkernel/framework/`.
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents) implements `Agent`, `Tool`, `Runner`, and `Module` subclasses that wrap native framework objects.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
-4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, DynamoDB, Cosmos DB, Firestore).
+4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, and messaging integrations are all pluggable via well-defined interfaces.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them.
 
@@ -218,6 +218,7 @@ ak-py/src/agentkernel/
 │       ├── serde.py          # Session (de)serialization helpers
 │       ├── in_memory.py
 │       ├── redis.py
+│       ├── valkey.py          # ValkeySessionStore (requires the `valkey` extra)
 │       ├── dynamodb.py
 │       ├── cosmosdb.py
 │       └── firestore.py

@@ -330,7 +330,7 @@ Configure where agent sessions are stored (supports multi-cloud storage backends
 
 - **Field**: `session.type`
 - **Type**: string
-- **Options**: `in_memory`, `redis`, `dynamodb` (AWS), `cosmosdb` (Azure), `firestore` (GCP)
+- **Options**: `in_memory`, `redis`, `valkey` (AWS), `dynamodb` (AWS), `cosmosdb` (Azure), `firestore` (GCP)
 - **Default**: `in_memory`
 - **Environment Variable**: `AK_SESSION__TYPE`
 
@@ -355,6 +355,30 @@ Required when `session.type=redis`:
   - **Default**: `ak:sessions:`
   - **Description**: Key prefix for session storage
   - **Environment Variable**: `AK_SESSION__REDIS__PREFIX`
+
+##### Valkey Configuration
+
+Required when `session.type=valkey` (requires the `agentkernel[valkey]` extra). [Valkey](https://valkey.io/)
+is the open-source, Linux Foundation-governed fork of Redis — wire-compatible with Redis and
+available on AWS ElastiCache at a lower price point than the Redis OSS engine:
+
+- **URL**
+  - **Field**: `session.valkey.url`
+  - **Default**: `valkey://localhost:6379`
+  - **Description**: Valkey connection URL. Use `valkeys://` for SSL
+  - **Environment Variable**: `AK_SESSION__VALKEY__URL`
+
+- **TTL (Time to Live)**
+  - **Field**: `session.valkey.ttl`
+  - **Default**: `604800` (7 days)
+  - **Description**: Session TTL in seconds
+  - **Environment Variable**: `AK_SESSION__VALKEY__TTL`
+
+- **Key Prefix**
+  - **Field**: `session.valkey.prefix`
+  - **Default**: `ak:sessions:`
+  - **Description**: Key prefix for session storage
+  - **Environment Variable**: `AK_SESSION__VALKEY__PREFIX`
 
 #### Execution Configuration
 
@@ -433,12 +457,17 @@ Configure queue-backed and serverless execution behavior.
     - **Field**: `execution.response_store.redis`
     - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`, `AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX`, `AK_EXECUTION__RESPONSE_STORE__REDIS__TTL`
 
+  - **Valkey Backend**
+    - **Field**: `execution.response_store.valkey`
+    - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`, `AK_EXECUTION__RESPONSE_STORE__VALKEY__PREFIX`, `AK_EXECUTION__RESPONSE_STORE__VALKEY__TTL`
+    - **Description**: Valkey-backed response storage (requires the `agentkernel[valkey]` extra)
+
   - **DynamoDB Backend**
     - **Field**: `execution.response_store.dynamodb`
     - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`, `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL`
     - **Description**: DynamoDB-backed response storage with table name and TTL
 
-Use either Redis or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
+Use Redis, Valkey, or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
 
 #### API Configuration
 
@@ -954,11 +983,15 @@ execution:
     type: redis
     retry_count: 5
     delay: 5
-    redis: # if this is given, then dynamodb response store part cannot be given
+    redis: # if this is given, then valkey/dynamodb response store parts cannot be given
       url: redis://localhost:6379
       prefix: "ak:responses:"
       ttl: 3600
-    dynamodb: # if this is given, then redis response store part cannot be given
+    valkey: # if this is given, then redis/dynamodb response store parts cannot be given (requires the `valkey` extra)
+      url: valkey://localhost:6379
+      prefix: "ak:responses:"
+      ttl: 3600
+    dynamodb: # if this is given, then redis/valkey response store parts cannot be given
       table_name: table-name
       table_arn: table-arn
       ttl: 3600
@@ -1235,3 +1268,4 @@ SPDX-License-Identifier: Apache-2.0
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+

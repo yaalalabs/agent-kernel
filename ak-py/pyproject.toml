@@ -61,6 +61,10 @@ redis = [
     "redis>=7.1.0",
 ]
 
+valkey = [
+    "valkey>=6.0.0",
+]
+
 neo4j = [
     "neo4j>=5.0.0",
 ]

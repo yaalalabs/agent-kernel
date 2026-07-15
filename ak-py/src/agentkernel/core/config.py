@@ -28,6 +28,15 @@ class _RedisConfig(BaseModel):
     prefix: str = Field(default="ak:sessions:", description="Key prefix for Redis session storage")
 
 
+class _ValkeyConfig(BaseModel):
+    url: str = Field(
+        default="valkey://localhost:6379",
+        description="Valkey connection URL. Use valkeys:// for SSL",
+    )
+    ttl: int = Field(default=604800, description="Valkey saved value TTL in seconds")
+    prefix: str = Field(default="ak:sessions:", description="Key prefix for Valkey session storage")
+
+
 class _DynamoDBConfig(BaseModel):
     table_name: str = Field(
         description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'"
@@ -68,9 +77,10 @@ class _FirestoreConfig(BaseModel):
 
 
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb|cosmosdb|firestore)$")
+    type: str = Field(default="in_memory", pattern="^(in_memory|redis|valkey|dynamodb|cosmosdb|firestore)$")
     cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
+    valkey: Optional[_ValkeyConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
     cosmosdb: Optional[_CosmosDBConfig] = None
     firestore: Optional[_FirestoreConfig] = None
@@ -226,6 +236,10 @@ class _ResponseStoreRedisConfig(_RedisConfig):
     prefix: str = Field(default="ak:responses:", description="Key prefix for Redis response storage")
 
 
+class _ResponseStoreValkeyConfig(_ValkeyConfig):
+    prefix: str = Field(default="ak:responses:", description="Key prefix for Valkey response storage")
+
+
 class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
     table_name: Optional[str] = Field(
         default=None,
@@ -234,10 +248,11 @@ class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
 
 
 class _ResponseStoreConfig(BaseModel):
-    type: str = Field(default=None, pattern="^(redis|dynamodb)$")
+    type: str = Field(default=None, pattern="^(redis|valkey|dynamodb)$")
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
+    valkey: Optional[_ResponseStoreValkeyConfig] = None
     dynamodb: Optional[_ResponseStoreDynamoDBConfig] = None
 
 

@@ -40,6 +40,7 @@ module "agent_runner" {
   output_queue_arn = module.queues[0].output_queue_arn
 
   redis_url                     = local.redis_url
+  valkey_url                    = local.valkey_url
   create_dynamodb_memory_table  = var.create_dynamodb_memory_table
   dynamodb_memory_table_arn     = local.dynamodb_memory_table_arn
   dynamodb_memory_table_name    = local.dynamodb_memory_table_name

@@ -16,9 +16,8 @@ class RedisDriver:
     RedisUtil provides Redis connection and helper methods for namespaced key/value operations.
     """
 
-    _redis_client = None
-
     def __init__(self):
+        self._redis_client = None
         self._log = logging.getLogger("ak.core.session.redis.util")
         self._url = AKConfig.get().session.redis.url
         self._prefix = AKConfig.get().session.redis.prefix
@@ -61,10 +60,11 @@ class RedisDriver:
                 client = redis.from_url(self._url, decode_responses=False, socket_connect_timeout=5)
                 client.ping()
                 self._redis_client = client
+                return
             except redis.RedisError as e:
                 self._log.warning(f"Attempt {attempt + 1} failed: {e}")
                 if attempt == retries - 1:
-                    break
+                    raise
                 time.sleep(2)
 
     def key(self, session_id: str) -> str:

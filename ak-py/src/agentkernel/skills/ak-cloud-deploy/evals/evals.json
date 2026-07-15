@@ -183,6 +183,18 @@
       ]
     },
     {
+      "id": "deploy-session-valkey",
+      "name": "Containerized deployment with Valkey sessions",
+      "input": "Deploy to AWS ECS with Valkey session persistence",
+      "expected_outputs": [
+        "session:",
+        "type: valkey",
+        "create_valkey_cluster",
+        "true",
+        "agentkernel[", "valkey"
+      ]
+    },
+    {
       "id": "deploy-prerequisites-aws",
       "name": "Show AWS prerequisites",
       "input": "Deploy to AWS",

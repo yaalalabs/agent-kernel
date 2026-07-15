@@ -9,6 +9,7 @@ from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestTe
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
+from agentkernel.core.session.valkey import ValkeySessionStore
 
 
 @pytest.fixture(autouse=True)
@@ -80,6 +81,24 @@ def test_runtime_instance_redis_when_config(monkeypatch):
     # Should select REDIS memory type and initialize a session store
     assert runtime.sessions() is not None
     assert type(runtime.sessions()) is RedisSessionStore
+
+
+def test_runtime_instance_valkey_when_config(monkeypatch):
+    class FakeCfg:
+        class session:
+            type = "valkey"
+
+            class valkey:
+                url = "valkey://localhost:6379"
+                ttl = 60
+                prefix = "ak:test:"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    runtime = Runtime(SessionStoreBuilder.build())
+    # Should select VALKEY memory type and initialize a session store
+    assert runtime.sessions() is not None
+    assert type(runtime.sessions()) is ValkeySessionStore
 
 
 def test_runtime_instance_invalid_fallback(monkeypatch):

@@ -60,7 +60,9 @@ module "request_handler" {
 | `input_queue_url` | Input queue URL injected into the environment |
 | `security_group_id` | Shared Lambda security group ID used for VPC networking |
 | `redis_url` | Redis URL injected into the environment |
+| `valkey_url` | Valkey URL injected into the environment |
 | `response_store_redis` | Redis response store configuration |
+| `response_store_valkey` | Valkey response store configuration |
 | `response_store_dynamodb` | DynamoDB response store configuration |
 | `vpc_id` | VPC ID |
 | `subnet_ids` | Private subnet IDs |
@@ -82,9 +84,11 @@ The module adds these environment variables when the corresponding inputs are pr
 - `API_VERSION`
 - `AGENT_ENDPOINT`
 - `AK_SESSION__REDIS__URL`
+- `AK_SESSION__VALKEY__URL`
 - `AK_SESSION__DYNAMODB__TABLE_NAME`
 - `AK_MULTIMODAL__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`
+- `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__QUEUES__INPUT__URL`
 
