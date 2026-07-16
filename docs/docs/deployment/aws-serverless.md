@@ -19,7 +19,7 @@ The serverless stack supports four execution modes (`execution.mode` / Terraform
 | `stream` | WebSocket | One `STREAM_CHUNK` push per token (`ServerlessStreamAgentRunner`) | Request handler, agent runner (stream), response handler, WS connection handler |
 
 :::info No SSE on Lambda
-Token streaming on AWS serverless is delivered over **WebSocket**, not SSE; API Gateway REST endpoints can't stream SSE from standard Lambda integrations. For SSE streaming use the self-hosted/containerized REST server instead. See [Execution Flow](/docs/architecture/execution-flow) for end-to-end sequence diagrams of each mode.
+Token streaming on AWS serverless is delivered over **WebSocket**, not SSE; API Gateway REST endpoints can't stream SSE from standard Lambda integrations. For SSE streaming use the self-hosted/containerized REST server instead. See [Execution Flow](../architecture/execution-flow) for end-to-end sequence diagrams of each mode.
 :::
 
 ## Architecture
