@@ -14,7 +14,7 @@ Two topologies are supported:
 | **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
 
 :::note Protocol support
-ECS containers serve JSON REST. Token streaming (SSE/WebSocket) and the WebSocket `async`/`stream` execution modes are currently **not available on ECS**; they are AWS Lambda serverless features. In the single-container REST mode `execution.mode: stream` would serve SSE via the built-in REST server, but the scalable queue mode supports `rest_sync` and `rest_async` only.
+ECS containers serve JSON REST. **SSE token streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. WebSocket `async`/`stream` execution modes are **not** available on ECS (AWS Lambda only). The scalable queue mode supports `rest_sync` and `rest_async` only.
 :::
 
 ## Simple REST Architecture

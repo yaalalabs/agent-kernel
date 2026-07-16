@@ -286,7 +286,7 @@ Common configuration options:
 | `AK_SESSION__TYPE` | Session storage backend (`in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore`) | `in_memory` |
 | `AK_SESSION__REDIS__URL` | Redis connection URL | `redis://localhost:6379` |
 | `AK_SESSION__DYNAMODB__TABLE_NAME` | DynamoDB table name | - |
-| `AK_EXECUTION__MODE` | Execution mode (`rest_sync`, `rest_async`, `stream`, `async`) | direct |
+| `AK_EXECUTION__MODE` | Execution mode (`rest_sync`, `rest_async`, `stream`, `async`) | - (direct when unset) |
 
 [Learn more about Configuration →](./configuration)
 

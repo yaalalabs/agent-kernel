@@ -128,7 +128,7 @@ See [AWS Serverless](./aws-serverless), [AWS Containerized](./aws-containerized)
 
 ### Local Development
 
-Uses `agentkernel.CLI` module.
+Uses the `agentkernel.cli` module.
 
 ```bash
 python my_agent.py
